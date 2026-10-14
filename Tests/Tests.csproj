@@ -54,6 +54,7 @@
     <ProjectReference Include="..\McpChannelVoice\McpChannelVoice.csproj" />
     <ProjectReference Include="..\McpServerScheduling\McpServerScheduling.csproj" />
     <ProjectReference Include="..\McpServerTimers\McpServerTimers.csproj" />
+    <ProjectReference Include="..\McpServerSugary\McpServerSugary.csproj" />
     <ProjectReference Include="..\Observability\Observability.csproj" />
     <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
   </ItemGroup>

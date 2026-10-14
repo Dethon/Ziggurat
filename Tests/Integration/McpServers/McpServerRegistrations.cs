@@ -11,6 +11,7 @@ using McpServerOutpost.Modules;
 using McpServerPrinter.Modules;
 using McpServerSandbox.Modules;
 using McpServerScheduling.Modules;
+using McpServerSugary.Modules;
 using McpServerTimers.Modules;
 using McpServerVault.Modules;
 using McpServerWebSearch.Modules;
@@ -26,6 +27,7 @@ using ServiceBusSettings = McpChannelServiceBus.Settings;
 // Aliased because Tests.Integration has sibling namespaces named after the server projects, which
 // shadow the project namespaces from inside Tests.
 using SignalRSettings = McpChannelSignalR.Settings;
+using SugarySettings = McpServerSugary.Settings;
 using TelegramSettings = McpChannelTelegram.Settings;
 using TimersSettings = McpServerTimers.Settings;
 using VaultSettings = McpServerVault.Settings;
@@ -216,6 +218,13 @@ public static class McpServerRegistrations
                 Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureMcp(settings)),
+
+        // The database is never opened at registration: the context factory opens it per read, and
+        // the schema is applied when the host starts. A tool server for now — the channel the app
+        // estimates through is a later ticket.
+        Row("sugary", "McpServerSugary", McpServerRole.Tool,
+            new SugarySettings.SugarySettings { DatabasePath = "/data/sugary.db", Mcp = DeploymentGate },
+            (services, settings) => services.ConfigureSugary(settings)),
 
         // The voice hub is reached through a named HttpClient, which never dials at registration.
         Row("timers", "McpServerTimers", McpServerRole.Tool,
