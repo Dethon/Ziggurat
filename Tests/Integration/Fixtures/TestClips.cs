@@ -64,6 +64,12 @@ public static class TestClips
         "-f", "lavfi", "-i", "sine=duration=3",
         "-c:v", "libvpx-vp9", "-b:v", "1M", "-deadline", "realtime", "-c:a", "libopus", "-shortest");
 
+    // What a browser's recorder writes while it records: WebM with no length stated anywhere in it.
+    public static Task<byte[]> Recorder(double seconds) => Make(
+        $"recorder-{seconds}.webm",
+        "-f", "lavfi", "-i", $"testsrc2=size=640x360:rate=10:duration={Seconds(seconds)}",
+        "-c:v", "libvpx-vp9", "-b:v", "300k", "-deadline", "realtime", "-live", "1", "-f", "webm");
+
     // A phone held upright stores its picture sideways and a flag saying how to turn it.
     public static async Task<byte[]> Rotated()
     {

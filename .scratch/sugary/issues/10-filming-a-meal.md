@@ -74,7 +74,8 @@ where it is absent). Covered:
 - a clip with sound reaches the turn naming 6–8 stills, each an attachment of the same message,
   fetched through `ChannelAttachmentSource`: JPEG, at the phone's 1280×720;
 - the fetched clip is H.264 in MP4 at 960×540 with exactly one stream (no audio);
-- HEVC portrait MOV and VP9/Opus WebM are accepted, and a clip stored sideways with a rotation flag
+- HEVC portrait MOV, VP9/Opus WebM and a browser recorder's WebM with no stated length are accepted
+  (a 25 s one of those is still refused, its length read off the last frame), and a clip stored sideways with a rotation flag
   arrives upright as 540×960;
 - 25 s is refused with its reason and nothing stored; 20.3 s goes, cut to at most 20 s;
 - a clip blurred from 2.5 s to 5.5 s gives 5–6 stills, none taken from the blurred window
@@ -92,7 +93,7 @@ where it is absent). Covered:
 
 Unit: `StillChoiceTests` and `MealTurnTests` (both video wordings). Full suite
 (`Category!=Llm&Category!=Eval&Category!=E2E&Category!=EvalCalibration`): 6,739 passed, 0 failed,
-0 skipped. PWA: `tsc --noEmit` clean, vitest 42 passed.
+0 skipped (before the two recorder-WebM cases were added; `SugaryClipApiTests` then 20/20). PWA: `tsc --noEmit` clean, vitest 42 passed.
 
 **Docker.** `McpServerSugary/Dockerfile` installs `ffmpeg` (apt, `--no-install-recommends`) in the
 final stage as root, then drops back to `$APP_UID`. It was built once against a private base tag. In

@@ -98,6 +98,7 @@ public class SugaryClipApiTests
     {
         { "HEVC in a QuickTime file, portrait", 540, 960 },
         { "VP9 and Opus in WebM", 960, 540 },
+        { "a browser recorder's WebM with no stated length", 640, 360 },
         { "stored sideways with a rotation flag", 540, 960 }
     };
 
@@ -110,6 +111,7 @@ public class SugaryClipApiTests
         {
             "HEVC in a QuickTime file, portrait" => (await TestClips.HevcPortrait(), "video/quicktime", "clip.mov"),
             "VP9 and Opus in WebM" => (await TestClips.WebM(), "video/webm", "clip.webm"),
+            "a browser recorder's WebM with no stated length" => (await TestClips.Recorder(3), "video/webm", "clip.webm"),
             _ => (await TestClips.Rotated(), "video/mp4", "clip.mp4")
         };
         await using var server = await SugaryServer.StartAsync();
@@ -146,6 +148,22 @@ public class SugaryClipApiTests
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await DetailAsync(response)).ShouldBe(
             "The clip is 25 seconds long. Film at most 20 seconds around the plate, or take a photo instead.");
+        StoredFiles(server).ShouldBeEmpty();
+    }
+
+    // A browser's recorder states no length, so the clip's length is read off its last frame.
+    [SkippableFact]
+    public async Task ARecordersClipWithNoStatedLength_IsStillRefusedPastTwentySeconds()
+    {
+        Skip.If(TestClips.Missing is not null, TestClips.Missing);
+        await using var server = await SugaryServer.StartAsync();
+        var app = await server.SignedInAsync();
+
+        var response = await app.PostAsync("/api/estimates",
+            Form("", clip: await TestClips.Recorder(25), clipType: "video/webm", clipName: "clip.webm"));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await DetailAsync(response)).ShouldStartWith("The clip is 25 seconds long.");
         StoredFiles(server).ShouldBeEmpty();
     }
 
