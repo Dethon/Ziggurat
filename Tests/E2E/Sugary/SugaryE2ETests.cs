@@ -16,7 +16,7 @@ namespace Tests.E2E.Sugary;
 // turn of the Sugary channel, she saves the meal, the meal is in the table another agent reads under
 // /sugary, and the conversation is a topic WebChat shows under the sugary agent.
 //
-// This reaches a live model (the shipped sugary agent's, Gemini 3.8 Flash, through OpenRouter) and
+// This reaches a live model (the shipped sugary agent's, Gemini 3.8 Flash today, through OpenRouter) and
 // so spends money — about a cent. Run it on purpose, never as part of a routine run:
 //   dotnet test --filter "Category=E2E&FullyQualifiedName~SugaryE2ETests"
 [Collection(WebChatE2ECollections.Sugary)]

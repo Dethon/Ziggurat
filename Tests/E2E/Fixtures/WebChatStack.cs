@@ -519,7 +519,10 @@ internal sealed class WebChatStack
         WebChatUrl = $"{baseUrl}/";
     }
 
-    private static string ShippedAgent(string id)
+    // An agent's definition as Agent/appsettings.json ships it, as JSON to splice into the agent's
+    // settings. Every WebChat collection's stack starts through this, so a shape it cannot read
+    // fails them all (WebChatStackTests pins it).
+    internal static string ShippedAgent(string id)
     {
         var path = Path.Combine(TestHelpers.FindSolutionRoot(), "Agent", "appsettings.json");
         var shipped = JsonNode.Parse(
