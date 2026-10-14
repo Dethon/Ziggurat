@@ -114,6 +114,17 @@ a few photographed meals a day.
   of the window, takes a half-written attachment, and is registered.
 - Full suite: 6,547 passed.
 
+**For ticket 07 (labels):** `PhotoUpload.ModelRefusal` passes `patchedModel: null`, which asks about
+the agent's own model. A label turn runs on the patched label model, so the label route must pass
+its patch's model (`AttachmentCapability.Refusal(agent, patch.Model, …)`). Otherwise it judges
+Gemini's inputs for a turn Opus answers.
+
+**Known cost: photos of a turn that failed after the send stay until the sweep.** Validation and the
+capability check come before anything is stored. Nobody listening, a timeout, an `Error` chunk and an
+unreadable reply all come after, and their photos sit out the 365 days like any other. WebChat's
+store has the same property for abandoned uploads. Deleting them on failure was left out, because
+ticket 06's follow-up turn on the same conversation may still need them.
+
 **For ticket 10 (filming a meal): the clip and its stills go in this store.** Save the normalised
 clip and each still with `UploadStore.SaveAsync` under the **same** conversation id as any overhead
 photo. Each is its own attachment, fetched by the same `fetch_attachment`. Then build one
