@@ -586,6 +586,41 @@ services:
       mcp-channel-voice:
         condition: service_started
 
+  mcp-sugary:
+    image: mcp-sugary:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-sugary
+    ports:
+      - "6017:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerSugary/Dockerfile
+    restart: unless-stopped
+    # Her carb log is a SQLite file in this volume (docs/adr/0043), so it is backed up with the
+    # volume and not with Redis. PUID/PGID in .env must own ./volumes/sugary, as for the voice hub.
+    # Carrying the standalone app's log over is one command: put its three downloads
+    # (sugary-meals.csv, sugary-items.csv, sugary-foods.csv) in ./volumes/sugary/import, then
+    #   docker exec mcp-sugary dotnet McpServerSugary.dll import /data/import
+    # A meal or food already here is left alone, so running it twice adds nothing.
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/sugary:/data
+    env_file:
+      - .env
+    environment:
+      # Also the zone the tables' times are written in (HomeZone empty): the same anchor the Home
+      # Assistant container runs on, so a meal lines up with the glucose history /ha serves.
+      <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+    networks:
+      - jackbot
+    depends_on:
+      base-sdk:
+        condition: service_started
+
   mcp-channel-voice:
     image: mcp-channel-voice:latest
     logging:
