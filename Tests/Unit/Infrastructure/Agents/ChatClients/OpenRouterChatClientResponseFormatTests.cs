@@ -100,6 +100,42 @@ public sealed class OpenRouterChatClientResponseFormatTests
         added.ShouldBeSubsetOf(["text", "provider"]);
     }
 
+    // The shipped pins are a deployment constraint and survive the turn; the requirement is added
+    // beside them, so the format is never silently dropped by a provider that ignores it.
+    [Fact]
+    public async Task ATurnWithAFormat_RequiresProvidersThatHonourItAndKeepsTheRouting()
+    {
+        var wire = new RecordingResponsesHandler();
+        await using var agent = CreateAgent(wire, routing: _pinned);
+
+        await agent.RunStreamingAsync([UserMessage("paella", _format)]).ToListAsync();
+
+        var provider = wire.Bodies.ShouldHaveSingleItem()["provider"]!.AsObject();
+        provider["require_parameters"]!.GetValue<bool>().ShouldBeTrue();
+        provider["sort"]!.GetValue<string>().ShouldBe("throughput");
+        provider["preferred_max_latency"]!.GetValue<double>().ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ATurnWithoutAFormat_RoutesExactlyAsConfigured()
+    {
+        var wire = new RecordingResponsesHandler();
+        await using var agent = CreateAgent(wire, routing: _pinned);
+
+        await agent.RunStreamingAsync([UserMessage("hi")]).ToListAsync();
+
+        var provider = wire.Bodies.ShouldHaveSingleItem()["provider"]!.AsObject();
+        provider.ContainsKey("require_parameters").ShouldBeFalse();
+        provider["sort"]!.GetValue<string>().ShouldBe("throughput");
+    }
+
+    // nabu's shipped routing, the one non-default pin in Agent/appsettings.json.
+    private static readonly ProviderRouting _pinned = new()
+    {
+        Sort = ProviderSort.Throughput,
+        PreferredMaxLatency = new ProviderThreshold { P50 = 1 }
+    };
+
     private static JsonObject? TextFormat(JsonObject body) => body["text"]?["format"] as JsonObject;
 
     private static ChatMessage UserMessage(string text, ResponseFormat? format = null)

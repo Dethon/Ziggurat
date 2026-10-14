@@ -332,6 +332,28 @@ public sealed class HostRoutingChatClientTests
         JsonNode.Parse(openRouter.CapturedBody!)!["reasoning"]!["effort"]!.GetValue<string>().ShouldBe("high");
     }
 
+    // Provider routing is OpenRouter's: the box has no providers to choose among, so a turn that
+    // asks for a response format reaches it with the format and without the routing it asks for.
+    [Fact]
+    public async Task ALemonadeTurnWithAResponseFormat_ReachesTheHostWithTheFormatAndNoProviderNode()
+    {
+        var lemonade = new CapturingSseHandler();
+        await using var agent = Agent(Routing(new CapturingSseHandler(), lemonade));
+
+        var message = Patched(LemonadeModel);
+        message.SetResponseFormat(new ResponseFormat
+        {
+            Name = "meal_estimate",
+            Schema = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(
+                """{"type":"object","properties":{},"required":[],"additionalProperties":false}""")
+        });
+        await agent.RunStreamingAsync([message]).ToListAsync();
+
+        var body = JsonNode.Parse(lemonade.CapturedBody!)!.AsObject();
+        body["text"]!["format"]!["name"]!.GetValue<string>().ShouldBe("meal_estimate");
+        body.ContainsKey("provider").ShouldBeFalse();
+    }
+
     private static HostRoutingChatClient Routing(
         HttpMessageHandler openRouter, HttpMessageHandler lemonade, string? apiKey = null) =>
         new(
