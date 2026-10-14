@@ -308,7 +308,8 @@ label.button:focus-within {
   flex: none;
 }
 
-.photos img {
+.photos img,
+.photos video {
   display: block;
   width: 112px;
   height: 112px;

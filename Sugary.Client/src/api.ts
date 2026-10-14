@@ -37,6 +37,9 @@ const json = (method: string, body: unknown): RequestInit => ({
 
 export interface EstimateInput {
   photos: Blob[];
+  // A short film around the plate, as the phone recorded it. The server makes it small, drops its
+  // sound and takes stills from it, so it goes as it is.
+  clip: Blob | null;
   description: string;
   clarifications: string;
   // What the person has already added themselves, so the model leaves it out.
@@ -46,14 +49,17 @@ export interface EstimateInput {
   conversationId: string | null;
 }
 
-// Her answers continue the conversation, whose first message already holds the photos and her
-// words, so a follow-up sends neither again.
+// Her answers continue the conversation, whose first message already holds the photos, the clip
+// and her words, so a follow-up sends none of them again.
 export function estimateForm(input: EstimateInput): FormData {
   const form = new FormData();
   if (input.conversationId) {
     form.append("conversationId", input.conversationId);
   } else {
     input.photos.forEach((photo, index) => form.append("photos", photo, `meal-${index}.jpg`));
+    if (input.clip) {
+      form.append("clip", input.clip, input.clip instanceof File ? input.clip.name : "meal.mp4");
+    }
     form.append("description", input.description);
   }
   form.append("clarifications", input.clarifications);

@@ -22,6 +22,7 @@ const answer = (conversationId: string, names: string[] = ["rice"]): MealEstimat
 });
 
 const photo = new Blob(["jpeg"], { type: "image/jpeg" });
+const clip = new File(["mov"], "IMG_0042.MOV", { type: "video/quicktime" });
 
 // A draft estimated once, with a food she added herself and an answer not yet sent.
 function answered(): Draft {
@@ -48,6 +49,7 @@ describe("the estimate's form", () => {
   it("sends a first estimate's photos and words, and no conversation", () => {
     const form = estimateForm({
       photos: [photo, photo],
+      clip: null,
       description: "rice",
       clarifications: "",
       counted: "- yoghurt: 12 g of carbs",
@@ -60,11 +62,30 @@ describe("the estimate's form", () => {
     expect(form.get("counted")).toBe("- yoghurt: 12 g of carbs");
     expect(form.get("language")).toBe("es");
     expect(form.has("conversationId")).toBe(false);
+    expect(form.has("clip")).toBe(false);
+  });
+
+  it("sends a filmed meal's clip as the phone recorded it, beside the photos", () => {
+    const form = estimateForm({
+      photos: [photo],
+      clip,
+      description: "",
+      clarifications: "",
+      counted: "",
+      language: "en",
+      conversationId: null,
+    });
+
+    const sent = form.get("clip") as File;
+    expect(sent.name).toBe("IMG_0042.MOV");
+    expect(sent.type).toBe("video/quicktime");
+    expect(form.getAll("photos")).toHaveLength(1);
   });
 
   it("sends her answers on the conversation, with what she counted and nothing of the first turn", () => {
     const form = estimateForm({
       photos: [photo],
+      clip,
       description: "rice",
       clarifications: "Q: How much rice?\nA: a cup (160 g)",
       counted: "- yoghurt: 12 g of carbs",
@@ -77,6 +98,7 @@ describe("the estimate's form", () => {
     expect(form.get("counted")).toBe("- yoghurt: 12 g of carbs");
     expect(form.get("language")).toBe("en");
     expect(form.has("photos")).toBe(false);
+    expect(form.has("clip")).toBe(false);
     expect(form.has("description")).toBe(false);
   });
 });
@@ -86,21 +108,30 @@ describe("estimating a draft", () => {
     const { sent, send } = recording(answer("c1"));
     const draft = reduce(emptyDraft, { type: "describe", description: "rice" });
 
-    await estimateDraft(draft, [photo], "en", send);
+    await estimateDraft(draft, { photos: [photo], clip }, "en", send);
 
     expect(sent).toEqual([
-      { photos: [photo], description: "rice", clarifications: "", counted: "", language: "en", conversationId: null },
+      {
+        photos: [photo],
+        clip,
+        description: "rice",
+        clarifications: "",
+        counted: "",
+        language: "en",
+        conversationId: null,
+      },
     ]);
   });
 
-  it("sends her answers on the conversation the first estimate opened, without the photos", async () => {
+  it("sends her answers on the conversation the first estimate opened, without the photos or the clip", async () => {
     const { sent, send } = recording(answer("c1"));
 
-    await estimateDraft(answered(), [photo], "es", send);
+    await estimateDraft(answered(), { photos: [photo], clip }, "es", send);
 
     expect(sent).toEqual([
       {
         photos: [],
+        clip: null,
         description: "",
         clarifications: "Q: How much rice?\nA: a cup (160 g)",
         counted: "- yoghurt: 12 g of carbs",
@@ -113,11 +144,12 @@ describe("estimating a draft", () => {
   it("estimates the meal afresh, with everything, when the conversation is gone", async () => {
     const { sent, send } = recording(new ApiError(410, "gone"), answer("c2"));
 
-    const result = await estimateDraft(answered(), [photo], "en", send);
+    const result = await estimateDraft(answered(), { photos: [photo], clip }, "en", send);
 
     expect(result.conversationId).toBe("c2");
     expect(sent[1]).toEqual({
       photos: [photo],
+      clip,
       description: "rice and bread",
       clarifications: "Q: How much rice?\nA: a cup (160 g)",
       counted: "- yoghurt: 12 g of carbs",
@@ -129,7 +161,7 @@ describe("estimating a draft", () => {
   it("does not start again on any other failure", async () => {
     const { sent, send } = recording(new ApiError(502, "not connected"));
 
-    await expect(estimateDraft(answered(), [photo], "en", send)).rejects.toThrow("not connected");
+    await expect(estimateDraft(answered(), { photos: [photo], clip: null }, "en", send)).rejects.toThrow("not connected");
     expect(sent).toHaveLength(1);
   });
 });

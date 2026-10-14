@@ -15,6 +15,9 @@ const en = {
   manual: "Add by hand",
   manualHint: "When you already know the carbs",
   removePhoto: "Remove photo",
+  filmPlate: "Film the plate",
+  filmHint: "Up to 20 seconds, moving slowly around the plate. It shows how high the food is piled. The sound is never sent.",
+  removeClip: "Remove video",
   estimatesUnavailable:
     "Estimating from a photo or a description is not available yet. Add what you are eating from your foods, a package or by hand.",
 
@@ -198,6 +201,9 @@ const es: Strings = {
   manual: "Añadir a mano",
   manualHint: "Cuando ya sabes los hidratos",
   removePhoto: "Quitar foto",
+  filmPlate: "Grabar el plato",
+  filmHint: "Hasta 20 segundos, moviéndote despacio alrededor del plato. Así se ve cuánta comida hay. El sonido nunca se envía.",
+  removeClip: "Quitar vídeo",
   estimatesUnavailable:
     "Todavía no se puede calcular a partir de una foto o una descripción. Añade lo que vas a comer desde tus alimentos, un producto envasado o a mano.",
 

@@ -6,14 +6,20 @@ import type { MealEstimate } from "./types";
 // her photos and words still in front of it. A conversation the server no longer has open (it
 // restarted, or the meal was left too long) is answered 410, and the meal is then estimated afresh
 // with everything, as the standalone app always did.
+export interface MealMedia {
+  photos: Blob[];
+  clip: Blob | null;
+}
+
 export async function estimateDraft(
   draft: Draft,
-  photos: Blob[],
+  { photos, clip }: MealMedia,
   language: string,
   send: (input: EstimateInput) => Promise<MealEstimate>,
 ): Promise<MealEstimate> {
   const fresh: EstimateInput = {
     photos,
+    clip,
     description: draft.description,
     clarifications: clarifications(draft),
     counted: counted(draft),
@@ -25,7 +31,7 @@ export async function estimateDraft(
   }
 
   try {
-    return await send({ ...fresh, photos: [], description: "", conversationId: draft.conversation });
+    return await send({ ...fresh, photos: [], clip: null, description: "", conversationId: draft.conversation });
   } catch (failure) {
     if (failure instanceof ApiError && failure.status === 410) {
       return send(fresh);

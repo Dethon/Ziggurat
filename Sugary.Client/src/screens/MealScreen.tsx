@@ -34,6 +34,8 @@ export function MealScreen({
   const { t, language } = useSettings();
   const [draft, dispatch] = useDraft();
   const [photos, setPhotos] = useState<Photo[]>([]);
+  // At most one clip, shown as she filmed it; the server makes it small and takes its stills.
+  const [clip, setClip] = useState<Photo | null>(null);
   const [running, setRunning] = useState<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"foods" | "packaged" | "manual" | null>(null);
@@ -42,13 +44,21 @@ export function MealScreen({
   const [unsentAnswers, setUnsentAnswers] = useState(false);
   const livePhotos = useRef(photos);
   livePhotos.current = photos;
+  const liveClip = useRef(clip);
+  liveClip.current = clip;
 
-  useEffect(() => () => livePhotos.current.forEach((photo) => URL.revokeObjectURL(photo.url)), []);
+  useEffect(
+    () => () =>
+      [...livePhotos.current, ...(liveClip.current ? [liveClip.current] : [])].forEach((photo) =>
+        URL.revokeObjectURL(photo.url),
+      ),
+    [],
+  );
 
   // After a reload the draft survives but the photos do not, and asking the model again
   // without them would quietly produce a worse estimate than the one on screen.
   const photosGone = draft.estimated && draft.thumbnail !== null && photos.length === 0;
-  const canEstimate = photos.length > 0 || draft.description.trim() !== "";
+  const canEstimate = photos.length > 0 || clip !== null || draft.description.trim() !== "";
   const sum = total(draft.items);
 
   async function addPhotos(event: ChangeEvent<HTMLInputElement>) {
@@ -63,6 +73,24 @@ export function MealScreen({
     } catch {
       setError(t("errorGeneric"));
     }
+  }
+
+  function addClip(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) {
+      if (clip) {
+        URL.revokeObjectURL(clip.url);
+      }
+      setClip({ blob: file, url: URL.createObjectURL(file) });
+    }
+  }
+
+  function removeClip() {
+    if (clip) {
+      URL.revokeObjectURL(clip.url);
+    }
+    setClip(null);
   }
 
   function removePhoto(photo: Photo) {
@@ -87,7 +115,7 @@ export function MealScreen({
     try {
       const result = await estimateDraft(
         asked,
-        photos.map((photo) => photo.blob),
+        { photos: photos.map((photo) => photo.blob), clip: clip?.blob ?? null },
         language,
         (input) => api.estimate(input, controller.signal),
       );
@@ -131,6 +159,7 @@ export function MealScreen({
   function startOver() {
     photos.forEach((photo) => URL.revokeObjectURL(photo.url));
     setPhotos([]);
+    removeClip();
     setError(null);
     setCorrection("");
     setUnsentAnswers(false);
@@ -167,8 +196,16 @@ export function MealScreen({
           <h1>{t("captureTitle")}</h1>
           <p className="muted">{t("captureHint")}</p>
 
-          {photos.length > 0 && (
+          {(photos.length > 0 || clip) && (
             <ul className="photos">
+              {clip && (
+                <li key={clip.url}>
+                  <video src={clip.url} muted playsInline preload="metadata" />
+                  <button type="button" className="photo-remove" aria-label={t("removeClip")} onClick={removeClip}>
+                    <Icon name="close" size={16} />
+                  </button>
+                </li>
+              )}
               {photos.map((photo) => (
                 <li key={photo.url}>
                   <img src={photo.url} alt="" />
@@ -199,6 +236,17 @@ export function MealScreen({
               </label>
             </div>
           )}
+
+          {!clip && (
+            <div className="capture-buttons">
+              <label className="button button-secondary">
+                <Icon name="video" />
+                {t("filmPlate")}
+                <input type="file" accept="video/*" capture="environment" hidden onChange={addClip} />
+              </label>
+            </div>
+          )}
+          {!clip && <p className="muted small">{t("filmHint")}</p>}
 
           <label className="field">
             <span className="field-label">{t("describeLabel")}</span>
