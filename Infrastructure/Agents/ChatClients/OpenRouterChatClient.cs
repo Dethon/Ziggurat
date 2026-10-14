@@ -32,6 +32,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly IAttachmentSource? _attachmentSource;
     private readonly IReadImageStore? _readImageStore;
     private readonly Func<string, bool> _modelAcceptsImages;
+    private readonly Func<string, bool> _modelAcceptsVideo;
     private readonly int _hydrationDepthMessages;
 
     public OpenRouterChatClient(
@@ -49,7 +50,8 @@ public sealed class OpenRouterChatClient : IChatClient
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
-        int? maxRetries = null)
+        int? maxRetries = null,
+        Func<string, bool>? modelAcceptsVideo = null)
     {
         _model = model;
         _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
@@ -58,6 +60,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _attachmentSource = attachmentSource;
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
+        _modelAcceptsVideo = modelAcceptsVideo ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
         _httpClient = CreateHttpClient(
             _costQueue, _cachedTokenQueue, _routeSink, sessionId, providerRouting, transportHandler);
@@ -75,7 +78,8 @@ public sealed class OpenRouterChatClient : IChatClient
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
-        Func<string, int?>? contextWindowFor = null)
+        Func<string, int?>? contextWindowFor = null,
+        Func<string, bool>? modelAcceptsVideo = null)
     {
         _model = model;
         _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
@@ -84,6 +88,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _attachmentSource = attachmentSource;
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
+        _modelAcceptsVideo = modelAcceptsVideo ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
         _client = innerClient;
     }
@@ -115,8 +120,11 @@ public sealed class OpenRouterChatClient : IChatClient
         // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on
         // and a concurrent turn has nothing shared to overwrite. Resolved before hydration,
         // because whether an image part may travel at all depends on it: the wire rejects a
-        // request carrying an image the model cannot take rather than stripping it.
+        // request carrying an image the model cannot take rather than stripping it. Whether a clip
+        // or its stills go is the same question asked about video.
         var effectiveModel = options?.ModelId ?? _model;
+        var inputs = new ModelInputs(
+            effectiveModel, _modelAcceptsImages(effectiveModel), _modelAcceptsVideo(effectiveModel));
 
         // The conversation reaches this send on the turn's own options, the way MCP tool metadata
         // already does: a chat client is built per model from DI, so there is nothing per
@@ -127,9 +135,10 @@ public sealed class OpenRouterChatClient : IChatClient
             new ReadImageContext(
                 _readImageStore,
                 ConversationContextMeta.TryRead(options)?.ConversationId,
-                _modelAcceptsImages(effectiveModel)),
+                inputs.Images),
             _hydrationDepthMessages,
-            ct);
+            ct,
+            inputs);
 
         var sender = transformedMessages
             .LastOrDefault(m => m.Role == ChatRole.User)
@@ -160,7 +169,7 @@ public sealed class OpenRouterChatClient : IChatClient
         // Last, on what is left to send: a preload is recorded as a pair and sent as a note, and
         // everything above — who is speaking, what is pinned, what a group weighs — is asked of
         // the record, where the last user-role message is still the person's.
-        var sent = SkillPreloadNote.AsSent(truncated);
+        var sent = VideoInputParts.AsSent(SkillPreloadNote.AsSent(truncated));
 
         UsageContent? usage = null;
 
