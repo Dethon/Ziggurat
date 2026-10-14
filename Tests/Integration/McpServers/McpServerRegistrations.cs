@@ -92,7 +92,7 @@ public static class McpServerRegistrations
     // Broadcast for the two chat-shaped transports whose callers cannot retry; gate-on-live for
     // the three whose callers settle a durable record on a confirmed delivery — a schedule, a
     // routing entry, a broker message — and would otherwise keep the record *and* leave a buffered
-    // duplicate behind; buffer-always for the one transport with no way to tell a sender to try
+    // duplicate behind, and for Sugary, whose app waits on its own request; buffer-always for the one transport with no way to tell a sender to try
     // again later.
     //
     // The tool servers all take unreachable-but-well-formed connection details for the same reason

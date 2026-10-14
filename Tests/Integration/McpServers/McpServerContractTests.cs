@@ -107,9 +107,10 @@ public class McpServerContractTests
             .ShouldBe(1, $"{id} must have exactly one call-tool filter");
     }
 
-    // The two dual-role servers can raise something with the agent unprompted but have nobody to
-    // speak to, so they accept the protocol tools and drop what arrives. That is a stated fact about
-    // them, and this row is where it is stated.
+    // A dual-role server answers the protocol tools whether or not it has anybody to speak to: most
+    // raise something with the agent unprompted and drop what comes back, while Sugary hands the
+    // reply to the app waiting on it. Either way the tools are there, and this row is where it is
+    // stated.
     [Theory]
     [MemberData(nameof(DualRoleServers))]
     public void EveryDualRoleServer_AdvertisesTheChannelProtocolTools(string id)
