@@ -67,6 +67,9 @@ meals; with no agent connected an estimate is answered 502 with the "not connect
 waits on. The E2E unit guards pass, including the image's watched directories and the ten collection
 slices (this is the tenth, so the slices are now full).
 
+Full suite (`Category!=Llm&Category!=Eval&Category!=E2E&Category!=EvalCalibration`): 6,744 passed,
+0 failed, 0 skipped. PWA: `tsc --noEmit` clean, vitest 45 passed.
+
 One side change: `TestHelpers`' staleness walk now skips `node_modules`. It is dockerignored, and an
 `npm install` on the host would otherwise rebuild the Sugary image for nothing.
 
@@ -106,7 +109,8 @@ image never reached Gemini as expected.
   `ZIGGURAT_EVAL=1 ZIGGURAT_EVAL_MODEL=google/gemini-3.8-flash dotnet test --filter "Category=Eval&Tier=Sugary"`.
   - Photos must be linked and clips made (`Tests/Eval/Sugary/README.md`).
   - About $0.75–0.95 for one pass of the 78 meals plus the scenarios (tickets 08 and 10).
-  - Compare `.eval-output/scorecard-sugary-google_gemini-3.8-flash.json` (`benchmark.byInput` and
+  - Compare `.eval-output/scorecard-sugary-<served model>.json` (`/` filed as `-`, e.g.
+    `scorecard-sugary-google-gemini-3.8-flash.json`; `benchmark.byInput` and
     `bySetAndInput`) with the standalone figures. Photo: 12.3 g mean error, −8.3 g bias, median 23 s.
     `n5k` filmed against photographed: 8.3 g against 11.2 g. Compare the mean error first: the
     standalone in-range count predates the range floor.
