@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
@@ -195,6 +196,39 @@ public sealed class OpenRouterChatClientResponseFormatTests
 
         withFormat.Bodies.Single()["tools"]!.ToJsonString()
             .ShouldBe(without.Bodies.Single()["tools"]!.ToJsonString());
+    }
+
+    // A turn asked for in a schema is billed like any other: its usage reaches the dashboard's token
+    // totals under the turn's sender and model, from the same place every turn's does. Sugary's
+    // estimates are such turns, and what counting carbs costs is read off these events.
+    [Fact]
+    public async Task ATurnWithAFormat_PublishesItsTokenUsageLikeAnyTurn()
+    {
+        var wire = new RecordingResponsesHandler();
+        var published = new List<MetricEvent>();
+        var metrics = new Mock<IMetricsPublisher>();
+        metrics.Setup(p => p.Publish(It.IsAny<MetricEvent>())).Callback<MetricEvent>(published.Add);
+        var client = new OpenRouterChatClient(
+            "http://localhost/api/v1", "test-key", "configured/model",
+            metricsPublisher: metrics.Object, transportHandler: wire);
+        await using var agent = new McpAgent(
+            TestAgentSpec.Default with { Model = "configured/model" },
+            client,
+            new Mock<IThreadStateStore>().Object,
+            NoOpMetricsPublisher.Instance,
+            TimeProvider.System,
+            [],
+            []);
+        var message = UserMessage("two slices of toast", _format);
+        message.SetSenderId("sugary-app");
+
+        await agent.RunStreamingAsync([message]).ToListAsync();
+
+        var usage = published.OfType<TokenUsageEvent>().ShouldHaveSingleItem();
+        usage.Sender.ShouldBe("sugary-app");
+        usage.Model.ShouldBe("configured/model");
+        usage.InputTokens.ShouldBe(5);
+        usage.OutputTokens.ShouldBe(1);
     }
 
     // nabu's shipped routing, the one non-default pin in Agent/appsettings.json.
