@@ -17,7 +17,16 @@ interface Found {
   barcode?: string;
 }
 
-export function PackagedSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (item: DraftItem) => void }) {
+// Without `labels` a photo is read for its barcode only, and says so when it has none.
+export function PackagedSheet({
+  labels,
+  onClose,
+  onAdd,
+}: {
+  labels: boolean;
+  onClose: () => void;
+  onAdd: (item: DraftItem) => void;
+}) {
   const { t, language } = useSettings();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +88,10 @@ export function PackagedSheet({ onClose, onAdd }: { onClose: () => void; onAdd: 
         await find(code);
         return;
       }
+      if (!labels) {
+        setError(t("labelsUnavailable"));
+        return;
+      }
       show({ food: await api.readLabel(await forUpload(file), language), source: "label" });
     });
   }
@@ -112,7 +125,9 @@ export function PackagedSheet({ onClose, onAdd }: { onClose: () => void; onAdd: 
     <Sheet title={t("packagedTitle")} onClose={onClose}>
       {found === null ? (
         <div className="sheet-form">
-          <p className="muted">{t(live ? "scanIntro" : "packagedIntro")}</p>
+          <p className="muted">
+            {t(labels ? (live ? "scanIntro" : "packagedIntro") : live ? "scanIntroBarcode" : "packagedIntroBarcode")}
+          </p>
           {scanning ? (
             <BarcodeScanner onDetected={fromScan} onProblem={scanFailed} onStop={() => setScanning(false)} />
           ) : (
@@ -137,7 +152,7 @@ export function PackagedSheet({ onClose, onAdd }: { onClose: () => void; onAdd: 
               .join(" ")}
           >
             <Icon name="camera" />
-            {busy && !live ? t("reading") : t("packagedPhoto")}
+            {busy && !live ? t("reading") : t(labels ? "packagedPhoto" : "barcodePhoto")}
             <input type="file" accept="image/*" capture="environment" hidden disabled={busy} onChange={fromPhoto} />
           </label>
           <form

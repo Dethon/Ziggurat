@@ -19,7 +19,17 @@ interface Photo {
   url: string;
 }
 
-export function MealScreen({ onSaved }: { onSaved: () => void }) {
+// `estimates` and `labels` say whether the server answers those two actions yet; when it does not,
+// the photo and description are replaced by a notice and only the other ways in remain.
+export function MealScreen({
+  estimates,
+  labels,
+  onSaved,
+}: {
+  estimates: boolean;
+  labels: boolean;
+  onSaved: () => void;
+}) {
   const { t, language } = useSettings();
   const [draft, dispatch] = useDraft();
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -146,7 +156,16 @@ export function MealScreen({ onSaved }: { onSaved: () => void }) {
 
   return (
     <div className="screen">
-      {!draft.estimated && (
+      {!draft.estimated && !estimates && (
+        <section className="capture">
+          <h1>{t("captureTitle")}</h1>
+          <p className="notice">
+            <Icon name="info" size={18} /> {t("estimatesUnavailable")}
+          </p>
+        </section>
+      )}
+
+      {!draft.estimated && estimates && (
         <section className="capture">
           <h1>{t("captureTitle")}</h1>
           <p className="muted">{t("captureHint")}</p>
@@ -304,7 +323,7 @@ export function MealScreen({ onSaved }: { onSaved: () => void }) {
             <Icon name="barcode" />
             <span>
               <strong>{t("packaged")}</strong>
-              <small>{t("packagedHint")}</small>
+              <small>{t(labels ? "packagedHint" : "packagedHintBarcode")}</small>
             </span>
           </button>
           <button type="button" className="add-button" onClick={() => setSheet("manual")}>
@@ -344,6 +363,7 @@ export function MealScreen({ onSaved }: { onSaved: () => void }) {
       )}
       {sheet === "packaged" && (
         <PackagedSheet
+          labels={labels}
           onClose={() => setSheet(null)}
           onAdd={(item) => {
             dispatch({ type: "add", item });

@@ -27,16 +27,17 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg,png,wasm}"],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // The API is never served from cache: a stale estimate or log would be worse than an error.
-        navigateFallbackDenylist: [/^\/api\//],
+        navigateFallbackDenylist: [/^\/api\//, /^\/mcp/],
       },
     }),
   ],
   server: {
-    proxy: { "/api": "http://localhost:5080" },
+    // The Sugary server as compose publishes it.
+    proxy: { "/api": "http://localhost:6017" },
   },
   build: {
-    // ASP.NET serves the app from its wwwroot, so one container holds both halves.
-    outDir: "../Sugary/wwwroot",
+    // The Sugary server serves the app from its wwwroot, so one container holds both halves.
+    outDir: "../McpServerSugary/wwwroot",
     emptyOutDir: true,
   },
 });

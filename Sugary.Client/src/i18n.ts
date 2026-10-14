@@ -15,6 +15,8 @@ const en = {
   manual: "Add by hand",
   manualHint: "When you already know the carbs",
   removePhoto: "Remove photo",
+  estimatesUnavailable:
+    "Estimating from a photo or a description is not available yet. Add what you are eating from your foods, a package or by hand.",
 
   estimating: "Looking at your meal…",
   estimatingHint: "This usually takes 10 to 30 seconds.",
@@ -58,6 +60,12 @@ const en = {
   packagedTitle: "Packaged food",
   packagedIntro: "Take a photo of the barcode or of the nutrition table. Either works.",
   packagedPhoto: "Photo of barcode or label",
+  packagedHintBarcode: "Barcode",
+  packagedIntroBarcode: "Take a photo of the barcode. Reading a nutrition table is not available yet.",
+  scanIntroBarcode: "Scan the barcode with the camera, or take a photo of it. Reading a nutrition table is not available yet.",
+  barcodePhoto: "Photo of the barcode",
+  labelsUnavailable:
+    "There is no barcode in that photo, and reading a nutrition table is not available yet. Type the numbers under the bars, or add it by hand.",
   barcodeManual: "Or type the barcode",
   lookUp: "Look up",
   reading: "Reading…",
@@ -190,6 +198,8 @@ const es: Strings = {
   manual: "Añadir a mano",
   manualHint: "Cuando ya sabes los hidratos",
   removePhoto: "Quitar foto",
+  estimatesUnavailable:
+    "Todavía no se puede calcular a partir de una foto o una descripción. Añade lo que vas a comer desde tus alimentos, un producto envasado o a mano.",
 
   estimating: "Mirando tu comida…",
   estimatingHint: "Suele tardar entre 10 y 30 segundos.",
@@ -233,6 +243,13 @@ const es: Strings = {
   packagedTitle: "Producto envasado",
   packagedIntro: "Haz una foto del código de barras o de la tabla nutricional. Vale cualquiera de las dos.",
   packagedPhoto: "Foto del código o la etiqueta",
+  packagedHintBarcode: "Código de barras",
+  packagedIntroBarcode: "Haz una foto del código de barras. Todavía no se puede leer la tabla nutricional.",
+  scanIntroBarcode:
+    "Escanea el código de barras con la cámara o hazle una foto. Todavía no se puede leer la tabla nutricional.",
+  barcodePhoto: "Foto del código de barras",
+  labelsUnavailable:
+    "No hay ningún código de barras en esa foto, y todavía no se puede leer la tabla nutricional. Escribe los números que hay bajo las barras o añádelo a mano.",
   barcodeManual: "O escribe el código de barras",
   lookUp: "Buscar",
   reading: "Leyendo…",

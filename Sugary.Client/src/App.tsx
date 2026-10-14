@@ -31,13 +31,14 @@ export function App() {
         .session()
         .then(setSession)
         // Offline at launch: show the app rather than a dead screen; calls will report it.
-        .catch(() => setSession({ required: false, authenticated: false })),
+        .catch(() => setSession({ required: false, authenticated: false, estimates: false, labels: false })),
     [],
   );
 
   useEffect(() => {
     void refreshSession();
-    const onUnauthorized = () => setSession({ required: true, authenticated: false });
+    const onUnauthorized = () =>
+      setSession((current) => ({ estimates: false, labels: false, ...current, required: true, authenticated: false }));
     window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
   }, [refreshSession]);
@@ -63,6 +64,8 @@ export function App() {
         {/* The meal screen stays mounted so an estimate in progress survives a look at the log. */}
         <div hidden={tab !== "meal"}>
           <MealScreen
+            estimates={session.estimates}
+            labels={session.labels}
             onSaved={() => {
               setToast(t("saved"));
               setTab("log");
