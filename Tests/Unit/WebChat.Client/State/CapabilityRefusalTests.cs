@@ -87,6 +87,18 @@ public class CapabilityRefusalTests
         refusal.ShouldNotContain("stay attached");
     }
 
+    // A clip travels with its stills, and a model that only sees pictures is sent those instead, so
+    // the shared rule refuses a clip only where a model would take neither.
+    [Fact]
+    public void AClip_IsRefusedOnlyByAModelThatTakesNeitherVideoNorImages()
+    {
+        var refusal = AttachmentCapability.Refusal(_agents[0], null, ["video/mp4"]);
+
+        refusal.ShouldNotBeNull();
+        refusal.ShouldContain("videos");
+        AttachmentCapability.Refusal(_agents[0], "sees/pictures", ["video/mp4"]).ShouldBeNull();
+    }
+
     [Fact]
     public void SwitchingToACapableModel_ReEnablesSendingWithoutReattaching()
     {

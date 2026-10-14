@@ -20,11 +20,14 @@ public static class AttachmentKinds
 
     public static bool IsImage(string? mediaType) => ForMediaType(mediaType) == AttachmentKind.Image;
 
+    public static bool IsVideo(string? mediaType) => ForMediaType(mediaType) == AttachmentKind.Video;
+
     public static AttachmentKind? ForMediaType(string? mediaType) => mediaType switch
     {
         null => null,
         "application/pdf" => AttachmentKind.Document,
         _ when mediaType.StartsWith("image/", StringComparison.OrdinalIgnoreCase) => AttachmentKind.Image,
+        _ when mediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase) => AttachmentKind.Video,
         _ => null
     };
 }

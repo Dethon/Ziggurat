@@ -41,7 +41,9 @@ internal static class AttachmentIntake
         var mediaType = MediaTypes.Resolve(media);
         var name = MediaTypes.NameFor(media, message.Id, mediaType);
 
-        if (AttachmentKinds.ForMediaType(mediaType) is null)
+        // A video is a kind the agent can take, but only as a clip a channel has normalised and
+        // taken stills from; this channel does neither, so it refuses one as before.
+        if (AttachmentKinds.ForMediaType(mediaType) is null or AttachmentKind.Video)
         {
             // An animated sticker, a video note, a voice message: the person chose an expression
             // rather than a file, so complaining about unsupported file types is noise. An

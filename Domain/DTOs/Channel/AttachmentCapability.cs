@@ -46,7 +46,7 @@ public static class AttachmentCapability
             .Select(AttachmentKinds.ForMediaType)
             .OfType<AttachmentKind>()
             .Distinct()
-            .Where(kind => !accepted.Contains(kind))
+            .Where(kind => !Takes(accepted, kind))
             .ToList();
 
         if (refused.Count == 0)
@@ -59,6 +59,17 @@ public static class AttachmentCapability
         return $"{model} cannot read {kinds}. Pick a different model and send it again.";
     }
 
-    private static string Describe(AttachmentKind kind) =>
-        kind == AttachmentKind.Image ? "images" : "documents";
+    // A clip travels with its stills, and a model that only sees pictures is sent those instead,
+    // so a clip is refused here only where a model would take neither — the same line the send
+    // draws. A clip that came with no stills is the send's to refuse, since only it sees them.
+    private static bool Takes(IReadOnlyList<AttachmentKind> accepted, AttachmentKind kind) =>
+        accepted.Contains(kind)
+        || kind == AttachmentKind.Video && accepted.Contains(AttachmentKind.Image);
+
+    private static string Describe(AttachmentKind kind) => kind switch
+    {
+        AttachmentKind.Image => "images",
+        AttachmentKind.Video => "videos",
+        _ => "documents"
+    };
 }
