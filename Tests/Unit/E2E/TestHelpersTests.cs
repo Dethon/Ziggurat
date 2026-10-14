@@ -57,6 +57,35 @@ public class TestHelpersTests
         }
     }
 
+    // The Sugary image builds its app from Sugary.Client with its own `npm ci`, and .dockerignore
+    // keeps the host's node_modules out of the context. An `npm install` on the host touches
+    // thousands of files there, which would read as a source edit and rebuild the image for nothing.
+    [Fact]
+    public void GetNewestSourceTimestamp_FilesUnderNodeModules_DoNotCountAsSource()
+    {
+        var root = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            var source = Path.Combine(root, "Sugary.Client", "src", "api.ts");
+            var installed = Path.Combine(root, "Sugary.Client", "node_modules", "vite", "index.js");
+            Directory.CreateDirectory(Path.GetDirectoryName(source)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(installed)!);
+            File.WriteAllText(source, "");
+            File.WriteAllText(installed, "");
+            var editedAt = DateTime.UtcNow.AddDays(-1);
+            File.SetLastWriteTimeUtc(source, editedAt);
+            File.SetLastWriteTimeUtc(installed, DateTime.UtcNow.AddDays(1));
+
+            var newest = TestHelpers.GetNewestSourceTimestamp(root, ["Sugary.Client"], "Dockerfile.absent");
+
+            newest.ShouldBe(new DateTimeOffset(editedAt, TimeSpan.Zero));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public void IsImageFresh_SourceNewerThanTheRecordedBuild_IsStale()
     {

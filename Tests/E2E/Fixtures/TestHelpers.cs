@@ -207,7 +207,9 @@ internal static class TestHelpers
         string.Concat(imageName.Select(c => char.IsLetterOrDigit(c) ? c : '_'));
 
     // target is cargo's: the sandbox image builds sandbox-runtime/ itself and never copies it.
-    private static readonly string[] _buildOutputDirs = ["bin", "obj", "target"];
+    // node_modules is npm's: the Sugary image runs its own `npm ci`, and .dockerignore keeps the
+    // host's out of the context, so an install on the host is not a source edit.
+    private static readonly string[] _buildOutputDirs = ["bin", "obj", "target", "node_modules"];
 
     internal static DateTimeOffset GetNewestSourceTimestamp(
         string solutionRoot,
