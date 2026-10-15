@@ -72,6 +72,33 @@ public sealed class McpChannelConnectionStoreAttachmentTests : IDisposable
         (await _attachments.ReadBytesAsync(_photo.Id, CancellationToken.None)).ShouldBe(new byte[] { 1, 2, 3 });
     }
 
+    // A clip crosses as one tool call whose base64 body Kestrel caps at its default 30,000,000 bytes,
+    // and the cap on a kept clip is chosen to fit under it: one at the cap goes through the agent's
+    // real connection into the real tool, and one a byte over is refused, not lost in transit.
+    [Fact]
+    public async Task AClipAtTheCap_CrossesInOneCallAndIsKept_AndOneOverItIsNot()
+    {
+        var cap = new AttachmentSettings().MaxReviewCopyClipBytes;
+        await using var server = await StartWebChatAsync();
+        await using var connection = new McpChannelConnection("signalr");
+        await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
+
+        var atCap = await connection.StoreAttachmentAsync(
+            "11:22", Clip("11-22/clip", cap), new byte[cap], CancellationToken.None);
+        var over = await connection.StoreAttachmentAsync(
+            "11:22", Clip("11-22/over", cap + 1), new byte[cap + 1], CancellationToken.None);
+
+        atCap.ShouldBeTrue();
+        _attachments.MintDownload("11-22/clip", "default").ShouldNotBeNull();
+        over.ShouldBeFalse();
+        _attachments.MintDownload("11-22/over", "default").ShouldBeNull();
+    }
+
+    private static AttachmentReference Clip(string id, long size) => new()
+    {
+        Id = id, FileName = "meal.mp4", MediaType = "video/mp4", SizeBytes = size
+    };
+
     // A channel that keeps no copies offers no such tool, and the answer is "not kept", not a fault.
     [Fact]
     public async Task AChannelWithNoStoreAttachmentTool_KeepsNothing()

@@ -25,7 +25,10 @@ public sealed class StoreAttachmentToolTests : IDisposable
     public StoreAttachmentToolTests()
     {
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 10, 15, 12, 0, 0, TimeSpan.Zero));
-        var settings = new AttachmentSettings { StoragePath = _root, MaxBytesPerFile = 4096 };
+        var settings = new AttachmentSettings
+        {
+            StoragePath = _root, MaxBytesPerFile = 4096, MaxReviewCopyClipBytes = 8192
+        };
         _store = new AttachmentStore(
             settings, new RetentionSettings(), new FakeConversationLiveness(), time, NullLogger<AttachmentStore>.Instance);
         _attachments = new AttachmentService(
@@ -117,7 +120,41 @@ public sealed class StoreAttachmentToolTests : IDisposable
         _store.Find("11-22/zip").ShouldBeNull();
     }
 
-    private Task<string> StoreAsync(string id, byte[] bytes, string mediaType = "image/jpeg") =>
+    // A review copy shows what a video model was sent, and that is the clip (ADR 0046's 2026-10-15
+    // refinement). So the store keeps the channel's normalised clip, larger than a person's upload
+    // may be, though nobody can upload one here.
+    [Fact]
+    public async Task AClip_IsKeptUnderItsOwnReference_AboveAnUploadsSizeButWithinAClipsOwn()
+    {
+        await StoreAsync("11-22/clip", new byte[6000], "video/mp4", "meal.mp4");
+
+        var record = _store.Find("11-22/clip").ShouldNotBeNull();
+        record.Reference.MediaType.ShouldBe("video/mp4");
+        record.Reference.FileName.ShouldBe("meal.mp4");
+        record.Reference.SizeBytes.ShouldBe(6000);
+        _attachments.MintDownload("11-22/clip", "default").ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task AClipLargerThanAClipsCap_IsRefused()
+    {
+        await Should.ThrowAsync<McpException>(() => StoreAsync("11-22/clip", new byte[8193], "video/mp4", "meal.mp4"));
+
+        _store.Find("11-22/clip").ShouldBeNull();
+    }
+
+    // Only what a channel sends after normalising it: a phone's own container never reaches the
+    // store, so nothing the browser might fail to play rests here.
+    [Fact]
+    public async Task AVideoKindNoChannelSends_IsRefused()
+    {
+        await Should.ThrowAsync<McpException>(() => StoreAsync("11-22/mov", [1, 2, 3], "video/quicktime", "meal.mov"));
+
+        _store.Find("11-22/mov").ShouldBeNull();
+    }
+
+    private Task<string> StoreAsync(
+        string id, byte[] bytes, string mediaType = "image/jpeg", string fileName = "meal-1.jpg") =>
         StoreAttachmentTool.McpRun(
-            "11:22", id, "meal-1.jpg", mediaType, Convert.ToBase64String(bytes), _services, CancellationToken.None);
+            "11:22", id, fileName, mediaType, Convert.ToBase64String(bytes), _services, CancellationToken.None);
 }

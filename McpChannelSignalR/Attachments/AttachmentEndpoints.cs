@@ -86,9 +86,12 @@ public static class AttachmentEndpoints
             return Results.Unauthorized();
         }
 
+        // Ranges, because a <video> element asks for them to start playing and to seek; the ticket
+        // is not spent by a request, so every range a clip's playback asks for is answered.
         var record = store.Find(id);
         return record is null
             ? Results.NotFound()
-            : Results.File(record.Path, record.Reference.MediaType, record.Reference.FileName);
+            : Results.File(
+                record.Path, record.Reference.MediaType, record.Reference.FileName, enableRangeProcessing: true);
     }
 }

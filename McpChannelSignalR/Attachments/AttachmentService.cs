@@ -52,12 +52,13 @@ public sealed class AttachmentService(
 
     // A review copy's file, kept under the reference the shared history names it by, in the space
     // the conversation's topic is in. The same rules an upload meets, so the store only ever holds
-    // what this chat can show. Null when kept; otherwise why not.
+    // what this chat can show — and a channel's clip besides, under a cap of its own, since the
+    // review shows what a video model was sent. Null when kept; otherwise why not.
     public async Task<string?> KeepCopyAsync(
         string conversationId, string? spaceSlug, string attachmentId, string fileName, string mediaType,
         byte[] bytes, CancellationToken ct)
     {
-        if (AttachmentRefusals.For(fileName, mediaType, bytes.LongLength, Limits) is { } refusal)
+        if (CopyRefusal(fileName, mediaType, bytes.LongLength) is { } refusal)
         {
             return refusal;
         }
@@ -67,6 +68,13 @@ public sealed class AttachmentService(
             : $"Attachment '{attachmentId}' cannot be kept here: its id names no file this store could hold for " +
               $"conversation '{conversationId}', or one it already holds.";
     }
+
+    private string? CopyRefusal(string fileName, string mediaType, long sizeBytes) =>
+        settings.ReviewCopyMediaTypes.Contains(mediaType, StringComparer.OrdinalIgnoreCase)
+            ? sizeBytes > settings.MaxReviewCopyClipBytes
+                ? AttachmentRefusals.TooLarge(fileName, settings.MaxReviewCopyClipBytes)
+                : null
+            : AttachmentRefusals.For(fileName, mediaType, sizeBytes, Limits);
 
     public Task<byte[]?> ReadBytesAsync(string attachmentId, CancellationToken ct) =>
         store.ReadBytesAsync(attachmentId, ct);
