@@ -42,7 +42,9 @@ export function useTypingMark() {
     // The page's height before the keyboard: followed while no text field has focus, so a turn of
     // the phone (or any other resize) is never taken for a keyboard.
     let before = window.innerHeight;
+    let wasUp = false;
     let shownInset = 0;
+    let scrolling = 0;
     const update = () => {
       const focused = document.activeElement;
       if (!bringsKeyboard(focused)) {
@@ -52,13 +54,16 @@ export function useTypingMark() {
       const up = keyboardUp(focused, { height: window.innerHeight, before, inset });
       root.toggleAttribute("data-typing", up);
       root.style.setProperty("--keyboard", `${up ? inset : 0}px`);
-      // When the keyboard comes up or changes height, the field she is typing in is brought above
-      // it and above the pinned action (the page's scroll-padding counts both), in a sheet as on a
-      // screen.
+      // When the keyboard comes up (Android: the page shrinks, the inset stays 0) or changes height
+      // (iPhone), the field she is typing in is brought above it and above the pinned action (the
+      // page's scroll-padding counts both), in a sheet as on a screen. The keyboard arrives in a run
+      // of resizes, so the scroll waits for the last of them and happens once.
       const nextInset = up ? inset : 0;
-      if (up && nextInset !== shownInset && focused instanceof HTMLElement) {
-        requestAnimationFrame(() => focused.scrollIntoView({ block: "nearest" }));
+      if (up && (!wasUp || nextInset !== shownInset) && focused instanceof HTMLElement) {
+        window.clearTimeout(scrolling);
+        scrolling = window.setTimeout(() => focused.scrollIntoView({ block: "nearest" }), 120);
       }
+      wasUp = up;
       shownInset = nextInset;
     };
     // Focus moves in two steps (out, then in); reading the result once both are done avoids a flicker.
@@ -74,6 +79,7 @@ export function useTypingMark() {
       window.removeEventListener("resize", update);
       visual?.removeEventListener("resize", update);
       visual?.removeEventListener("scroll", update);
+      window.clearTimeout(scrolling);
       root.removeAttribute("data-typing");
       root.style.removeProperty("--keyboard");
     };
