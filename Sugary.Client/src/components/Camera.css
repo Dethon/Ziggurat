@@ -35,14 +35,18 @@
   transform: scaleX(-1);
 }
 
+/* Read over a bright plate as well as a dark table: always on its own dark pill. */
 .camera-status {
   justify-self: center;
+  max-width: calc(100% - 32px);
   min-height: 2em;
-  margin: calc(10px + env(safe-area-inset-top)) 16px 10px;
-  padding: 4px 12px;
+  margin: calc(12px + env(safe-area-inset-top)) 16px 12px;
+  padding: 6px 16px;
   border-radius: 999px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  background: rgb(0 0 0 / 60%);
+  font-size: var(--text-meta);
+  font-weight: 700;
+  line-height: 1.35;
   text-align: center;
 }
 
@@ -58,7 +62,7 @@
   display: flex;
   align-items: center;
   justify-content: space-around;
-  padding: 18px 16px calc(22px + env(safe-area-inset-bottom));
+  padding: 20px 16px calc(24px + env(safe-area-inset-bottom));
 }
 
 .camera-icon {
@@ -67,11 +71,17 @@
   width: 52px;
   height: 52px;
   padding: 0;
-  border: 0;
+  border: 1.5px solid rgb(255 255 255 / 35%);
   border-radius: 50%;
-  background: rgb(255 255 255 / 16%);
+  background: rgb(0 0 0 / 45%);
   color: #fff;
   cursor: pointer;
+}
+
+.camera-icon:focus-visible,
+.camera-shutter:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
 }
 
 .camera-icon:disabled {

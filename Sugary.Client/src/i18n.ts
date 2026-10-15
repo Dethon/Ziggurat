@@ -219,6 +219,7 @@ const en = {
   scanSlow:
     "Not reading? Move closer, flatten the pack and tilt it away from glare. Or type the digits under the bars.",
   scanFound: "Barcode read",
+  scanType: "Type the digits instead",
   scanStop: "Stop scanning",
   scanLightOn: "Turn the light on",
   scanLightOff: "Turn the light off",
@@ -465,6 +466,7 @@ const es: Strings = {
   scanSlow:
     "¿No lo lee? Acércate, alisa el envase e inclínalo para evitar reflejos. O escribe los números que hay bajo las barras.",
   scanFound: "Código leído",
+  scanType: "Escribir los números",
   scanStop: "Dejar de escanear",
   scanLightOn: "Encender la luz",
   scanLightOff: "Apagar la luz",

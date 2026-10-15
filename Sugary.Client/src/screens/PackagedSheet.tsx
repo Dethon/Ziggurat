@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import { readBarcode } from "../barcode";
 import { formatGrams, fromPackaged, parseAmount } from "../carbs";
@@ -32,6 +32,7 @@ export function PackagedSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [barcode, setBarcode] = useState("");
+  const digits = useRef<HTMLInputElement>(null);
   // Scanning with the live camera needs a secure page; without one the photo is the way in.
   const [live] = useState(canScanLive);
   // Where the live camera works, the sheet opens scanning: the barcode is the usual way in.
@@ -135,7 +136,15 @@ export function PackagedSheet({
             {t(labels ? (live ? "scanIntro" : "packagedIntro") : live ? "scanIntroBarcode" : "packagedIntroBarcode")}
           </p>
           {scanning ? (
-            <BarcodeScanner onDetected={fromScan} onProblem={scanFailed} onStop={() => setScanning(false)} />
+            <BarcodeScanner
+              onDetected={fromScan}
+              onProblem={scanFailed}
+              onStop={() => setScanning(false)}
+              onType={() => {
+                setScanning(false);
+                requestAnimationFrame(() => digits.current?.focus());
+              }}
+            />
           ) : (
             live && (
               <button
@@ -172,6 +181,7 @@ export function PackagedSheet({
             <label className="field">
               <span className="field-label">{t("barcodeManual")}</span>
               <input
+                ref={digits}
                 inputMode="numeric"
                 value={barcode}
                 onChange={(event) => setBarcode(event.target.value.replace(/\D/g, ""))}

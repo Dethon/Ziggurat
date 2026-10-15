@@ -3,6 +3,7 @@ import { openFrameReader } from "../barcode";
 import { canUseCamera, isDenied, openBackCamera, release } from "../camera";
 import { coverCrop } from "../scanner";
 import { useSettings } from "../settings";
+import { Icon } from "./Icon";
 import "./BarcodeScanner.css";
 
 export type ScanProblem = "denied" | "unavailable";
@@ -41,10 +42,13 @@ export function BarcodeScanner({
   onDetected,
   onProblem,
   onStop,
+  onType,
 }: {
   onDetected: (code: string) => void;
   onProblem: (problem: ScanProblem) => void;
   onStop: () => void;
+  // Stops scanning and puts her in the box for the digits under the bars.
+  onType?: () => void;
 }) {
   const { t } = useSettings();
   const frame = useRef<HTMLDivElement>(null);
@@ -190,19 +194,25 @@ export function BarcodeScanner({
             aria-label={t(light ? "scanLightOff" : "scanLightOn")}
             onClick={toggleLight}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M8 3h8l-1 5 2 3v2h-4v8h-2v-8H7v-2l2-3-1-5Z" />
-            </svg>
+            <Icon name="torch" size={22} />
           </button>
         )}
       </div>
       <p className="scanner-status" role="status">
         {phase === "found" ? t("scanFound") : phase === "starting" ? t("scanStarting") : t(slow ? "scanSlow" : "scanHint")}
       </p>
-      {/* The button that opened the scanner is gone, so the keyboard is given somewhere to be. */}
-      <button type="button" className="button button-quiet" autoFocus onClick={onStop}>
-        {t("scanStop")}
-      </button>
+      <div className="scanner-actions">
+        {onType && (
+          <button type="button" className="button button-quiet" onClick={onType}>
+            <Icon name="pencil" size={20} />
+            {t("scanType")}
+          </button>
+        )}
+        {/* The button that opened the scanner may be gone, so the keyboard is given somewhere to be. */}
+        <button type="button" className="button button-secondary" autoFocus onClick={onStop}>
+          {t("scanStop")}
+        </button>
+      </div>
     </div>
   );
 }
