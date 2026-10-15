@@ -96,8 +96,13 @@ public record ClipSettings
     // A still's longest edge: the size the app shrinks a photo to before sending it.
     public int StillEdge { get; init; } = 1568;
 
-    // How long reading and making one clip may take before the meal is refused.
+    // How long reading and making one clip may take before the meal is refused: the whole clip,
+    // every run of the tools together, not each run.
     public int TimeoutSeconds { get; init; } = 120;
+
+    // How many clips are read at once. Each run of ffmpeg takes a core for seconds, so a few meals
+    // filmed together wait their turn rather than all running at the same time.
+    public int MaxConcurrent { get; init; } = 2;
 }
 
 public record SugaryAppSettings

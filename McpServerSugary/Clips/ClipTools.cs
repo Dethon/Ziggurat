@@ -41,33 +41,26 @@ public sealed class ClipTools(ClipSettings settings)
             throw new ClipToolsUnavailableException($"{tool} could not be started: {e.Message}", e);
         }
 
+        // The time a run may take is the clip's, which the caller's token carries (ClipProcessor).
         using (process)
         {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(TimeSpan.FromSeconds(settings.TimeoutSeconds));
-            var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
-            var error = process.StandardError.ReadToEndAsync(timeout.Token);
+            var output = process.StandardOutput.ReadToEndAsync(ct);
+            var error = process.StandardError.ReadToEndAsync(ct);
             try
             {
-                await process.WaitForExitAsync(timeout.Token);
+                await process.WaitForExitAsync(ct);
                 return new Run(process.ExitCode, await output, await error);
             }
             catch (OperationCanceledException)
             {
                 process.Kill(entireProcessTree: true);
-                if (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-
-                throw new ClipToolsUnavailableException(
-                    $"{tool} took longer than {settings.TimeoutSeconds} s on one clip");
+                throw;
             }
         }
     }
 }
 
-// The server cannot read clips at all just now: the tools are missing from its image, or one ran
-// past its time. Not the clip's fault, so not said as a refusal of it.
+// The server cannot read clips at all just now: the tools are missing from its image, or reading
+// one ran past its time. Not the clip's fault, so not said as a refusal of it.
 public sealed class ClipToolsUnavailableException(string message, Exception? inner = null)
     : Exception(message, inner);

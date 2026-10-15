@@ -392,6 +392,95 @@ public class SugaryClipApiTests
         StoredFiles(server).ShouldBeEmpty();
     }
 
+    // A probe that answers nothing it can read says the clip is not one, as a probe that fails does:
+    // it is the clip being refused, not the server failing.
+    [Theory]
+    [InlineData("nothing")]
+    [InlineData("not json")]
+    public async Task AClipWhoseProbeAnswersNothingReadable_IsRefusedAsUnreadable(string answer)
+    {
+        using var tools = new FakeTools();
+        var ffprobe = tools.Write("ffprobe", answer == "nothing" ? "exit 0" : "echo 'not json'; exit 0");
+        await using var server = await SugaryServer.StartAsync(configure: settings =>
+            settings with { Clips = settings.Clips with { Ffprobe = ffprobe } });
+        var app = await server.SignedInAsync();
+
+        var response = await app.PostAsync("/api/estimates", Form("", clip: [1, 2, 3]));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await DetailAsync(response)).ShouldBe("That clip could not be read. Film it again, or take a photo instead.");
+        StoredFiles(server).ShouldBeEmpty();
+    }
+
+    // Reading a clip is a dozen ffmpeg runs, each a whole core for seconds; a handful of meals filmed
+    // at once wait their turn rather than all running together.
+    [Fact]
+    public async Task ClipsAreReadAFewAtATime()
+    {
+        using var tools = new FakeTools();
+        var ffprobe = tools.Write("ffprobe",
+            $"touch \"{tools.Directory}/started-$$\"; while [ ! -e \"{tools.Directory}/release\" ]; do sleep 0.05; done; exit 1");
+        await using var server = await SugaryServer.StartAsync(configure: settings =>
+            settings with { Clips = settings.Clips with { Ffprobe = ffprobe, MaxConcurrent = 1 } });
+        var app = await server.SignedInAsync();
+
+        var first = app.PostAsync("/api/estimates", Form("", clip: [1, 2, 3]));
+        var second = app.PostAsync("/api/estimates", Form("", clip: [4, 5, 6]));
+        await Eventually.Until(() => tools.Started > 0, "a clip to be read");
+        await Eventually.Settle();
+
+        tools.Started.ShouldBe(1);
+        tools.Release();
+        (await first).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await second).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        tools.Started.ShouldBe(2);
+    }
+
+    // The time a clip may take is the whole clip's, not each of the dozen runs reading it: a run that
+    // stays inside it a dozen times over is a meal waited on for minutes.
+    [SkippableFact]
+    public async Task AClipIsReadWithinOneBudget_NotOnePerRun()
+    {
+        Skip.If(TestClips.Missing is not null, TestClips.Missing);
+        using var tools = new FakeTools();
+        var ffmpeg = tools.Write("ffmpeg", "sleep 1; exec ffmpeg \"$@\"");
+        await using var server = await SugaryServer.StartAsync(configure: settings =>
+            settings with { Clips = settings.Clips with { Ffmpeg = ffmpeg, TimeoutSeconds = 2 } });
+        var app = await server.SignedInAsync();
+
+        var response = await app.PostAsync("/api/estimates", Form("", clip: await TestClips.Silent()));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.InternalServerError);
+        (await DetailAsync(response)).ShouldBe(
+            "Clips cannot be read on this server right now. Take a photo instead, or describe the meal.");
+        StoredFiles(server).ShouldBeEmpty();
+    }
+
+    // Stand-ins for ffprobe and ffmpeg, as shell scripts in a directory of their own.
+    private sealed class FakeTools : IDisposable
+    {
+        public string Directory { get; } = System.IO.Directory.CreateDirectory(
+            Path.Combine(Path.GetTempPath(), "sugary-tools", Guid.NewGuid().ToString("N"))).FullName;
+
+        public int Started => System.IO.Directory.GetFiles(Directory, "started-*").Length;
+
+        public string Write(string name, string body)
+        {
+            var path = Path.Combine(Directory, name);
+            File.WriteAllText(path, $"#!/bin/sh\n{body}\n");
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            return path;
+        }
+
+        public void Release() => File.WriteAllText(Path.Combine(Directory, "release"), "");
+
+        public void Dispose()
+        {
+            Release();
+            System.IO.Directory.Delete(Directory, recursive: true);
+        }
+    }
+
     // The still's file name carries the moment it was taken from, which WebChat's review shows and
     // this test reads.
     private static double TakenAt(AttachmentReference still) =>

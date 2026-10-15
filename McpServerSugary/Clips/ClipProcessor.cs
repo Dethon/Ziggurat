@@ -35,6 +35,10 @@ public sealed class ClipProcessor(ClipSettings settings, ClipTools tools, ILogge
 
     private const string Unreadable = "That clip could not be read. Film it again, or take a photo instead.";
 
+    // Every run of the tools takes a core for seconds, so clips are read a few at a time; one waiting
+    // its turn has not started its time yet.
+    private readonly SemaphoreSlim _reading = new(Math.Max(1, settings.MaxConcurrent));
+
     public async Task<PreparedClip> PrepareAsync(IFormFile clip, CancellationToken ct)
     {
         var work = Path.Combine(Path.GetTempPath(), "sugary-clips", Guid.NewGuid().ToString("N"));
@@ -47,7 +51,24 @@ public sealed class ClipProcessor(ClipSettings settings, ClipTools tools, ILogge
                 await clip.CopyToAsync(file, ct);
             }
 
-            return await PrepareAsync(original, work, ct);
+            await _reading.WaitAsync(ct);
+            try
+            {
+                // One budget for the whole clip, every run of the tools together: a dozen runs each
+                // inside a budget of its own would keep the meal waiting a dozen times over.
+                using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                budget.CancelAfter(TimeSpan.FromSeconds(settings.TimeoutSeconds));
+                return await PrepareAsync(original, work, budget.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new ClipToolsUnavailableException(
+                    $"Reading one clip took longer than {settings.TimeoutSeconds} s");
+            }
+            finally
+            {
+                _reading.Release();
+            }
         }
         finally
         {
@@ -120,17 +141,29 @@ public sealed class ClipProcessor(ClipSettings settings, ClipTools tools, ILogge
             return null;
         }
 
-        using var read = JsonDocument.Parse(probe.Output);
-        var hasPicture = read.RootElement.TryGetProperty("streams", out var streams)
+        // A probe that answers with nothing it can read has said no more than one that failed.
+        using var read = Json(probe.Output);
+        if (read?.RootElement is not { ValueKind: JsonValueKind.Object } root)
+        {
+            return null;
+        }
+
+        var hasPicture = root.TryGetProperty("streams", out var streams)
+                         && streams.ValueKind == JsonValueKind.Array
                          && streams.EnumerateArray().Any(s =>
-                             s.TryGetProperty("codec_type", out var type) && type.GetString() == "video");
+                             s.ValueKind == JsonValueKind.Object
+                             && s.TryGetProperty("codec_type", out var type)
+                             && type.ValueKind == JsonValueKind.String
+                             && type.GetString() == "video");
         if (!hasPicture)
         {
             return null;
         }
 
-        if (read.RootElement.TryGetProperty("format", out var format)
+        if (root.TryGetProperty("format", out var format)
+            && format.ValueKind == JsonValueKind.Object
             && format.TryGetProperty("duration", out var stated)
+            && stated.ValueKind == JsonValueKind.String
             && Parse(stated.GetString()) is { } duration)
         {
             return duration;
@@ -210,6 +243,18 @@ public sealed class ClipProcessor(ClipSettings settings, ClipTools tools, ILogge
 
     private static string LongSide(int edge) =>
         $"scale=w='if(gte(iw,ih),{edge},-2)':h='if(gte(iw,ih),-2,{edge})'";
+
+    private static JsonDocument? Json(string text)
+    {
+        try
+        {
+            return JsonDocument.Parse(text);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static double? Parse(string? text) =>
         double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) ? value : null;
