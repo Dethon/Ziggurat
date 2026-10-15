@@ -319,16 +319,12 @@ export function MealScreen({
               Sugary
             </p>
           )}
-          {hasMeal ? (
+          {started ? (
+            // Once a photo, a clip or a food is in, this is her meal: the wordmark steps aside and the
+            // slice stays with the title, short enough to share its line with Start over.
             <h1 className="title-small marked">
               <Icon name="slice" size={24} />
               {t("mealDraftTitle")}
-            </h1>
-          ) : started ? (
-            // The wordmark steps aside once she has started; the slice stays with the title.
-            <h1 className="marked">
-              <Icon name="slice" size={28} />
-              {t("captureTitle")}
             </h1>
           ) : (
             <h1>{t("captureTitle")}</h1>
@@ -336,9 +332,14 @@ export function MealScreen({
           {!started && <Drip />}
         </div>
         {started && (
-          <button type="button" className="button button-quiet button-small" onClick={askStartOver}>
+          <button
+            type="button"
+            className="button button-quiet button-small start-over"
+            aria-label={t("discard")}
+            onClick={askStartOver}
+          >
             <Icon name="restart" size={20} />
-            {t("discard")}
+            <span className="start-over-label">{t("discard")}</span>
           </button>
         )}
       </header>

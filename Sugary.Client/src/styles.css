@@ -382,6 +382,23 @@ h1.title-small {
   white-space: nowrap;
 }
 
+/* At large text sizes the title keeps its line and Start over is its icon alone (its name stays in
+   aria-label): the header holds less than 20 rem of text then. */
+.screen-header {
+  container: header / inline-size;
+}
+
+@container header (max-width: 20rem) {
+  .start-over-label {
+    display: none;
+  }
+
+  .start-over {
+    width: var(--target);
+    padding: 0;
+  }
+}
+
 .button-small {
   min-height: var(--target);
   padding: var(--space-1) var(--space-2);
