@@ -324,6 +324,12 @@ export function MealScreen({
               <Icon name="slice" size={24} />
               {t("mealDraftTitle")}
             </h1>
+          ) : started ? (
+            // The wordmark steps aside once she has started; the slice stays with the title.
+            <h1 className="marked">
+              <Icon name="slice" size={28} />
+              {t("captureTitle")}
+            </h1>
           ) : (
             <h1>{t("captureTitle")}</h1>
           )}
@@ -617,7 +623,8 @@ export function MealScreen({
       )}
 
       <section className="add-more" aria-labelledby="add-title">
-        <h2 id="add-title">{t(hasMeal ? "addMore" : "otherWaysTitle")}</h2>
+        {/* "No photo?" only while there is none: once a photo or a clip is in, the rest is added to it. */}
+        <h2 id="add-title">{t(started ? "addMore" : "otherWaysTitle")}</h2>
         <div className="tiles">
           <button type="button" className="tile" onClick={() => setSheet("foods")}>
             <Icon name="jar" size={26} />
