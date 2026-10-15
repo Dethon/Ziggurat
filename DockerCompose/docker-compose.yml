@@ -593,8 +593,11 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-sugary
+    # Her phone reaches the app through Caddy at sugary.herfluffness.com. The port is published on
+    # loopback only, for local runs and the E2E: the sign-in limit counts by X-Forwarded-For, which a
+    # caller on the LAN could otherwise set to anything.
     ports:
-      - "6017:8080"
+      - "127.0.0.1:6017:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSugary/Dockerfile
@@ -616,7 +619,7 @@ services:
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       # Her app is served on this port too (every route but /mcp), behind the code she types once
-      # per phone. Installing it and scanning with the live camera need HTTPS in front.
+      # per phone, and through Caddy over HTTPS, which installing it and live scanning need.
       SUGARYAPP__ACCESSCODE: ${SUGARYAPP__ACCESSCODE}
     networks:
       - jackbot
@@ -901,6 +904,7 @@ services:
     depends_on:
       - webui
       - agent
+      - mcp-sugary
 
 networks:
   jackbot:

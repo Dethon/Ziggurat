@@ -118,7 +118,7 @@ image never reached Gemini as expected.
     standalone in-range count predates the range floor.
   - Keep the scorecard with the switch (box 2).
 - [x] **The E2E above, green once** (box 1), with the command above (≈ $0.01).
-- [ ] **HTTPS and a hostname** for the app (the hostname is your call), with a reverse-proxy site
+- [x] **HTTPS and a hostname** for the app (the hostname is your call), with a reverse-proxy site
   for `mcp-sugary:8080`.
   - The proxy must allow request bodies of about **200 MB** on `/api/estimates`. That is the clip
     ceiling (`Uploads:MaxClipBytes`) plus four photos.
@@ -134,7 +134,7 @@ image never reached Gemini as expected.
     window for every address it claims, and can guess the code without limit.
   - Installing the PWA and scanning with the live camera both need HTTPS.
   - Keep `/mcp` unexposed, or at least behind the deployment secret as it is now.
-- [ ] **Set `SUGARYAPP__ACCESSCODE`** in `DockerCompose/.env`. Her standalone `AUTH__ACCESSCODE`
+- [x] **Set `SUGARYAPP__ACCESSCODE`** in `DockerCompose/.env`. Her standalone `AUTH__ACCESSCODE`
   value carries over; the name does not. While it is empty, every sign-in is refused.
 - [x] **Export her standalone log** from the standalone app's download screen:
   `sugary-meals.csv`, `sugary-items.csv`, `sugary-foods.csv`. Put the three files in
@@ -159,3 +159,5 @@ The E2E passed on the compose stack in 30 s, before the `noTools` change. The ev
 Box 2 ticked 2026-10-15: the user accepted pass 2 as level with the standalone figures. Photo was 12.8 g against 12.3 g, and video 8.9 g against 8.3 g, both within the standalone's run-to-run spread. Both scorecards are kept in `.scratch/sugary/scorecards/`.
 
 Box 3 ticked 2026-10-15: she has not logged anything in the standalone app, so there is nothing to import. The import steps in the checklist do not apply.
+
+2026-10-15: the app's address is `https://sugary.herfluffness.com`. A Caddy site serves it and answers 404 on `/mcp`. It allows bodies up to 230 MiB and sets `X-Forwarded-For`. Port 6017 is now published on loopback only, so the LAN cannot reach the app around Caddy. The user picked the hostname. I generated the access code and gave it to the user to set in the deployment's `DockerCompose/.env`; it is never committed. Still to do on the deployment host: a DNS record for the name pointing at the host, as `assistants.herfluffness.com` has, and recreating `caddy` and `mcp-sugary`.

@@ -66,7 +66,7 @@ internal sealed class WebChatStack
     public string WebChatUrl { get; private set; } = "";
 
     // Her app and its API, published as compose publishes them (port 6017 there): straight from the
-    // Sugary server, not through Caddy, which has no site for it yet.
+    // Sugary server, not through the Caddy site her phone uses.
     public string SugaryUrl { get; private set; } = "";
 
     // The Sugary server's /mcp, where the tables an agent reads under /sugary are served.
