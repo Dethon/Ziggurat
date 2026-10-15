@@ -109,6 +109,90 @@ public class SugaryImportTests : IDisposable
         Body(await server.ReadAsync("/foods.csv")).ShouldBeEmpty();
     }
 
+    // A meal's total is what its items add up to, as the app computes it on every save: a row that
+    // says otherwise is not believed, since the items are what she sees and edits.
+    [Fact]
+    public async Task AnImportedMealsTotal_IsTheSumOfItsItems()
+    {
+        await using var server = await SugaryServer.StartAsync("Europe/Madrid");
+        File.WriteAllText(Path.Combine(_exports, "sugary-meals.csv"),
+            _meals.Replace("2026-10-11T13:30:00+02:00,67,47,88,", "2026-10-11T13:30:00+02:00,99,1,500,",
+                StringComparison.Ordinal));
+
+        var (exit, _) = await ImportAsync(server);
+
+        exit.ShouldBe(0);
+        (await server.ReadAsync("/meals/2026-10.csv")).ShouldContain($"{_lunch},2026-10-11T13:30:00+02:00,67,47,88,");
+    }
+
+    // Numbers a spreadsheet can write but no meal has: each stops the import naming where it is.
+    [Theory]
+    [InlineData("NaN")]
+    [InlineData("Infinity")]
+    [InlineData("-5")]
+    public async Task ANumberNoMealHas_ImportsNothingAndSaysWhere(string number)
+    {
+        await using var server = await SugaryServer.StartAsync("Europe/Madrid");
+        File.WriteAllText(Path.Combine(_exports, "sugary-items.csv"),
+            _items.Replace("150,28,42,32,52.5,", $"150,{number},42,32,52.5,", StringComparison.Ordinal));
+
+        var (exit, output) = await ImportAsync(server);
+
+        exit.ShouldNotBe(0);
+        output.ShouldContain("sugary-items.csv line 4");
+        output.ShouldContain("carbs_per_100");
+        (await server.GlobAsync("meals/*")).ShouldBeEmpty();
+        Body(await server.ReadAsync("/foods.csv")).ShouldBeEmpty();
+    }
+
+    // The rules a meal is saved under in the app hold for one carried over, each refusal naming the
+    // line it is on.
+    public static TheoryData<string, Func<string, string>, Func<string, string>, string> Unsaveable => new()
+    {
+        {
+            "an item whose range is out of order", meals => meals,
+            items => items.Replace(",42,32,52.5,", ",42,50,52.5,", StringComparison.Ordinal),
+            "sugary-items.csv line 4"
+        },
+        {
+            "an item over the 2000 g a meal may hold", meals => meals,
+            items => items.Replace(",42,32,52.5,", ",42,32,2500,", StringComparison.Ordinal),
+            "sugary-items.csv line 4"
+        },
+        {
+            "an item with no name", meals => meals,
+            items => items.Replace(",'+danger,", ",,", StringComparison.Ordinal),
+            "sugary-items.csv line 4"
+        },
+        {
+            "a first estimate out of order", meals => meals.Replace(",40,30,55,", ",40,50,55,", StringComparison.Ordinal),
+            items => items,
+            "sugary-meals.csv line 3"
+        },
+        {
+            "a meal with no items", meals => meals,
+            items => string.Join('\n', items.Split('\n').Where(line => !line.StartsWith(_toastDinner.ToString()))),
+            "sugary-meals.csv line 2"
+        }
+    };
+
+    [Theory]
+    [MemberData(nameof(Unsaveable))]
+    public async Task AMealTheAppWouldNotSave_ImportsNothingAndSaysWhere(
+        string what, Func<string, string> meals, Func<string, string> items, string where)
+    {
+        await using var server = await SugaryServer.StartAsync("Europe/Madrid");
+        File.WriteAllText(Path.Combine(_exports, "sugary-meals.csv"), meals(_meals));
+        File.WriteAllText(Path.Combine(_exports, "sugary-items.csv"), items(_items));
+
+        var (exit, output) = await ImportAsync(server);
+
+        exit.ShouldNotBe(0, what);
+        output.ShouldContain(where, customMessage: what);
+        (await server.GlobAsync("meals/*")).ShouldBeEmpty(what);
+        Body(await server.ReadAsync("/foods.csv")).ShouldBeEmpty(what);
+    }
+
     [Fact]
     public async Task ADirectoryWithoutTheExports_IsRefused()
     {

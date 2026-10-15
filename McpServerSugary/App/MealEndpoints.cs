@@ -30,8 +30,6 @@ public static class MealEndpoints
 {
     private const string PhotoPrefix = "data:image/jpeg;base64,";
     private const int MaxPhotoBytes = 400 * 1024;
-    private const int MaxItems = 50;
-    private const double MaxCarbs = 2000;
 
     public static void MapMealEndpoints(this IEndpointRouteBuilder api)
     {
@@ -119,9 +117,7 @@ public static class MealEndpoints
         meal.Notes = string.IsNullOrWhiteSpace(request.Notes) ? null : request.Notes.Trim();
         meal.Outcome = request.Outcome;
         meal.Items = [.. request.Items!.Select((item, position) => item with { Name = item.Name.Trim(), Position = position })];
-        meal.CarbsLow = Math.Round(meal.Items.Sum(item => item.CarbsLow), 1);
-        meal.Carbs = Math.Round(meal.Items.Sum(item => item.Carbs), 1);
-        meal.CarbsHigh = Math.Round(meal.Items.Sum(item => item.CarbsHigh), 1);
+        MealRules.Total(meal);
     }
 
     private static MealDto ToDto(Meal meal) =>
@@ -130,25 +126,11 @@ public static class MealEndpoints
 
     private static IReadOnlyList<MealItem> InOrder(IEnumerable<MealItem> items) => [.. items.OrderBy(i => i.Position)];
 
-    private static string? Validate(SaveMealRequest request) => request switch
-    {
-        { Items: null or { Count: 0 } } => "A meal needs at least one item.",
-        { Items.Count: > MaxItems } => $"A meal can have at most {MaxItems} items.",
-        _ when request.Items.Any(item => string.IsNullOrWhiteSpace(item.Name) || item.Name.Length > 200) =>
-            "Every item needs a name of at most 200 characters.",
-        _ when request.Items.Any(item => !IsOrdered(item.CarbsLow, item.Carbs, item.CarbsHigh)) =>
-            "Carbs must satisfy 0 ≤ low ≤ best ≤ high.",
-        { FirstEstimate: { } first } when !IsOrdered(first.Low, first.Best, first.High) =>
-            "The first estimate must satisfy 0 ≤ low ≤ best ≤ high.",
-        { Notes.Length: > 2000 } => "Notes can be at most 2000 characters.",
-        _ when !Enum.IsDefined(request.Outcome) => "Unknown outcome.",
-        _ when request.Photo is not null && DecodePhoto(request.Photo) is null =>
-            "The photo must be a JPEG data URL under 400 KB.",
-        _ => null
-    };
-
-    private static bool IsOrdered(double low, double best, double high) =>
-        low >= 0 && low <= best && best <= high && high <= MaxCarbs;
+    private static string? Validate(SaveMealRequest request) =>
+        MealRules.MealProblem(request.Items, request.FirstEstimate, request.Notes, request.Outcome)
+        ?? (request.Photo is not null && DecodePhoto(request.Photo) is null
+            ? "The photo must be a JPEG data URL under 400 KB."
+            : null);
 
     private static byte[]? DecodePhoto(string? dataUrl)
     {

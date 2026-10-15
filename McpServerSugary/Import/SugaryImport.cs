@@ -54,17 +54,16 @@ public static class SugaryImport
             newMeals.Count, newMeals.Sum(meal => meal.Items.Count), newFoods.Count, presentMeals.Count, presentFoods.Count);
     }
 
+    // A meal is held to the rules the app saves one under, and its total is what its items add up
+    // to, as the app computes it: the row's own carbs columns are the standalone's copy of that sum.
     private static Meal ToMeal(Row row, ILookup<Guid, MealItem> itemsByMeal)
     {
         var id = row.Guid("meal_id");
         var firstBest = row.Number("first_estimate_g");
-        return new Meal
+        var meal = new Meal
         {
             Id = id,
             EatenAt = row.Time("eaten_at"),
-            Carbs = row.RequiredNumber("carbs_g"),
-            CarbsLow = row.RequiredNumber("carbs_low_g"),
-            CarbsHigh = row.RequiredNumber("carbs_high_g"),
             FirstEstimate = firstBest is { } best
                 ? new Interval(row.RequiredNumber("first_estimate_low_g"), best, row.RequiredNumber("first_estimate_high_g"))
                 : null,
@@ -72,10 +71,18 @@ public static class SugaryImport
             Notes = row.Text("notes"),
             Items = itemsByMeal[id].OrderBy(item => item.Position).ToList()
         };
+        if (MealRules.MealProblem(meal.Items, meal.FirstEstimate, meal.Notes, meal.Outcome) is { } problem)
+        {
+            throw row.Refused(problem);
+        }
+
+        MealRules.Total(meal);
+        return meal;
     }
 
-    private static MealItem ToItem(Row row) =>
-        new(
+    private static MealItem ToItem(Row row)
+    {
+        var item = new MealItem(
             row.Text("name") ?? "",
             row.Text("portion"),
             row.Number("amount"),
@@ -90,6 +97,8 @@ public static class SugaryImport
         {
             Position = (int)row.RequiredNumber("position") - 1
         };
+        return MealRules.ItemProblem(item) is { } problem ? throw row.Refused(problem) : item;
+    }
 
     // The export has no creation time for a food, so it is the moment it arrived here.
     private static Food ToFood(Row row, DateTimeOffset importedAt) => new()
@@ -152,9 +161,12 @@ public static class SugaryImport
                 ? time
                 : throw Invalid(column, "a time");
 
+        // Every number in the downloads is an amount, so one that is negative, or one a spreadsheet
+        // writes for a failed sum (NaN, Infinity), is no number of a meal's.
         public double? Number(string column) =>
             Text(column) is not { } text ? null
-            : double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) ? number
+            : double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+              && double.IsFinite(number) && number >= 0 ? number
             : throw Invalid(column, "a number");
 
         public double RequiredNumber(string column) => Number(column) ?? throw Invalid(column, "a number");
@@ -171,6 +183,8 @@ public static class SugaryImport
                                      && Enum.IsDefined(value) && !char.IsDigit(word[0])
                 ? value
                 : throw Invalid(column, string.Join(", ", Enum.GetValues<T>().Select(SugaryTables.Word)));
+
+        public ImportException Refused(string problem) => new($"{File} line {Record.Line}: {problem}");
 
         private ImportException Invalid(string column, string expected) =>
             new($"{File} line {Record.Line}: {column} is '{Text(column)}', not {expected}.");
