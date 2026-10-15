@@ -3,6 +3,7 @@ import { api } from "../api";
 import { formatGrams, isRange, shownTotal } from "../carbs";
 import { useConfirm } from "../components/Confirm";
 import { Icon, type IconName } from "../components/Icon";
+import { CakeStand } from "../components/Illustrations";
 import { Sheet } from "../components/Sheet";
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, rationCount, rationText } from "../format";
@@ -131,7 +132,10 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
 
   return (
     <div className="screen">
-      <h1>{t("tabLog")}</h1>
+      <h1 className="marked">
+        <Icon name="slice" size={28} />
+        {t("tabLog")}
+      </h1>
       {error && (
         <p className="notice notice-error" role="alert">
           <Icon name="alert" size={18} /> <span>{error}</span>
@@ -140,7 +144,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
 
       {meals?.length === 0 && (
         <div className="empty">
-          <Icon name="slice" size={44} />
+          <CakeStand />
           <p className="empty-title">{t("logEmpty")}</p>
           <p className="small">{t("logEmptyHint")}</p>
         </div>

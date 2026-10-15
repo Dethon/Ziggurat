@@ -1,7 +1,7 @@
 const en = {
   tabMeal: "Meal",
   tabLog: "Log",
-  tabFoods: "Foods",
+  tabFoods: "Pantry",
   tabSettings: "Settings",
 
   captureTitle: "What's on the plate?",
@@ -24,9 +24,9 @@ const en = {
   clip: "Video",
   clipSpoken: "Video, {s} seconds",
   estimatesUnavailable:
-    "Estimating from a photo or a description is not available yet. Add what you are eating from your foods, a package or by hand.",
+    "Estimating from a photo or a description is not available yet. Add what you are eating from your pantry, a package or by hand.",
 
-  estimating: "Looking at your plate…",
+  estimating: "Weighing up your plate…",
   estimatingHint: "Usually 10 to 30\u00a0seconds.",
   cancel: "Cancel",
 
@@ -84,7 +84,7 @@ const en = {
 
   save: "Save to log",
   saving: "Saving…",
-  saved: "Saved to your log",
+  saved: "Into the display case",
   discard: "Start over",
   discardTitle: "Discard this meal?",
   discardBody: "The photos, answers and foods you added go too.",
@@ -118,11 +118,11 @@ const en = {
   manualName: "What is it?",
   manualCarbs: "Carbs in grams",
 
-  myFoods: "My foods",
+  myFoods: "Pantry",
   foodsTitle: "Your pantry",
   foodsEmpty: "The pantry is bare.",
-  foodsEmptyHint: "Scan a barcode or a label and tick “Save to my foods”, or add one here.",
-  foodSearch: "Search your foods",
+  foodsEmptyHint: "Scan a barcode or a label and tick “Save to the pantry”, or add one here.",
+  foodSearch: "Search the pantry",
   foodNone: "No food with that name.",
   foodNew: "New food",
   foodEdit: "Edit food",
@@ -145,10 +145,10 @@ const en = {
   foodUsualChip: "Usual ({n} {unit})",
   foodHalf: "Half",
   foodDouble: "Double",
-  saveToFoods: "Save to my foods",
+  saveToFoods: "Save to the pantry",
   saveToFoodsHint: "With this amount as your usual one",
   saveToFoodsManualHint: "As one portion with these carbs",
-  fromMyFoods: "From your foods",
+  fromMyFoods: "From your pantry",
   addFoodToMeal: "Add {name} to the meal",
   addedToMeal: "Added to your meal",
   viewMeal: "View",
@@ -160,7 +160,7 @@ const en = {
   exportHint: "The log as tables, to open in a spreadsheet or take to your diabetes team.",
   exportMeals: "Meals",
   exportItems: "Foods in each meal",
-  exportFoods: "My foods",
+  exportFoods: "Pantry",
 
   logEmpty: "The display case is empty.",
   logEmptyHint: "Save a meal and it shows up here. A couple of hours later, note how your glucose went.",
@@ -265,7 +265,7 @@ export type StringKey = keyof Strings;
 const es: Strings = {
   tabMeal: "Comida",
   tabLog: "Diario",
-  tabFoods: "Alimentos",
+  tabFoods: "Despensa",
   tabSettings: "Ajustes",
 
   captureTitle: "¿Qué hay en el plato?",
@@ -288,9 +288,9 @@ const es: Strings = {
   clip: "Vídeo",
   clipSpoken: "Vídeo de {s} segundos",
   estimatesUnavailable:
-    "Todavía no se puede calcular a partir de una foto o una descripción. Añade lo que vas a comer desde tus alimentos, un producto envasado o a mano.",
+    "Todavía no se puede calcular a partir de una foto o una descripción. Añade lo que vas a comer desde tu despensa, un producto envasado o a mano.",
 
-  estimating: "Mirando tu plato…",
+  estimating: "Pesando tu plato…",
   estimatingHint: "Suele tardar entre 10 y 30\u00a0segundos.",
   cancel: "Cancelar",
 
@@ -348,7 +348,7 @@ const es: Strings = {
 
   save: "Guardar en el diario",
   saving: "Guardando…",
-  saved: "Guardado en tu diario",
+  saved: "A la vitrina",
   discard: "Empezar de nuevo",
   discardTitle: "¿Descartar esta comida?",
   discardBody: "También se borran las fotos, las respuestas y lo que has añadido.",
@@ -383,11 +383,11 @@ const es: Strings = {
   manualName: "¿Qué es?",
   manualCarbs: "Hidratos en gramos",
 
-  myFoods: "Mis alimentos",
+  myFoods: "Despensa",
   foodsTitle: "Tu despensa",
   foodsEmpty: "La despensa está vacía.",
-  foodsEmptyHint: "Escanea un código de barras o una etiqueta y marca «Guardar en mis alimentos», o añade uno aquí.",
-  foodSearch: "Buscar en tus alimentos",
+  foodsEmptyHint: "Escanea un código de barras o una etiqueta y marca «Guardar en la despensa», o añade uno aquí.",
+  foodSearch: "Buscar en la despensa",
   foodNone: "Ningún alimento con ese nombre.",
   foodNew: "Nuevo alimento",
   foodEdit: "Editar alimento",
@@ -410,10 +410,10 @@ const es: Strings = {
   foodUsualChip: "Lo habitual ({n} {unit})",
   foodHalf: "La mitad",
   foodDouble: "El doble",
-  saveToFoods: "Guardar en mis alimentos",
+  saveToFoods: "Guardar en la despensa",
   saveToFoodsHint: "Con esta cantidad como la habitual",
   saveToFoodsManualHint: "Como una porción con estos hidratos",
-  fromMyFoods: "De tus alimentos",
+  fromMyFoods: "De tu despensa",
   addFoodToMeal: "Añadir {name} a la comida",
   addedToMeal: "Añadido a tu comida",
   viewMeal: "Ver",
@@ -425,7 +425,7 @@ const es: Strings = {
   exportHint: "El diario en tablas, para abrir en una hoja de cálculo o llevar a tu equipo de diabetes.",
   exportMeals: "Comidas",
   exportItems: "Alimentos de cada comida",
-  exportFoods: "Mis alimentos",
+  exportFoods: "Despensa",
 
   logEmpty: "La vitrina está vacía.",
   logEmptyHint: "Guarda una comida y aparecerá aquí. Un par de horas después, apunta cómo fue tu glucosa.",

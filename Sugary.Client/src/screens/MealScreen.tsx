@@ -5,6 +5,7 @@ import { shownTotal, toMealItem } from "../carbs";
 import { CameraButton, CameraFallbackNote } from "../components/Camera";
 import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
+import { Drip, Slice } from "../components/Illustrations";
 import { ItemRow } from "../components/ItemRow";
 import { PortionSheet } from "../components/PortionSheet";
 import { TotalCard } from "../components/TotalCard";
@@ -286,7 +287,7 @@ export function MealScreen({
   if (running) {
     return (
       <div className="screen estimating">
-        {draft.thumbnail && <img className="estimating-photo" src={draft.thumbnail} alt="" />}
+        {draft.thumbnail ? <img className="estimating-photo" src={draft.thumbnail} alt="" /> : <Slice />}
         <div className="spinner" aria-hidden="true" />
         <h1 className="estimating-title" role="status">
           {t("estimating")}
@@ -314,6 +315,7 @@ export function MealScreen({
             </p>
           )}
           <h1 className={hasMeal ? "title-small" : undefined}>{t(hasMeal ? "mealDraftTitle" : "captureTitle")}</h1>
+          {!started && <Drip />}
         </div>
         {started && (
           <button type="button" className="button button-quiet button-small" onClick={askStartOver}>

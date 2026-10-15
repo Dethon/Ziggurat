@@ -50,6 +50,11 @@
   --sprinkle-pistachio: #7db38a;
   --sprinkle-lemon: #e9b949;
   --sponge-gold: #f2c879;
+  --sponge-crust: #e3a84f;
+  /* The drawings' frosting keeps its raspberry in both schemes: it is cake, not a control. */
+  --art-raspberry: #c42d5c;
+  --art-raspberry-dark: #8e1a3f;
+  --art-cream: #fffdf9;
 
   --font-ui: "Sugary Digits", "Atkinson Hyperlegible Next Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;

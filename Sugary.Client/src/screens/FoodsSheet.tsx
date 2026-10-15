@@ -3,6 +3,7 @@ import { api } from "../api";
 import { formatGrams, fromFood, parseAmount } from "../carbs";
 import { useConfirm } from "../components/Confirm";
 import { Icon, type IconName } from "../components/Icon";
+import { Jar } from "../components/Illustrations";
 import { Sheet } from "../components/Sheet";
 import { errorMessage } from "../errors";
 import { search } from "../foods";
@@ -99,7 +100,7 @@ export function FoodList({
       )}
       {foods !== null && foods.length === 0 && (
         <div className="empty compact">
-          <Icon name="jar" size={40} />
+          <Jar />
           <p className="empty-title">{t("foodsEmpty")}</p>
           <p className="small">{t("foodsEmptyHint")}</p>
         </div>

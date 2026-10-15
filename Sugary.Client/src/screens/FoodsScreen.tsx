@@ -30,7 +30,10 @@ export function FoodsScreen({ onAddToMeal }: { onAddToMeal: (item: DraftItem) =>
 
   return (
     <div className="screen">
-      <h1>{t("foodsTitle")}</h1>
+      <h1 className="marked">
+        <Icon name="slice" size={28} />
+        {t("foodsTitle")}
+      </h1>
       <FoodList
         framed
         foods={foods}

@@ -1294,7 +1294,101 @@ h1.title-small {
   color: var(--color-muted);
 }
 
-.empty > .icon {
+/* The drawings, in the palette's colours, so they turn with the dark mode. */
+.art {
+  display: block;
+  margin: 0 auto var(--space-2);
+}
+
+.art-shadow {
+  fill: var(--color-ink);
+  opacity: 0.08;
+}
+
+.art-glass {
+  fill: var(--color-surface);
+  opacity: 0.7;
+}
+
+.art-line,
+.art-shine,
+.art-label-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 3;
+}
+
+.art-line {
+  stroke: var(--color-field);
+}
+
+.art-shine {
+  stroke: var(--color-surface);
+  stroke-width: 4;
+  opacity: 0.9;
+}
+
+.art-label {
+  fill: var(--color-sponge);
+}
+
+.art-label-line {
+  stroke: var(--color-line);
+}
+
+.art-stand {
+  fill: var(--color-surface);
+  stroke: var(--color-field);
+  stroke-width: 2;
+}
+
+.art-raspberry {
+  fill: var(--art-raspberry);
+}
+
+.art-raspberry-dark {
+  fill: var(--art-raspberry-dark);
+}
+
+.art-sponge {
+  fill: var(--sponge-gold);
+}
+
+.art-crust {
+  fill: var(--sponge-crust);
+}
+
+.art-cream {
+  fill: var(--art-cream);
+}
+
+.art-crumb {
+  fill: var(--sponge-gold);
+}
+
+.art-pistachio {
+  fill: var(--sprinkle-pistachio);
+}
+
+.art-lemon {
+  fill: var(--sprinkle-lemon);
+}
+
+.drip-line {
+  display: block;
+  width: 100%;
+  height: 22px;
+  margin-top: var(--space-3);
+  fill: var(--art-raspberry);
+}
+
+h1.marked {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+h1.marked .icon {
   color: var(--color-primary);
 }
 
