@@ -814,7 +814,12 @@ h1.title-small {
   line-height: 1.3;
 }
 
+/* A rough guess stands out from a fair one by more than a bar: a caramel pill. */
 .badge-low {
+  margin-left: -6px;
+  padding: 1px 10px 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--color-caution-soft);
   color: var(--color-caution);
 }
 

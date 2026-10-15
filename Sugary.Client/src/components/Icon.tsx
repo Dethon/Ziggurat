@@ -62,7 +62,7 @@ export function Icon({ name, size = 22 }: { name: IconName; size?: number }) {
 }
 
 // How sure the estimate is, drawn as one, two or three filled bars so it never rests on colour.
-export function Meter({ level, size = 16 }: { level: 1 | 2 | 3; size?: number }) {
+export function Meter({ level, size = 20 }: { level: 1 | 2 | 3; size?: number }) {
   return (
     <svg className="icon meter" width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
       {[0, 1, 2].map((bar) => (
