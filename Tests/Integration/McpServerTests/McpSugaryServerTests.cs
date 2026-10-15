@@ -172,6 +172,23 @@ public class McpSugaryServerTests
         info["exists"]!.GetValue<bool>().ShouldBeFalse();
     }
 
+    // The calendar's first and last months name a file like any other, and no meal is in them.
+    [Theory]
+    [InlineData("/meals/9999-12.csv")]
+    [InlineData("/items/9999-12.csv")]
+    [InlineData("/meals/0001-01.csv")]
+    [InlineData("/items/0001-01.csv")]
+    public async Task TheCalendarsEdgeMonths_HaveNoFile(string path)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(Meal("2026-03-10T12:00:00Z", null, Item("toast", 30)));
+
+        var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = path });
+        read["errorCode"]!.GetValue<string>().ShouldBe("not_found");
+        var info = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = path });
+        info["exists"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
     // The month a meal is filed under is the one its eaten_at shows, so a late dinner on the last
     // night of March in Madrid is in April's file once the clocks have gone forward.
     [Fact]

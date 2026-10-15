@@ -169,11 +169,18 @@ public sealed class SugaryFileSystem(
 
     // A month on the home's calendar starts and ends at an offset that can differ from UTC's by up
     // to a day either way, so the store is asked for a day more each side and the home's calendar
-    // decides which meals are in.
+    // decides which meals are in. The calendar's first and last months have no day beyond them to
+    // ask for, and no meal in them, so they are simply empty.
     private async Task<IReadOnlyList<LoggedMeal>> MealsInAsync(string month, CancellationToken ct)
     {
         var first = DateTimeOffset.ParseExact(
             month + "-01T00:00:00Z", "yyyy-MM-dd'T'HH:mm:ssK", CultureInfo.InvariantCulture);
+        if (first.Year == DateTimeOffset.MinValue.Year && first.Month == 1
+            || first.Year == DateTimeOffset.MaxValue.Year && first.Month == 12)
+        {
+            return [];
+        }
+
         var meals = await log.MealsAsync(first.AddDays(-1), first.AddMonths(1).AddDays(1), ct);
         return meals.Where(meal => SugaryTables.Month(meal.EatenAt, homeZone) == month).ToList();
     }
