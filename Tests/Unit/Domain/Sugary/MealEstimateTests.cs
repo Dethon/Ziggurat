@@ -77,13 +77,23 @@ public class MealEstimateTests
     public void BlankItemsQuestionsAndNotes_AreDropped()
     {
         var estimate = MealEstimate.From(new ModelEstimate(
-            [Item(), Item(name: "  ")],
+            [Item(), Item(name: "  ", low: 0, best: 0, high: 0)],
             [new ModelQuestion("Sugar-free?", ["Yes", "No"]), new ModelQuestion(" ", [])],
             ["High in fat", ""]));
 
         estimate.Items.Count.ShouldBe(1);
         estimate.Questions.Single().Options.ShouldBe(["Yes", "No"]);
         estimate.Notes.ShouldBe(["High in fat"]);
+    }
+
+    // An item with carbs and no name cannot be shown, and dropping it would drop its carbs from the
+    // total unseen: the reply is not read at all.
+    [Theory]
+    [InlineData(150, 150, 150)]
+    [InlineData(0, 0, 50)]
+    public void ABlankItemCarryingCarbs_RefusesTheReply(double low, double best, double high)
+    {
+        Should.Throw<UnreadableEstimateException>(() => From(Item(), Item(name: " ", low: low, best: best, high: high)));
     }
 
     [Fact]

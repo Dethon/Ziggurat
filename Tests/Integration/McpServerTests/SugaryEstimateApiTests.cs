@@ -124,7 +124,9 @@ public class SugaryEstimateApiTests
     {
         { "prose", "That meal has about 40 g of carbs." },
         { "a field missing", Estimate.Replace("\"gramsHigh\":60,", "") },
-        { "a total of its own", Estimate.Replace("\"notes\"", "\"total\":40,\"notes\"") }
+        { "a total of its own", Estimate.Replace("\"notes\"", "\"total\":40,\"notes\"") },
+        // Dropped, its carbs would go with it and the total would read low with nothing to show why.
+        { "an item with carbs and no name", Estimate.Replace("\"name\":\"orange juice\"", "\"name\":\" \"") }
     };
 
     [Theory]

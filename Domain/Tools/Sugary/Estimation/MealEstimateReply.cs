@@ -45,6 +45,6 @@ public static class MealEstimateReply
         return MealEstimate.From(raw);
     }
 
-    private static UnreadableEstimateException Unreadable(Exception? inner = null) =>
+    internal static UnreadableEstimateException Unreadable(Exception? inner = null) =>
         new("The model returned an answer that could not be read.", inner);
 }

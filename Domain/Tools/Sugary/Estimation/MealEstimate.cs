@@ -49,14 +49,21 @@ public record MealEstimate(
     IReadOnlyList<string> Notes)
 {
     // The carb figures are derived here rather than asked of the model, so the total always
-    // equals the sum of what is shown and stays consistent when a portion is edited later.
+    // equals the sum of what is shown and stays consistent when a portion is edited later. An item
+    // with no name is dropped only when it carries nothing: one with carbs cannot be shown, and
+    // dropping it would take its carbs off the total unseen, so the reply is not read at all.
     public static MealEstimate From(ModelEstimate raw)
     {
         ArgumentNullException.ThrowIfNull(raw);
-        var items = raw.Items
-            .Where(item => !string.IsNullOrWhiteSpace(item.Name))
-            .Select(ToItem)
+        var read = raw.Items
+            .Select(item => (Named: !string.IsNullOrWhiteSpace(item.Name), Item: ToItem(item)))
             .ToList();
+        if (read.Any(entry => !entry.Named && entry.Item.Carbs.High > 0))
+        {
+            throw MealEstimateReply.Unreadable();
+        }
+
+        var items = read.Where(entry => entry.Named).Select(entry => entry.Item).ToList();
         var questions = raw.Questions
             .Where(q => !string.IsNullOrWhiteSpace(q.Text))
             .Select(q => new ClarifyingQuestion(q.Text.Trim(), [.. q.Options.Where(o => o.Length > 0)]))
