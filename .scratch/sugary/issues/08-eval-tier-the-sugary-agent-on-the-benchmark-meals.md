@@ -179,3 +179,31 @@ Call it **$0.008–0.010 per estimate**: about **$0.50–0.65 for the 64 meals**
 
 That is about $0.15–0.20. **One pass is about $0.65–0.85. Three passes for a variance read are about
 $2–2.50.** The scorecard's `spend` and `benchmark.overall.cost` will give the real figure.
+
+**Changed (2026-10-15), after the first paid pass.** The pass
+(`.eval-output/scorecard-sugary-google-gemini-3.8-flash.json`): 72 of 78 meals answered, mean
+absolute error 11.6 g (12.0 g photo, 9.6 g video), $0.0199 per estimate against the standalone's
+$0.0066, because estimate turns read `/sugary` and loaded `sugary-log` — 35 Gemini requests over 11
+scenario runs. The six unanswered meals ended with "The model returned no answer". Scenarios: dose
+2/3, amount first 2/2, counted food 0/3 (over the ceiling searching `/sugary`, no answer, a timeout
+after 8 calls), log skill 0/3 (loaded and read, then replied with nothing).
+
+- **The `sugary` agent has no tools** (`noTools`, ticket 04's note of the same date), so a meal is
+  one model call. The three estimate scenarios permit nothing and have a call ceiling of 0, and the
+  benchmark's meals are counted against a ceiling of 0 (reported, not failing). `SugaryScenariosTests`
+  pins both.
+- **The log scenario runs on Jonas** ("a question about her log loads the sugary-log skill before
+  reading it", `AgentId = "jonas"`), who now dials `mcp-sugary`. It keeps citing
+  `sugary-log.loads-for-a-question-about-her-log`, stays in the full tier (`SugaryScenarioTests`),
+  and drops out of the Sugary tier, which selects the `sugary` agent's scenarios only. Its
+  demonstration red is still owed, now on Jonas's model.
+- **The Sugary tier still drives `sugary`**: three scenarios plus the 78 meals. The re-run command
+  is unchanged:
+
+```bash
+ZIGGURAT_EVAL=1 ZIGGURAT_EVAL_MODEL=google/gemini-3.8-flash \
+  dotnet test --filter "Category=Eval&Tier=Sugary"
+```
+
+  Expect about the standalone's cost per estimate plus the larger prompt, roughly $0.007–0.008, and
+  no "no answer" meal from a tool loop.

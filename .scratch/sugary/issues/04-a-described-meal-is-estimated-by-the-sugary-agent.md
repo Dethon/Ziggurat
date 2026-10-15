@@ -129,3 +129,35 @@ for a formatted turn (sender, model, tokens). Nothing new was needed.
 **Not done / deferred.** No change to the PWA. No WebChat review copy (11). No eval of the agent
 on the benchmark meals (08): nothing here called a real model, so whether Gemini honours the
 language line and the dose rule as a turn of this agent is unmeasured.
+
+**Changed (2026-10-15): the `sugary` agent has no tools; Jonas reads her log.** Three decisions
+above no longer hold — "the agent can read `/sugary`", "every estimate turn asks Jev for a skill
+preload" and "the agent's only tools are the whitelisted read-only mount tools and `load_skill`".
+
+- **Why.** Ticket 08's first paid pass (Tier=Sugary, Gemini 3.8 Flash,
+  `.eval-output/scorecard-sugary-google-gemini-3.8-flash.json`) showed estimate turns calling the
+  file tools on `/sugary` and `load_skill`: 2 to 6 model calls per meal instead of one, $0.0199 per
+  estimate against the standalone's $0.0066, and 6 of 78 meals ending with no answer ("The model
+  returned no answer"). The counted-food scenario went 0 of 3: one run searched `/sugary` for
+  "hamburguesa" and "patatas" past its ceiling, one gave no answer, one timed out after 8 calls. The
+  log scenario went 0 of 3 too: the model loaded `sugary-log`, searched, globbed and read, then
+  replied with nothing.
+- **`noTools`** (new, `AgentDefinition.NoTools`, `"noTools": true` on `sugary`). The definition's
+  servers are dialled for their prompts alone: `ThreadSessionBuilder` offers no tool, no skill and
+  no mount for such a session, so the request carries no `tools`, the `skills` section and
+  `load_skill` are gone, and both preload paths (`ConversationGroup`, `SkillsProvider`) ask nothing
+  because the session has no skills. `AgentSpecProjection` refuses a `noTools` agent that enables a
+  feature or outposts. `sugary` lost its `enabledFeatures` and `whitelistPatterns`; its description
+  no longer says it reads her log. Its prompt went from 2,189 to 1,819 tokens
+  (`Tests/Snapshots/prompt.sugary.txt`). Pinned at the request seam by
+  `Tests/Integration/Agents/SugaryAgentRequestTests` (shipped definition, real Sugary server: no
+  `tools` key, the estimating section present, no skills, the judge never asked).
+- **The estimating words are the `sugary` agent's alone.** `sugary_prompt`'s declaration has
+  `Audience = PromptAudience.ForAgents("sugary")`, the existing per-agent filter in
+  `PromptAssembly.Build`, so an agent dialling the server for anything else does not read them.
+  `PromptAudienceTests` checks every audience names a configured agent.
+- **Jonas dials `mcp-sugary`** (`appsettings.json`, and `localhost:6017` in
+  `appsettings.Local.json`), so `/sugary` is mounted read-only for him beside `/ha` with the
+  `sugary-log` skill. That is not a channel subscription: `agentDefaults.byChannel.sugary` still
+  routes the app's estimates to `sugary`. `prompt.jonas.txt` gained the skill's advertisement (75
+  tokens). `jonas-worker` does not dial it, so a delegated log question cannot read `/sugary`.

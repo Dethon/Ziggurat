@@ -96,8 +96,8 @@ ZIGGURAT_EVAL=1 ZIGGURAT_EVAL_MODEL=google/gemini-3.8-flash \
   dotnet test --filter "Category=Eval&Tier=Sugary"
 ```
 
-One pass is the 78 meals (64 photographed, 14 filmed), one estimate each, plus the sugary agent's four scenarios
-(`Tests/Eval/Scenarios/SugaryScenarios.cs`) on the same model. Each meal is sent as the Sugary
+One pass is the 78 meals (64 photographed, 14 filmed), one estimate each, plus the sugary agent's three scenarios
+(`Tests/Eval/Scenarios/SugaryScenarios.cs`; the fourth, her log, is Jonas's and runs in the full tier) on the same model. Each meal is sent as the Sugary
 channel sends an estimate (the standalone app's words for one photo, the `meal_estimate` format, the
 photo as an attachment) and its answer is read by the server's own parse and arithmetic. The
 scorecard is `.eval-output/scorecard-sugary-<model>.json`: its `benchmark` section has the mean

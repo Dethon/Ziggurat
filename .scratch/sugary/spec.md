@@ -49,7 +49,8 @@ Sugary becomes a **dual-role server** in Ziggurat, served by its own container, 
   the frames, so a future model is not ruled out by its input types.
 - **The tables are a mount.** The database is the only store. `/sugary` renders the meals, the
   foods in each meal and her saved foods as CSV on every read, read-only, so any agent with the
-  mount can list, search and read them with today's file tools.
+  mount can list, search and read them with today's file tools. Jonas has it, beside the glucose
+  history `/ha` serves; the `sugary` agent does not.
 - **Plain data stays plain.** Saving a meal, editing a portion, managing her foods, looking up a
   barcode and downloading the log are ordinary HTTP calls to the server, never agent turns.
 
@@ -192,7 +193,8 @@ Sugary becomes a **dual-role server** in Ziggurat, served by its own container, 
 ### Operating it
 
 55. As the operator, I want the `sugary` agent defined in configuration like every other agent, with
-    the Sugary server as its only server, so that it does not mix with Jonas's tools.
+    the Sugary server as its only server and no tools at all, so that every estimate is one answer
+    and it does not mix with Jonas's tools.
 56. As the operator, I want the `sugary` agent to run with memory off, so that a recalled old meal
     never leaks into a new estimate.
 57. As the operator, I want the Sugary server's prompt declared in the prompt manifest, so that it is
@@ -258,12 +260,21 @@ Sugary becomes a **dual-role server** in Ziggurat, served by its own container, 
   subagents off, Spanish and English handled by the language rule that already exists. Its model
   starts as Gemini 3.8 Flash, the best measured with video; its patchable models include the label
   model (Opus 5.5 today) and Haiku 5.5.
+- **The `sugary` agent is a pure estimator with no tools.** Its definition says `noTools`: the Sugary
+  server is dialled for the estimating prompt it serves and nothing else, so its requests carry no
+  tool, no skill and no `load_skill`, it mounts nothing, and no skill preload judgment (Jev) is asked
+  on its turns. Decided 2026-10-15 on the first paid pass of the eval tier: with the mount and the
+  skill, estimate turns read her log and loaded the skill, 2 to 6 model calls per meal instead of
+  one, $0.020 per estimate against the standalone's $0.0066, and 6 of 78 meals ended with no answer.
 - `agentDefaults` sends the Sugary channel's messages to `sugary`.
 - The estimating prompt is a **section served by the Sugary server**, declared in the prompt
-  manifest under a name constant, with its budget. The never-suggest-doses rule lives there, not in
-  a skill, because it governs every turn.
+  manifest under a name constant, with its budget, and for the `sugary` agent alone
+  (`PromptAudience.ForAgents("sugary")`): any agent dialling the server would otherwise read it. The
+  never-suggest-doses rule lives there, not in a skill, because it governs every turn.
 - What the server can explain on demand (how her foods and the tables are laid out) is a **skill**
-  the server ships.
+  the server ships, `sugary-log`. It is Jonas's: he dials the Sugary server for the `/sugary` mount
+  and the skill, beside `/ha`, so a meal can later be lined up with her glucose. Dialling the server
+  does not make him a consumer of its channel; `agentDefaults` routes the channel to `sugary`.
 
 ### Response format per message (a Ziggurat core change)
 
@@ -274,7 +285,7 @@ Sugary becomes a **dual-role server** in Ziggurat, served by its own container, 
   Responses wire. Structured output is already used through OpenRouter by memory extraction and
   consolidation, never yet in an agent turn.
 - A turn with a response format may still call tools before it answers; the format applies to the
-  final answer.
+  final answer. The `sugary` agent has none, so each of its turns is one answer.
 - Provider routing on such a turn asks for providers that honour the parameter, as the standalone
   app does, so the format is never silently dropped.
 
@@ -327,6 +338,8 @@ Sugary becomes a **dual-role server** in Ziggurat, served by its own container, 
   both.
 - The backend overrides read, glob, info and text search, and nothing that writes: no workspace, not
   a landing target, no shell reach. A month with no meals has no file.
+- Its reader is Jonas, with the `sugary-log` skill. The `sugary` agent dials the same server but
+  calls nothing, so the mount is not made for it.
 - Parquet is not rendered. A later format is another rendering of the same rows, never a second
   store.
 
