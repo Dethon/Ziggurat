@@ -1625,6 +1625,18 @@ h1.title-small {
   line-height: 20px;
 }
 
+/* While she types on a phone, the tab bar steps aside: the keyboard, the field and the screen's one
+   action are what is left in view. */
+@media (pointer: coarse) {
+  :root[data-typing] .tabs {
+    display: none;
+  }
+
+  :root[data-typing] {
+    --tabs-height: 0px;
+  }
+}
+
 .toast {
   position: fixed;
   left: 50%;

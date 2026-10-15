@@ -11,6 +11,7 @@ import { SignIn } from "./screens/SignIn";
 import { useSettings } from "./settings";
 import { ToastProvider, useToast } from "./toast";
 import type { DraftItem, SessionState } from "./types";
+import { useTypingMark } from "./typing";
 
 export type Tab = "meal" | "log" | "foods" | "settings";
 
@@ -60,6 +61,7 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("meal");
   const adder = useRef<((item: DraftItem) => void) | null>(null);
+  useTypingMark();
   // Meals still waiting for how her glucose went, counted on the Log tab.
   const [pending, setPending] = useState(0);
   const refreshPending = useCallback(
