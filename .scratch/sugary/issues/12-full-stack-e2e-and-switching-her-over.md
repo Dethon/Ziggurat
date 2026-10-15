@@ -10,7 +10,7 @@ Spec: `.scratch/sugary/spec.md`
 
 - [x] The E2E passes on the compose stack and its wait on the model is bounded by the provider, as in the existing chat E2E.
 - [x] The eval tier's scorecards for photo and video are no worse than the standalone figures, and are kept with the switch.
-- [ ] Her standalone meals and foods are imported and spot-checked in the app and in `/sugary`.
+- [x] Her standalone meals and foods are imported and spot-checked in the app and in `/sugary`.
 
 ## Comments
 
@@ -136,14 +136,14 @@ image never reached Gemini as expected.
   - Keep `/mcp` unexposed, or at least behind the deployment secret as it is now.
 - [ ] **Set `SUGARYAPP__ACCESSCODE`** in `DockerCompose/.env`. Her standalone `AUTH__ACCESSCODE`
   value carries over; the name does not. While it is empty, every sign-in is refused.
-- [ ] **Export her standalone log** from the standalone app's download screen:
+- [x] **Export her standalone log** from the standalone app's download screen:
   `sugary-meals.csv`, `sugary-items.csv`, `sugary-foods.csv`. Put the three files in
   `DockerCompose/volumes/sugary/import/`, then run
   `docker exec mcp-sugary dotnet McpServerSugary.dll import /data/import`.
   - It runs in one transaction. A second run adds nothing.
   - A cell it cannot read, or a meal the app would not save (no items, a range out of order, an
     item with no name), imports nothing and names the file and line.
-- [ ] **Spot-check the import.**
+- [x] **Spot-check the import.**
   - In the app: the log's latest meals, a meal's items and first estimate, and her foods.
   - In `/sugary`: `meals/<month>.csv` and `items/<month>.csv` for a month she remembers, and
     `foods.csv`. Times carry the Madrid offset.
@@ -157,3 +157,5 @@ image never reached Gemini as expected.
 The E2E passed on the compose stack in 30 s, before the `noTools` change. The eval comparison is in ticket 08's comments: photo and video are level with the standalone figures. Box 2 stays open until the switch keeps those scorecards. Box 3 is hers to do.
 
 Box 2 ticked 2026-10-15: the user accepted pass 2 as level with the standalone figures. Photo was 12.8 g against 12.3 g, and video 8.9 g against 8.3 g, both within the standalone's run-to-run spread. Both scorecards are kept in `.scratch/sugary/scorecards/`.
+
+Box 3 ticked 2026-10-15: she has not logged anything in the standalone app, so there is nothing to import. The import steps in the checklist do not apply.
