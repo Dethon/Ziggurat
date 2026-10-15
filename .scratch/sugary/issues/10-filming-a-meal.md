@@ -192,3 +192,37 @@ Per set, from a photo: Nutrition5k 12.3 g, Nutrient Vision 9.7 g, SNAPMe 14.7 g.
 Read: from a photo the agent is level with the standalone app, within the spread seen between its runs. The gain from video reproduces: 3.4 g here against 2.9 g in the standalone. That is one pass against three, so both are noisy.
 
 Spend: pass 1 cost $1.82 and pass 2 $0.64, account figures.
+
+### 2026-10-15: photos, the label photo and the clip taken in the app, on the back camera
+
+**Why.** On her phone, "Take a photo" and "Film the plate" opened the front camera. Both were `<input capture="environment">`, which hands over to the phone's camera app, and many Android camera apps (Samsung's especially) ignore the facing hint and reopen whichever camera was used last. The live scanner's `facingMode: { ideal: "environment" }` is only a wish, which some phones also answer with the front camera. The user chose to capture in the app itself, always starting on the back camera. "From gallery" is unchanged.
+
+**What.**
+- `Sugary.Client/src/camera.ts` picks the camera, in this order: the back camera that worked earlier in this session (`deviceId: { exact }`); `facingMode: { exact: "environment" }`; a `videoinput` whose label says back (`back`, `rear`, `environment`, `trasera`, `posterior`; the plain one before ultra wide or tele), which works once labels can be read, i.e. after a camera has been allowed; `facingMode: { ideal: "environment" }`, and if that opened a camera that is not the back one while a back-labelled one now shows, the first is closed and the back one opened; then any camera (a computer). A refusal stops the chain at once. The camera found is remembered for the session, but only if it is not a front camera. A flip is never remembered, so the next photo starts on the back camera again.
+- `components/Camera.tsx` has `CameraButton` and `CameraView`. The view is a full-screen `<dialog>` shown modal, so it sits above the packaged-food sheet too. It has a shutter or record button, close, and a flip button when there is more than one camera. The camera stops whenever the view closes, unmounts, or the app is hidden. A take still running when the app is hidden is thrown away.
+- **Photos.** The picture on screen is drawn to a canvas at the stream's own size (asked for 4096×3072, 4:3) when the shutter is pressed. Where `ImageCapture` exists (Chrome on Android), the camera is then asked for a full photo. Its photo is used unless it fails, takes more than 4 s, or comes out the other way round from the picture on screen. Otherwise the canvas frame is used. Either goes to the same callback as a picked file: `forUpload` for meal photos, and `readBarcode` then `forUpload` for the label.
+- **Clips.** `recording.ts`: `MediaRecorder` with the first supported type of `video/mp4;codecs=avc1`, `video/mp4`, `video/webm;codecs=vp9`, `vp8`, `video/webm`. No audio is asked for, so there is no microphone prompt. Settings are 1920×1080 at 5 Mbit/s (about 12 MB for 20 s), recorded in 1 s slices. An elapsed timer shows "0:07 / 0:20", and the take stops itself at 20 000 ms. The server's half second of grace covers the last frame. The file is `meal.mp4` / `meal.webm` / `meal.mov`, with the codecs left off its type, and is sent as the `clip` part exactly as a picked file was.
+- **Scanner.** `BarcodeScanner` opens its camera with the same chain, at 1920×1080.
+- **Fallback.** Some cases fall back to today's `<input capture="environment">`, with a note under the buttons (English and Spanish): no `getUserMedia` or not a secure context, no `MediaRecorder` (filming only), or the camera refused or failing in the app. After a refusal or failure the fallback lasts until the app is reopened, and the note asks her to tap again and check the camera app is on the back camera. The scanner keeps its own error messages.
+
+**Tests.** vitest has 29 new tests (74 in all):
+- the selection order and each fallback, against a fake `mediaDevices` whose labels are blank until a camera is allowed;
+- label matching in English and Spanish;
+- remembering, and forgetting a vanished or front camera;
+- flipping;
+- the mime choice;
+- the 20 s auto-stop with fake timers;
+- the stop, cancel and empty takes;
+- file naming.
+
+`tsc` and `npm run build` are clean. No .NET code changed. `SugaryAppServingTests` serves a stand-in web root, not the build.
+
+**Checked in headless Chromium** with a fake camera (no phone):
+- the photo goes through `ImageCapture` and arrives as `meal-0.jpg`;
+- a 2.3 s take arrives as `clip`, `meal.mp4`, `video/mp4`, H.264 1920×1080 with a stated duration;
+- no camera is left running after either;
+- the label camera opens above the sheet;
+- the scanner opens;
+- with the camera refused, both buttons become file inputs and the note shows.
+
+**Not verified.** Nothing has been tried on her phone yet. What a real Samsung does with `exact: "environment"`, whether its `takePhoto()` is upright and quick, and the recorder's real file sizes are unmeasured. A clip taken through the fallback still has no client-side length check.
