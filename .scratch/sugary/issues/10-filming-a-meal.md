@@ -159,9 +159,9 @@ photos`), and all 78 cases find every file. The armed command is unchanged.
   thumbnail. Her answers still work, because the server holds the clip. A 410 fallback would then
   re-estimate without the clip. Drawing a thumbnail from the clip's first frame would close both
   gaps.
-- **WebChat review.** The stills are copied into WebChat's store. The clip is fetched for the copy
-  too, which is about 1–3 MB over MCP, but WebChat's store refuses `video/`, so the review shows a
-  placeholder for it (ticket 11's caveat).
+- **WebChat review.** Superseded on 2026-10-15; see the amendment in ticket 11 and ADR 0046. The review
+  topic now plays the clip, which WebChat stores up to 20 MiB, and no longer copies or shows its stills,
+  so it shows what a video model saw.
 
 **Not done / owed to the paid run.**
 - Box 5's first comparison: Gemini 3.8 Flash on the 14 filmed against the 14 photographed `n5k`
