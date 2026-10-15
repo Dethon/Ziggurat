@@ -117,3 +117,26 @@ unmeasured until ticket 08. `photosGone` (follow-ups hidden after a reload that 
 unchanged. With the conversation persisted in the draft, a follow-up would no longer need the
 photos, but the 410 fallback would, so it stays.
 
+
+**A cancel ends the conversation's group, not the turn (2026-10-15, review finding, not fixed).**
+`SugaryChannel.AskAsync` emits a cancel when a turn outlives `TurnTimeoutSeconds` or the phone gives
+up on the request. The channel protocol has no per-turn cancel. `ChannelCancelNotification` carries
+`ConversationId` and `AgentId`, and no `TurnKey`. `McpChannelConnection.HandleChannelCancelNotification`
+turns it into a `/cancel` message, which goes into the same agent inbox as the turns, in order.
+`ConversationGroup` dispatches `/cancel` as soon as its pump reads it (`CancelOwnContext`), and that
+tears down the whole group, not only the turn that was running. Turns still queued behind it are
+dropped and logged ("Group teardown dropped a queued turn"), including ones still unread in the
+grouping. So a cancel that arrives late can hit the next turn on the same meal:
+
+- **Timeout, then an answer.** If an answer turn times out and she answers again right away, the new
+  turn is emitted after the cancel. If it reaches the group before the teardown finishes, it is
+  dropped. The app then waits out the whole `TurnTimeoutSeconds` and gets 504 "took too long". If it
+  arrives after the teardown, it opens a fresh group with the thread restored, and nothing is lost.
+- **The phone gives up after the reply.** If the turn had already finished, the cancel only tears
+  down an idle group. That costs a thread restore on the next turn and nothing else.
+
+A first estimate always opens a new conversation, so a late cancel can never reach another meal.
+Fixing this properly means a per-turn cancel in the protocol: a `TurnKey` on
+`ChannelCancelNotification`, and a group that cancels only the turn carrying that key and ignores
+a key that is no longer running. That would change every channel's contract (SignalR and voice
+also emit cancels), so it is left for a ticket of its own.
