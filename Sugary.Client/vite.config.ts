@@ -14,7 +14,11 @@ export default defineConfig({
         description: "Carb counting from a photo",
         display: "standalone",
         orientation: "portrait",
+        // A stable identity, as WebChat's manifest has, so a later change to start_url never makes the
+        // installed app a different one on her phone.
+        id: "/",
         start_url: "/",
+        scope: "/",
         // Cream, as the light app and its status bar are, so the splash and the bar match.
         background_color: "#fbf5ec",
         theme_color: "#fbf5ec",
