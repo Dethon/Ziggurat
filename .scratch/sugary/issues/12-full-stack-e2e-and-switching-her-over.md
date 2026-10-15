@@ -8,7 +8,7 @@
 
 Spec: `.scratch/sugary/spec.md`
 
-- [ ] The E2E passes on the compose stack and its wait on the model is bounded by the provider, as in the existing chat E2E.
+- [x] The E2E passes on the compose stack and its wait on the model is bounded by the provider, as in the existing chat E2E.
 - [ ] The eval tier's scorecards for photo and video are no worse than the standalone figures, and are kept with the switch.
 - [ ] Her standalone meals and foods are imported and spot-checked in the app and in `/sugary`.
 
@@ -107,7 +107,7 @@ image never reached Gemini as expected.
 
 ### Switching her over — checklist
 
-- [ ] **Eval tier, paid run, approved first.**
+- [x] **Eval tier, paid run, approved first.**
   `ZIGGURAT_EVAL=1 ZIGGURAT_EVAL_MODEL=google/gemini-3.8-flash dotnet test --filter "Category=Eval&Tier=Sugary"`.
   - Photos must be linked and clips made (`Tests/Eval/Sugary/README.md`).
   - About $0.75–0.95 for one pass of the 78 meals plus the scenarios (tickets 08 and 10).
@@ -117,7 +117,7 @@ image never reached Gemini as expected.
     `n5k` filmed against photographed: 8.3 g against 11.2 g. Compare the mean error first: the
     standalone in-range count predates the range floor.
   - Keep the scorecard with the switch (box 2).
-- [ ] **The E2E above, green once** (box 1), with the command above (≈ $0.01).
+- [x] **The E2E above, green once** (box 1), with the command above (≈ $0.01).
 - [ ] **HTTPS and a hostname** for the app (the hostname is your call), with a reverse-proxy site
   for `mcp-sugary:8080`.
   - The proxy must allow request bodies of about **200 MB** on `/api/estimates`. That is the clip
@@ -151,3 +151,7 @@ image never reached Gemini as expected.
   - This is box 3.
 - [ ] **Reinstall the PWA on her phone** from the new HTTPS address, sign in with the code, and make
   one real estimate with a photo. Remove the standalone app's icon so she does not log in both.
+
+### 2026-10-15
+
+The E2E passed on the compose stack in 30 s, before the `noTools` change. The eval comparison is in ticket 08's comments: photo and video are level with the standalone figures. Box 2 stays open until the switch keeps those scorecards. Box 3 is hers to do.

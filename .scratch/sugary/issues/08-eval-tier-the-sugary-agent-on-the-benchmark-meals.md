@@ -11,8 +11,8 @@ Spec: `.scratch/sugary/spec.md`
 - [x] The tier is selected only when asked for, with a model named, and spends nothing on a routine run.
 - [x] The scorecard gives mean absolute error, bias, how often the truth is inside the range, estimated against true weight, and time and cost per estimate, per set and overall.
 - [x] The case files and the reasons behind their truth values (fibre subtracted, self-reported sets) travel with the tier; the photos stay out of git under their licences.
-- [ ] The graded scenarios pass on the agent's model.
-- [ ] A first run's scorecard is compared with the standalone figures (about 13–14 g mean error from a photo) and the comparison is written down.
+- [x] The graded scenarios pass on the agent's model.
+- [x] A first run's scorecard is compared with the standalone figures (about 13–14 g mean error from a photo) and the comparison is written down.
 
 ## Comments
 
@@ -207,3 +207,23 @@ ZIGGURAT_EVAL=1 ZIGGURAT_EVAL_MODEL=google/gemini-3.8-flash \
 
   Expect about the standalone's cost per estimate plus the larger prompt, roughly $0.007–0.008, and
   no "no answer" meal from a tool loop.
+
+### 2026-10-15: first paid runs, compared with the standalone figures
+
+Gemini 3.8 Flash, one pass each (`.eval-output/scorecard-sugary-google-gemini-3.8-flash.json`, gitignored).
+
+- **Pass 1, the agent still had file tools:** 6 of 78 meals got no answer; 2–6 model calls per meal; $0.020 per estimate; photo 12.0 g. Two scenarios failed on tool use. This led to the `noTools` change (`sugary` became a pure estimator; Jonas got `/sugary`).
+- **Pass 2, no tools:** all 78 meals answered, all four tests green, $0.008 per estimate, median 15 s (the standalone took 23 s).
+
+| Gemini 3.8 Flash | Pass 2 | Standalone |
+|---|---|---|
+| Photo, 64 meals: mean error | 12.8 g (bias −7.2) | 12.3 g (bias −8.3); about 13–14 g across models |
+| Photo, 64 meals: truth inside range | 59% | 50% (before the server's range floor) |
+| Nutrition5k, 14 dishes: video | 8.9 g (bias −1.0), 79% in range | 8.3 g (runs of 7.5–9.0) |
+| Nutrition5k, 14 dishes: photo | 12.3 g (bias −6.7) | 11.2 g (runs of 9.9–12.2) |
+
+Per set, from a photo: Nutrition5k 12.3 g, Nutrient Vision 9.7 g, SNAPMe 14.7 g.
+
+Read: from a photo the agent is level with the standalone app, within the spread seen between its runs. The gain from video reproduces: 3.4 g here against 2.9 g in the standalone. That is one pass against three, so both are noisy.
+
+Spend: pass 1 cost $1.82 and pass 2 $0.64, account figures.
