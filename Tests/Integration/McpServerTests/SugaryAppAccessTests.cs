@@ -88,6 +88,27 @@ public class SugaryAppAccessTests
         (await browser.GetAsync("/api/meals")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
+    // Guessing the code is slowed per address: ten tries a minute, and then that address waits.
+    // Anyone else reaching the port is no reason for her phone to be locked out with it.
+    [Fact]
+    public async Task GuessingTheCode_IsSlowedForTheGuesser_AndNotForHer()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var guesser = server.Browser(IPAddress.Parse("127.0.0.2"));
+        var her = server.Browser(IPAddress.Loopback);
+
+        for (var guess = 0; guess < 10; guess++)
+        {
+            (await guesser.PostAsJsonAsync("/api/session", new { code = $"guess-{guess}" })).StatusCode
+                .ShouldBe(HttpStatusCode.Unauthorized);
+        }
+
+        (await guesser.PostAsJsonAsync("/api/session", new { code = SugaryServer.AccessCode })).StatusCode
+            .ShouldBe(HttpStatusCode.TooManyRequests);
+        (await her.PostAsJsonAsync("/api/session", new { code = SugaryServer.AccessCode })).StatusCode
+            .ShouldBe(HttpStatusCode.NoContent);
+    }
+
     [Fact]
     public async Task TheCookie_DoesNotOpenMcp()
     {

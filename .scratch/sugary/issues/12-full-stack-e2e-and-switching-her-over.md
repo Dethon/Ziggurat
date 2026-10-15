@@ -123,6 +123,15 @@ image never reached Gemini as expected.
   - The proxy must allow request bodies of about **200 MB** on `/api/estimates`. That is the clip
     ceiling (`Uploads:MaxClipBytes`) plus four photos.
   - It must forward `X-Forwarded-Proto`, so the cookie is marked Secure.
+  - It must set `X-Forwarded-For` to the phone's address. The sign-in limit (ten tries a minute) is
+    kept per address and reads it, so without it every phone shares the proxy's one window and a
+    stranger guessing the code locks her out with them. Caddy's `reverse_proxy` sets it by default
+    and drops a client's own unless `trusted_proxies` says otherwise: check that against the
+    Caddyfile and version in use.
+  - Once the proxy fronts `mcp-sugary:8080`, stop publishing `6017` (drop the `ports:` entry, or bind
+    it to `127.0.0.1`). The image trusts `X-Forwarded-For` from any peer
+    (`ASPNETCORE_FORWARDEDHEADERS_ENABLED`), so a caller reaching the port directly gets a fresh
+    window for every address it claims, and can guess the code without limit.
   - Installing the PWA and scanning with the live camera both need HTTPS.
   - Keep `/mcp` unexposed, or at least behind the deployment secret as it is now.
 - [ ] **Set `SUGARYAPP__ACCESSCODE`** in `DockerCompose/.env`. Her standalone `AUTH__ACCESSCODE`

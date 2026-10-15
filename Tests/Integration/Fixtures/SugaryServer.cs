@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Sockets;
 using System.Text.Json.Nodes;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
@@ -101,6 +102,34 @@ public sealed class SugaryServer : IAsyncDisposable
         {
             BaseAddress = Address
         };
+        _browsers.Add(browser);
+        return browser;
+    }
+
+    // A phone at another address. Every 127.x address is this machine, so a connection made from
+    // one reaches the server on 127.0.0.1 and the server sees it come from that address.
+    public HttpClient Browser(IPAddress from)
+    {
+        var handler = new SocketsHttpHandler
+        {
+            CookieContainer = new CookieContainer(),
+            ConnectCallback = async (context, ct) =>
+            {
+                var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+                try
+                {
+                    socket.Bind(new IPEndPoint(from, 0));
+                    await socket.ConnectAsync(IPAddress.Loopback, context.DnsEndPoint.Port, ct);
+                    return new NetworkStream(socket, ownsSocket: true);
+                }
+                catch
+                {
+                    socket.Dispose();
+                    throw;
+                }
+            }
+        };
+        var browser = new HttpClient(handler) { BaseAddress = Address };
         _browsers.Add(browser);
         return browser;
     }

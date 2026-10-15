@@ -62,10 +62,14 @@ public static class SugaryApp
         services.AddRateLimiter(limiter =>
         {
             limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            // One shared window rather than one per client: behind a proxy every caller can look
-            // alike, and only two people are ever meant to sign in.
-            limiter.AddPolicy(SessionEndpoints.SignInRateLimit, _ => RateLimitPartition.GetFixedWindowLimiter(
-                "all", _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }));
+            // One window per address, so somebody guessing the code waits alone and her phone can
+            // still sign in. In the image the address is what X-Forwarded-For says, trusted from any
+            // peer (the Dockerfile's ASPNETCORE_FORWARDEDHEADERS_ENABLED): per phone behind the
+            // proxy, and per claimed address for a caller reaching the port directly, which the
+            // deployment must not allow (ticket 12's checklist).
+            limiter.AddPolicy(SessionEndpoints.SignInRateLimit, context => RateLimitPartition.GetFixedWindowLimiter(
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }));
         });
 
         return services;
