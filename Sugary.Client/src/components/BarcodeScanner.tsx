@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { openFrameReader } from "../barcode";
+import { canUseCamera, isDenied, openBackCamera, release } from "../camera";
 import { coverCrop } from "../scanner";
 import { useSettings } from "../settings";
 import "./BarcodeScanner.css";
@@ -7,9 +8,7 @@ import "./BarcodeScanner.css";
 export type ScanProblem = "denied" | "unavailable";
 
 // A camera can only be opened from a page served over HTTPS (or from localhost).
-export function canScanLive(): boolean {
-  return window.isSecureContext && typeof navigator.mediaDevices?.getUserMedia === "function";
-}
+export const canScanLive = canUseCamera;
 
 const SLOW_AFTER_MS = 7000;
 const CONFIRMATION_MS = 350;
@@ -24,14 +23,6 @@ function nextPicture(video: HTMLVideoElement): Promise<void> {
     return pause(80);
   }
   return Promise.race([new Promise<void>((resolve) => video.requestVideoFrameCallback(() => resolve())), pause(250)]);
-}
-
-function release(stream: MediaStream | null) {
-  stream?.getTracks().forEach((track) => track.stop());
-}
-
-function isDenied(failure: unknown): boolean {
-  return failure instanceof DOMException && (failure.name === "NotAllowedError" || failure.name === "SecurityError");
 }
 
 // The light and the focus mode are capabilities of phone cameras that the standard types do
@@ -87,10 +78,8 @@ export function BarcodeScanner({
       const opening = openFrameReader();
       opening.catch(() => undefined);
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        });
+        // The back camera, insisted on: asked only to prefer it, some phones open the front one.
+        stream = await openBackCamera(navigator.mediaDevices, { width: 1920, height: 1080 });
       } catch (failure) {
         if (!stopped) {
           handlers.current.onProblem(isDenied(failure) ? "denied" : "unavailable");
