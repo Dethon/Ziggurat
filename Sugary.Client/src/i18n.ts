@@ -22,6 +22,7 @@ const en = {
   filmPlateSub: "Up to 20\u00a0s",
   removeClip: "Remove video",
   clip: "Video",
+  clipSpoken: "Video, {s} seconds",
   estimatesUnavailable:
     "Estimating from a photo or a description is not available yet. Add what you are eating from your foods, a package or by hand.",
 
@@ -52,7 +53,7 @@ const en = {
   answersPending: "Your answers aren't in the total yet.",
   saveWithoutAnswers: "Save without them",
   correctionPlaceholder: "Something off? For example: the rice was only half",
-  correctionToggle: "Something off? Tell it",
+  correctionToggle: "Something off? Correct it",
   sendCorrection: "Send your correction",
   correctionPending: "Your correction isn't in the total yet.",
   saveWithoutCorrection: "Save without it",
@@ -182,6 +183,7 @@ const en = {
   when: "When",
   outcomeTitle: "How was your glucose afterwards?",
   outcomeWaiting: "Waiting",
+  outcomeClear: "Clear: not noted",
   outcome_unknown: "Not noted",
   outcome_low: "Went low",
   outcome_inRange: "In range",
@@ -277,6 +279,7 @@ const es: Strings = {
   filmPlateSub: "Hasta 20\u00a0s",
   removeClip: "Quitar vídeo",
   clip: "Vídeo",
+  clipSpoken: "Vídeo de {s} segundos",
   estimatesUnavailable:
     "Todavía no se puede calcular a partir de una foto o una descripción. Añade lo que vas a comer desde tus alimentos, un producto envasado o a mano.",
 
@@ -307,7 +310,7 @@ const es: Strings = {
   answersPending: "Tus respuestas aún no están en el total.",
   saveWithoutAnswers: "Guardar sin ellas",
   correctionPlaceholder: "¿Algo no cuadra? Por ejemplo: solo comí la mitad del arroz",
-  correctionToggle: "¿Algo no cuadra? Cuéntalo",
+  correctionToggle: "¿Algo no cuadra? Corrígelo",
   sendCorrection: "Enviar tu corrección",
   correctionPending: "Tu corrección aún no está en el total.",
   saveWithoutCorrection: "Guardar sin ella",
@@ -377,7 +380,7 @@ const es: Strings = {
   foodsTitle: "Tu despensa",
   foodsEmpty: "La despensa está vacía.",
   foodsEmptyHint: "Escanea un código de barras o una etiqueta y marca «Guardar en mis alimentos», o añade uno aquí.",
-  foodSearch: "Busca en tus alimentos",
+  foodSearch: "Buscar en tus alimentos",
   foodNone: "Ningún alimento con ese nombre.",
   foodNew: "Nuevo alimento",
   foodEdit: "Editar alimento",
@@ -438,6 +441,7 @@ const es: Strings = {
   when: "Cuándo",
   outcomeTitle: "¿Cómo fue tu glucosa después?",
   outcomeWaiting: "Pendiente",
+  outcomeClear: "Quitar: sin apuntar",
   outcome_unknown: "Sin apuntar",
   outcome_low: "Bajó",
   outcome_inRange: "En rango",

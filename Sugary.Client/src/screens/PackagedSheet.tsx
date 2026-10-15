@@ -261,23 +261,31 @@ export function PackagedSheet({
             </span>
           </label>
           <div className="chips">
-            {found.food.servingGrams && (
-              <>
-                <button type="button" className="chip" onClick={() => setAmount(formatGrams(found.food.servingGrams!))}>
-                  {t("serving", { n: formatGrams(found.food.servingGrams), unit: found.food.unit })}
-                </button>
+            {[
+              ...(found.food.servingGrams
+                ? [
+                    {
+                      label: t("serving", { n: formatGrams(found.food.servingGrams), unit: found.food.unit }),
+                      value: found.food.servingGrams,
+                    },
+                    { label: t("halfServing"), value: found.food.servingGrams / 2 },
+                  ]
+                : []),
+              { label: `100\u00a0${found.food.unit}`, value: 100 },
+            ].map((choice) => {
+              const on = eaten !== null && formatGrams(eaten) === formatGrams(choice.value);
+              return (
                 <button
+                  key={choice.label}
                   type="button"
-                  className="chip"
-                  onClick={() => setAmount(formatGrams(found.food.servingGrams! / 2))}
+                  className={on ? "chip chip-on" : "chip"}
+                  aria-pressed={on}
+                  onClick={() => setAmount(formatGrams(choice.value))}
                 >
-                  {t("halfServing")}
+                  {choice.label}
                 </button>
-              </>
-            )}
-            <button type="button" className="chip" onClick={() => setAmount("100")}>
-              100&nbsp;{found.food.unit}
-            </button>
+              );
+            })}
           </div>
           <p className="packaged-result">
             {eaten !== null

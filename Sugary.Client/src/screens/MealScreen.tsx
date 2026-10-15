@@ -25,6 +25,8 @@ const MAX_PHOTOS = 4;
 interface Photo {
   blob: Blob;
   url: string;
+  // A clip's length, when known.
+  seconds?: number;
 }
 
 // What the footer says for each action, and the quiet way out it offers beside it.
@@ -153,11 +155,11 @@ export function MealScreen({
     }
   }
 
-  function addClip(file: File) {
+  function addClip(file: File, seconds?: number) {
     if (clip) {
       URL.revokeObjectURL(clip.url);
     }
-    setClip({ blob: file, url: URL.createObjectURL(file) });
+    setClip({ blob: file, url: URL.createObjectURL(file), seconds });
   }
 
   function removeClip() {
@@ -494,10 +496,23 @@ export function MealScreen({
             <ul className="photos">
               {clip && (
                 <li key={clip.url}>
-                  <video src={clip.url} muted playsInline preload="metadata" aria-label={t("clip")} />
+                  <video
+                    src={clip.url}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    aria-label={clip.seconds ? t("clipSpoken", { s: clip.seconds }) : t("clip")}
+                    onLoadedMetadata={(event) => {
+                      // From the phone's camera app the length is read from the file, where it is known.
+                      const duration = event.currentTarget.duration;
+                      if (!clip.seconds && Number.isFinite(duration) && duration > 0) {
+                        setClip((current) => current && { ...current, seconds: Math.round(duration) });
+                      }
+                    }}
+                  />
                   <span className="clip-badge" aria-hidden="true">
                     <Icon name="play" size={16} />
-                    {t("clip")}
+                    {clip.seconds ? `${clip.seconds}\u00a0s` : t("clip")}
                   </span>
                   <button type="button" className="photo-remove" aria-label={t("removeClip")} onClick={removeClip}>
                     <Icon name="close" size={16} />

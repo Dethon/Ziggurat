@@ -265,8 +265,6 @@ function Thumb({ meal }: { meal: Meal }) {
   );
 }
 
-const OUTCOMES: Outcome[] = ["low", "inRange", "high", "unknown"];
-
 function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => void; onChanged: () => void }) {
   const { t, language, rationSize } = useSettings();
   const [confirm, confirming] = useConfirm();
@@ -330,22 +328,30 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
           </div>
         </dl>
 
+        {/* Low, in range and high side by side, in that order, as on the pending cards. */}
         <fieldset className="question">
           <legend>{t("outcomeTitle")}</legend>
-          <div className="segmented outcome-segments">
-            {OUTCOMES.map((option) => (
+          <div className="outcome-buttons">
+            {RECORDED.map((option) => (
               <button
                 key={option}
                 type="button"
-                className={outcome === option ? `segment segment-on outcome-segment-${option}` : "segment"}
+                className={`outcome-button outcome-button-${option}`}
                 aria-pressed={outcome === option}
                 onClick={() => setOutcome(option)}
               >
-                {option !== "unknown" && <Icon name={OUTCOME_ICON[option]} size={18} />}
+                <Icon name={outcome === option ? "check" : OUTCOME_ICON[option]} size={20} />
                 {t(`outcome_${option}`)}
               </button>
             ))}
           </div>
+          {outcome === "unknown" ? (
+            <p className="muted small outcome-none">{t("outcome_unknown")}</p>
+          ) : (
+            <button type="button" className="button button-quiet button-small outcome-none" onClick={() => setOutcome("unknown")}>
+              {t("outcomeClear")}
+            </button>
+          )}
         </fieldset>
 
         <ul className="items compact">

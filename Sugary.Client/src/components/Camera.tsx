@@ -93,7 +93,8 @@ export function CameraButton({
   disabled?: boolean;
   children: ReactNode;
   onPhoto?: (photo: Blob) => void;
-  onClip?: (clip: File) => void;
+  // The clip, and how long it ran when the app filmed it (unknown from the phone's camera app).
+  onClip?: (clip: File, seconds?: number) => void;
 }) {
   const fallback = fallbackFor(useFallbackState(), [mode], supported);
   const [open, setOpen] = useState(false);
@@ -152,9 +153,9 @@ export function CameraButton({
             setOpen(false);
             onPhoto?.(photo);
           }}
-          onClip={(clip) => {
+          onClip={(clip, seconds) => {
             setOpen(false);
-            onClip?.(clip);
+            onClip?.(clip, seconds);
           }}
         />
       )}
@@ -224,7 +225,7 @@ export function CameraView({
 }: {
   mode: CameraMode;
   onPhoto: (photo: Blob) => void;
-  onClip: (clip: File) => void;
+  onClip: (clip: File, seconds: number) => void;
   onProblem: (problem: "denied" | "failed") => void;
   onClose: () => void;
 }) {
@@ -240,6 +241,7 @@ export function CameraView({
   const [canFlip, setCanFlip] = useState(false);
   const [phase, setPhase] = useState<Phase>("starting");
   const [elapsed, setElapsed] = useState(0);
+  const filmedFor = useRef(0);
   const [awake, setAwake] = useState(() => !document.hidden);
   // The camera must not restart because the parent re-rendered with new callbacks.
   const handlers = useRef({ onPhoto, onClip, onProblem });
@@ -345,7 +347,11 @@ export function CameraView({
     }
     const type = recordingType((candidate) => MediaRecorder.isTypeSupported(candidate));
     // A recorder that will not take the chosen type and rate is asked again with the browser's own.
-    const begin = (options?: MediaRecorderOptions) => startTake(new MediaRecorder(opened, options), { onTick: setElapsed });
+    const tick = (ms: number) => {
+      filmedFor.current = ms;
+      setElapsed(ms);
+    };
+    const begin = (options?: MediaRecorderOptions) => startTake(new MediaRecorder(opened, options), { onTick: tick });
     try {
       let started: Take;
       try {
@@ -361,7 +367,7 @@ export function CameraView({
         }
         take.current = null;
         if (clip) {
-          handlers.current.onClip(clip);
+          handlers.current.onClip(clip, Math.max(1, Math.round(filmedFor.current / 1000)));
         } else {
           setElapsed(0);
           setPhase("ready");

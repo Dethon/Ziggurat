@@ -234,6 +234,12 @@ main {
   color: var(--color-muted);
 }
 
+/* A text box grows with what is in it, its placeholder included, at any text size. */
+textarea {
+  field-sizing: content;
+  min-height: calc(2lh + 24px);
+}
+
 input,
 textarea {
   width: 100%;
@@ -497,6 +503,11 @@ h1.title-small {
   overflow-x: auto;
   scrollbar-width: none;
   scroll-padding-inline: var(--space-4);
+}
+
+/* The last chip fades at the edge, so the row reads as one that goes on. */
+.chips-scroll {
+  mask-image: linear-gradient(90deg, black calc(100% - 56px), transparent);
 }
 
 .chips-scroll::-webkit-scrollbar {
@@ -1117,6 +1128,17 @@ h1.title-small {
   transition: transform var(--dur-fast) var(--ease-out);
 }
 
+.outcome-button[aria-pressed="true"] {
+  border-width: 2px;
+  border-color: var(--color-ink);
+  background: var(--color-sponge);
+}
+
+.outcome-none {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+}
+
 .outcome-button:active {
   transform: scale(0.97);
 }
@@ -1253,32 +1275,6 @@ h1.title-small {
 
 .meal-range {
   font-size: var(--text-number);
-}
-
-.outcome-segments {
-  flex-wrap: wrap;
-}
-
-.outcome-segments .segment {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  flex: 1 1 40%;
-  min-height: 48px;
-}
-
-.outcome-segment-low,
-.outcome-segment-low .icon {
-  color: var(--color-danger);
-}
-
-.outcome-segment-inRange .icon {
-  color: var(--color-good);
-}
-
-.outcome-segment-high .icon {
-  color: var(--color-caution);
 }
 
 .meal-photo {

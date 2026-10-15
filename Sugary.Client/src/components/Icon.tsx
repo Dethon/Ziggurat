@@ -38,6 +38,7 @@ const paths = {
   eyeOff:
     "M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM4 4l16 16",
   torch: "M8 3h8l-1 5 2 3v2h-4v8h-2v-8H7v-2l2-3-1-5Z",
+  signOut: "M14 4.5h4A1.5 1.5 0 0 1 19.5 6v12a1.5 1.5 0 0 1-1.5 1.5h-4M10 8l-4 4 4 4M6 12h9",
 } as const;
 
 export type IconName = keyof typeof paths;

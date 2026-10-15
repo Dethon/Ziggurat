@@ -97,7 +97,7 @@ export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }
             }
           }}
         >
-          <Icon name="back" size={20} />
+          <Icon name="signOut" size={20} />
           <span>{t("signOut")}</span>
         </button>
       )}
