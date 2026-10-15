@@ -36,8 +36,9 @@ public class OpenFoodFactsClient(HttpClient http)
     {
         var product = JsonNode.Parse(json)?["product"];
         // A product without a carbohydrate value is as good as unknown: reporting it as 0 g
-        // would be indistinguishable from a real zero.
-        if (Number(product?["nutriments"]?["carbohydrates_100g"]) is not { } carbs)
+        // would be indistinguishable from a real zero. So is one whose value no food can have, more
+        // than its own weight or less than none, as a label read with one is refused.
+        if (Number(product?["nutriments"]?["carbohydrates_100g"]) is not (>= 0 and <= 100 and var carbs))
         {
             return null;
         }

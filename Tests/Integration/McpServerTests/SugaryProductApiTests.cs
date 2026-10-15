@@ -73,6 +73,20 @@ public sealed class SugaryProductApiTests : IDisposable
         (await client.GetAsync("/api/products/8410188012092")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
+    // A crowd-sourced value no food can have — more carbohydrate than weight, or less than none — is
+    // no value at all, as a label read with one is refused: offered, it would reach her dose.
+    [Theory]
+    [InlineData("150")]
+    [InlineData("-3")]
+    public async Task AProductWithCarbsNoFoodCanHave_IsNotFound(string carbs)
+    {
+        Knows("8410188012092", $$$"""{"product_name":"Corn Flakes","nutriments":{"carbohydrates_100g":{{{carbs}}}}}""");
+        await using var server = await StartAsync();
+        var client = await server.SignedInAsync();
+
+        (await client.GetAsync("/api/products/8410188012092")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.TooManyRequests, "busy")]
     [InlineData(HttpStatusCode.InternalServerError, "could not be reached")]

@@ -35,6 +35,8 @@ public class OpenFoodFactsClientTests
     [Theory]
     [InlineData("""{"status":0,"status_verbose":"product not found"}""")]
     [InlineData("""{"product":{"product_name":"Mystery","nutriments":{}}}""")]
+    [InlineData("""{"product":{"product_name":"Heavy","nutriments":{"carbohydrates_100g":100.5}}}""")]
+    [InlineData("""{"product":{"product_name":"Negative","nutriments":{"carbohydrates_100g":"-1"}}}""")]
     public void Parse_TreatsAProductWithoutCarbsAsUnknown(string json)
     {
         OpenFoodFactsClient.Parse(json).ShouldBeNull();
