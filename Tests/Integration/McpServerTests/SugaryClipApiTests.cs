@@ -394,11 +394,12 @@ public class SugaryClipApiTests
 
     // A probe that answers nothing it can read says the clip is not one, as a probe that fails does:
     // it is the clip being refused, not the server failing.
-    [Theory]
+    [SkippableTheory]
     [InlineData("nothing")]
     [InlineData("not json")]
     public async Task AClipWhoseProbeAnswersNothingReadable_IsRefusedAsUnreadable(string answer)
     {
+        Skip.If(FakeTools.Missing is not null, FakeTools.Missing);
         using var tools = new FakeTools();
         var ffprobe = tools.Write("ffprobe", answer == "nothing" ? "exit 0" : "echo 'not json'; exit 0");
         await using var server = await SugaryServer.StartAsync(configure: settings =>
@@ -414,9 +415,10 @@ public class SugaryClipApiTests
 
     // Reading a clip is a dozen ffmpeg runs, each a whole core for seconds; a handful of meals filmed
     // at once wait their turn rather than all running together.
-    [Fact]
+    [SkippableFact]
     public async Task ClipsAreReadAFewAtATime()
     {
+        Skip.If(FakeTools.Missing is not null, FakeTools.Missing);
         using var tools = new FakeTools();
         var ffprobe = tools.Write("ffprobe",
             $"touch \"{tools.Directory}/started-$$\"; while [ ! -e \"{tools.Directory}/release\" ]; do sleep 0.05; done; exit 1");
@@ -442,6 +444,7 @@ public class SugaryClipApiTests
     public async Task AClipIsReadWithinOneBudget_NotOnePerRun()
     {
         Skip.If(TestClips.Missing is not null, TestClips.Missing);
+        Skip.If(FakeTools.Missing is not null, FakeTools.Missing);
         using var tools = new FakeTools();
         var ffmpeg = tools.Write("ffmpeg", "sleep 1; exec ffmpeg \"$@\"");
         await using var server = await SugaryServer.StartAsync(configure: settings =>
@@ -459,6 +462,8 @@ public class SugaryClipApiTests
     // Stand-ins for ffprobe and ffmpeg, as shell scripts in a directory of their own.
     private sealed class FakeTools : IDisposable
     {
+        public static string? Missing => OperatingSystem.IsWindows() ? "The stand-in tools are shell scripts." : null;
+
         public string Directory { get; } = System.IO.Directory.CreateDirectory(
             Path.Combine(Path.GetTempPath(), "sugary-tools", Guid.NewGuid().ToString("N"))).FullName;
 
@@ -468,7 +473,11 @@ public class SugaryClipApiTests
         {
             var path = Path.Combine(Directory, name);
             File.WriteAllText(path, $"#!/bin/sh\n{body}\n");
-            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
+
             return path;
         }
 
