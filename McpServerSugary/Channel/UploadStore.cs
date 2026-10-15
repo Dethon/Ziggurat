@@ -20,6 +20,11 @@ public sealed class UploadStore(
 {
     private const string MetadataFileName = "meta.json";
 
+    // An attachment's metadata is written after its bytes, so one without it may be a write still
+    // under way (a clip of a couple of hundred megabytes takes a moment). Past this it is one the
+    // server died in the middle of, and goes without waiting out the window.
+    private static readonly TimeSpan _unfinishedGrace = TimeSpan.FromHours(1);
+
     private sealed record Metadata(string FileName, string MediaType, long SizeBytes, DateTimeOffset StoredAt);
 
     public async Task<AttachmentReference> SaveAsync(
@@ -72,11 +77,14 @@ public sealed class UploadStore(
             return 0;
         }
 
-        var cutoff = clock.GetUtcNow() - retention.AttachmentRetention;
+        var now = clock.GetUtcNow();
+        var cutoff = now - retention.AttachmentRetention;
         var conversations = Directory.EnumerateDirectories(settings.StoragePath).ToList();
         var swept = conversations
             .SelectMany(Directory.EnumerateDirectories)
-            .Where(directory => (ReadMetadata(directory)?.StoredAt ?? DateTimeOffset.MinValue) <= cutoff)
+            .Where(directory => ReadMetadata(directory) is { } metadata
+                ? metadata.StoredAt <= cutoff
+                : Directory.GetLastWriteTimeUtc(directory) <= (now - _unfinishedGrace).UtcDateTime)
             .ToList()
             .Count(TryDelete);
 
@@ -95,7 +103,8 @@ public sealed class UploadStore(
             : null;
     }
 
-    // Null is an attachment that was never completed, which the sweep treats as old enough to go.
+    // Null is an attachment that was never completed (or is still being written), which the sweep
+    // judges by its directory's own age.
     private Metadata? ReadMetadata(string directory)
     {
         var path = Path.Combine(directory, MetadataFileName);

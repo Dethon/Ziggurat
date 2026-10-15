@@ -75,15 +75,31 @@ public sealed class UploadStoreTests : IDisposable
         (await _store.ReadBytesAsync(photo.Id, CancellationToken.None)).ShouldBe([1]);
     }
 
-    // A write the server died in the middle of holds nothing a turn can name, so it does not wait.
+    // A write the server died in the middle of holds nothing a turn can name, so it does not wait
+    // out the window: an hour after it was begun, it goes.
     [Fact]
     public void TheSweep_TakesAnAttachmentThatWasNeverCompleted()
     {
-        Directory.CreateDirectory(Path.Combine(_root, "meal-1", "half-written"));
+        var directory = Directory.CreateDirectory(Path.Combine(_root, "meal-1", "half-written"));
+        directory.LastWriteTimeUtc = (_clock.GetUtcNow() - TimeSpan.FromHours(2)).UtcDateTime;
 
         _store.Sweep().ShouldBe(1);
 
         Directory.GetDirectories(_root).ShouldBeEmpty();
+    }
+
+    // An attachment with no metadata yet may be one being written right now, its bytes landing
+    // before the metadata that completes it: the sweep leaves it to finish.
+    [Fact]
+    public void TheSweep_LeavesAnAttachmentStillBeingWritten()
+    {
+        var directory = Directory.CreateDirectory(Path.Combine(_root, "meal-1", "being-written"));
+        File.WriteAllBytes(Path.Combine(directory.FullName, "meal-0.jpg"), [1, 2, 3]);
+        directory.LastWriteTimeUtc = _clock.GetUtcNow().UtcDateTime;
+
+        _store.Sweep().ShouldBe(0);
+
+        Directory.Exists(directory.FullName).ShouldBeTrue();
     }
 
     [Fact]
