@@ -128,7 +128,11 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
               )}
             </span>
             {t(label)}
-            {id === "log" && pending > 0 && <span className="visually-hidden">, {t("logBadgeSpoken", { n: pending })}</span>}
+            {id === "log" && pending > 0 && (
+              <span className="visually-hidden">
+                , {pending === 1 ? t("logBadgeSpokenOne") : t("logBadgeSpoken", { n: pending })}
+              </span>
+            )}
           </button>
         ))}
       </nav>

@@ -5,16 +5,10 @@ import { useSettings } from "../settings";
 import type { DraftItem } from "../types";
 import { Icon } from "./Icon";
 import { ItemBadge } from "./ItemRow";
+import { ShareChips } from "./ShareChips";
 import { Sheet } from "./Sheet";
 
 const GRAM_STEP = 10;
-const SHARES = [
-  { share: 0.5, label: "½" },
-  { share: 0.75, label: "¾" },
-  { share: 1, label: "1" },
-  { share: 1.5, label: "1½" },
-  { share: 2, label: "2" },
-];
 
 // One food's amount, changed with the thumb: a big stepper, a few shares of the amount it opened
 // with, or its carbs typed straight in. Every change applies at once; Done only closes.
@@ -79,23 +73,13 @@ export function PortionSheet({
               onCommit={(grams) => onChange(withGrams(item, grams))}
             />
             {opened.current !== null && opened.current > 0 && (
-              <div className="chips shares" role="group" aria-label={t("portionAmount")}>
-                {SHARES.map(({ share, label }) => {
-                  const grams = Math.round(opened.current! * share);
-                  const on = item.grams !== null && Math.round(item.grams) === grams;
-                  return (
-                    <button
-                      key={share}
-                      type="button"
-                      className={on ? "chip chip-on" : "chip"}
-                      aria-pressed={on}
-                      onClick={() => onChange(withGrams(item, grams))}
-                    >
-                      <span className="share">×{label}</span> · {grams}&nbsp;{unit}
-                    </button>
-                  );
-                })}
-              </div>
+              <ShareChips
+                base={opened.current}
+                unit={unit}
+                current={item.grams}
+                label={t("portionAmount")}
+                onPick={(grams) => onChange(withGrams(item, grams))}
+              />
             )}
             <p className="muted small">{t("per100", { n: formatGrams(item.carbsPer100g ?? 0), unit })}</p>
           </>

@@ -4,6 +4,7 @@ import { formatGrams, fromFood, parseAmount } from "../carbs";
 import { useConfirm } from "../components/Confirm";
 import { Icon, type IconName } from "../components/Icon";
 import { Jar } from "../components/Illustrations";
+import { ShareChips } from "../components/ShareChips";
 import { Sheet } from "../components/Sheet";
 import { errorMessage } from "../errors";
 import { search } from "../foods";
@@ -201,30 +202,22 @@ export function AmountSheet({
       >
         <p className="per100">{describe(food, t, language)}</p>
         <label className="field">
-          <span className="field-label">{t(byWeight ? "amountEaten" : "foodHowMany")}</span>
+          <span className="field-label">
+            {t(!byWeight ? "foodHowMany" : food.unit === "ml" ? "amountDrunk" : "amountEaten")}
+          </span>
           <span className="amount-input">
             <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
             {byWeight && <span className="amount-unit">{food.unit}</span>}
           </span>
         </label>
         {usual !== null && (
-          <div className="chips">
-            {[
-              { label: t("foodHalf"), value: usual / 2 },
-              { label: byWeight ? t("foodUsualChip", { n: formatGrams(usual), unit: food.unit }) : "1", value: usual },
-              { label: t("foodDouble"), value: usual * 2 },
-            ].map((choice) => (
-              <button
-                key={choice.label}
-                type="button"
-                className={eaten === choice.value ? "chip chip-on" : "chip"}
-                aria-pressed={eaten === choice.value}
-                onClick={() => setAmount(String(choice.value))}
-              >
-                {choice.label}
-              </button>
-            ))}
-          </div>
+          <ShareChips
+            base={usual}
+            unit={byWeight ? food.unit : undefined}
+            current={eaten}
+            label={t(byWeight ? "amountEaten" : "foodHowMany")}
+            onPick={(value) => setAmount(String(value))}
+          />
         )}
         <p className="packaged-result" aria-live="polite">
           {carbs !== null ? t("carbsFromAmount", { carbs: formatGrams(carbs) }) : " "}

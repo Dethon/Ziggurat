@@ -5,6 +5,7 @@ import { formatGrams, fromPackaged, parseAmount } from "../carbs";
 import { BarcodeScanner, canScanLive, type ScanProblem } from "../components/BarcodeScanner";
 import { CameraButton, CameraFallbackNote } from "../components/Camera";
 import { Icon } from "../components/Icon";
+import { ShareChips } from "../components/ShareChips";
 import { Sheet } from "../components/Sheet";
 import { errorMessage, labelFailureMessage, type Asking } from "../errors";
 import { keep } from "../foods";
@@ -254,39 +255,21 @@ export function PackagedSheet({
             </p>
           )}
           <label className="field">
-            <span className="field-label">{t("amountEaten")}</span>
+            <span className="field-label">{t(found.food.unit === "ml" ? "amountDrunk" : "amountEaten")}</span>
             <span className="amount-input">
               <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
               <span className="amount-unit">{found.food.unit}</span>
             </span>
           </label>
-          <div className="chips">
-            {[
-              ...(found.food.servingGrams
-                ? [
-                    {
-                      label: t("serving", { n: formatGrams(found.food.servingGrams), unit: found.food.unit }),
-                      value: found.food.servingGrams,
-                    },
-                    { label: t("halfServing"), value: found.food.servingGrams / 2 },
-                  ]
-                : []),
-              { label: `100\u00a0${found.food.unit}`, value: 100 },
-            ].map((choice) => {
-              const on = eaten !== null && formatGrams(eaten) === formatGrams(choice.value);
-              return (
-                <button
-                  key={choice.label}
-                  type="button"
-                  className={on ? "chip chip-on" : "chip"}
-                  aria-pressed={on}
-                  onClick={() => setAmount(formatGrams(choice.value))}
-                >
-                  {choice.label}
-                </button>
-              );
-            })}
-          </div>
+          {found.food.servingGrams && (
+            <ShareChips
+              base={found.food.servingGrams}
+              unit={found.food.unit}
+              current={eaten}
+              label={t("amountEaten")}
+              onPick={(value) => setAmount(String(value))}
+            />
+          )}
           <p className="packaged-result">
             {eaten !== null
               ? t("carbsFromAmount", { carbs: formatGrams((eaten * found.food.carbsPer100g) / 100) })

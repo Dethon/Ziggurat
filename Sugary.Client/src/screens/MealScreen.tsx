@@ -378,7 +378,7 @@ export function MealScreen({
             <section className="card item-group counted" aria-labelledby="counted-title">
               <div>
                 <h2 id="counted-title">{t("countedTitle")}</h2>
-                {estimatedItems.length > 0 && <p className="muted small">{t("countedHint")}</p>}
+                <p className="muted small">{t("countedHint")}</p>
               </div>
               <ul className="items">
                 {countedItems.map((item) => (
