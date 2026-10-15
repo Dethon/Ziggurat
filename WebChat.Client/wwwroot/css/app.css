@@ -1514,6 +1514,14 @@ h1, h2, h3 {
     object-fit: cover;
 }
 
+.attachment-clip {
+    display: block;
+    max-width: min(320px, 100%);
+    max-height: 320px;
+    border-radius: 10px;
+    background-color: #000;
+}
+
 .attachment-chip {
     display: inline-flex;
     align-items: center;
