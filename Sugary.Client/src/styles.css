@@ -693,10 +693,21 @@ h1.title-small {
   color: var(--color-primary-strong);
 }
 
+.range-axis {
+  margin: var(--space-2) 0 var(--space-1);
+}
+
+.range-ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: var(--text-label);
+  color: var(--color-muted);
+}
+
 .range-bar {
   position: relative;
   height: 8px;
-  margin: var(--space-2) 0 var(--space-1);
   border-radius: var(--radius-pill);
   background: var(--color-sponge);
 }

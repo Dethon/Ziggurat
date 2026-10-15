@@ -6,6 +6,12 @@ import { Icon } from "./Icon";
 
 // The meal's carbs, range first: the range is what she doses from, the best guess sits under it,
 // and the reminder that this is an estimate stays right beside the number it qualifies.
+export const AXIS_MIN = 150;
+
+export function axisEnd(high: number): number {
+  return Math.max(AXIS_MIN, Math.ceil(high / 50) * 50);
+}
+
 export function TotalCard({
   total,
   stale = false,
@@ -23,8 +29,9 @@ export function TotalCard({
   const { t, rationSize, language } = useSettings();
   const ranged = isRange(total);
   const [low, best, high] = [total.low, total.best, total.high].map(formatGrams);
-  // The bar's scale runs a little past the high end so the range never touches the edge.
-  const scale = Math.max(total.high * 1.2, 1);
+  // A fixed axis, 0 to 150 g (further, in steps of 50, for a bigger meal), so an answer that narrows
+  // the range is seen narrowing rather than redrawn to fill the bar.
+  const scale = axisEnd(total.high);
   const percent = (grams: number) => `${(grams / scale) * 100}%`;
 
   return (
@@ -46,9 +53,15 @@ export function TotalCard({
         {ranged ? t("totalBest", { best }) : t("exactTotal")}
       </p>
       {ranged && (
-        <div className="range-bar" aria-hidden="true">
-          <span className="range-fill" style={{ left: percent(total.low), width: percent(total.high - total.low) }} />
-          <span className="range-mark" style={{ left: percent(total.best) }} />
+        <div className="range-axis" aria-hidden="true">
+          <div className="range-bar">
+            <span className="range-fill" style={{ left: percent(total.low), width: percent(total.high - total.low) }} />
+            <span className="range-mark" style={{ left: percent(total.best) }} />
+          </div>
+          <span className="range-ends">
+            <span>0</span>
+            <span>{scale}&nbsp;g</span>
+          </span>
         </div>
       )}
       <p className="total-rations">{rationText(total, rationSize, language, t)}</p>
