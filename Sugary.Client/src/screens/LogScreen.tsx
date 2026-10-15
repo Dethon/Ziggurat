@@ -6,7 +6,7 @@ import { Icon, type IconName } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, rationCount, rationText } from "../format";
-import { matches, pendingOutcomes } from "../log";
+import { matches, outcomeState, pendingOutcomes } from "../log";
 import { bindUnits, sentence } from "../meal";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
@@ -34,8 +34,17 @@ const asSaved = (meal: Meal, outcome: Outcome) => ({
   items: meal.items,
 });
 
-export function OutcomeBadge({ outcome }: { outcome: Outcome }) {
+export function OutcomeBadge({ meal }: { meal: Meal }) {
   const { t } = useSettings();
+  const { outcome } = meal;
+  const state = outcomeState(meal);
+  if (state === "early") {
+    return null;
+  }
+  if (state === "waiting") {
+    // Asked for in its card at the top; here it only says so.
+    return <span className="outcome outcome-unknown">{t("outcomeWaiting")}</span>;
+  }
   return (
     <span className={`outcome outcome-${outcome}`}>
       {outcome !== "unknown" && <Icon name={OUTCOME_ICON[outcome]} size={16} />}
@@ -210,7 +219,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
                       <span className="item-name">{names(meal)}</span>
                       <span className="item-meta">
                         {formatTime(meal.eatenAt, language)}
-                        <OutcomeBadge outcome={meal.outcome} />
+                        <OutcomeBadge meal={meal} />
                       </span>
                     </span>
                     <span className="item-carbs">
