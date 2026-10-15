@@ -612,7 +612,8 @@ export function MealScreen({
       {!draft.estimated && usuals(foods).length > 0 && (
         <section className="usuals" aria-labelledby="usuals-title">
           <h2 id="usuals-title">{t("usualsTitle")}</h2>
-          <div className="chips chips-scroll">
+          {/* A few fit as they are; more run in one row that scrolls sideways. */}
+          <div className={usuals(foods).length > 4 ? "chips chips-scroll" : "chips"}>
             {usuals(foods).map((food) => (
               <button key={food.id} type="button" className="chip chip-food" onClick={() => setUsual(food)}>
                 <Icon name="plus" size={18} />

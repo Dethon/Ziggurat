@@ -1171,10 +1171,24 @@ h1.title-small {
   transition: transform var(--dur-fast) var(--ease-out);
 }
 
+/* Picked, an outcome keeps its own arrow or check and is filled with its colour's tint. */
 .outcome-button[aria-pressed="true"] {
-  border-width: 2px;
-  border-color: var(--color-ink);
-  background: var(--color-sponge);
+  border-width: 2.5px;
+}
+
+.outcome-button-low[aria-pressed="true"] {
+  border-color: var(--color-danger);
+  background: var(--color-danger-soft);
+}
+
+.outcome-button-inRange[aria-pressed="true"] {
+  border-color: var(--color-good);
+  background: var(--color-counted);
+}
+
+.outcome-button-high[aria-pressed="true"] {
+  border-color: var(--color-caution);
+  background: var(--color-caution-soft);
 }
 
 .outcome-none {

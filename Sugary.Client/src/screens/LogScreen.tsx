@@ -346,7 +346,7 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
                 aria-pressed={outcome === option}
                 onClick={() => setOutcome(option)}
               >
-                <Icon name={outcome === option ? "check" : OUTCOME_ICON[option]} size={20} />
+                <Icon name={OUTCOME_ICON[option]} size={20} />
                 {t(`outcome_${option}`)}
               </button>
             ))}
