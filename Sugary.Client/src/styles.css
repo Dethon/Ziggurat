@@ -234,22 +234,25 @@ main {
   color: var(--color-muted);
 }
 
-/* A text box grows with what is in it, its placeholder included, at any text size. */
-textarea {
-  field-sizing: content;
-  resize: none;
-  min-height: calc(2lh + 24px);
-}
-
 input,
 textarea {
   width: 100%;
-  min-height: 48px;
   padding: 11px 14px;
   border: 1.5px solid var(--color-field);
   border-radius: var(--radius-s);
   background: var(--color-surface);
-  resize: vertical;
+}
+
+input {
+  min-height: 48px;
+}
+
+/* A text box grows with what is in it, its placeholder included, at any text size, so it needs no
+   grip to be pulled taller. */
+textarea {
+  field-sizing: content;
+  resize: none;
+  min-height: calc(2lh + 24px);
 }
 
 input:focus-visible,
