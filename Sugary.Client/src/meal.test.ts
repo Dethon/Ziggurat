@@ -93,6 +93,13 @@ describe("bindUnits", () => {
     expect(bindUnits("A standard square, about 4 cm (250 g)")).toBe("A standard square, about 4\u00a0cm (250\u00a0g)");
     expect(bindUnits("2 slices")).toBe("2 slices");
   });
+
+  it("makes a range one unbreakable piece with an en dash", () => {
+    expect(bindUnits("Pan estándar de hamburguesa (unos 60-70 g)")).toBe("Pan estándar de hamburguesa (unos 60\u2060–\u206070\u00a0g)");
+    expect(bindUnits("1 - 2 cucharadas")).toBe("1\u2060–\u20602 cucharadas");
+    expect(bindUnits("90–110 g")).toBe("90\u2060–\u2060110\u00a0g");
+    expect(bindUnits("0,5-1,5 tazas")).toBe("0,5\u2060–\u20601,5 tazas");
+  });
 });
 
 describe("sentence", () => {

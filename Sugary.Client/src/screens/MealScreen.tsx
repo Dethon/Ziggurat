@@ -353,7 +353,7 @@ export function MealScreen({
               </ul>
               {draft.notes.map((note) => (
                 <p key={note} className="notice">
-                  <Icon name="info" size={18} /> <span>{note}</span>
+                  <Icon name="info" size={18} /> <span>{bindUnits(note)}</span>
                 </p>
               ))}
             </section>
@@ -381,7 +381,7 @@ export function MealScreen({
               </div>
               {questions.map((question) => (
                 <fieldset key={question.text} className="question">
-                  <legend>{question.text}</legend>
+                  <legend>{bindUnits(question.text)}</legend>
                   <div className="chips">
                     {question.options.map((option) => (
                       <button
@@ -414,7 +414,7 @@ export function MealScreen({
                     <li key={text} className="answer">
                       <div className="answer-row">
                         <span className="item-text">
-                          <span className="item-meta">{text}</span>
+                          <span className="item-meta">{bindUnits(text)}</span>
                           <span className="answer-given">{bindUnits(answer)}</span>
                         </span>
                         {canChange && changing !== text && (

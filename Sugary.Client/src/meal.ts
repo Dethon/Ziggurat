@@ -52,9 +52,12 @@ export function grouped(items: readonly DraftItem[]): { estimated: DraftItem[]; 
   };
 }
 
-// The model writes "about 4 cm (250 g)"; shown, a number never parts from its unit.
+// The model writes "about 4 cm (250 g)" or "unos 60-70 g"; shown, a number never parts from its
+// unit, and a range is one unit with an en dash, joined so a line never breaks inside it.
 export function bindUnits(text: string): string {
-  return text.replace(/(\d) (g|ml|cm|kg|l)\b/g, "$1\u00a0$2");
+  return text
+    .replace(/(\d+(?:[.,]\d+)?)\s?[-–]\s?(\d+(?:[.,]\d+)?)/g, "$1\u2060–\u2060$2")
+    .replace(/(\d) (g|ml|cm|kg|l)\b/g, "$1\u00a0$2");
 }
 
 // Names arrive in the model's lower case; shown, they start with a capital.

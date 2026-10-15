@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { formatGrams, parseAmount, withCarbs, withGrams } from "../carbs";
-import { sentence } from "../meal";
+import { bindUnits, sentence } from "../meal";
 import { useSettings } from "../settings";
 import type { DraftItem } from "../types";
 import { Icon } from "./Icon";
@@ -55,7 +55,7 @@ export function PortionSheet({
         <ItemBadge item={item} />
         {item.note && (
           <p className="notice">
-            <Icon name="info" size={18} /> <span>{item.note}</span>
+            <Icon name="info" size={18} /> <span>{bindUnits(item.note)}</span>
           </p>
         )}
         {byWeight && (

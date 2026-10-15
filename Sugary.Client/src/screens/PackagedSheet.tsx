@@ -9,6 +9,7 @@ import { Sheet } from "../components/Sheet";
 import { errorMessage, labelFailureMessage, type Asking } from "../errors";
 import { keep } from "../foods";
 import { forUpload } from "../images";
+import { bindUnits } from "../meal";
 import { useSettings } from "../settings";
 import type { DraftItem, ItemSource, PackagedFood } from "../types";
 
@@ -255,7 +256,7 @@ export function PackagedSheet({
           </div>
           {found.food.note && (
             <p className="notice">
-              <Icon name="info" size={18} /> <span>{found.food.note}</span>
+              <Icon name="info" size={18} /> <span>{bindUnits(found.food.note)}</span>
             </p>
           )}
           <label className="field">
