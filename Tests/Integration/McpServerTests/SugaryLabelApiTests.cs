@@ -164,7 +164,8 @@ public class SugaryLabelApiTests
 
         var response = await answer;
         response.StatusCode.ShouldBe(HttpStatusCode.BadGateway, what);
-        (await DetailAsync(response)).ShouldContain("could not be read", Case.Insensitive, what);
+        // No English for her Spanish screen: the app words it, the reason goes to the log.
+        (await DetailAsync(response)).ShouldBeNullOrEmpty(what);
     }
 
     // The agent's error is the exception it caught, in English and often carrying the provider's

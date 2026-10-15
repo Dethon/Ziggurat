@@ -30,7 +30,7 @@ public static class EstimateEndpoints
     private static async Task<IResult> EstimateAsync(
         HttpRequest request, SugaryChannel channel, UploadStore uploads, OpenEstimates estimates,
         IAgentCatalog catalog, SugarySettings settings, ClipProcessor clips, ILogger<ClipProcessor> logger,
-        CancellationToken ct)
+        ILoggerFactory loggers, CancellationToken ct)
     {
         if (!request.HasFormContentType)
         {
@@ -52,7 +52,7 @@ public static class EstimateEndpoints
 
         if (Field("conversationId") is { Length: > 0 } conversation)
         {
-            return await FollowUpAsync(conversation, photos, filmed, Field, channel, estimates, ct);
+            return await FollowUpAsync(conversation, photos, filmed, Field, channel, estimates, Log(loggers), ct);
         }
 
         var description = Field("description");
@@ -106,7 +106,7 @@ public static class EstimateEndpoints
             Filmed: clip is not null));
         return Answer(
             await channel.AskAsync(opened, turn, MealEstimateSchema.Format, attachments, patch: null, review, ct),
-            opened);
+            opened, Log(loggers));
     }
 
     // Her answers continue the conversation the first estimate opened, whose first message the agent
@@ -114,7 +114,8 @@ public static class EstimateEndpoints
     // so they are neither stored nor sent again.
     private static async Task<IResult> FollowUpAsync(
         string conversation, IReadOnlyList<IFormFile> photos, IReadOnlyList<IFormFile> clips,
-        Func<string, string?> field, SugaryChannel channel, OpenEstimates estimates, CancellationToken ct)
+        Func<string, string?> field, SugaryChannel channel, OpenEstimates estimates, ILogger log,
+        CancellationToken ct)
     {
         // Refused before the conversation is asked for, since continuing it starts its window again.
         if (photos.Count > 0 || clips.Count > 0)
@@ -133,16 +134,18 @@ public static class EstimateEndpoints
         var turn = MealTurn.FollowUp(new MealFollowUp(field("clarifications"), field("counted"), field("language")));
         return Answer(
             await channel.AskAsync(conversation, turn, MealEstimateSchema.Format, [], patch: null, review, ct),
-            conversation);
+            conversation, log);
     }
 
     // Every way of not getting an estimate is said, and none of them is shown as one. A 503 would
     // read in the app as "the model is not set up", so a missing agent is a bad gateway. The agent's
     // own error is logged by the channel and answered with no detail, which the app says in her
     // language as something that went wrong.
-    private static IResult Answer(TurnReply reply, string conversation) => reply switch
+    private static ILogger Log(ILoggerFactory loggers) => loggers.CreateLogger("McpServerSugary.App.Estimates");
+
+    private static IResult Answer(TurnReply reply, string conversation, ILogger log) => reply switch
     {
-        TurnReply.Answered answered => Read(answered.Text, conversation),
+        TurnReply.Answered answered => Read(answered.Text, conversation, log),
         TurnReply.Failed => Problem(StatusCodes.Status502BadGateway, ""),
         TurnReply.Unanswered => Problem(StatusCodes.Status502BadGateway, "The model returned no answer."),
         TurnReply.NotListening => Problem(StatusCodes.Status502BadGateway,
@@ -174,7 +177,9 @@ public static class EstimateEndpoints
         return new ReviewCopy { Title = $"Meal: {words}" };
     }
 
-    private static IResult Read(string reply, string conversation)
+    // Why the answer could not be read is for the log; the app says it in her language, so the
+    // problem carries no English sentence for it to show.
+    private static IResult Read(string reply, string conversation, ILogger log)
     {
         try
         {
@@ -182,7 +187,8 @@ public static class EstimateEndpoints
         }
         catch (UnreadableEstimateException e)
         {
-            return Problem(StatusCodes.Status502BadGateway, e.Message);
+            log.LogWarning(e, "The estimate for {Conversation} could not be read", conversation);
+            return Problem(StatusCodes.Status502BadGateway, "");
         }
     }
 

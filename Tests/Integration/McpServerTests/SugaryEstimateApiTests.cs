@@ -142,7 +142,8 @@ public class SugaryEstimateApiTests
 
         var response = await answer;
         response.StatusCode.ShouldBe(HttpStatusCode.BadGateway, what);
-        (await DetailAsync(response)).ShouldContain("could not be read");
+        // No English for her Spanish screen: the app words it, the reason goes to the log.
+        (await DetailAsync(response)).ShouldBeNullOrEmpty(what);
     }
 
     [Fact]

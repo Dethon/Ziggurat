@@ -100,6 +100,7 @@ const en = {
   lookUp: "Look up",
   reading: "Reading…",
   productNotFound: "That product isn't in the database. Try a photo of its nutrition table instead.",
+  labelNoAnswer: "The label reading didn't come back. Try again, or add it by hand.",
   labelUnreadable: "I couldn't read that label.",
   name: "Name",
   amountEaten: "How much are you eating?",
@@ -207,6 +208,7 @@ const en = {
 
   errorOffline: "No connection. Check your signal and try again.",
   errorNotConfigured: "The AI model isn't set up on the server yet.",
+  errorUnreadable: "The estimate didn't come back. Try again, or count it by hand.",
   errorTimeout: "The estimate took too long. Try again, or count this meal by hand.",
   errorGeneric: "Something went wrong. Try again.",
   tryAgain: "Try again",
@@ -347,6 +349,7 @@ const es: Strings = {
   lookUp: "Buscar",
   reading: "Leyendo…",
   productNotFound: "Ese producto no está en la base de datos. Prueba con una foto de su tabla nutricional.",
+  labelNoAnswer: "No ha llegado la lectura de la etiqueta. Inténtalo de nuevo o añádelo a mano.",
   labelUnreadable: "No he podido leer esa etiqueta.",
   name: "Nombre",
   amountEaten: "¿Cuánto vas a comer?",
@@ -454,6 +457,7 @@ const es: Strings = {
 
   errorOffline: "Sin conexión. Comprueba la cobertura e inténtalo de nuevo.",
   errorNotConfigured: "El modelo de IA aún no está configurado en el servidor.",
+  errorUnreadable: "La estimación no ha llegado. Inténtalo de nuevo o cuenta esta comida a mano.",
   errorTimeout: "La estimación ha tardado demasiado. Inténtalo de nuevo o cuenta esta comida a mano.",
   errorGeneric: "Algo ha fallado. Inténtalo de nuevo.",
   tryAgain: "Reintentar",

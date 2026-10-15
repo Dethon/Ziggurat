@@ -9,7 +9,10 @@ export function errorMessage(error: unknown, t: Translate): string {
     if (error.status === 503) {
       return t("errorNotConfigured");
     }
-    // The server words its timeout in English; she reads it in her language.
+    // The server words these in English, or not at all; she reads them in her language.
+    if (error.status === 502) {
+      return t("errorUnreadable");
+    }
     if (error.status === 504) {
       return t("errorTimeout");
     }
@@ -26,6 +29,9 @@ export function errorMessage(error: unknown, t: Translate): string {
 export function labelFailureMessage(error: unknown, t: Translate): string {
   if (error instanceof ApiError && error.status === 422) {
     return error.message || t("labelUnreadable");
+  }
+  if (error instanceof ApiError && error.status === 502) {
+    return t("labelNoAnswer");
   }
   return errorMessage(error, t);
 }

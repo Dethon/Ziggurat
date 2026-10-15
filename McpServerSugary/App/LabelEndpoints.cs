@@ -8,6 +8,7 @@ using McpServerSugary.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Logging;
 
 namespace McpServerSugary.App;
 
@@ -25,7 +26,7 @@ public static class LabelEndpoints
     // Read rather than bound, as the estimate's form is, so the cookie gate answers first.
     private static async Task<IResult> ReadLabelAsync(
         HttpRequest request, SugaryChannel channel, UploadStore uploads, IAgentCatalog catalog,
-        SugarySettings settings, CancellationToken ct)
+        SugarySettings settings, ILoggerFactory loggers, CancellationToken ct)
     {
         if (!request.HasFormContentType)
         {
@@ -61,7 +62,7 @@ public static class LabelEndpoints
             conversation, LabelTurn.Text(form["language"].ToString()), NutritionLabelSchema.Format, attachments,
             new AgentConfigPatch { Model = settings.LabelModel },
             new ReviewCopy { Title = ReviewTitle }, ct);
-        return Answer(reply);
+        return Answer(reply, loggers.CreateLogger("McpServerSugary.App.Labels"));
     }
 
     // Read back in WebChat as a meal is, so a misread can be traced to what the model was shown.
@@ -77,9 +78,9 @@ public static class LabelEndpoints
         && !patchable.Any(m => string.Equals(m.Id, labelModel, StringComparison.OrdinalIgnoreCase));
 
     // The agent's own error is logged by the channel and answered with no detail, as an estimate's is.
-    private static IResult Answer(TurnReply reply) => reply switch
+    private static IResult Answer(TurnReply reply, ILogger log) => reply switch
     {
-        TurnReply.Answered answered => Read(answered.Text),
+        TurnReply.Answered answered => Read(answered.Text, log),
         TurnReply.Failed => Problem(StatusCodes.Status502BadGateway, ""),
         TurnReply.Unanswered => Problem(StatusCodes.Status502BadGateway, "The model returned no answer."),
         TurnReply.NotListening => Problem(StatusCodes.Status502BadGateway,
@@ -94,7 +95,7 @@ public static class LabelEndpoints
     // in her language (an English sentence from here would reach her Spanish screen as it is; an
     // absent detail would show the problem's title instead). An answer outside the schema is a
     // failure, like an estimate's.
-    private static IResult Read(string reply)
+    private static IResult Read(string reply, ILogger log)
     {
         try
         {
@@ -109,7 +110,9 @@ public static class LabelEndpoints
         }
         catch (UnreadableEstimateException e)
         {
-            return Problem(StatusCodes.Status502BadGateway, e.Message);
+            // Logged, and not sent: the app words it in her language.
+            log.LogWarning(e, "A label's answer could not be read");
+            return Problem(StatusCodes.Status502BadGateway, "");
         }
     }
 
