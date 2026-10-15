@@ -167,8 +167,10 @@ public class SugaryLabelApiTests
         (await DetailAsync(response)).ShouldContain("could not be read", Case.Insensitive, what);
     }
 
+    // The agent's error is the exception it caught, in English and often carrying the provider's
+    // own body: logged here, and the app answered with no detail so it says so in her language.
     [Fact]
-    public async Task AnErrorOnTheLabelTurn_IsTheAppsError()
+    public async Task AnErrorOnTheLabelTurn_IsTheAppsError_WithoutTheAgentsWords()
     {
         await using var server = await SugaryServer.StartAsync();
         var agent = await server.AgentAsync();
@@ -176,12 +178,15 @@ public class SugaryLabelApiTests
 
         var answer = app.PostAsync("/api/labels", Form(Photo(1, 10)));
         var turn = await NextTurnAsync(agent);
-        await SendAsync(agent, turn, ReplyContentType.Error, "Insufficient credits");
+        await SendAsync(agent, turn, ReplyContentType.Error,
+            "An error occurred: Response status code does not indicate success: 402 (Payment Required). " +
+            "{\"error\":{\"message\":\"Insufficient credits\",\"code\":402}}");
         await SendAsync(agent, turn, ReplyContentType.StreamComplete, "", isComplete: true);
 
         var response = await answer;
         response.StatusCode.ShouldBe(HttpStatusCode.BadGateway);
-        (await DetailAsync(response)).ShouldBe("Insufficient credits");
+        (await DetailAsync(response)).ShouldBeEmpty();
+        (await response.Content.ReadAsStringAsync()).ShouldNotContain("credits");
     }
 
     [Fact]

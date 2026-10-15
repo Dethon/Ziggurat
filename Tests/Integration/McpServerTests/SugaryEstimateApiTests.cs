@@ -158,10 +158,11 @@ public class SugaryEstimateApiTests
         (await DetailAsync(response)).ShouldContain("no answer");
     }
 
-    // What failed is what she reads: an out-of-credit provider is worth knowing about, and is not
-    // worth waiting on.
+    // The agent's error is the exception it caught, in English and often carrying the provider's
+    // own body, so it goes to the server's log and never to her screen: the app is answered with no
+    // detail and says it went wrong in her language. Still at once, since it is not worth waiting on.
     [Fact]
-    public async Task AnErrorOnTheTurn_IsTheAppsError_EvenAfterPartOfAnAnswer()
+    public async Task AnErrorOnTheTurn_IsTheAppsError_EvenAfterPartOfAnAnswer_WithoutTheAgentsWords()
     {
         await using var server = await SugaryServer.StartAsync();
         var agent = await server.AgentAsync();
@@ -170,13 +171,19 @@ public class SugaryEstimateApiTests
         var answer = app.PostAsync("/api/estimates", Form("paella"));
         var turn = await NextTurnAsync(agent);
         await SendAsync(agent, turn, ReplyContentType.Text, Estimate[..60]);
-        await SendAsync(agent, turn, ReplyContentType.Error, "Insufficient credits");
+        await SendAsync(agent, turn, ReplyContentType.Error, ProviderError);
         await SendAsync(agent, turn, ReplyContentType.StreamComplete, "", isComplete: true);
 
         var response = await answer;
         response.StatusCode.ShouldBe(HttpStatusCode.BadGateway);
-        (await DetailAsync(response)).ShouldBe("Insufficient credits");
+        (await DetailAsync(response)).ShouldBeEmpty();
+        (await response.Content.ReadAsStringAsync()).ShouldNotContain("credits");
     }
+
+    // What the agent sends when its provider refuses the call: the exception's message as caught.
+    private const string ProviderError =
+        "An error occurred: Response status code does not indicate success: 402 (Payment Required). " +
+        "{\"error\":{\"message\":\"Insufficient credits\",\"code\":402}}";
 
     [Fact]
     public async Task WithNoAgentListening_TheAppIsToldAtOnce()

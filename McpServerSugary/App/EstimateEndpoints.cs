@@ -137,11 +137,13 @@ public static class EstimateEndpoints
     }
 
     // Every way of not getting an estimate is said, and none of them is shown as one. A 503 would
-    // read in the app as "the model is not set up", so a missing agent is a bad gateway.
+    // read in the app as "the model is not set up", so a missing agent is a bad gateway. The agent's
+    // own error is logged by the channel and answered with no detail, which the app says in her
+    // language as something that went wrong.
     private static IResult Answer(TurnReply reply, string conversation) => reply switch
     {
         TurnReply.Answered answered => Read(answered.Text, conversation),
-        TurnReply.Failed failed => Problem(StatusCodes.Status502BadGateway, failed.Reason),
+        TurnReply.Failed => Problem(StatusCodes.Status502BadGateway, ""),
         TurnReply.Unanswered => Problem(StatusCodes.Status502BadGateway, "The model returned no answer."),
         TurnReply.NotListening => Problem(StatusCodes.Status502BadGateway,
             "The estimating agent is not connected right now. Try again in a moment, or count this meal by hand."),

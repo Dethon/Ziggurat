@@ -1,6 +1,7 @@
 using Domain.DTOs.Channel;
 using Mcp.Hosting;
 using McpServerSugary.Settings;
+using Microsoft.Extensions.Logging;
 
 namespace McpServerSugary.Channel;
 
@@ -9,7 +10,8 @@ namespace McpServerSugary.Channel;
 // (agentDefaults), so the message names none; a patch may still move that one turn to another of the
 // agent's models, as a label's does.
 public sealed class SugaryChannel(
-    ChannelNotificationEmitter emitter, AgentTurns turns, TimeProvider clock, SugarySettings settings)
+    ChannelNotificationEmitter emitter, AgentTurns turns, TimeProvider clock, SugarySettings settings,
+    ILogger<SugaryChannel> logger)
 {
     // Who a turn from the app is from, on the dashboard's token totals and in the conversation.
     public const string Sender = "sugary-app";
@@ -40,7 +42,16 @@ public sealed class SugaryChannel(
 
         try
         {
-            return await turn.Reply.WaitAsync(TimeSpan.FromSeconds(settings.TurnTimeoutSeconds), clock, ct);
+            var reply = await turn.Reply.WaitAsync(TimeSpan.FromSeconds(settings.TurnTimeoutSeconds), clock, ct);
+            // The agent's reason is the exception it caught, often with the provider's own body, and
+            // in English: kept here for whoever looks into it, never sent on to her screen.
+            if (reply is TurnReply.Failed failed)
+            {
+                logger.LogWarning("The agent failed turn {TurnKey} of {ConversationId}: {Reason}",
+                    turn.TurnKey, conversationId, failed.Reason);
+            }
+
+            return reply;
         }
         catch (TimeoutException)
         {

@@ -76,10 +76,11 @@ public static class LabelEndpoints
         && !string.Equals(agent.DefaultModel, labelModel, StringComparison.OrdinalIgnoreCase)
         && !patchable.Any(m => string.Equals(m.Id, labelModel, StringComparison.OrdinalIgnoreCase));
 
+    // The agent's own error is logged by the channel and answered with no detail, as an estimate's is.
     private static IResult Answer(TurnReply reply) => reply switch
     {
         TurnReply.Answered answered => Read(answered.Text),
-        TurnReply.Failed failed => Problem(StatusCodes.Status502BadGateway, failed.Reason),
+        TurnReply.Failed => Problem(StatusCodes.Status502BadGateway, ""),
         TurnReply.Unanswered => Problem(StatusCodes.Status502BadGateway, "The model returned no answer."),
         TurnReply.NotListening => Problem(StatusCodes.Status502BadGateway,
             "The label reader is not connected right now. Try again in a moment, or add the food by hand."),
