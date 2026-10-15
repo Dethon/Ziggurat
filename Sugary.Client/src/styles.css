@@ -306,7 +306,9 @@ textarea:focus-visible {
 .segment-on {
   background: var(--color-surface);
   color: var(--color-ink);
-  box-shadow: var(--shadow-1), var(--edge);
+  box-shadow:
+    var(--shadow-1),
+    0 0 0 1.5px var(--color-field);
 }
 
 /* Notices */
@@ -996,6 +998,89 @@ h1.title-small {
 
 /* Log */
 
+.section-title {
+  font-family: var(--font-display);
+  font-variation-settings: "SOFT" 100;
+  font-weight: 600;
+  font-size: var(--text-sheet-title);
+  line-height: 1.2;
+  color: var(--color-ink);
+}
+
+.search {
+  position: relative;
+  display: block;
+}
+
+.search .icon {
+  position: absolute;
+  top: 50%;
+  left: 14px;
+  transform: translateY(-50%);
+  color: var(--color-muted);
+  pointer-events: none;
+}
+
+.search input {
+  padding-left: 44px;
+}
+
+.pending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.pending-card {
+  gap: var(--space-2);
+  padding-top: var(--space-1);
+  padding-bottom: var(--space-4);
+  box-shadow: inset 4px 0 0 var(--color-primary), var(--shadow-1), var(--edge);
+}
+
+.pending-card .meal-row {
+  min-height: 56px;
+}
+
+.outcome-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.outcome-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  padding: var(--space-1);
+  border: 1.5px solid var(--color-field);
+  border-radius: var(--radius-m);
+  background: var(--color-surface);
+  font-size: var(--text-meta);
+  font-weight: 700;
+  line-height: 1.2;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.outcome-button:active {
+  transform: scale(0.97);
+}
+
+.outcome-button-low .icon {
+  color: var(--color-danger);
+}
+
+.outcome-button-inRange .icon {
+  color: var(--color-good);
+}
+
+.outcome-button-high .icon {
+  color: var(--color-caution);
+}
+
 .day {
   display: flex;
   flex-direction: column;
@@ -1006,7 +1091,12 @@ h1.title-small {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: var(--space-3);
   padding: 0 4px;
+}
+
+.day-header h2 {
+  color: var(--color-ink);
 }
 
 .day-header h2::first-letter {
@@ -1014,8 +1104,10 @@ h1.title-small {
 }
 
 .day-total {
+  font-size: var(--text-meta);
   font-weight: 700;
   color: var(--color-muted);
+  white-space: nowrap;
 }
 
 .meals {
@@ -1045,11 +1137,17 @@ h1.title-small {
   overflow: hidden;
 }
 
+.meal-row .item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-2);
+}
+
 .outcome {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  margin-left: var(--space-2);
+  gap: 3px;
   font-weight: 700;
 }
 
@@ -1070,16 +1168,63 @@ h1.title-small {
   font-weight: 400;
 }
 
+.meal-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.meal-total {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: var(--space-3);
+  font-size: 2.25rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.meal-total .total-unit {
+  margin-left: 4px;
+}
+
+.meal-range {
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.outcome-segments {
+  flex-wrap: wrap;
+}
+
+.outcome-segments .segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  flex: 1 1 40%;
+  min-height: 48px;
+}
+
+.outcome-segment-low,
+.outcome-segment-low .icon {
+  color: var(--color-danger);
+}
+
+.outcome-segment-inRange .icon {
+  color: var(--color-good);
+}
+
+.outcome-segment-high .icon {
+  color: var(--color-caution);
+}
+
 .meal-photo {
   width: 100%;
   max-height: 160px;
   object-fit: cover;
   border-radius: var(--radius-m);
-}
-
-.meal-total {
-  font-size: 1.9rem;
-  font-weight: 800;
 }
 
 .empty {
@@ -1092,6 +1237,10 @@ h1.title-small {
   color: var(--color-muted);
 }
 
+.empty > .icon {
+  color: var(--color-primary);
+}
+
 .empty-title {
   font-family: var(--font-display);
   font-variation-settings: "SOFT" 100;
@@ -1099,12 +1248,6 @@ h1.title-small {
   font-size: var(--text-sheet-title);
   line-height: 1.2;
   color: var(--color-ink);
-}
-
-.empty-art {
-  width: 120px;
-  height: 96px;
-  margin-bottom: var(--space-2);
 }
 
 .empty.compact {
@@ -1350,8 +1493,8 @@ h1.title-small {
   align-items: center;
   gap: var(--space-2);
   max-width: calc(100% - 2 * var(--space-4));
-  min-height: 48px;
-  padding: 4px 6px 4px 18px;
+  min-height: 52px;
+  padding: 4px 4px 4px 18px;
   border-radius: var(--radius-pill);
   background: var(--color-ink);
   color: var(--color-bg);
@@ -1368,7 +1511,7 @@ h1.title-small {
 }
 
 .toast .button {
-  min-height: 40px;
+  min-height: var(--target);
   padding: 0 14px;
   color: var(--color-bg);
   text-decoration: underline;

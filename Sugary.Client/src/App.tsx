@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, UNAUTHORIZED_EVENT } from "./api";
 import { Icon, type IconName } from "./components/Icon";
 import type { StringKey } from "./i18n";
+import { pendingOutcomes } from "./log";
 import { FoodsScreen } from "./screens/FoodsScreen";
 import { LogScreen } from "./screens/LogScreen";
 import { MealScreen } from "./screens/MealScreen";
@@ -58,6 +59,16 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
   const { t } = useSettings();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("meal");
+  // Meals still waiting for how her glucose went, counted on the Log tab.
+  const [pending, setPending] = useState(0);
+  const refreshPending = useCallback(
+    () => api.meals(0, 50).then((meals) => setPending(pendingOutcomes(meals).length), () => {}),
+    [],
+  );
+
+  useEffect(() => {
+    void refreshPending();
+  }, [refreshPending]);
 
   return (
     <>
@@ -71,10 +82,11 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
             onSaved={() => {
               toast({ text: t("saved") });
               setTab("log");
+              void refreshPending();
             }}
           />
         </div>
-        {tab === "log" && <LogScreen />}
+        {tab === "log" && <LogScreen onChanged={() => void refreshPending()} />}
         {tab === "foods" && <FoodsScreen />}
         {tab === "settings" && <SettingsScreen onSignOut={onSignOut} />}
       </main>
@@ -93,8 +105,14 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
           >
             <span className="tab-icon">
               <Icon name={icon} size={24} />
+              {id === "log" && pending > 0 && (
+                <span className="tab-badge" aria-hidden="true">
+                  {pending}
+                </span>
+              )}
             </span>
             {t(label)}
+            {id === "log" && pending > 0 && <span className="visually-hidden">, {t("logBadgeSpoken", { n: pending })}</span>}
           </button>
         ))}
       </nav>

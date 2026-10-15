@@ -98,8 +98,9 @@
     --color-focus: #9dbcf2;
     --color-scrim: rgb(0 0 0 / 62%);
 
-    --shadow-1: none;
-    --shadow-2: none;
+    /* "none" cannot sit in a shadow list beside the edge, so no shadow is a transparent one. */
+    --shadow-1: 0 0 0 0 transparent;
+    --shadow-2: 0 0 0 0 transparent;
     /* Without shadows, raised things are told apart by a hairline edge. */
     --edge: 0 0 0 1px var(--color-line);
   }

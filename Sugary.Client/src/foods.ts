@@ -1,7 +1,7 @@
 import { api } from "./api";
 import type { Food, SaveFood } from "./types";
 
-const plain = (text: string) =>
+export const plain = (text: string) =>
   text
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")

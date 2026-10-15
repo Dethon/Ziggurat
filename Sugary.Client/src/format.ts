@@ -15,10 +15,14 @@ export function formatDay(date: Date, language: Language): string {
 }
 
 
+// "6.5 rations", "1 ration".
+export function rationCount(grams: number, size: number, language: Language, t: Translate): string {
+  return rations(grams, size) === 1 ? t("rationOne") : t("rations", { n: formatRations(grams, size, language) });
+}
+
 // "6.5 rations of 10 g (4–10)", the range left out when it rounds to one figure.
 export function rationText(total: Interval, size: number, language: Language, t: Translate): string {
-  const best = rations(total.best, size);
-  const count = best === 1 ? t("rationOne") : t("rations", { n: formatRations(total.best, size, language) });
+  const count = rationCount(total.best, size, language, t);
   const low = formatRations(total.low, size, language);
   const high = formatRations(total.high, size, language);
   return `${count} ${t("rationsOf", { size })}${low === high ? "" : ` (${low}–${high})`}`;
