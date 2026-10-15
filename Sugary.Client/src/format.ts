@@ -20,9 +20,13 @@ export function rationCount(grams: number, size: number, language: Language, t: 
   return rations(grams, size) === 1 ? t("rationOne") : t("rations", { n: formatRations(grams, size, language) });
 }
 
-// "6.5 rations of 10 g (4–10)", the range left out when it rounds to one figure.
+// "6.5 rations of 10 g (4–10)". An exact amount (no range in grams) gets no range of rations either:
+// widening its rations outward would invent one.
 export function rationText(total: Interval, size: number, language: Language, t: Translate): string {
   const count = rationCount(total.best, size, language, t);
+  if (Math.round(total.low) === Math.round(total.high)) {
+    return `${count} ${t("rationsOf", { size })}`;
+  }
   const bounds = rationBounds(total, size);
   const [low, high] = [bounds.low, bounds.high].map((n) => n.toLocaleString(locale(language), { maximumFractionDigits: 1 }));
   return `${count} ${t("rationsOf", { size })}${low === high ? "" : ` (${low}–${high})`}`;

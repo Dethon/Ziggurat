@@ -68,10 +68,13 @@ export function TotalCard({
         </div>
       )}
       <p className="total-rations">{rationText(total, rationSize, language, t)}</p>
-      <p className="total-disclaimer">
-        <Icon name="info" size={18} />
-        <span>{t("estimateDisclaimer")}</span>
-      </p>
+      {/* Beside every range; an exact total, from amounts she confirmed, is not an estimate. */}
+      {ranged && (
+        <p className="total-disclaimer">
+          <Icon name="info" size={18} />
+          <span>{t("estimateDisclaimer")}</span>
+        </p>
+      )}
       {questions > 0 && (
         <button type="button" className="link-button" onClick={onJumpToQuestions}>
           {t("questionsJump", { n: questions })}

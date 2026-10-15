@@ -49,6 +49,12 @@ describe("rationBounds", () => {
     expect(rationBounds({ low: 20, high: 50 }, 10)).toEqual({ low: 2, high: 5 });
   });
 
+  it("invents no range of rations for an exact amount", () => {
+    const en = translator("en");
+    expect(rationText({ low: 6, best: 6, high: 6 }, 10, "en", en)).toBe("0.5\u00a0rations of 10\u00a0g");
+    expect(rationText({ low: 61, best: 61, high: 61 }, 10, "en", en)).toBe("6\u00a0rations of 10\u00a0g");
+  });
+
   it("is what the rations line says", () => {
     expect(rationText({ low: 21, best: 35, high: 56 }, 10, "en", translator("en"))).toBe("3.5 rations of 10 g (2–6)");
   });
