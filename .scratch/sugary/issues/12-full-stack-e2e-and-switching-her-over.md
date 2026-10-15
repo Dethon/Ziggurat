@@ -9,7 +9,7 @@
 Spec: `.scratch/sugary/spec.md`
 
 - [x] The E2E passes on the compose stack and its wait on the model is bounded by the provider, as in the existing chat E2E.
-- [ ] The eval tier's scorecards for photo and video are no worse than the standalone figures, and are kept with the switch.
+- [x] The eval tier's scorecards for photo and video are no worse than the standalone figures, and are kept with the switch.
 - [ ] Her standalone meals and foods are imported and spot-checked in the app and in `/sugary`.
 
 ## Comments
@@ -155,3 +155,5 @@ image never reached Gemini as expected.
 ### 2026-10-15
 
 The E2E passed on the compose stack in 30 s, before the `noTools` change. The eval comparison is in ticket 08's comments: photo and video are level with the standalone figures. Box 2 stays open until the switch keeps those scorecards. Box 3 is hers to do.
+
+Box 2 ticked 2026-10-15: the user accepted pass 2 as level with the standalone figures. Photo was 12.8 g against 12.3 g, and video 8.9 g against 8.3 g, both within the standalone's run-to-run spread. Both scorecards are kept in `.scratch/sugary/scorecards/`.
