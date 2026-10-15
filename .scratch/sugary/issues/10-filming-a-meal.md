@@ -203,9 +203,15 @@ Spend: pass 1 cost $1.82 and pass 2 $0.64, account figures.
 - **Photos.** The picture on screen is drawn to a canvas at the stream's own size (asked for 4096×3072, 4:3) when the shutter is pressed. Where `ImageCapture` exists (Chrome on Android), the camera is then asked for a full photo. Its photo is used unless it fails, takes more than 4 s, or comes out the other way round from the picture on screen. Otherwise the canvas frame is used. Either goes to the same callback as a picked file: `forUpload` for meal photos, and `readBarcode` then `forUpload` for the label.
 - **Clips.** `recording.ts`: `MediaRecorder` with the first supported type of `video/mp4;codecs=avc1`, `video/mp4`, `video/webm;codecs=vp9`, `vp8`, `video/webm`. No audio is asked for, so there is no microphone prompt. Settings are 1920×1080 at 5 Mbit/s (about 12 MB for 20 s), recorded in 1 s slices. An elapsed timer shows "0:07 / 0:20", and the take stops itself at 20 000 ms. The server's half second of grace covers the last frame. The file is `meal.mp4` / `meal.webm` / `meal.mov`, with the codecs left off its type, and is sent as the `clip` part exactly as a picked file was.
 - **Scanner.** `BarcodeScanner` opens its camera with the same chain, at 1920×1080.
-- **Fallback.** Some cases fall back to today's `<input capture="environment">`, with a note under the buttons (English and Spanish): no `getUserMedia` or not a secure context, no `MediaRecorder` (filming only), or the camera refused or failing in the app. After a refusal or failure the fallback lasts until the app is reopened, and the note asks her to tap again and check the camera app is on the back camera. The scanner keeps its own error messages.
+- **Fallback** (`fallback.ts`). Some cases fall back to today's `<input capture="environment">`, with a note under the buttons (English and Spanish):
+  - no `getUserMedia`, or not a secure context: always;
+  - no `MediaRecorder`: filming only;
+  - the camera refused: until the app is reopened, since asking again would only be refused again;
+  - the camera failing in the app (held by another app, a recorder that will not start even with the browser's own settings): for that button's next tap only. Once the phone's camera app has been used or cancelled, the app's own camera is tried again, so one hiccup does not bring the front-camera problem back for the day.
 
-**Tests.** vitest has 29 new tests (74 in all):
+  The note asks her to tap again and check the camera app is on the back camera. The scanner keeps its own error messages.
+
+**Tests.** vitest has 34 new tests (79 in all):
 - the selection order and each fallback, against a fake `mediaDevices` whose labels are blank until a camera is allowed;
 - label matching in English and Spanish;
 - remembering, and forgetting a vanished or front camera;
@@ -213,7 +219,9 @@ Spend: pass 1 cost $1.82 and pass 2 $0.64, account figures.
 - the mime choice;
 - the 20 s auto-stop with fake timers;
 - the stop, cancel and empty takes;
-- file naming.
+- file naming;
+- a recorder that will not start leaving no timer;
+- which fallback lasts and which lasts one tap.
 
 `tsc` and `npm run build` are clean. No .NET code changed. `SugaryAppServingTests` serves a stand-in web root, not the build.
 
