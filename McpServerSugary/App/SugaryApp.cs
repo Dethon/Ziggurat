@@ -89,7 +89,12 @@ public static class SugaryApp
         var api = app.MapGroup("/api");
         api.MapSessionEndpoints();
 
-        var guarded = api.MapGroup("").RequireAuthorization();
+        var guarded = api.MapGroup("");
+        if (app.Services.GetRequiredService<SugaryAppSettings>().RequireAccessCode)
+        {
+            guarded.RequireAuthorization();
+        }
+
         guarded.MapMealEndpoints();
         guarded.MapFoodEndpoints();
         guarded.MapProductEndpoints();

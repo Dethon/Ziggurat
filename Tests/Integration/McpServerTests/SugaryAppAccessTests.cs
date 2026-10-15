@@ -88,6 +88,35 @@ public class SugaryAppAccessTests
         (await browser.GetAsync("/api/meals")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
+    // A deployment reached only through its VPN can switch the code off. Every route then opens with
+    // no cookie, and the session tells the app not to ask, so she never sees the sign-in screen.
+    [Theory]
+    [MemberData(nameof(ApiRoutes))]
+    public async Task WithTheCodeSwitchedOff_EveryApiRouteOpensWithoutSigningIn(string method, string path)
+    {
+        await using var server = await SugaryServer.StartAsync(
+            configure: settings => settings with { SugaryApp = new() { RequireAccessCode = false } });
+
+        var response = await server.Browser().SendAsync(new HttpRequestMessage(new HttpMethod(method), path)
+        {
+            Content = method is "POST" or "PUT" ? JsonContent.Create(new { }) : null
+        });
+
+        response.StatusCode.ShouldNotBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task WithTheCodeSwitchedOff_TheSessionSaysNoneIsNeeded()
+    {
+        await using var server = await SugaryServer.StartAsync(
+            configure: settings => settings with { SugaryApp = new() { RequireAccessCode = false } });
+
+        var session = (await server.Browser().GetFromJsonAsync<JsonNode>("/api/session"))!;
+
+        session["required"]!.GetValue<bool>().ShouldBeFalse();
+        session["authenticated"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
     // Guessing the code is slowed per address: ten tries a minute, and then that address waits.
     // Anyone else reaching the port is no reason for her phone to be locked out with it.
     [Fact]

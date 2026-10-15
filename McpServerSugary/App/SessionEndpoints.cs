@@ -11,8 +11,8 @@ namespace McpServerSugary.App;
 
 public record SignInRequest(string? Code);
 
-// Required is always true here, unlike in the standalone app, which ran open in Development: a code
-// nobody set refuses every sign-in. The field stays because the app reads it.
+// Required is true unless the deployment switched the code off (RequireAccessCode, for a server reached
+// only through a VPN). With it on, a code nobody set refuses every sign-in.
 //
 // Estimates and Labels say which of the app's model-backed actions this server can answer. Both are
 // turns of the sugary agent now; the app still reads the flags, and shows an action that is off as
@@ -26,8 +26,11 @@ public static class SessionEndpoints
     public static void MapSessionEndpoints(this IEndpointRouteBuilder api)
     {
         var session = api.MapGroup("/session").AllowAnonymous();
-        session.MapGet("/", (HttpContext http) =>
-            new SessionState(true, http.User.Identity?.IsAuthenticated is true, Estimates: true, Labels: true));
+        session.MapGet("/", (HttpContext http, SugaryAppSettings settings) => new SessionState(
+            settings.RequireAccessCode,
+            !settings.RequireAccessCode || http.User.Identity?.IsAuthenticated is true,
+            Estimates: true,
+            Labels: true));
         session.MapPost("/", SignInAsync).RequireRateLimiting(SignInRateLimit);
         session.MapDelete("/", async (HttpContext http) =>
         {

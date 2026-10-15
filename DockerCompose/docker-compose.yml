@@ -638,8 +638,11 @@ services:
       # Assistant container runs on, so a meal lines up with the glucose history /ha serves.
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
-      # Her app is served on this port too (every route but /mcp), behind the code she types once
-      # per phone, and through Caddy over HTTPS, which installing it and live scanning need.
+      # Her app is served on this port too (every route but /mcp), and through Caddy over HTTPS,
+      # which installing it and live scanning need. This deployment is reached only through the VPN,
+      # so the app's own access code is switched off; set it back to true (and SUGARYAPP__ACCESSCODE
+      # in .env) for a deployment the open network can reach. /mcp keeps the deployment secret.
+      SUGARYAPP__REQUIREACCESSCODE: "false"
       SUGARYAPP__ACCESSCODE: ${SUGARYAPP__ACCESSCODE}
     networks:
       - jackbot

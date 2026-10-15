@@ -110,4 +110,8 @@ public record SugaryAppSettings
     // The code typed once per phone to get in (SUGARYAPP__ACCESSCODE, a deployment secret). Unset
     // refuses every sign-in, as an unset shared secret refuses every call.
     public string AccessCode { get; init; } = "";
+
+    // False only where the deployment itself keeps strangers out (a VPN): every app route opens with
+    // no sign-in and the session tells the app not to ask. /mcp keeps the deployment secret either way.
+    public bool RequireAccessCode { get; init; } = true;
 }
