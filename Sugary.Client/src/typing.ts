@@ -42,6 +42,7 @@ export function useTypingMark() {
     // The page's height before the keyboard: followed while no text field has focus, so a turn of
     // the phone (or any other resize) is never taken for a keyboard.
     let before = window.innerHeight;
+    let shownInset = 0;
     const update = () => {
       const focused = document.activeElement;
       if (!bringsKeyboard(focused)) {
@@ -51,6 +52,14 @@ export function useTypingMark() {
       const up = keyboardUp(focused, { height: window.innerHeight, before, inset });
       root.toggleAttribute("data-typing", up);
       root.style.setProperty("--keyboard", `${up ? inset : 0}px`);
+      // When the keyboard comes up or changes height, the field she is typing in is brought above
+      // it and above the pinned action (the page's scroll-padding counts both), in a sheet as on a
+      // screen.
+      const nextInset = up ? inset : 0;
+      if (up && nextInset !== shownInset && focused instanceof HTMLElement) {
+        requestAnimationFrame(() => focused.scrollIntoView({ block: "nearest" }));
+      }
+      shownInset = nextInset;
     };
     // Focus moves in two steps (out, then in); reading the result once both are done avoids a flicker.
     const later = () => window.setTimeout(update, 0);

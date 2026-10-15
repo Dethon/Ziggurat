@@ -6,6 +6,10 @@
 
 html {
   -webkit-text-size-adjust: 100%;
+  /* What scrolls a field into view leaves it above the pinned action and the keyboard. */
+  scroll-padding-bottom: calc(
+    var(--tabs-height) + env(safe-area-inset-bottom) + var(--footer-space, 0px) + var(--keyboard, 0px) + var(--space-4)
+  );
 }
 
 body {
@@ -116,7 +120,8 @@ label.button:focus-within,
 main {
   max-width: 560px;
   margin: 0 auto;
-  padding-bottom: calc(var(--tabs-height) + env(safe-area-inset-bottom) + var(--footer-space, 0px));
+  /* Room to scroll the last field above the pinned action, and above the keyboard while it is up. */
+  padding-bottom: calc(var(--tabs-height) + env(safe-area-inset-bottom) + var(--footer-space, 0px) + var(--keyboard, 0px));
 }
 
 .screen {
@@ -1469,6 +1474,7 @@ h1.marked .icon {
 }
 
 .sheet-body {
+  scroll-padding-bottom: var(--space-4);
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
