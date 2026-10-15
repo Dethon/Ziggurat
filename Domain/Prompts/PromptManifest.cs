@@ -220,6 +220,9 @@ public static class PromptManifest
             // whole: every sentence of it is read while estimating, so none of it is a skill.
             TokenBudget = 1_200,
             ServedBy = "mcp-sugary",
+            // Jonas dials the same server for her log; these words are for the agent that
+            // estimates, and a reader of the log is not one.
+            Audience = PromptAudience.ForAgents("sugary"),
             // The dose rule is a refusal, and the one thing the core directive's "do not refuse"
             // must lose to: it is read later, and it governs every turn of this agent.
             Conflict = ConflictPolicy.Governs(PromptRules.Refusals).Beating(CoreDirective),

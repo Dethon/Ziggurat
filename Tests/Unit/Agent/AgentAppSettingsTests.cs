@@ -212,6 +212,20 @@ public class AgentAppSettingsTests
         sugary.UsesOutposts.ShouldBeFalse();
     }
 
+    // Her log is Jonas's to read, beside the glucose history /ha serves, so a meal can be lined up
+    // with what her glucose did after it. Dialling the server is not consuming its channel: the
+    // estimates it sends stay routed to sugary, whoever else reads the mount.
+    [Fact]
+    public void Jonas_DialsTheSugaryServerForHerLog_AndHerEstimatesStaySugarys()
+    {
+        var settings = BoundConfig().Get<AgentSettings>()!;
+        var jonas = BoundAgents().Single(a => a.Id == "jonas");
+
+        jonas.McpServerEndpoints.ShouldContain("http://mcp-sugary:8080/mcp");
+        jonas.McpServerEndpoints.ShouldContain("http://mcp-homeassistant:8080/mcp");
+        settings.AgentDefaults.For("sugary").ShouldBe("sugary");
+    }
+
     // The app's channel is connected, and a meal sent on it is answered by the agent that estimates:
     // left to the fallback it would be answered by the general assistant, in prose no schema reads.
     [Fact]

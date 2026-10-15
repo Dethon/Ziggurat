@@ -1,4 +1,4 @@
-# jonas — 6569 tokens across 17 sections and 7 skills
+# jonas — 6644 tokens across 17 sections and 8 skills
 
   core_directive           CoreDirective         524 / 550    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               30 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -24,6 +24,7 @@
   home-assistant           Skill                 150 / 150    body 3588 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1121 / 1300, served by mcp-scheduling
   countdown-timers         Skill                 126 / 130    body 640 / 900, served by mcp-timers
+  sugary-log               Skill                  75 / 100    body 403 / 500, served by mcp-sugary
 
 ================================================================================================
 
@@ -361,6 +362,10 @@ Proper nouns (people, places, titles of works) stay as they are -- do not transl
   <skill>
     <name>scheduling</name>
     <description>Creating, changing, running now or removing a scheduled task under `/schedules` — an action the agent itself performs later, once or on a cron (&quot;turn the air off in an hour&quot;, &quot;every morning at nine send me the news&quot;, &quot;cancel the nightly check&quot;). Not for a human alarm, reminder or timer. The layout, which agent&apos;s directory, the schedule.json fields, cron and runAt in the local zone, delivery targets, and the managing actions.</description>
+  </skill>
+  <skill>
+    <name>sugary-log</name>
+    <description>Reading her carb log under `/sugary` — the foods she keeps, the meals she logged and the foods in each (&quot;what is in her usual breakfast&quot;, &quot;when did she last have paella&quot;, &quot;how did her glucose do after pizza&quot;). Where each table is, where its columns are explained, and how to find a food or a month.</description>
   </skill>
   <skill>
     <name>web-browsing</name>

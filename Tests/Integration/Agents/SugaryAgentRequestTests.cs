@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.Extensions;
@@ -21,7 +22,8 @@ namespace Tests.Integration.Agents;
 // that leaves for OpenRouter. The sugary agent is an estimator and nothing else — the first paid
 // pass saw it read the log and load the skill on estimate turns, at three times the cost and with
 // six meals of 78 left unanswered — so its request carries the estimating words the server serves
-// and no tool at all, and no judge is asked which skill it needs.
+// and no tool at all, and no judge is asked which skill it needs. Jonas dials the same server for
+// her log: the mount and the skill reach him, the estimating words do not.
 public sealed class SugaryAgentRequestTests
 {
     private static readonly SkillPreloadSettings _preload = new() { DeadlineMs = 600 };
@@ -42,6 +44,26 @@ public sealed class SugaryAgentRequestTests
         body["instructions"]!.GetValue<string>().ShouldContain("## Estimating carbs");
         agent.GetSkills(session).ShouldBeEmpty();
         judge.Asked.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task JonasDiallingTheSugaryServer_GetsTheMountAndTheSkillButNotTheEstimatingPrompt()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var wire = new RecordingResponsesHandler();
+        await using var agent = Agent("jonas", server, wire, judge: null);
+        var session = await agent.CreateSessionAsync();
+
+        await agent.RunStreamingAsync(
+            [new ChatMessage(ChatRole.User, "¿Cuándo comió paella por última vez?")], session).ToListAsync();
+
+        var body = wire.Bodies.ShouldHaveSingleItem();
+        var instructions = body["instructions"]!.GetValue<string>();
+        instructions.ShouldNotContain("## Estimating carbs");
+        instructions.ShouldContain("`/sugary`");
+        Tools(body).ShouldContain("domain__filesystem__text_search");
+        Tools(body).ShouldContain(SkillLoadTool.Name);
+        agent.GetSkills(session).Select(s => s.Name).ShouldBe([SugarySkill.Name]);
     }
 
     // The shipped definition, its endpoints pointed at this server, projected as the factory
@@ -73,4 +95,7 @@ public sealed class SugaryAgentRequestTests
         message.SetResponseFormat(MealEstimateSchema.Format);
         return message;
     }
+
+    private static IReadOnlyList<string> Tools(JsonObject body) =>
+        [.. body["tools"]!.AsArray().Select(t => t!["name"]!.GetValue<string>())];
 }
