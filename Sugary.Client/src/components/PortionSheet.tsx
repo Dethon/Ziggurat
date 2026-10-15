@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { formatGrams, parseAmount, withCarbs, withGrams } from "../carbs";
+import { formatGrams, isRange, parseAmount, withCarbs, withGrams } from "../carbs";
 import { bindUnits, sentence } from "../meal";
 import { useSettings } from "../settings";
 import type { DraftItem } from "../types";
@@ -31,7 +31,11 @@ export function PortionSheet({
 }) {
   const { t } = useSettings();
   const opened = useRef(item.grams);
-  const byWeight = item.carbsPer100g !== null && item.grams !== null;
+  // Read once, so typing the carbs (which drops the weight) does not take the weight field away.
+  const byWeight = useRef(item.carbsPer100g !== null && item.grams !== null).current;
+  const [low, best, high] = [item.carbsLow, item.carbs, item.carbsHigh].map(formatGrams);
+  // The carbs field holds only carbs she typed herself, never the model's guess.
+  const typedCarbs = item.edited && item.grams === null ? item.carbs : null;
   // Read once: a corrected amount loses its portion text, not its unit.
   const unit = useRef(item.portion?.endsWith(" ml") ? "ml" : "g").current;
 
@@ -52,7 +56,13 @@ export function PortionSheet({
       }
     >
       <div className="sheet-form">
-        <ItemBadge item={item} />
+        <div className="portion-figure">
+          <span className="item-grams">
+            {isRange({ low: item.carbsLow, best: item.carbs, high: item.carbsHigh }) ? `${low}–${high}\u00a0g` : `${best}\u00a0g`}
+          </span>
+          {isRange({ low: item.carbsLow, best: item.carbs, high: item.carbsHigh }) && <span className="item-best">≈&nbsp;{best}</span>}
+          <ItemBadge item={item} />
+        </div>
         {item.note && (
           <p className="notice">
             <Icon name="info" size={18} /> <span>{bindUnits(item.note)}</span>
@@ -81,18 +91,19 @@ export function PortionSheet({
                       aria-pressed={on}
                       onClick={() => onChange(withGrams(item, grams))}
                     >
-                      <span className="share">×{label}</span> {grams}&nbsp;{unit}
+                      <span className="share">×{label}</span> · {grams}&nbsp;{unit}
                     </button>
                   );
                 })}
               </div>
             )}
-            <p className="muted small">{t("per100", { n: formatGrams(item.carbsPer100g!), unit })}</p>
+            <p className="muted small">{t("per100", { n: formatGrams(item.carbsPer100g ?? 0), unit })}</p>
           </>
         )}
         <AmountField
           label={byWeight ? t("portionCarbs") : t("carbs")}
-          value={item.carbs}
+          value={byWeight ? typedCarbs : item.carbs}
+          placeholder={t("portionCarbsPlaceholder")}
           unit="g"
           onCommit={(carbs) => onChange(withCarbs(item, carbs))}
         />
@@ -107,6 +118,7 @@ function AmountField({
   unit,
   step,
   big = false,
+  placeholder,
   onCommit,
 }: {
   label: string;
@@ -114,6 +126,7 @@ function AmountField({
   unit: string;
   step?: number;
   big?: boolean;
+  placeholder?: string;
   onCommit: (value: number) => void;
 }) {
   const shown = value === null ? "" : formatGrams(value);
@@ -145,7 +158,12 @@ function AmountField({
           </button>
         )}
         <span className="amount-input">
-          <input inputMode="decimal" value={text} onChange={(event) => commit(event.target.value)} />
+          <input
+            inputMode="decimal"
+            value={text}
+            placeholder={placeholder}
+            onChange={(event) => commit(event.target.value)}
+          />
           <span className="amount-unit">{unit}</span>
         </span>
         {step && (
