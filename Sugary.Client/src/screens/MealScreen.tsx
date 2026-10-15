@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
 import { api } from "../api";
+import { ActionBar } from "../components/ActionBar";
 import { toMealItem, total } from "../carbs";
 import { CameraButton, CameraFallbackNote } from "../components/Camera";
 import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
 import { ItemRow } from "../components/ItemRow";
 import { PortionSheet } from "../components/PortionSheet";
-import { Sheet } from "../components/Sheet";
 import { TotalCard } from "../components/TotalCard";
 import { reduce, useDraft, type DraftAction } from "../draft";
 import { errorMessage } from "../errors";
@@ -16,7 +16,7 @@ import { forUpload, thumbnail } from "../images";
 import { bindUnits, footerAction, grouped, usuals, type FooterAction } from "../meal";
 import { useSettings } from "../settings";
 import type { DraftItem, Food } from "../types";
-import { AmountForm, FoodsSheet } from "./FoodsSheet";
+import { AmountSheet, FoodsSheet } from "./FoodsSheet";
 import { ManualSheet } from "./ManualSheet";
 import { PackagedSheet } from "./PackagedSheet";
 
@@ -40,12 +40,15 @@ const ACTIONS: Record<FooterAction, { primary: StringKey; secondary?: StringKey;
 // the photo and description are replaced by a notice and only the other ways in remain.
 export function MealScreen({
   active,
+  adder,
   estimates,
   labels,
   onSaved,
 }: {
   // Whether the Meal tab is the one on screen; the screen stays mounted behind the others.
   active: boolean;
+  // Filled in by the screen: how the Foods tab adds one of her foods to this meal.
+  adder: RefObject<((item: DraftItem) => void) | null>;
   estimates: boolean;
   labels: boolean;
   onSaved: () => void;
@@ -81,6 +84,13 @@ export function MealScreen({
       ),
     [],
   );
+
+  useEffect(() => {
+    adder.current = (item) => dispatch({ type: "add", item });
+    return () => {
+      adder.current = null;
+    };
+  }, [adder, dispatch]);
 
   // Her usuals follow what she uses, so they are read again whenever she comes back to the meal.
   useEffect(() => {
@@ -562,43 +572,11 @@ export function MealScreen({
           onClose={() => setEditing(null)}
         />
       )}
-      {usual && (
-        <Sheet title={usual.name} onClose={() => setUsual(null)}>
-          <AmountForm food={usual} onAdd={add} />
-        </Sheet>
-      )}
+      {usual && <AmountSheet food={usual} onAdd={add} onClose={() => setUsual(null)} />}
       {confirming}
       {sheet === "foods" && <FoodsSheet onClose={() => setSheet(null)} onAdd={add} />}
       {sheet === "packaged" && <PackagedSheet labels={labels} onClose={() => setSheet(null)} onAdd={add} />}
       {sheet === "manual" && <ManualSheet onClose={() => setSheet(null)} onAdd={add} />}
-    </div>
-  );
-}
-
-// The meal's one primary action, pinned above the tab bar. Its height is published as
-// --footer-space so the page can scroll its last content clear of it and the toast sits above it.
-function ActionBar({ active, children }: { active: boolean; children: ReactNode }) {
-  const bar = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const element = bar.current;
-    const root = document.documentElement;
-    if (!element || !active) {
-      return;
-    }
-    const publish = () => root.style.setProperty("--footer-space", `${element.offsetHeight}px`);
-    publish();
-    const observer = new ResizeObserver(publish);
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-      root.style.removeProperty("--footer-space");
-    };
-  }, [active]);
-
-  return (
-    <div ref={bar} className="action-bar">
-      <div className="action-bar-inner">{children}</div>
     </div>
   );
 }

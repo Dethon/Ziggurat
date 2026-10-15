@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { manualItem, parseAmount } from "../carbs";
+import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { errorMessage } from "../errors";
 import { keep } from "../foods";
@@ -14,6 +15,7 @@ export function ManualSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (i
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const amount = parseAmount(carbs);
+  const formId = useId();
 
   async function add(named: string, grams: number) {
     setBusy(true);
@@ -39,8 +41,22 @@ export function ManualSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (i
   }
 
   return (
-    <Sheet title={t("manualTitle")} onClose={onClose}>
+    <Sheet
+      title={t("manualTitle")}
+      onClose={onClose}
+      footer={
+        <button
+          type="submit"
+          form={formId}
+          className="button button-primary button-big"
+          disabled={busy || !name.trim() || amount === null}
+        >
+          {t("addToMeal")}
+        </button>
+      }
+    >
       <form
+        id={formId}
         className="sheet-form"
         onSubmit={(event) => {
           event.preventDefault();
@@ -55,7 +71,10 @@ export function ManualSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (i
         </label>
         <label className="field">
           <span className="field-label">{t("manualCarbs")}</span>
-          <input inputMode="decimal" value={carbs} onChange={(event) => setCarbs(event.target.value)} />
+          <span className="amount-input">
+            <input inputMode="decimal" value={carbs} onChange={(event) => setCarbs(event.target.value)} />
+            <span className="amount-unit">g</span>
+          </span>
         </label>
         <label className="check">
           <input type="checkbox" checked={saveFood} onChange={(event) => setSaveFood(event.target.checked)} />
@@ -66,16 +85,9 @@ export function ManualSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (i
         </label>
         {error && (
           <p className="notice notice-error" role="alert">
-            {error}
+            <Icon name="alert" size={18} /> <span>{error}</span>
           </p>
         )}
-        <button
-          type="submit"
-          className="button button-primary button-big"
-          disabled={busy || !name.trim() || amount === null}
-        >
-          {t("addToMeal")}
-        </button>
       </form>
     </Sheet>
   );

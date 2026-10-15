@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, UNAUTHORIZED_EVENT } from "./api";
 import { Icon, type IconName } from "./components/Icon";
 import type { StringKey } from "./i18n";
@@ -10,7 +10,7 @@ import { SettingsScreen } from "./screens/SettingsScreen";
 import { SignIn } from "./screens/SignIn";
 import { useSettings } from "./settings";
 import { ToastProvider, useToast } from "./toast";
-import type { SessionState } from "./types";
+import type { DraftItem, SessionState } from "./types";
 
 export type Tab = "meal" | "log" | "foods" | "settings";
 
@@ -59,6 +59,7 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
   const { t } = useSettings();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("meal");
+  const adder = useRef<((item: DraftItem) => void) | null>(null);
   // Meals still waiting for how her glucose went, counted on the Log tab.
   const [pending, setPending] = useState(0);
   const refreshPending = useCallback(
@@ -77,6 +78,7 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
         <div hidden={tab !== "meal"}>
           <MealScreen
             active={tab === "meal"}
+            adder={adder}
             estimates={session.estimates}
             labels={session.labels}
             onSaved={() => {
@@ -87,7 +89,14 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
           />
         </div>
         {tab === "log" && <LogScreen onChanged={() => void refreshPending()} />}
-        {tab === "foods" && <FoodsScreen />}
+        {tab === "foods" && (
+          <FoodsScreen
+            onAddToMeal={(item) => {
+              adder.current?.(item);
+              toast({ text: t("addedToMeal"), action: { label: t("viewMeal"), run: () => setTab("meal") } });
+            }}
+          />
+        )}
         {tab === "settings" && <SettingsScreen onSignOut={onSignOut} />}
       </main>
 

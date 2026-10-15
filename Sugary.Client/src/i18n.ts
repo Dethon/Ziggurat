@@ -144,6 +144,11 @@ const en = {
   saveToFoodsHint: "With this amount as your usual one",
   saveToFoodsManualHint: "As one portion with these carbs",
   fromMyFoods: "From your foods",
+  addFoodToMeal: "Add {name} to the meal",
+  addedToMeal: "Added to your meal",
+  viewMeal: "View",
+  sourceProduct: "From the product database (barcode {code}).",
+  sourceLabel: "Read from your photo of the label. Check it against the pack.",
   back: "Back",
 
   exportTitle: "Your data",
@@ -382,6 +387,11 @@ const es: Strings = {
   saveToFoodsHint: "Con esta cantidad como la habitual",
   saveToFoodsManualHint: "Como una porción con estos hidratos",
   fromMyFoods: "De tus alimentos",
+  addFoodToMeal: "Añadir {name} a la comida",
+  addedToMeal: "Añadido a tu comida",
+  viewMeal: "Ver",
+  sourceProduct: "De la base de datos de productos (código {code}).",
+  sourceLabel: "Leído de tu foto de la etiqueta. Compruébalo con el envase.",
   back: "Atrás",
 
   exportTitle: "Tus datos",

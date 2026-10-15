@@ -1561,6 +1561,56 @@ h1.title-small {
   color: var(--color-muted);
 }
 
+.food-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.food-item .food-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.food-source {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-sponge);
+  color: var(--color-muted);
+}
+
+.food-add {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.provenance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.provenance-line {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.provenance-line .icon {
+  margin-top: 1px;
+}
+
 .check {
   display: flex;
   align-items: center;

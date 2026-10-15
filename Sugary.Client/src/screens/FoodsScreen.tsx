@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { Sheet } from "../components/Sheet";
+import { ActionBar } from "../components/ActionBar";
+import { Icon } from "../components/Icon";
 import { errorMessage } from "../errors";
 import { useSettings } from "../settings";
-import type { Food } from "../types";
-import { FoodForm, FoodList } from "./FoodsSheet";
+import type { DraftItem, Food } from "../types";
+import { AmountSheet, FoodList, FoodSheet } from "./FoodsSheet";
 
-// Her pantry: everything she keeps, to find, change or add to.
-export function FoodsScreen() {
+// Her pantry: everything she keeps, to find, change, or add to the meal in two taps.
+export function FoodsScreen({ onAddToMeal }: { onAddToMeal: (item: DraftItem) => void }) {
   const { t } = useSettings();
   const [foods, setFoods] = useState<Food[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ food: Food | null } | null>(null);
+  const [adding, setAdding] = useState<Food | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -34,18 +36,33 @@ export function FoodsScreen() {
         foods={foods}
         error={error}
         onPick={(food) => setEditing({ food })}
-        onNew={() => setEditing({ food: null })}
+        onAdd={setAdding}
       />
+      <ActionBar active>
+        <button type="button" className="button button-primary button-big" onClick={() => setEditing({ food: null })}>
+          <Icon name="plus" />
+          {t("foodNew")}
+        </button>
+      </ActionBar>
       {editing && (
-        <Sheet title={t(editing.food ? "foodEdit" : "foodNew")} onClose={() => setEditing(null)}>
-          <FoodForm
-            food={editing.food}
-            onDone={() => {
-              setEditing(null);
-              void load();
-            }}
-          />
-        </Sheet>
+        <FoodSheet
+          food={editing.food}
+          onClose={() => setEditing(null)}
+          onDone={() => {
+            setEditing(null);
+            void load();
+          }}
+        />
+      )}
+      {adding && (
+        <AmountSheet
+          food={adding}
+          onClose={() => setAdding(null)}
+          onAdd={(item) => {
+            setAdding(null);
+            onAddToMeal(item);
+          }}
+        />
       )}
     </div>
   );

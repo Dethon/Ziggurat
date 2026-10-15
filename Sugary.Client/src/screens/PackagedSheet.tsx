@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { api, ApiError } from "../api";
 import { readBarcode } from "../barcode";
 import { formatGrams, fromPackaged, parseAmount } from "../carbs";
@@ -34,7 +34,8 @@ export function PackagedSheet({
   const [barcode, setBarcode] = useState("");
   // Scanning with the live camera needs a secure page; without one the photo is the way in.
   const [live] = useState(canScanLive);
-  const [scanning, setScanning] = useState(false);
+  // Where the live camera works, the sheet opens scanning: the barcode is the usual way in.
+  const [scanning, setScanning] = useState(live);
   const [found, setFound] = useState<Found | null>(null);
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
@@ -112,9 +113,22 @@ export function PackagedSheet({
   }
 
   const eaten = parseAmount(amount);
+  const formId = useId();
+  const valid = eaten !== null && eaten > 0;
 
   return (
-    <Sheet title={t("packagedTitle")} onClose={onClose}>
+    <Sheet
+      title={t("packagedTitle")}
+      onClose={onClose}
+      onBack={found ? () => setFound(null) : undefined}
+      footer={
+        found && (
+          <button type="submit" form={formId} className="button button-primary button-big" disabled={busy || !valid}>
+            {t("addToMeal")}
+          </button>
+        )
+      }
+    >
       {found === null ? (
         <div className="sheet-form">
           <p className="muted">
@@ -169,16 +183,17 @@ export function PackagedSheet({
           </form>
           {error && (
             <p className="notice notice-error" role="alert">
-              {error}
+              <Icon name="alert" size={18} /> <span>{error}</span>
             </p>
           )}
         </div>
       ) : (
         <form
+          id={formId}
           className="sheet-form"
           onSubmit={(event) => {
             event.preventDefault();
-            if (eaten === null || eaten <= 0) {
+            if (!valid || eaten === null) {
               return;
             }
             const named = name.trim() || t("unnamedProduct");
@@ -207,18 +222,31 @@ export function PackagedSheet({
             <span className="field-label">{t("name")}</span>
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
-          <p className="per100">
-            {t("per100", { n: found.food.carbsPer100g.toLocaleString(language), unit: found.food.unit })}
-          </p>
+          <div className="provenance">
+            <p className="per100">
+              {t("per100", { n: found.food.carbsPer100g.toLocaleString(language), unit: found.food.unit })}
+            </p>
+            {/* Where the number came from, before she adds it: a database, a model's reading, or her own list. */}
+            <p className="muted small provenance-line">
+              <Icon name={found.food.foodId ? "jar" : found.source === "barcode" ? "barcode" : "label"} size={18} />
+              <span>
+                {found.food.foodId
+                  ? t("fromMyFoods")
+                  : found.source === "barcode"
+                    ? t("sourceProduct", { code: found.barcode ?? "" })
+                    : t("sourceLabel")}
+              </span>
+            </p>
+          </div>
           {found.food.note && (
             <p className="notice">
-              <Icon name="info" size={18} /> {found.food.note}
+              <Icon name="info" size={18} /> <span>{found.food.note}</span>
             </p>
           )}
           <label className="field">
             <span className="field-label">{t("amountEaten")}</span>
-            <span className="amount-control wide">
-              <input inputMode="decimal" value={amount} autoFocus onChange={(event) => setAmount(event.target.value)} />
+            <span className="amount-input">
+              <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
               <span className="amount-unit">{found.food.unit}</span>
             </span>
           </label>
@@ -238,7 +266,7 @@ export function PackagedSheet({
               </>
             )}
             <button type="button" className="chip" onClick={() => setAmount("100")}>
-              100 {found.food.unit}
+              100&nbsp;{found.food.unit}
             </button>
           </div>
           <p className="packaged-result">
@@ -246,11 +274,7 @@ export function PackagedSheet({
               ? t("carbsFromAmount", { carbs: formatGrams((eaten * found.food.carbsPer100g) / 100) })
               : " "}
           </p>
-          {found.food.foodId ? (
-            <p className="muted small">
-              <Icon name="bookmark" size={16} /> {t("fromMyFoods")}
-            </p>
-          ) : (
+          {!found.food.foodId && (
             <label className="check">
               <input type="checkbox" checked={saveFood} onChange={(event) => setSaveFood(event.target.checked)} />
               <span>
@@ -261,16 +285,9 @@ export function PackagedSheet({
           )}
           {error && (
             <p className="notice notice-error" role="alert">
-              {error}
+              <Icon name="alert" size={18} /> <span>{error}</span>
             </p>
           )}
-          <button
-            type="submit"
-            className="button button-primary button-big"
-            disabled={busy || eaten === null || eaten <= 0}
-          >
-            {t("addToMeal")}
-          </button>
         </form>
       )}
     </Sheet>
