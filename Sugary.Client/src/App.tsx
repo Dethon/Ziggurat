@@ -24,6 +24,8 @@ const TABS: { id: Tab; label: StringKey; icon: IconName }[] = [
 
 export function App() {
   const [session, setSession] = useState<SessionState | null>(null);
+  // Mounted for the whole app, the sign-in included.
+  useTypingMark();
 
   const refreshSession = useCallback(
     () =>
@@ -61,7 +63,6 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("meal");
   const adder = useRef<((item: DraftItem) => void) | null>(null);
-  useTypingMark();
   // Meals still waiting for how her glucose went, counted on the Log tab.
   const [pending, setPending] = useState(0);
   const refreshPending = useCallback(

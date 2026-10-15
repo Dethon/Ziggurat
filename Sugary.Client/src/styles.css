@@ -1018,7 +1018,7 @@ h1.title-small {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(var(--tabs-height) + env(safe-area-inset-bottom));
+  bottom: calc(var(--tabs-height) + env(safe-area-inset-bottom) + var(--keyboard, 0px));
   z-index: 9;
   border-top: 1px solid var(--color-line);
   background: var(--color-bg);
@@ -1320,8 +1320,8 @@ h1.title-small {
 .sheet {
   width: 100%;
   max-width: 560px;
-  max-height: 100dvh;
-  margin: auto auto 0;
+  max-height: calc(100dvh - var(--keyboard, 0px));
+  margin: auto auto var(--keyboard, 0px);
   padding: 0;
   border: 0;
   background: none;
@@ -1346,7 +1346,7 @@ h1.title-small {
 .sheet-panel {
   display: flex;
   flex-direction: column;
-  max-height: 92dvh;
+  max-height: calc(92dvh - var(--keyboard, 0px));
   padding-top: var(--space-2);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--color-bg);
@@ -1477,7 +1477,7 @@ h1.title-small {
   min-height: 100dvh;
   margin: 0 auto;
   padding: calc(var(--space-10) + 72px + env(safe-area-inset-top)) var(--space-6)
-    calc(var(--space-6) + env(safe-area-inset-bottom));
+    calc(var(--space-6) + env(safe-area-inset-bottom) + var(--keyboard, 0px));
 }
 
 .sign-in img {
@@ -1673,22 +1673,22 @@ h1.title-small {
   line-height: 20px;
 }
 
-/* While she types on a phone, the tab bar steps aside: the keyboard, the field and the screen's one
-   action are what is left in view. */
-@media (pointer: coarse) {
-  :root[data-typing] .tabs {
-    display: none;
-  }
+/* While the keyboard is up, the tab bar steps aside, and whatever is pinned to the bottom sits on
+   top of the keyboard (--keyboard is its height where the page does not resize for it: the iPhone). */
+:root[data-typing] {
+  --tabs-height: 0px;
+}
 
-  :root[data-typing] {
-    --tabs-height: 0px;
-  }
+:root[data-typing] .tabs {
+  display: none;
 }
 
 .toast {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--tabs-height) + env(safe-area-inset-bottom) + var(--footer-space, 0px) + var(--space-4));
+  bottom: calc(
+    var(--tabs-height) + env(safe-area-inset-bottom) + var(--footer-space, 0px) + var(--keyboard, 0px) + var(--space-4)
+  );
   z-index: 20;
   transform: translateX(-50%);
   display: flex;
