@@ -4,6 +4,19 @@
  * dark-chocolate counter, not an inverted pink. Each text pair here meets WCAG AA; the pairs and
  * their ratios are listed in .scratch/sugary/design/brief.md, §4.2.
  */
+
+/* Atkinson Hyperlegible Next slashes its zero, and "38–1Ø0 g" is the number she doses from. Its
+   ten digits come instead from Inter (OFL, see fonts/OFL-Inter.txt), subset to 0–9 with tabular
+   figures and its weight axis kept, renamed, and scaled to Atkinson's digit height. */
+@font-face {
+  font-family: "Sugary Digits";
+  src: url("./fonts/sugary-digits.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range: U+0030-0039;
+  size-adjust: 93%;
+}
+
 :root {
   color-scheme: light dark;
 
@@ -36,7 +49,7 @@
   --sprinkle-lemon: #e9b949;
   --sponge-gold: #f2c879;
 
-  --font-ui: "Atkinson Hyperlegible Next Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-ui: "Sugary Digits", "Atkinson Hyperlegible Next Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
 
   --text-hero: 2.75rem; /* 44px: the meal's range */
