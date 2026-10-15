@@ -94,12 +94,12 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
         text: t("outcomeNoted", { outcome: t(`outcome_${outcome}`) }),
         action: {
           label: t("undo"),
-          run: () => void put(was).then(onChanged, (failure) => setError(errorMessage(failure, t))),
+          run: () => void put(was).then(onChanged, (failure) => setError(errorMessage(failure, t, "save"))),
         },
       });
     } catch (failure) {
       setMeals((current) => current?.map((m) => (m.id === meal.id ? { ...m, outcome: was } : m)) ?? null);
-      setError(errorMessage(failure, t));
+      setError(errorMessage(failure, t, "save"));
     }
   }
 
@@ -281,7 +281,7 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
       await work();
       onChanged();
     } catch (failure) {
-      setError(errorMessage(failure, t));
+      setError(errorMessage(failure, t, "save"));
       setBusy(false);
     }
   }

@@ -271,7 +271,7 @@ export function FoodSheet({
       await work();
       onDone();
     } catch (failure) {
-      setError(errorMessage(failure, t));
+      setError(errorMessage(failure, t, "save"));
       setBusy(false);
     }
   }

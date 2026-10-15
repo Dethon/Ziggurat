@@ -209,7 +209,7 @@ export function MealScreen({
       }
     } catch (failure) {
       if (!controller.signal.aborted) {
-        setError(errorMessage(failure, t));
+        setError(errorMessage(failure, t, "estimate"));
         setStale(asked.estimated && asked.items.length > 0);
       }
     } finally {
@@ -233,7 +233,7 @@ export function MealScreen({
       startOver();
       onSaved();
     } catch (failure) {
-      setError(errorMessage(failure, t));
+      setError(errorMessage(failure, t, "save"));
     } finally {
       setSaving(false);
     }

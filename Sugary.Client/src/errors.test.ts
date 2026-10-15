@@ -55,7 +55,7 @@ describe("an estimate that took too long", () => {
     const { ApiError } = await import("./api");
     const { errorMessage } = await import("./errors");
     const failure = new ApiError(504, "The estimate took too long. Try again, or count this meal by hand.");
-    expect(errorMessage(failure, translator("es"))).toBe(translator("es")("errorTimeout"));
+    expect(errorMessage(failure, translator("es"), "estimate")).toBe(translator("es")("errorTimeout"));
   });
 });
 
@@ -64,7 +64,7 @@ describe("an answer the server could not read", () => {
     const { ApiError } = await import("./api");
     const { errorMessage, labelFailureMessage } = await import("./errors");
     const es = translator("es");
-    expect(errorMessage(new ApiError(502, "The model returned no answer."), es)).toBe(es("errorUnreadable"));
+    expect(errorMessage(new ApiError(502, "The model returned no answer."), es, "estimate")).toBe(es("errorUnreadable"));
     expect(labelFailureMessage(new ApiError(502, ""), es)).toBe(es("labelNoAnswer"));
   });
 });

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, ApiError } from "../api";
+import { api } from "../api";
 import { Icon } from "../components/Icon";
 import { errorMessage } from "../errors";
 import { useSettings } from "../settings";
@@ -27,7 +27,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
       await api.signIn(code);
       onSignedIn();
     } catch (failure) {
-      setError(failure instanceof ApiError && failure.status === 401 ? t("wrongCode") : errorMessage(failure, t));
+      setError(errorMessage(failure, t, "signIn"));
       setBusy(false);
     }
   }

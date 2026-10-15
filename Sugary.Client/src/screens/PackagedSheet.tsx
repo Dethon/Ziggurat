@@ -6,7 +6,7 @@ import { BarcodeScanner, canScanLive, type ScanProblem } from "../components/Bar
 import { CameraButton, CameraFallbackNote } from "../components/Camera";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
-import { labelFailureMessage } from "../errors";
+import { errorMessage, labelFailureMessage, type Asking } from "../errors";
 import { keep } from "../foods";
 import { forUpload } from "../images";
 import { useSettings } from "../settings";
@@ -33,6 +33,8 @@ export function PackagedSheet({
   const [error, setError] = useState<string | null>(null);
   const [barcode, setBarcode] = useState("");
   const digits = useRef<HTMLInputElement>(null);
+  // Which request is under way, so a failure is said for what it was: a lookup, a label, a save.
+  const asking = useRef<Asking>("product");
   // Scanning with the live camera needs a secure page; without one the photo is the way in.
   const [live] = useState(canScanLive);
   // Where the live camera works, the sheet opens scanning: the barcode is the usual way in.
@@ -50,6 +52,7 @@ export function PackagedSheet({
 
   async function lookUp(code: string): Promise<boolean> {
     try {
+      asking.current = "product";
       show({ food: await api.product(code), source: "barcode", barcode: code });
       return true;
     } catch (failure) {
@@ -66,7 +69,7 @@ export function PackagedSheet({
     try {
       await work();
     } catch (failure) {
-      setError(labelFailureMessage(failure, t));
+      setError(asking.current === "label" ? labelFailureMessage(failure, t) : errorMessage(failure, t, asking.current));
     } finally {
       setBusy(false);
     }
@@ -86,6 +89,7 @@ export function PackagedSheet({
         setError(t("labelsUnavailable"));
         return;
       }
+      asking.current = "label";
       show({ food: await api.readLabel(await forUpload(file), language), source: "label" });
     });
   }
@@ -208,6 +212,7 @@ export function PackagedSheet({
             }
             const named = name.trim() || t("unnamedProduct");
             void run(async () => {
+              asking.current = "save";
               // Kept with this amount as her usual one, so next time it is one tap.
               const foodId =
                 found.food.foodId ??

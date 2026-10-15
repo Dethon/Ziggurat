@@ -35,7 +35,7 @@ export function ManualSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (i
         : null;
       onAdd(manualItem(named, grams, food?.id ?? null));
     } catch (failure) {
-      setError(errorMessage(failure, t));
+      setError(errorMessage(failure, t, "save"));
       setBusy(false);
     }
   }
