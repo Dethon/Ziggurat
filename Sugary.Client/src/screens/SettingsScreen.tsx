@@ -1,9 +1,8 @@
-import { useState } from "react";
 import { api } from "../api";
 import { Icon } from "../components/Icon";
 import type { Language } from "../i18n";
 import { useSettings, type RationSize } from "../settings";
-import { FoodsSheet } from "./FoodsSheet";
+import { useConfirm } from "../components/Confirm";
 
 const EXPORTS = [
   { table: "meals", label: "exportMeals" },
@@ -19,7 +18,7 @@ const LANGUAGES: { code: Language; name: string }[] = [
 
 export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }) {
   const { t, rationSize, language, update } = useSettings();
-  const [managingFoods, setManagingFoods] = useState(false);
+  const [confirm, confirming] = useConfirm();
 
   return (
     <div className="screen">
@@ -61,15 +60,6 @@ export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }
       </section>
 
       <section className="card setting">
-        <h2>{t("myFoods")}</h2>
-        <p className="muted small">{t("myFoodsAbout")}</p>
-        <button type="button" className="button button-secondary" onClick={() => setManagingFoods(true)}>
-          <Icon name="bookmark" />
-          {t("manageFoods")}
-        </button>
-      </section>
-
-      <section className="card setting">
         <h2>{t("exportTitle")}</h2>
         <p className="muted small">{t("exportHint")}</p>
         <div className="downloads">
@@ -87,13 +77,20 @@ export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }
         <p className="muted">{t("aboutText")}</p>
       </section>
 
-      {managingFoods && <FoodsSheet onClose={() => setManagingFoods(false)} />}
-
       {onSignOut && (
-        <button type="button" className="button button-quiet" onClick={onSignOut}>
+        <button
+          type="button"
+          className="button button-quiet"
+          onClick={async () => {
+            if (await confirm({ title: t("signOutTitle"), body: t("signOutBody"), confirm: t("signOut") })) {
+              onSignOut();
+            }
+          }}
+        >
           {t("signOut")}
         </button>
       )}
+      {confirming}
     </div>
   );
 }

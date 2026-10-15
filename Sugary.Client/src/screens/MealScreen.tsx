@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { api } from "../api";
 import { toMealItem, total } from "../carbs";
 import { CameraButton, CameraFallbackNote } from "../components/Camera";
+import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
 import { ItemRow } from "../components/ItemRow";
 import { TotalCard } from "../components/TotalCard";
@@ -34,6 +35,7 @@ export function MealScreen({
 }) {
   const { t, language } = useSettings();
   const [draft, dispatch] = useDraft();
+  const [confirm, confirming] = useConfirm();
   const [photos, setPhotos] = useState<Photo[]>([]);
   // At most one clip, shown as she filmed it; the server makes it small and takes its stills.
   const [clip, setClip] = useState<Photo | null>(null);
@@ -396,13 +398,18 @@ export function MealScreen({
           <button
             type="button"
             className="button button-quiet"
-            onClick={() => window.confirm(t("discardConfirm")) && startOver()}
+            onClick={async () => {
+              if (await confirm({ title: t("discardTitle"), body: t("discardBody"), confirm: t("discardYes"), cancel: t("discardNo") })) {
+                startOver();
+              }
+            }}
           >
             {t("discard")}
           </button>
         </footer>
       )}
 
+      {confirming}
       {sheet === "foods" && (
         <FoodsSheet
           onClose={() => setSheet(null)}

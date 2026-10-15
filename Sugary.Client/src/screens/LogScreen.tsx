@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { formatGrams, formatRations, total } from "../carbs";
+import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { errorMessage } from "../errors";
+import { formatDay, formatTime } from "../format";
 import { useSettings } from "../settings";
 import type { Meal, Outcome } from "../types";
 
@@ -52,7 +54,7 @@ export function LogScreen() {
     if (dayKey(date) === dayKey(yesterday)) {
       return t("yesterday");
     }
-    return date.toLocaleDateString(language, { weekday: "long", day: "numeric", month: "long" });
+    return formatDay(date, language);
   }
 
   const days = (meals ?? []).reduce<{ key: string; date: Date; meals: Meal[] }[]>((groups, meal) => {
@@ -76,8 +78,8 @@ export function LogScreen() {
       )}
       {meals?.length === 0 && (
         <div className="empty">
-          <Icon name="list" size={36} />
-          <p>{t("logEmpty")}</p>
+          <Icon name="book" size={36} />
+          <p className="empty-title">{t("logEmpty")}</p>
           <p className="muted small">{t("logEmptyHint")}</p>
         </div>
       )}
@@ -106,7 +108,7 @@ export function LogScreen() {
                     <span className="item-text">
                       <span className="item-name">{meal.items.map((item) => item.name).join(", ")}</span>
                       <span className="item-meta">
-                        {new Date(meal.eatenAt).toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" })}
+                        {formatTime(meal.eatenAt, language)}
                         {meal.outcome !== "unknown" && (
                           <span className={`outcome outcome-${meal.outcome}`}>{t(`outcome_${meal.outcome}`)}</span>
                         )}
@@ -148,6 +150,7 @@ export function LogScreen() {
 
 function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => void; onChanged: () => void }) {
   const { t } = useSettings();
+  const [confirm, confirming] = useConfirm();
   const [when, setWhen] = useState(() => toLocalInput(meal.eatenAt));
   const [outcome, setOutcome] = useState(meal.outcome);
   const [notes, setNotes] = useState(meal.notes ?? "");
@@ -246,11 +249,16 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
           type="button"
           className="button button-quiet danger"
           disabled={busy}
-          onClick={() => window.confirm(t("deleteConfirm")) && run(() => api.deleteMeal(meal.id))}
+          onClick={async () => {
+            if (await confirm({ title: t("deleteTitle"), body: t("deleteBody"), confirm: t("deleteMeal") })) {
+              void run(() => api.deleteMeal(meal.id));
+            }
+          }}
         >
           {t("deleteMeal")}
         </button>
       </div>
+      {confirming}
     </Sheet>
   );
 }

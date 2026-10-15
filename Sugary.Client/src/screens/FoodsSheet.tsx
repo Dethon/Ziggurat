@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { formatGrams, fromFood, parseAmount } from "../carbs";
 import { Icon } from "../components/Icon";
+import { useConfirm } from "../components/Confirm";
 import { Sheet } from "../components/Sheet";
 import { errorMessage } from "../errors";
 import { search } from "../foods";
@@ -64,7 +65,7 @@ export function FoodsSheet({ onClose, onAdd }: { onClose: () => void; onAdd?: (i
   );
 }
 
-function describe(food: Food, t: ReturnType<typeof useSettings>["t"], language: string): string {
+export function describe(food: Food, t: ReturnType<typeof useSettings>["t"], language: string): string {
   if (food.carbsPer100g === null) {
     return t("foodPerPortion", { n: formatGrams(food.portionCarbs ?? 0) });
   }
@@ -74,16 +75,19 @@ function describe(food: Food, t: ReturnType<typeof useSettings>["t"], language: 
     : `${density} · ${t("foodUsual", { n: formatGrams(food.portionGrams), unit: food.unit })}`;
 }
 
-function FoodList({
+export function FoodList({
   foods,
   error,
   onPick,
   onNew,
+  framed = false,
 }: {
   foods: Food[] | null;
   error: string | null;
   onPick: (food: Food) => void;
   onNew: () => void;
+  // On a screen the list sits on a card; in a sheet it sits on the sheet.
+  framed?: boolean;
 }) {
   const { t, language } = useSettings();
   const [query, setQuery] = useState("");
@@ -98,7 +102,7 @@ function FoodList({
       )}
       {foods !== null && foods.length === 0 && (
         <div className="empty compact">
-          <p>{t("foodsEmpty")}</p>
+          <p className="empty-title">{t("foodsEmpty")}</p>
           <p className="small">{t("foodsEmptyHint")}</p>
         </div>
       )}
@@ -112,7 +116,7 @@ function FoodList({
             onChange={(event) => setQuery(event.target.value)}
           />
           {shown.length === 0 && <p className="muted">{t("foodNone")}</p>}
-          <ul className="foods">
+          <ul className={framed ? "foods card foods-card" : "foods"}>
             {shown.map((food) => (
               <li key={food.id}>
                 <button type="button" className="food-row" onClick={() => onPick(food)}>
@@ -120,7 +124,7 @@ function FoodList({
                     <span className="item-name">{food.name}</span>
                     <span className="item-meta">{describe(food, t, language)}</span>
                   </span>
-                  <Icon name="chevron" size={18} />
+                  <Icon name="chevronRight" size={20} />
                 </button>
               </li>
             ))}
@@ -186,8 +190,9 @@ function AmountForm({ food, onAdd, onEdit }: { food: Food; onAdd: (item: DraftIt
   );
 }
 
-function FoodForm({ food, onDone }: { food: Food | null; onDone: () => void }) {
+export function FoodForm({ food, onDone }: { food: Food | null; onDone: () => void }) {
   const { t } = useSettings();
+  const [confirm, confirming] = useConfirm();
   const [name, setName] = useState(food?.name ?? "");
   const [byWeight, setByWeight] = useState(food === null || food.carbsPer100g !== null);
   const [unit, setUnit] = useState<Unit>(food?.unit ?? "g");
@@ -310,11 +315,16 @@ function FoodForm({ food, onDone }: { food: Food | null; onDone: () => void }) {
           type="button"
           className="button button-quiet danger"
           disabled={busy}
-          onClick={() => window.confirm(t("foodDeleteConfirm")) && run(() => api.deleteFood(food.id))}
+          onClick={async () => {
+            if (await confirm({ title: t("foodDeleteTitle"), body: t("foodDeleteBody"), confirm: t("foodDelete") })) {
+              void run(() => api.deleteFood(food.id));
+            }
+          }}
         >
           {t("foodDelete")}
         </button>
       )}
+      {confirming}
     </form>
   );
 }

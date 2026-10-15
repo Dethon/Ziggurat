@@ -7,10 +7,13 @@ interface Props {
   onClose: () => void;
   // Shown as a back arrow when the sheet has an earlier step to return to.
   onBack?: () => void;
+  role?: "dialog" | "alertdialog";
+  // Pinned under the scrolling content, so the sheet's main action is always in reach.
+  footer?: ReactNode;
   children: ReactNode;
 }
 
-export function Sheet({ title, onClose, onBack, children }: Props) {
+export function Sheet({ title, onClose, onBack, role, footer, children }: Props) {
   const { t } = useSettings();
   const dialog = useRef<HTMLDialogElement>(null);
 
@@ -24,8 +27,12 @@ export function Sheet({ title, onClose, onBack, children }: Props) {
     <dialog
       ref={dialog}
       className="sheet"
+      role={role}
       aria-label={title}
-      onCancel={onClose}
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
       onClick={(event) => event.target === dialog.current && onClose()}
     >
       <div className="sheet-panel">
@@ -40,7 +47,8 @@ export function Sheet({ title, onClose, onBack, children }: Props) {
             <Icon name="close" />
           </button>
         </header>
-        {children}
+        <div className="sheet-body">{children}</div>
+        {footer && <div className="sheet-footer">{footer}</div>}
       </div>
     </dialog>
   );

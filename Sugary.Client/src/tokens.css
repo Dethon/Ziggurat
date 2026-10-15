@@ -1,0 +1,114 @@
+/*
+ * Every colour, size and timing the app uses, in one place. A bakery counter: cream and sponge
+ * surfaces, raspberry frosting for the one thing to press, dark chocolate for text. Dark mode is a
+ * dark-chocolate counter, not an inverted pink. Each text pair here meets WCAG AA; the pairs and
+ * their ratios are listed in .scratch/sugary/design/brief.md, §4.2.
+ */
+:root {
+  color-scheme: light dark;
+
+  --color-bg: #fbf5ec;
+  --color-surface: #fffdf9;
+  --color-sponge: #f3e6d3;
+  --color-counted: #eaf2ec;
+  --color-line: #e3d0b8;
+  --color-field: #a88b74;
+  --color-ink: #3b2219;
+  --color-muted: #6e4f40;
+  --color-primary: #b0234f;
+  --color-on-primary: #ffffff;
+  --color-primary-soft: #fbe4eb;
+  --color-primary-strong: #8e1a3f;
+  --color-good: #2d6a43;
+  --color-caution: #7f5200;
+  --color-danger: #b3261e;
+  --color-danger-soft: #fce8e6;
+  --color-on-danger: #ffffff;
+  --color-info: #2f5da8;
+  --color-focus: #2f5da8;
+  --color-scrim: rgb(28 19 16 / 55%);
+  /* Over a photo, the same in both schemes. */
+  --color-on-photo: #ffffff;
+  --color-photo-scrim: rgb(28 19 16 / 75%);
+
+  /* Decoration only: never text, never meaning. */
+  --sprinkle-pistachio: #7db38a;
+  --sprinkle-lemon: #e9b949;
+  --sponge-gold: #f2c879;
+
+  --font-ui: "Atkinson Hyperlegible Next Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
+
+  --text-hero: 2.75rem; /* 44px: the meal's range */
+  --text-title: 1.875rem; /* 30px: screen titles (display face) */
+  --text-sheet-title: 1.375rem; /* 22px: sheet titles (display face) */
+  --text-number: 1.1875rem; /* 19px: a row's carbs */
+  --text-body: 1.0625rem; /* 17px */
+  --text-meta: 0.9375rem; /* 15px */
+  --text-label: 0.875rem; /* 14px: the smallest text anywhere */
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  --radius-s: 10px;
+  --radius-m: 16px;
+  --radius-l: 22px;
+  --radius-xl: 28px;
+  --radius-pill: 999px;
+
+  --shadow-1: 0 1px 2px rgb(59 34 25 / 8%);
+  --shadow-2: 0 2px 6px rgb(59 34 25 / 6%), 0 12px 28px rgb(59 34 25 / 10%);
+  --edge: 0 0 0 0 transparent;
+
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 280ms;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --tabs-height: 64px;
+  --target: 44px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #1c1310;
+    --color-surface: #281b16;
+    --color-sponge: #33241d;
+    --color-counted: #1f2e24;
+    --color-line: #4d382e;
+    --color-field: #8c7060;
+    --color-ink: #f7ebdd;
+    --color-muted: #cdb3a0;
+    --color-primary: #f48fb1;
+    --color-on-primary: #2a0d18;
+    --color-primary-soft: #46202f;
+    --color-primary-strong: #ffb8ce;
+    --color-good: #8fd3a6;
+    --color-caution: #edc074;
+    --color-danger: #ff8a80;
+    --color-danger-soft: #3d1f1b;
+    --color-on-danger: #2a0d18;
+    --color-info: #9dbcf2;
+    --color-focus: #9dbcf2;
+    --color-scrim: rgb(0 0 0 / 62%);
+
+    --shadow-1: none;
+    --shadow-2: none;
+    /* Without shadows, raised things are told apart by a hairline edge. */
+    --edge: 0 0 0 1px var(--color-line);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur: 0ms;
+    --dur-slow: 0ms;
+  }
+}
