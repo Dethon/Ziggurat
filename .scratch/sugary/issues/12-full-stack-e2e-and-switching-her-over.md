@@ -141,7 +141,8 @@ image never reached Gemini as expected.
   `DockerCompose/volumes/sugary/import/`, then run
   `docker exec mcp-sugary dotnet McpServerSugary.dll import /data/import`.
   - It runs in one transaction. A second run adds nothing.
-  - A cell it cannot read imports nothing and names the file and line.
+  - A cell it cannot read, or a meal the app would not save (no items, a range out of order, an
+    item with no name), imports nothing and names the file and line.
 - [ ] **Spot-check the import.**
   - In the app: the log's latest meals, a meal's items and first estimate, and her foods.
   - In `/sugary`: `meals/<month>.csv` and `items/<month>.csv` for a month she remembers, and

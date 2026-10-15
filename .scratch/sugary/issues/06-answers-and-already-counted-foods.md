@@ -138,5 +138,5 @@ grouping. So a cancel that arrives late can hit the next turn on the same meal:
 A first estimate always opens a new conversation, so a late cancel can never reach another meal.
 Fixing this properly means a per-turn cancel in the protocol: a `TurnKey` on
 `ChannelCancelNotification`, and a group that cancels only the turn carrying that key and ignores
-a key that is no longer running. That would change every channel's contract (SignalR and voice
-also emit cancels), so it is left for a ticket of its own.
+a key that is no longer running. That would change every channel's contract (WebChat
+also emits cancels), so it is left for a ticket of its own.
