@@ -1352,21 +1352,23 @@ h1.title-small {
   fill: var(--color-sponge);
 }
 
-.art-shine,
 .art-label-line {
   fill: none;
+  stroke: var(--color-line);
   stroke-linecap: round;
   stroke-width: 3;
 }
 
-.art-shine {
-  stroke: var(--art-cream);
-  stroke-width: 4;
-  opacity: 0.8;
+.art-highlight {
+  fill: var(--art-cream);
+  opacity: 0.45;
 }
 
-.art-label-line {
-  stroke: var(--color-line);
+.art-stem {
+  fill: none;
+  stroke: var(--art-stem);
+  stroke-width: 7;
+  stroke-linecap: round;
 }
 
 .art-under {
