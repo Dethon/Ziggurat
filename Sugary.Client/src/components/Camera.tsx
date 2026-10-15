@@ -19,6 +19,7 @@ import {
   startTake,
   type Take,
 } from "../recording";
+import { afterCameraApp, afterProblem, fallbackFor, NO_FALLBACK, type CameraMode, type FallbackState } from "../fallback";
 import { useSettings } from "../settings";
 import { Icon, type IconName } from "./Icon";
 import "./Camera.css";
@@ -28,47 +29,42 @@ import "./Camera.css";
 // whichever was used last. When the app cannot use the camera, the phone's camera app is the way
 // in, as it was before.
 
-export type CameraMode = "photo" | "video";
-type Fallback = "denied" | "failed" | "unsupported";
-
 // Asked of the camera when a photo is taken from the live picture rather than by the camera itself:
 // 4:3 as the sensor is, and more than the upload keeps (1568) or the barcode reader wants (2000).
 const PHOTO_SIZE: CameraSize = { width: 4096, height: 3072 };
 // Some phones take long to take a full photo, or never answer; the picture on screen is used then.
 const PHOTO_PATIENCE_MS = 4000;
 
-// Once the camera has failed in the app it is not tried again until the app is reopened: every
-// camera button opens the phone's camera app instead, and a note says why.
-let failure: Fallback | null = null;
+// Shared by every camera button: once the camera is refused they all open the phone's camera app,
+// and a note says why.
+let fallbackState: FallbackState = NO_FALLBACK;
 const listeners = new Set<() => void>();
 
-function fallBack(reason: Fallback) {
-  failure = reason;
-  listeners.forEach((listener) => listener());
+function updateFallback(next: FallbackState) {
+  if (next !== fallbackState) {
+    fallbackState = next;
+    listeners.forEach((listener) => listener());
+  }
 }
 
 function supported(mode: CameraMode): boolean {
   return canUseCamera() && (mode === "photo" || typeof MediaRecorder === "function");
 }
 
-function useFailure(): Fallback | null {
+function useFallbackState(): FallbackState {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    () => failure,
+    () => fallbackState,
   );
-}
-
-function fallbackFor(modes: CameraMode[], failed: Fallback | null): Fallback | null {
-  return failed ?? (modes.every(supported) ? null : "unsupported");
 }
 
 // Said once beside the camera buttons, when they open the phone's camera app instead.
 export function CameraFallbackNote({ modes }: { modes: CameraMode[] }) {
   const { t } = useSettings();
-  const reason = fallbackFor(modes, useFailure());
+  const reason = fallbackFor(useFallbackState(), modes, supported);
   if (!reason) {
     return null;
   }
@@ -99,13 +95,24 @@ export function CameraButton({
   onPhoto?: (photo: Blob) => void;
   onClip?: (clip: File) => void;
 }) {
-  const fallback = fallbackFor([mode], useFailure());
+  const fallback = fallbackFor(useFallbackState(), [mode], supported);
   const [open, setOpen] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+
+  // After a failure the phone's camera app is used once; when it is done with, used or cancelled,
+  // the next tap tries the app's camera again.
+  useEffect(() => {
+    const element = input.current;
+    const done = () => updateFallback(afterCameraApp(fallbackState, mode));
+    element?.addEventListener("cancel", done);
+    return () => element?.removeEventListener("cancel", done);
+  }, [fallback, mode]);
 
   if (fallback) {
     const picked = (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
       event.target.value = "";
+      updateFallback(afterCameraApp(fallbackState, mode));
       if (file) {
         (mode === "photo" ? onPhoto : onClip)?.(file);
       }
@@ -115,6 +122,7 @@ export function CameraButton({
         <Icon name={icon} />
         {children}
         <input
+          ref={input}
           type="file"
           accept={mode === "photo" ? "image/*" : "video/*"}
           capture="environment"
@@ -138,7 +146,7 @@ export function CameraButton({
           onClose={() => setOpen(false)}
           onProblem={(problem) => {
             setOpen(false);
-            fallBack(problem);
+            updateFallback(afterProblem(fallbackState, mode, problem));
           }}
           onPhoto={(photo) => {
             setOpen(false);
@@ -336,13 +344,15 @@ export function CameraView({
       return;
     }
     const type = recordingType((candidate) => MediaRecorder.isTypeSupported(candidate));
-    let recorder: MediaRecorder;
+    // A recorder that will not take the chosen type and rate is asked again with the browser's own.
+    const begin = (options?: MediaRecorderOptions) => startTake(new MediaRecorder(opened, options), { onTick: setElapsed });
     try {
-      recorder = new MediaRecorder(opened, {
-        ...(type ? { mimeType: type } : {}),
-        videoBitsPerSecond: CLIP_BITS_PER_SECOND,
-      });
-      const started = startTake(recorder, { onTick: setElapsed });
+      let started: Take;
+      try {
+        started = begin({ ...(type ? { mimeType: type } : {}), videoBitsPerSecond: CLIP_BITS_PER_SECOND });
+      } catch {
+        started = begin();
+      }
       take.current = started;
       setPhase("recording");
       void started.result.then((clip) => {

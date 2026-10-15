@@ -189,7 +189,7 @@ const en = {
   cameraDenied:
     "The camera is blocked for this app, so the camera buttons now open your phone's camera app. Tap again, and check it is on the back camera. Allow the camera in the browser's site settings to use the app's own again.",
   cameraFailed:
-    "The camera could not be started in the app, so the camera buttons now open your phone's camera app. Tap again, and check it is on the back camera.",
+    "The camera could not be started in the app. Tap the button again to use your phone's camera app, and check it is on the back camera.",
   cameraUnsupported:
     "This browser cannot use the camera inside the app, so your phone's camera app opens. Check it is on the back camera.",
 };
@@ -390,7 +390,7 @@ const es: Strings = {
   cameraDenied:
     "La cámara está bloqueada para esta aplicación, así que los botones de cámara abren ahora la app de cámara del móvil. Vuelve a tocar y comprueba que esté en la cámara trasera. Permite la cámara en los ajustes del sitio del navegador para volver a usar la de la aplicación.",
   cameraFailed:
-    "No se ha podido abrir la cámara en la aplicación, así que los botones de cámara abren ahora la app de cámara del móvil. Vuelve a tocar y comprueba que esté en la cámara trasera.",
+    "No se ha podido abrir la cámara en la aplicación. Vuelve a tocar el botón para usar la app de cámara del móvil y comprueba que esté en la cámara trasera.",
   cameraUnsupported:
     "Este navegador no puede usar la cámara dentro de la aplicación, así que se abre la app de cámara del móvil. Comprueba que esté en la cámara trasera.",
 };

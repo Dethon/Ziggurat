@@ -68,8 +68,8 @@ export function startTake(
   let kept = true;
   const began = Date.now();
 
-  const ticking = setInterval(() => onTick(Date.now() - began), TICK_MS);
-  const limit = setTimeout(() => end(true), limitMs);
+  let ticking: ReturnType<typeof setInterval> | undefined;
+  let limit: ReturnType<typeof setTimeout> | undefined;
 
   const result = new Promise<File | null>((resolve) => {
     recorder.addEventListener("dataavailable", (event) => {
@@ -100,8 +100,11 @@ export function startTake(
     }
   }
 
-  // Slices of a second, so the recording is not held in one piece until the end.
+  // Slices of a second, so the recording is not held in one piece until the end. A recorder that
+  // will not start throws here, before any timer is set.
   recorder.start(1000);
+  ticking = setInterval(() => onTick(Date.now() - began), TICK_MS);
+  limit = setTimeout(() => end(true), limitMs);
   onTick(0);
 
   return { stop: () => end(true), cancel: () => end(false), result };

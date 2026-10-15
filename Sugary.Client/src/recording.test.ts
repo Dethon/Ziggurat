@@ -148,6 +148,16 @@ describe("a take", () => {
     expect(await take.result).toBeNull();
   });
 
+  it("leaves no timer behind when the recorder will not start", () => {
+    const recorder = new FakeRecorder();
+    recorder.start.mockImplementation(() => {
+      throw new Error("NotSupportedError");
+    });
+
+    expect(() => startTake(recorder, { onTick: () => undefined })).toThrow();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("asks the recorder for slices, so a long take is not held in one piece", () => {
     const recorder = new FakeRecorder();
 
