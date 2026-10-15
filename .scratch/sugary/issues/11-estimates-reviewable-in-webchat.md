@@ -140,3 +140,37 @@ host would never get the answer's turn. A nutrition label asks as well (`Nutriti
 id is minted the same way, since a GUID would have asked for a review SignalR could not show. Pinned
 by `HerAnswers_AskForTheSameReviewCopy_OnTheConversationTheAppCarriedBack` and
 `ALabelTurn_AsksForAReviewCopy_OnAConversationWebChatCanShow`.
+
+
+**The review plays the clip and leaves its stills out (2026-10-15).** On the live deployment a
+filmed meal's topic showed the eight stills and a placeholder for the clip, read as "it sent both
+the video and the pictures". The model got only the clip. The topic now shows what a video model
+saw: her photos and the clip, playable, and no stills. ADR 0046 has an amendment.
+- **Agent:** the review copy skips the stills a clip on the same message names: they are not
+  fetched and not copied (`ClipStills.Without`, now shared with `ClipSelection` and the client).
+- **WebChat's store:** `store_attachment` keeps `video/mp4` (`AttachmentSettings.ReviewCopyMediaTypes`,
+  all Sugary sends after normalising) up to `MaxReviewCopyClipBytes`, 20 MiB. A person's upload
+  still refuses video: `AttachmentLimits` (composer and upload endpoint) is unchanged.
+- **Why 20 MiB:** a copy is one MCP call with the bytes base64 in the body, and SignalR's Kestrel
+  caps a request body at 30,000,000 bytes by default. 20 MiB is 27,962,028 bytes of base64. A 20 s
+  clip at 540 lines, CRF 28, is a few MB. A larger clip is refused and logged, and shows as a chip;
+  nothing is chunked and Kestrel's limit is not raised.
+- **The download route** answers byte ranges (`enableRangeProcessing: true`) with the stored type, so
+  a `<video>` can start and seek; a ticket is reusable until it expires (15 min), so every range
+  request is answered.
+- **The client:** `MessageAttachments` plays a video reference as `<video controls playsinline
+  preload="metadata">` on the minted download URL, re-mints on an error like a thumbnail, and leaves
+  out the stills a clip names (`AttachmentDisplay`). A clip it cannot fetch (too large, or a topic
+  made before this) shows as a chip. Pictures no clip names show as before.
+- **Older review topics** keep their copied stills in the store but no longer show them, and their
+  clip, never copied, shows as a chip.
+
+Tests: `StoreAttachmentToolTests` (a clip above an upload's size kept, one over its cap refused,
+`video/quicktime` refused); `AttachmentEndpointTests` (an upload of `video/mp4` still 415; a ranged
+download answers 206 with `video/mp4` and the range); `McpChannelConnectionStoreAttachmentTests` (a
+clip of exactly 20 MiB crosses the agent's real connection over Kestrel and is kept, one byte more is
+refused); `ChatMonitorReviewCopyTests` (a filmed meal copies her photo and the clip, and neither
+fetches nor copies a still); `AttachmentDisplayTests` (a clip is shown as a clip and its stills not;
+pictures no clip names show as before; thumbnails and clips are the ones previewed). There is no
+bUnit in the suite, so the component's choice lives in `AttachmentDisplay` and is tested there, as
+`AttachmentPreviewCache` is. Nothing was played in a real browser.

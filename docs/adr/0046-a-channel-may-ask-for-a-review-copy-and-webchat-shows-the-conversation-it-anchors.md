@@ -113,8 +113,9 @@ announce them. A flag the deployment resolves is smaller.
   the history. Nothing stops it, since it may be what an operator wants.
 - `IChannelConnection` has two more members. Not connected, `StoreAttachmentAsync` answers false,
   the silent side of ADR 0011's rule: its only caller logs.
-- WebChat's store refuses `video/` types, so a clip (ticket 10) is not copied and shows as a
-  placeholder until that store and the client learn to show one.
+- ~~WebChat's store refuses `video/` types, so a clip (ticket 10) is not copied and shows as a
+  placeholder until that store and the client learn to show one.~~ Superseded by the amendment
+  below: the clip is copied and plays, and its stills are not.
 - "The app never waits on WebChat" holds for a host that is down or fails, which is skipped. A host
   that is merely slow is waited on per chunk: `ReplyDispatcher` sends each chunk to every target
   together and moves on when all have answered. That is the existing fan-out's behaviour, unchanged.
@@ -122,3 +123,36 @@ announce them. A flag the deployment resolves is smaller.
   the announce as a later fan-out target and mint a topic.
 - A review copy whose host is down on the first turn has no topic until a later turn of the same
   conversation reaches the host; a single-turn estimate then has none.
+
+## Amendment (2026-10-15) — the review plays the clip and leaves its stills out
+
+A filmed meal's review showed the clip's eight stills and a placeholder for the clip, because
+WebChat's store refused `video/` and the stills, as ordinary pictures of the message, were copied.
+The operator read that as "the model was sent both", and it was not: a video model is sent the
+clip and none of its stills (ADR 0045). A review is for reading what the model was sent, so the
+topic now shows what a video model saw.
+
+- **The clip is copied; its stills are not.** `DeliveryTargetResolver` copies
+  `ClipStills.Without(attachments)`: a still a clip on the same message names is neither fetched
+  nor handed to the host. `ClipStills` is the one reading of which pictures are a clip's, shared by
+  `ClipSelection` and the client.
+- **WebChat keeps a clip as a review copy only.** `AttachmentSettings.ReviewCopyMediaTypes`
+  (`video/mp4`, which is all the Sugary channel sends after normalising) are accepted by
+  `store_attachment` under a cap of their own, `MaxReviewCopyClipBytes`. A person's upload still
+  refuses video: `AttachmentLimits`, which the composer and the upload endpoint both read, is
+  unchanged.
+- **The cap is what one MCP call can carry.** A copy crosses as one `store_attachment` call with the
+  bytes base64 in its body, and SignalR's Kestrel caps a request body at its default 30,000,000
+  bytes. 20 MiB is 27,962,028 bytes of base64, so the cap is 20 MiB, pinned at the real boundary
+  (the agent's `McpChannelConnection` into the real tool over Kestrel). A 20 s clip at 540 lines,
+  CRF 28, runs a few MB. A larger one is refused and logged, and the review shows it as a chip, as
+  before; nothing chunks it.
+- **The client plays it.** `MessageAttachments` renders a video reference as `<video controls>` on
+  the ticketed download URL it already mints for a thumbnail, and leaves out the stills a clip names
+  (`AttachmentDisplay`). The download route answers byte ranges (`enableRangeProcessing`), which a
+  `<video>` asks for to start and to seek, and the ticket is not spent by a request. A clip that
+  cannot be fetched, or was never copied, shows as the chip it was.
+- A message with pictures and no clip shows every picture: a still is a still only when a clip
+  names it.
+- Review topics made before this keep their copied stills in WebChat's store, but no longer show
+  them, and their clip shows as a chip: it was never copied.
