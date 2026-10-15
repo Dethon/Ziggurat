@@ -198,8 +198,11 @@ const en = {
     "Sugary estimates carbs from photos and descriptions with an AI model. Portion size is the hardest part to judge from a photo, so every estimate comes as a range and every item can be corrected. It never suggests insulin doses: those stay between you and your diabetes team.",
 
   signInTitle: "Sugary",
-  signInPrompt: "Enter the access code",
-  signIn: "Continue",
+  tagline: "Carb counting, a piece of cake.",
+  signInPrompt: "Access code",
+  signIn: "Come in",
+  showCode: "Show the code",
+  hideCode: "Hide the code",
   wrongCode: "That code is not right.",
 
   errorOffline: "No connection. Check your signal and try again.",
@@ -441,8 +444,11 @@ const es: Strings = {
     "Sugary estima los hidratos a partir de fotos y descripciones con un modelo de IA. El tamaño de la porción es lo más difícil de calcular en una foto, así que cada estimación viene como un rango y cada alimento se puede corregir. Nunca sugiere dosis de insulina: eso queda entre tú y tu equipo de diabetes.",
 
   signInTitle: "Sugary",
-  signInPrompt: "Introduce el código de acceso",
-  signIn: "Continuar",
+  tagline: "Contar hidratos, pan comido.",
+  signInPrompt: "Código de acceso",
+  signIn: "Entrar",
+  showCode: "Mostrar el código",
+  hideCode: "Ocultar el código",
   wrongCode: "Ese código no es correcto.",
 
   errorOffline: "Sin conexión. Comprueba la cobertura e inténtalo de nuevo.",

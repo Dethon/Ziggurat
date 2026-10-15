@@ -1,8 +1,8 @@
 import { api } from "../api";
+import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
 import type { Language } from "../i18n";
 import { useSettings, type RationSize } from "../settings";
-import { useConfirm } from "../components/Confirm";
 
 const EXPORTS = [
   { table: "meals", label: "exportMeals" },
@@ -24,9 +24,9 @@ export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }
     <div className="screen">
       <h1>{t("settingsTitle")}</h1>
 
-      <section className="card setting">
-        <h2>{t("rationSize")}</h2>
-        <div className="segmented" role="group" aria-label={t("rationSize")}>
+      <section className="card setting" aria-labelledby="ration-title">
+        <h2 id="ration-title">{t("rationSize")}</h2>
+        <div className="segmented" role="group" aria-labelledby="ration-title">
           {RATION_SIZES.map((size) => (
             <button
               key={size}
@@ -42,13 +42,14 @@ export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }
         <p className="muted small">{t("rationSizeHint")}</p>
       </section>
 
-      <section className="card setting">
-        <h2>{t("language")}</h2>
-        <div className="segmented" role="group" aria-label={t("language")}>
+      <section className="card setting" aria-labelledby="language-title">
+        <h2 id="language-title">{t("language")}</h2>
+        <div className="segmented" role="group" aria-labelledby="language-title">
           {LANGUAGES.map((option) => (
             <button
               key={option.code}
               type="button"
+              lang={option.code}
               className={language === option.code ? "segment segment-on" : "segment"}
               aria-pressed={language === option.code}
               onClick={() => update({ language: option.code })}
@@ -59,37 +60,52 @@ export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }
         </div>
       </section>
 
-      <section className="card setting">
-        <h2>{t("exportTitle")}</h2>
-        <p className="muted small">{t("exportHint")}</p>
-        <div className="downloads">
-          {EXPORTS.map(({ table, label }) => (
-            <a key={table} className="button button-secondary" href={api.exportUrl(table)} download>
-              <Icon name="download" />
-              {t(label)}
-            </a>
-          ))}
+      <section className="card setting" aria-labelledby="data-title">
+        <div>
+          <h2 id="data-title">{t("exportTitle")}</h2>
+          <p className="muted small">{t("exportHint")}</p>
         </div>
+        <ul className="rows">
+          {EXPORTS.map(({ table, label }) => (
+            <li key={table}>
+              <a className="row-link" href={api.exportUrl(table)} download>
+                <Icon name="file" />
+                <span>{t(label)}</span>
+                <span className="row-tag">CSV</span>
+                <Icon name="download" size={20} />
+              </a>
+            </li>
+          ))}
+        </ul>
       </section>
 
-      <section className="card setting">
-        <h2>{t("about")}</h2>
+      <details className="card setting about">
+        <summary>
+          <h2>{t("about")}</h2>
+          <Icon name="chevron" size={20} />
+        </summary>
         <p className="muted">{t("aboutText")}</p>
-      </section>
+      </details>
 
       {onSignOut && (
         <button
           type="button"
-          className="button button-quiet"
+          className="row-button sign-out"
           onClick={async () => {
             if (await confirm({ title: t("signOutTitle"), body: t("signOutBody"), confirm: t("signOut") })) {
               onSignOut();
             }
           }}
         >
-          {t("signOut")}
+          <Icon name="back" size={20} />
+          <span>{t("signOut")}</span>
         </button>
       )}
+
+      <p className="colophon">
+        <Icon name="slice" size={18} />
+        Sugary · {t("tagline")}
+      </p>
       {confirming}
     </div>
   );
