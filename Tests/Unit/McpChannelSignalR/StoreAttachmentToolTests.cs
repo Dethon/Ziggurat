@@ -94,6 +94,18 @@ public sealed class StoreAttachmentToolTests : IDisposable
         Directory.Exists(_root).ShouldBeFalse();
     }
 
+    // A reference names its conversation in its first segment, and the copy is kept there: one
+    // claiming another conversation's directory would land among that conversation's files and be
+    // removed with its topic instead of this one's.
+    [Fact]
+    public async Task AReferenceUnderAnotherConversation_IsRefused()
+    {
+        await Should.ThrowAsync<McpException>(() => StoreAsync("33-44/aaa", [1, 2, 3]));
+
+        _store.Find("33-44/aaa").ShouldBeNull();
+        Directory.Exists(_root).ShouldBeFalse();
+    }
+
     // The same rules a file sent here meets: the store holds only what the chat can show.
     [Fact]
     public async Task AFileThisChatWouldRefuse_IsRefused()

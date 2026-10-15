@@ -64,7 +64,8 @@ public sealed class AttachmentService(
 
         return await store.SaveCopyAsync(attachmentId, conversationId, spaceSlug ?? SpaceDefault, fileName, mediaType, bytes, ct)
             ? null
-            : $"Attachment '{attachmentId}' cannot be kept here: its id names no file this store could hold, or one it already holds.";
+            : $"Attachment '{attachmentId}' cannot be kept here: its id names no file this store could hold for " +
+              $"conversation '{conversationId}', or one it already holds.";
     }
 
     public Task<byte[]?> ReadBytesAsync(string attachmentId, CancellationToken ct) =>

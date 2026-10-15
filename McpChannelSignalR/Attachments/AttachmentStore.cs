@@ -71,8 +71,9 @@ public sealed class AttachmentStore(
 
     // A copy of a file another channel holds, kept under that channel's own reference so the history
     // the two share names something here (ADR 0046). False for an id that cannot name a file here,
-    // and for one this store already holds: whatever rests under it — somebody's upload, or the same
-    // copy kept before — is never written over.
+    // for one under another conversation's directory (it would be removed with that topic, not this
+    // one), and for one this store already holds: whatever rests under it — somebody's upload, or the
+    // same copy kept before — is never written over.
     public async Task<bool> SaveCopyAsync(
         string id,
         string conversationId,
@@ -83,7 +84,9 @@ public sealed class AttachmentStore(
         CancellationToken ct)
     {
         var directory = ResolveDirectory(id);
-        if (directory is null || Directory.Exists(directory))
+        if (directory is null
+            || id.Split('/')[0] != ConversationKey(conversationId)
+            || Directory.Exists(directory))
         {
             return false;
         }
