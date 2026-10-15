@@ -22,7 +22,10 @@ export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }
 
   return (
     <div className="screen">
-      <h1>{t("settingsTitle")}</h1>
+      <h1 className="marked">
+        <Icon name="slice" size={28} />
+        {t("settingsTitle")}
+      </h1>
 
       <section className="card setting" aria-labelledby="ration-title">
         <h2 id="ration-title">{t("rationSize")}</h2>

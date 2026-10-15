@@ -319,7 +319,14 @@ export function MealScreen({
               Sugary
             </p>
           )}
-          <h1 className={hasMeal ? "title-small" : undefined}>{t(hasMeal ? "mealDraftTitle" : "captureTitle")}</h1>
+          {hasMeal ? (
+            <h1 className="title-small marked">
+              <Icon name="slice" size={24} />
+              {t("mealDraftTitle")}
+            </h1>
+          ) : (
+            <h1>{t("captureTitle")}</h1>
+          )}
           {!started && <Drip />}
         </div>
         {started && (
