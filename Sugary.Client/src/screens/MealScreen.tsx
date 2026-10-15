@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
 import { api } from "../api";
 import { ActionBar } from "../components/ActionBar";
-import { toMealItem, total } from "../carbs";
+import { shownTotal, toMealItem } from "../carbs";
 import { CameraButton, CameraFallbackNote } from "../components/Camera";
 import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
@@ -115,7 +115,7 @@ export function MealScreen({
   // without them would quietly produce a worse estimate than the one on screen.
   const photosGone = draft.estimated && draft.thumbnail !== null && photos.length === 0;
   const canEstimate = photos.length > 0 || clip !== null || draft.description.trim() !== "";
-  const sum = total(draft.items);
+  const sum = shownTotal(draft.items);
   const { estimated: estimatedItems, counted: countedItems } = grouped(draft.items);
   const questions = draft.estimated && !photosGone ? draft.questions : [];
   const action = running

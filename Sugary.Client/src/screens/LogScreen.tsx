@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { formatGrams, isRange, total } from "../carbs";
+import { formatGrams, isRange, shownTotal } from "../carbs";
 import { useConfirm } from "../components/Confirm";
 import { Icon, type IconName } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
@@ -168,7 +168,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
             <p className="muted small">{t("logPendingHint")}</p>
           </div>
           {pending.map((meal) => {
-            const carbs = total(meal.items);
+            const carbs = shownTotal(meal.items);
             return (
               <article key={meal.id} className="card pending-card" aria-label={names(meal)}>
                 <button type="button" className="meal-row" onClick={() => setOpen(meal)}>
@@ -205,12 +205,12 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
           <header className="day-header">
             <h2>{dayLabel(day.date)}</h2>
             <span className="day-total">
-              {t("dayTotal", { n: formatGrams(total(day.meals.flatMap((meal) => meal.items)).best) })}
+              {t("dayTotal", { n: day.meals.reduce((sum, meal) => sum + shownTotal(meal.items).best, 0) })}
             </span>
           </header>
           <ul className="card meals">
             {day.meals.map((meal) => {
-              const carbs = total(meal.items);
+              const carbs = shownTotal(meal.items);
               return (
                 <li key={meal.id}>
                   <button type="button" className="meal-row" aria-haspopup="dialog" onClick={() => setOpen(meal)}>
@@ -273,7 +273,7 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
   const [notes, setNotes] = useState(meal.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const carbs = total(meal.items);
+  const carbs = shownTotal(meal.items);
 
   async function run(work: () => Promise<unknown>) {
     setBusy(true);

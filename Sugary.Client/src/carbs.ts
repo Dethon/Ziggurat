@@ -12,6 +12,23 @@ export function total(items: readonly Pick<MealItem, "carbsLow" | "carbs" | "car
   };
 }
 
+// The total as it is shown: the sum of every row's figures as each row shows them (whole grams), so
+// the total on screen and the rows under it never disagree by a gram. Use it for every total shown.
+export function shownTotal(items: readonly Pick<MealItem, "carbsLow" | "carbs" | "carbsHigh">[]): Interval {
+  const sum = (pick: (item: Pick<MealItem, "carbsLow" | "carbs" | "carbsHigh">) => number) =>
+    items.reduce((total, item) => total + Math.round(pick(item)), 0);
+  return { low: sum((i) => i.carbsLow), best: sum((i) => i.carbs), high: sum((i) => i.carbsHigh) };
+}
+
+// A range of rations is widened to the half below and the half above, never narrowed by rounding:
+// 21–56 g at 10 g a ration is 2–6, not 2–5.5.
+export function rationBounds(range: Pick<Interval, "low" | "high">, rationSize: number): { low: number; high: number } {
+  return {
+    low: Math.floor((range.low / rationSize) * 2) / 2,
+    high: Math.ceil((range.high / rationSize) * 2) / 2,
+  };
+}
+
 // Rations are shown to the nearest half, which is the precision carb counting is taught at.
 export function rations(grams: number, rationSize: number): number {
   return Math.round((grams / rationSize) * 2) / 2;

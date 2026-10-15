@@ -1,4 +1,4 @@
-import { formatRations, rations } from "./carbs";
+import { formatRations, rationBounds, rations } from "./carbs";
 import type { Language, Translate } from "./i18n";
 import type { Interval } from "./types";
 
@@ -23,7 +23,7 @@ export function rationCount(grams: number, size: number, language: Language, t: 
 // "6.5 rations of 10 g (4–10)", the range left out when it rounds to one figure.
 export function rationText(total: Interval, size: number, language: Language, t: Translate): string {
   const count = rationCount(total.best, size, language, t);
-  const low = formatRations(total.low, size, language);
-  const high = formatRations(total.high, size, language);
+  const bounds = rationBounds(total, size);
+  const [low, high] = [bounds.low, bounds.high].map((n) => n.toLocaleString(locale(language), { maximumFractionDigits: 1 }));
   return `${count} ${t("rationsOf", { size })}${low === high ? "" : ` (${low}–${high})`}`;
 }
