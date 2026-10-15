@@ -1625,6 +1625,8 @@ h1.title-small {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* As wide as its words, up to the screen's gutters: it never squeezes itself onto three lines. */
+  width: max-content;
   max-width: calc(100% - 2 * var(--space-4));
   min-height: 52px;
   padding: 4px 4px 4px 18px;
