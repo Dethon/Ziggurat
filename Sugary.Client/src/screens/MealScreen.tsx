@@ -1,17 +1,22 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { api } from "../api";
 import { toMealItem, total } from "../carbs";
 import { CameraButton, CameraFallbackNote } from "../components/Camera";
 import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
 import { ItemRow } from "../components/ItemRow";
+import { PortionSheet } from "../components/PortionSheet";
+import { Sheet } from "../components/Sheet";
 import { TotalCard } from "../components/TotalCard";
 import { reduce, useDraft, type DraftAction } from "../draft";
 import { errorMessage } from "../errors";
 import { estimateDraft } from "../estimate";
+import type { StringKey } from "../i18n";
 import { forUpload, thumbnail } from "../images";
+import { bindUnits, footerAction, grouped, usuals, type FooterAction } from "../meal";
 import { useSettings } from "../settings";
-import { FoodsSheet } from "./FoodsSheet";
+import type { DraftItem, Food } from "../types";
+import { AmountForm, FoodsSheet } from "./FoodsSheet";
 import { ManualSheet } from "./ManualSheet";
 import { PackagedSheet } from "./PackagedSheet";
 
@@ -22,13 +27,25 @@ interface Photo {
   url: string;
 }
 
+// What the footer says for each action, and the quiet way out it offers beside it.
+const ACTIONS: Record<FooterAction, { primary: StringKey; secondary?: StringKey; pending?: StringKey }> = {
+  estimate: { primary: "estimate", secondary: "saveWithoutEstimate" },
+  retry: { primary: "tryAgain", secondary: "saveAsIs" },
+  update: { primary: "updateWithAnswers", secondary: "saveWithoutAnswers", pending: "answersPending" },
+  sendCorrection: { primary: "sendCorrection", secondary: "saveWithoutCorrection", pending: "correctionPending" },
+  save: { primary: "save" },
+};
+
 // `estimates` and `labels` say whether the server answers those two actions yet; when it does not,
 // the photo and description are replaced by a notice and only the other ways in remain.
 export function MealScreen({
+  active,
   estimates,
   labels,
   onSaved,
 }: {
+  // Whether the Meal tab is the one on screen; the screen stays mounted behind the others.
+  active: boolean;
   estimates: boolean;
   labels: boolean;
   onSaved: () => void;
@@ -41,14 +58,21 @@ export function MealScreen({
   const [clip, setClip] = useState<Photo | null>(null);
   const [running, setRunning] = useState<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The last change to an estimate on screen failed: the numbers shown are from before it.
+  const [stale, setStale] = useState(false);
   const [sheet, setSheet] = useState<"foods" | "packaged" | "manual" | null>(null);
+  const [usual, setUsual] = useState<Food | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const [correction, setCorrection] = useState("");
   const [unsentAnswers, setUnsentAnswers] = useState(false);
+  const [foods, setFoods] = useState<Food[]>([]);
   const livePhotos = useRef(photos);
   livePhotos.current = photos;
   const liveClip = useRef(clip);
   liveClip.current = clip;
+  const questionsCard = useRef<HTMLElement>(null);
 
   useEffect(
     () => () =>
@@ -58,20 +82,40 @@ export function MealScreen({
     [],
   );
 
+  // Her usuals follow what she uses, so they are read again whenever she comes back to the meal.
+  useEffect(() => {
+    if (active) {
+      api.foods().then(setFoods, () => setFoods([]));
+    }
+  }, [active]);
+
   // After a reload the draft survives but the photos do not, and asking the model again
   // without them would quietly produce a worse estimate than the one on screen.
   const photosGone = draft.estimated && draft.thumbnail !== null && photos.length === 0;
   const canEstimate = photos.length > 0 || clip !== null || draft.description.trim() !== "";
   const sum = total(draft.items);
+  const { estimated: estimatedItems, counted: countedItems } = grouped(draft.items);
+  const questions = draft.estimated && !photosGone ? draft.questions : [];
+  const action = running
+    ? null
+    : footerAction({
+        items: draft.items.length,
+        canEstimate: estimates && canEstimate,
+        estimated: draft.estimated,
+        stale: stale && !photosGone,
+        unsentAnswers: unsentAnswers && !photosGone,
+        unsentCorrection: draft.estimated && !photosGone && correction.trim() !== "",
+      });
+  const editingItem = draft.items.find((item) => item.id === editing) ?? null;
 
-  // Photos from the gallery and from the camera go the same way: shrunk for the upload, the first
-  // one also kept small as the meal's picture in the log.
   function pickPhotos(event: ChangeEvent<HTMLInputElement>) {
     const files = [...(event.target.files ?? [])];
     event.target.value = "";
     void addPhotos(files);
   }
 
+  // Photos from the gallery and from the camera go the same way: shrunk for the upload, the first
+  // one also kept small as the meal's picture in the log.
   async function addPhotos(picked: Blob[]) {
     const files = picked.slice(0, MAX_PHOTOS - photos.length);
     try {
@@ -115,6 +159,11 @@ export function MealScreen({
     if (before) {
       dispatch(before);
     }
+    if (before?.type === "correct") {
+      // It is in the draft now and goes with every request until one succeeds.
+      setCorrection("");
+      setCorrecting(false);
+    }
     const controller = new AbortController();
     setRunning(controller);
     setError(null);
@@ -130,14 +179,16 @@ export function MealScreen({
       } else {
         dispatch({ type: "estimated", estimate: result });
         setUnsentAnswers(false);
-        setCorrection("");
+        setStale(false);
       }
     } catch (failure) {
       if (!controller.signal.aborted) {
         setError(errorMessage(failure, t));
+        setStale(asked.estimated && asked.items.length > 0);
       }
     } finally {
       setRunning(null);
+      window.scrollTo(0, 0);
     }
   }
 
@@ -167,46 +218,208 @@ export function MealScreen({
     setPhotos([]);
     removeClip();
     setError(null);
+    setStale(false);
     setCorrection("");
+    setCorrecting(false);
     setUnsentAnswers(false);
+    setEditing(null);
     dispatch({ type: "reset" });
+  }
+
+  async function askStartOver() {
+    const yes = await confirm({
+      title: t("discardTitle"),
+      body: t("discardBody"),
+      confirm: t("discardYes"),
+      cancel: t("discardNo"),
+    });
+    if (yes) {
+      startOver();
+      window.scrollTo(0, 0);
+    }
+  }
+
+  function runPrimary(next: FooterAction) {
+    if (next === "save") {
+      void save();
+    } else if (next === "sendCorrection") {
+      void estimate({ type: "correct", text: correction.trim() });
+    } else {
+      void estimate();
+    }
+  }
+
+  function add(item: DraftItem) {
+    dispatch({ type: "add", item });
+    setSheet(null);
+    setUsual(null);
   }
 
   if (running) {
     return (
       <div className="screen estimating">
         {draft.thumbnail && <img className="estimating-photo" src={draft.thumbnail} alt="" />}
-        <div className="spinner" role="status" />
-        <h1>{t("estimating")}</h1>
+        <div className="spinner" aria-hidden="true" />
+        <h1 className="estimating-title" role="status">
+          {t("estimating")}
+        </h1>
         <p className="muted">{t("estimatingHint")}</p>
-        <button type="button" className="button button-quiet" onClick={() => running.abort()}>
+        <button type="button" className="button button-secondary" onClick={() => running.abort()}>
           {t("cancel")}
         </button>
       </div>
     );
   }
 
+  const hasMeal = draft.items.length > 0;
+  const started = hasMeal || photos.length > 0 || clip !== null;
+  const shown = ACTIONS[action ?? "save"];
+
   return (
-    <div className="screen">
+    <div className="screen meal">
+      <header className="screen-header">
+        <div>
+          {!started && (
+            <p className="wordmark">
+              <Icon name="slice" size={22} />
+              Sugary
+            </p>
+          )}
+          <h1 className={hasMeal ? "title-small" : undefined}>{t(hasMeal ? "mealDraftTitle" : "captureTitle")}</h1>
+        </div>
+        {started && (
+          <button type="button" className="button button-quiet button-small" onClick={askStartOver}>
+            <Icon name="restart" size={20} />
+            {t("discard")}
+          </button>
+        )}
+      </header>
+
+      {error && (
+        <div className="notice notice-error" role="alert">
+          <Icon name="alert" size={18} />
+          <span className="notice-body">
+            <span>{error}</span>
+            {stale && <strong>{t("staleAfterError")}</strong>}
+          </span>
+        </div>
+      )}
+
+      {hasMeal && (
+        <>
+          <TotalCard
+            total={sum}
+            stale={stale}
+            thumbnail={draft.estimated ? draft.thumbnail : null}
+            questions={questions.length}
+            onJumpToQuestions={() => questionsCard.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+          />
+
+          {estimatedItems.length > 0 && (
+            <section className="card item-group" aria-labelledby="estimated-title">
+              <h2 id="estimated-title">{t("itemsTitle")}</h2>
+              <ul className="items">
+                {estimatedItems.map((item) => (
+                  <ItemRow key={item.id} item={item} onOpen={() => setEditing(item.id)} />
+                ))}
+              </ul>
+              {draft.notes.map((note) => (
+                <p key={note} className="notice">
+                  <Icon name="info" size={18} /> <span>{note}</span>
+                </p>
+              ))}
+            </section>
+          )}
+
+          {countedItems.length > 0 && (
+            <section className="card item-group counted" aria-labelledby="counted-title">
+              <div>
+                <h2 id="counted-title">{t("countedTitle")}</h2>
+                {estimatedItems.length > 0 && <p className="muted small">{t("countedHint")}</p>}
+              </div>
+              <ul className="items">
+                {countedItems.map((item) => (
+                  <ItemRow key={item.id} item={item} onOpen={() => setEditing(item.id)} />
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {questions.length > 0 && (
+            <section ref={questionsCard} className="card questions" aria-labelledby="questions-title">
+              <div>
+                <h2 id="questions-title">{t("questionsTitle")}</h2>
+                <p className="muted small">{t("questionsHint")}</p>
+              </div>
+              {questions.map((question) => (
+                <fieldset key={question.text} className="question">
+                  <legend>{question.text}</legend>
+                  <div className="chips">
+                    {question.options.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className={draft.answers[question.text] === option ? "chip chip-on" : "chip"}
+                        aria-pressed={draft.answers[question.text] === option}
+                        onClick={() => {
+                          dispatch({ type: "answer", question: question.text, answer: option });
+                          setUnsentAnswers(true);
+                        }}
+                      >
+                        {bindUnits(option)}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
+              ))}
+            </section>
+          )}
+
+          {draft.estimated && !photosGone && (
+            <section className="correction">
+              {correcting || correction ? (
+                <label className="field">
+                  <span className="field-label">{t("correctionToggle")}</span>
+                  <textarea
+                    rows={2}
+                    autoFocus={correcting && !correction}
+                    value={correction}
+                    placeholder={t("correctionPlaceholder")}
+                    onChange={(event) => setCorrection(event.target.value)}
+                  />
+                </label>
+              ) : (
+                <button type="button" className="row-button" onClick={() => setCorrecting(true)}>
+                  <Icon name="pencil" size={20} />
+                  <span>{t("correctionToggle")}</span>
+                  <Icon name="chevron" size={20} />
+                </button>
+              )}
+            </section>
+          )}
+          {photosGone && <p className="muted small">{t("photosGone")}</p>}
+        </>
+      )}
+
       {!draft.estimated && !estimates && (
-        <section className="capture">
-          <h1>{t("captureTitle")}</h1>
-          <p className="notice">
-            <Icon name="info" size={18} /> {t("estimatesUnavailable")}
-          </p>
-        </section>
+        <p className="notice">
+          <Icon name="info" size={18} /> <span>{t("estimatesUnavailable")}</span>
+        </p>
       )}
 
       {!draft.estimated && estimates && (
-        <section className="capture">
-          <h1>{t("captureTitle")}</h1>
-          <p className="muted">{t("captureHint")}</p>
+        <section className="capture" aria-label={t("captureTitle")}>
+          {!started && <p className="muted">{t("captureHint")}</p>}
 
           {(photos.length > 0 || clip) && (
             <ul className="photos">
               {clip && (
                 <li key={clip.url}>
-                  <video src={clip.url} muted playsInline preload="metadata" />
+                  <video src={clip.url} muted playsInline preload="metadata" aria-label={t("clip")} />
+                  <span className="clip-badge" aria-hidden="true">
+                    <Icon name="play" size={16} />
+                    {t("clip")}
+                  </span>
                   <button type="button" className="photo-remove" aria-label={t("removeClip")} onClick={removeClip}>
                     <Icon name="close" size={16} />
                   </button>
@@ -228,32 +441,44 @@ export function MealScreen({
             </ul>
           )}
 
-          {photos.length < MAX_PHOTOS && (
-            <div className="capture-buttons">
+          {photos.length === 0 && !clip && (
+            <CameraButton
+              mode="photo"
+              icon="camera"
+              className="button button-primary capture-hero"
+              onPhoto={(photo) => void addPhotos([photo])}
+            >
+              {t("takePhoto")}
+            </CameraButton>
+          )}
+
+          <div className="capture-row">
+            {(photos.length > 0 || clip) && photos.length < MAX_PHOTOS && (
               <CameraButton
                 mode="photo"
                 icon="camera"
-                className={photos.length === 0 ? "button button-primary button-big" : "button button-secondary"}
+                className="button button-secondary tile-button"
                 onPhoto={(photo) => void addPhotos([photo])}
               >
-                {t("takePhoto")}
+                {t("takeAnother")}
               </CameraButton>
-              <label className="button button-secondary">
+            )}
+            {!clip && (
+              <CameraButton mode="video" icon="video" className="button button-secondary tile-button" onClip={addClip}>
+                <span className="tile-label">
+                  {t("filmPlate")}
+                  <small>{t("filmPlateSub")}</small>
+                </span>
+              </CameraButton>
+            )}
+            {photos.length < MAX_PHOTOS && (
+              <label className="button button-secondary tile-button">
                 <Icon name="image" />
                 {t("fromGallery")}
                 <input type="file" accept="image/*" multiple hidden onChange={pickPhotos} />
               </label>
-            </div>
-          )}
-
-          {!clip && (
-            <div className="capture-buttons">
-              <CameraButton mode="video" icon="video" className="button button-secondary" onClip={addClip}>
-                {t("filmPlate")}
-              </CameraButton>
-            </div>
-          )}
-          {!clip && <p className="muted small">{t("filmHint")}</p>}
+            )}
+          </div>
           <CameraFallbackNote modes={["photo", "video"]} />
 
           <label className="field">
@@ -265,179 +490,115 @@ export function MealScreen({
               onChange={(event) => dispatch({ type: "describe", description: event.target.value })}
             />
           </label>
-
-          {canEstimate && (
-            <button type="button" className="button button-primary button-big" onClick={() => estimate()}>
-              {t("estimate")}
-            </button>
-          )}
         </section>
       )}
 
-      {error && (
-        <p className="notice notice-error" role="alert">
-          {error}
-        </p>
-      )}
-
-      {draft.items.length > 0 && (
-        <>
-          <TotalCard total={sum} thumbnail={draft.estimated ? draft.thumbnail : null} />
-
-          {draft.estimated && !photosGone && draft.questions.length > 0 && (
-            <section className="card questions">
-              <h2>{t("questionsTitle")}</h2>
-              <p className="muted small">{t("questionsHint")}</p>
-              {draft.questions.map((question) => (
-                <fieldset key={question.text} className="question">
-                  <legend>{question.text}</legend>
-                  <div className="chips">
-                    {question.options.map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        className={draft.answers[question.text] === option ? "chip chip-on" : "chip"}
-                        aria-pressed={draft.answers[question.text] === option}
-                        onClick={() => {
-                          dispatch({ type: "answer", question: question.text, answer: option });
-                          setUnsentAnswers(true);
-                        }}
-                      >
-                        {option}
-                      </button>
-                    ))}
-                  </div>
-                </fieldset>
-              ))}
-              {unsentAnswers && (
-                <button type="button" className="button button-primary" onClick={() => estimate()}>
-                  {t("updateEstimate")}
-                </button>
-              )}
-            </section>
-          )}
-
-          <section className="card">
-            <h2>{t("itemsTitle")}</h2>
-            <ul className="items">
-              {draft.items.map((item) => (
-                <ItemRow
-                  key={item.id}
-                  item={item}
-                  onChange={(next) => dispatch({ type: "replace", item: next })}
-                  onRemove={() => dispatch({ type: "remove", id: item.id })}
-                />
-              ))}
-            </ul>
-            {draft.notes.map((note) => (
-              <p key={note} className="notice">
-                <Icon name="info" size={18} /> {note}
-              </p>
-            ))}
-          </section>
-
-          {draft.estimated && !photosGone && (
-            <form
-              className="correction"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (correction.trim()) {
-                  void estimate({ type: "correct", text: correction.trim() });
-                }
-              }}
-            >
-              <textarea
-                rows={2}
-                value={correction}
-                placeholder={t("correctionPlaceholder")}
-                aria-label={t("correctionPlaceholder")}
-                onChange={(event) => setCorrection(event.target.value)}
-              />
-              <button type="submit" className="button button-secondary" disabled={!correction.trim()}>
-                {t("updateEstimate")}
+      {!draft.estimated && usuals(foods).length > 0 && (
+        <section className="usuals" aria-labelledby="usuals-title">
+          <h2 id="usuals-title">{t("usualsTitle")}</h2>
+          <div className="chips chips-scroll">
+            {usuals(foods).map((food) => (
+              <button key={food.id} type="button" className="chip chip-food" onClick={() => setUsual(food)}>
+                <Icon name="plus" size={18} />
+                {food.name}
               </button>
-            </form>
-          )}
-          {photosGone && <p className="muted small">{t("photosGone")}</p>}
-        </>
+            ))}
+          </div>
+        </section>
       )}
 
-      <section className="add-more">
-        {draft.items.length > 0 && <h2>{t("addMore")}</h2>}
-        <div className="add-buttons">
-          <button type="button" className="add-button" onClick={() => setSheet("foods")}>
-            <Icon name="bookmark" />
-            <span>
-              <strong>{t("myFoods")}</strong>
-              <small>{t("myFoodsHint")}</small>
-            </span>
+      <section className="add-more" aria-labelledby="add-title">
+        <h2 id="add-title">{t(hasMeal ? "addMore" : "otherWaysTitle")}</h2>
+        <div className="tiles">
+          <button type="button" className="tile" onClick={() => setSheet("foods")}>
+            <Icon name="jar" size={26} />
+            {t("myFoods")}
           </button>
-          <button type="button" className="add-button" onClick={() => setSheet("packaged")}>
-            <Icon name="barcode" />
-            <span>
-              <strong>{t("packaged")}</strong>
-              <small>{t(labels ? "packagedHint" : "packagedHintBarcode")}</small>
-            </span>
+          <button type="button" className="tile" onClick={() => setSheet("packaged")}>
+            <Icon name="barcode" size={26} />
+            {t(labels ? "packaged" : "packagedHintBarcode")}
           </button>
-          <button type="button" className="add-button" onClick={() => setSheet("manual")}>
-            <Icon name="pencil" />
-            <span>
-              <strong>{t("manual")}</strong>
-              <small>{t("manualHint")}</small>
-            </span>
+          <button type="button" className="tile" onClick={() => setSheet("manual")}>
+            <Icon name="pencil" size={26} />
+            {t("manual")}
           </button>
         </div>
       </section>
 
-      {draft.items.length > 0 && (
-        <footer className="save-bar">
-          <p className="muted small">{t("estimateDisclaimer")}</p>
-          <button type="button" className="button button-primary button-big" disabled={saving} onClick={save}>
-            {saving ? t("saving") : t("save")}
-          </button>
-          <button
-            type="button"
-            className="button button-quiet"
-            onClick={async () => {
-              if (await confirm({ title: t("discardTitle"), body: t("discardBody"), confirm: t("discardYes"), cancel: t("discardNo") })) {
-                startOver();
-              }
-            }}
-          >
-            {t("discard")}
-          </button>
-        </footer>
+      {action && (
+        <ActionBar active={active}>
+          {shown.pending && (
+            <p className="action-pending" role="status">
+              <Icon name="alert" size={18} />
+              {t(shown.pending)}
+            </p>
+          )}
+          <div className="footer-row">
+            {shown.secondary && (action !== "estimate" || hasMeal) && (
+              <button type="button" className="button button-quiet" disabled={saving} onClick={() => void save()}>
+                {t(shown.secondary)}
+              </button>
+            )}
+            <button
+              type="button"
+              className="button button-primary button-grow"
+              disabled={saving}
+              onClick={() => runPrimary(action)}
+            >
+              {action === "save" && saving ? t("saving") : t(shown.primary)}
+            </button>
+          </div>
+        </ActionBar>
       )}
 
+      {editingItem && (
+        <PortionSheet
+          item={editingItem}
+          onChange={(next) => dispatch({ type: "replace", item: next })}
+          onRemove={() => {
+            dispatch({ type: "remove", id: editingItem.id });
+            setEditing(null);
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {usual && (
+        <Sheet title={usual.name} onClose={() => setUsual(null)}>
+          <AmountForm food={usual} onAdd={add} />
+        </Sheet>
+      )}
       {confirming}
-      {sheet === "foods" && (
-        <FoodsSheet
-          onClose={() => setSheet(null)}
-          onAdd={(item) => {
-            dispatch({ type: "add", item });
-            setSheet(null);
-          }}
-        />
-      )}
-      {sheet === "packaged" && (
-        <PackagedSheet
-          labels={labels}
-          onClose={() => setSheet(null)}
-          onAdd={(item) => {
-            dispatch({ type: "add", item });
-            setSheet(null);
-          }}
-        />
-      )}
-      {sheet === "manual" && (
-        <ManualSheet
-          onClose={() => setSheet(null)}
-          onAdd={(item) => {
-            dispatch({ type: "add", item });
-            setSheet(null);
-          }}
-        />
-      )}
+      {sheet === "foods" && <FoodsSheet onClose={() => setSheet(null)} onAdd={add} />}
+      {sheet === "packaged" && <PackagedSheet labels={labels} onClose={() => setSheet(null)} onAdd={add} />}
+      {sheet === "manual" && <ManualSheet onClose={() => setSheet(null)} onAdd={add} />}
+    </div>
+  );
+}
+
+// The meal's one primary action, pinned above the tab bar. Its height is published as
+// --footer-space so the page can scroll its last content clear of it and the toast sits above it.
+function ActionBar({ active, children }: { active: boolean; children: ReactNode }) {
+  const bar = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const element = bar.current;
+    const root = document.documentElement;
+    if (!element || !active) {
+      return;
+    }
+    const publish = () => root.style.setProperty("--footer-space", `${element.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty("--footer-space");
+    };
+  }, [active]);
+
+  return (
+    <div ref={bar} className="action-bar">
+      <div className="action-bar-inner">{children}</div>
     </div>
   );
 }

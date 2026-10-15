@@ -65,6 +65,7 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
         {/* The meal screen stays mounted so an estimate in progress survives a look at the log. */}
         <div hidden={tab !== "meal"}>
           <MealScreen
+            active={tab === "meal"}
             estimates={session.estimates}
             labels={session.labels}
             onSaved={() => {

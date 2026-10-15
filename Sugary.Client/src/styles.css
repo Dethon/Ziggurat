@@ -342,35 +342,85 @@ textarea:focus-visible {
   gap: var(--space-2);
 }
 
-/* Capture */
+/* The meal: capture */
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: var(--space-1);
+  font-family: var(--font-display);
+  font-variation-settings: "SOFT" 100;
+  font-weight: 600;
+  font-size: 1.125rem;
+  color: var(--color-primary-strong);
+}
+
+h1.title-small {
+  font-size: var(--text-sheet-title);
+}
+
+.screen-header .button-small {
+  flex: none;
+  white-space: nowrap;
+}
+
+.button-small {
+  min-height: var(--target);
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-meta);
+}
 
 .capture {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-}
-
-.capture-buttons {
-  display: flex;
-  flex-wrap: wrap;
   gap: var(--space-3);
 }
 
-.capture-buttons .button {
-  flex: 1 1 140px;
+.capture-hero {
+  width: 100%;
+  min-height: 96px;
+  border-radius: var(--radius-l);
+  font-size: 1.25rem;
 }
 
-.capture-buttons .button-big {
-  flex-basis: 100%;
-  min-height: 96px;
-  font-size: 1.1875rem;
-  border-radius: var(--radius-l);
+.capture-hero .icon {
+  width: 28px;
+  height: 28px;
+}
+
+.capture-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.tile-button {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 72px;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  font-size: var(--text-meta);
+}
+
+.tile-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tile-label small {
+  font-size: var(--text-label);
+  font-weight: 600;
+  opacity: 0.85;
 }
 
 .photos {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  padding-top: var(--space-2);
 }
 
 .photos li {
@@ -381,8 +431,8 @@ textarea:focus-visible {
 .photos img,
 .photos video {
   display: block;
-  width: 84px;
-  height: 84px;
+  width: 76px;
+  height: 76px;
   object-fit: cover;
   border-radius: var(--radius-m);
   background: var(--color-sponge);
@@ -391,8 +441,8 @@ textarea:focus-visible {
 /* The × is small to the eye and a full target to the thumb. */
 .photo-remove {
   position: absolute;
-  top: -8px;
-  right: -8px;
+  top: -14px;
+  right: -14px;
   display: grid;
   place-items: center;
   width: var(--target);
@@ -406,7 +456,7 @@ textarea:focus-visible {
 .photo-remove::before {
   content: "";
   position: absolute;
-  inset: 9px;
+  inset: 10px;
   border-radius: 50%;
   background: var(--color-photo-scrim);
 }
@@ -417,12 +467,12 @@ textarea:focus-visible {
 
 .clip-badge {
   position: absolute;
-  left: 6px;
-  bottom: 6px;
+  left: 4px;
+  bottom: 4px;
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px 8px 2px 4px;
+  padding: 1px 8px 1px 4px;
   border-radius: var(--radius-pill);
   background: var(--color-photo-scrim);
   color: var(--color-on-photo);
@@ -430,11 +480,87 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+.usuals,
+.add-more {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* One row that scrolls sideways, running to the screen's edges. */
+.chips-scroll {
+  flex-wrap: nowrap;
+  margin: 0 calc(-1 * var(--space-4));
+  padding: 2px var(--space-4) var(--space-1);
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-padding-inline: var(--space-4);
+}
+
+.chips-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.chips-scroll .chip {
+  flex: none;
+  white-space: nowrap;
+}
+
+.chip-food {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: var(--space-3);
+}
+
+.chip-food .icon {
+  color: var(--color-primary);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 84px;
+  padding: var(--space-3) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-l);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-1), var(--edge);
+  font-size: var(--text-meta);
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.tile:active {
+  transform: scale(0.98);
+}
+
+.tile .icon {
+  color: var(--color-primary);
+}
+
+/* Estimating */
+
 .estimating {
   min-height: 70vh;
   align-items: center;
   justify-content: center;
   text-align: center;
+}
+
+.estimating-title {
+  font-size: var(--text-sheet-title);
 }
 
 .estimating-photo {
@@ -473,54 +599,61 @@ textarea:focus-visible {
   }
 }
 
-/* Total */
+/* The meal's total: range first */
 
 .total {
-  flex-direction: row;
-  align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-4) var(--space-4);
+  border-radius: var(--radius-xl);
+}
+
+.total-stale {
+  box-shadow: inset 0 0 0 2px var(--color-danger);
+}
+
+.total-stale .total-figure,
+.total-stale .total-best {
+  color: var(--color-muted);
+}
+
+.total-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.total-label {
+  padding-top: var(--space-1);
 }
 
 .total-photo {
   flex: none;
-  width: 84px;
-  height: 84px;
+  width: 56px;
+  height: 56px;
+  margin: -6px 0 -24px;
   object-fit: cover;
   border-radius: var(--radius-m);
 }
 
-.total-figures {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.total-number {
-  font-size: 3rem;
+.total-figure {
+  font-size: var(--text-hero);
   font-weight: 800;
-  line-height: 1;
+  line-height: 1.05;
   letter-spacing: -0.02em;
-}
-
-.total-approx {
-  margin-right: 4px;
-  font-size: 1.6rem;
-  font-weight: 500;
-  color: var(--color-muted);
 }
 
 .total-unit {
   margin-left: 6px;
-  font-size: 1.3rem;
+  font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: 0;
   color: var(--color-muted);
 }
 
-.total-range {
-  font-size: var(--text-meta);
+.total-best {
+  font-size: var(--text-body);
+  font-weight: 700;
 }
 
 .total-rations {
@@ -528,13 +661,40 @@ textarea:focus-visible {
   color: var(--color-muted);
 }
 
-.total-rations strong {
+.total-disclaimer {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-line);
+  font-size: var(--text-meta);
+  line-height: 1.4;
+  color: var(--color-muted);
+}
+
+.total-disclaimer .icon {
+  margin-top: 1px;
+  color: var(--color-info);
+}
+
+.link-button {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--target);
+  margin: 0 0 calc(-1 * var(--space-2));
+  padding: 0;
+  border: 0;
+  background: none;
+  font-weight: 700;
   color: var(--color-primary-strong);
 }
 
 .range-bar {
   position: relative;
   height: 8px;
+  margin: var(--space-2) 0 var(--space-1);
   border-radius: var(--radius-pill);
   background: var(--color-sponge);
 }
@@ -564,6 +724,15 @@ textarea:focus-visible {
 
 /* Items */
 
+.item-group {
+  gap: var(--space-1);
+  padding-bottom: var(--space-2);
+}
+
+.item-group.counted {
+  background: var(--color-counted);
+}
+
 .items {
   display: flex;
   flex-direction: column;
@@ -588,11 +757,17 @@ textarea:focus-visible {
   text-align: left;
 }
 
+.item-summary > .icon {
+  color: var(--color-muted);
+  margin-right: -4px;
+}
+
 .item-text {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
 }
 
@@ -600,10 +775,6 @@ textarea:focus-visible {
   font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
-}
-
-.sentence::first-letter {
-  text-transform: uppercase;
 }
 
 .item-meta {
@@ -625,63 +796,45 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
-.item-chevron {
-  flex: none;
-  display: grid;
-  color: var(--color-muted);
-  transition: transform var(--dur-fast);
-}
-
-.item-chevron.open {
-  transform: rotate(180deg);
-}
-
-.dot {
-  flex: none;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-.dot-high {
-  background: var(--color-good);
-}
-
-.dot-medium {
-  background: var(--color-muted);
-}
-
-.dot-low {
-  background: var(--color-caution);
-}
-
-.dot-exact {
-  background: var(--color-primary);
-}
-
-.item-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 4px 0 14px 22px;
-}
-
-.item-note {
-  display: flex;
-  gap: 6px;
+.item-best {
   font-size: var(--text-meta);
   color: var(--color-muted);
+  white-space: nowrap;
 }
 
-.item-note .icon {
-  margin-top: 3px;
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: var(--text-label);
+  font-weight: 700;
+  line-height: 1.3;
 }
 
-.item-fields {
+.badge-low {
+  color: var(--color-caution);
+}
+
+.badge-medium,
+.badge-edited,
+.badge-counted {
+  color: var(--color-muted);
+}
+
+.badge-high,
+.badge-counted .icon {
+  color: var(--color-good);
+}
+
+.item-line {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-3);
+  padding: 10px 0;
 }
+
+/* A food's amount */
 
 .amount-field {
   display: flex;
@@ -692,13 +845,32 @@ textarea:focus-visible {
 .amount-control {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
-.amount-control input {
-  width: 84px;
-  padding: 10px;
+.amount-input {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.amount-input input {
+  padding-right: 44px;
   text-align: right;
+  font-weight: 700;
+}
+
+.amount-input .amount-unit {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.amount-big input {
+  min-height: 56px;
+  font-size: 1.5rem;
 }
 
 .amount-control.wide input {
@@ -713,29 +885,31 @@ textarea:focus-visible {
 }
 
 .stepper {
+  flex: none;
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 56px;
+  height: 56px;
   border: 0;
   border-radius: var(--radius-m);
   background: var(--color-primary-soft);
   color: var(--color-primary-strong);
 }
 
-.item-actions {
-  display: flex;
-  justify-content: space-between;
+.shares .chip {
+  padding: var(--space-2) var(--space-3);
 }
 
-.item-line {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 10px 0;
+.share {
+  font-weight: 800;
 }
 
 /* Questions and corrections */
+
+.questions {
+  gap: var(--space-4);
+  scroll-margin-top: var(--space-4);
+}
 
 .question {
   display: flex;
@@ -749,58 +923,75 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
-.correction {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-/* Adding other things */
-
-.add-more {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.add-buttons {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 10px;
-}
-
-.add-button {
+.row-button {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  min-height: 64px;
-  padding: 10px 14px;
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-2) var(--space-4);
   border: 0;
   border-radius: var(--radius-l);
   background: var(--color-surface);
   box-shadow: var(--shadow-1), var(--edge);
+  font-weight: 700;
   text-align: left;
+  color: var(--color-ink);
 }
 
-.add-button .icon {
-  color: var(--color-primary);
+.row-button span {
+  flex: 1;
 }
 
-.add-button span {
-  display: flex;
-  flex-direction: column;
-}
-
-.add-button small {
-  font-size: var(--text-meta);
+.row-button .icon {
   color: var(--color-muted);
 }
 
-.save-bar {
+/* The pinned action */
+
+.action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--tabs-height) + env(safe-area-inset-bottom));
+  z-index: 9;
+  border-top: 1px solid var(--color-line);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-2);
+}
+
+.action-bar-inner {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  text-align: center;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-4);
+}
+
+.action-pending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-meta);
+  font-weight: 700;
+  color: var(--color-caution);
+}
+
+.footer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.footer-row .button-quiet {
+  flex: 0 1 auto;
+  padding-inline: var(--space-3);
+}
+
+.button-grow {
+  flex: 1 1 auto;
+  min-height: 56px;
 }
 
 /* Log */

@@ -49,3 +49,12 @@ describe("a label that could not be read", () => {
     expect(labelFailureMessage(await readingFails(), es)).toBe("The label reader is not connected right now.");
   });
 });
+
+describe("an estimate that took too long", () => {
+  it("is told in her language, not the server's English", async () => {
+    const { ApiError } = await import("./api");
+    const { errorMessage } = await import("./errors");
+    const failure = new ApiError(504, "The estimate took too long. Try again, or count this meal by hand.");
+    expect(errorMessage(failure, translator("es"))).toBe(translator("es")("errorTimeout"));
+  });
+});

@@ -9,6 +9,10 @@ export function errorMessage(error: unknown, t: Translate): string {
     if (error.status === 503) {
       return t("errorNotConfigured");
     }
+    // The server words its timeout in English; she reads it in her language.
+    if (error.status === 504) {
+      return t("errorTimeout");
+    }
     if (error.message) {
       return error.message;
     }

@@ -139,7 +139,7 @@ export function FoodList({
   );
 }
 
-function AmountForm({ food, onAdd, onEdit }: { food: Food; onAdd: (item: DraftItem) => void; onEdit: () => void }) {
+export function AmountForm({ food, onAdd, onEdit }: { food: Food; onAdd: (item: DraftItem) => void; onEdit?: () => void }) {
   const { t, language } = useSettings();
   const byWeight = food.carbsPer100g !== null;
   // A weighed food starts at her usual amount; a fixed portion starts at one of them.
@@ -183,9 +183,11 @@ function AmountForm({ food, onAdd, onEdit }: { food: Food; onAdd: (item: DraftIt
       <button type="submit" className="button button-primary button-big" disabled={eaten === null || eaten <= 0}>
         {t("addToMeal")}
       </button>
-      <button type="button" className="button button-quiet" onClick={onEdit}>
-        {t("foodEdit")}
-      </button>
+      {onEdit && (
+        <button type="button" className="button button-quiet" onClick={onEdit}>
+          {t("foodEdit")}
+        </button>
+      )}
     </form>
   );
 }
