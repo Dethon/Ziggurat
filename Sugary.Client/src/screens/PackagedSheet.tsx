@@ -1,8 +1,9 @@
-import { useState, type ChangeEvent } from "react";
+import { useState } from "react";
 import { api, ApiError } from "../api";
 import { readBarcode } from "../barcode";
 import { formatGrams, fromPackaged, parseAmount } from "../carbs";
 import { BarcodeScanner, canScanLive, type ScanProblem } from "../components/BarcodeScanner";
+import { CameraButton, CameraFallbackNote } from "../components/Camera";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { labelFailureMessage } from "../errors";
@@ -69,12 +70,7 @@ export function PackagedSheet({
     }
   }
 
-  function fromPhoto(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) {
-      return;
-    }
+  function fromPhoto(file: Blob) {
     setScanning(false);
     void run(async () => {
       // A barcode is looked for in the photo as taken, since thin bars need the pixels; only a
@@ -142,15 +138,16 @@ export function PackagedSheet({
               </button>
             )
           )}
-          <label
-            className={[live ? "button button-secondary" : "button button-primary button-big", busy && "disabled"]
-              .filter(Boolean)
-              .join(" ")}
+          <CameraButton
+            mode="photo"
+            icon="camera"
+            className={live ? "button button-secondary" : "button button-primary button-big"}
+            disabled={busy}
+            onPhoto={fromPhoto}
           >
-            <Icon name="camera" />
             {busy && !live ? t("reading") : t(labels ? "packagedPhoto" : "barcodePhoto")}
-            <input type="file" accept="image/*" capture="environment" hidden disabled={busy} onChange={fromPhoto} />
-          </label>
+          </CameraButton>
+          <CameraFallbackNote modes={["photo"]} />
           <form
             className="inline-form"
             onSubmit={(event) => {

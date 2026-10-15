@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { api } from "../api";
 import { toMealItem, total } from "../carbs";
+import { CameraButton, CameraFallbackNote } from "../components/Camera";
 import { Icon } from "../components/Icon";
 import { ItemRow } from "../components/ItemRow";
 import { TotalCard } from "../components/TotalCard";
@@ -61,9 +62,16 @@ export function MealScreen({
   const canEstimate = photos.length > 0 || clip !== null || draft.description.trim() !== "";
   const sum = total(draft.items);
 
-  async function addPhotos(event: ChangeEvent<HTMLInputElement>) {
-    const files = [...(event.target.files ?? [])].slice(0, MAX_PHOTOS - photos.length);
+  // Photos from the gallery and from the camera go the same way: shrunk for the upload, the first
+  // one also kept small as the meal's picture in the log.
+  function pickPhotos(event: ChangeEvent<HTMLInputElement>) {
+    const files = [...(event.target.files ?? [])];
     event.target.value = "";
+    void addPhotos(files);
+  }
+
+  async function addPhotos(picked: Blob[]) {
+    const files = picked.slice(0, MAX_PHOTOS - photos.length);
     try {
       const blobs = await Promise.all(files.map(forUpload));
       if (photos.length === 0 && blobs.length > 0) {
@@ -75,15 +83,11 @@ export function MealScreen({
     }
   }
 
-  function addClip(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (file) {
-      if (clip) {
-        URL.revokeObjectURL(clip.url);
-      }
-      setClip({ blob: file, url: URL.createObjectURL(file) });
+  function addClip(file: File) {
+    if (clip) {
+      URL.revokeObjectURL(clip.url);
     }
+    setClip({ blob: file, url: URL.createObjectURL(file) });
   }
 
   function removeClip() {
@@ -224,29 +228,31 @@ export function MealScreen({
 
           {photos.length < MAX_PHOTOS && (
             <div className="capture-buttons">
-              <label className={photos.length === 0 ? "button button-primary button-big" : "button button-secondary"}>
-                <Icon name="camera" />
+              <CameraButton
+                mode="photo"
+                icon="camera"
+                className={photos.length === 0 ? "button button-primary button-big" : "button button-secondary"}
+                onPhoto={(photo) => void addPhotos([photo])}
+              >
                 {t("takePhoto")}
-                <input type="file" accept="image/*" capture="environment" hidden onChange={addPhotos} />
-              </label>
+              </CameraButton>
               <label className="button button-secondary">
                 <Icon name="image" />
                 {t("fromGallery")}
-                <input type="file" accept="image/*" multiple hidden onChange={addPhotos} />
+                <input type="file" accept="image/*" multiple hidden onChange={pickPhotos} />
               </label>
             </div>
           )}
 
           {!clip && (
             <div className="capture-buttons">
-              <label className="button button-secondary">
-                <Icon name="video" />
+              <CameraButton mode="video" icon="video" className="button button-secondary" onClip={addClip}>
                 {t("filmPlate")}
-                <input type="file" accept="video/*" capture="environment" hidden onChange={addClip} />
-              </label>
+              </CameraButton>
             </div>
           )}
           {!clip && <p className="muted small">{t("filmHint")}</p>}
+          <CameraFallbackNote modes={["photo", "video"]} />
 
           <label className="field">
             <span className="field-label">{t("describeLabel")}</span>

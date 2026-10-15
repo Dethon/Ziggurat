@@ -18,6 +18,7 @@ const paths = {
   plus: "M12 6v12M6 12h12",
   check: "M5 12.5l4.5 4.5L19 7.5",
   info: "M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM12 11v5M12 8h.01",
+  flip: "M4.5 11a7.5 7.5 0 0 1 13.4-4.2M19.5 13a7.5 7.5 0 0 1-13.4 4.2M18.5 3v4h-4M5.5 21v-4h4",
 } as const;
 
 export type IconName = keyof typeof paths;

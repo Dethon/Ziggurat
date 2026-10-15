@@ -179,6 +179,19 @@ const en = {
   scanDenied:
     "The camera is blocked for this app. Allow it in the browser's site settings, or use a photo or type the digits.",
   scanUnavailable: "The camera could not be started. Use a photo or type the digits under the bars.",
+
+  camera: "Camera",
+  cameraShutter: "Take the photo",
+  cameraFilm: "Start filming",
+  cameraStopFilming: "Stop filming",
+  cameraFlip: "Switch camera",
+  cameraFilmHint: "Move slowly around the plate",
+  cameraDenied:
+    "The camera is blocked for this app, so the camera buttons now open your phone's camera app. Tap again, and check it is on the back camera. Allow the camera in the browser's site settings to use the app's own again.",
+  cameraFailed:
+    "The camera could not be started in the app, so the camera buttons now open your phone's camera app. Tap again, and check it is on the back camera.",
+  cameraUnsupported:
+    "This browser cannot use the camera inside the app, so your phone's camera app opens. Check it is on the back camera.",
 };
 
 export type Strings = typeof en;
@@ -367,6 +380,19 @@ const es: Strings = {
   scanDenied:
     "La cámara está bloqueada para esta aplicación. Permítela en los ajustes del sitio del navegador, o usa una foto o escribe los números.",
   scanUnavailable: "No se ha podido abrir la cámara. Usa una foto o escribe los números que hay bajo las barras.",
+
+  camera: "Cámara",
+  cameraShutter: "Hacer la foto",
+  cameraFilm: "Empezar a grabar",
+  cameraStopFilming: "Dejar de grabar",
+  cameraFlip: "Cambiar de cámara",
+  cameraFilmHint: "Muévete despacio alrededor del plato",
+  cameraDenied:
+    "La cámara está bloqueada para esta aplicación, así que los botones de cámara abren ahora la app de cámara del móvil. Vuelve a tocar y comprueba que esté en la cámara trasera. Permite la cámara en los ajustes del sitio del navegador para volver a usar la de la aplicación.",
+  cameraFailed:
+    "No se ha podido abrir la cámara en la aplicación, así que los botones de cámara abren ahora la app de cámara del móvil. Vuelve a tocar y comprueba que esté en la cámara trasera.",
+  cameraUnsupported:
+    "Este navegador no puede usar la cámara dentro de la aplicación, así que se abre la app de cámara del móvil. Comprueba que esté en la cámara trasera.",
 };
 
 export type Language = "en" | "es";
