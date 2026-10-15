@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, UNAUTHORIZED_EVENT } from "./api";
 import { Icon, type IconName } from "./components/Icon";
 import type { StringKey } from "./i18n";
+import { useMinute } from "./clock";
 import { pendingOutcomes } from "./log";
 import { FoodsScreen } from "./screens/FoodsScreen";
 import { LogScreen } from "./screens/LogScreen";
@@ -70,9 +71,12 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
     [],
   );
 
+  // Read again as the minutes pass and when the app comes back, so a meal crossing its two hours
+  // is counted without a reload.
+  const minute = useMinute();
   useEffect(() => {
     void refreshPending();
-  }, [refreshPending]);
+  }, [refreshPending, minute]);
 
   return (
     <>

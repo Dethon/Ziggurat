@@ -9,6 +9,7 @@ import { errorMessage } from "../errors";
 import { formatDay, formatTime, rationCount, rationText } from "../format";
 import { matches, outcomeState, pendingOutcomes } from "../log";
 import { bindUnits, sentence } from "../meal";
+import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
 import type { Meal, Outcome } from "../types";
@@ -18,7 +19,7 @@ const RECORDED: Exclude<Outcome, "unknown">[] = ["low", "inRange", "high"];
 const OUTCOME_ICON: Record<Outcome, IconName> = { low: "arrowDown", inRange: "checkCircle", high: "arrowUp", unknown: "minus" };
 
 const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-const names = (meal: Meal) => meal.items.map((item) => sentence(item.name)).join(" · ");
+const names = (meal: Meal) => meal.items.map((item) => sentence(item.name)).join("\u00a0· ");
 
 // datetime-local works in the device's own time zone and has no zone suffix.
 function toLocalInput(iso: string): string {
@@ -62,6 +63,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Meal | null>(null);
   const [query, setQuery] = useState("");
+  const now = new Date(useMinute());
 
   const loadPage = useCallback(
     async (skip: number) => {
@@ -118,7 +120,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
 
   const searching = query.trim() !== "";
   const shown = (meals ?? []).filter((meal) => matches(meal, query));
-  const pending = searching ? [] : pendingOutcomes(meals ?? []);
+  const pending = searching ? [] : pendingOutcomes(meals ?? [], now);
   const days = shown.reduce<{ key: string; date: Date; meals: Meal[] }[]>((groups, meal) => {
     const date = new Date(meal.eatenAt);
     const last = groups.at(-1);

@@ -42,13 +42,10 @@ export function BarcodeScanner({
   onDetected,
   onProblem,
   onStop,
-  onType,
 }: {
   onDetected: (code: string) => void;
   onProblem: (problem: ScanProblem) => void;
   onStop: () => void;
-  // Stops scanning and puts her in the box for the digits under the bars.
-  onType?: () => void;
 }) {
   const { t } = useSettings();
   const frame = useRef<HTMLDivElement>(null);
@@ -202,12 +199,6 @@ export function BarcodeScanner({
         {phase === "found" ? t("scanFound") : phase === "starting" ? t("scanStarting") : t(slow ? "scanSlow" : "scanHint")}
       </p>
       <div className="scanner-actions">
-        {onType && (
-          <button type="button" className="button button-quiet" onClick={onType}>
-            <Icon name="pencil" size={20} />
-            {t("scanType")}
-          </button>
-        )}
         {/* The button that opened the scanner may be gone, so the keyboard is given somewhere to be. */}
         <button type="button" className="button button-secondary" autoFocus onClick={onStop}>
           {t("scanStop")}

@@ -33,7 +33,6 @@ export function PackagedSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [barcode, setBarcode] = useState("");
-  const digits = useRef<HTMLInputElement>(null);
   // Which request is under way, so a failure is said for what it was: a lookup, a label, a save.
   const asking = useRef<Asking>("product");
   // Scanning with the live camera needs a secure page; without one the photo is the way in.
@@ -145,10 +144,6 @@ export function PackagedSheet({
               onDetected={fromScan}
               onProblem={scanFailed}
               onStop={() => setScanning(false)}
-              onType={() => {
-                setScanning(false);
-                requestAnimationFrame(() => digits.current?.focus());
-              }}
             />
           ) : (
             live && (
@@ -186,7 +181,6 @@ export function PackagedSheet({
             <label className="field">
               <span className="field-label">{t("barcodeManual")}</span>
               <input
-                ref={digits}
                 inputMode="numeric"
                 value={barcode}
                 onChange={(event) => setBarcode(event.target.value.replace(/\D/g, ""))}

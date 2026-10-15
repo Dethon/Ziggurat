@@ -8,18 +8,23 @@ import { Icon } from "./Icon";
 // and the reminder that this is an estimate stays right beside the number it qualifies.
 export const AXIS_MIN = 150;
 
+// A fixed axis, 0 to 150 g (further, in steps of 50, for a bigger meal), so an answer that narrows
+// the range is seen narrowing rather than redrawn to fill the bar.
 export function axisEnd(high: number): number {
   return Math.max(AXIS_MIN, Math.ceil(high / 50) * 50);
 }
 
 export function TotalCard({
   total,
+  axis,
   stale = false,
   thumbnail,
   questions,
   onJumpToQuestions,
 }: {
   total: Interval;
+  // The bar's axis, kept by the meal for as long as the draft lasts.
+  axis: number;
   // The last change failed: these numbers are from before it.
   stale?: boolean;
   thumbnail: string | null;
@@ -29,10 +34,8 @@ export function TotalCard({
   const { t, rationSize, language } = useSettings();
   const ranged = isRange(total);
   const [low, best, high] = [total.low, total.best, total.high].map(formatGrams);
-  // A fixed axis, 0 to 150 g (further, in steps of 50, for a bigger meal), so an answer that narrows
-  // the range is seen narrowing rather than redrawn to fill the bar.
-  const scale = axisEnd(total.high);
-  const percent = (grams: number) => `${(grams / scale) * 100}%`;
+  const scale = axis;
+  const percent = (grams: number) => `${Math.min(100, (grams / scale) * 100)}%`;
 
   return (
     <section className={stale ? "total card total-stale" : "total card"} aria-labelledby="total-label">

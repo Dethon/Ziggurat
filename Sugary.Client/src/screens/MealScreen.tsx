@@ -8,7 +8,7 @@ import { Icon } from "../components/Icon";
 import { Drip, Slice } from "../components/Illustrations";
 import { ItemRow } from "../components/ItemRow";
 import { PortionSheet } from "../components/PortionSheet";
-import { TotalCard } from "../components/TotalCard";
+import { axisEnd, TotalCard } from "../components/TotalCard";
 import { reduce, useDraft, type DraftAction } from "../draft";
 import { errorMessage } from "../errors";
 import { estimateDraft } from "../estimate";
@@ -117,6 +117,10 @@ export function MealScreen({
   const photosGone = draft.estimated && draft.thumbnail !== null && photos.length === 0;
   const canEstimate = photos.length > 0 || clip !== null || draft.description.trim() !== "";
   const sum = shownTotal(draft.items);
+  // The range bar's axis is set once for the meal and only ever grows, so it never jumps back and
+  // forth as the range crosses 150 g.
+  const axis = useRef(0);
+  axis.current = Math.max(axis.current, axisEnd(sum.high));
   const { estimated: estimatedItems, counted: countedItems } = grouped(draft.items);
   const questions = draft.estimated && !photosGone ? draft.questions : [];
   const action = running
@@ -252,6 +256,7 @@ export function MealScreen({
     setEditing(null);
     setAsked({});
     setChanging(null);
+    axis.current = 0;
     dispatch({ type: "reset" });
   }
 
@@ -339,6 +344,7 @@ export function MealScreen({
         <>
           <TotalCard
             total={sum}
+            axis={axis.current}
             stale={stale}
             thumbnail={draft.estimated ? draft.thumbnail : null}
             questions={questions.length}

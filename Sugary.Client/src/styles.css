@@ -237,6 +237,7 @@ main {
 /* A text box grows with what is in it, its placeholder included, at any text size. */
 textarea {
   field-sizing: content;
+  resize: none;
   min-height: calc(2lh + 24px);
 }
 
@@ -949,6 +950,12 @@ h1.title-small {
 .questions {
   gap: var(--space-4);
   scroll-margin-top: var(--space-4);
+}
+
+/* Answers often run to two lines; a pill would pinch them. */
+.question .chip,
+.answer .chip {
+  border-radius: var(--radius-m);
 }
 
 .question {

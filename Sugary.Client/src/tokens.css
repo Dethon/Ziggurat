@@ -41,7 +41,7 @@
   /* Information is said in milk chocolate; the focus ring keeps a blueberry of its own to be seen. */
   --color-info: #6e4f40;
   --color-focus: #2f5da8;
-  --color-scrim: rgb(28 19 16 / 55%);
+  --color-scrim: rgb(74 38 28 / 48%);
   /* Over a photo, the same in both schemes. */
   --color-on-photo: #ffffff;
   --color-photo-scrim: rgb(28 19 16 / 75%);
