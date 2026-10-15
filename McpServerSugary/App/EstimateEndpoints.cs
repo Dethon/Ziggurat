@@ -46,16 +46,16 @@ public static class EstimateEndpoints
         }
 
         var form = await request.ReadFormAsync(new FormOptions { MultipartBodyLengthLimit = limit }, ct);
-        string? Field(string name) => form.TryGetValue(name, out var value) ? value.ToString() : null;
+        string? field(string name) => form.TryGetValue(name, out var value) ? value.ToString() : null;
         var photos = form.Files.GetFiles("photos");
         var filmed = form.Files.GetFiles("clip");
 
-        if (Field("conversationId") is { Length: > 0 } conversation)
+        if (field("conversationId") is { Length: > 0 } conversation)
         {
-            return await FollowUpAsync(conversation, photos, filmed, Field, channel, estimates, Log(loggers), ct);
+            return await FollowUpAsync(conversation, photos, filmed, field, channel, estimates, Log(loggers), ct);
         }
 
-        var description = Field("description");
+        var description = field("description");
         if (photos.Count == 0 && filmed.Count == 0 && string.IsNullOrWhiteSpace(description))
         {
             return Problem(StatusCodes.Status400BadRequest, "Add a photo or a clip, or describe the meal.");
@@ -102,7 +102,7 @@ public static class EstimateEndpoints
             .Concat(clip is null ? [] : await ClipUpload.StoreAsync(opened, clip, uploads, ct))
             .ToList();
         var turn = MealTurn.Text(new MealInput(
-            photos.Count, description, Field("clarifications"), Field("language"), Field("counted"),
+            photos.Count, description, field("clarifications"), field("language"), field("counted"),
             Filmed: clip is not null));
         return Answer(
             await channel.AskAsync(opened, turn, MealEstimateSchema.Format, attachments, patch: null, review, ct),
