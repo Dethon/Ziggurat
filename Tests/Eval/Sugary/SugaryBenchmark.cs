@@ -72,9 +72,9 @@ public static class SugaryBenchmark
                 ]
             },
             Instant = EvalInstant.Evening,
-            // An estimate turn may read her log before answering (ADR-0044 lets a formatted turn
-            // call tools), so the calls are counted rather than capped.
-            CallCeiling = 4,
+            // The agent is offered no tools, so a meal is one answer and no call; any call shows on
+            // the scorecard as over the ceiling rather than failing a meal that was estimated.
+            CallCeiling = 0,
             CeilingReported = true,
             Group = meal.Set,
             Tier = EvalTier.Sugary
