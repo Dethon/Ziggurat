@@ -1168,30 +1168,39 @@ h1.title-small {
   font-weight: 400;
 }
 
-.meal-summary {
+.meal-figures {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
+  margin: 0;
 }
 
-.meal-total {
+.meal-figures div {
   display: flex;
   align-items: baseline;
-  flex-wrap: wrap;
-  column-gap: var(--space-3);
-  font-size: 2.25rem;
-  font-weight: 800;
-  line-height: 1.1;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
-.meal-total .total-unit {
-  margin-left: 4px;
+.meal-figures dt {
+  font-size: var(--text-meta);
+  font-weight: 700;
+  color: var(--color-muted);
+}
+
+.meal-figures dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.meal-logged {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.15;
 }
 
 .meal-range {
-  font-size: var(--text-body);
-  font-weight: 700;
-  color: var(--color-muted);
+  font-size: var(--text-number);
 }
 
 .outcome-segments {

@@ -308,20 +308,27 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
       }
     >
       <div className="sheet-form">
-        <div className="meal-summary">
-          <p className="meal-total">
-            <span>
-              {formatGrams(carbs.best)}
-              <span className="total-unit">g</span>
-            </span>
-            {isRange(carbs) && (
-              <span className="meal-range">
+        {/* What was logged, and the range it came with, each said for what it is. */}
+        <dl className="meal-figures">
+          <div>
+            <dt>{t("mealLogged")}</dt>
+            <dd className="meal-logged">
+              {formatGrams(carbs.best)}&nbsp;g
+            </dd>
+          </div>
+          {isRange(carbs) && (
+            <div>
+              <dt>{t("mealRange")}</dt>
+              <dd className="meal-range">
                 {formatGrams(carbs.low)}–{formatGrams(carbs.high)}&nbsp;g
-              </span>
-            )}
-          </p>
-          <p className="muted small">{rationText(carbs, rationSize, language, t)}</p>
-        </div>
+              </dd>
+            </div>
+          )}
+          <div>
+            <dt>{t("mealRations")}</dt>
+            <dd>{rationText({ ...carbs, low: carbs.best, high: carbs.best }, rationSize, language, t)}</dd>
+          </div>
+        </dl>
 
         <fieldset className="question">
           <legend>{t("outcomeTitle")}</legend>
