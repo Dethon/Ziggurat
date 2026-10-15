@@ -60,7 +60,7 @@ const en = {
 
   itemsTitle: "On your plate",
   countedTitle: "Already counted",
-  countedHint: "Exact amounts. The estimate leaves these out.",
+  countedHint: "Exact amounts, already in the total above.",
   confidence_low: "Rough guess",
   confidence_medium: "Fair guess",
   confidence_high: "Confident",
@@ -306,7 +306,7 @@ const es: Strings = {
 
   itemsTitle: "En tu plato",
   countedTitle: "Ya contado",
-  countedHint: "Cantidades exactas. La estimación no las incluye.",
+  countedHint: "Cantidades exactas, ya incluidas en el total.",
   confidence_low: "Muy aproximado",
   confidence_medium: "Aproximado",
   confidence_high: "Fiable",
