@@ -31,6 +31,10 @@ public sealed record AgentSpec
     // Whether live outposts join the endpoint list above when a session is built. A deliberate
     // choice per agent, never a default.
     public bool UsesOutposts { get; init; }
+
+    // Whether the servers above are dialled for their prompts alone. A subagent always calls
+    // tools — it exists to do a delegated task — so only a definition can set it.
+    public bool NoTools { get; init; }
     public required IReadOnlyList<string> EnabledFeatures { get; init; }
 
     // Derived from the enabled features by the projection rather than handed to the agent

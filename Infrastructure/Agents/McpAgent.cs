@@ -33,6 +33,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IReadOnlyList<McpServerEndpoint> _endpoints;
     private readonly bool _usesOutposts;
     private readonly bool _recordsOutpostVerdicts;
+    private readonly bool _noTools;
     private readonly OutpostAccess? _outposts;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
@@ -91,6 +92,7 @@ public sealed class McpAgent : DisposableAgent
         _endpoints = spec.McpServerEndpoints;
         _usesOutposts = spec.UsesOutposts;
         _recordsOutpostVerdicts = spec.RecordsOutpostVerdicts;
+        _noTools = spec.NoTools;
         _outposts = outposts;
         _filesystemEnabledTools = spec.FilesystemEnabledTools;
         _loggerFactory = loggerFactory;
@@ -560,7 +562,7 @@ public sealed class McpAgent : DisposableAgent
             var newSession = await ThreadSession
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
-                             ct, _promptCache, _readImages, _bridge);
+                             ct, _promptCache, _readImages, _bridge, _noTools);
 
             // The one moment a shadowed outpost is knowable, and the machine serving it has no way
             // to find out for itself — the next keepalive carries the answer home. Whether this

@@ -195,16 +195,21 @@ public class AgentAppSettingsTests
         settings.AgentDefaults.For("telegram").ShouldBe("jonas");
     }
 
-    // Her estimates run on an agent of their own that reaches her log and nothing else: no other
-    // server's tools to wander into, no memory to recall an old meal into a new estimate, and no
-    // workers. That is a rule about her health data, not a setting, so it is read back here.
+    // Her estimates run on an agent of their own that only estimates: the Sugary server is dialled
+    // for the estimating words it serves, and nothing reaches the model to call — not her log, not a
+    // skill, not memory to recall an old meal into a new estimate, not a worker. A turn that read
+    // her log first cost three times as much and sometimes answered nothing (the first paid pass,
+    // 2026-10-15). That is a rule about her health data and her bill, not a setting.
     [Fact]
-    public void Sugary_ReachesTheSugaryServerAlone_WithNoMemoryAndNoWorkers()
+    public void Sugary_DialsTheSugaryServerAloneForItsPrompt_AndCallsNothing()
     {
         var sugary = BoundAgents().Single(a => a.Id == "sugary");
 
         sugary.McpServerEndpoints.ShouldBe(["http://mcp-sugary:8080/mcp"]);
-        sugary.EnabledFeatures.ShouldNotContain(f => f.StartsWith("memory") || f.StartsWith("subagents"));
+        sugary.NoTools.ShouldBeTrue();
+        sugary.EnabledFeatures.ShouldBeEmpty();
+        sugary.WhitelistPatterns.ShouldBeEmpty();
+        sugary.UsesOutposts.ShouldBeFalse();
     }
 
     // The app's channel is connected, and a meal sent on it is answered by the agent that estimates:

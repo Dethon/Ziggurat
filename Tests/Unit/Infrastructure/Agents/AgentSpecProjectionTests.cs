@@ -139,6 +139,35 @@ public sealed class AgentSpecProjectionTests
             .UsesOutposts.ShouldBe(expected);
     }
 
+    // An agent that calls nothing is dialled for its servers' prompts alone; one that also enabled a
+    // feature or opted into outposts would be configured for something it never does, so it is
+    // refused where it was written rather than built quietly without either.
+    [Fact]
+    public void ForAgent_AnAgentWithNoTools_IsProjectedSo()
+    {
+        Project(_agentDefinition with { NoTools = true, EnabledFeatures = [] }).NoTools.ShouldBeTrue();
+        AgentSpec().NoTools.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("memory", false)]
+    [InlineData(null, true)]
+    public void ForAgent_AnAgentWithNoToolsThatEnablesFeaturesOrOutposts_IsRefused(string? feature, bool outposts)
+    {
+        var definition = _agentDefinition with
+        {
+            NoTools = true,
+            EnabledFeatures = feature is null ? [] : [feature],
+            UsesOutposts = outposts
+        };
+
+        Should.Throw<InvalidOperationException>(() => Project(definition)).Message.ShouldContain("'jack'");
+    }
+
+    private static AgentSpec Project(AgentDefinition definition) => AgentSpecProjection.ForAgent(
+        definition, new AgentKey("conv-1", "jack"), "fran", _openRouter, _patchable, lemonadeHostAddress: null,
+        McpSecret, new DeploymentEndpoints(definition.McpServerEndpoints), logger: null);
+
     // The session id is what OpenRouter sticks a prompt cache to, so two spawns of the same
     // subagent definition must not land on one.
     [Fact]

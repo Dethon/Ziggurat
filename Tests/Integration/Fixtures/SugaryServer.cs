@@ -49,6 +49,9 @@ public sealed class SugaryServer : IAsyncDisposable
 
     public Uri Address => new(new Uri(_server.Endpoint), "/");
 
+    // Where an agent dials it, as a definition names an endpoint.
+    public string Endpoint => _server.Endpoint;
+
     // A conversation no estimate ever has, for the probe AgentAsync sends.
     private const string ProbeConversation = "probe";
 
