@@ -925,6 +925,42 @@ h1.title-small {
   font-weight: 700;
 }
 
+.answers {
+  gap: var(--space-2);
+}
+
+.answer-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-3);
+}
+
+.answer + .answer {
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-3);
+}
+
+.answer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.answer-given {
+  font-weight: 700;
+}
+
+.answer-row .button {
+  flex: none;
+  color: var(--color-primary-strong);
+}
+
 .row-button {
   display: flex;
   align-items: center;

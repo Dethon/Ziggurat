@@ -15,7 +15,7 @@ import type { StringKey } from "../i18n";
 import { forUpload, thumbnail } from "../images";
 import { bindUnits, footerAction, grouped, usuals, type FooterAction } from "../meal";
 import { useSettings } from "../settings";
-import type { DraftItem, Food } from "../types";
+import type { DraftItem, Food, Question } from "../types";
 import { AmountSheet, FoodsSheet } from "./FoodsSheet";
 import { ManualSheet } from "./ManualSheet";
 import { PackagedSheet } from "./PackagedSheet";
@@ -71,6 +71,10 @@ export function MealScreen({
   const [correction, setCorrection] = useState("");
   const [unsentAnswers, setUnsentAnswers] = useState(false);
   const [foods, setFoods] = useState<Food[]>([]);
+  // Every question the model has asked on this meal, kept here so an answer already sent can be
+  // changed: the draft keeps only the answers, and the questions still unanswered.
+  const [asked, setAsked] = useState<Record<string, Question>>({});
+  const [changing, setChanging] = useState<string | null>(null);
   const livePhotos = useRef(photos);
   livePhotos.current = photos;
   const liveClip = useRef(clip);
@@ -91,6 +95,12 @@ export function MealScreen({
       adder.current = null;
     };
   }, [adder, dispatch]);
+
+  useEffect(() => {
+    if (draft.questions.length > 0) {
+      setAsked((known) => ({ ...known, ...Object.fromEntries(draft.questions.map((q) => [q.text, q])) }));
+    }
+  }, [draft.questions]);
 
   // Her usuals follow what she uses, so they are read again whenever she comes back to the meal.
   useEffect(() => {
@@ -117,6 +127,10 @@ export function MealScreen({
         unsentCorrection: draft.estimated && !photosGone && correction.trim() !== "",
       });
   const editingItem = draft.items.find((item) => item.id === editing) ?? null;
+  // Answers already in a request: their questions are no longer among the open ones.
+  const sentAnswers = draft.estimated
+    ? Object.entries(draft.answers).filter(([text]) => !draft.questions.some((q) => q.text === text))
+    : [];
 
   function pickPhotos(event: ChangeEvent<HTMLInputElement>) {
     const files = [...(event.target.files ?? [])];
@@ -233,6 +247,8 @@ export function MealScreen({
     setCorrecting(false);
     setUnsentAnswers(false);
     setEditing(null);
+    setAsked({});
+    setChanging(null);
     dispatch({ type: "reset" });
   }
 
@@ -382,6 +398,59 @@ export function MealScreen({
                   </div>
                 </fieldset>
               ))}
+            </section>
+          )}
+
+          {sentAnswers.length > 0 && (
+            <section className="card answers" aria-labelledby="answers-title">
+              <h2 id="answers-title">{t("answersTitle")}</h2>
+              <ul className="answer-list">
+                {sentAnswers.map(([text, answer]) => {
+                  const question = asked[text];
+                  const canChange = question !== undefined && !photosGone;
+                  return (
+                    <li key={text} className="answer">
+                      <div className="answer-row">
+                        <span className="item-text">
+                          <span className="item-meta">{text}</span>
+                          <span className="answer-given">{bindUnits(answer)}</span>
+                        </span>
+                        {canChange && changing !== text && (
+                          <button
+                            type="button"
+                            className="button button-quiet button-small"
+                            aria-label={t("changeAnswerSpoken", { question: text })}
+                            onClick={() => setChanging(text)}
+                          >
+                            {t("changeAnswer")}
+                          </button>
+                        )}
+                      </div>
+                      {canChange && changing === text && (
+                        <div className="chips" role="group" aria-label={text}>
+                          {question.options.map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              className={answer === option ? "chip chip-on" : "chip"}
+                              aria-pressed={answer === option}
+                              onClick={() => {
+                                if (option !== answer) {
+                                  dispatch({ type: "answer", question: text, answer: option });
+                                  setUnsentAnswers(true);
+                                }
+                                setChanging(null);
+                              }}
+                            >
+                              {bindUnits(option)}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             </section>
           )}
 

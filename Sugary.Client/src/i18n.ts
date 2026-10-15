@@ -59,6 +59,9 @@ const en = {
   photosGone: "The photos are no longer on this device. Start over to estimate again.",
 
   itemsTitle: "On your plate",
+  answersTitle: "Your answers",
+  changeAnswer: "Change",
+  changeAnswerSpoken: "Change your answer to: {question}",
   countedTitle: "Already counted",
   countedHint: "Exact amounts, already in the total above.",
   confidence_low: "Rough guess",
@@ -311,6 +314,9 @@ const es: Strings = {
   photosGone: "Las fotos ya no están en este dispositivo. Empieza de nuevo para volver a calcular.",
 
   itemsTitle: "En tu plato",
+  answersTitle: "Tus respuestas",
+  changeAnswer: "Cambiar",
+  changeAnswerSpoken: "Cambiar tu respuesta a: {question}",
   countedTitle: "Ya contado",
   countedHint: "Cantidades exactas, ya incluidas en el total.",
   confidence_low: "Muy aproximado",
