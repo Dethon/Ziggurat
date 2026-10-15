@@ -108,6 +108,46 @@ public class ChatMonitorReviewCopyTests
         stored.Bytes.ShouldBe(new byte[] { 1, 2, 3 });
     }
 
+    // The review shows what a video model was sent: the clip, and her photos, but not the stills
+    // taken from the clip, which only a model that cannot watch is given. So a still is neither
+    // fetched nor copied, and the topic has no picture it would have to explain.
+    [Fact]
+    public async Task AReviewCopyOfAFilmedMeal_CopiesTheClipAndHerPhotos_AndNoneOfTheClipsStills()
+    {
+        var photo = new AttachmentReference
+        {
+            Id = "11-22/photo", FileName = "meal-1.jpg", MediaType = "image/jpeg", SizeBytes = 3
+        };
+        var stills = new[] { "11-22/s1", "11-22/s2" }.Select((id, i) => new AttachmentReference
+        {
+            Id = id, FileName = $"still-{i + 1}.jpg", MediaType = "image/jpeg", SizeBytes = 1
+        }).ToList();
+        var clip = new AttachmentReference
+        {
+            Id = "11-22/clip", FileName = "meal.mp4", MediaType = "video/mp4", SizeBytes = 4,
+            Stills = [.. stills.Select(s => s.Id)]
+        };
+        var sugary = new FakeChannelConnection { ChannelId = "sugary" };
+        sugary.Attachments[photo.Id] = [1, 2, 3];
+        sugary.Attachments[clip.Id] = [4, 5, 6, 7];
+        stills.ForEach(s => sugary.Attachments[s.Id] = [9]);
+        sugary.WriteMessage(Turn("a plate of paella") with
+        {
+            ReviewCopy = _review,
+            Attachments = [photo, clip, .. stills]
+        });
+        sugary.Complete();
+        var webchat = ReviewHost();
+
+        await RunAsync([sugary, webchat], MonitorTestMocks.CreateAgentFactory(ReplyingAgent()));
+
+        await Eventually.Until(() => webchat.StoredAttachments.Count >= 2, "the photo and the clip were copied");
+        await Eventually.Settle();
+        webchat.StoredAttachments.Select(s => s.Attachment).ShouldBe([photo, clip]);
+        webchat.StoredAttachments[1].Bytes.ShouldBe(new byte[] { 4, 5, 6, 7 });
+        sugary.FetchedAttachments.ShouldBe([photo.Id, clip.Id]);
+    }
+
     [Fact]
     public async Task ATurnWithPhotosNotAskingForAReviewCopy_CopiesNothing()
     {

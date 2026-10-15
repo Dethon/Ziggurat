@@ -24,8 +24,7 @@ internal static class ClipSelection
 
         if (inputs.Video || !withinDepth)
         {
-            var stills = clips.SelectMany(c => c.Stills ?? []).ToHashSet(StringComparer.Ordinal);
-            return attachments.Where(a => !stills.Contains(a.Id)).ToList();
+            return ClipStills.Without(attachments);
         }
 
         if (!inputs.Images)

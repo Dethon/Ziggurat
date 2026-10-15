@@ -248,8 +248,28 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public Dictionary<string, byte[]> Attachments { get; } = [];
 
+    private readonly List<string> _fetched = [];
+
+    public IReadOnlyList<string> FetchedAttachments
+    {
+        get
+        {
+            lock (_fetched)
+            {
+                return [.. _fetched];
+            }
+        }
+    }
+
     public Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
-        => Task.FromResult(Attachments.GetValueOrDefault(attachmentId));
+    {
+        lock (_fetched)
+        {
+            _fetched.Add(attachmentId);
+        }
+
+        return Task.FromResult(Attachments.GetValueOrDefault(attachmentId));
+    }
 
     private readonly List<(string ConversationId, AttachmentReference Attachment, byte[] Bytes)> _stored = [];
 

@@ -37,8 +37,9 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
         if (message.Attachments is { Count: > 0 } attachments
             && targets.FirstOrDefault(t => t.Channel == host) is { Channel: not null } review)
         {
-            // Started, not awaited: the channel's answer must never wait on the review host.
-            _ = CopyAttachmentsAsync(originChannel, review, attachments, ct);
+            // Started, not awaited: the channel's answer must never wait on the review host. A clip's
+            // stills stay behind: the review shows what a video model was sent, which is the clip.
+            _ = CopyAttachmentsAsync(originChannel, review, ClipStills.Without(attachments), ct);
         }
 
         return targets;
@@ -48,7 +49,7 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
     // the bytes rest where only the channel and the agent can reach them. So the host is handed a
     // copy under that same reference — the agent being the one party connected to both — and the
     // message and the history still carry references alone (ADR 0020, ADR 0046). One at a time, in
-    // the order sent, so at most one photo is held here at once. Never faults: a copy that fails
+    // the order sent, so at most one file is held here at once. Never faults: a copy that fails
     // costs the review a picture and nothing else.
     private async Task CopyAttachmentsAsync(
         IChannelConnection origin, DeliveryTarget review, IReadOnlyList<AttachmentReference> attachments,
