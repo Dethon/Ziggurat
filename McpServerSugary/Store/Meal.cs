@@ -88,3 +88,10 @@ public class Period
     public DateOnly Start { get; set; }
     public DateOnly? End { get; set; }
 }
+// What she wrote about a day of her calendar, period or not: how she felt, what she craved. One
+// per day, keyed by it.
+public class DayNote
+{
+    public DateOnly Day { get; set; }
+    public string Text { get; set; } = "";
+}

@@ -1,4 +1,5 @@
 import type {
+  DayNote,
   Dose,
   Food,
   Meal,
@@ -127,6 +128,9 @@ export const api = {
   createPeriod: (period: SavePeriod) => request<Period>("/periods", json("POST", period)),
   updatePeriod: (id: string, period: SavePeriod) => request<Period>(`/periods/${id}`, json("PUT", period)),
   deletePeriod: (id: string) => request<void>(`/periods/${id}`, { method: "DELETE" }),
+  dayNotes: () => request<DayNote[]>("/day-notes"),
+  // Empty text deletes the note; the server then answers with nothing.
+  setDayNote: (day: string, text: string) => request<DayNote | undefined>(`/day-notes/${day}`, json("PUT", { text })),
 
   foods: () => request<Food[]>("/foods"),
   createFood: (food: SaveFood) => request<Food>("/foods", json("POST", food)),

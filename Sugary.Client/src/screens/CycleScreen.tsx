@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { CycleCalendar } from "../components/CycleCalendar";
 import { Icon } from "../components/Icon";
 import { cycleStatus, history, localDay, periodProblem } from "../cycle";
 import { errorMessage } from "../errors";
@@ -7,7 +8,8 @@ import { formatDays } from "../format";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { Period, SavePeriod } from "../types";
+import type { DayNote, Period, SavePeriod } from "../types";
+import { DaySheet } from "./DaySheet";
 import { PeriodSheet, problemText } from "./PeriodSheet";
 
 // Past this day of a period, the status asks whether it is still going: an end she forgot to note
@@ -23,12 +25,17 @@ export function CycleScreen() {
   const [error, setError] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Opened | null>(null);
   const [busy, setBusy] = useState(false);
+  const [notes, setNotes] = useState<DayNote[]>([]);
+  const [openDay, setOpenDay] = useState<string | null>(null);
   const today = localDay(new Date(useMinute()));
   const thisYear = today.slice(0, 4);
+  const [month, setMonth] = useState(() => today.slice(0, 7));
 
   const load = useCallback(async () => {
     try {
-      setPeriods(await api.periods());
+      const [recorded, written] = await Promise.all([api.periods(), api.dayNotes()]);
+      setPeriods(recorded);
+      setNotes(written);
       setError(null);
     } catch (failure) {
       setError(errorMessage(failure, t));
@@ -41,6 +48,7 @@ export function CycleScreen() {
 
   const all = periods ?? [];
   const status = cycleStatus(all, today);
+  const noted = new Set(notes.map((note) => note.day));
 
   // One tap records today; the rules are asked first so a clash is said in her language.
   async function quick(values: SavePeriod, period?: Period) {
@@ -52,6 +60,7 @@ export function CycleScreen() {
     setBusy(true);
     try {
       await (period ? api.updatePeriod(period.id, values) : api.createPeriod(values));
+      setOpenDay(null);
       toast({ text: t("periodSaved") });
       await load();
     } catch (failure) {
@@ -150,6 +159,10 @@ export function CycleScreen() {
         </section>
       )}
 
+      {periods !== null && (
+        <CycleCalendar month={month} periods={all} noted={noted} today={today} onMonth={setMonth} onDay={setOpenDay} />
+      )}
+
       {all.length > 0 && (
         <section className="card" aria-labelledby="periods-title">
           <h2 id="periods-title" className="section-title">
@@ -182,6 +195,26 @@ export function CycleScreen() {
             ))}
           </ul>
         </section>
+      )}
+
+      {openDay && (
+        <DaySheet
+          day={openDay}
+          note={notes.find((note) => note.day === openDay)?.text ?? ""}
+          periods={all}
+          today={today}
+          onClose={() => setOpenDay(null)}
+          onNoteSaved={(text) => {
+            setNotes((current) => [...current.filter((note) => note.day !== openDay), ...(text ? [{ day: openDay, text }] : [])]);
+            setOpenDay(null);
+            toast({ text: t(text ? "noteSaved" : "noteCleared") });
+          }}
+          onPeriod={(values, period) => void quick(values, period)}
+          onOpenPeriod={(period, initial) => {
+            setOpenDay(null);
+            setSheet({ period, initial });
+          }}
+        />
       )}
 
       {sheet && (

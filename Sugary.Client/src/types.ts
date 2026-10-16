@@ -132,6 +132,12 @@ export interface Period {
 
 export type SavePeriod = Omit<Period, "id">;
 
+// What she wrote about a day of her calendar, period or not.
+export interface DayNote {
+  day: string;
+  text: string;
+}
+
 export interface DraftItem extends MealItem {
   id: string;
   note: string | null;

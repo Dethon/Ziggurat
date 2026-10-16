@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, cycleStatus, daysBetween, history, localDay, MAX_PERIOD_DAYS, periodProblem } from "./cycle";
+import { addDays, cycleStatus, dayAction, daysBetween, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, shiftMonth } from "./cycle";
 import type { Period } from "./types";
 
 const period = (start: string, end: string | null, id = start): Period => ({ id, start, end });
@@ -99,5 +99,82 @@ describe("periodProblem", () => {
       key: "periodStillOpen",
       start: "2026-09-03",
     });
+  });
+});
+
+describe("monthGrid", () => {
+  const today = "2026-10-16";
+
+  // October 2026 starts on a Thursday and ends on a Saturday.
+  it("lays a month out in weeks starting on Monday, with blanks outside it", () => {
+    const weeks = monthGrid("2026-10", [], new Set(), today);
+    expect(weeks).toHaveLength(5);
+    expect(weeks[0].map((cell) => cell?.day ?? null)).toEqual([null, null, null, "2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04"]);
+    expect(weeks[4].map((cell) => cell?.day ?? null)).toEqual([
+      "2026-10-26",
+      "2026-10-27",
+      "2026-10-28",
+      "2026-10-29",
+      "2026-10-30",
+      "2026-10-31",
+      null,
+    ]);
+  });
+
+  it("marks her period days, an ongoing period only up to today", () => {
+    const periods = [period("2026-09-29", "2026-10-02"), period("2026-10-14", null)];
+    const cells = monthGrid("2026-10", periods, new Set(), today).flat();
+    const marked = cells.filter((cell) => cell?.period).map((cell) => cell!.day);
+    expect(marked).toEqual(["2026-10-01", "2026-10-02", "2026-10-14", "2026-10-15", "2026-10-16"]);
+  });
+
+  it("marks the days with a note, today, and the days still to come", () => {
+    const cells = monthGrid("2026-10", [], new Set(["2026-10-03", "2026-09-30"]), today).flat();
+    expect(cells.filter((cell) => cell?.note).map((cell) => cell!.day)).toEqual(["2026-10-03"]);
+    expect(cells.filter((cell) => cell?.today).map((cell) => cell!.day)).toEqual(["2026-10-16"]);
+    expect(cells.find((cell) => cell?.day === "2026-10-17")?.future).toBe(true);
+    expect(cells.find((cell) => cell?.day === "2026-10-16")?.future).toBe(false);
+  });
+
+  // A month starting on a Monday needs no blank before it; February 2027 fills exactly four weeks.
+  it("adds no blank week where the month does not need one", () => {
+    const weeks = monthGrid("2027-02", [], new Set(), today);
+    expect(weeks).toHaveLength(4);
+    expect(weeks[0][0]?.day).toBe("2027-02-01");
+    expect(weeks[3][6]?.day).toBe("2027-02-28");
+  });
+});
+
+describe("shiftMonth", () => {
+  it("steps across years", () => {
+    expect(shiftMonth("2026-12", 1)).toBe("2027-01");
+    expect(shiftMonth("2026-01", -1)).toBe("2025-12");
+    expect(shiftMonth("2026-10", 0)).toBe("2026-10");
+  });
+});
+
+describe("dayAction", () => {
+  const today = "2026-10-16";
+
+  it("opens the period a day belongs to", () => {
+    const covering = period("2026-10-01", "2026-10-05");
+    expect(dayAction("2026-10-03", [covering], today)).toEqual({ kind: "open", period: covering });
+  });
+
+  it("starts a period with an end on a day a later period follows", () => {
+    const ongoing = period("2026-10-12", null);
+    expect(dayAction("2026-10-03", [ongoing], today)).toEqual({ kind: "start", ongoing: false });
+    expect(dayAction("2026-10-12", [ongoing], today)).toEqual({ kind: "open", period: ongoing });
+  });
+
+  it("starts an ongoing period on a day no later period follows", () => {
+    expect(dayAction("2026-10-10", [period("2026-09-01", "2026-09-05")], today)).toEqual({ kind: "start", ongoing: true });
+  });
+
+  // An ongoing period ending today belongs to today only up to today, so an earlier ongoing one
+  // ends on any day after its start.
+  it("ends an ongoing period on a day after its start that it does not yet reach", () => {
+    const ongoing = period("2026-10-10", null);
+    expect(dayAction("2026-10-17", [ongoing], "2026-10-16")).toEqual({ kind: "end", period: ongoing });
   });
 });

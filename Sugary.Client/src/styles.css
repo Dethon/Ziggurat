@@ -2141,3 +2141,126 @@ h1.marked .icon {
   font-size: var(--text-meta);
   color: var(--color-muted);
 }
+
+.calendar {
+  gap: var(--space-2);
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.calendar-title {
+  font-family: var(--font-display);
+  font-variation-settings: "SOFT" 100;
+  font-weight: 600;
+  font-size: var(--text-body);
+  color: var(--color-ink);
+}
+
+.calendar-grid {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 2px 4px;
+  table-layout: fixed;
+}
+
+.calendar-weekday {
+  padding-bottom: var(--space-1);
+  font-size: var(--text-label);
+  font-weight: 400;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+.calendar-day {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-width: var(--target);
+  aspect-ratio: 1;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-ink);
+}
+
+.calendar-day-period {
+  background: var(--color-period);
+  color: var(--color-on-period);
+  font-weight: 700;
+}
+
+.calendar-day-today {
+  box-shadow: inset 0 0 0 2px var(--color-ink);
+}
+
+.calendar-day-period.calendar-day-today {
+  box-shadow:
+    inset 0 0 0 2px var(--color-period),
+    inset 0 0 0 4px var(--color-on-period);
+}
+
+.calendar-day-future {
+  color: var(--color-muted);
+  cursor: default;
+}
+
+.calendar-dot {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  font-size: var(--text-label);
+  color: var(--color-muted);
+}
+
+.calendar-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.legend-period {
+  background: var(--color-period);
+}
+
+.legend-note::after {
+  content: "";
+  position: absolute;
+  inset: 4.5px;
+  border-radius: 50%;
+  background: var(--color-ink);
+}
+
+.legend-today {
+  box-shadow: inset 0 0 0 2px var(--color-ink);
+}
+
+.period-in-day .icon:first-child {
+  color: var(--color-period);
+}

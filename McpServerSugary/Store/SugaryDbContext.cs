@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Design;
 namespace McpServerSugary.Store;
 
 // The log is meant to be read by other tools next to glucose data, so it is plain tables with
-// plain columns: one row per meal, one row per item, one row per dose, one row per period, enums,
+// plain columns: one row per meal, one row per item, one row per dose, one row per period, one row per noted day, enums,
 // times and days as readable text.
 public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbContext(options)
 {
@@ -12,6 +12,7 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
     public DbSet<Food> Foods => Set<Food>();
     public DbSet<Dose> Doses => Set<Dose>();
     public DbSet<Period> Periods => Set<Period>();
+    public DbSet<DayNote> DayNotes => Set<DayNote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,6 +59,7 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
 
         // A day is stored as yyyy-MM-dd text, which sorts as days do.
         modelBuilder.Entity<Period>().HasIndex(p => p.Start);
+        modelBuilder.Entity<DayNote>().HasKey(n => n.Day);
     }
 }
 

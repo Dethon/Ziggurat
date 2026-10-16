@@ -100,3 +100,61 @@ export function periodProblem(start: string, end: string | null, today: string, 
   }
   return { key: clash.end === null && clash.start < start ? "periodStillOpen" : "periodOverlaps", start: clash.start };
 }
+
+// One day of the calendar and what is on it.
+export interface CalendarDay {
+  day: string;
+  period: boolean;
+  note: boolean;
+  today: boolean;
+  future: boolean;
+}
+
+// A month ("yyyy-MM") in weeks from Monday, as both her languages lay a calendar out; the days
+// before the first and after the last are blank.
+export function monthGrid(month: string, periods: readonly Period[], noted: ReadonlySet<string>, today: string): (CalendarDay | null)[][] {
+  const first = `${month}-01`;
+  const length = daysBetween(first, `${shiftMonth(month, 1)}-01`);
+  const lead = (new Date(utc(first)).getUTCDay() + 6) % 7;
+  const cells = [
+    ...Array.from({ length: lead }, () => null),
+    ...Array.from({ length }, (_, index): CalendarDay => {
+      const day = addDays(first, index);
+      return {
+        day,
+        period: periods.some((period) => covers(period, day, today)),
+        note: noted.has(day),
+        today: day === today,
+        future: day > today,
+      };
+    }),
+  ];
+  const weeks = Math.ceil(cells.length / 7);
+  return Array.from({ length: weeks }, (_, week) =>
+    Array.from({ length: 7 }, (_, weekday) => cells[week * 7 + weekday] ?? null),
+  );
+}
+
+export function shiftMonth(month: string, months: number): string {
+  const index = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1 + months;
+  return `${Math.floor(index / 12)}-${pad((index % 12) + 1)}`;
+}
+
+// What a day the period could be started or ended on asks for: the ongoing period ended on it, or
+// one started on it — ongoing when no later period is in its way, otherwise a sheet to say its end.
+export type DayAction =
+  | { kind: "open"; period: Period }
+  | { kind: "end"; period: Period }
+  | { kind: "start"; ongoing: boolean };
+
+export function dayAction(day: string, periods: readonly Period[], today: string): DayAction {
+  const covering = periods.find((period) => covers(period, day, today));
+  if (covering) {
+    return { kind: "open", period: covering };
+  }
+  const ongoing = periods.find((period) => period.end === null && period.start < day);
+  if (ongoing) {
+    return { kind: "end", period: ongoing };
+  }
+  return { kind: "start", ongoing: !periods.some((period) => period.start > day) };
+}

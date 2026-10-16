@@ -12,8 +12,8 @@ period on it, end the ongoing one on it, or open the period it belongs to. Notes
 
 Spec: `.scratch/period-tracker/spec.md`
 
-- [ ] A note set, replaced and cleared (empty text deletes it) through the API; listed by period.
-- [ ] Refusals: over 500 characters, a day after tomorrow, a day that is not a date.
-- [ ] Every day-note route sits behind the access gate.
-- [ ] The calendar grid (Monday first, each day's marks) is a pure function under vitest.
-- [ ] Each day button is named for screen readers with its date and what it is.
+- [x] A note set, replaced and cleared (empty text deletes it) through the API; listed by period.
+- [x] Refusals: over 500 characters, a day after tomorrow, a day that is not a date.
+- [x] Every day-note route sits behind the access gate.
+- [x] The calendar grid (Monday first, each day's marks) is a pure function under vitest.
+- [x] Each day button is named for screen readers with its date and what it is.
