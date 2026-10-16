@@ -53,6 +53,22 @@ public class McpSugaryServerTests
         body.ShouldContain("/sugary/foods.csv");
     }
 
+    // "How much did she take for the pizza" is one search, and reading her doses never turns into
+    // advising one.
+    [Fact]
+    public async Task TheLogSkill_SaysWhereHerDosesAre_AndThatTheyAreNeverABasisForAdvice()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(SugarySkill.Name));
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+
+        body.ShouldContain("/sugary/doses/<YYYY-MM>.csv");
+        body.ShouldContain("`meal_id`, with `directoryPath` set to `/sugary/doses`");
+        body.ShouldContain("never a basis for suggesting a dose, a ratio, a correction or a timing");
+        SugarySkill.Description.ShouldContain("insulin");
+    }
+
     [Fact]
     public async Task AnEmptyLog_HasItsReadmeFoodsAndThreeEmptyDirectories()
     {

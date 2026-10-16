@@ -12,8 +12,8 @@ timing.
 
 Spec: `.scratch/insulin-doses/spec.md`
 
-- [ ] The skill body names `/sugary/doses/<YYYY-MM>.csv`, how to find a meal's doses (text search for its `meal_id` under `/sugary/doses`), and the never-advise rule.
-- [ ] The skill description is widened to cover questions about her insulin doses, and stays within the skill budget.
-- [ ] Prompt staleness and budget tests pass, and the prompt snapshots are updated.
+- [x] The skill body names `/sugary/doses/<YYYY-MM>.csv`, how to find a meal's doses (text search for its `meal_id` under `/sugary/doses`), and the never-advise rule.
+- [x] The skill description is widened to cover questions about her insulin doses, and stays within the skill budget.
+- [x] Prompt staleness and budget tests pass, and the prompt snapshots are updated.
 - [ ] An armed changed-tier eval run against `master` is taken after the edit and its scorecard checked. Any red is either explained or fixed.
-- [ ] The `sugary` agent's definition and the estimating prompt are unchanged.
+- [x] The `sugary` agent's definition and the estimating prompt are unchanged.
