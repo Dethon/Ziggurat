@@ -2311,3 +2311,16 @@ h1.marked .icon {
 .forecast-disclaimer {
   margin-top: var(--space-1);
 }
+
+.day-period {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: auto;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--color-period-soft);
+  font-size: var(--text-label);
+  font-weight: 700;
+  color: var(--color-period);
+}

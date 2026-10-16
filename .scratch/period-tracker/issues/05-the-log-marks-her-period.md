@@ -10,4 +10,4 @@ Log's days.
 
 Spec: `.scratch/period-tracker/spec.md`
 
-- [ ] Under vitest: which Log days are period days, ongoing periods included up to today and no further.
+- [x] Under vitest: which Log days are period days, ongoing periods included up to today and no further.

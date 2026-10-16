@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   byDay,
+  onPeriod,
   matches,
   OUTCOME_AFTER_HOURS,
   outcomeState,
@@ -152,5 +153,25 @@ describe("withDose and withoutDose", () => {
 
   it("takes a deleted dose off its meal", () => {
     expect(withoutDose([lunch, tea], "d").map((m) => m.doses.length)).toEqual([0, 0]);
+  });
+});
+
+describe("onPeriod", () => {
+  const periods = [
+    { id: "p1", start: "2026-09-09", end: "2026-09-14" },
+    { id: "p2", start: "2026-10-14", end: null },
+  ];
+  const today = "2026-10-16";
+
+  // The Log's days are the phone's calendar days, and so are a period's.
+  it("marks a day inside a recorded period, by the phone's calendar", () => {
+    expect(onPeriod(new Date(2026, 8, 9, 0, 10), periods, today)).toBe(true);
+    expect(onPeriod(new Date(2026, 8, 14, 23, 50), periods, today)).toBe(true);
+    expect(onPeriod(new Date(2026, 8, 15, 0, 10), periods, today)).toBe(false);
+  });
+
+  it("marks an ongoing period up to today and no further", () => {
+    expect(onPeriod(new Date(2026, 9, 16, 12), periods, today)).toBe(true);
+    expect(onPeriod(new Date(2026, 9, 17, 12), periods, today)).toBe(false);
   });
 });

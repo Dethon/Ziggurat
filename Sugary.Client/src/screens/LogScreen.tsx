@@ -8,12 +8,13 @@ import { Sheet } from "../components/Sheet";
 import { restored } from "../dose";
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
-import { byDay, dayKey, matches, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
+import { localDay } from "../cycle";
+import { byDay, dayKey, matches, onPeriod, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
 import { bindUnits, sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { Dose, Meal, Outcome } from "../types";
+import type { Dose, Meal, Outcome, Period } from "../types";
 import { DoseSheet } from "./DoseSheet";
 
 const PAGE = 50;
@@ -63,6 +64,8 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   const [meals, setMeals] = useState<Meal[] | null>(null);
   const loaded = useRef<Meal[]>([]);
   const [doses, setDoses] = useState<Dose[]>([]);
+  // Only to mark her period days; the Log reads as it did without them.
+  const [periods, setPeriods] = useState<Period[]>([]);
   // The dose sheet: a new dose, one she opened, or closed.
   const [doseSheet, setDoseSheet] = useState<Dose | "new" | null>(null);
   const [more, setMore] = useState(false);
@@ -94,6 +97,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
 
   useEffect(() => {
     void loadPage(0);
+    api.periods().then(setPeriods, () => {});
   }, [loadPage]);
 
   // One tap records it; the toast offers it back.
@@ -260,6 +264,12 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
         <section key={day.key} className="day" aria-label={dayLabel(day.date)}>
           <header className="day-header">
             <h2>{dayLabel(day.date)}</h2>
+            {onPeriod(day.date, periods, localDay(now)) && (
+              <span className="day-period">
+                <Icon name="drop" size={14} />
+                {t("logPeriodDay")}
+              </span>
+            )}
             <span className="day-total">
               {t("dayTotal", {
                 n: day.entries.reduce((sum, entry) => sum + (entry.type === "meal" ? shownTotal(entry.meal.items).best : 0), 0),

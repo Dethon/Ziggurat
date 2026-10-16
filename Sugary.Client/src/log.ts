@@ -1,5 +1,6 @@
+import { covers, localDay } from "./cycle";
 import { plain } from "./foods";
-import type { Dose, LinkedDose, Meal } from "./types";
+import type { Dose, LinkedDose, Meal, Period } from "./types";
 
 const HOUR = 3_600_000;
 // Glucose says little about a meal before about two hours, so a meal is asked about from then on.
@@ -82,4 +83,10 @@ export function withDose(meals: readonly Meal[], dose: Dose): Meal[] {
 
 export function withoutDose(meals: readonly Meal[], id: string): Meal[] {
   return meals.map((meal) => (meal.doses.some((dose) => dose.id === id) ? { ...meal, doses: meal.doses.filter((dose) => dose.id !== id) } : meal));
+}
+
+// Whether a day of the Log was one of her period days, both read on the phone's calendar.
+export function onPeriod(date: Date, periods: readonly Period[], today: string): boolean {
+  const day = localDay(date);
+  return periods.some((period) => covers(period, day, today));
 }
