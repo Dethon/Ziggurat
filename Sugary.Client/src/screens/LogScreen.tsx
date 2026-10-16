@@ -5,6 +5,7 @@ import { useConfirm } from "../components/Confirm";
 import { Icon, type IconName } from "../components/Icon";
 import { CakeStand } from "../components/Illustrations";
 import { Sheet } from "../components/Sheet";
+import { restored } from "../dose";
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
 import { byDay, matches, outcomeState, pendingOutcomes, timeline } from "../log";
@@ -63,7 +64,8 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   const [meals, setMeals] = useState<Meal[] | null>(null);
   const loaded = useRef<Meal[]>([]);
   const [doses, setDoses] = useState<Dose[]>([]);
-  const [addingDose, setAddingDose] = useState(false);
+  // The dose sheet: a new dose, one she opened, or closed.
+  const [doseSheet, setDoseSheet] = useState<Dose | "new" | null>(null);
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Meal | null>(null);
@@ -120,6 +122,29 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
     }
   }
 
+  // Gone at once; the toast offers it back, saved again with every value she recorded.
+  async function removeDose(dose: Dose) {
+    try {
+      await api.deleteDose(dose.id);
+      setDoseSheet(null);
+      setDoses((current) => current.filter((d) => d.id !== dose.id));
+      toast({
+        text: t("doseDeleted"),
+        action: {
+          label: t("undo"),
+          run: () =>
+            void api.createDose(restored(dose)).then(
+              (back) => setDoses((current) => [back, ...current]),
+              (failure) => setError(errorMessage(failure, t, "save")),
+            ),
+        },
+      });
+    } catch (failure) {
+      setDoseSheet(null);
+      setError(errorMessage(failure, t, "save"));
+    }
+  }
+
   function dayLabel(date: Date): string {
     const today = new Date();
     const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
@@ -160,7 +185,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
       )}
 
       {meals !== null && (
-        <button type="button" className="row-button add-dose" onClick={() => setAddingDose(true)}>
+        <button type="button" className="row-button add-dose" onClick={() => setDoseSheet("new")}>
           <Icon name="insulin" size={20} />
           <span>{t("addDose")}</span>
           <Icon name="plus" size={20} />
@@ -236,7 +261,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
               if (entry.type === "dose") {
                 return (
                   <li key={entry.id}>
-                    <DoseRow dose={entry.dose} />
+                    <DoseRow dose={entry.dose} onOpen={() => setDoseSheet(entry.dose)} />
                   </li>
                 );
               }
@@ -271,14 +296,16 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
         </button>
       )}
 
-      {addingDose && (
+      {doseSheet && (
         <DoseSheet
-          onClose={() => setAddingDose(false)}
+          dose={doseSheet === "new" ? undefined : doseSheet}
+          onClose={() => setDoseSheet(null)}
           onSaved={(dose) => {
-            setAddingDose(false);
-            setDoses((current) => [dose, ...current]);
+            setDoseSheet(null);
+            setDoses((current) => [dose, ...current.filter((d) => d.id !== dose.id)]);
             toast({ text: t("doseSaved") });
           }}
+          onDelete={(dose) => void removeDose(dose)}
         />
       )}
 
@@ -298,10 +325,10 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
 }
 
 // Rapid and basal are told apart three ways: the word, a bolt or a clock, and the mark's tint.
-function DoseRow({ dose }: { dose: Dose }) {
+function DoseRow({ dose, onOpen }: { dose: Dose; onOpen: () => void }) {
   const { t, language } = useSettings();
   return (
-    <div className={`meal-row dose-row dose-${dose.kind}`}>
+    <button type="button" className={`meal-row dose-row dose-${dose.kind}`} aria-haspopup="dialog" onClick={onOpen}>
       <span className={`meal-thumb dose-mark dose-mark-${dose.kind}`}>
         <Icon name={DOSE_ICON[dose.kind]} />
       </span>
@@ -313,7 +340,7 @@ function DoseRow({ dose }: { dose: Dose }) {
           {dose.note && <span className="dose-note">{dose.note}</span>}
         </span>
       </span>
-    </div>
+    </button>
   );
 }
 

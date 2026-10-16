@@ -10,7 +10,7 @@ can. A change that is refused says why and leaves the dose as it was.
 
 Spec: `.scratch/insulin-doses/spec.md`
 
-- [ ] Replacing a dose through the API stores the new values. The same refusals as on create apply, and a refused replace leaves the stored dose unchanged.
-- [ ] Deleting a dose removes it. An unknown identifier gets a 404 on replace and on delete.
-- [ ] The dose sheet edits every field and deletes. The toast's undo brings a deleted dose back with its values.
-- [ ] The timeline reflects an edit (including a time moved to another day) and a deletion without a reload.
+- [x] Replacing a dose through the API stores the new values. The same refusals as on create apply, and a refused replace leaves the stored dose unchanged.
+- [x] Deleting a dose removes it. An unknown identifier gets a 404 on replace and on delete.
+- [x] The dose sheet edits every field and deletes. The toast's undo brings a deleted dose back with its values.
+- [x] The timeline reflects an edit (including a time moved to another day) and a deletion without a reload.

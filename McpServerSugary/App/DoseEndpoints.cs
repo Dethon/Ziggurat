@@ -22,6 +22,8 @@ public static class DoseEndpoints
         var doses = api.MapGroup("/doses");
         doses.MapGet("/", ListAsync);
         doses.MapPost("/", CreateAsync);
+        doses.MapPut("/{id:guid}", ReplaceAsync);
+        doses.MapDelete("/{id:guid}", DeleteAsync);
     }
 
     // Newest first and paged, as meals are, and bounded to [from, to) when the Log asks for the days
@@ -54,6 +56,27 @@ public static class DoseEndpoints
         await db.SaveChangesAsync(ct);
         return Results.Created($"/api/doses/{dose.Id}", ToDto(dose));
     }
+
+    private static async Task<IResult> ReplaceAsync(
+        Guid id, SaveDoseRequest request, SugaryDbContext db, CancellationToken ct)
+    {
+        if (await db.Doses.FindAsync([id], ct) is not { } dose)
+        {
+            return Results.NotFound();
+        }
+
+        if (await ValidateAsync(request, db, ct) is { } problem)
+        {
+            return Results.Problem(problem, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        Apply(request, dose);
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(ToDto(dose));
+    }
+
+    private static async Task<IResult> DeleteAsync(Guid id, SugaryDbContext db, CancellationToken ct) =>
+        await db.Doses.Where(d => d.Id == id).ExecuteDeleteAsync(ct) > 0 ? Results.NoContent() : Results.NotFound();
 
     private static void Apply(SaveDoseRequest request, Dose dose)
     {

@@ -127,6 +127,58 @@ public class SugaryDoseApiTests
         (await ListAsync(client)).Select(d => d!["units"]!.GetValue<double>()).Order().ShouldBe([0.05, 14, 100]);
     }
 
+    [Fact]
+    public async Task ADose_CanBeReplacedAndDeleted()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var id = (await ReadAsync(await client.PostAsJsonAsync("/api/doses", Dose())))["id"]!.GetValue<string>();
+
+        var replaced = await client.PutAsJsonAsync(
+            $"/api/doses/{id}", Dose("2026-10-12T08:15:00+02:00", units: 6.5, kind: "rapid", note: "pre-bolus"));
+
+        replaced.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var listed = (await ListAsync(client)).Single()!;
+        listed["id"]!.GetValue<string>().ShouldBe(id);
+        listed["units"]!.GetValue<double>().ShouldBe(6.5);
+        listed["kind"]!.GetValue<string>().ShouldBe("rapid");
+        listed["note"]!.GetValue<string>().ShouldBe("pre-bolus");
+        DateTimeOffset.Parse(listed["takenAt"]!.GetValue<string>(), CultureInfo.InvariantCulture)
+            .ShouldBe(DateTimeOffset.Parse("2026-10-12T06:15:00Z", CultureInfo.InvariantCulture));
+
+        (await client.DeleteAsync($"/api/doses/{id}")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await ListAsync(client)).ShouldBeEmpty();
+    }
+
+    [Theory]
+    [MemberData(nameof(Refusals))]
+    public async Task ARefusedReplace_SaysWhyAndLeavesTheDoseAsItWas(string _, JsonObject dose, string sentence)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var id = (await ReadAsync(await client.PostAsJsonAsync("/api/doses", Dose(note: "night"))))["id"]!
+            .GetValue<string>();
+
+        var response = await client.PutAsJsonAsync($"/api/doses/{id}", dose);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await ReadAsync(response))["detail"]!.GetValue<string>().ShouldBe(sentence);
+        var kept = (await ListAsync(client)).Single()!;
+        kept["units"]!.GetValue<double>().ShouldBe(14);
+        kept["kind"]!.GetValue<string>().ShouldBe("basal");
+        kept["note"]!.GetValue<string>().ShouldBe("night");
+    }
+
+    [Fact]
+    public async Task AnUnknownDose_IsNotFound()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+
+        (await client.PutAsJsonAsync($"/api/doses/{Guid.NewGuid()}", Dose())).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await client.DeleteAsync($"/api/doses/{Guid.NewGuid()}")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
     // An existing log upgrades in place: the server opens a database made before doses existed,
     // gains the table and loses no meal.
     [Fact]

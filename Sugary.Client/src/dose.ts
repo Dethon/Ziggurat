@@ -1,4 +1,5 @@
 import type { StringKey } from "./i18n";
+import type { Dose, SaveDose } from "./types";
 
 // The most one dose can be. It catches a slipped digit, not a clinical limit, and the server holds
 // the same bound: a number over it is refused, never clamped into one she did not type.
@@ -27,4 +28,9 @@ export function readUnits(text: string): number | UnitsProblem {
     return "unitsAtMost";
   }
   return decimals.length > 2 ? "unitsDecimals" : units;
+}
+
+// A deleted dose as it is saved again when she undoes the deletion.
+export function restored({ takenAt, units, kind, note, mealId }: Dose): SaveDose {
+  return { takenAt, units, kind, note, mealId };
 }

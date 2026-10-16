@@ -1310,14 +1310,6 @@ h1.title-small {
   color: var(--color-primary);
 }
 
-.dose-row {
-  cursor: default;
-}
-
-button.dose-row {
-  cursor: pointer;
-}
-
 .dose-mark {
   display: grid;
   place-items: center;

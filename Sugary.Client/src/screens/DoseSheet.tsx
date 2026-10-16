@@ -4,7 +4,7 @@ import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { MAX_NOTE, MAX_UNITS, readUnits } from "../dose";
 import { errorMessage } from "../errors";
-import { toLocalInput } from "../format";
+import { formatUnits, toLocalInput } from "../format";
 import { useSettings } from "../settings";
 import type { Dose, DoseKind } from "../types";
 
@@ -13,14 +13,25 @@ const KINDS: { kind: DoseKind; icon: "bolt" | "clock"; hint: "doseRapidHint" | "
   { kind: "basal", icon: "clock", hint: "doseBasalHint" },
 ];
 
-// A dose added on its own: the units always start empty, because the number recorded is only ever
-// one she typed. Rapid is the usual kind and now the usual time; both can be changed.
-export function DoseSheet({ onClose, onSaved }: { onClose: () => void; onSaved: (dose: Dose) => void }) {
-  const { t } = useSettings();
-  const [units, setUnits] = useState("");
-  const [kind, setKind] = useState<DoseKind>("rapid");
-  const [when, setWhen] = useState(() => toLocalInput(new Date().toISOString()));
-  const [note, setNote] = useState("");
+// A dose added on its own, or one she recorded opened to change or delete. A new dose's units always
+// start empty, because the number recorded is only ever one she typed; rapid is the usual kind and
+// now the usual time, and both can be changed. An open dose starts from what she recorded.
+export function DoseSheet({
+  dose,
+  onClose,
+  onSaved,
+  onDelete,
+}: {
+  dose?: Dose;
+  onClose: () => void;
+  onSaved: (dose: Dose) => void;
+  onDelete?: (dose: Dose) => void;
+}) {
+  const { t, language } = useSettings();
+  const [units, setUnits] = useState(() => (dose ? formatUnits(dose.units, language) : ""));
+  const [kind, setKind] = useState<DoseKind>(dose?.kind ?? "rapid");
+  const [when, setWhen] = useState(() => toLocalInput(dose?.takenAt ?? new Date().toISOString()));
+  const [note, setNote] = useState(dose?.note ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formId = useId();
@@ -34,16 +45,15 @@ export function DoseSheet({ onClose, onSaved }: { onClose: () => void; onSaved: 
     }
     setBusy(true);
     setError(null);
+    const values = {
+      takenAt: new Date(when).toISOString(),
+      units: read,
+      kind,
+      note: note.trim() || null,
+      mealId: dose?.mealId ?? null,
+    };
     try {
-      onSaved(
-        await api.createDose({
-          takenAt: new Date(when).toISOString(),
-          units: read,
-          kind,
-          note: note.trim() || null,
-          mealId: null,
-        }),
-      );
+      onSaved(await (dose ? api.updateDose(dose.id, values) : api.createDose(values)));
     } catch (failure) {
       setError(errorMessage(failure, t, "save"));
       setBusy(false);
@@ -52,7 +62,7 @@ export function DoseSheet({ onClose, onSaved }: { onClose: () => void; onSaved: 
 
   return (
     <Sheet
-      title={t("doseTitle")}
+      title={t(dose ? "doseEditTitle" : "doseTitle")}
       onClose={onClose}
       footer={
         <button
@@ -129,6 +139,12 @@ export function DoseSheet({ onClose, onSaved }: { onClose: () => void; onSaved: 
           <p className="notice notice-error" role="alert">
             <Icon name="alert" size={18} /> <span>{error}</span>
           </p>
+        )}
+        {dose && onDelete && (
+          <button type="button" className="button button-quiet danger" disabled={busy} onClick={() => onDelete(dose)}>
+            <Icon name="trash" size={20} />
+            {t("deleteDose")}
+          </button>
         )}
       </form>
     </Sheet>

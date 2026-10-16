@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_UNITS, readUnits } from "./dose";
+import { MAX_UNITS, readUnits, restored } from "./dose";
 
 describe("readUnits", () => {
   it("reads what she typed, with a comma or a point for the decimals", () => {
@@ -29,5 +29,13 @@ describe("readUnits", () => {
     expect(readUnits("100")).toBe(100);
     expect(readUnits("100,01")).toBe("unitsAtMost");
     expect(readUnits("140")).toBe("unitsAtMost");
+  });
+});
+
+describe("restored", () => {
+  // Undoing a deletion saves the dose again as it was: everything she recorded, a new id.
+  it("keeps every value she recorded", () => {
+    const dose = { id: "d1", takenAt: "2026-10-15T08:00:00.000Z", units: 4.5, kind: "basal", note: "night", mealId: "m1" } as const;
+    expect(restored(dose)).toEqual({ takenAt: dose.takenAt, units: 4.5, kind: "basal", note: "night", mealId: "m1" });
   });
 });

@@ -107,6 +107,8 @@ export const api = {
     }
   },
   createDose: (dose: SaveDose) => request<Dose>("/doses", json("POST", dose)),
+  updateDose: (id: string, dose: SaveDose) => request<Dose>(`/doses/${id}`, json("PUT", dose)),
+  deleteDose: (id: string) => request<void>(`/doses/${id}`, { method: "DELETE" }),
 
   foods: () => request<Food[]>("/foods"),
   createFood: (food: SaveFood) => request<Food>("/foods", json("POST", food)),
