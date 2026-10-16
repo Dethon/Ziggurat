@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MAX_UNITS, readUnits, restored } from "./dose";
+import { linkable, MAX_UNITS, readUnits, restored } from "./dose";
+import type { Meal } from "./types";
 
 describe("readUnits", () => {
   it("reads what she typed, with a comma or a point for the decimals", () => {
@@ -37,5 +38,30 @@ describe("restored", () => {
   it("keeps every value she recorded", () => {
     const dose = { id: "d1", takenAt: "2026-10-15T08:00:00.000Z", units: 4.5, kind: "basal", note: "night", mealId: "m1" } as const;
     expect(restored(dose)).toEqual({ takenAt: dose.takenAt, units: 4.5, kind: "basal", note: "night", mealId: "m1" });
+  });
+});
+
+describe("linkable", () => {
+  const now = new Date("2026-10-15T20:00:00Z");
+  const meal = (id: string, hoursAgo: number): Meal => ({
+    id,
+    eatenAt: new Date(now.getTime() - hoursAgo * 3_600_000).toISOString(),
+    notes: null,
+    outcome: "unknown",
+    hasPhoto: false,
+    firstEstimate: null,
+    doses: [],
+    items: [],
+  });
+
+  it("offers the meals of about the last day, newest first", () => {
+    const meals = [meal("breakfast", 12), meal("old", 30), meal("lunch", 6)];
+    expect(linkable(meals, now).map((m) => m.id)).toEqual(["lunch", "breakfast"]);
+  });
+
+  // An older dose opened to change keeps its meal on offer, or saving it would quietly unlink it.
+  it("keeps the meal a dose already belongs to on offer", () => {
+    const meals = [meal("lunch", 6), meal("old", 30)];
+    expect(linkable(meals, now, "old").map((m) => m.id)).toEqual(["lunch", "old"]);
   });
 });

@@ -1,5 +1,5 @@
 import type { StringKey } from "./i18n";
-import type { Dose, SaveDose } from "./types";
+import type { Dose, Meal, SaveDose } from "./types";
 
 // The most one dose can be. It catches a slipped digit, not a clinical limit, and the server holds
 // the same bound: a number over it is refused, never clamped into one she did not type.
@@ -33,4 +33,16 @@ export function readUnits(text: string): number | UnitsProblem {
 // A deleted dose as it is saved again when she undoes the deletion.
 export function restored({ takenAt, units, kind, note, mealId }: Dose): SaveDose {
   return { takenAt, units, kind, note, mealId };
+}
+
+// About a day: a dose added on its own is linked to a meal she has just eaten, or is about to.
+const LINKABLE_HOURS = 24;
+
+// The meals a dose can be linked to: those of about the last day, newest first, and the meal it
+// already belongs to wherever that is, so opening an older dose never quietly unlinks it.
+export function linkable(meals: readonly Meal[], now: Date, current: string | null = null): Meal[] {
+  const since = now.getTime() - LINKABLE_HOURS * 3_600_000;
+  return meals
+    .filter((meal) => meal.id === current || Date.parse(meal.eatenAt) >= since)
+    .toSorted((a, b) => Date.parse(b.eatenAt) - Date.parse(a.eatenAt));
 }

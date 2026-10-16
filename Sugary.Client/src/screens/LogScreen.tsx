@@ -8,7 +8,7 @@ import { Sheet } from "../components/Sheet";
 import { restored } from "../dose";
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
-import { byDay, matches, outcomeState, pendingOutcomes, timeline } from "../log";
+import { byDay, matches, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
 import { bindUnits, sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
@@ -122,19 +122,30 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
     }
   }
 
+  // A dose saved or deleted moves on or off the meal it is linked to, so the meal's insulin shows
+  // without a reload.
+  function relink(change: (meals: Meal[]) => Meal[]) {
+    loaded.current = change(loaded.current);
+    setMeals(loaded.current);
+  }
+
   // Gone at once; the toast offers it back, saved again with every value she recorded.
   async function removeDose(dose: Dose) {
     try {
       await api.deleteDose(dose.id);
       setDoseSheet(null);
       setDoses((current) => current.filter((d) => d.id !== dose.id));
+      relink((current) => withoutDose(current, dose.id));
       toast({
         text: t("doseDeleted"),
         action: {
           label: t("undo"),
           run: () =>
             void api.createDose(restored(dose)).then(
-              (back) => setDoses((current) => [back, ...current]),
+              (back) => {
+                setDoses((current) => [back, ...current]);
+                relink((current) => withDose(current, back));
+              },
               (failure) => setError(errorMessage(failure, t, "save")),
             ),
         },
@@ -276,6 +287,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
                       <span className="item-meta">
                         {formatTime(meal.eatenAt, language)}
                         <OutcomeBadge meal={meal} />
+                        <MealInsulin meal={meal} />
                       </span>
                     </span>
                     <span className="item-carbs">
@@ -299,10 +311,12 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
       {doseSheet && (
         <DoseSheet
           dose={doseSheet === "new" ? undefined : doseSheet}
+          meals={meals ?? []}
           onClose={() => setDoseSheet(null)}
           onSaved={(dose) => {
             setDoseSheet(null);
             setDoses((current) => [dose, ...current.filter((d) => d.id !== dose.id)]);
+            relink((current) => withDose(current, dose));
             toast({ text: t("doseSaved") });
           }}
           onDelete={(dose) => void removeDose(dose)}
@@ -321,6 +335,22 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
         />
       )}
     </div>
+  );
+}
+
+// The rapid insulin she took for a meal, beside its time, drawn as a rapid dose is.
+function MealInsulin({ meal }: { meal: Meal }) {
+  const { t, language } = useSettings();
+  const units = rapidUnits(meal);
+  if (units === 0) {
+    return null;
+  }
+  const shown = formatUnits(units, language);
+  return (
+    <span className="meal-insulin" aria-label={t("mealInsulinSpoken", { n: shown })}>
+      <Icon name="bolt" size={16} />
+      {t("unitsCount", { n: shown })}
+    </span>
   );
 }
 
@@ -481,7 +511,8 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
           className="button button-quiet danger"
           disabled={busy}
           onClick={async () => {
-            if (await confirm({ title: t("deleteTitle"), body: t("deleteBody"), confirm: t("deleteMeal") })) {
+            const body = meal.doses.length > 0 ? t("deleteBodyDoses") : t("deleteBody");
+            if (await confirm({ title: t("deleteTitle"), body, confirm: t("deleteMeal") })) {
               void run(() => api.deleteMeal(meal.id));
             }
           }}

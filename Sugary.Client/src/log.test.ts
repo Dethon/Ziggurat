@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { byDay, matches, OUTCOME_AFTER_HOURS, outcomeState, pendingOutcomes, timeline } from "./log";
+import {
+  byDay,
+  matches,
+  OUTCOME_AFTER_HOURS,
+  outcomeState,
+  pendingOutcomes,
+  rapidUnits,
+  timeline,
+  withDose,
+  withoutDose,
+} from "./log";
 import type { Dose, Meal } from "./types";
 
 const now = new Date("2026-10-15T20:00:00Z");
@@ -10,6 +20,7 @@ const meal = (id: string, hoursAgo: number, outcome: Meal["outcome"] = "unknown"
   outcome,
   hasPhoto: false,
   firstEstimate: null,
+  doses: [],
   items: names.map((name) => ({
     name,
     portion: null,
@@ -103,5 +114,43 @@ describe("byDay", () => {
 
   it("gives a day of doses alone a day of its own", () => {
     expect(byDay(timeline([], [dose("basal", 2, "basal")])).map((day) => day.entries.length)).toEqual([1]);
+  });
+});
+
+describe("rapidUnits", () => {
+  it("adds up the rapid insulin linked to a meal, and leaves basal out", () => {
+    const lunch = {
+      ...meal("lunch", 3),
+      doses: [
+        { id: "a", units: 4.5, kind: "rapid" as const },
+        { id: "b", units: 1.25, kind: "rapid" as const },
+        { id: "c", units: 14, kind: "basal" as const },
+      ],
+    };
+    expect(rapidUnits(lunch)).toBe(5.75);
+    expect(rapidUnits(meal("none", 3))).toBe(0);
+  });
+
+  it("does not drift on decimals", () => {
+    const tea = { ...meal("tea", 3), doses: [0.1, 0.2].map((units, i) => ({ id: `${i}`, units, kind: "rapid" as const })) };
+    expect(rapidUnits(tea)).toBe(0.3);
+  });
+});
+
+describe("withDose and withoutDose", () => {
+  const lunch = { ...meal("lunch", 3), doses: [{ id: "d", units: 4, kind: "rapid" as const }] };
+  const tea = meal("tea", 1);
+
+  it("moves a dose to the meal it now belongs to, and off the one it left", () => {
+    const moved = withDose([lunch, tea], { ...dose("d", 1), units: 5, mealId: "tea" });
+    expect(moved.map((m) => m.doses)).toEqual([[], [{ id: "d", units: 5, kind: "rapid" }]]);
+  });
+
+  it("unlinks a dose that belongs to no meal now", () => {
+    expect(withDose([lunch, tea], { ...dose("d", 1), mealId: null }).map((m) => m.doses.length)).toEqual([0, 0]);
+  });
+
+  it("takes a deleted dose off its meal", () => {
+    expect(withoutDose([lunch, tea], "d").map((m) => m.doses.length)).toEqual([0, 0]);
   });
 });

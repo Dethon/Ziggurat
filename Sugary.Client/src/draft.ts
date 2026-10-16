@@ -20,6 +20,9 @@ export interface Draft {
   // The conversation the latest estimate was made on, which her answers continue. A draft stored
   // before conversations existed has none, and its next estimate starts one.
   conversation?: string | null;
+  // The rapid insulin she took for this meal, as she typed it. Only ever what she typed: nothing
+  // here fills it, and every new meal starts without it. A draft stored before it existed has none.
+  insulin?: string;
 }
 
 export const emptyDraft: Draft = {
@@ -34,6 +37,7 @@ export const emptyDraft: Draft = {
   firstEstimate: null,
   estimated: false,
   conversation: null,
+  insulin: "",
 };
 
 export type DraftAction =
@@ -45,6 +49,7 @@ export type DraftAction =
   | { type: "add"; item: DraftItem }
   | { type: "replace"; item: DraftItem }
   | { type: "remove"; id: string }
+  | { type: "insulin"; text: string }
   | { type: "reset" };
 
 export function reduce(draft: Draft, action: DraftAction): Draft {
@@ -81,6 +86,8 @@ export function reduce(draft: Draft, action: DraftAction): Draft {
         removed: item?.source === "estimate" ? [...draft.removed, item.name] : draft.removed,
       };
     }
+    case "insulin":
+      return { ...draft, insulin: action.text };
     case "reset":
       return emptyDraft;
   }

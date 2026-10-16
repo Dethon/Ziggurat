@@ -1,5 +1,5 @@
 import { plain } from "./foods";
-import type { Dose, Meal } from "./types";
+import type { Dose, LinkedDose, Meal } from "./types";
 
 const HOUR = 3_600_000;
 // Glucose says little about a meal before about two hours, so a meal is asked about from then on.
@@ -66,4 +66,20 @@ export function byDay(entries: readonly Entry[]): Day[] {
     }
     return days;
   }, []);
+}
+
+// The rapid insulin she took for a meal, however many doses it came in. Basal belongs to no meal's
+// count, even when linked to one. Summed in hundredths, the smallest step a dose is recorded in.
+export function rapidUnits(meal: Meal): number {
+  return meal.doses.filter((dose) => dose.kind === "rapid").reduce((sum, dose) => sum + Math.round(dose.units * 100), 0) / 100;
+}
+
+// The meals as they stand once a dose is saved: off whichever meal it was on, onto the one it names.
+export function withDose(meals: readonly Meal[], dose: Dose): Meal[] {
+  const linked: LinkedDose = { id: dose.id, units: dose.units, kind: dose.kind };
+  return withoutDose(meals, dose.id).map((meal) => (meal.id === dose.mealId ? { ...meal, doses: [...meal.doses, linked] } : meal));
+}
+
+export function withoutDose(meals: readonly Meal[], id: string): Meal[] {
+  return meals.map((meal) => (meal.doses.some((dose) => dose.id === id) ? { ...meal, doses: meal.doses.filter((dose) => dose.id !== id) } : meal));
 }

@@ -123,6 +123,139 @@ public class SugaryMealApiTests
             .Select(item => item!["name"]!.GetValue<string>()).ShouldBe(["bread", "rice"]);
     }
 
+    // The rapid insulin she took for a meal, noted as she saves it: one save, linked to the meal and
+    // stamped with its time, since the app knows no better one.
+    [Fact]
+    public async Task AMealSavedWithADose_StoresBoth_TheDoseRapidAtTheMealsTimeAndLinked()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var meal = Meal();
+        meal["dose"] = new JsonObject { ["units"] = 4.5, ["note"] = " for the rice " };
+
+        var created = await client.PostAsJsonAsync("/api/meals", meal);
+
+        created.StatusCode.ShouldBe(HttpStatusCode.Created);
+        var saved = await ReadAsync(created);
+        var id = saved["id"]!.GetValue<string>();
+        var dose = (await client.GetFromJsonAsync<JsonNode>("/api/doses"))!.AsArray().Single()!;
+        dose["units"]!.GetValue<double>().ShouldBe(4.5);
+        dose["kind"]!.GetValue<string>().ShouldBe("rapid");
+        dose["note"]!.GetValue<string>().ShouldBe("for the rice");
+        dose["mealId"]!.GetValue<string>().ShouldBe(id);
+        DateTimeOffset.Parse(dose["takenAt"]!.GetValue<string>(), CultureInfo.InvariantCulture)
+            .ShouldBe(DateTimeOffset.Parse("2026-10-11T13:30:00+02:00", CultureInfo.InvariantCulture));
+        saved["doses"]!.AsArray().Single()!["units"]!.GetValue<double>().ShouldBe(4.5);
+    }
+
+    public static TheoryData<double, string?, string> RefusedDoses => new()
+    {
+        { 0, null, "A dose needs a number of units above 0." },
+        { 100.5, null, "A dose can be at most 100 units." },
+        { 2.125, null, "Units can have at most two decimals." },
+        { 4, new string('x', 201), "A note can be at most 200 characters." }
+    };
+
+    // A failure never leaves the meal saved and her dose silently lost.
+    [Theory]
+    [MemberData(nameof(RefusedDoses))]
+    public async Task AMealSavedWithARefusedDose_StoresNeither(double units, string? note, string sentence)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var meal = Meal();
+        meal["dose"] = new JsonObject { ["units"] = units, ["note"] = note };
+
+        var response = await client.PostAsJsonAsync("/api/meals", meal);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await ReadAsync(response))["detail"]!.GetValue<string>().ShouldBe(sentence);
+        (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray().ShouldBeEmpty();
+        (await client.GetFromJsonAsync<JsonNode>("/api/doses"))!.AsArray().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AMealWithoutADose_SavesAsItAlwaysHas()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+
+        var saved = await ReadAsync(await client.PostAsJsonAsync("/api/meals", Meal()));
+
+        saved["doses"]!.AsArray().ShouldBeEmpty();
+        (await client.GetFromJsonAsync<JsonNode>("/api/doses"))!.AsArray().ShouldBeEmpty();
+    }
+
+    // Saving the whole meal again — an edit, an outcome — is about the meal; its doses change only
+    // through their own routes.
+    [Fact]
+    public async Task AMealUpdate_LeavesItsDosesAsTheyWere()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var meal = Meal();
+        meal["dose"] = new JsonObject { ["units"] = 6 };
+        var id = (await ReadAsync(await client.PostAsJsonAsync("/api/meals", meal)))["id"]!.GetValue<string>();
+
+        var edit = Meal("2026-10-11T15:00:00+02:00", carbs: 60);
+        edit["outcome"] = "high";
+        edit["dose"] = new JsonObject { ["units"] = 9 };
+        (await client.PutAsJsonAsync($"/api/meals/{id}", edit)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var dose = (await client.GetFromJsonAsync<JsonNode>("/api/doses"))!.AsArray().Single()!;
+        dose["units"]!.GetValue<double>().ShouldBe(6);
+        dose["mealId"]!.GetValue<string>().ShouldBe(id);
+        DateTimeOffset.Parse(dose["takenAt"]!.GetValue<string>(), CultureInfo.InvariantCulture)
+            .ShouldBe(DateTimeOffset.Parse("2026-10-11T13:30:00+02:00", CultureInfo.InvariantCulture));
+    }
+
+    // The Log shows a meal's insulin from the list it already has: each meal with its doses' ids,
+    // units and kinds, however each was linked.
+    [Fact]
+    public async Task TheMealList_CarriesEachMealsDoses()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var lunch = Meal("2026-10-11T13:30:00+02:00");
+        lunch["dose"] = new JsonObject { ["units"] = 5 };
+        var lunchId = (await ReadAsync(await client.PostAsJsonAsync("/api/meals", lunch)))["id"]!.GetValue<string>();
+        await client.PostAsJsonAsync("/api/meals", Meal("2026-10-11T09:00:00+02:00"));
+        var topUp = await ReadAsync(await client.PostAsJsonAsync("/api/doses", new JsonObject
+        {
+            ["takenAt"] = "2026-10-11T15:00:00+02:00",
+            ["units"] = 1.5,
+            ["kind"] = "rapid",
+            ["mealId"] = lunchId
+        }));
+
+        var meals = (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray();
+
+        var doses = meals[0]!["doses"]!.AsArray();
+        doses.Select(d => d!["units"]!.GetValue<double>()).Order().ShouldBe([1.5, 5]);
+        doses.Select(d => d!["kind"]!.GetValue<string>()).ShouldAllBe(kind => kind == "rapid");
+        doses.Select(d => d!["id"]!.GetValue<string>()).ShouldContain(topUp["id"]!.GetValue<string>());
+        meals[1]!["doses"]!.AsArray().ShouldBeEmpty();
+    }
+
+    // Insulin she really took is never erased with a meal she logged wrongly: the dose stays, no
+    // longer linked to anything.
+    [Fact]
+    public async Task DeletingAMeal_KeepsItsDoses_WithTheLinkCleared()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var meal = Meal();
+        meal["dose"] = new JsonObject { ["units"] = 7 };
+        var id = (await ReadAsync(await client.PostAsJsonAsync("/api/meals", meal)))["id"]!.GetValue<string>();
+
+        (await client.DeleteAsync($"/api/meals/{id}")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        var dose = (await client.GetFromJsonAsync<JsonNode>("/api/doses"))!.AsArray().Single()!;
+        dose["units"]!.GetValue<double>().ShouldBe(7);
+        dose["mealId"].ShouldBeNull();
+        (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray().ShouldBeEmpty();
+    }
+
     private static async Task<List<string>> QueryAsync(SqliteConnection db, string sql)
     {
         await using var command = db.CreateCommand();

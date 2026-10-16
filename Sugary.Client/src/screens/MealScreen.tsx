@@ -9,6 +9,7 @@ import { Drip, Slice } from "../components/Illustrations";
 import { ItemRow } from "../components/ItemRow";
 import { PortionSheet } from "../components/PortionSheet";
 import { axisEnd, TotalCard } from "../components/TotalCard";
+import { MAX_UNITS, readUnits } from "../dose";
 import { reduce, useDraft, type DraftAction } from "../draft";
 import { errorMessage } from "../errors";
 import { estimateDraft } from "../estimate";
@@ -134,6 +135,9 @@ export function MealScreen({
         unsentCorrection: draft.estimated && !photosGone && correction.trim() !== "",
       });
   const editingItem = draft.items.find((item) => item.id === editing) ?? null;
+  // The rapid insulin to save with the meal: none when the field is empty, else what she typed, read.
+  const insulinText = draft.insulin ?? "";
+  const insulin = insulinText.trim() === "" ? null : readUnits(insulinText);
   // Answers already in a request: their questions are no longer among the open ones.
   const sentAnswers = draft.estimated
     ? Object.entries(draft.answers).filter(([text]) => !draft.questions.some((q) => q.text === text))
@@ -224,6 +228,11 @@ export function MealScreen({
   }
 
   async function save() {
+    // Units she typed and that cannot be a dose stop the save, rather than saving the meal without them.
+    if (typeof insulin === "string") {
+      setError(t(insulin, { max: MAX_UNITS }));
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -234,6 +243,7 @@ export function MealScreen({
         photo: draft.thumbnail,
         firstEstimate: draft.firstEstimate,
         items: draft.items.map(toMealItem),
+        dose: insulin === null ? null : { units: insulin, note: null },
       });
       startOver();
       onSaved();
@@ -642,6 +652,37 @@ export function MealScreen({
           </button>
         </div>
       </section>
+
+      {hasMeal && (
+        <section className="card insulin-taken" aria-labelledby="insulin-title">
+          <label className="field">
+            <span id="insulin-title" className="field-label">
+              <Icon name="bolt" size={18} />
+              {t("insulinTaken")}
+            </span>
+            <span className="amount-input">
+              <input
+                inputMode="decimal"
+                autoComplete="off"
+                value={insulinText}
+                aria-invalid={typeof insulin === "string"}
+                aria-describedby="insulin-hint"
+                onChange={(event) => dispatch({ type: "insulin", text: event.target.value })}
+              />
+              <span className="amount-unit">{t("unitsShort")}</span>
+            </span>
+            {typeof insulin === "string" ? (
+              <span className="field-problem" role="alert">
+                {t(insulin, { max: MAX_UNITS })}
+              </span>
+            ) : (
+              <span id="insulin-hint" className="muted small">
+                {t("insulinTakenHint")}
+              </span>
+            )}
+          </label>
+        </section>
+      )}
 
       {action && (
         <ActionBar active={active}>

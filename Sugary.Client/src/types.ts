@@ -85,6 +85,14 @@ export interface Meal {
   hasPhoto: boolean;
   firstEstimate: Interval | null;
   items: MealItem[];
+  // The doses linked to it, as much of each as the Log shows.
+  doses: LinkedDose[];
+}
+
+export interface LinkedDose {
+  id: string;
+  units: number;
+  kind: DoseKind;
 }
 
 export interface SaveMeal {
@@ -94,6 +102,9 @@ export interface SaveMeal {
   photo: string | null;
   firstEstimate: Interval | null;
   items: MealItem[];
+  // The rapid insulin she took for it, saved with it on a new meal only; editing a meal never
+  // touches its doses.
+  dose?: { units: number; note: string | null } | null;
 }
 
 export type DoseKind = "rapid" | "basal";

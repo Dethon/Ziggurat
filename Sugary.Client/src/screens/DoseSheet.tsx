@@ -2,11 +2,12 @@ import { useId, useState } from "react";
 import { api } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
-import { MAX_NOTE, MAX_UNITS, readUnits } from "../dose";
+import { linkable, MAX_NOTE, MAX_UNITS, readUnits } from "../dose";
 import { errorMessage } from "../errors";
-import { formatUnits, toLocalInput } from "../format";
+import { formatTime, formatUnits, toLocalInput } from "../format";
+import { sentence } from "../meal";
 import { useSettings } from "../settings";
-import type { Dose, DoseKind } from "../types";
+import type { Dose, DoseKind, Meal } from "../types";
 
 const KINDS: { kind: DoseKind; icon: "bolt" | "clock"; hint: "doseRapidHint" | "doseBasalHint" }[] = [
   { kind: "rapid", icon: "bolt", hint: "doseRapidHint" },
@@ -18,11 +19,14 @@ const KINDS: { kind: DoseKind; icon: "bolt" | "clock"; hint: "doseRapidHint" | "
 // now the usual time, and both can be changed. An open dose starts from what she recorded.
 export function DoseSheet({
   dose,
+  meals,
   onClose,
   onSaved,
   onDelete,
 }: {
   dose?: Dose;
+  // Her loaded meals, of which those of about the last day are offered to link the dose to.
+  meals: readonly Meal[];
   onClose: () => void;
   onSaved: (dose: Dose) => void;
   onDelete?: (dose: Dose) => void;
@@ -32,6 +36,8 @@ export function DoseSheet({
   const [kind, setKind] = useState<DoseKind>(dose?.kind ?? "rapid");
   const [when, setWhen] = useState(() => toLocalInput(dose?.takenAt ?? new Date().toISOString()));
   const [note, setNote] = useState(dose?.note ?? "");
+  const [mealId, setMealId] = useState(dose?.mealId ?? "");
+  const [offered] = useState(() => linkable(meals, new Date(), dose?.mealId ?? null));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formId = useId();
@@ -50,7 +56,7 @@ export function DoseSheet({
       units: read,
       kind,
       note: note.trim() || null,
-      mealId: dose?.mealId ?? null,
+      mealId: mealId || null,
     };
     try {
       onSaved(await (dose ? api.updateDose(dose.id, values) : api.createDose(values)));
@@ -126,6 +132,19 @@ export function DoseSheet({
           <span className="field-label">{t("when")}</span>
           <input type="datetime-local" required value={when} onChange={(event) => setWhen(event.target.value)} />
         </label>
+        {offered.length > 0 && (
+          <label className="field">
+            <span className="field-label">{t("doseMeal")}</span>
+            <select value={mealId} onChange={(event) => setMealId(event.target.value)}>
+              <option value="">{t("doseNoMeal")}</option>
+              {offered.map((meal) => (
+                <option key={meal.id} value={meal.id}>
+                  {`${formatTime(meal.eatenAt, language)} · ${meal.items.map((item) => sentence(item.name)).join(", ")}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="field">
           <span className="field-label">{t("doseNote")}</span>
           <input

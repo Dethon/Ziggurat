@@ -66,6 +66,7 @@ fieldset {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
   color: inherit;
@@ -240,6 +241,7 @@ main {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   padding: 11px 14px;
@@ -248,7 +250,8 @@ textarea {
   background: var(--color-surface);
 }
 
-input {
+input,
+select {
   min-height: 48px;
 }
 
@@ -1357,6 +1360,24 @@ h1.title-small {
 }
 
 .dose-kind-rapid.segment-on .icon {
+  color: var(--color-primary);
+}
+
+.meal-insulin {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 700;
+  color: var(--color-primary-strong);
+}
+
+.insulin-taken .field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.insulin-taken .field-label .icon {
   color: var(--color-primary);
 }
 

@@ -79,4 +79,20 @@ describe("draft", () => {
 
     expect(clarifications(draft)).toBe("");
   });
+
+  // The units recorded with a meal are only ever ones she typed: never the carbs, never a past dose.
+  it("starts every meal with no insulin and clears it on reset", () => {
+    expect(emptyDraft.insulin).toBe("");
+    let draft = reduce(emptyDraft, { type: "insulin", text: "4,5" });
+    expect(draft.insulin).toBe("4,5");
+    draft = reduce(draft, { type: "reset" });
+    expect(draft.insulin).toBe("");
+  });
+
+  it("never fills the insulin from an estimate or a food added", () => {
+    let draft = estimated(emptyDraft, ["rice", "bread"]);
+    draft = reduce(draft, { type: "add", item: manualItem("yoghurt", 12) });
+    draft = estimated(draft, ["rice"]);
+    expect(draft.insulin).toBe("");
+  });
 });

@@ -14,7 +14,11 @@ public record MealDto(
     MealOutcome Outcome,
     bool HasPhoto,
     Interval? FirstEstimate,
-    IReadOnlyList<MealItem> Items);
+    IReadOnlyList<MealItem> Items,
+    IReadOnlyList<LinkedDose> Doses);
+
+// A dose linked to a meal, as much of it as the Log needs to show the meal's insulin.
+public record LinkedDose(Guid Id, double Units, DoseKind Kind);
 
 public record SaveMealRequest(
     DateTimeOffset EatenAt,
@@ -22,10 +26,16 @@ public record SaveMealRequest(
     MealOutcome Outcome,
     string? Photo,
     Interval? FirstEstimate,
-    IReadOnlyList<MealItem>? Items);
+    IReadOnlyList<MealItem>? Items,
+    MealDoseRequest? Dose = null);
+
+// The rapid insulin she took for a meal, noted as she saves it. Only units and a note: it is rapid
+// and taken at the meal's time by definition, and she can change either from the Log afterwards.
+public record MealDoseRequest(double? Units, string? Note);
 
 // Her log as the app keeps it, ported from the standalone app as it was. Saving, editing a portion
-// and recording how her glucose went are all a whole meal sent again.
+// and recording how her glucose went are all a whole meal sent again; a meal's doses are not part
+// of that, and change only through their own routes.
 public static class MealEndpoints
 {
     private const string PhotoPrefix = "data:image/jpeg;base64,";
@@ -59,13 +69,17 @@ public static class MealEndpoints
                 m.Items
             })
             .ToListAsync(ct);
+        var doses = await LinkedAsync(db, [.. rows.Select(m => m.Id)], ct);
         return [.. rows.Select(m => new MealDto(
-            m.Id, m.EatenAt, m.Notes, m.Outcome, m.HasPhoto, m.FirstEstimate, InOrder(m.Items)))];
+            m.Id, m.EatenAt, m.Notes, m.Outcome, m.HasPhoto, m.FirstEstimate, InOrder(m.Items),
+            doses[m.Id].ToList()))];
     }
 
     private static async Task<IResult> CreateAsync(SaveMealRequest request, SugaryDbContext db, CancellationToken ct)
     {
-        if (Validate(request) is { } problem)
+        // A refused dose refuses the whole save, so the meal is never kept without the dose she meant
+        // to record with it.
+        if ((Validate(request) ?? DoseProblem(request.Dose)) is { } problem)
         {
             return Results.Problem(problem, statusCode: StatusCodes.Status400BadRequest);
         }
@@ -79,8 +93,26 @@ public static class MealEndpoints
         };
         Apply(request, meal);
         db.Meals.Add(meal);
+        // Added before the one save, which is one transaction: both are kept or neither is.
+        var dose = request.Dose is { } taken
+            ? new Dose
+            {
+                Id = Guid.NewGuid(),
+                TakenAt = meal.EatenAt,
+                Units = taken.Units!.Value,
+                Kind = DoseKind.Rapid,
+                Note = DoseRules.Note(taken.Note),
+                MealId = meal.Id
+            }
+            : null;
+        if (dose is not null)
+        {
+            db.Doses.Add(dose);
+        }
+
         await db.SaveChangesAsync(ct);
-        return Results.Created($"/api/meals/{meal.Id}", ToDto(meal));
+        return Results.Created($"/api/meals/{meal.Id}",
+            ToDto(meal, dose is null ? [] : [new LinkedDose(dose.Id, dose.Units, dose.Kind)]));
     }
 
     private static async Task<IResult> UpdateAsync(
@@ -100,11 +132,39 @@ public static class MealEndpoints
         // An edit that sends no photo keeps the one already stored.
         meal.Photo = DecodePhoto(request.Photo) ?? meal.Photo;
         await db.SaveChangesAsync(ct);
-        return Results.Ok(ToDto(meal));
+        return Results.Ok(ToDto(meal, (await LinkedAsync(db, [meal.Id], ct))[meal.Id].ToList()));
     }
 
-    private static async Task<IResult> DeleteAsync(Guid id, SugaryDbContext db, CancellationToken ct) =>
-        await db.Meals.Where(m => m.Id == id).ExecuteDeleteAsync(ct) > 0 ? Results.NoContent() : Results.NotFound();
+    // A dose is a fact of what she injected, so it outlives a meal logged wrongly: its link is
+    // cleared in the same transaction the meal goes in.
+    private static async Task<IResult> DeleteAsync(Guid id, SugaryDbContext db, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Doses.Where(d => d.MealId == id)
+            .ExecuteUpdateAsync(set => set.SetProperty(d => d.MealId, (Guid?)null), ct);
+        if (await db.Meals.Where(m => m.Id == id).ExecuteDeleteAsync(ct) == 0)
+        {
+            return Results.NotFound();
+        }
+
+        await transaction.CommitAsync(ct);
+        return Results.NoContent();
+    }
+
+    // The doses linked to these meals, one query for the lot.
+    private static async Task<ILookup<Guid, LinkedDose>> LinkedAsync(
+        SugaryDbContext db, IReadOnlyList<Guid> meals, CancellationToken ct)
+    {
+        var doses = await db.Doses.AsNoTracking()
+            .Where(d => d.MealId != null && meals.Contains(d.MealId.Value))
+            .OrderBy(d => d.TakenAt)
+            .Select(d => new { MealId = d.MealId!.Value, d.Id, d.Units, d.Kind })
+            .ToListAsync(ct);
+        return doses.ToLookup(d => d.MealId, d => new LinkedDose(d.Id, d.Units, d.Kind));
+    }
+
+    private static string? DoseProblem(MealDoseRequest? dose) =>
+        dose is null ? null : DoseRules.Problem(dose.Units, DoseKind.Rapid, dose.Note);
 
     private static async Task<IResult> PhotoAsync(Guid id, SugaryDbContext db, CancellationToken ct) =>
         await db.Meals.Where(m => m.Id == id).Select(m => m.Photo).FirstOrDefaultAsync(ct) is { } photo
@@ -120,9 +180,9 @@ public static class MealEndpoints
         MealRules.Total(meal);
     }
 
-    private static MealDto ToDto(Meal meal) =>
+    private static MealDto ToDto(Meal meal, IReadOnlyList<LinkedDose> doses) =>
         new(meal.Id, meal.EatenAt, meal.Notes, meal.Outcome, meal.Photo is not null, meal.FirstEstimate,
-            InOrder(meal.Items));
+            InOrder(meal.Items), doses);
 
     private static IReadOnlyList<MealItem> InOrder(IEnumerable<MealItem> items) => [.. items.OrderBy(i => i.Position)];
 
