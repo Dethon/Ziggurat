@@ -138,6 +138,6 @@ export const api = {
   deleteFood: (id: string) => request<void>(`/foods/${id}`, { method: "DELETE" }),
 
   // Each time carries its offset in the phone's own zone, so the file reads like the clock on the wall.
-  exportUrl: (table: "meals" | "items" | "doses" | "foods") =>
+  exportUrl: (table: "meals" | "items" | "doses" | "periods" | "day-notes" | "foods") =>
     `/api/export/${table}.csv?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`,
 };

@@ -11,6 +11,6 @@ period has no end, and the forecasts are not in the tables; and both as download
 
 Spec: `.scratch/period-tracker/spec.md`
 
-- [ ] Through MCP: both files, the derived columns, the formula escape, text search, writes refused, the README's sections.
-- [ ] The mount in isolation lists and globs both files; the conformance row passes unchanged.
-- [ ] Both downloads, behind the access gate.
+- [x] Through MCP: both files, the derived columns, the formula escape, text search, writes refused, the README's sections.
+- [x] The mount in isolation lists and globs both files; the conformance row passes unchanged.
+- [x] Both downloads, behind the access gate.

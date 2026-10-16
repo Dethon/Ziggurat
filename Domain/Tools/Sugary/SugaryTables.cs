@@ -5,9 +5,10 @@ using Domain.DTOs.Sugary;
 namespace Domain.Tools.Sugary;
 
 // The log as tables another tool can lay beside glucose readings: one with a row per meal, one
-// with a row per food eaten, one with her saved foods, one with a row per insulin dose. The first
-// three's columns, order and spelling are the standalone app's export, so a reader of either reads
-// both; the doses are Sugary's own, joined to a meal by meal_id.
+// with a row per food eaten, one with her saved foods, one with a row per insulin dose, one with a
+// row per period and one with a row per day she wrote a note on. The first three's columns, order
+// and spelling are the standalone app's export, so a reader of either reads both; the rest are
+// Sugary's own, the doses joined to a meal by meal_id.
 public static class SugaryTables
 {
     public static readonly string[] MealColumns =
@@ -28,6 +29,10 @@ public static class SugaryTables
     ];
 
     public static readonly string[] DoseColumns = ["dose_id", "taken_at", "kind", "units", "meal_id", "note"];
+
+    public static readonly string[] PeriodColumns = ["period_id", "start_date", "end_date", "days", "cycle_days"];
+
+    public static readonly string[] DayNoteColumns = ["date", "note"];
 
     // Oldest first, the order a table of events is read in.
     public static string Meals(IEnumerable<LoggedMeal> meals, TimeZoneInfo zone) =>
@@ -56,6 +61,29 @@ public static class SugaryTables
                 dose.Id.ToString(), Stamp(dose.TakenAt, zone), Word(dose.Kind), dose.Units, dose.MealId?.ToString(),
                 dose.Note))
             .ToString();
+
+    // Each period's length (both ends counted) and the cycle it began (to the next start) are worked
+    // out here, from her days on every read, so a reader never does date arithmetic and the
+    // figures can never disagree with the days. An ongoing period has neither.
+    public static string Periods(IEnumerable<LoggedPeriod> periods)
+    {
+        var sorted = periods.OrderBy(period => period.Start).ToList();
+        return sorted
+            .Select((period, index) => (period, next: index + 1 < sorted.Count ? sorted[index + 1].Start : (DateOnly?)null))
+            .Aggregate(new SugaryCsv(PeriodColumns), (csv, row) => csv.Row(
+                row.period.Id.ToString(), Day(row.period.Start), row.period.End is { } end ? Day(end) : null,
+                row.period.End is { } last ? last.DayNumber - row.period.Start.DayNumber + 1 : null,
+                row.next is { } next ? next.DayNumber - row.period.Start.DayNumber : null))
+            .ToString();
+    }
+
+    public static string DayNotes(IEnumerable<LoggedDayNote> notes) =>
+        notes.OrderBy(note => note.Day)
+            .Aggregate(new SugaryCsv(DayNoteColumns), (csv, note) => csv.Row(Day(note.Day), note.Text))
+            .ToString();
+
+    // A day of her calendar, with no time and no offset: the same day wherever it is read.
+    public static string Day(DateOnly day) => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     // By name, the order a list of things she keeps is looked through in.
     public static string Foods(IEnumerable<SavedFood> foods) =>

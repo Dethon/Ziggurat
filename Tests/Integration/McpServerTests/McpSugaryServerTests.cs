@@ -71,13 +71,16 @@ public class McpSugaryServerTests
     }
 
     [Fact]
-    public async Task AnEmptyLog_HasItsReadmeFoodsAndThreeEmptyDirectories()
+    public async Task AnEmptyLog_HasItsReadmeItsThreeTablesAndThreeEmptyDirectories()
     {
         await using var server = await SugaryServer.StartAsync();
 
-        (await server.GlobAsync("**")).ShouldBe(["/README.md", "/doses/", "/foods.csv", "/items/", "/meals/"]);
+        (await server.GlobAsync("**")).ShouldBe(
+            ["/README.md", "/day-notes.csv", "/doses/", "/foods.csv", "/items/", "/meals/", "/periods.csv"]);
         (await server.ReadAsync("/foods.csv"))
             .ShouldBe("food_id,name,carbs_per_100,unit,portion_amount,portion_carbs_g,barcode,source\n");
+        (await server.ReadAsync("/periods.csv")).ShouldBe("period_id,start_date,end_date,days,cycle_days\n");
+        (await server.ReadAsync("/day-notes.csv")).ShouldBe("date,note\n");
     }
 
     // A reader that takes carbs for total carbohydrate, or the first estimate for the whole meal,
@@ -94,7 +97,8 @@ public class McpSugaryServerTests
             "meal_id", "eaten_at", "carbs_g", "carbs_low_g", "carbs_high_g", "first_estimate_g",
             "first_estimate_low_g", "first_estimate_high_g", "outcome", "items", "notes", "position", "name",
             "portion", "amount", "carbs_per_100", "source", "confidence", "edited", "food_id", "unit",
-            "portion_amount", "portion_carbs_g", "barcode", "dose_id", "taken_at", "kind", "units"
+            "portion_amount", "portion_carbs_g", "barcode", "dose_id", "taken_at", "kind", "units", "period_id",
+            "start_date", "end_date", "days", "cycle_days", "date", "note"
         ];
         columns.Where(column => !readme.Contains($"`{column}`")).ShouldBeEmpty();
         readme.ShouldContain("fibre excluded");
@@ -118,6 +122,68 @@ public class McpSugaryServerTests
         readme.ShouldContain("empty for a dose not linked to a meal");
         readme.ShouldContain("carries the meal's time unless she changed it");
         readme.ShouldContain("never a recommendation");
+    }
+
+    // An ongoing period read as one day long, or a forecast read as a day she recorded, puts the
+    // wrong week beside a glucose curve.
+    [Fact]
+    public async Task TheReadme_ExplainsHerCycle()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var readme = await server.ReadAsync("/README.md");
+
+        readme.ShouldContain("## periods.csv");
+        readme.ShouldContain("## day-notes.csv");
+        readme.ShouldContain("days on the home's calendar");
+        readme.ShouldContain("empty while it is still going");
+        readme.ShouldContain("forecasts are not in these tables");
+    }
+
+    // Her periods with what a reader would otherwise work out by hand: each one's length, and the
+    // cycle it began, both from her own days.
+    [Fact]
+    public async Task Periods_AreOneRowEach_OldestFirst_WithTheirLengthAndTheirCycle()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var september = Period("2026-09-09", "2026-09-14");
+        var october = Period("2026-10-08", null);
+        var august = Period("2026-08-11", "2026-08-15");
+        await server.SaveAsync(september, october, august);
+
+        Lines(await server.ReadAsync("/periods.csv")).ShouldBe([
+            "period_id,start_date,end_date,days,cycle_days",
+            $"{august.Id},2026-08-11,2026-08-15,5,29",
+            $"{september.Id},2026-09-09,2026-09-14,6,29",
+            $"{october.Id},2026-10-08,,,"
+        ]);
+    }
+
+    [Fact]
+    public async Task DayNotes_AreOneRowEach_OldestFirst_AndAFormulaIsWrittenAsText()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(
+            new DayNote { Day = new DateOnly(2026, 10, 6), Text = "craving chocolate, all afternoon" },
+            new DayNote { Day = new DateOnly(2026, 10, 2), Text = "=cramps" });
+
+        Lines(await server.ReadAsync("/day-notes.csv")).ShouldBe([
+            "date,note",
+            "2026-10-02,'=cramps",
+            "2026-10-06,\"craving chocolate, all afternoon\""
+        ]);
+    }
+
+    // "What did she write the week of her period" is a search of the notes by the days' month.
+    [Fact]
+    public async Task DayNotes_AreFoundBySearch()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(new DayNote { Day = new DateOnly(2026, 10, 6), Text = "craving chocolate" });
+
+        var hits = await server.CallAsync("fs_search", new Dictionary<string, object?> { ["query"] = "2026-10-" });
+
+        Files(hits).ShouldBe(["/day-notes.csv"]);
     }
 
     // The only way to change her log is through Sugary itself, so the mount offers nothing that
@@ -151,6 +217,13 @@ public class McpSugaryServerTests
         CarbsLow = items.Sum(i => i.CarbsLow),
         Carbs = items.Sum(i => i.Carbs),
         CarbsHigh = items.Sum(i => i.CarbsHigh)
+    };
+
+    private static Period Period(string start, string? end) => new()
+    {
+        Id = Guid.NewGuid(),
+        Start = DateOnly.Parse(start, System.Globalization.CultureInfo.InvariantCulture),
+        End = end is null ? null : DateOnly.Parse(end, System.Globalization.CultureInfo.InvariantCulture)
     };
 
     private static Dose Dose(string takenAt, double units, DoseKind kind, Guid? mealId = null, string? note = null) => new()
@@ -209,7 +282,8 @@ public class McpSugaryServerTests
             Meal("2026-05-10T12:00:00Z", null, Item("toast", 30)));
 
         (await server.GlobAsync("**/*.csv")).ShouldBe([
-            "/foods.csv", "/items/2026-03.csv", "/items/2026-05.csv", "/meals/2026-03.csv", "/meals/2026-05.csv"
+            "/day-notes.csv", "/foods.csv", "/items/2026-03.csv", "/items/2026-05.csv", "/meals/2026-03.csv",
+            "/meals/2026-05.csv", "/periods.csv"
         ]);
         var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/meals/2026-04.csv" });
         read["errorCode"]!.GetValue<string>().ShouldBe("not_found");

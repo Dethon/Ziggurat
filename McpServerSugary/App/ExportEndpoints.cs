@@ -21,6 +21,8 @@ public static class ExportEndpoints
         export.MapGet("/items.csv", ItemsAsync);
         export.MapGet("/foods.csv", FoodsAsync);
         export.MapGet("/doses.csv", DosesAsync);
+        export.MapGet("/periods.csv", PeriodsAsync);
+        export.MapGet("/day-notes.csv", DayNotesAsync);
     }
 
     // Named by the same pattern as the three the import reads, though the import does not read it.
@@ -47,6 +49,13 @@ public static class ExportEndpoints
             ? File(SugaryTables.Doses(
                 await log.DosesAsync(from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct), zone), DosesFile)
             : UnknownClock(tz);
+
+    // Days carry no clock, so these take no zone.
+    private static async Task<IResult> PeriodsAsync(ISugaryLog log, CancellationToken ct) =>
+        File(SugaryTables.Periods(await log.PeriodsAsync(ct)), "sugary-periods.csv");
+
+    private static async Task<IResult> DayNotesAsync(ISugaryLog log, CancellationToken ct) =>
+        File(SugaryTables.DayNotes(await log.DayNotesAsync(ct)), "sugary-day-notes.csv");
 
     private static async Task<IResult> FoodsAsync(ISugaryLog log, CancellationToken ct) =>
         File(SugaryTables.Foods(await log.FoodsAsync(ct)), SugaryImport.FoodsFile);

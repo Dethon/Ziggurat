@@ -4,7 +4,7 @@ namespace Domain.Tools.Sugary.Vfs;
 
 public enum SugaryNodeKind
 {
-    Root, Readme, Foods, MealsDir, ItemsDir, DosesDir, MealsMonth, ItemsMonth, DosesMonth, Unknown
+    Root, Readme, Foods, Periods, DayNotes, MealsDir, ItemsDir, DosesDir, MealsMonth, ItemsMonth, DosesMonth, Unknown
 }
 
 // Month is "yyyy-MM" on the monthly kinds and null elsewhere.
@@ -19,6 +19,8 @@ public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
         SugaryNodeKind.Root => "/",
         SugaryNodeKind.Readme => "/" + SugaryPath.ReadmeFileName,
         SugaryNodeKind.Foods => "/" + SugaryPath.FoodsFileName,
+        SugaryNodeKind.Periods => "/" + SugaryPath.PeriodsFileName,
+        SugaryNodeKind.DayNotes => "/" + SugaryPath.DayNotesFileName,
         SugaryNodeKind.MealsDir => "/" + SugaryPath.MealsDirName,
         SugaryNodeKind.ItemsDir => "/" + SugaryPath.ItemsDirName,
         SugaryNodeKind.DosesDir => "/" + SugaryPath.DosesDirName,
@@ -35,6 +37,8 @@ public static class SugaryPath
 {
     public const string ReadmeFileName = "README.md";
     public const string FoodsFileName = "foods.csv";
+    public const string PeriodsFileName = "periods.csv";
+    public const string DayNotesFileName = "day-notes.csv";
     public const string MealsDirName = "meals";
     public const string ItemsDirName = "items";
     public const string DosesDirName = "doses";
@@ -49,6 +53,8 @@ public static class SugaryPath
             [] => new SugaryNode(SugaryNodeKind.Root),
             [ReadmeFileName] => new SugaryNode(SugaryNodeKind.Readme),
             [FoodsFileName] => new SugaryNode(SugaryNodeKind.Foods),
+            [PeriodsFileName] => new SugaryNode(SugaryNodeKind.Periods),
+            [DayNotesFileName] => new SugaryNode(SugaryNodeKind.DayNotes),
             [MealsDirName] => new SugaryNode(SugaryNodeKind.MealsDir),
             [ItemsDirName] => new SugaryNode(SugaryNodeKind.ItemsDir),
             [DosesDirName] => new SugaryNode(SugaryNodeKind.DosesDir),

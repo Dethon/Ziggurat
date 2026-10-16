@@ -158,6 +158,8 @@ const en = {
   exportMeals: "Meals",
   exportItems: "Foods in each meal",
   exportDoses: "Insulin doses",
+  exportPeriods: "Periods",
+  exportDayNotes: "Day notes",
   exportFoods: "Pantry",
 
   logEmpty: "The display case is empty.",
@@ -509,6 +511,8 @@ const es: Strings = {
   exportMeals: "Comidas",
   exportItems: "Alimentos de cada comida",
   exportDoses: "Dosis de insulina",
+  exportPeriods: "Reglas",
+  exportDayNotes: "Notas de los días",
   exportFoods: "Despensa",
 
   logEmpty: "La vitrina está vacía.",

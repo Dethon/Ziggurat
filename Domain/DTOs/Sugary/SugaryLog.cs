@@ -71,6 +71,12 @@ public sealed record LoggedDose(
     Guid? MealId,
     string? Note);
 
+// A period as she recorded it: days on her calendar, with no end while it is still going.
+public sealed record LoggedPeriod(Guid Id, DateOnly Start, DateOnly? End);
+
+// What she wrote about one day of her calendar.
+public sealed record LoggedDayNote(DateOnly Day, string Text);
+
 // A food from her own list. Amounts are in its unit (g or ml), carbs per 100 of that unit.
 public sealed record SavedFood(
     Guid Id,

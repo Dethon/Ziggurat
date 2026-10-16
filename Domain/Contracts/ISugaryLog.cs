@@ -19,6 +19,11 @@ public interface ISugaryLog
     // The doses taken in [from, to), oldest first, each with the meal it belongs to, if any.
     Task<IReadOnlyList<LoggedDose>> DosesAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct);
 
+    // Her periods and her day notes, each whole and oldest first: a few a year, and a few a week.
+    Task<IReadOnlyList<LoggedPeriod>> PeriodsAsync(CancellationToken ct);
+
+    Task<IReadOnlyList<LoggedDayNote>> DayNotesAsync(CancellationToken ct);
+
     // Her saved foods, by name.
     Task<IReadOnlyList<SavedFood>> FoodsAsync(CancellationToken ct);
 }

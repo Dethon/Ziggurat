@@ -190,6 +190,20 @@ public sealed class SugaryServer : IAsyncDisposable
         await db.SaveChangesAsync();
     }
 
+    public async Task SaveAsync(params Period[] periods)
+    {
+        await using var db = await Contexts.CreateDbContextAsync();
+        db.Periods.AddRange(periods);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task SaveAsync(params DayNote[] notes)
+    {
+        await using var db = await Contexts.CreateDbContextAsync();
+        db.DayNotes.AddRange(notes);
+        await db.SaveChangesAsync();
+    }
+
     public async Task<JsonNode> CallAsync(string tool, Dictionary<string, object?> arguments)
     {
         var result = await Client.CallToolAsync(tool, arguments);

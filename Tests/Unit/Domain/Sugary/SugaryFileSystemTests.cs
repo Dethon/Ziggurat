@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Sugary;
 using Domain.Tools;
 using Domain.Tools.Sugary.Vfs;
 using Moq;
@@ -52,10 +53,33 @@ public class SugaryFileSystemTests
         var doses = (await mount.GlobAsync("/doses", "*.csv", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
         all.Entries.ShouldBe([
-            "/README.md", "/doses/", "/doses/2026-08.csv", "/doses/2026-09.csv", "/foods.csv", "/items/",
-            "/items/2026-10.csv", "/meals/", "/meals/2026-10.csv"
+            "/README.md", "/day-notes.csv", "/doses/", "/doses/2026-08.csv", "/doses/2026-09.csv", "/foods.csv",
+            "/items/", "/items/2026-10.csv", "/meals/", "/meals/2026-10.csv", "/periods.csv"
         ]);
         doses.Entries.ShouldBe(["/doses/2026-08.csv", "/doses/2026-09.csv"]);
+    }
+
+    // Her cycle is two tables at the root, there with headers before she has recorded anything.
+    [Fact]
+    public async Task HerCycleFiles_AreAtTheRoot_AndReadWithTheirHeaders()
+    {
+        var log = new Mock<ISugaryLog>();
+        log.Setup(l => l.PeriodsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new LoggedPeriod(Guid.Empty, new DateOnly(2026, 10, 8), null)]);
+        log.Setup(l => l.DayNotesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        log.Setup(l => l.MealTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        log.Setup(l => l.DoseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc);
+
+        var glob = (await mount.GlobAsync("/", "*.csv", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+        var periods = (await mount.ReadAsync("/periods.csv", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+        var notes = (await mount.ReadAsync("/day-notes.csv", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+
+        glob.Entries.ShouldBe(["/day-notes.csv", "/foods.csv", "/periods.csv"]);
+        periods.Content.ShouldBe($"period_id,start_date,end_date,days,cycle_days\n{Guid.Empty},2026-10-08,,,\n");
+        notes.Content.ShouldBe("date,note\n");
     }
 
     private static ToolErrorResult Error<T>(FsResult<T> result) where T : class =>

@@ -62,7 +62,8 @@ public class SugaryImportTests : IDisposable
 
         exit.ShouldBe(0);
         (await server.GlobAsync("**/*.csv")).ShouldBe([
-            "/foods.csv", "/items/2026-09.csv", "/items/2026-10.csv", "/meals/2026-09.csv", "/meals/2026-10.csv"
+            "/day-notes.csv", "/foods.csv", "/items/2026-09.csv", "/items/2026-10.csv", "/meals/2026-09.csv",
+            "/meals/2026-10.csv", "/periods.csv"
         ]);
         (await server.ReadAsync("/meals/2026-09.csv") + Body(await server.ReadAsync("/meals/2026-10.csv")))
             .ShouldBe(_meals);

@@ -25,12 +25,13 @@ public sealed class SugaryFileSystem(
         "Her carb-counting log from Sugary (she has type 1 diabetes), read-only and always current: "
         + "meals/<YYYY-MM>.csv (one row per meal), items/<YYYY-MM>.csv (one row per food in a meal), "
         + "doses/<YYYY-MM>.csv (one row per insulin dose she recorded taking), "
-        + "foods.csv (the foods she keeps) and README.md, which explains every column — read it before "
+        + "foods.csv (the foods she keeps), periods.csv (her menstrual periods), day-notes.csv (what she "
+        + "wrote about a day) and README.md, which explains every column — read it before "
         + $"reading a number. Times carry their offset in the home's zone ({homeZone.Id}).";
 
     public override string DescribeRead =>
-        "Read a file of her carb log: README.md, foods.csv, meals/<YYYY-MM>.csv, items/<YYYY-MM>.csv or "
-        + "doses/<YYYY-MM>.csv. "
+        "Read a file of her carb log: README.md, foods.csv, periods.csv, day-notes.csv, meals/<YYYY-MM>.csv, "
+        + "items/<YYYY-MM>.csv or doses/<YYYY-MM>.csv. "
         + "The CSV comes back exactly as it is; offset and limit (1-based lines) read a window of it.";
 
     public override string DescribeInfo => "Get info about a path of her carb log: exists, isDirectory, size.";
@@ -144,6 +145,7 @@ public sealed class SugaryFileSystem(
         SugaryNode[] fixedNodes =
         [
             new(SugaryNodeKind.Root), new(SugaryNodeKind.Readme), new(SugaryNodeKind.Foods),
+            new(SugaryNodeKind.Periods), new(SugaryNodeKind.DayNotes),
             new(SugaryNodeKind.MealsDir), new(SugaryNodeKind.ItemsDir), new(SugaryNodeKind.DosesDir)
         ];
         return fixedNodes
@@ -167,6 +169,8 @@ public sealed class SugaryFileSystem(
     {
         SugaryNodeKind.Readme => SugaryReadme.For(homeZone),
         SugaryNodeKind.Foods => SugaryTables.Foods(await log.FoodsAsync(ct)),
+        SugaryNodeKind.Periods => SugaryTables.Periods(await log.PeriodsAsync(ct)),
+        SugaryNodeKind.DayNotes => SugaryTables.DayNotes(await log.DayNotesAsync(ct)),
         SugaryNodeKind.MealsMonth => await MealsInAsync(node.Month!, ct) is { Count: > 0 } meals
             ? SugaryTables.Meals(meals, homeZone)
             : null,

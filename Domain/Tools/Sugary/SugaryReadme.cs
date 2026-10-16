@@ -10,14 +10,16 @@ public static class SugaryReadme
         $$"""
           # Sugary — her carb log
 
-          The meals she logged in Sugary, the foods in each meal, the insulin doses she recorded and the foods
-          she keeps, as tables. They are rendered from Sugary's database each time they are read, so they are
+          The meals she logged in Sugary, the foods in each meal, the insulin doses she recorded, the foods
+          she keeps, her menstrual periods and the notes she wrote about her days, as tables. They are rendered from Sugary's database each time they are read, so they are
           always current. Nothing here can be written: her log changes only through Sugary.
 
           - `meals/<YYYY-MM>.csv` — one row per meal eaten that month, oldest first.
           - `items/<YYYY-MM>.csv` — one row per food in those meals, in the order of each meal.
           - `doses/<YYYY-MM>.csv` — one row per insulin dose she took that month, oldest first.
           - `foods.csv` — one row per food she keeps on her own list.
+          - `periods.csv` — one row per menstrual period she recorded, oldest first.
+          - `day-notes.csv` — one row per day she wrote a note about, oldest first.
 
           A month with no meals has no meals or items file, and a month with no doses has no doses file. A
           meal belongs to the month its `eaten_at` shows, a dose to the month its `taken_at` shows.
@@ -87,6 +89,28 @@ public static class SugaryReadme
 
           A dose saved together with its meal carries the meal's time unless she changed it, so a gap of
           zero minutes between the two is not a measurement of when she injected.
+
+          ## periods.csv
+
+          Her record of her periods, entered by her. The dates are days on the home's calendar, written
+          `YYYY-MM-DD` with no time and no offset: to line a period up with glucose, read the history under
+          the Home Assistant mount for those days. The app's forecasts of her next period and fertile window
+          are estimates it shows her; the forecasts are not in these tables, so every day here is one she
+          recorded.
+
+          - `period_id` — the period's identifier.
+          - `start_date` — the first day of the period.
+          - `end_date` — its last day; empty while it is still going.
+          - `days` — how long it lasted, both ends counted; empty while it is still going.
+          - `cycle_days` — the days from this period's start to the next one's: the length of the cycle it
+            began. Empty for her latest period.
+
+          ## day-notes.csv
+
+          What she wrote about a day — how she felt, what she craved — on a period day or any other.
+
+          - `date` — the day, on the home's calendar.
+          - `note` — what she wrote.
 
           ## foods.csv
 
