@@ -33,6 +33,12 @@
   --color-primary-soft: #fbe4eb;
   --color-primary-strong: #8e1a3f;
   --color-good: #2d6a43;
+  /* Her period: a recorded day is filled in jam, a forecast day only tinted and outlined, and the
+     fertile window tinted in pistachio; jam on its soft tint and white on jam both clear AA. */
+  --color-period: #9e2f4d;
+  --color-on-period: #ffffff;
+  --color-period-soft: #f6dde3;
+  --color-fertile-soft: #e3efe6;
   --color-caution: #7f5200;
   --color-caution-soft: #f7e7cc;
   --color-danger: #b3261e;
@@ -111,6 +117,10 @@
     --color-primary-soft: #3d2522;
     --color-primary-strong: #ffb8ce;
     --color-good: #8fd3a6;
+    --color-period: #f08aa8;
+    --color-on-period: #2a0d18;
+    --color-period-soft: #45232d;
+    --color-fertile-soft: #1f3326;
     --color-caution: #edc074;
     --color-caution-soft: #3b2b14;
     --color-danger: #ff8a80;

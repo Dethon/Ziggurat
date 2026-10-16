@@ -42,6 +42,9 @@ const paths = {
   insulin: "M3.5 9.5h11a1.5 1.5 0 0 1 1.5 1.5v2a1.5 1.5 0 0 1-1.5 1.5h-11v-5ZM16 12h5M3.5 12H2M8 9.5v5M10.5 9.5v2.5",
   bolt: "M13 3.5 6 13h5.5l-1 7.5L18 11h-5.5l.5-7.5Z",
   clock: "M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM12 7.5V12l3 2",
+  // A drop, for her period: the tab, a recorded day's mark and the Log's period day.
+  drop: "M12 3.5c3 4.1 6 7.4 6 11a6 6 0 0 1-12 0c0-3.6 3-6.9 6-11Z",
+  calendar: "M5.5 5.5h13A1.5 1.5 0 0 1 20 7v11.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5V7a1.5 1.5 0 0 1 1.5-1.5ZM4 10h16M8.5 3.5v4M15.5 3.5v4",
   signOut: "M14 4.5h4A1.5 1.5 0 0 1 19.5 6v12a1.5 1.5 0 0 1-1.5 1.5h-4M10 8l-4 4 4 4M6 12h9",
 } as const;
 

@@ -123,6 +123,25 @@ namespace McpServerSugary.Store.Migrations
                     b.ToTable("Meals");
                 });
 
+            modelBuilder.Entity("McpServerSugary.Store.Period", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("End")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("Start")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Start");
+
+                    b.ToTable("Periods");
+                });
+
             modelBuilder.Entity("McpServerSugary.Store.Meal", b =>
                 {
                     b.OwnsOne("McpServerSugary.Store.Interval", "FirstEstimate", b1 =>

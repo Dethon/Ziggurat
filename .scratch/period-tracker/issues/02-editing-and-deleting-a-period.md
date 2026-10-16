@@ -10,6 +10,6 @@ Deleting it is undone from the toast with the dates she recorded.
 
 Spec: `.scratch/period-tracker/spec.md`
 
-- [ ] Delete route; an unknown period is not found on replace and delete.
-- [ ] A refused replace leaves the period as it was.
-- [ ] The sheet's undo restores the period with its dates.
+- [x] Delete route; an unknown period is not found on replace and delete.
+- [x] A refused replace leaves the period as it was.
+- [x] The sheet's undo restores the period with its dates.

@@ -25,6 +25,7 @@ public static class ConfigModule
             .AddSugaryStore(settings)
             .AddSingleton<ISugaryLog, SqliteSugaryLog>()
             .AddSingleton(sp => new SugaryFileSystem(sp.GetRequiredService<ISugaryLog>(), homeZone))
+            .AddSingleton(sp => new HomeCalendar(sp.GetRequiredService<TimeProvider>(), homeZone))
             .AddHostedService<SugaryDatabaseMigrator>()
             .AddSingleton(settings.Uploads)
             .AddSingleton(settings.Retention)

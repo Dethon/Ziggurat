@@ -4,6 +4,7 @@ import { Icon, type IconName } from "./components/Icon";
 import type { StringKey } from "./i18n";
 import { useMinute } from "./clock";
 import { pendingOutcomes } from "./log";
+import { CycleScreen } from "./screens/CycleScreen";
 import { FoodsScreen } from "./screens/FoodsScreen";
 import { LogScreen } from "./screens/LogScreen";
 import { MealScreen } from "./screens/MealScreen";
@@ -14,11 +15,12 @@ import { ToastProvider, useToast } from "./toast";
 import type { DraftItem, SessionState } from "./types";
 import { useTypingMark } from "./typing";
 
-export type Tab = "meal" | "log" | "foods" | "settings";
+export type Tab = "meal" | "log" | "cycle" | "foods" | "settings";
 
 const TABS: { id: Tab; label: StringKey; icon: IconName }[] = [
   { id: "meal", label: "tabMeal", icon: "plate" },
   { id: "log", label: "tabLog", icon: "book" },
+  { id: "cycle", label: "tabCycle", icon: "drop" },
   { id: "foods", label: "tabFoods", icon: "jar" },
   { id: "settings", label: "tabSettings", icon: "sliders" },
 ];
@@ -96,6 +98,7 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
           />
         </div>
         {tab === "log" && <LogScreen onChanged={() => void refreshPending()} />}
+        {tab === "cycle" && <CycleScreen />}
         {tab === "foods" && (
           <FoodsScreen
             onAddToMeal={(item) => {

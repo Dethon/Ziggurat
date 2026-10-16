@@ -1,4 +1,16 @@
-import type { Dose, Food, Meal, MealEstimate, PackagedFood, SaveDose, SaveFood, SaveMeal, SessionState } from "./types";
+import type {
+  Dose,
+  Food,
+  Meal,
+  MealEstimate,
+  PackagedFood,
+  Period,
+  SaveDose,
+  SaveFood,
+  SaveMeal,
+  SavePeriod,
+  SessionState,
+} from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -109,6 +121,12 @@ export const api = {
   createDose: (dose: SaveDose) => request<Dose>("/doses", json("POST", dose)),
   updateDose: (id: string, dose: SaveDose) => request<Dose>(`/doses/${id}`, json("PUT", dose)),
   deleteDose: (id: string) => request<void>(`/doses/${id}`, { method: "DELETE" }),
+
+  // All of them, newest first: a few a year, and the forecast reads every one.
+  periods: () => request<Period[]>("/periods"),
+  createPeriod: (period: SavePeriod) => request<Period>("/periods", json("POST", period)),
+  updatePeriod: (id: string, period: SavePeriod) => request<Period>(`/periods/${id}`, json("PUT", period)),
+  deletePeriod: (id: string) => request<void>(`/periods/${id}`, { method: "DELETE" }),
 
   foods: () => request<Food[]>("/foods"),
   createFood: (food: SaveFood) => request<Food>("/foods", json("POST", food)),

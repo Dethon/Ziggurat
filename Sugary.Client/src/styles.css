@@ -2081,3 +2081,63 @@ h1.marked .icon {
 .downloads a {
   text-decoration: none;
 }
+
+/* Cycle: what she recorded is filled, what the app forecasts is only tinted and outlined, so a
+   forecast never reads as a record. */
+
+.cycle-status-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.cycle-status-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--color-period-soft);
+  color: var(--color-period);
+}
+
+.cycle-status-period .cycle-status-mark {
+  background: var(--color-period);
+  color: var(--color-on-period);
+}
+
+.cycle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.cycle-actions .button-primary {
+  flex: 1 1 auto;
+}
+
+.period-row {
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: var(--space-2) 0;
+  text-align: left;
+}
+
+.period-row > .icon:first-child {
+  color: var(--color-period);
+}
+
+.period-row-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.period-row-text .item-meta {
+  font-weight: 400;
+  font-size: var(--text-meta);
+  color: var(--color-muted);
+}

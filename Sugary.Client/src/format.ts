@@ -1,5 +1,6 @@
 import { formatRations, rationBounds, rations } from "./carbs";
 import type { Language, Translate } from "./i18n";
+import { dayDate } from "./cycle";
 import type { Interval } from "./types";
 
 // Dates and times follow the UI language's spelling but always a 24-hour clock: she lives in
@@ -40,4 +41,20 @@ export function rationText(total: Interval, size: number, language: Language, t:
   const bounds = rationBounds(total, size);
   const [low, high] = [bounds.low, bounds.high].map((n) => n.toLocaleString(locale(language), { maximumFractionDigits: 1 }));
   return `${count} ${t("rationsOf", { size })}${low === high ? "" : ` (${low}–${high})`}`;
+}
+
+// A day of her calendar (yyyy-MM-dd), or a run of them, in her language: "3–7 Oct", "28 Sept –
+// 2 Oct". The year is named only when it is not the one given as this year.
+export function formatDays(start: string, end: string, language: Language, thisYear = start.slice(0, 4)): string {
+  const [first, last] = [dayDate(start), dayDate(end)];
+  const otherYear = start.slice(0, 4) !== thisYear || end.slice(0, 4) !== thisYear;
+  const spell = (date: Date, parts: Intl.DateTimeFormatOptions) => date.toLocaleDateString(locale(language), parts);
+  const full: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", ...(otherYear ? { year: "numeric" } : {}) };
+  if (start === end) {
+    return spell(first, full);
+  }
+  if (start.slice(0, 7) === end.slice(0, 7)) {
+    return `${first.getDate()}–${spell(last, full)}`;
+  }
+  return `${spell(first, full)} – ${spell(last, full)}`;
 }

@@ -79,3 +79,12 @@ public class Dose
     public string? Note { get; set; }
     public Guid? MealId { get; set; }
 }
+// A period, as the days she recorded it on: the day it started and the day it ended, with no end
+// while it is still going. Days on her calendar, not instants, so a reader in any zone sees the
+// same days she lived.
+public class Period
+{
+    public Guid Id { get; set; }
+    public DateOnly Start { get; set; }
+    public DateOnly? End { get; set; }
+}

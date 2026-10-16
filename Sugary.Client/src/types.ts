@@ -122,6 +122,16 @@ export interface Dose {
 
 export type SaveDose = Omit<Dose, "id">;
 
+// A period as she recorded it: the day it started and the day it ended, both yyyy-MM-dd on her
+// calendar, with no end while it is going.
+export interface Period {
+  id: string;
+  start: string;
+  end: string | null;
+}
+
+export type SavePeriod = Omit<Period, "id">;
+
 export interface DraftItem extends MealItem {
   id: string;
   note: string | null;
