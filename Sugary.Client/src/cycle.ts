@@ -105,6 +105,9 @@ export function periodProblem(start: string, end: string | null, today: string, 
 export interface CalendarDay {
   day: string;
   period: boolean;
+  // Forecast, never on a recorded period day.
+  expected: boolean;
+  fertile: boolean;
   note: boolean;
   today: boolean;
   future: boolean;
@@ -112,7 +115,13 @@ export interface CalendarDay {
 
 // A month ("yyyy-MM") in weeks from Monday, as both her languages lay a calendar out; the days
 // before the first and after the last are blank.
-export function monthGrid(month: string, periods: readonly Period[], noted: ReadonlySet<string>, today: string): (CalendarDay | null)[][] {
+export function monthGrid(
+  month: string,
+  periods: readonly Period[],
+  noted: ReadonlySet<string>,
+  today: string,
+  forecasted: Forecast | null = null,
+): (CalendarDay | null)[][] {
   const first = `${month}-01`;
   const length = daysBetween(first, `${shiftMonth(month, 1)}-01`);
   const lead = (new Date(utc(first)).getUTCDay() + 6) % 7;
@@ -120,9 +129,13 @@ export function monthGrid(month: string, periods: readonly Period[], noted: Read
     ...Array.from({ length: lead }, () => null),
     ...Array.from({ length }, (_, index): CalendarDay => {
       const day = addDays(first, index);
+      const period = periods.some((recorded) => covers(recorded, day, today));
+      const within = (range: { start: string; end: string } | null | undefined) => !period && !!range && range.start <= day && day <= range.end;
       return {
         day,
-        period: periods.some((period) => covers(period, day, today)),
+        period,
+        expected: within(forecasted && { start: forecasted.earliest, end: forecasted.latest }),
+        fertile: within(forecasted?.fertile),
         note: noted.has(day),
         today: day === today,
         future: day > today,
@@ -157,4 +170,53 @@ export function dayAction(day: string, periods: readonly Period[], today: string
     return { kind: "end", period: ongoing };
   }
   return { kind: "start", ongoing: !periods.some((period) => period.start > day) };
+}
+
+// The cycles a forecast reads: the most recent, since a cycle drifts over the years.
+const RECENT_CYCLES = 6;
+// A cycle longer than this many times the median is a period she did not note, not a cycle.
+const OUTLIER = 1.5;
+// Ovulation is taken as this many days before the next start; she is fertile the five days before
+// it and the day after.
+const LUTEAL_DAYS = 14;
+
+export interface Forecast {
+  // The next start, between the shortest and the longest recent cycle.
+  earliest: string;
+  latest: string;
+  likeliest: string;
+  // While its last day is not past.
+  fertile: { start: string; end: string } | null;
+  // How many cycles it was read from.
+  cycles: number;
+}
+
+// When her next period is expected and her likely fertile window, from her own recent cycles. An
+// estimate, and said to be one wherever it is shown; nothing here is stored or sent.
+export function forecast(periods: readonly Period[], today: string): Forecast | null {
+  const starts = byStart(periods)
+    .filter((period) => period.start <= today)
+    .map((period) => period.start);
+  if (starts.length < 2) {
+    return null;
+  }
+  const recent = starts
+    .slice(1)
+    .map((start, index) => daysBetween(starts[index], start))
+    .slice(-RECENT_CYCLES);
+  const sorted = recent.toSorted((a, b) => a - b);
+  const middle = sorted.length / 2;
+  const median = sorted.length % 2 ? sorted[Math.floor(middle)] : (sorted[middle - 1] + sorted[middle]) / 2;
+  const kept = recent.filter((days) => days <= median * OUTLIER);
+  const last = starts.at(-1)!;
+  const earliest = addDays(last, Math.min(...kept));
+  const latest = addDays(last, Math.max(...kept));
+  const fertile = { start: addDays(earliest, -LUTEAL_DAYS - 5), end: addDays(latest, -LUTEAL_DAYS + 1) };
+  return {
+    earliest,
+    latest,
+    likeliest: addDays(last, Math.round(kept.reduce((sum, days) => sum + days, 0) / kept.length)),
+    fertile: fertile.end >= today ? fertile : null,
+    cycles: kept.length,
+  };
 }

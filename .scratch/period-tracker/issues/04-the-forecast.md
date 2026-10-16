@@ -11,6 +11,6 @@ the expected and fertile days with a dashed outline and a tint, and the legend s
 
 Spec: `.scratch/period-tracker/spec.md`
 
-- [ ] Under vitest: no forecast before two periods; up to six recent cycles; a cycle over 1.5 × the median left out; range and likeliest day; fertile window from 19 days before the earliest to 13 before the latest; an ongoing period forecast from its start.
-- [ ] The estimate sentence is shown with every forecast, in both languages.
-- [ ] Forecast days are drawn differently from recorded ones, in both colour schemes.
+- [x] Under vitest: no forecast before two periods; up to six recent cycles; a cycle over 1.5 × the median left out; range and likeliest day; fertile window from 19 days before the earliest to 13 before the latest; an ongoing period forecast from its start.
+- [x] The estimate sentence is shown with every forecast, in both languages.
+- [x] Forecast days are drawn differently from recorded ones, in both colour schemes.

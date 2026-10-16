@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { CycleCalendar } from "../components/CycleCalendar";
 import { Icon } from "../components/Icon";
-import { cycleStatus, history, localDay, periodProblem } from "../cycle";
+import { cycleStatus, forecast, history, localDay, periodProblem } from "../cycle";
 import { errorMessage } from "../errors";
 import { formatDays } from "../format";
 import { useMinute } from "../clock";
@@ -49,6 +49,7 @@ export function CycleScreen() {
   const all = periods ?? [];
   const status = cycleStatus(all, today);
   const noted = new Set(notes.map((note) => note.day));
+  const expected = forecast(all, today);
 
   // One tap records today; the rules are asked first so a clash is said in her language.
   async function quick(values: SavePeriod, period?: Period) {
@@ -159,8 +160,45 @@ export function CycleScreen() {
         </section>
       )}
 
+      {all.length > 0 && (
+        <section className="card forecast" aria-labelledby="forecast-title">
+          <h2 id="forecast-title" className="section-title">
+            {t("forecastTitle")}
+          </h2>
+          {expected ? (
+            <>
+              <p className="forecast-range">{t("forecastRange", { range: formatDays(expected.earliest, expected.latest, language, thisYear) })}</p>
+              {expected.earliest !== expected.latest && (
+                <p className="muted">{t("forecastLikeliest", { date: formatDays(expected.likeliest, expected.likeliest, language, thisYear) })}</p>
+              )}
+              {expected.fertile && (
+                <p className="forecast-fertile">
+                  {t("fertileWindow", { range: formatDays(expected.fertile.start, expected.fertile.end, language, thisYear) })}
+                </p>
+              )}
+              <p className="notice forecast-disclaimer">
+                <Icon name="info" size={18} />
+                <span>
+                  {expected.cycles === 1 ? t("forecastBasisOne") : t("forecastBasis", { n: expected.cycles })} {t("forecastDisclaimer")}
+                </span>
+              </p>
+            </>
+          ) : (
+            <p className="muted small">{t("forecastNeedsTwo")}</p>
+          )}
+        </section>
+      )}
+
       {periods !== null && (
-        <CycleCalendar month={month} periods={all} noted={noted} today={today} onMonth={setMonth} onDay={setOpenDay} />
+        <CycleCalendar
+          month={month}
+          periods={all}
+          noted={noted}
+          today={today}
+          forecast={expected}
+          onMonth={setMonth}
+          onDay={setOpenDay}
+        />
       )}
 
       {all.length > 0 && (

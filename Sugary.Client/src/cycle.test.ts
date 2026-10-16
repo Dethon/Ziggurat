@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, cycleStatus, dayAction, daysBetween, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, shiftMonth } from "./cycle";
+import { addDays, cycleStatus, dayAction, daysBetween, forecast, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, shiftMonth } from "./cycle";
 import type { Period } from "./types";
 
 const period = (start: string, end: string | null, id = start): Period => ({ id, start, end });
@@ -176,5 +176,72 @@ describe("dayAction", () => {
   it("ends an ongoing period on a day after its start that it does not yet reach", () => {
     const ongoing = period("2026-10-10", null);
     expect(dayAction("2026-10-17", [ongoing], "2026-10-16")).toEqual({ kind: "end", period: ongoing });
+  });
+});
+
+describe("forecast", () => {
+  const today = "2026-10-16";
+  const four = [period("2026-07-14", "2026-07-18"), period("2026-08-11", "2026-08-15"), period("2026-09-09", "2026-09-14"), period("2026-10-08", "2026-10-12")];
+
+  it("says nothing before two periods", () => {
+    expect(forecast([], today)).toBeNull();
+    expect(forecast([period("2026-10-08", null)], today)).toBeNull();
+  });
+
+  // Cycles of 28, 29 and 29 days after a start on 8 October.
+  it("expects the next start between the shortest and the longest recent cycle, most likely at their mean", () => {
+    expect(forecast(four, today)).toMatchObject({ earliest: "2026-11-05", latest: "2026-11-06", likeliest: "2026-11-06", cycles: 3 });
+  });
+
+  // Ovulation about 14 days before the next start; fertile the five days before it to the day after.
+  it("puts the fertile window from 19 days before the earliest start to 13 before the latest", () => {
+    expect(forecast(four, today)?.fertile).toEqual({ start: "2026-10-17", end: "2026-10-24" });
+  });
+
+  it("leaves the fertile window out once it is past", () => {
+    expect(forecast(four, "2026-10-25")?.fertile).toBeNull();
+    expect(forecast(four, "2026-10-24")?.fertile).not.toBeNull();
+  });
+
+  it("forecasts from an ongoing period's start", () => {
+    const ongoing = [period("2026-09-10", "2026-09-14"), period("2026-10-08", null)];
+    expect(forecast(ongoing, "2026-10-10")).toMatchObject({ earliest: "2026-11-05", latest: "2026-11-05", likeliest: "2026-11-05", cycles: 1 });
+  });
+
+  // A period she did not note makes one cycle about twice as long; it would drag every forecast out.
+  it("leaves out a cycle longer than one and a half times the median", () => {
+    const gap = [period("2026-05-19", null), period("2026-06-16", null), period("2026-08-11", null), period("2026-09-09", null)].map(
+      (p) => ({ ...p, end: addDays(p.start, 4) }),
+    );
+    expect(forecast(gap, today)).toMatchObject({ earliest: "2026-10-07", latest: "2026-10-08", cycles: 2 });
+  });
+
+  it("reads only the six most recent cycles", () => {
+    // A 41-day cycle, short of the outlier rule, before six of 28 days.
+    const starts = ["2026-01-19", "2026-03-01", "2026-03-29", "2026-04-26", "2026-05-24", "2026-06-21", "2026-07-19", "2026-08-16"];
+    const periods = starts.map((start) => period(start, addDays(start, 4)));
+    expect(forecast(periods, "2026-08-20")).toMatchObject({ earliest: "2026-09-13", latest: "2026-09-13", cycles: 6 });
+  });
+});
+
+describe("monthGrid with a forecast", () => {
+  const four = [period("2026-07-14", "2026-07-18"), period("2026-08-11", "2026-08-15"), period("2026-09-09", "2026-09-14"), period("2026-10-08", "2026-10-12")];
+
+  it("draws the expected and fertile days apart from the recorded ones", () => {
+    const today = "2026-10-16";
+    const cells = monthGrid("2026-11", four, new Set(), today, forecast(four, today)).flat();
+    expect(cells.filter((cell) => cell?.expected).map((cell) => cell!.day)).toEqual(["2026-11-05", "2026-11-06"]);
+    const october = monthGrid("2026-10", four, new Set(), today, forecast(four, today)).flat();
+    expect(october.filter((cell) => cell?.fertile).map((cell) => cell!.day)).toEqual([
+      "2026-10-17",
+      "2026-10-18",
+      "2026-10-19",
+      "2026-10-20",
+      "2026-10-21",
+      "2026-10-22",
+      "2026-10-23",
+      "2026-10-24",
+    ]);
+    expect(october.some((cell) => cell?.period && (cell.expected || cell.fertile))).toBe(false);
   });
 });

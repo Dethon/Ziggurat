@@ -2264,3 +2264,50 @@ h1.marked .icon {
 .period-in-day .icon:first-child {
   color: var(--color-period);
 }
+
+.calendar-day-expected {
+  background: var(--color-period-soft);
+  outline: 1.5px dashed var(--color-period);
+  outline-offset: -1.5px;
+}
+
+.calendar-day-fertile {
+  background: var(--color-fertile-soft);
+  outline: 1.5px dashed var(--color-good);
+  outline-offset: -1.5px;
+}
+
+.calendar-day-expected.calendar-day-today,
+.calendar-day-fertile.calendar-day-today {
+  box-shadow: inset 0 0 0 3px var(--color-ink);
+}
+
+.legend-expected {
+  background: var(--color-period-soft);
+  outline: 1.5px dashed var(--color-period);
+  outline-offset: -1.5px;
+}
+
+.legend-fertile {
+  background: var(--color-fertile-soft);
+  outline: 1.5px dashed var(--color-good);
+  outline-offset: -1.5px;
+}
+
+.forecast {
+  gap: var(--space-2);
+}
+
+.forecast-range {
+  font-size: var(--text-number);
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.forecast-fertile {
+  color: var(--color-ink);
+}
+
+.forecast-disclaimer {
+  margin-top: var(--space-1);
+}

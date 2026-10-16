@@ -1,4 +1,4 @@
-import { dayDate, monthGrid, shiftMonth, type CalendarDay } from "../cycle";
+import { dayDate, monthGrid, shiftMonth, type CalendarDay, type Forecast } from "../cycle";
 import { locale } from "../format";
 import { sentence } from "../meal";
 import { useSettings } from "../settings";
@@ -15,6 +15,7 @@ export function CycleCalendar({
   periods,
   noted,
   today,
+  forecast,
   onMonth,
   onDay,
 }: {
@@ -22,11 +23,12 @@ export function CycleCalendar({
   periods: readonly Period[];
   noted: ReadonlySet<string>;
   today: string;
+  forecast: Forecast | null;
   onMonth: (month: string) => void;
   onDay: (day: string) => void;
 }) {
   const { t, language } = useSettings();
-  const weeks = monthGrid(month, periods, noted, today);
+  const weeks = monthGrid(month, periods, noted, today, forecast);
   const title = sentence(dayDate(`${month}-01`).toLocaleDateString(locale(language), { month: "long", year: "numeric" }));
   const weekdays = Array.from({ length: 7 }, (_, index) =>
     new Date(A_MONDAY.getFullYear(), A_MONDAY.getMonth(), A_MONDAY.getDate() + index).toLocaleDateString(locale(language), {
@@ -36,7 +38,13 @@ export function CycleCalendar({
 
   function spoken(cell: CalendarDay): string {
     const date = dayDate(cell.day).toLocaleDateString(locale(language), { weekday: "long", day: "numeric", month: "long" });
-    const marks = [cell.today && t("daySpokenToday"), cell.period && t("daySpokenPeriod"), cell.note && t("daySpokenNote")];
+    const marks = [
+      cell.today && t("daySpokenToday"),
+      cell.period && t("daySpokenPeriod"),
+      cell.expected && t("daySpokenExpected"),
+      cell.fertile && t("daySpokenFertile"),
+      cell.note && t("daySpokenNote"),
+    ];
     return [date, ...marks.filter(Boolean)].join(", ");
   }
 
@@ -76,6 +84,8 @@ export function CycleCalendar({
                       className={[
                         "calendar-day",
                         cell.period && "calendar-day-period",
+                        cell.expected && "calendar-day-expected",
+                        cell.fertile && "calendar-day-fertile",
                         cell.today && "calendar-day-today",
                         cell.future && "calendar-day-future",
                       ]
@@ -100,6 +110,18 @@ export function CycleCalendar({
           <span className="legend-swatch legend-period" />
           {t("legendPeriod")}
         </li>
+        {forecast && (
+          <>
+            <li>
+              <span className="legend-swatch legend-expected" />
+              {t("legendExpected")}
+            </li>
+            <li>
+              <span className="legend-swatch legend-fertile" />
+              {t("legendFertile")}
+            </li>
+          </>
+        )}
         <li>
           <span className="legend-swatch legend-note" />
           {t("legendNote")}
