@@ -70,6 +70,21 @@ public class McpSugaryServerTests
         SugarySkill.Description.ShouldContain("insulin");
     }
 
+    // "Was she on her period the week her glucose ran high" is a read of one file beside /ha.
+    [Fact]
+    public async Task TheLogSkill_SaysWhereHerCycleIs_AndThatItsDaysLineUpWithHa()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(SugarySkill.Name));
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+
+        body.ShouldContain("/sugary/periods.csv");
+        body.ShouldContain("/sugary/day-notes.csv");
+        body.ShouldContain("read `/ha` history for those days");
+        SugarySkill.Description.ShouldContain("period");
+    }
+
     [Fact]
     public async Task AnEmptyLog_HasItsReadmeItsThreeTablesAndThreeEmptyDirectories()
     {

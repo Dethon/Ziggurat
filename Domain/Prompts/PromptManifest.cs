@@ -341,8 +341,9 @@ public static class PromptManifest
             Description = SugarySkill.Description,
             DescriptionBudget = 100,
             // Raised from 500 for her insulin doses: where they are, how a meal's are found, and that
-            // they are never a basis for advice — the one rule here that guards her safety.
-            BodyBudget = 600,
+            // they are never a basis for advice — the one rule here that guards her safety. Raised
+            // again to 700 for her periods and day notes, the tables a cycle question reads beside /ha.
+            BodyBudget = 700,
             ServedBy = "mcp-sugary",
             Claims = SugarySkill.Claims
         },

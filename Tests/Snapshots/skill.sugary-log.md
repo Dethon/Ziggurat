@@ -1,10 +1,10 @@
-# sugary-log — description 97 / 100 tokens, body 600 / 600 tokens, served by mcp-sugary
+# sugary-log — description 100 / 100 tokens, body 669 / 700 tokens, served by mcp-sugary
 
 ================================================================================================
 
 ---
 name: sugary-log
-description: Reading her carb log under `/sugary` — the foods she keeps, the meals she logged, the foods in each and the insulin doses she recorded ("what is in her usual breakfast", "when did she last have paella", "how did her glucose do after pizza", "how much insulin did she take for it"). Where each table is, where its columns are explained, and how to find a food, a meal's dose or a month.
+description: Reading her carb log under `/sugary` — the foods she keeps, the meals she logged, the foods in each, the insulin doses she recorded and her periods ("when did she last have paella", "how did her glucose do after pizza", "how much insulin did she take for it", "was she on her period that week"). Where each table is, where its columns are explained, and how to find a food, a meal's dose or a month.
 ---
 
 ### Her carb log at `/sugary`
@@ -16,6 +16,7 @@ Read-only, and rendered from Sugary's database on every read, so it is always cu
 - `/sugary/meals/<YYYY-MM>.csv` — one row per meal she logged that month: its carbs as finally logged, the model's first estimate, and what her glucose did afterwards.
 - `/sugary/items/<YYYY-MM>.csv` — one row per food in those meals, with where its numbers came from: an estimate, a label, a barcode, or typed by her.
 - `/sugary/doses/<YYYY-MM>.csv` — one row per insulin dose she took that month: its units, `rapid` or `basal` (long-acting), and the `meal_id` of the meal it was for, if any.
+- `/sugary/periods.csv` — her menstrual periods: `start_date`, `end_date` (empty while it is going), each one's length and its cycle's. `/sugary/day-notes.csv` — what she wrote about a day. Both are days on the home's calendar: read `/ha` history for those days beside them.
 
 A month with nothing logged has no file, and a row is filed under the month its own time shows. Every time carries its offset in the home's zone, the clock the glucose history under `/ha` is stamped on, so a meal, its dose and the readings after them line up.
 

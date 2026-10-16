@@ -1,4 +1,4 @@
-# jonas — 6666 tokens across 17 sections and 8 skills
+# jonas — 6669 tokens across 17 sections and 8 skills
 
   core_directive           CoreDirective         524 / 550    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               30 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -24,7 +24,7 @@
   home-assistant           Skill                 150 / 150    body 3588 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1121 / 1300, served by mcp-scheduling
   countdown-timers         Skill                 126 / 130    body 640 / 900, served by mcp-timers
-  sugary-log               Skill                  97 / 100    body 600 / 600, served by mcp-sugary
+  sugary-log               Skill                 100 / 100    body 669 / 700, served by mcp-sugary
 
 ================================================================================================
 
@@ -365,7 +365,7 @@ Proper nouns (people, places, titles of works) stay as they are -- do not transl
   </skill>
   <skill>
     <name>sugary-log</name>
-    <description>Reading her carb log under `/sugary` — the foods she keeps, the meals she logged, the foods in each and the insulin doses she recorded (&quot;what is in her usual breakfast&quot;, &quot;when did she last have paella&quot;, &quot;how did her glucose do after pizza&quot;, &quot;how much insulin did she take for it&quot;). Where each table is, where its columns are explained, and how to find a food, a meal&apos;s dose or a month.</description>
+    <description>Reading her carb log under `/sugary` — the foods she keeps, the meals she logged, the foods in each, the insulin doses she recorded and her periods (&quot;when did she last have paella&quot;, &quot;how did her glucose do after pizza&quot;, &quot;how much insulin did she take for it&quot;, &quot;was she on her period that week&quot;). Where each table is, where its columns are explained, and how to find a food, a meal&apos;s dose or a month.</description>
   </skill>
   <skill>
     <name>web-browsing</name>

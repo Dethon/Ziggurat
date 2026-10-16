@@ -11,5 +11,5 @@ follows.
 
 Spec: `.scratch/period-tracker/spec.md`
 
-- [ ] The skill snapshot and Jonas's prompt snapshot updated.
+- [x] The skill snapshot and Jonas's prompt snapshot updated.
 - [ ] The changed-tier eval run, once the user agrees to the spend.
