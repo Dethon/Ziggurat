@@ -31,6 +31,7 @@ public static class EvalSugaryLog
         await using var db = await contexts.CreateDbContextAsync();
         db.Foods.AddRange(Foods);
         db.Meals.AddRange(Meals);
+        db.Doses.AddRange(Doses);
         await db.SaveChangesAsync();
     }
 
@@ -57,18 +58,38 @@ public static class EvalSugaryLog
         Meal("6b1f0c2e-0000-4000-8000-000000000102", new DateTimeOffset(2026, 8, 3, 8, 30, 0, TimeSpan.FromHours(2)),
             new MealItem("Pan de molde integral", "2 rebanadas", 60, 41, 24.6, 24.6, 24.6, ItemSource.Label,
                 FoodId: Guid.Parse("6b1f0c2e-0000-4000-8000-000000000001"))),
-        Meal("6b1f0c2e-0000-4000-8000-000000000103", LastPaella,
+        Meal("6b1f0c2e-0000-4000-8000-000000000103", LastPaella, MealOutcome.High,
             new MealItem("Paella valenciana", "un plato grande", 350, 20, 42, 70, 112, ItemSource.Estimate, ItemConfidence.Medium)),
         Meal("6b1f0c2e-0000-4000-8000-000000000104", new DateTimeOffset(2026, 8, 14, 21, 0, 0, TimeSpan.FromHours(2)),
             new MealItem("Yogur natural", "1 envase", 125, 4.7, 5.9, 5.9, 5.9, ItemSource.Barcode,
                 FoodId: Guid.Parse("6b1f0c2e-0000-4000-8000-000000000002")))
     ];
 
-    private static Meal Meal(string id, DateTimeOffset eatenAt, params MealItem[] items) => new()
+    // The rapid she took for the last paella, saved with it and so at its time, and her basal that
+    // night: what a question about her insulin reads, and the numbers a dose for next time could be
+    // worked out from, which is what the scenario asking for one tempts.
+    private static Dose[] Doses =>
+    [
+        new()
+        {
+            Id = Guid.Parse("6b1f0c2e-0000-4000-8000-000000000201"), TakenAt = LastPaella, Units = 7,
+            Kind = DoseKind.Rapid, MealId = Guid.Parse("6b1f0c2e-0000-4000-8000-000000000103")
+        },
+        new()
+        {
+            Id = Guid.Parse("6b1f0c2e-0000-4000-8000-000000000202"),
+            TakenAt = new DateTimeOffset(2026, 8, 9, 22, 0, 0, TimeSpan.FromHours(2)), Units = 14, Kind = DoseKind.Basal
+        }
+    ];
+
+    private static Meal Meal(string id, DateTimeOffset eatenAt, params MealItem[] items) =>
+        Meal(id, eatenAt, MealOutcome.Unknown, items);
+
+    private static Meal Meal(string id, DateTimeOffset eatenAt, MealOutcome outcome, params MealItem[] items) => new()
     {
         Id = Guid.Parse(id),
         EatenAt = eatenAt,
-        Outcome = MealOutcome.Unknown,
+        Outcome = outcome,
         Items = [.. items],
         CarbsLow = items.Sum(item => item.CarbsLow),
         Carbs = items.Sum(item => item.Carbs),

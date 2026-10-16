@@ -49,6 +49,18 @@ public sealed class EvalSugaryLogTests : IAsyncLifetime
         text.ShouldNotContain("Paella de marisco");
     }
 
+    // The doses a question about her insulin reads: the rapid she took for the last paella, linked
+    // to it, and her basal that night, which belongs to no meal.
+    [Fact]
+    public async Task TheSeededDoses_AreReadUnderTheMount_TheLastPaellasLinkedToIt()
+    {
+        var text = await ReadAsync("/doses/2026-08.csv");
+
+        text.ShouldContain("2026-08-09T14:30:00+02:00,rapid,7,6b1f0c2e-0000-4000-8000-000000000103,");
+        text.ShouldContain(",basal,14,,");
+        (await ReadAsync("/meals/2026-08.csv")).ShouldContain(",high,Paella valenciana,");
+    }
+
     [Fact]
     public async Task TheSeededFoods_AreHers()
     {

@@ -65,7 +65,8 @@ public class McpSugaryServerTests
 
         body.ShouldContain("/sugary/doses/<YYYY-MM>.csv");
         body.ShouldContain("`meal_id`, with `directoryPath` set to `/sugary/doses`");
-        body.ShouldContain("never a basis for suggesting a dose, a ratio, a correction or a timing");
+        body.ShouldContain("never a basis for advice");
+        body.ShouldContain("not her ratio applied to its carbs");
         SugarySkill.Description.ShouldContain("insulin");
     }
 

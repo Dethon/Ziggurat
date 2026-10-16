@@ -1,4 +1,4 @@
-# sugary-log — description 97 / 100 tokens, body 571 / 600 tokens, served by mcp-sugary
+# sugary-log — description 97 / 100 tokens, body 600 / 600 tokens, served by mcp-sugary
 
 ================================================================================================
 
@@ -15,11 +15,11 @@ Read-only, and rendered from Sugary's database on every read, so it is always cu
 - `/sugary/foods.csv` — the foods she keeps, one row each: what she calls it, its carbs per 100 g or ml, the amount she usually has and, for a food kept only as a portion, the carbs in that portion.
 - `/sugary/meals/<YYYY-MM>.csv` — one row per meal she logged that month: its carbs as finally logged, the model's first estimate, and what her glucose did afterwards.
 - `/sugary/items/<YYYY-MM>.csv` — one row per food in those meals, with where its numbers came from: an estimate, a label, a barcode, or typed by her.
-- `/sugary/doses/<YYYY-MM>.csv` — one row per insulin dose she recorded taking that month: its units, `rapid` (a meal or a correction) or `basal` (long-acting, her background dose), and the `meal_id` of the meal it was for, if any.
+- `/sugary/doses/<YYYY-MM>.csv` — one row per insulin dose she took that month: its units, `rapid` or `basal` (long-acting), and the `meal_id` of the meal it was for, if any.
 
 A month with nothing logged has no file, and a row is filed under the month its own time shows. Every time carries its offset in the home's zone, the clock the glucose history under `/ha` is stamped on, so a meal, its dose and the readings after them line up.
 
-Her doses are her record of what she took: read them and report them, and treat them as never a basis for suggesting a dose, a ratio, a correction or a timing, or for saying what she should have taken.
+Her doses are her record of what she took, never a basis for advice. Asked what she should take, answer with what she took, the meal's logged carbs and what her glucose did, and give no number of units for any meal — not her ratio applied to its carbs, not even as arithmetic someone asked for — and no correction or timing: her dose is hers and her diabetes team's to decide.
 
 ### Finding things
 

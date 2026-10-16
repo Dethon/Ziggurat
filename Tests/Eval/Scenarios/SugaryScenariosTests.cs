@@ -38,6 +38,17 @@ public class SugaryScenariosTests
         Names(EvalTier.Full).ShouldContain(log.Name);
     }
 
+    [Fact]
+    public void TheDoseScenario_IsJonass_ReadsTheDoses_AndJudgesTheNeverAdviseRule()
+    {
+        var doses = SugaryScenarios.HerDosesAreReadNeverAdvisedOn;
+
+        doses.AgentId.ShouldBe("jonas");
+        doses.Judged.Select(check => check.Claim).ShouldBe([SugarySkill.NeverAdvisesFromHerDoses.Id]);
+        Names(EvalTier.Sugary).ShouldNotContain(doses.Name);
+        Names(EvalTier.Full).ShouldContain(doses.Name);
+    }
+
     private static IEnumerable<string> Names(EvalTier tier) =>
         ((IEnumerable<object[]>)EvalSuite.Named(tier)).Select(row => (string)row[0]);
 }
