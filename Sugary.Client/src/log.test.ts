@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { matches, OUTCOME_AFTER_HOURS, outcomeState, pendingOutcomes } from "./log";
-import type { Meal } from "./types";
+import { byDay, matches, OUTCOME_AFTER_HOURS, outcomeState, pendingOutcomes, timeline } from "./log";
+import type { Dose, Meal } from "./types";
 
 const now = new Date("2026-10-15T20:00:00Z");
 const meal = (id: string, hoursAgo: number, outcome: Meal["outcome"] = "unknown", names = ["toast"]): Meal => ({
@@ -57,5 +57,51 @@ describe("matches", () => {
     expect(matches(paella, "MARISCO")).toBe(true);
     expect(matches(paella, "pizza")).toBe(false);
     expect(matches(paella, "  ")).toBe(true);
+  });
+});
+
+const dose = (id: string, hoursAgo: number, kind: Dose["kind"] = "rapid"): Dose => ({
+  id,
+  takenAt: new Date(now.getTime() - hoursAgo * 3_600_000).toISOString(),
+  units: 4,
+  kind,
+  note: null,
+  mealId: null,
+});
+
+describe("timeline", () => {
+  it("lists meals and doses together, newest first, as the day happened", () => {
+    const entries = timeline([meal("lunch", 6), meal("breakfast", 12)], [dose("basal", 2, "basal"), dose("correction", 9)]);
+    expect(entries.map((entry) => entry.id)).toEqual(["basal", "lunch", "correction", "breakfast"]);
+    expect(entries.map((entry) => entry.type)).toEqual(["dose", "meal", "dose", "meal"]);
+  });
+
+  it("puts a meal above a dose taken at the same moment, which reads as the dose taken for it", () => {
+    const lunch = meal("lunch", 6);
+    const withIt = { ...dose("bolus", 0), takenAt: lunch.eatenAt };
+    expect(timeline([lunch], [withIt]).map((entry) => entry.id)).toEqual(["lunch", "bolus"]);
+  });
+
+  it("orders by the instant, whatever offset each time was written with", () => {
+    const early = { ...meal("early", 0), eatenAt: "2026-10-15T10:00:00+02:00" };
+    const late = { ...dose("late", 0), takenAt: "2026-10-15T09:30:00Z" };
+    expect(timeline([early], [late]).map((entry) => entry.id)).toEqual(["late", "early"]);
+  });
+});
+
+describe("byDay", () => {
+  // Built on the phone's own clock, so the days are the same wherever the tests run.
+  const at = (day: number, hour: number) => new Date(2026, 9, day, hour, 0).toISOString();
+
+  it("groups the timeline by the day on the phone's calendar, keeping its order", () => {
+    const meals = [{ ...meal("lunch", 0), eatenAt: at(15, 14) }, { ...meal("yesterday", 0), eatenAt: at(14, 23) }];
+    const doses = [{ ...dose("night", 0, "basal"), takenAt: at(15, 22) }];
+    const days = byDay(timeline(meals, doses));
+    expect(days.map((day) => day.entries.map((entry) => entry.id))).toEqual([["night", "lunch"], ["yesterday"]]);
+    expect(days[0].date.getDate()).toBe(15);
+  });
+
+  it("gives a day of doses alone a day of its own", () => {
+    expect(byDay(timeline([], [dose("basal", 2, "basal")])).map((day) => day.entries.length)).toEqual([1]);
   });
 });

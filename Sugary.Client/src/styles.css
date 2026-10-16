@@ -1299,6 +1299,80 @@ h1.title-small {
   font-weight: 400;
 }
 
+/* Doses: a dose is a record she made, never advice, and rapid and basal must never be misread for
+   each other, so each says its kind in words, with its own drawing, on its own tint. */
+
+.add-dose {
+  margin-bottom: var(--space-2);
+}
+
+.add-dose .icon:first-child {
+  color: var(--color-primary);
+}
+
+.dose-row {
+  cursor: default;
+}
+
+button.dose-row {
+  cursor: pointer;
+}
+
+.dose-mark {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.dose-mark-rapid {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-strong);
+}
+
+.dose-mark-basal {
+  background: var(--color-sponge);
+  color: var(--color-ink);
+  box-shadow: inset 0 0 0 1.5px var(--color-field);
+}
+
+.dose-kind-word {
+  font-weight: 700;
+  color: var(--color-ink);
+}
+
+.dose-note {
+  overflow-wrap: anywhere;
+}
+
+.dose-kinds .segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  text-align: left;
+}
+
+.dose-kind-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.dose-kind-text small {
+  font-weight: 400;
+  font-size: var(--text-label);
+  color: var(--color-muted);
+}
+
+.dose-kind-rapid.segment-on .icon {
+  color: var(--color-primary);
+}
+
+.field-problem {
+  font-size: var(--text-meta);
+  color: var(--color-danger);
+}
+
 .meal-figures {
   display: flex;
   flex-direction: column;

@@ -17,6 +17,37 @@ namespace McpServerSugary.Store.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
+            modelBuilder.Entity("McpServerSugary.Store.Dose", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("MealId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("TakenAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("Units")
+                        .HasColumnType("REAL");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MealId");
+
+                    b.HasIndex("TakenAt");
+
+                    b.ToTable("Doses");
+                });
+
             modelBuilder.Entity("McpServerSugary.Store.Food", b =>
                 {
                     b.Property<Guid>("Id")

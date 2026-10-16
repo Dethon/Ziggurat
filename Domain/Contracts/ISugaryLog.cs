@@ -13,6 +13,12 @@ public interface ISugaryLog
     // The meals eaten in [from, to), oldest first, each with its items in the order of the meal.
     Task<IReadOnlyList<LoggedMeal>> MealsAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct);
 
+    // When every dose was taken, oldest first, for the same reason as the meals' times.
+    Task<IReadOnlyList<DateTimeOffset>> DoseTimesAsync(CancellationToken ct);
+
+    // The doses taken in [from, to), oldest first, each with the meal it belongs to, if any.
+    Task<IReadOnlyList<LoggedDose>> DosesAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct);
+
     // Her saved foods, by name.
     Task<IReadOnlyList<SavedFood>> FoodsAsync(CancellationToken ct);
 }

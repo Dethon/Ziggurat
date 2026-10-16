@@ -37,6 +37,22 @@ public sealed class SqliteSugaryLog(IDbContextFactory<SugaryDbContext> contexts)
         return meals.Select(ToLogged).ToList();
     }
 
+    public async Task<IReadOnlyList<DateTimeOffset>> DoseTimesAsync(CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return await db.Doses.AsNoTracking().OrderBy(d => d.TakenAt).Select(d => d.TakenAt).ToListAsync(ct);
+    }
+
+    public async Task<IReadOnlyList<LoggedDose>> DosesAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var doses = await db.Doses.AsNoTracking()
+            .Where(d => d.TakenAt >= from && d.TakenAt < to)
+            .OrderBy(d => d.TakenAt)
+            .ToListAsync(ct);
+        return doses.Select(d => new LoggedDose(d.Id, d.TakenAt, d.Units, d.Kind, d.MealId, d.Note)).ToList();
+    }
+
     public async Task<IReadOnlyList<SavedFood>> FoodsAsync(CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);

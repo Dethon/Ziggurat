@@ -14,6 +14,16 @@ export function formatDay(date: Date, language: Language): string {
   return date.toLocaleDateString(locale(language), { weekday: "long", day: "numeric", month: "long" });
 }
 
+// Units of insulin as she typed them, in her language's decimals: "4,5" in Spanish.
+export function formatUnits(units: number, language: Language): string {
+  return units.toLocaleString(locale(language), { maximumFractionDigits: 2 });
+}
+
+// datetime-local works in the device's own time zone and has no zone suffix.
+export function toLocalInput(iso: string): string {
+  const date = new Date(iso);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
 
 // "6.5 rations", "1 ration".
 export function rationCount(grams: number, size: number, language: Language, t: Translate): string {

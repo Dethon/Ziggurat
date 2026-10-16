@@ -38,6 +38,10 @@ const paths = {
   eyeOff:
     "M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12ZM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM4 4l16 16",
   torch: "M8 3h8l-1 5 2 3v2h-4v8h-2v-8H7v-2l2-3-1-5Z",
+  // An insulin pen, for a dose; rapid and basal are told apart by a bolt and a clock as well as by tint.
+  insulin: "M3.5 9.5h11a1.5 1.5 0 0 1 1.5 1.5v2a1.5 1.5 0 0 1-1.5 1.5h-11v-5ZM16 12h5M3.5 12H2M8 9.5v5M10.5 9.5v2.5",
+  bolt: "M13 3.5 6 13h5.5l-1 7.5L18 11h-5.5l.5-7.5Z",
+  clock: "M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM12 7.5V12l3 2",
   signOut: "M14 4.5h4A1.5 1.5 0 0 1 19.5 6v12a1.5 1.5 0 0 1-1.5 1.5h-4M10 8l-4 4 4 4M6 12h9",
 } as const;
 

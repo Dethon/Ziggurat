@@ -68,3 +68,14 @@ public class Food
     public ItemSource Source { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
+// A dose of insulin she took. MealId is a plain column and not a relationship: a dose is a fact of
+// what she injected, so it outlives a meal deleted from the log, which only clears the link.
+public class Dose
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset TakenAt { get; set; }
+    public double Units { get; set; }
+    public DoseKind Kind { get; set; }
+    public string? Note { get; set; }
+    public Guid? MealId { get; set; }
+}

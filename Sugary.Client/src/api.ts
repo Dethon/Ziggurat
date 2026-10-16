@@ -1,4 +1,4 @@
-import type { Food, Meal, MealEstimate, PackagedFood, SaveFood, SaveMeal, SessionState } from "./types";
+import type { Dose, Food, Meal, MealEstimate, PackagedFood, SaveDose, SaveFood, SaveMeal, SessionState } from "./types";
 
 export class ApiError extends Error {
   constructor(
@@ -68,6 +68,8 @@ export function estimateForm(input: EstimateInput): FormData {
   return form;
 }
 
+const DOSE_PAGE = 200;
+
 export const api = {
   session: () => request<SessionState>("/session"),
   signIn: (code: string) => request<void>("/session", json("POST", { code })),
@@ -90,6 +92,21 @@ export const api = {
   updateMeal: (id: string, meal: SaveMeal) => request<Meal>(`/meals/${id}`, json("PUT", meal)),
   deleteMeal: (id: string) => request<void>(`/meals/${id}`, { method: "DELETE" }),
   photoUrl: (id: string) => `/api/meals/${id}/photo`,
+
+  doses: (from: string | null, skip = 0, take = DOSE_PAGE) =>
+    request<Dose[]>(`/doses?skip=${skip}&take=${take}${from ? `&from=${encodeURIComponent(from)}` : ""}`),
+  // Every dose since from (all of them, with none), newest first, a page at a time.
+  async allDoses(from: string | null): Promise<Dose[]> {
+    const doses: Dose[] = [];
+    for (;;) {
+      const page = await api.doses(from, doses.length);
+      doses.push(...page);
+      if (page.length < DOSE_PAGE) {
+        return doses;
+      }
+    }
+  },
+  createDose: (dose: SaveDose) => request<Dose>("/doses", json("POST", dose)),
 
   foods: () => request<Food[]>("/foods"),
   createFood: (food: SaveFood) => request<Food>("/foods", json("POST", food)),

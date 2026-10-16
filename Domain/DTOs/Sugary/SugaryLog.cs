@@ -19,6 +19,13 @@ public enum MealOutcome
     High
 }
 
+// What kind of insulin a dose was: rapid-acting (a meal or a correction) or long-acting.
+public enum DoseKind
+{
+    Rapid,
+    Basal
+}
+
 // How sure the estimate was of one item. Only an estimated item has one.
 public enum ItemConfidence
 {
@@ -53,6 +60,16 @@ public sealed record LoggedMeal(
     MealOutcome Outcome,
     string? Notes,
     IReadOnlyList<LoggedItem> Items);
+
+// A dose of insulin she recorded taking: her record of what she injected, never a recommendation.
+// MealId is the meal it was taken for, when she linked one.
+public sealed record LoggedDose(
+    Guid Id,
+    DateTimeOffset TakenAt,
+    double Units,
+    DoseKind Kind,
+    Guid? MealId,
+    string? Note);
 
 // A food from her own list. Amounts are in its unit (g or ml), carbs per 100 of that unit.
 public sealed record SavedFood(

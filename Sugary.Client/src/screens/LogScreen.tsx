@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { formatGrams, isRange, shownTotal } from "../carbs";
 import { useConfirm } from "../components/Confirm";
@@ -6,13 +6,14 @@ import { Icon, type IconName } from "../components/Icon";
 import { CakeStand } from "../components/Illustrations";
 import { Sheet } from "../components/Sheet";
 import { errorMessage } from "../errors";
-import { formatDay, formatTime, rationCount, rationText } from "../format";
-import { matches, outcomeState, pendingOutcomes } from "../log";
+import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
+import { byDay, matches, outcomeState, pendingOutcomes, timeline } from "../log";
 import { bindUnits, sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { Meal, Outcome } from "../types";
+import type { Dose, Meal, Outcome } from "../types";
+import { DoseSheet } from "./DoseSheet";
 
 const PAGE = 50;
 const RECORDED: Exclude<Outcome, "unknown">[] = ["low", "inRange", "high"];
@@ -20,11 +21,12 @@ const OUTCOME_ICON: Record<Outcome, IconName> = { low: "arrowDown", inRange: "ch
 
 const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 const names = (meal: Meal) => meal.items.map((item) => sentence(item.name)).join("\u00a0· ");
+const DOSE_ICON = { rapid: "bolt", basal: "clock" } as const;
 
-// datetime-local works in the device's own time zone and has no zone suffix.
-function toLocalInput(iso: string): string {
+// The start of the phone's day a meal was eaten on, so the doses of that whole day are shown with it.
+function startOfDay(iso: string): string {
   const date = new Date(iso);
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString();
 }
 
 const asSaved = (meal: Meal, outcome: Outcome) => ({
@@ -59,6 +61,9 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   const { t, language, rationSize } = useSettings();
   const toast = useToast();
   const [meals, setMeals] = useState<Meal[] | null>(null);
+  const loaded = useRef<Meal[]>([]);
+  const [doses, setDoses] = useState<Dose[]>([]);
+  const [addingDose, setAddingDose] = useState(false);
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Meal | null>(null);
@@ -69,8 +74,15 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
     async (skip: number) => {
       try {
         const page = await api.meals(skip, PAGE);
-        setMeals((current) => (skip === 0 ? page : [...(current ?? []), ...page]));
-        setMore(page.length === PAGE);
+        const all = skip === 0 ? page : [...loaded.current, ...page];
+        const hasMore = page.length === PAGE;
+        // The doses of the days the loaded meals span, and every dose once there are no older meals.
+        const oldest = all.at(-1);
+        const taken = await api.allDoses(hasMore && oldest ? startOfDay(oldest.eatenAt) : null);
+        loaded.current = all;
+        setMeals(all);
+        setDoses(taken);
+        setMore(hasMore);
         setError(null);
       } catch (failure) {
         setError(errorMessage(failure, t));
@@ -88,6 +100,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
     const was = meal.outcome;
     const put = (next: Outcome) => {
       setMeals((current) => current?.map((m) => (m.id === meal.id ? { ...m, outcome: next } : m)) ?? null);
+      loaded.current = loaded.current.map((m) => (m.id === meal.id ? { ...m, outcome: next } : m));
       return api.updateMeal(meal.id, asSaved(meal, next));
     };
     try {
@@ -102,6 +115,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
       });
     } catch (failure) {
       setMeals((current) => current?.map((m) => (m.id === meal.id ? { ...m, outcome: was } : m)) ?? null);
+      loaded.current = loaded.current.map((m) => (m.id === meal.id ? { ...m, outcome: was } : m));
       setError(errorMessage(failure, t, "save"));
     }
   }
@@ -121,16 +135,9 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   const searching = query.trim() !== "";
   const shown = (meals ?? []).filter((meal) => matches(meal, query));
   const pending = searching ? [] : pendingOutcomes(meals ?? [], now);
-  const days = shown.reduce<{ key: string; date: Date; meals: Meal[] }[]>((groups, meal) => {
-    const date = new Date(meal.eatenAt);
-    const last = groups.at(-1);
-    if (last?.key === dayKey(date)) {
-      last.meals.push(meal);
-    } else {
-      groups.push({ key: dayKey(date), date, meals: [meal] });
-    }
-    return groups;
-  }, []);
+  // A search looks through meals by their foods; doses have none, so they step aside while it runs.
+  const days = byDay(timeline(shown, searching ? [] : doses));
+  const empty = meals?.length === 0 && doses.length === 0;
 
   return (
     <div className="screen">
@@ -144,12 +151,20 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
         </p>
       )}
 
-      {meals?.length === 0 && (
+      {empty && (
         <div className="empty">
           <CakeStand />
           <p className="empty-title">{t("logEmpty")}</p>
           <p className="small">{t("logEmptyHint")}</p>
         </div>
+      )}
+
+      {meals !== null && (
+        <button type="button" className="row-button add-dose" onClick={() => setAddingDose(true)}>
+          <Icon name="insulin" size={20} />
+          <span>{t("addDose")}</span>
+          <Icon name="plus" size={20} />
+        </button>
       )}
 
       {meals !== null && meals.length > 0 && (
@@ -211,11 +226,21 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
           <header className="day-header">
             <h2>{dayLabel(day.date)}</h2>
             <span className="day-total">
-              {t("dayTotal", { n: day.meals.reduce((sum, meal) => sum + shownTotal(meal.items).best, 0) })}
+              {t("dayTotal", {
+                n: day.entries.reduce((sum, entry) => sum + (entry.type === "meal" ? shownTotal(entry.meal.items).best : 0), 0),
+              })}
             </span>
           </header>
           <ul className="card meals">
-            {day.meals.map((meal) => {
+            {day.entries.map((entry) => {
+              if (entry.type === "dose") {
+                return (
+                  <li key={entry.id}>
+                    <DoseRow dose={entry.dose} />
+                  </li>
+                );
+              }
+              const meal = entry.meal;
               const carbs = shownTotal(meal.items);
               return (
                 <li key={meal.id}>
@@ -246,6 +271,17 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
         </button>
       )}
 
+      {addingDose && (
+        <DoseSheet
+          onClose={() => setAddingDose(false)}
+          onSaved={(dose) => {
+            setAddingDose(false);
+            setDoses((current) => [dose, ...current]);
+            toast({ text: t("doseSaved") });
+          }}
+        />
+      )}
+
       {open && (
         <MealSheet
           meal={open}
@@ -257,6 +293,26 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Rapid and basal are told apart three ways: the word, a bolt or a clock, and the mark's tint.
+function DoseRow({ dose }: { dose: Dose }) {
+  const { t, language } = useSettings();
+  return (
+    <div className={`meal-row dose-row dose-${dose.kind}`}>
+      <span className={`meal-thumb dose-mark dose-mark-${dose.kind}`}>
+        <Icon name={DOSE_ICON[dose.kind]} />
+      </span>
+      <span className="item-text">
+        <span className="item-name">{t("unitsCount", { n: formatUnits(dose.units, language) })}</span>
+        <span className="item-meta">
+          {formatTime(dose.takenAt, language)}
+          <span className="dose-kind-word">{t(`dose_${dose.kind}`)}</span>
+          {dose.note && <span className="dose-note">{dose.note}</span>}
+        </span>
+      </span>
     </div>
   );
 }

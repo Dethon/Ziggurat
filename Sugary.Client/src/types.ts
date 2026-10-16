@@ -96,6 +96,21 @@ export interface SaveMeal {
   items: MealItem[];
 }
 
+export type DoseKind = "rapid" | "basal";
+
+// A dose of insulin she recorded taking: rapid (a meal or a correction) or basal (long-acting).
+export interface Dose {
+  id: string;
+  takenAt: string;
+  units: number;
+  kind: DoseKind;
+  note: string | null;
+  // The meal it was taken for, when she linked one.
+  mealId: string | null;
+}
+
+export type SaveDose = Omit<Dose, "id">;
+
 export interface DraftItem extends MealItem {
   id: string;
   note: string | null;
