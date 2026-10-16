@@ -183,6 +183,13 @@ public sealed class SugaryServer : IAsyncDisposable
         await db.SaveChangesAsync();
     }
 
+    public async Task SaveAsync(params Dose[] doses)
+    {
+        await using var db = await Contexts.CreateDbContextAsync();
+        db.Doses.AddRange(doses);
+        await db.SaveChangesAsync();
+    }
+
     public async Task<JsonNode> CallAsync(string tool, Dictionary<string, object?> arguments)
     {
         var result = await Client.CallToolAsync(tool, arguments);

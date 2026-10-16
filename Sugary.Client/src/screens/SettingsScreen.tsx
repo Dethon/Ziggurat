@@ -7,6 +7,7 @@ import { useSettings, type RationSize } from "../settings";
 const EXPORTS = [
   { table: "meals", label: "exportMeals" },
   { table: "items", label: "exportItems" },
+  { table: "doses", label: "exportDoses" },
   { table: "foods", label: "exportFoods" },
 ] as const;
 

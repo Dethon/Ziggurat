@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Routing;
 
 namespace McpServerSugary.App;
 
-// The three downloads in the app's settings: the same tables the /sugary mount renders, from the
+// The downloads in the app's settings: the same tables the /sugary mount renders, from the
 // same rendering, as one file each rather than one per month. Times are in the clock the app asks
 // for — the phone's own — or UTC when it names none, as the standalone app wrote them.
 public static class ExportEndpoints
@@ -20,7 +20,11 @@ public static class ExportEndpoints
         export.MapGet("/meals.csv", MealsAsync);
         export.MapGet("/items.csv", ItemsAsync);
         export.MapGet("/foods.csv", FoodsAsync);
+        export.MapGet("/doses.csv", DosesAsync);
     }
+
+    // Named by the same pattern as the three the import reads, though the import does not read it.
+    private const string DosesFile = "sugary-doses.csv";
 
     private static async Task<IResult> MealsAsync(
         ISugaryLog log, CancellationToken ct, DateTimeOffset? from = null, DateTimeOffset? to = null,
@@ -34,6 +38,14 @@ public static class ExportEndpoints
         string? tz = null) =>
         Clock(tz) is { } zone
             ? File(SugaryTables.Items(await InPeriod(log, from, to, ct), zone), SugaryImport.ItemsFile)
+            : UnknownClock(tz);
+
+    private static async Task<IResult> DosesAsync(
+        ISugaryLog log, CancellationToken ct, DateTimeOffset? from = null, DateTimeOffset? to = null,
+        string? tz = null) =>
+        Clock(tz) is { } zone
+            ? File(SugaryTables.Doses(
+                await log.DosesAsync(from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct), zone), DosesFile)
             : UnknownClock(tz);
 
     private static async Task<IResult> FoodsAsync(ISugaryLog log, CancellationToken ct) =>

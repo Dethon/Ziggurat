@@ -54,11 +54,11 @@ public class McpSugaryServerTests
     }
 
     [Fact]
-    public async Task AnEmptyLog_HasItsReadmeFoodsAndTwoEmptyDirectories()
+    public async Task AnEmptyLog_HasItsReadmeFoodsAndThreeEmptyDirectories()
     {
         await using var server = await SugaryServer.StartAsync();
 
-        (await server.GlobAsync("**")).ShouldBe(["/README.md", "/foods.csv", "/items/", "/meals/"]);
+        (await server.GlobAsync("**")).ShouldBe(["/README.md", "/doses/", "/foods.csv", "/items/", "/meals/"]);
         (await server.ReadAsync("/foods.csv"))
             .ShouldBe("food_id,name,carbs_per_100,unit,portion_amount,portion_carbs_g,barcode,source\n");
     }
@@ -77,12 +77,30 @@ public class McpSugaryServerTests
             "meal_id", "eaten_at", "carbs_g", "carbs_low_g", "carbs_high_g", "first_estimate_g",
             "first_estimate_low_g", "first_estimate_high_g", "outcome", "items", "notes", "position", "name",
             "portion", "amount", "carbs_per_100", "source", "confidence", "edited", "food_id", "unit",
-            "portion_amount", "portion_carbs_g", "barcode"
+            "portion_amount", "portion_carbs_g", "barcode", "dose_id", "taken_at", "kind", "units"
         ];
         columns.Where(column => !readme.Contains($"`{column}`")).ShouldBeEmpty();
         readme.ShouldContain("fibre excluded");
         readme.ShouldContain("only the items whose `source` is `estimate`");
         readme.ShouldContain("Europe/Madrid");
+    }
+
+    // Basal units read as a meal dose, or a dose stamped with its meal's time read as measured, put
+    // the wrong insulin beside a glucose curve; and the table is a record, not advice.
+    [Fact]
+    public async Task TheReadme_ExplainsTheDoses()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var readme = await server.ReadAsync("/README.md");
+
+        readme.ShouldContain("## doses/<YYYY-MM>.csv");
+        readme.ShouldContain("insulin units");
+        readme.ShouldContain("`rapid` — rapid-acting");
+        readme.ShouldContain("`basal` — long-acting");
+        readme.ShouldContain("empty for a dose not linked to a meal");
+        readme.ShouldContain("carries the meal's time unless she changed it");
+        readme.ShouldContain("never a recommendation");
     }
 
     // The only way to change her log is through Sugary itself, so the mount offers nothing that
@@ -116,6 +134,16 @@ public class McpSugaryServerTests
         CarbsLow = items.Sum(i => i.CarbsLow),
         Carbs = items.Sum(i => i.Carbs),
         CarbsHigh = items.Sum(i => i.CarbsHigh)
+    };
+
+    private static Dose Dose(string takenAt, double units, DoseKind kind, Guid? mealId = null, string? note = null) => new()
+    {
+        Id = Guid.NewGuid(),
+        TakenAt = DateTimeOffset.Parse(takenAt),
+        Units = units,
+        Kind = kind,
+        MealId = mealId,
+        Note = note
     };
 
     private static string[] Lines(string csv) => csv.TrimEnd('\n').Split('\n');
@@ -308,12 +336,86 @@ public class McpSugaryServerTests
         inItems["totalMatches"]!.GetValue<int>().ShouldBe(2);
     }
 
+    // Her doses, one file per month they were taken in on the home's calendar, whether or not she
+    // logged a meal that month: a month of basal alone is still a month of insulin.
     [Fact]
-    public async Task TheTwoTableDirectories_AreDirectories()
+    public async Task Doses_AreOneRowEachInAFilePerMonth_EvenInAMonthWithNoMeals()
+    {
+        await using var server = await SugaryServer.StartAsync("Europe/Madrid");
+        var lunch = Meal("2026-10-11T11:30:00Z", null, Item("rice", 42));
+        await server.SaveAsync(lunch);
+        var bolus = Dose("2026-10-11T11:30:00Z", 4.5, DoseKind.Rapid, lunch.Id, "pre-bolus, late");
+        var correction = Dose("2026-10-11T16:00:00Z", 1.25, DoseKind.Rapid);
+        // The last night of August in UTC is the first of September at home.
+        var basal = Dose("2026-08-31T22:30:00Z", 14, DoseKind.Basal);
+        await server.SaveAsync(correction, bolus, basal);
+
+        (await server.GlobAsync("doses/*")).ShouldBe(["/doses/2026-09.csv", "/doses/2026-10.csv"]);
+        (await server.GlobAsync("meals/*")).ShouldBe(["/meals/2026-10.csv"]);
+        Lines(await server.ReadAsync("/doses/2026-09.csv")).ShouldBe([
+            "dose_id,taken_at,kind,units,meal_id,note",
+            $"{basal.Id},2026-09-01T00:30:00+02:00,basal,14,,"
+        ]);
+        Lines(await server.ReadAsync("/doses/2026-10.csv")).ShouldBe([
+            "dose_id,taken_at,kind,units,meal_id,note",
+            $"{bolus.Id},2026-10-11T13:30:00+02:00,rapid,4.5,{lunch.Id},\"pre-bolus, late\"",
+            $"{correction.Id},2026-10-11T18:00:00+02:00,rapid,1.25,,"
+        ]);
+    }
+
+    [Fact]
+    public async Task AMonthWithNoDoses_HasNoDoseFile()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(Meal("2026-10-11T12:00:00Z", null, Item("toast", 30)));
+        await server.SaveAsync(Dose("2026-09-10T21:00:00Z", 14, DoseKind.Basal));
+
+        (await server.GlobAsync("doses/*")).ShouldBe(["/doses/2026-09.csv"]);
+        var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/doses/2026-10.csv" });
+        read["errorCode"]!.GetValue<string>().ShouldBe("not_found");
+        var info = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = "/doses/2026-10.csv" });
+        info["exists"]!.GetValue<bool>().ShouldBeFalse();
+        var exists = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = "/doses/2026-09.csv" });
+        exists["exists"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ADoseNoteThatASpreadsheetWouldRunAsAFormula_IsWrittenAsText()
+    {
+        await using var server = await SugaryServer.StartAsync("UTC");
+        await server.SaveAsync(Dose("2026-10-11T12:00:00Z", 2, DoseKind.Rapid, note: "-2 for the walk"));
+
+        Lines(await server.ReadAsync("/doses/2026-10.csv"))[1].ShouldEndWith(",2026-10-11T12:00:00+00:00,rapid,2,,'-2 for the walk");
+    }
+
+    // "How much did she take for the pizza" is a search for the meal's id among the doses.
+    [Fact]
+    public async Task AMealsDoses_AreFoundByItsMealId()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var pizza = Meal("2026-10-11T19:00:00Z", null, Item("pizza", 90));
+        await server.SaveAsync(pizza);
+        await server.SaveAsync(
+            Dose("2026-10-11T19:00:00Z", 8, DoseKind.Rapid, pizza.Id),
+            Dose("2026-10-11T21:00:00Z", 2, DoseKind.Rapid, pizza.Id, "top-up"),
+            Dose("2026-10-11T22:00:00Z", 14, DoseKind.Basal));
+
+        var hits = await server.CallAsync("fs_search", new Dictionary<string, object?>
+        {
+            ["query"] = pizza.Id.ToString(),
+            ["directoryPath"] = "/doses"
+        });
+
+        Files(hits).ShouldBe(["/doses/2026-10.csv"]);
+        hits["totalMatches"]!.GetValue<int>().ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task TheTableDirectories_AreDirectories()
     {
         await using var server = await SugaryServer.StartAsync();
 
-        foreach (var path in new[] { "/meals", "/items" })
+        foreach (var path in new[] { "/meals", "/items", "/doses" })
         {
             var info = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = path });
             info["isDirectory"]!.GetValue<bool>().ShouldBeTrue(path);

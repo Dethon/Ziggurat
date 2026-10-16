@@ -134,11 +134,56 @@ public class SugaryExportApiTests
         lines[1].ShouldBe($"{id},Pan de molde,46,g,32,,8480000823298,label");
     }
 
-    // The names the import reads them back under, so a download can be carried to another server.
+    private static async Task<string> SaveDoseAsync(
+        HttpClient client, string takenAt, double units, string kind, string? note = null) =>
+        (await (await client.PostAsJsonAsync("/api/doses", new JsonObject
+        {
+            ["takenAt"] = takenAt,
+            ["units"] = units,
+            ["kind"] = kind,
+            ["note"] = note
+        })).Content.ReadFromJsonAsync<JsonNode>())!["id"]!.GetValue<string>();
+
+    [Fact]
+    public async Task Doses_ExportAsOneRowEachInTheClockThatWasAskedFor()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var basal = await SaveDoseAsync(client, "2026-03-01T21:00:00Z", 14, "basal");
+        var correction = await SaveDoseAsync(client, "2026-10-11T16:00:00Z", 1.5, "rapid", "=1+1");
+
+        var madrid = await LinesAsync(client, "/api/export/doses.csv?tz=Europe/Madrid");
+        var utc = await LinesAsync(client, "/api/export/doses.csv");
+
+        madrid.ShouldBe([
+            "dose_id,taken_at,kind,units,meal_id,note",
+            $"{basal},2026-03-01T22:00:00+01:00,basal,14,,",
+            $"{correction},2026-10-11T18:00:00+02:00,rapid,1.5,,'=1+1"
+        ]);
+        utc[1].ShouldBe($"{basal},2026-03-01T21:00:00+00:00,basal,14,,");
+    }
+
+    [Fact]
+    public async Task ADoseExport_CanBeLimitedToAPeriod()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        await SaveDoseAsync(client, "2026-10-09T12:00:00Z", 1, "rapid");
+        var inside = await SaveDoseAsync(client, "2026-10-11T12:00:00Z", 2, "rapid");
+        await SaveDoseAsync(client, "2026-10-13T12:00:00Z", 3, "rapid");
+
+        var lines = await LinesAsync(client, "/api/export/doses.csv?from=2026-10-10T00:00:00Z&to=2026-10-12T00:00:00Z");
+
+        lines.Skip(1).Select(line => line.Split(',')[0]).ShouldBe([inside]);
+    }
+
+    // The names the import reads them back under, so a download can be carried to another server;
+    // doses, which the import does not read, by the same pattern.
     [Theory]
     [InlineData("meals")]
     [InlineData("items")]
     [InlineData("foods")]
+    [InlineData("doses")]
     public async Task ADownload_IsNamedAsTheImportExpectsIt(string table)
     {
         await using var server = await SugaryServer.StartAsync();
@@ -156,6 +201,8 @@ public class SugaryExportApiTests
         var client = await server.SignedInAsync();
 
         (await client.GetAsync("/api/export/meals.csv?tz=Mars/Olympus")).StatusCode
+            .ShouldBe(HttpStatusCode.BadRequest);
+        (await client.GetAsync("/api/export/doses.csv?tz=Mars/Olympus")).StatusCode
             .ShouldBe(HttpStatusCode.BadRequest);
     }
 }

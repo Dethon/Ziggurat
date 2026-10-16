@@ -1,23 +1,26 @@
 namespace Domain.Tools.Sugary;
 
-// What a reader of /sugary needs before reading a number: two columns are easy to misread in ways
-// that put a meal on the wrong side of a glucose curve — carbs taken for total carbohydrate, and
-// the first estimate taken for the whole meal.
+// What a reader of /sugary needs before reading a number: columns are easy to misread in ways that
+// put a meal on the wrong side of a glucose curve — carbs taken for total carbohydrate, the first
+// estimate taken for the whole meal, basal units taken for a meal dose, and a dose saved with its
+// meal taken as injected at exactly the meal's minute.
 public static class SugaryReadme
 {
     public static string For(TimeZoneInfo zone) =>
         $$"""
           # Sugary — her carb log
 
-          The meals she logged in Sugary, the foods in each meal and the foods she keeps, as tables. They are
-          rendered from Sugary's database each time they are read, so they are always current. Nothing here
-          can be written: her log changes only through Sugary.
+          The meals she logged in Sugary, the foods in each meal, the insulin doses she recorded and the foods
+          she keeps, as tables. They are rendered from Sugary's database each time they are read, so they are
+          always current. Nothing here can be written: her log changes only through Sugary.
 
           - `meals/<YYYY-MM>.csv` — one row per meal eaten that month, oldest first.
           - `items/<YYYY-MM>.csv` — one row per food in those meals, in the order of each meal.
+          - `doses/<YYYY-MM>.csv` — one row per insulin dose she took that month, oldest first.
           - `foods.csv` — one row per food she keeps on her own list.
 
-          A month with no meals has no file. A meal belongs to the month its `eaten_at` shows.
+          A month with no meals has no meals or items file, and a month with no doses has no doses file. A
+          meal belongs to the month its `eaten_at` shows, a dose to the month its `taken_at` shows.
 
           ## Conventions
 
@@ -65,6 +68,25 @@ public static class SugaryReadme
           - `edited` — `true` when she changed the item's numbers before saving the meal.
           - `food_id` — the food on her own list this item was made from, if any (`food_id` in `foods.csv`).
             The item keeps its own numbers, so a food edited or deleted later does not change it.
+
+          ## doses/<YYYY-MM>.csv
+
+          Her record of the insulin she took, entered by her: never a recommendation, and never a basis for
+          one.
+
+          - `dose_id` — the dose's identifier.
+          - `taken_at` — when she took it, on the same clock as the meals.
+          - `kind` — which insulin it was:
+            - `rapid` — rapid-acting, taken for a meal or as a correction;
+            - `basal` — long-acting, her background dose, which belongs to no meal.
+          - `units` — how much she took, in insulin units (not grams).
+          - `meal_id` — the meal it was taken for (`meal_id` in `meals/<YYYY-MM>.csv`),
+            empty for a dose not linked to a meal. A meal may have several doses, a split dose or a top-up.
+            A meal deleted from the log keeps its doses here, with this cell emptied.
+          - `note` — what she wrote about the dose.
+
+          A dose saved together with its meal carries the meal's time unless she changed it, so a gap of
+          zero minutes between the two is not a measurement of when she injected.
 
           ## foods.csv
 

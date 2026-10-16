@@ -5,8 +5,9 @@ using Domain.DTOs.Sugary;
 namespace Domain.Tools.Sugary;
 
 // The log as tables another tool can lay beside glucose readings: one with a row per meal, one
-// with a row per food eaten, one with her saved foods. Columns, order and spelling are the
-// standalone app's export, so a reader of either reads both.
+// with a row per food eaten, one with her saved foods, one with a row per insulin dose. The first
+// three's columns, order and spelling are the standalone app's export, so a reader of either reads
+// both; the doses are Sugary's own, joined to a meal by meal_id.
 public static class SugaryTables
 {
     public static readonly string[] MealColumns =
@@ -25,6 +26,8 @@ public static class SugaryTables
     [
         "food_id", "name", "carbs_per_100", "unit", "portion_amount", "portion_carbs_g", "barcode", "source"
     ];
+
+    public static readonly string[] DoseColumns = ["dose_id", "taken_at", "kind", "units", "meal_id", "note"];
 
     // Oldest first, the order a table of events is read in.
     public static string Meals(IEnumerable<LoggedMeal> meals, TimeZoneInfo zone) =>
@@ -45,6 +48,13 @@ public static class SugaryTables
                 row.item.Carbs.High, Word(row.item.Source),
                 row.item.Confidence is { } confidence ? Word(confidence) : null, row.item.Edited,
                 row.item.FoodId?.ToString()))
+            .ToString();
+
+    public static string Doses(IEnumerable<LoggedDose> doses, TimeZoneInfo zone) =>
+        doses.OrderBy(dose => dose.TakenAt)
+            .Aggregate(new SugaryCsv(DoseColumns), (csv, dose) => csv.Row(
+                dose.Id.ToString(), Stamp(dose.TakenAt, zone), Word(dose.Kind), dose.Units, dose.MealId?.ToString(),
+                dose.Note))
             .ToString();
 
     // By name, the order a list of things she keeps is looked through in.

@@ -12,15 +12,15 @@ meals, items and foods.
 
 Spec: `.scratch/insulin-doses/spec.md`
 
-- [ ] Over MCP, `doses/<YYYY-MM>.csv` exists for a month with doses and not for a month without, including a month with doses and no meals.
-- [ ] Listing, glob, info, read and text search cover the dose months like the meal months. Text search finds a meal's doses by `meal_id`.
-- [ ] Times carry their offset in the home's zone. The CSV follows the other tables' rules: RFC 4180, no byte-order mark, a leading formula character in a note escaped.
-- [ ] Writes under `/sugary/doses` are refused, and the filesystem conformance row still passes.
-- [ ] The README's dose section covers:
+- [x] Over MCP, `doses/<YYYY-MM>.csv` exists for a month with doses and not for a month without, including a month with doses and no meals.
+- [x] Listing, glob, info, read and text search cover the dose months like the meal months. Text search finds a meal's doses by `meal_id`.
+- [x] Times carry their offset in the home's zone. The CSV follows the other tables' rules: RFC 4180, no byte-order mark, a leading formula character in a note escaped.
+- [x] Writes under `/sugary/doses` are refused, and the filesystem conformance row still passes.
+- [x] The README's dose section covers:
   - units are insulin units;
   - `rapid` is rapid-acting and `basal` is long-acting;
   - `meal_id` is empty for a dose not linked to a meal;
   - a dose saved with a meal carries the meal's time unless she changed it;
   - the table is her record of what she took, never a recommendation.
-- [ ] `GET /api/export/doses.csv` honours the period and clock parameters like the other downloads, and settings links to it.
-- [ ] The meals and items tables are byte-identical to before, and the import is unchanged.
+- [x] `GET /api/export/doses.csv` honours the period and clock parameters like the other downloads, and settings links to it.
+- [x] The meals and items tables are byte-identical to before, and the import is unchanged.

@@ -157,6 +157,7 @@ const en = {
   exportHint: "The log as tables, to open in a spreadsheet or take to your diabetes team.",
   exportMeals: "Meals",
   exportItems: "Foods in each meal",
+  exportDoses: "Insulin doses",
   exportFoods: "Pantry",
 
   logEmpty: "The display case is empty.",
@@ -443,6 +444,7 @@ const es: Strings = {
   exportHint: "El diario en tablas, para abrir en una hoja de cálculo o llevar a tu equipo de diabetes.",
   exportMeals: "Comidas",
   exportItems: "Alimentos de cada comida",
+  exportDoses: "Dosis de insulina",
   exportFoods: "Despensa",
 
   logEmpty: "La vitrina está vacía.",
