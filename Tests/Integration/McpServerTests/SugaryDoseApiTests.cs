@@ -94,6 +94,7 @@ public class SugaryDoseApiTests
         { "three decimals", Dose(units: 1.125), "Units can have at most two decimals." },
         { "unknown kind", Dose(kind: "mixed"), "A dose is rapid or basal." },
         { "no kind", Without(Dose(), "kind"), "A dose is rapid or basal." },
+        { "no time", Without(Dose(), "takenAt"), "A dose needs the time it was taken." },
         { "long note", Dose(note: new string('x', 201)), "A note can be at most 200 characters." },
         { "unknown meal", With(Dose(), "mealId", Guid.NewGuid().ToString()), "There is no such meal to link the dose to." }
     };

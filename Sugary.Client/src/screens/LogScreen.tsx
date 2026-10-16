@@ -8,7 +8,7 @@ import { Sheet } from "../components/Sheet";
 import { restored } from "../dose";
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
-import { byDay, matches, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
+import { byDay, dayKey, matches, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
 import { bindUnits, sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
@@ -20,7 +20,6 @@ const PAGE = 50;
 const RECORDED: Exclude<Outcome, "unknown">[] = ["low", "inRange", "high"];
 const OUTCOME_ICON: Record<Outcome, IconName> = { low: "arrowDown", inRange: "checkCircle", high: "arrowUp", unknown: "minus" };
 
-const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 const names = (meal: Meal) => meal.items.map((item) => sentence(item.name)).join("\u00a0· ");
 const DOSE_ICON = { rapid: "bolt", basal: "clock" } as const;
 

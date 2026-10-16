@@ -52,7 +52,7 @@ export interface Day {
   entries: Entry[];
 }
 
-const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+export const dayKey = (date: Date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 
 // The timeline cut into the days of the phone's own calendar, in the order it came.
 export function byDay(entries: readonly Entry[]): Day[] {

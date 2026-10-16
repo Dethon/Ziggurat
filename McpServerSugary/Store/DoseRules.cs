@@ -12,6 +12,7 @@ public static class DoseRules
     private const int MaxNoteLength = 200;
 
     public const string UnknownMeal = "There is no such meal to link the dose to.";
+    public const string NoTime = "A dose needs the time it was taken.";
 
     public static string? Problem(double? units, DoseKind? kind, string? note) => units switch
     {

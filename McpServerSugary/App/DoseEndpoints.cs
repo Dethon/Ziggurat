@@ -10,8 +10,9 @@ namespace McpServerSugary.App;
 public record DoseDto(Guid Id, DateTimeOffset TakenAt, double Units, DoseKind Kind, string? Note, Guid? MealId);
 
 // Kind is text rather than the enum so a kind the app does not know is refused with a sentence,
-// where a failed bind would be a bare 400; units are nullable for the same reason.
-public record SaveDoseRequest(DateTimeOffset TakenAt, double? Units, string? Kind, string? Note, Guid? MealId);
+// where a failed bind would be a bare 400; the time and the units are nullable for the same reason,
+// and so a missing time is refused rather than stored as the first day of the calendar.
+public record SaveDoseRequest(DateTimeOffset? TakenAt, double? Units, string? Kind, string? Note, Guid? MealId);
 
 // Her insulin doses, recorded by her and only ever recorded: nothing here computes, suggests or
 // fills in a number of units.
@@ -80,7 +81,7 @@ public static class DoseEndpoints
 
     private static void Apply(SaveDoseRequest request, Dose dose)
     {
-        dose.TakenAt = request.TakenAt;
+        dose.TakenAt = request.TakenAt!.Value;
         dose.Units = request.Units!.Value;
         dose.Kind = DoseRules.Kind(request.Kind)!.Value;
         dose.Note = DoseRules.Note(request.Note);
@@ -88,7 +89,8 @@ public static class DoseEndpoints
     }
 
     private static async Task<string?> ValidateAsync(SaveDoseRequest request, SugaryDbContext db, CancellationToken ct) =>
-        DoseRules.Problem(request.Units, DoseRules.Kind(request.Kind), request.Note)
+        (request.TakenAt is null ? DoseRules.NoTime : null)
+        ?? DoseRules.Problem(request.Units, DoseRules.Kind(request.Kind), request.Note)
         ?? (request.MealId is { } mealId && !await db.Meals.AnyAsync(m => m.Id == mealId, ct)
             ? DoseRules.UnknownMeal
             : null);
