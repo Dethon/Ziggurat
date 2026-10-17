@@ -69,9 +69,11 @@ export function attachedDoses(entries: readonly Entry[]): Set<string> {
   return attached;
 }
 
-// Whether every dose of a meal is drawn right under it, so the meal need not count them itself.
+// Whether every rapid dose of a meal, the ones its own count adds up, is drawn right under it, so the
+// meal need not count them itself.
 export function insulinBelow(meal: Meal, attached: ReadonlySet<string>): boolean {
-  return meal.doses.length > 0 && meal.doses.every((dose) => attached.has(dose.id));
+  const rapid = meal.doses.filter((dose) => dose.kind === "rapid");
+  return rapid.length > 0 && rapid.every((dose) => attached.has(dose.id));
 }
 
 // Every unit of insulin in these rows, rapid and basal, summed in hundredths as rapidUnits does.

@@ -28,10 +28,20 @@ save bar, saved toast, log, meal sheet, outcome picked, settings, my foods, food
 unavailable, empty log. Scrolling screens also get a `-full.png`; sheets that scroll get a
 `-bottom.png`. Each variant also gets `targets.txt`: every visible control under 44 px.
 
-- Harness: `/tmp/claude-1000/-home-dethon-repos-sugary/46283ba1-5e7d-46db-9a5f-e9750b6856c6/scratchpad/design/harness/`
-  (`run.sh`, `capture.mjs`, `fixtures.mjs`, `fixtures/`). Run: `…/harness/run.sh <name>` → PNGs
+- Harness: `/tmp/claude-1000/-home-dethon-repos-ziggurat/e9ef3238-1d80-4fc5-8797-024abcc7add3/scratchpad/design/harness/`
+  (`run.sh`, `capture.mjs`, `fixtures.mjs`, `fixtures/`; `tools/` beside it). Run: `…/harness/run.sh <name>` → PNGs
   in `…/design/<name>/<lang>-<scheme>/`. Filters: `VARIANTS=en-light`, `STATES='estimate|log'`,
-  `NO_BUILD=1`. Baseline: `…/design/before/`.
+  `NO_BUILD=1`. Latest full pass: `…/design/final/`. The first harness (redesign rounds, `before/`)
+  is at `/tmp/claude-1000/-home-dethon-repos-sugary/46283ba1-5e7d-46db-9a5f-e9750b6856c6/scratchpad/design/`;
+  it predates doses, exercise and the cycle and hangs on the Log's lazy images.
+- Since 2026-10-17 it also mocks `/api/doses`, `/api/exercise` (and `/names`), `/api/periods` and
+  `/api/day-notes` (`fixtures.mjs`: `doses`, `exercise`, `periods`, `dayNotes`; meals carry their
+  linked `doses`, and every fixture time hangs off one `NOW`, so a dose saved with its meal shares the
+  meal's instant as the server makes it). States 33–40c: the Log with doses and exercise, the dose
+  sheet new and opened, another exercise, a past one, a running session and its sheet, a meal's sheet
+  with its insulin and a dose added from it, the Cycle tab, a day, a period, an empty cycle. The iPhone
+  keyboard states moved to 50/51. Waiting for images is capped at 2.5 s (lazy ones below the fold
+  never load).
 - Button names come from `src/i18n.ts` (imported by Node 25.6 with types stripped), so copy edits do
   not break it; structural changes (the new tab bar, new screens) mean editing the state functions
   in `capture.mjs`. Each slice updates the harness with the screens it changes.

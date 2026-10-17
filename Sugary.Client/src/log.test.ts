@@ -238,6 +238,13 @@ describe("insulinBelow", () => {
     expect(insulinBelow(lunch, new Set(["a", "b"]))).toBe(true);
   });
 
+  // As rapidUnits counts: a basal dose linked to the meal never was in its count.
+  it("minds only its rapid doses, as the meal's own count does", () => {
+    const withBasal = { ...lunch, doses: [...lunch.doses, { id: "c", units: 14, kind: "basal" as const }] };
+    expect(insulinBelow(withBasal, new Set(["a", "b"]))).toBe(true);
+    expect(insulinBelow({ ...meal("tea", 1), doses: [{ id: "c", units: 14, kind: "basal" as const }] }, new Set(["c"]))).toBe(false);
+  });
+
   it("is false when any of its doses is elsewhere in the day, or it has none", () => {
     expect(insulinBelow(lunch, new Set(["a"]))).toBe(false);
     expect(insulinBelow(meal("tea", 1), new Set())).toBe(false);
