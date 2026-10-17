@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linkable, MAX_UNITS, readUnits, restored, stepUnits } from "./dose";
+import { doseStart, linkable, MAX_UNITS, readUnits, restored, stepUnits } from "./dose";
 import type { Meal } from "./types";
 
 describe("readUnits", () => {
@@ -102,5 +102,28 @@ describe("stepUnits", () => {
     expect(stepUnits("4 u", 1, "en")).toBeNull();
     expect(stepUnits("1,125", 1, "es")).toBeNull();
     expect(stepUnits("-2", 1, "en")).toBeNull();
+  });
+});
+
+describe("doseStart", () => {
+  const now = new Date("2026-10-15T20:00:00Z");
+  const lunch: Meal = {
+    id: "lunch",
+    eatenAt: "2026-10-15T13:30:00.000Z",
+    notes: null,
+    outcome: "unknown",
+    hasPhoto: false,
+    firstEstimate: null,
+    doses: [],
+    items: [],
+  };
+
+  it("starts a dose on its own now, linked to nothing", () => {
+    expect(doseStart(undefined, now)).toEqual({ takenAt: now.toISOString(), mealId: null });
+  });
+
+  // Added later from the meal itself: the insulin for a meal is taken at the meal, and the time stays hers to change.
+  it("starts a dose added from a meal at the meal's time, linked to it", () => {
+    expect(doseStart(lunch, now)).toEqual({ takenAt: lunch.eatenAt, mealId: "lunch" });
   });
 });

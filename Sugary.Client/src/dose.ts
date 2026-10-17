@@ -57,6 +57,12 @@ export function restored({ takenAt, units, kind, note, mealId }: Dose): SaveDose
   return { takenAt, units, kind, note, mealId };
 }
 
+// Where a new dose starts: now and on its own, or, added from a meal, at the meal's time and linked
+// to it. Never its units, which are only ever what she types.
+export function doseStart(forMeal: Meal | undefined, now: Date): { takenAt: string; mealId: string | null } {
+  return forMeal ? { takenAt: forMeal.eatenAt, mealId: forMeal.id } : { takenAt: now.toISOString(), mealId: null };
+}
+
 // About a day: a dose added on its own is linked to a meal she has just eaten, or is about to.
 const LINKABLE_HOURS = 24;
 

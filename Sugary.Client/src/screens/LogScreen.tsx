@@ -10,7 +10,7 @@ import { canStopNow, duration, elapsedMinutes, EXERCISE_ICON, restored as restor
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
 import { localDay } from "../cycle";
-import { byDay, dayKey, matches, onPeriod, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
+import { attachedDoses, byDay, dayKey, dayUnits, insulinBelow, matches, onPeriod, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
 import { bindUnits, sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
@@ -76,7 +76,8 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   const [doseSheet, setDoseSheet] = useState<Dose | "new" | null>(null);
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState<Meal | null>(null);
+  // The meal open in its sheet, read from the list so a dose changed from the sheet shows in it.
+  const [openId, setOpenId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const now = new Date(useMinute());
 
@@ -138,6 +139,13 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   function relink(change: (meals: Meal[]) => Meal[]) {
     loaded.current = change(loaded.current);
     setMeals(loaded.current);
+  }
+
+  function doseSaved(dose: Dose) {
+    setDoseSheet(null);
+    setDoses((current) => [dose, ...current.filter((d) => d.id !== dose.id)]);
+    relink((current) => withDose(current, dose));
+    toast({ text: t("doseSaved") });
   }
 
   // Gone at once; the toast offers it back, saved again with every value she recorded.
@@ -255,6 +263,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   // A search looks through meals by their foods; doses have none, so they step aside while it runs.
   const days = byDay(timeline(shown, searching ? [] : doses, searching ? [] : sessions));
   const empty = meals?.length === 0 && doses.length === 0 && sessions.length === 0;
+  const open = openId === null ? null : (meals?.find((meal) => meal.id === openId) ?? null);
 
   return (
     <div className="screen">
@@ -277,49 +286,54 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
       )}
 
       {meals !== null && (
-        <button type="button" className="row-button add-dose" onClick={() => setDoseSheet("new")}>
-          <Icon name="insulin" size={20} />
-          <span>{t("addDose")}</span>
-          <Icon name="plus" size={20} />
-        </button>
-      )}
-
-      {meals !== null &&
-        (current ? (
-          <RunningCard
-            session={current}
-            now={now}
-            onStop={() => void stopExercise(current)}
-            onOpen={() => setExerciseSheet({ mode: "edit", session: current })}
-          />
-        ) : (
-          <section className="exercise-start" aria-labelledby="exercise-title">
-            <h2 id="exercise-title" className="section-title">
-              {t("exerciseTitle")}
-            </h2>
-            <div className="chips" role="group" aria-label={t("exerciseStartGroup")}>
-              {SHORTCUTS.map((kind) => (
-                <button key={kind} type="button" className="chip exercise-chip" onClick={() => void startExercise(kind)}>
-                  <Icon name={EXERCISE_ICON[kind]} size={20} />
-                  {t(`exercise_${kind}`)}
-                </button>
-              ))}
-              <button type="button" className="chip exercise-chip" aria-haspopup="dialog" onClick={() => setExerciseSheet({ mode: "other" })}>
-                <Icon name={EXERCISE_ICON.other} size={20} />
-                {t("exercise_other")}
+        <section className="record" aria-labelledby="record-title">
+          <h2 id="record-title">{t("recordTitle")}</h2>
+          {current ? (
+            <>
+              <RunningCard
+                session={current}
+                now={now}
+                onStop={() => void stopExercise(current)}
+                onOpen={() => setExerciseSheet({ mode: "edit", session: current })}
+              />
+              <button type="button" className="row-button add-dose" aria-haspopup="dialog" onClick={() => setDoseSheet("new")}>
+                <Icon name="insulin" size={20} />
+                <span>{t("addDose")}</span>
+                <Icon name="plus" size={20} />
               </button>
-            </div>
-            <button
-              type="button"
-              className="button button-quiet button-small exercise-past"
-              aria-haspopup="dialog"
-              onClick={() => setExerciseSheet({ mode: "past" })}
-            >
-              <Icon name="plus" size={18} />
-              {t("exerciseAddPast")}
-            </button>
-          </section>
-        ))}
+            </>
+          ) : (
+            <>
+              {/* Insulin opens its sheet; a walk or the gym starts at once, the toast taking it back. */}
+              <div className="tiles tiles-record">
+                <button type="button" className="tile tile-dose" aria-haspopup="dialog" onClick={() => setDoseSheet("new")}>
+                  <Icon name="insulin" size={26} />
+                  {t("recordDose")}
+                </button>
+                {SHORTCUTS.map((kind) => (
+                  <button key={kind} type="button" className="tile tile-exercise" onClick={() => void startExercise(kind)}>
+                    <Icon name={EXERCISE_ICON[kind]} size={26} />
+                    {t(`exercise_${kind}`)}
+                  </button>
+                ))}
+                <button type="button" className="tile tile-exercise" aria-haspopup="dialog" onClick={() => setExerciseSheet({ mode: "other" })}>
+                  <Icon name={EXERCISE_ICON.other} size={26} />
+                  {t("exercise_other")}
+                </button>
+              </div>
+              <button
+                type="button"
+                className="button button-quiet button-small exercise-past"
+                aria-haspopup="dialog"
+                onClick={() => setExerciseSheet({ mode: "past" })}
+              >
+                <Icon name="plus" size={18} />
+                {t("exerciseAddPast")}
+              </button>
+            </>
+          )}
+        </section>
+      )}
 
       {meals !== null && meals.length > 0 && (
         <label className="search">
@@ -346,7 +360,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
             const carbs = shownTotal(meal.items);
             return (
               <article key={meal.id} className="card pending-card" aria-label={names(meal)}>
-                <button type="button" className="meal-row" onClick={() => setOpen(meal)}>
+                <button type="button" className="meal-row" onClick={() => setOpenId(meal.id)}>
                   <Thumb meal={meal} />
                   <span className="item-text">
                     <span className="item-name">{names(meal)}</span>
@@ -375,7 +389,10 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
 
       {searching && shown.length === 0 && <p className="muted">{t("logSearchNone")}</p>}
 
-      {days.map((day) => (
+      {days.map((day) => {
+        const attached = attachedDoses(day.entries);
+        const units = dayUnits(day.entries);
+        return (
         <section key={day.key} className="day" aria-label={dayLabel(day.date)}>
           <header className="day-header">
             <h2>{dayLabel(day.date)}</h2>
@@ -385,10 +402,13 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
                 {t("logPeriodDay")}
               </span>
             )}
-            <span className="day-total">
-              {t("dayTotal", {
-                n: day.entries.reduce((sum, entry) => sum + (entry.type === "meal" ? shownTotal(entry.meal.items).best : 0), 0),
-              })}
+            <span className="day-totals">
+              <span className="day-total">
+                {t("dayTotal", {
+                  n: day.entries.reduce((sum, entry) => sum + (entry.type === "meal" ? shownTotal(entry.meal.items).best : 0), 0),
+                })}
+              </span>
+              {units > 0 && <span className="day-units">{t("dayUnits", { n: formatUnits(units, language) })}</span>}
             </span>
           </header>
           <ul className="card meals">
@@ -405,8 +425,9 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
                 );
               }
               if (entry.type === "dose") {
+                // Under the meal it was taken for, drawn smaller and joined to it, as part of that meal.
                 return (
-                  <li key={entry.id}>
+                  <li key={entry.id} className={attached.has(entry.id) ? "dose-attached" : undefined}>
                     <DoseRow dose={entry.dose} onOpen={() => setDoseSheet(entry.dose)} />
                   </li>
                 );
@@ -415,14 +436,14 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
               const carbs = shownTotal(meal.items);
               return (
                 <li key={meal.id}>
-                  <button type="button" className="meal-row" aria-haspopup="dialog" onClick={() => setOpen(meal)}>
+                  <button type="button" className="meal-row" aria-haspopup="dialog" onClick={() => setOpenId(meal.id)}>
                     <Thumb meal={meal} />
                     <span className="item-text">
                       <span className="item-name">{names(meal)}</span>
                       <span className="item-meta">
                         {formatTime(meal.eatenAt, language)}
                         <OutcomeBadge meal={meal} />
-                        <MealInsulin meal={meal} />
+                        {!insulinBelow(meal, attached) && <MealInsulin meal={meal} />}
                       </span>
                     </span>
                     <span className="item-carbs">
@@ -435,7 +456,8 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
             })}
           </ul>
         </section>
-      ))}
+        );
+      })}
 
       {more && (
         <button type="button" className="button button-secondary" onClick={() => loadPage(meals?.length ?? 0)}>
@@ -448,12 +470,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
           dose={doseSheet === "new" ? undefined : doseSheet}
           meals={meals ?? []}
           onClose={() => setDoseSheet(null)}
-          onSaved={(dose) => {
-            setDoseSheet(null);
-            setDoses((current) => [dose, ...current.filter((d) => d.id !== dose.id)]);
-            relink((current) => withDose(current, dose));
-            toast({ text: t("doseSaved") });
-          }}
+          onSaved={doseSaved}
           onDelete={(dose) => void removeDose(dose)}
         />
       )}
@@ -474,9 +491,13 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
       {open && (
         <MealSheet
           meal={open}
-          onClose={() => setOpen(null)}
+          meals={meals ?? []}
+          doses={doses}
+          onDoseSaved={doseSaved}
+          onDoseDelete={(dose) => void removeDose(dose)}
+          onClose={() => setOpenId(null)}
           onChanged={() => {
-            setOpen(null);
+            setOpenId(null);
             onChanged();
             void loadPage(0);
           }}
@@ -599,8 +620,30 @@ function Thumb({ meal }: { meal: Meal }) {
   );
 }
 
-function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => void; onChanged: () => void }) {
+function MealSheet({
+  meal,
+  meals,
+  doses,
+  onDoseSaved,
+  onDoseDelete,
+  onClose,
+  onChanged,
+}: {
+  meal: Meal;
+  meals: readonly Meal[];
+  doses: readonly Dose[];
+  onDoseSaved: (dose: Dose) => void;
+  onDoseDelete: (dose: Dose) => void;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
   const { t, language, rationSize } = useSettings();
+  // A dose of this meal opened over its sheet, a new one for it, or none.
+  const [doseOpen, setDoseOpen] = useState<Dose | "new" | null>(null);
+  const linked = meal.doses
+    .map((link) => doses.find((dose) => dose.id === link.id))
+    .filter((dose): dose is Dose => dose !== undefined)
+    .toSorted((a, b) => a.takenAt.localeCompare(b.takenAt));
   const [confirm, confirming] = useConfirm();
   const [when, setWhen] = useState(() => toLocalInput(meal.eatenAt));
   const [outcome, setOutcome] = useState(meal.outcome);
@@ -688,6 +731,37 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
           )}
         </fieldset>
 
+        {/* Her insulin for this meal: each dose opens to change it, and one can be added later. */}
+        <section className="meal-doses" aria-labelledby="meal-doses-title">
+          <h3 id="meal-doses-title" className="field-label">
+            {t("mealDosesTitle")}
+          </h3>
+          {linked.length > 0 && (
+            <ul className="rows">
+              {linked.map((dose) => (
+                <li key={dose.id}>
+                  <button type="button" className="row-link meal-dose" aria-haspopup="dialog" onClick={() => setDoseOpen(dose)}>
+                    <span className={`dose-mark dose-mark-small dose-mark-${dose.kind}`}>
+                      <Icon name={DOSE_ICON[dose.kind]} size={18} />
+                    </span>
+                    <span className="item-text">
+                      <span className="item-name">{t("unitsCount", { n: formatUnits(dose.units, language) })}</span>
+                      <span className="item-meta">
+                        {formatTime(dose.takenAt, language)} · {t(`dose_${dose.kind}`)}
+                      </span>
+                    </span>
+                    <Icon name="chevronRight" size={20} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button type="button" className="button button-secondary meal-dose-add" aria-haspopup="dialog" onClick={() => setDoseOpen("new")}>
+            <Icon name="plus" size={20} />
+            {t("mealAddDose")}
+          </button>
+        </section>
+
         <ul className="items compact">
           {meal.items.map((item, index) => (
             <li key={index} className="item-line">
@@ -737,6 +811,22 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
         </button>
       </div>
       {confirming}
+      {doseOpen && (
+        <DoseSheet
+          dose={doseOpen === "new" ? undefined : doseOpen}
+          forMeal={doseOpen === "new" ? meal : undefined}
+          meals={meals}
+          onClose={() => setDoseOpen(null)}
+          onSaved={(dose) => {
+            setDoseOpen(null);
+            onDoseSaved(dose);
+          }}
+          onDelete={(dose) => {
+            setDoseOpen(null);
+            onDoseDelete(dose);
+          }}
+        />
+      )}
     </Sheet>
   );
 }

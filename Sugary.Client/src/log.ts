@@ -52,6 +52,33 @@ export function timeline(meals: readonly Meal[], doses: readonly Dose[], session
   ].toSorted((a, b) => b.at - a.at || (a.type === b.type ? 0 : a.type === "meal" ? -1 : 1));
 }
 
+// The doses drawn as part of the meal they were taken for: linked to the meal right above them, or
+// to the same meal as the linked dose right above them. Each is still a row of its own.
+export function attachedDoses(entries: readonly Entry[]): Set<string> {
+  const attached = new Set<string>();
+  let meal: string | null = null;
+  for (const entry of entries) {
+    if (entry.type === "meal") {
+      meal = entry.meal.id;
+    } else if (entry.type === "dose" && meal !== null && entry.dose.mealId === meal) {
+      attached.add(entry.id);
+    } else {
+      meal = null;
+    }
+  }
+  return attached;
+}
+
+// Whether every dose of a meal is drawn right under it, so the meal need not count them itself.
+export function insulinBelow(meal: Meal, attached: ReadonlySet<string>): boolean {
+  return meal.doses.length > 0 && meal.doses.every((dose) => attached.has(dose.id));
+}
+
+// Every unit of insulin in these rows, rapid and basal, summed in hundredths as rapidUnits does.
+export function dayUnits(entries: readonly Entry[]): number {
+  return entries.reduce((sum, entry) => sum + (entry.type === "dose" ? Math.round(entry.dose.units * 100) : 0), 0) / 100;
+}
+
 export interface Day {
   key: string;
   date: Date;

@@ -1310,8 +1310,98 @@ h1.title-small {
 /* Doses: a dose is a record she made, never advice, and rapid and basal must never be misread for
    each other, so each says its kind in words, with its own drawing, on its own tint. */
 
-.add-dose {
+/* What she records as it happens, in one compact row above the day: insulin, a walk, the gym, another. */
+.record {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   margin-bottom: var(--space-2);
+}
+
+.tiles-record {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.tiles-record .tile {
+  min-height: 76px;
+  padding-inline: var(--space-1);
+  hyphens: auto;
+  overflow-wrap: break-word;
+}
+
+.tile-exercise .icon {
+  color: var(--color-good);
+}
+
+/* A dose under the meal it was taken for: its own row still, drawn smaller and joined to the meal. */
+.meals li.dose-attached {
+  border-top: 0;
+}
+
+.dose-attached .meal-row {
+  min-height: 0;
+  margin-top: calc(-1 * var(--space-2));
+  padding: 0 0 var(--space-3) calc(52px + var(--space-3));
+}
+
+.dose-attached .dose-mark {
+  width: 32px;
+  height: 32px;
+}
+
+.dose-attached .dose-mark .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.dose-attached .item-name {
+  font-size: var(--text-meta);
+}
+
+/* The day's carbs, and under them every unit of insulin she took that day. */
+.day-totals {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+}
+
+.day-units {
+  font-size: var(--text-meta);
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+
+/* Her insulin for a meal, in the meal's sheet: each dose a row, and one added from there. */
+.meal-doses {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.meal-dose {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.row-link.meal-dose > .item-text {
+  flex: 1;
+}
+
+.row-link.meal-dose > .dose-mark-small {
+  flex: none;
+  width: 36px;
+  height: 36px;
+}
+
+.meal-dose-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
 }
 
 .add-dose .icon:first-child {
@@ -2147,8 +2237,10 @@ h1.marked .icon {
   color: var(--color-muted);
 }
 
+/* Narrower edges than a card's, so seven days a row each keep a whole target at 390 px. */
 .calendar {
   gap: var(--space-2);
+  padding-inline: var(--space-2);
 }
 
 .calendar-header {
@@ -2168,7 +2260,7 @@ h1.marked .icon {
 .calendar-grid {
   width: 100%;
   border-collapse: separate;
-  border-spacing: 2px 4px;
+  border-spacing: 0 4px;
   table-layout: fixed;
 }
 
@@ -2333,19 +2425,6 @@ h1.marked .icon {
 /* Exercise: started with a tap, running in a card of its own until stopped, and a row in the day
    drawn on the counted green, apart from meals' photos and doses' pink. */
 
-.exercise-start {
-  display: grid;
-  gap: var(--space-2);
-  margin-bottom: var(--space-3);
-}
-
-.exercise-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.exercise-chip .icon,
 .exercise-mark {
   color: var(--color-good);
 }
@@ -2358,7 +2437,6 @@ h1.marked .icon {
 }
 
 .exercise-running {
-  margin-bottom: var(--space-3);
   padding-block: 0;
 }
 
@@ -2392,7 +2470,7 @@ h1.marked .icon {
 }
 
 .exercise-past {
-  justify-self: start;
+  align-self: flex-start;
 }
 
 .exercise-kinds .segment {

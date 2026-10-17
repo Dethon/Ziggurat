@@ -3,12 +3,14 @@ import { api } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { errorMessage } from "../errors";
-import { endFrom, endsLater, EXERCISE_ICON, MAX_MINUTES, MAX_NAME, MAX_NOTE, readMinutes, sessionMinutes } from "../exercise";
+import { duration, endFrom, endsLater, EXERCISE_ICON, MAX_MINUTES, MAX_NAME, MAX_NOTE, readMinutes, sessionMinutes } from "../exercise";
 import { toLocalInput } from "../format";
 import { useSettings } from "../settings";
 import type { Exercise, ExerciseKind, SaveExercise } from "../types";
 
 const KINDS: ExerciseKind[] = ["walk", "gym", "other"];
+// The lengths most sessions come in, a tap each; any other is typed.
+const LENGTHS = [15, 30, 45, 60];
 
 // What the sheet was opened for: another kind to start now, a session she already did, or one she
 // recorded, to change or delete (a running one included, which can be given its end here).
@@ -168,6 +170,19 @@ export function ExerciseSheet({
                 aria-invalid={minutesProblem !== null}
                 onChange={(event) => setMinutes(event.target.value)}
               />
+              <div className="chips" role="group" aria-label={t("exerciseMinutes")}>
+                {LENGTHS.map((length) => (
+                  <button
+                    key={length}
+                    type="button"
+                    className={`chip${minutes.trim() === String(length) ? " chip-on" : ""}`}
+                    aria-pressed={minutes.trim() === String(length)}
+                    onClick={() => setMinutes(String(length))}
+                  >
+                    {duration(length, t)}
+                  </button>
+                ))}
+              </div>
               {session?.endedAt === null && <span className="muted small">{t("exerciseMinutesRunningHint")}</span>}
               {minutesProblem && (
                 <span className="field-problem" role="alert">

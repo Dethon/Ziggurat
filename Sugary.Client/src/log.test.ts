@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  attachedDoses,
   byDay,
+  insulinBelow,
+  dayUnits,
   onPeriod,
   matches,
   OUTCOME_AFTER_HOURS,
@@ -182,5 +185,61 @@ describe("onPeriod", () => {
   it("marks an ongoing period up to today and no further", () => {
     expect(onPeriod(new Date(2026, 9, 16, 12), periods, today)).toBe(true);
     expect(onPeriod(new Date(2026, 9, 17, 12), periods, today)).toBe(false);
+  });
+});
+
+describe("attachedDoses", () => {
+  const lunch = meal("lunch", 6);
+  const linked = (id: string, to: string, takenAt = lunch.eatenAt) => ({ ...dose(id, 0), takenAt, mealId: to });
+
+  // Its own row still, as every dose is, but drawn as part of the meal it was taken for.
+  it("attaches a dose to its meal when it sits right under it", () => {
+    expect([...attachedDoses(timeline([lunch], [linked("bolus", "lunch")]))]).toEqual(["bolus"]);
+  });
+
+  it("attaches every dose of the meal that follows it, one after another", () => {
+    const entries = timeline([lunch], [linked("a", "lunch"), linked("b", "lunch")]);
+    expect([...attachedDoses(entries)].toSorted()).toEqual(["a", "b"]);
+  });
+
+  it("leaves a linked dose on its own when something else came between", () => {
+    const later = new Date(Date.parse(lunch.eatenAt) + 3_600_000).toISOString();
+    const entries = timeline([lunch, meal("tea", 4)], [linked("bolus", "lunch", later)]);
+    expect(entries.map((entry) => entry.id)).toEqual(["tea", "bolus", "lunch"]);
+    expect(attachedDoses(entries).size).toBe(0);
+  });
+
+  it("never attaches a dose linked to no meal, or to another meal", () => {
+    const entries = timeline([lunch], [{ ...dose("free", 0), takenAt: lunch.eatenAt }, linked("other", "breakfast")]);
+    expect(attachedDoses(entries).size).toBe(0);
+  });
+});
+
+describe("dayUnits", () => {
+  it("adds up every dose of the day, rapid and basal, without drift", () => {
+    const entries = timeline([meal("lunch", 6)], [dose("a", 1, "basal"), { ...dose("b", 2), units: 0.1 }, { ...dose("c", 3), units: 0.2 }]);
+    const basal = entries.find((entry) => entry.id === "a");
+    if (basal?.type === "dose") {
+      basal.dose.units = 14;
+    }
+    expect(dayUnits(entries)).toBe(14.3);
+  });
+
+  it("is nothing on a day without doses", () => {
+    expect(dayUnits(timeline([meal("lunch", 6)], []))).toBe(0);
+  });
+});
+
+describe("insulinBelow", () => {
+  const lunch = { ...meal("lunch", 3), doses: [{ id: "a", units: 4, kind: "rapid" as const }, { id: "b", units: 1, kind: "rapid" as const }] };
+
+  // The meal's own count of its insulin would say the same number twice, right above the dose rows.
+  it("is true when every dose of the meal is drawn right under it", () => {
+    expect(insulinBelow(lunch, new Set(["a", "b"]))).toBe(true);
+  });
+
+  it("is false when any of its doses is elsewhere in the day, or it has none", () => {
+    expect(insulinBelow(lunch, new Set(["a"]))).toBe(false);
+    expect(insulinBelow(meal("tea", 1), new Set())).toBe(false);
   });
 });

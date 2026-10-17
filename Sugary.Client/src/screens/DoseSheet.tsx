@@ -3,7 +3,7 @@ import { api } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { UnitsControl } from "../components/UnitsControl";
-import { linkable, MAX_NOTE, MAX_UNITS, readUnits } from "../dose";
+import { doseStart, linkable, MAX_NOTE, MAX_UNITS, readUnits } from "../dose";
 import { errorMessage } from "../errors";
 import { formatTime, formatUnits, toLocalInput } from "../format";
 import { sentence } from "../meal";
@@ -20,12 +20,15 @@ const KINDS: { kind: DoseKind; icon: "bolt" | "clock"; hint: "doseRapidHint" | "
 // now the usual time, and both can be changed. An open dose starts from what she recorded.
 export function DoseSheet({
   dose,
+  forMeal,
   meals,
   onClose,
   onSaved,
   onDelete,
 }: {
   dose?: Dose;
+  // A new dose added from this meal's sheet: it starts linked to the meal, at its time.
+  forMeal?: Meal;
   // Her loaded meals, of which those of about the last day are offered to link the dose to.
   meals: readonly Meal[];
   onClose: () => void;
@@ -35,10 +38,11 @@ export function DoseSheet({
   const { t, language } = useSettings();
   const [units, setUnits] = useState(() => (dose ? formatUnits(dose.units, language) : ""));
   const [kind, setKind] = useState<DoseKind>(dose?.kind ?? "rapid");
-  const [when, setWhen] = useState(() => toLocalInput(dose?.takenAt ?? new Date().toISOString()));
+  const [start] = useState(() => doseStart(forMeal, new Date()));
+  const [when, setWhen] = useState(() => toLocalInput(dose?.takenAt ?? start.takenAt));
   const [note, setNote] = useState(dose?.note ?? "");
-  const [mealId, setMealId] = useState(dose?.mealId ?? "");
-  const [offered] = useState(() => linkable(meals, new Date(), dose?.mealId ?? null));
+  const [mealId, setMealId] = useState(dose ? (dose.mealId ?? "") : (start.mealId ?? ""));
+  const [offered] = useState(() => linkable(meals, new Date(), dose ? dose.mealId : start.mealId));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formId = useId();
