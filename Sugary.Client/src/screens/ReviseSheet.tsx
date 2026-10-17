@@ -121,9 +121,15 @@ export function ReviseSheet({
     </button>
   ) : estimate && next ? (
     unsentAnswers ? (
-      <button type="button" className="button button-primary button-big" onClick={() => void ask(answers, estimate.conversationId)}>
-        {t("updateWithAnswers")}
-      </button>
+      // What it found stays hers to take, as on the meal screen, if asking again fails or she would rather not.
+      <div className="footer-row">
+        <button type="button" className="button button-quiet" onClick={() => onApply(next)}>
+          {t("reviseUseWithout")}
+        </button>
+        <button type="button" className="button button-primary button-grow" onClick={() => void ask(answers, estimate.conversationId)}>
+          {t("updateWithAnswers")}
+        </button>
+      </div>
     ) : (
       <button type="button" className="button button-primary button-big" onClick={() => onApply(next)}>
         {t(adding ? "reviseAddUse" : "reviseUse")}
