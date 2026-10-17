@@ -177,6 +177,29 @@ public class SugaryExportApiTests
         lines.Skip(1).Select(line => line.Split(',')[0]).ShouldBe([inside]);
     }
 
+    [Fact]
+    public async Task Exercise_ExportsAsOneRowEachInTheClockThatWasAskedFor()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var created = await client.PostAsJsonAsync("/api/exercise", new JsonObject
+        {
+            ["kind"] = "gym",
+            ["startedAt"] = "2026-03-01T18:00:00Z",
+            ["endedAt"] = "2026-03-01T19:05:00Z"
+        });
+        var id = (await created.Content.ReadFromJsonAsync<JsonNode>())!["id"]!.GetValue<string>();
+
+        var madrid = await LinesAsync(client, "/api/export/exercise.csv?tz=Europe/Madrid");
+        var outside = await LinesAsync(client, "/api/export/exercise.csv?from=2026-03-02T00:00:00Z");
+
+        madrid.ShouldBe([
+            "exercise_id,started_at,ended_at,minutes,kind,name,note",
+            $"{id},2026-03-01T19:00:00+01:00,2026-03-01T20:05:00+01:00,65,gym,,"
+        ]);
+        outside.ShouldBe(["exercise_id,started_at,ended_at,minutes,kind,name,note"]);
+    }
+
     // The names the import reads them back under, so a download can be carried to another server;
     // doses, which the import does not read, by the same pattern.
     [Theory]
@@ -184,6 +207,7 @@ public class SugaryExportApiTests
     [InlineData("items")]
     [InlineData("foods")]
     [InlineData("doses")]
+    [InlineData("exercise")]
     [InlineData("periods")]
     [InlineData("day-notes")]
     public async Task ADownload_IsNamedAsTheImportExpectsIt(string table)

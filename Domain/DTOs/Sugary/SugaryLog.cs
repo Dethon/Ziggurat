@@ -79,6 +79,16 @@ public sealed record LoggedDose(
     Guid? MealId,
     string? Note);
 
+// A session of exercise she recorded: a walk, the gym, or another kind under the name she gave it,
+// with no end while it is running.
+public sealed record LoggedExercise(
+    Guid Id,
+    ExerciseKind Kind,
+    string? Name,
+    DateTimeOffset StartedAt,
+    DateTimeOffset? EndedAt,
+    string? Note);
+
 // A period as she recorded it: days on her calendar, with no end while it is still going.
 public sealed record LoggedPeriod(Guid Id, DateOnly Start, DateOnly? End);
 

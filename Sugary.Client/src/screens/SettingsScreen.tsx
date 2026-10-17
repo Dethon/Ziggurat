@@ -8,6 +8,7 @@ const EXPORTS = [
   { table: "meals", label: "exportMeals" },
   { table: "items", label: "exportItems" },
   { table: "doses", label: "exportDoses" },
+  { table: "exercise", label: "exportExercise" },
   { table: "periods", label: "exportPeriods" },
   { table: "day-notes", label: "exportDayNotes" },
   { table: "foods", label: "exportFoods" },

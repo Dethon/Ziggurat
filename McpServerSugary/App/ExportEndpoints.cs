@@ -21,6 +21,7 @@ public static class ExportEndpoints
         export.MapGet("/items.csv", ItemsAsync);
         export.MapGet("/foods.csv", FoodsAsync);
         export.MapGet("/doses.csv", DosesAsync);
+        export.MapGet("/exercise.csv", ExerciseAsync);
         export.MapGet("/periods.csv", PeriodsAsync);
         export.MapGet("/day-notes.csv", DayNotesAsync);
     }
@@ -48,6 +49,15 @@ public static class ExportEndpoints
         Clock(tz) is { } zone
             ? File(SugaryTables.Doses(
                 await log.DosesAsync(from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct), zone), DosesFile)
+            : UnknownClock(tz);
+
+    private static async Task<IResult> ExerciseAsync(
+        ISugaryLog log, CancellationToken ct, DateTimeOffset? from = null, DateTimeOffset? to = null,
+        string? tz = null) =>
+        Clock(tz) is { } zone
+            ? File(SugaryTables.Exercise(
+                    await log.ExerciseAsync(from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct), zone),
+                "sugary-exercise.csv")
             : UnknownClock(tz);
 
     // Days carry no clock, so these take no zone.

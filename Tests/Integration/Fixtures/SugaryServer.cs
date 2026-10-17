@@ -190,6 +190,13 @@ public sealed class SugaryServer : IAsyncDisposable
         await db.SaveChangesAsync();
     }
 
+    public async Task SaveAsync(params ExerciseSession[] sessions)
+    {
+        await using var db = await Contexts.CreateDbContextAsync();
+        db.ExerciseSessions.AddRange(sessions);
+        await db.SaveChangesAsync();
+    }
+
     public async Task SaveAsync(params Period[] periods)
     {
         await using var db = await Contexts.CreateDbContextAsync();

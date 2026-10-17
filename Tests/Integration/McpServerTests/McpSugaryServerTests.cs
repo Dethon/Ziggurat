@@ -91,7 +91,7 @@ public class McpSugaryServerTests
         await using var server = await SugaryServer.StartAsync();
 
         (await server.GlobAsync("**")).ShouldBe(
-            ["/README.md", "/day-notes.csv", "/doses/", "/foods.csv", "/items/", "/meals/", "/periods.csv"]);
+            ["/README.md", "/day-notes.csv", "/doses/", "/exercise/", "/foods.csv", "/items/", "/meals/", "/periods.csv"]);
         (await server.ReadAsync("/foods.csv"))
             .ShouldBe("food_id,name,carbs_per_100,unit,portion_amount,portion_carbs_g,barcode,source\n");
         (await server.ReadAsync("/periods.csv")).ShouldBe("period_id,start_date,end_date,days,cycle_days\n");
@@ -113,7 +113,8 @@ public class McpSugaryServerTests
             "first_estimate_low_g", "first_estimate_high_g", "outcome", "items", "notes", "position", "name",
             "portion", "amount", "carbs_per_100", "source", "confidence", "edited", "food_id", "unit",
             "portion_amount", "portion_carbs_g", "barcode", "dose_id", "taken_at", "kind", "units", "period_id",
-            "start_date", "end_date", "days", "cycle_days", "date", "note"
+            "start_date", "end_date", "days", "cycle_days", "date", "note", "exercise_id", "started_at",
+            "ended_at", "minutes"
         ];
         columns.Where(column => !readme.Contains($"`{column}`")).ShouldBeEmpty();
         readme.ShouldContain("fibre excluded");
@@ -240,6 +241,17 @@ public class McpSugaryServerTests
         Start = DateOnly.Parse(start, System.Globalization.CultureInfo.InvariantCulture),
         End = end is null ? null : DateOnly.Parse(end, System.Globalization.CultureInfo.InvariantCulture)
     };
+
+    private static ExerciseSession Session(
+        string startedAt, string? endedAt, ExerciseKind kind, string? name = null, string? note = null) => new()
+        {
+            Id = Guid.NewGuid(),
+            Kind = kind,
+            Name = name,
+            StartedAt = DateTimeOffset.Parse(startedAt),
+            EndedAt = endedAt is null ? null : DateTimeOffset.Parse(endedAt),
+            Note = note
+        };
 
     private static Dose Dose(string takenAt, double units, DoseKind kind, Guid? mealId = null, string? note = null) => new()
     {
@@ -492,6 +504,77 @@ public class McpSugaryServerTests
         await server.SaveAsync(Dose("2026-10-11T12:00:00Z", 2, DoseKind.Rapid, note: "-2 for the walk"));
 
         Lines(await server.ReadAsync("/doses/2026-10.csv"))[1].ShouldEndWith(",2026-10-11T12:00:00+00:00,rapid,2,,'-2 for the walk");
+    }
+
+    // Her exercise, one file per month a session started in on the home's calendar, its minutes
+    // worked out from its times and a running session's end and minutes left empty.
+    [Fact]
+    public async Task Exercise_IsOneRowEachInAFilePerMonth_WithItsMinutes()
+    {
+        await using var server = await SugaryServer.StartAsync("Europe/Madrid");
+        var walk = Session("2026-10-11T08:00:00Z", "2026-10-11T08:44:31Z", ExerciseKind.Walk);
+        var ride = Session("2026-10-11T16:00:00Z", "2026-10-11T17:30:00Z", ExerciseKind.Other, "bici", "con Ana, cuesta");
+        var gym = Session("2026-10-12T17:00:00Z", null, ExerciseKind.Gym);
+        // The last evening of August in UTC is the first of September at home.
+        var late = Session("2026-08-31T22:15:00Z", "2026-08-31T22:45:00Z", ExerciseKind.Walk);
+        await server.SaveAsync(gym, ride, walk, late);
+
+        (await server.GlobAsync("exercise/*")).ShouldBe(["/exercise/2026-09.csv", "/exercise/2026-10.csv"]);
+        Lines(await server.ReadAsync("/exercise/2026-09.csv")).ShouldBe([
+            "exercise_id,started_at,ended_at,minutes,kind,name,note",
+            $"{late.Id},2026-09-01T00:15:00+02:00,2026-09-01T00:45:00+02:00,30,walk,,"
+        ]);
+        Lines(await server.ReadAsync("/exercise/2026-10.csv")).ShouldBe([
+            "exercise_id,started_at,ended_at,minutes,kind,name,note",
+            $"{walk.Id},2026-10-11T10:00:00+02:00,2026-10-11T10:44:31+02:00,45,walk,,",
+            $"{ride.Id},2026-10-11T18:00:00+02:00,2026-10-11T19:30:00+02:00,90,other,bici,\"con Ana, cuesta\"",
+            $"{gym.Id},2026-10-12T19:00:00+02:00,,,gym,,"
+        ]);
+    }
+
+    [Fact]
+    public async Task AnExerciseNameOrNoteThatASpreadsheetWouldRunAsAFormula_IsWrittenAsText()
+    {
+        await using var server = await SugaryServer.StartAsync("UTC");
+        await server.SaveAsync(Session("2026-10-11T12:00:00Z", "2026-10-11T12:30:00Z", ExerciseKind.Other, "+pesas", "=suave"));
+
+        Lines(await server.ReadAsync("/exercise/2026-10.csv"))[1].ShouldEndWith(",30,other,'+pesas,'=suave");
+    }
+
+    // "When did she last ride her bike" is one search across the months of exercise.
+    [Fact]
+    public async Task HerSessions_AreFoundByName()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(
+            Session("2026-09-11T08:00:00Z", "2026-09-11T09:00:00Z", ExerciseKind.Other, "bici"),
+            Session("2026-10-11T08:00:00Z", "2026-10-11T09:00:00Z", ExerciseKind.Other, "bici"),
+            Session("2026-10-12T08:00:00Z", "2026-10-12T09:00:00Z", ExerciseKind.Walk));
+
+        var hits = await server.CallAsync("fs_search", new Dictionary<string, object?>
+        {
+            ["query"] = "bici",
+            ["directoryPath"] = "/exercise"
+        });
+
+        Files(hits).ShouldBe(["/exercise/2026-09.csv", "/exercise/2026-10.csv"], ignoreOrder: true);
+    }
+
+    // A running session read as zero minutes, or the table read as advice, puts the wrong thing beside
+    // a glucose curve.
+    [Fact]
+    public async Task TheReadme_ExplainsTheExercise()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var readme = await server.ReadAsync("/README.md");
+
+        readme.ShouldContain("## exercise/<YYYY-MM>.csv");
+        readme.ShouldContain("`walk`");
+        readme.ShouldContain("`gym`");
+        readme.ShouldContain("`other`");
+        readme.ShouldContain("empty while it is still running");
+        readme.ShouldContain("never a basis for suggesting carbs or insulin");
     }
 
     // "How much did she take for the pizza" is a search for the meal's id among the doses.

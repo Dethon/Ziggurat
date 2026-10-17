@@ -25,26 +25,28 @@ public sealed class SugaryFileSystem(
         "Her carb-counting log from Sugary (she has type 1 diabetes), read-only and always current: "
         + "meals/<YYYY-MM>.csv (one row per meal), items/<YYYY-MM>.csv (one row per food in a meal), "
         + "doses/<YYYY-MM>.csv (one row per insulin dose she recorded taking), "
+        + "exercise/<YYYY-MM>.csv (one row per session of exercise she recorded), "
         + "foods.csv (the foods she keeps), periods.csv (her menstrual periods), day-notes.csv (what she "
         + "wrote about a day) and README.md, which explains every column — read it before "
         + $"reading a number. Times carry their offset in the home's zone ({homeZone.Id}).";
 
     public override string DescribeRead =>
         "Read a file of her carb log: README.md, foods.csv, periods.csv, day-notes.csv, meals/<YYYY-MM>.csv, "
-        + "items/<YYYY-MM>.csv or doses/<YYYY-MM>.csv. "
+        + "items/<YYYY-MM>.csv, doses/<YYYY-MM>.csv or exercise/<YYYY-MM>.csv. "
         + "The CSV comes back exactly as it is; offset and limit (1-based lines) read a window of it.";
 
     public override string DescribeInfo => "Get info about a path of her carb log: exists, isDirectory, size.";
 
     public override string DescribeGlob =>
         "List the files of her carb log matching a glob under basePath — one meals and one items file "
-        + "per month she logged a meal in, one doses file per month she recorded a dose in. "
+        + "per month she logged a meal in, one doses file per month she recorded a dose in, one exercise "
+        + "file per month she started a session in. "
         + "`*` matches one path segment, `**` recurses, `?` one char, "
         + "`{a,b}` brace alternation. A trailing slash (e.g. `*/`) lists directories only.";
 
     public override string DescribeSearch =>
         "Search the text of her carb log, e.g. a food's name across every month, or a meal_id among the "
-        + "doses. Scope with path (one file) or directoryPath (meals, items or doses); omit both to "
+        + "doses. Scope with path (one file) or directoryPath (meals, items, doses or exercise); omit both to "
         + "search everything. Supports regex, "
         + "filePattern, maxResults, contextLines, and outputMode (content|filesOnly).";
 
@@ -131,22 +133,25 @@ public sealed class SugaryFileSystem(
         SugaryNodeKind.MealsDir => file.Kind == SugaryNodeKind.MealsMonth,
         SugaryNodeKind.ItemsDir => file.Kind == SugaryNodeKind.ItemsMonth,
         SugaryNodeKind.DosesDir => file.Kind == SugaryNodeKind.DosesMonth,
+        SugaryNodeKind.ExerciseDir => file.Kind == SugaryNodeKind.ExerciseMonth,
         SugaryNodeKind.Unknown => false,
         _ => file == scope
     };
 
     // Every node that exists right now: the fixed ones, a pair of files for each month she ate in and
-    // a doses file for each month she took a dose in — the two sets of months independent, so a
-    // month of basal alone still has its file.
+    // a doses file for each month she took a dose in and an exercise file for each month she started
+    // a session in — the sets of months independent, so a month of basal alone still has its file.
     private async Task<IReadOnlyList<SugaryNode>> NodesAsync(CancellationToken ct)
     {
         var mealMonths = Months(await log.MealTimesAsync(ct));
         var doseMonths = Months(await log.DoseTimesAsync(ct));
+        var exerciseMonths = Months(await log.ExerciseTimesAsync(ct));
         SugaryNode[] fixedNodes =
         [
             new(SugaryNodeKind.Root), new(SugaryNodeKind.Readme), new(SugaryNodeKind.Foods),
             new(SugaryNodeKind.Periods), new(SugaryNodeKind.DayNotes),
-            new(SugaryNodeKind.MealsDir), new(SugaryNodeKind.ItemsDir), new(SugaryNodeKind.DosesDir)
+            new(SugaryNodeKind.MealsDir), new(SugaryNodeKind.ItemsDir), new(SugaryNodeKind.DosesDir),
+            new(SugaryNodeKind.ExerciseDir)
         ];
         return fixedNodes
             .Concat(mealMonths.SelectMany(month => new SugaryNode[]
@@ -154,6 +159,7 @@ public sealed class SugaryFileSystem(
                 new(SugaryNodeKind.MealsMonth, month), new(SugaryNodeKind.ItemsMonth, month)
             }))
             .Concat(doseMonths.Select(month => new SugaryNode(SugaryNodeKind.DosesMonth, month)))
+            .Concat(exerciseMonths.Select(month => new SugaryNode(SugaryNodeKind.ExerciseMonth, month)))
             .ToList();
     }
 
@@ -180,6 +186,11 @@ public sealed class SugaryFileSystem(
         SugaryNodeKind.DosesMonth => await InMonthAsync(node.Month!, log.DosesAsync, dose => dose.TakenAt, ct)
             is { Count: > 0 } doses
             ? SugaryTables.Doses(doses, homeZone)
+            : null,
+        SugaryNodeKind.ExerciseMonth => await InMonthAsync(
+                node.Month!, log.ExerciseAsync, session => session.StartedAt, ct)
+            is { Count: > 0 } sessions
+            ? SugaryTables.Exercise(sessions, homeZone)
             : null,
         _ => null
     };

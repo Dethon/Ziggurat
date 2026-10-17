@@ -4,14 +4,16 @@ namespace Domain.Tools.Sugary.Vfs;
 
 public enum SugaryNodeKind
 {
-    Root, Readme, Foods, Periods, DayNotes, MealsDir, ItemsDir, DosesDir, MealsMonth, ItemsMonth, DosesMonth, Unknown
+    Root, Readme, Foods, Periods, DayNotes, MealsDir, ItemsDir, DosesDir, ExerciseDir, MealsMonth, ItemsMonth, DosesMonth,
+    ExerciseMonth, Unknown
 }
 
 // Month is "yyyy-MM" on the monthly kinds and null elsewhere.
 public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
 {
     public bool IsDirectory =>
-        Kind is SugaryNodeKind.Root or SugaryNodeKind.MealsDir or SugaryNodeKind.ItemsDir or SugaryNodeKind.DosesDir;
+        Kind is SugaryNodeKind.Root or SugaryNodeKind.MealsDir or SugaryNodeKind.ItemsDir or SugaryNodeKind.DosesDir
+            or SugaryNodeKind.ExerciseDir;
 
     // The path a listing or a search hit names this node by, mount-root-relative with a leading slash.
     public string Path => Kind switch
@@ -24,9 +26,11 @@ public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
         SugaryNodeKind.MealsDir => "/" + SugaryPath.MealsDirName,
         SugaryNodeKind.ItemsDir => "/" + SugaryPath.ItemsDirName,
         SugaryNodeKind.DosesDir => "/" + SugaryPath.DosesDirName,
+        SugaryNodeKind.ExerciseDir => "/" + SugaryPath.ExerciseDirName,
         SugaryNodeKind.MealsMonth => $"/{SugaryPath.MealsDirName}/{Month}.csv",
         SugaryNodeKind.ItemsMonth => $"/{SugaryPath.ItemsDirName}/{Month}.csv",
         SugaryNodeKind.DosesMonth => $"/{SugaryPath.DosesDirName}/{Month}.csv",
+        SugaryNodeKind.ExerciseMonth => $"/{SugaryPath.ExerciseDirName}/{Month}.csv",
         _ => ""
     };
 
@@ -42,6 +46,7 @@ public static class SugaryPath
     public const string MealsDirName = "meals";
     public const string ItemsDirName = "items";
     public const string DosesDirName = "doses";
+    public const string ExerciseDirName = "exercise";
 
     public static SugaryNode Parse(string? path)
     {
@@ -58,9 +63,12 @@ public static class SugaryPath
             [MealsDirName] => new SugaryNode(SugaryNodeKind.MealsDir),
             [ItemsDirName] => new SugaryNode(SugaryNodeKind.ItemsDir),
             [DosesDirName] => new SugaryNode(SugaryNodeKind.DosesDir),
+            [ExerciseDirName] => new SugaryNode(SugaryNodeKind.ExerciseDir),
             [MealsDirName, var file] when MonthOf(file) is { } month => new SugaryNode(SugaryNodeKind.MealsMonth, month),
             [ItemsDirName, var file] when MonthOf(file) is { } month => new SugaryNode(SugaryNodeKind.ItemsMonth, month),
             [DosesDirName, var file] when MonthOf(file) is { } month => new SugaryNode(SugaryNodeKind.DosesMonth, month),
+            [ExerciseDirName, var file] when MonthOf(file) is { } month =>
+                new SugaryNode(SugaryNodeKind.ExerciseMonth, month),
             _ => new SugaryNode(SugaryNodeKind.Unknown)
         };
     }

@@ -14,7 +14,7 @@ public class SugaryFileSystemTests
 {
     private readonly SugaryFileSystem _mount = new(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc);
 
-    public static TheoryData<string> Writes => new() { "create", "move", "delete", "create a dose", "delete a dose" };
+    public static TheoryData<string> Writes => new() { "create", "move", "delete", "create a dose", "delete a dose", "create exercise" };
 
     [Theory]
     [MemberData(nameof(Writes))]
@@ -26,6 +26,7 @@ public class SugaryFileSystemTests
             "move" => Error(await _mount.MoveAsync("/foods.csv", "/old.csv", CancellationToken.None)),
             "create a dose" => Error(await _mount.CreateAsync("/doses/2026-10.csv", "x", true, true, CancellationToken.None)),
             "delete a dose" => Error(await _mount.DeleteAsync("/doses/2026-10.csv", CancellationToken.None)),
+            "create exercise" => Error(await _mount.CreateAsync("/exercise/2026-10.csv", "x", true, true, CancellationToken.None)),
             _ => Error(await _mount.DeleteAsync("/meals/2026-10.csv", CancellationToken.None))
         };
 
@@ -47,14 +48,15 @@ public class SugaryFileSystemTests
             .ReturnsAsync([new DateTimeOffset(2026, 10, 11, 12, 0, 0, TimeSpan.Zero)]);
         log.Setup(l => l.DoseTimesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync([new DateTimeOffset(2026, 8, 30, 21, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 1, 21, 0, 0, TimeSpan.Zero)]);
+        log.Setup(l => l.ExerciseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc);
 
         var all = (await mount.GlobAsync("/", "**", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
         var doses = (await mount.GlobAsync("/doses", "*.csv", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
         all.Entries.ShouldBe([
-            "/README.md", "/day-notes.csv", "/doses/", "/doses/2026-08.csv", "/doses/2026-09.csv", "/foods.csv",
-            "/items/", "/items/2026-10.csv", "/meals/", "/meals/2026-10.csv", "/periods.csv"
+            "/README.md", "/day-notes.csv", "/doses/", "/doses/2026-08.csv", "/doses/2026-09.csv", "/exercise/",
+            "/foods.csv", "/items/", "/items/2026-10.csv", "/meals/", "/meals/2026-10.csv", "/periods.csv"
         ]);
         doses.Entries.ShouldBe(["/doses/2026-08.csv", "/doses/2026-09.csv"]);
     }
@@ -69,6 +71,7 @@ public class SugaryFileSystemTests
         log.Setup(l => l.DayNotesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.MealTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.DoseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        log.Setup(l => l.ExerciseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc);
 
         var glob = (await mount.GlobAsync("/", "*.csv", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
@@ -80,6 +83,23 @@ public class SugaryFileSystemTests
         glob.Entries.ShouldBe(["/day-notes.csv", "/foods.csv", "/periods.csv"]);
         periods.Content.ShouldBe($"period_id,start_date,end_date,days,cycle_days\n{Guid.Empty},2026-10-08,,,\n");
         notes.Content.ShouldBe("date,note\n");
+    }
+
+    // A month has an exercise file when a session started in it, whatever else she logged then.
+    [Fact]
+    public async Task ExerciseMonths_AreListedBesideTheOthers()
+    {
+        var log = new Mock<ISugaryLog>();
+        log.Setup(l => l.MealTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        log.Setup(l => l.DoseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
+        log.Setup(l => l.ExerciseTimesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new DateTimeOffset(2026, 9, 30, 18, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 10, 2, 9, 0, 0, TimeSpan.Zero)]);
+        var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc);
+
+        var exercise = (await mount.GlobAsync("/exercise", "*.csv", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+
+        exercise.Entries.ShouldBe(["/exercise/2026-09.csv", "/exercise/2026-10.csv"]);
     }
 
     private static ToolErrorResult Error<T>(FsResult<T> result) where T : class =>

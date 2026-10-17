@@ -6,7 +6,7 @@ namespace Domain.Tools.Sugary;
 
 // The log as tables another tool can lay beside glucose readings: one with a row per meal, one
 // with a row per food eaten, one with her saved foods, one with a row per insulin dose, one with a
-// row per period and one with a row per day she wrote a note on. The first three's columns, order
+// row per session of exercise, one with a row per period and one with a row per day she wrote a note on. The first three's columns, order
 // and spelling are the standalone app's export, so a reader of either reads both; the rest are
 // Sugary's own, the doses joined to a meal by meal_id.
 public static class SugaryTables
@@ -29,6 +29,9 @@ public static class SugaryTables
     ];
 
     public static readonly string[] DoseColumns = ["dose_id", "taken_at", "kind", "units", "meal_id", "note"];
+
+    public static readonly string[] ExerciseColumns =
+        ["exercise_id", "started_at", "ended_at", "minutes", "kind", "name", "note"];
 
     public static readonly string[] PeriodColumns = ["period_id", "start_date", "end_date", "days", "cycle_days"];
 
@@ -60,6 +63,19 @@ public static class SugaryTables
             .Aggregate(new SugaryCsv(DoseColumns), (csv, dose) => csv.Row(
                 dose.Id.ToString(), Stamp(dose.TakenAt, zone), Word(dose.Kind), dose.Units, dose.MealId?.ToString(),
                 dose.Note))
+            .ToString();
+
+    // A session's minutes are worked out from its two times on every read, rounded to the whole
+    // minute, so they never disagree with them; a running session has neither an end nor minutes.
+    public static string Exercise(IEnumerable<LoggedExercise> sessions, TimeZoneInfo zone) =>
+        sessions.OrderBy(session => session.StartedAt)
+            .Aggregate(new SugaryCsv(ExerciseColumns), (csv, session) => csv.Row(
+                session.Id.ToString(), Stamp(session.StartedAt, zone),
+                session.EndedAt is { } end ? Stamp(end, zone) : null,
+                session.EndedAt is { } last
+                    ? (int)Math.Round((last - session.StartedAt).TotalMinutes, MidpointRounding.AwayFromZero)
+                    : null,
+                Word(session.Kind), session.Name, session.Note))
             .ToString();
 
     // Each period's length (both ends counted) and the cycle it began (to the next start) are worked

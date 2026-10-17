@@ -10,19 +10,21 @@ public static class SugaryReadme
         $$"""
           # Sugary — her carb log
 
-          The meals she logged in Sugary, the foods in each meal, the insulin doses she recorded, the foods
-          she keeps, her menstrual periods and the notes she wrote about her days, as tables. They are rendered from Sugary's database each time they are read, so they are
+          The meals she logged in Sugary, the foods in each meal, the insulin doses she recorded, the exercise
+          she did, the foods she keeps, her menstrual periods and the notes she wrote about her days, as tables. They are rendered from Sugary's database each time they are read, so they are
           always current. Nothing here can be written: her log changes only through Sugary.
 
           - `meals/<YYYY-MM>.csv` — one row per meal eaten that month, oldest first.
           - `items/<YYYY-MM>.csv` — one row per food in those meals, in the order of each meal.
           - `doses/<YYYY-MM>.csv` — one row per insulin dose she took that month, oldest first.
+          - `exercise/<YYYY-MM>.csv` — one row per session of exercise she started that month, oldest first.
           - `foods.csv` — one row per food she keeps on her own list.
           - `periods.csv` — one row per menstrual period she recorded, oldest first.
           - `day-notes.csv` — one row per day she wrote a note about, oldest first.
 
-          A month with no meals has no meals or items file, and a month with no doses has no doses file. A
-          meal belongs to the month its `eaten_at` shows, a dose to the month its `taken_at` shows.
+          A month with no meals has no meals or items file, a month with no doses no doses file, and a month
+          with no exercise no exercise file. A meal belongs to the month its `eaten_at` shows, a dose to the
+          month its `taken_at` shows, a session to the month its `started_at` shows.
 
           ## Conventions
 
@@ -89,6 +91,21 @@ public static class SugaryReadme
 
           A dose saved together with its meal carries the meal's time unless she changed it, so a gap of
           zero minutes between the two is not a measurement of when she injected.
+
+          ## exercise/<YYYY-MM>.csv
+
+          Her record of the exercise she did, entered by her as she did it. It is
+          never a basis for suggesting carbs or insulin around exercise.
+
+          - `exercise_id` — the session's identifier.
+          - `started_at` — when she started it, on the same clock as the meals. Started with a tap as she set
+            off, so read it to the quarter hour, not the minute.
+          - `ended_at` — when she stopped it; empty while it is still running.
+          - `minutes` — how long it lasted, worked out from the two times and rounded to the minute; empty
+            while it is still running, which is not zero minutes.
+          - `kind` — what she did: `walk`, `gym`, or `other` for anything else.
+          - `name` — what she called an `other` session (a bike ride, a swim); empty for a walk or the gym.
+          - `note` — what she wrote about it.
 
           ## periods.csv
 
