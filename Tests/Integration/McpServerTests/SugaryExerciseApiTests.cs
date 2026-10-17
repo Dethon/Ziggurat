@@ -30,7 +30,9 @@ public class SugaryExerciseApiTests
             ["note"] = note
         };
 
-    // A time relative to now, for the rules about the future and about a running session.
+    // A time relative to now, for the rules about the future and about a running session. The refusals
+    // are built when the tests are found, not when they run, so a time meant to be in the future is
+    // an hour ahead: a long run must not catch up with it inside the server's few minutes of slack.
     private static string Ago(TimeSpan span) =>
         DateTimeOffset.UtcNow.Subtract(span).ToString("O", CultureInfo.InvariantCulture);
 
@@ -144,12 +146,12 @@ public class SugaryExerciseApiTests
             "A session can be at most 12 hours."
         },
         {
-            "a start in the future", Session(startedAt: Ago(TimeSpan.FromMinutes(-10)), endedAt: null),
+            "a start in the future", Session(startedAt: Ago(TimeSpan.FromHours(-1)), endedAt: null),
             "A session can't start or end in the future."
         },
         {
             "an end in the future",
-            Session(startedAt: Ago(TimeSpan.FromMinutes(20)), endedAt: Ago(TimeSpan.FromMinutes(-10))),
+            Session(startedAt: Ago(TimeSpan.FromMinutes(20)), endedAt: Ago(TimeSpan.FromHours(-1))),
             "A session can't start or end in the future."
         }
     };
