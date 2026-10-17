@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { UnitsControl } from "../components/UnitsControl";
 import { doseStart, linkable, MAX_NOTE, MAX_UNITS, readUnits } from "../dose";
+import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
 import { formatTime, formatUnits, toLocalInput } from "../format";
 import { sentence } from "../meal";
@@ -50,22 +51,26 @@ export function DoseSheet({
   const read = readUnits(units);
   // Said once she has typed something, not while the field is still empty.
   const problem = typeof read === "string" && units.trim() !== "" ? t(read, { max: MAX_UNITS }) : null;
+  const values = {
+    takenAt: when ? new Date(when).toISOString() : null,
+    units: read,
+    kind,
+    note: note.trim() || null,
+    mealId: mealId || null,
+  };
+  // A recorded dose is saved again only once something about it changed.
+  const edited = useEdited(values);
+  const ready = typeof read === "number" && !!when && (!dose || edited);
 
   async function save() {
-    if (typeof read !== "number" || !when) {
+    if (!ready || typeof read !== "number" || !when) {
       return;
     }
     setBusy(true);
     setError(null);
-    const values = {
-      takenAt: new Date(when).toISOString(),
-      units: read,
-      kind,
-      note: note.trim() || null,
-      mealId: mealId || null,
-    };
+    const saving = { ...values, units: read, takenAt: new Date(when).toISOString() };
     try {
-      onSaved(await (dose ? api.updateDose(dose.id, values) : api.createDose(values)));
+      onSaved(await (dose ? api.updateDose(dose.id, saving) : api.createDose(saving)));
     } catch (failure) {
       setError(errorMessage(failure, t, "save"));
       setBusy(false);
@@ -81,7 +86,7 @@ export function DoseSheet({
           type="submit"
           form={formId}
           className="button button-primary button-big"
-          disabled={busy || typeof read !== "number" || !when}
+          disabled={busy || !ready}
         >
           {t("saveDose")}
         </button>

@@ -6,6 +6,7 @@ import { Icon, type IconName } from "../components/Icon";
 import { Jar } from "../components/Illustrations";
 import { ShareChips } from "../components/ShareChips";
 import { Sheet } from "../components/Sheet";
+import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
 import { search } from "../foods";
 import { useSettings } from "../settings";
@@ -270,19 +271,19 @@ export function FoodSheet({
     }
   }
 
-  const save = () => {
-    const next: SaveFood = {
-      name: name.trim(),
-      carbsPer100g: byWeight ? per100 : null,
-      unit: byWeight ? unit : "g",
-      portionGrams: byWeight ? usual : null,
-      portionCarbs: byWeight ? null : fixed,
-      barcode: food?.barcode ?? null,
-      // Numbers she typed or changed are hers; an untouched label or barcode entry keeps its origin.
-      source: food !== null && byWeight && per100 === food.carbsPer100g ? food.source : "manual",
-    };
-    return run(() => (food ? api.updateFood(food.id, next) : api.createFood(next)));
+  const next: SaveFood = {
+    name: name.trim(),
+    carbsPer100g: byWeight ? per100 : null,
+    unit: byWeight ? unit : "g",
+    portionGrams: byWeight ? usual : null,
+    portionCarbs: byWeight ? null : fixed,
+    barcode: food?.barcode ?? null,
+    // Numbers she typed or changed are hers; an untouched label or barcode entry keeps its origin.
+    source: food !== null && byWeight && per100 === food.carbsPer100g ? food.source : "manual",
   };
+  // One of hers is saved again only once something about it changed.
+  const edited = useEdited(next);
+  const save = () => run(() => (food ? api.updateFood(food.id, next) : api.createFood(next)));
 
   return (
     <Sheet
@@ -290,7 +291,7 @@ export function FoodSheet({
       onClose={onClose}
       onBack={onBack}
       footer={
-        <button type="submit" form={formId} className="button button-primary button-big" disabled={busy || !valid}>
+        <button type="submit" form={formId} className="button button-primary button-big" disabled={busy || !valid || (food !== null && !edited)}>
           {t("foodSave")}
         </button>
       }

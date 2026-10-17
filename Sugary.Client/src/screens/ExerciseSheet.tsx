@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import { api } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
+import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
 import { duration, endFrom, endsLater, EXERCISE_ICON, MAX_MINUTES, MAX_NAME, MAX_NOTE, readMinutes, sessionMinutes } from "../exercise";
 import { toLocalInput } from "../format";
@@ -59,7 +60,19 @@ export function ExerciseSheet({
   const later = typeof read === "number" && startedAt !== null && endsLater(startedAt, read);
   const minutesProblem =
     typeof read === "string" && minutes.trim() !== "" ? t(read, { max: MAX_MINUTES }) : later ? t("exerciseEndsLater") : null;
-  const ready = named && !busy && (starting || (startedAt !== null && (keepsRunning || (typeof read === "number" && !later))));
+  // What a recorded session would be saved as now: one is saved again only once that changed.
+  const edited = useEdited({
+    kind,
+    name: kind === "other" ? name.trim() : null,
+    startedAt,
+    endedAt: typeof read === "number" && startedAt !== null ? endFrom(startedAt, read) : read,
+    note: note.trim() || null,
+  });
+  const ready =
+    named &&
+    !busy &&
+    (!session || edited) &&
+    (starting || (startedAt !== null && (keepsRunning || (typeof read === "number" && !later))));
 
   async function save() {
     if (!ready) {

@@ -705,11 +705,12 @@ function MealSheet({
       toast({ text: t("mealChangesSaved") });
     });
 
-  // Closed with changes not saved, a food halved or a correction taken, it asks before they go.
+  // Save waits for a change; closed with one not saved, a food halved or a correction taken, it
+  // asks before it goes.
+  const unsaved = mealEdited(meal, { items, notes, when, outcome });
   async function leave() {
-    const lose = mealEdited(meal, { items, notes, when, outcome });
     if (
-      !lose ||
+      !unsaved ||
       (await confirm({ title: t("editDiscardTitle"), body: t("editDiscardBody"), confirm: t("editDiscardYes"), cancel: t("editDiscardNo") }))
     ) {
       onClose();
@@ -721,7 +722,7 @@ function MealSheet({
       title={`${sentence(formatDay(new Date(meal.eatenAt), language))} · ${formatTime(meal.eatenAt, language)}`}
       onClose={() => void leave()}
       footer={
-        <button type="button" className="button button-primary button-big" disabled={busy} onClick={save}>
+        <button type="button" className="button button-primary button-big" disabled={busy || !unsaved} onClick={save}>
           {t("saveChanges")}
         </button>
       }

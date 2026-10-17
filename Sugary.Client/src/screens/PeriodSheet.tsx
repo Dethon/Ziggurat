@@ -3,6 +3,7 @@ import { api } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { MAX_PERIOD_DAYS, periodProblem, type PeriodProblem } from "../cycle";
+import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
 import { formatDays } from "../format";
 import type { Language, Translate } from "../i18n";
@@ -45,7 +46,10 @@ export function PeriodSheet({
   const chosenEnd = ongoing ? null : end;
   const others = periods.filter((other) => other.id !== period?.id);
   const problem = start ? periodProblem(start, chosenEnd, today, others) : null;
-  const ready = start !== "" && (ongoing || end !== "") && problem === null;
+  const values = { start, end: chosenEnd };
+  // A recorded period is saved again only once its days changed.
+  const edited = useEdited(values);
+  const ready = start !== "" && (ongoing || end !== "") && problem === null && (!period || edited);
 
   async function save() {
     if (!ready) {
@@ -53,7 +57,6 @@ export function PeriodSheet({
     }
     setBusy(true);
     setError(null);
-    const values = { start, end: chosenEnd };
     try {
       onSaved(await (period ? api.updatePeriod(period.id, values) : api.createPeriod(values)));
     } catch (failure) {
