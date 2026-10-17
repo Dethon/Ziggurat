@@ -20,10 +20,13 @@ public record SaveExerciseRequest(
 // stopping it is sending it again with one.
 public static class ExerciseEndpoints
 {
+    private const int MaxNames = 8;
+
     public static void MapExerciseEndpoints(this IEndpointRouteBuilder api)
     {
         var exercise = api.MapGroup("/exercise");
         exercise.MapGet("/", ListAsync);
+        exercise.MapGet("/names", NamesAsync);
         exercise.MapPost("/", CreateAsync);
         exercise.MapPut("/{id:guid}", ReplaceAsync);
         exercise.MapDelete("/{id:guid}", DeleteAsync);
@@ -44,6 +47,18 @@ public static class ExerciseEndpoints
             .Take(Math.Clamp(take, 1, 200))
             .ToListAsync(ct);
         return [.. rows.Select(ToDto)];
+    }
+
+    // What she called her other sessions, each once and the latest first, for Otro to offer back:
+    // the page of sessions the Log holds forgets a name once its sessions scroll off.
+    private static async Task<IReadOnlyList<string>> NamesAsync(SugaryDbContext db, CancellationToken ct)
+    {
+        var named = await db.ExerciseSessions.AsNoTracking()
+            .Where(e => e.Kind == ExerciseKind.Other && e.Name != null)
+            .OrderByDescending(e => e.StartedAt)
+            .Select(e => e.Name!)
+            .ToListAsync(ct);
+        return [.. named.Distinct().Take(MaxNames)];
     }
 
     private static async Task<IResult> CreateAsync(

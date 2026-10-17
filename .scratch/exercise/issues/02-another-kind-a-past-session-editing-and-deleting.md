@@ -11,9 +11,9 @@ toast; a session left running past twelve hours is stopped there by saying when 
 
 Spec: `.scratch/exercise/spec.md`
 
-- [ ] `GET /api/exercise/names` answers the names of her `other` sessions, each once, most recently used first, at most eight, behind the access gate.
-- [ ] Otro opens a sheet with a name field and her earlier names as chips; Start starts the session as the shortcuts do.
-- [ ] Add a past session opens the sheet with the kind, a start an hour ago, minutes empty (never prefilled) and a note; the minutes read as she typed them give the end (vitest), and a refusal says why.
-- [ ] A session opened from its row or the running card can change its kind, name, start, minutes and note; a running one can be given its end there.
-- [ ] Deleting a session is undone from the toast, saved again with every value she recorded (vitest on the restored session).
-- [ ] Every new string is in English and Spanish.
+- [x] `GET /api/exercise/names` answers the names of her `other` sessions, each once, most recently used first, at most eight, behind the access gate.
+- [x] Otro opens a sheet with a name field and her earlier names as chips; Start starts the session as the shortcuts do.
+- [x] Add a past session opens the sheet with the kind, a start an hour ago, minutes empty (never prefilled) and a note; the minutes read as she typed them give the end (vitest), and a refusal says why.
+- [x] A session opened from its row or the running card can change its kind, name, start, minutes and note; a running one can be given its end there.
+- [x] Deleting a session is undone from the toast, saved again with every value she recorded (vitest on the restored session).
+- [x] Every new string is in English and Spanish.

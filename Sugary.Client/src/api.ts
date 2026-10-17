@@ -142,6 +142,8 @@ export const api = {
   createExercise: (session: SaveExercise) => request<Exercise>("/exercise", json("POST", session)),
   updateExercise: (id: string, session: SaveExercise) => request<Exercise>(`/exercise/${id}`, json("PUT", session)),
   deleteExercise: (id: string) => request<void>(`/exercise/${id}`, { method: "DELETE" }),
+  // What she called her other sessions, the latest first, for Otro to offer back.
+  exerciseNames: () => request<string[]>("/exercise/names"),
 
   // All of them, newest first: a few a year, and the forecast reads every one.
   periods: () => request<Period[]>("/periods"),

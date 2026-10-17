@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canStopNow, duration, elapsedMinutes, running, sessionMinutes, startNow } from "./exercise";
+import { canStopNow, duration, elapsedMinutes, endFrom, endsLater, readMinutes, restored, running, sessionMinutes, startNow } from "./exercise";
 import { translator } from "./i18n";
 import type { Exercise } from "./types";
 
@@ -76,5 +76,51 @@ describe("duration", () => {
   it("says hours and minutes past an hour, and hours alone on the hour", () => {
     expect(duration(80, t)).toBe("1 h 20 min");
     expect(duration(120, t)).toBe("2 h");
+  });
+});
+
+describe("readMinutes", () => {
+  it("reads the whole minutes she typed", () => {
+    expect(readMinutes(" 45 ")).toBe(45);
+  });
+
+  it.each([
+    ["", "minutesMissing"],
+    ["cuarenta", "minutesNotANumber"],
+    ["45,5", "minutesNotANumber"],
+    ["0", "minutesAboveZero"],
+    ["721", "minutesAtMost"],
+  ])("says why %j is no length", (text, problem) => {
+    expect(readMinutes(text)).toBe(problem);
+  });
+
+  it("keeps twelve hours, the longest a session can be", () => {
+    expect(readMinutes("720")).toBe(720);
+  });
+});
+
+describe("endFrom", () => {
+  it("ends the session the minutes she typed after its start", () => {
+    expect(endFrom("2026-10-17T09:00:00.000Z", 45)).toBe("2026-10-17T09:45:00.000Z");
+  });
+});
+
+describe("endsLater", () => {
+  it("catches minutes that would end the session after now, past a phone's few minutes of slack", () => {
+    expect(endsLater(minutesAgo(30), 36, now)).toBe(true);
+    expect(endsLater(minutesAgo(30), 34, now)).toBe(false);
+  });
+});
+
+describe("restored", () => {
+  it("saves a deleted session again with every value she recorded", () => {
+    const deleted: Exercise = { ...session("ride", 90, 30, "other"), name: "bici", note: "con Ana" };
+    expect(restored(deleted)).toEqual({
+      kind: "other",
+      name: "bici",
+      startedAt: deleted.startedAt,
+      endedAt: deleted.endedAt,
+      note: "con Ana",
+    });
   });
 });

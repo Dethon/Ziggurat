@@ -23,6 +23,7 @@ public class SugaryAppAccessTests
         { "DELETE", $"/api/doses/{Guid.NewGuid()}" },
         { "GET", "/api/exercise" },
         { "POST", "/api/exercise" },
+        { "GET", "/api/exercise/names" },
         { "PUT", $"/api/exercise/{Guid.NewGuid()}" },
         { "DELETE", $"/api/exercise/{Guid.NewGuid()}" },
         { "GET", "/api/periods" },

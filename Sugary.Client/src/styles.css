@@ -2367,10 +2367,6 @@ h1.marked .icon {
   min-width: 0;
 }
 
-.exercise-too-long {
-  flex: 0 1 9rem;
-  text-align: right;
-}
 
 .exercise-elapsed {
   font-weight: 700;
@@ -2382,4 +2378,31 @@ h1.marked .icon {
   align-items: center;
   gap: var(--space-2);
   flex: none;
+}
+
+.exercise-running-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.exercise-running-row .meal-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.exercise-past {
+  justify-self: start;
+}
+
+.exercise-kinds .segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+}
+
+.exercise-name {
+  display: grid;
+  gap: var(--space-2);
 }

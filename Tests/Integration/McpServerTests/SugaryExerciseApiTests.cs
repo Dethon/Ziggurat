@@ -220,6 +220,29 @@ public class SugaryExerciseApiTests
             .ShouldBe(HttpStatusCode.OK);
     }
 
+    // Otro offers back what she called her other sessions: each name once, the latest first, a
+    // handful, and never a walk's or the gym's.
+    [Fact]
+    public async Task TheNamesOfHerOtherSessions_AreEachOnce_LatestFirst_AtMostEight()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var names = new[] { "bici", "natación", "yoga", "pádel", "baile", "remo", "tenis", "escalada", "golf" };
+        foreach (var (name, day) in names.Select((name, index) => (name, index + 1)))
+        {
+            await client.PostAsJsonAsync("/api/exercise", Session(
+                "other", $"2026-10-{day:00}T09:00:00Z", $"2026-10-{day:00}T10:00:00Z", name));
+        }
+
+        await client.PostAsJsonAsync("/api/exercise", Session("other", "2026-10-12T09:00:00Z", "2026-10-12T10:00:00Z", "bici"));
+        await client.PostAsJsonAsync("/api/exercise", Session("walk", "2026-10-13T09:00:00Z", "2026-10-13T10:00:00Z"));
+
+        var listed = (await client.GetFromJsonAsync<JsonNode>("/api/exercise/names"))!.AsArray()
+            .Select(n => n!.GetValue<string>());
+
+        listed.ShouldBe(["bici", "golf", "escalada", "tenis", "remo", "baile", "pádel", "yoga"]);
+    }
+
     // A session started by mistake is undone by deleting it.
     [Fact]
     public async Task ASession_CanBeDeleted()

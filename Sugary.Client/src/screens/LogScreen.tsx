@@ -6,7 +6,7 @@ import { Icon, type IconName } from "../components/Icon";
 import { CakeStand } from "../components/Illustrations";
 import { Sheet } from "../components/Sheet";
 import { restored } from "../dose";
-import { canStopNow, duration, elapsedMinutes, running, sessionMinutes, startNow } from "../exercise";
+import { canStopNow, duration, elapsedMinutes, EXERCISE_ICON, restored as restoredSession, running, sessionMinutes, startNow } from "../exercise";
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
 import { localDay } from "../cycle";
@@ -15,25 +15,16 @@ import { bindUnits, sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { Dose, Exercise, ExerciseKind, Meal, Outcome, Period } from "../types";
+import type { Dose, Exercise, Meal, Outcome, Period } from "../types";
 import { DoseSheet } from "./DoseSheet";
+import { ExerciseSheet, type ExerciseOpening } from "./ExerciseSheet";
 
 const PAGE = 50;
 const RECORDED: Exclude<Outcome, "unknown">[] = ["low", "inRange", "high"];
-const OUTCOME_ICON: Record<Outcome, IconName> = {
-  low: "arrowDown",
-  inRange: "checkCircle",
-  high: "arrowUp",
-  unknown: "minus",
-};
+const OUTCOME_ICON: Record<Outcome, IconName> = { low: "arrowDown", inRange: "checkCircle", high: "arrowUp", unknown: "minus" };
 
 const names = (meal: Meal) => meal.items.map((item) => sentence(item.name)).join("\u00a0· ");
 const DOSE_ICON = { rapid: "bolt", basal: "clock" } as const;
-export const EXERCISE_ICON: Record<ExerciseKind, IconName> = {
-  walk: "walk",
-  gym: "dumbbell",
-  other: "pulse",
-};
 // The two she does most, a tap each.
 const SHORTCUTS = ["walk", "gym"] as const;
 
@@ -78,6 +69,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   const loaded = useRef<Meal[]>([]);
   const [doses, setDoses] = useState<Dose[]>([]);
   const [sessions, setSessions] = useState<Exercise[]>([]);
+  const [exerciseSheet, setExerciseSheet] = useState<ExerciseOpening | null>(null);
   // Only to mark her period days; the Log reads as it did without them.
   const [periods, setPeriods] = useState<Period[]>([]);
   // The dose sheet: a new dose, one she opened, or closed.
@@ -200,6 +192,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   // would save hours she did not do.
   async function stopExercise(session: Exercise) {
     if (!canStopNow(session)) {
+      setExerciseSheet({ mode: "edit", session });
       return;
     }
     try {
@@ -215,6 +208,28 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
         }),
       });
     } catch (failure) {
+      setError(errorMessage(failure, t, "save"));
+    }
+  }
+
+  const putSession = (session: Exercise) => setSessions((current) => [session, ...current.filter((s) => s.id !== session.id)]);
+
+  // Gone at once; the toast offers it back, saved again with every value she recorded.
+  async function removeExercise(session: Exercise) {
+    try {
+      await api.deleteExercise(session.id);
+      setExerciseSheet(null);
+      setSessions((current) => current.filter((s) => s.id !== session.id));
+      toast({
+        text: t("exerciseDeleted"),
+        action: {
+          label: t("undo"),
+          run: () =>
+            void api.createExercise(restoredSession(session)).then(putSession, (failure) => setError(errorMessage(failure, t, "save"))),
+        },
+      });
+    } catch (failure) {
+      setExerciseSheet(null);
       setError(errorMessage(failure, t, "save"));
     }
   }
@@ -271,7 +286,12 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
 
       {meals !== null &&
         (current ? (
-          <RunningCard session={current} now={now} onStop={() => void stopExercise(current)} />
+          <RunningCard
+            session={current}
+            now={now}
+            onStop={() => void stopExercise(current)}
+            onOpen={() => setExerciseSheet({ mode: "edit", session: current })}
+          />
         ) : (
           <section className="exercise-start" aria-labelledby="exercise-title">
             <h2 id="exercise-title" className="section-title">
@@ -284,7 +304,20 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
                   {t(`exercise_${kind}`)}
                 </button>
               ))}
+              <button type="button" className="chip exercise-chip" aria-haspopup="dialog" onClick={() => setExerciseSheet({ mode: "other" })}>
+                <Icon name={EXERCISE_ICON.other} size={20} />
+                {t("exercise_other")}
+              </button>
             </div>
+            <button
+              type="button"
+              className="button button-quiet button-small exercise-past"
+              aria-haspopup="dialog"
+              onClick={() => setExerciseSheet({ mode: "past" })}
+            >
+              <Icon name="plus" size={18} />
+              {t("exerciseAddPast")}
+            </button>
           </section>
         ))}
 
@@ -363,7 +396,11 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
               if (entry.type === "exercise") {
                 return (
                   <li key={entry.id}>
-                    <ExerciseRow session={entry.session} now={now} />
+                    <ExerciseRow
+                      session={entry.session}
+                      now={now}
+                      onOpen={() => setExerciseSheet({ mode: "edit", session: entry.session })}
+                    />
                   </li>
                 );
               }
@@ -421,6 +458,19 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
         />
       )}
 
+      {exerciseSheet && (
+        <ExerciseSheet
+          opening={exerciseSheet}
+          onClose={() => setExerciseSheet(null)}
+          onSaved={(session, how) => {
+            setExerciseSheet(null);
+            putSession(session);
+            toast({ text: how === "started" ? t("exerciseStarted", { kind: exerciseName(session) }) : t("exerciseSaved") });
+          }}
+          onDelete={(session) => void removeExercise(session)}
+        />
+      )}
+
       {open && (
         <MealSheet
           meal={open}
@@ -474,31 +524,35 @@ function DoseRow({ dose, onOpen }: { dose: Dose; onOpen: () => void }) {
 
 // The session going now, in place of the shortcuts: what it is, since when, the minutes so far and
 // Stop. Past the longest a session can be, it says so instead of offering to stop it now.
-function RunningCard({ session, now, onStop }: { session: Exercise; now: Date; onStop: () => void }) {
+function RunningCard({ session, now, onStop, onOpen }: { session: Exercise; now: Date; onStop: () => void; onOpen: () => void }) {
   const { t, language } = useSettings();
   const name = session.name ?? t(`exercise_${session.kind}`);
   return (
     <section className="card exercise-running" aria-label={`${name} · ${t("exerciseRunning")}`}>
-      <div className="meal-row">
-        <span className="meal-thumb exercise-mark">
-          <Icon name={EXERCISE_ICON[session.kind]} />
-        </span>
-        <span className="item-text">
-          <span className="item-name">{name}</span>
-          <span className="item-meta">
-            {t("exerciseSince", {
-              time: formatTime(session.startedAt, language),
-            })}
-            <span className="exercise-elapsed">{duration(elapsedMinutes(session, now), t)}</span>
+      <div className="exercise-running-row">
+        <button type="button" className="meal-row" aria-haspopup="dialog" onClick={onOpen}>
+          <span className="meal-thumb exercise-mark">
+            <Icon name={EXERCISE_ICON[session.kind]} />
           </span>
-        </span>
+          <span className="item-text">
+            <span className="item-name">{name}</span>
+            <span className="item-meta">
+              {t("exerciseSince", { time: formatTime(session.startedAt, language) })}
+              <span className="exercise-elapsed">
+                {canStopNow(session, now) ? duration(elapsedMinutes(session, now), t) : t("exerciseTooLong")}
+              </span>
+            </span>
+          </span>
+        </button>
         {canStopNow(session, now) ? (
           <button type="button" className="button button-primary exercise-stop" onClick={onStop}>
             <Icon name="stop" size={20} />
             {t("exerciseStop")}
           </button>
         ) : (
-          <span className="muted small exercise-too-long">{t("exerciseTooLong")}</span>
+          <button type="button" className="button button-secondary exercise-stop" aria-haspopup="dialog" onClick={onOpen}>
+            {t("exerciseSetEnd")}
+          </button>
         )}
       </div>
     </section>
@@ -507,11 +561,11 @@ function RunningCard({ session, now, onStop }: { session: Exercise; now: Date; o
 
 // A session in the day: its kind or name, when it started and ended, and how long, or that it is
 // still going.
-function ExerciseRow({ session, now }: { session: Exercise; now: Date }) {
+function ExerciseRow({ session, now, onOpen }: { session: Exercise; now: Date; onOpen: () => void }) {
   const { t, language } = useSettings();
   const minutes = sessionMinutes(session);
   return (
-    <div className="meal-row exercise-row">
+    <button type="button" className="meal-row exercise-row" aria-haspopup="dialog" onClick={onOpen}>
       <span className="meal-thumb exercise-mark">
         <Icon name={EXERCISE_ICON[session.kind]} />
       </span>
@@ -531,7 +585,7 @@ function ExerciseRow({ session, now }: { session: Exercise; now: Date }) {
         <span className="item-grams">{duration(minutes ?? elapsedMinutes(session, now), t)}</span>
         {minutes === null && <span className="item-best">{t("exerciseRunning")}</span>}
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -673,13 +727,7 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
           disabled={busy}
           onClick={async () => {
             const body = meal.doses.length > 0 ? t("deleteBodyDoses") : t("deleteBody");
-            if (
-              await confirm({
-                title: t("deleteTitle"),
-                body,
-                confirm: t("deleteMeal"),
-              })
-            ) {
+            if (await confirm({ title: t("deleteTitle"), body, confirm: t("deleteMeal") })) {
               void run(() => api.deleteMeal(meal.id));
             }
           }}
