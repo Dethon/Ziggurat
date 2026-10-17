@@ -300,8 +300,9 @@ dark-chocolate counter, not an inverted pink.
 ### 4.1 Tokens (one place: `src/tokens.css`, imported first)
 
 All colours, type, space, radius, shadow and motion live as custom properties on `:root`, with the
-dark set in the existing `@media (prefers-color-scheme: dark)` block and `color-scheme: light dark`
-kept. No hex outside `tokens.css` (camera/scanner chrome may use `#000`/`#fff` for the viewfinder
+dark set once under `:root[data-theme="dark"]`: Settings → Appearance offers System, Light and
+Dark (remembered with the other settings), and script resolves it to `data-theme` — `index.html`
+before the first paint, `settings.tsx` after, following the phone live under System. No hex outside `tokens.css` (camera/scanner chrome may use `#000`/`#fff` for the viewfinder
 only).
 
 | Token | Light | Dark | Role |
@@ -428,7 +429,8 @@ sprinkles on numbers or over content, no decorative animation.
 - Manifest: `theme_color` and `background_color` `#FBF5EC` (cream, so the splash and the status
   bar match the light app); `description` "Carb counting from a photo"; icons as above.
 - `index.html`: `<meta name="theme-color" content="#FBF5EC" media="(prefers-color-scheme: light)">`
-  and `content="#1C1310"` for dark; `<link rel="icon" href="/favicon.svg">`.
+  and `content="#1C1310"` for dark (both rewritten to the resolved `--color-bg` once a theme is
+  chosen); `<link rel="icon" href="/favicon.svg">`.
 
 ## 5. Voice
 

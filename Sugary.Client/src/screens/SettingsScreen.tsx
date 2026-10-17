@@ -3,6 +3,7 @@ import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
 import type { Language } from "../i18n";
 import { useSettings, type RationSize } from "../settings";
+import { THEMES } from "../theme";
 
 const EXPORTS = [
   { table: "meals", label: "exportMeals" },
@@ -21,7 +22,7 @@ const LANGUAGES: { code: Language; name: string }[] = [
 ];
 
 export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }) {
-  const { t, rationSize, language, update } = useSettings();
+  const { t, rationSize, language, theme, update } = useSettings();
   const [confirm, confirming] = useConfirm();
 
   return (
@@ -62,6 +63,23 @@ export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }
               onClick={() => update({ language: option.code })}
             >
               {option.name}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="card setting" aria-labelledby="theme-title">
+        <h2 id="theme-title">{t("theme")}</h2>
+        <div className="segmented" role="group" aria-labelledby="theme-title">
+          {THEMES.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={theme === option ? "segment segment-on" : "segment"}
+              aria-pressed={theme === option}
+              onClick={() => update({ theme: option })}
+            >
+              {t(`theme_${option}`)}
             </button>
           ))}
         </div>
