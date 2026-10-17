@@ -1,6 +1,6 @@
 import { covers, localDay } from "./cycle";
 import { plain } from "./foods";
-import type { Dose, LinkedDose, Meal, Period } from "./types";
+import type { Dose, Exercise, LinkedDose, Meal, Period } from "./types";
 
 const HOUR = 3_600_000;
 // Glucose says little about a meal before about two hours, so a meal is asked about from then on.
@@ -35,15 +35,20 @@ export function matches(meal: Meal, query: string): boolean {
   return wanted === "" || meal.items.some((item) => plain(item.name).includes(wanted));
 }
 
-// One row of the Log's day: a meal or a dose, at the instant it happened.
-export type Entry = { type: "meal"; id: string; at: number; meal: Meal } | { type: "dose"; id: string; at: number; dose: Dose };
+// One row of the Log's day: a meal, a dose or a session of exercise, at the instant it happened
+// (a session at its start).
+export type Entry =
+  | { type: "meal"; id: string; at: number; meal: Meal }
+  | { type: "dose"; id: string; at: number; dose: Dose }
+  | { type: "exercise"; id: string; at: number; session: Exercise };
 
-// Meals and doses as one day reads, newest first. A dose taken at the same moment as a meal (one
-// saved with it) comes under it, as the dose taken for it.
-export function timeline(meals: readonly Meal[], doses: readonly Dose[]): Entry[] {
+// Meals, doses and exercise as one day reads, newest first. A dose taken at the same moment as a
+// meal (one saved with it) comes under it, as the dose taken for it.
+export function timeline(meals: readonly Meal[], doses: readonly Dose[], sessions: readonly Exercise[] = []): Entry[] {
   return [
     ...meals.map((meal): Entry => ({ type: "meal", id: meal.id, at: Date.parse(meal.eatenAt), meal })),
     ...doses.map((dose): Entry => ({ type: "dose", id: dose.id, at: Date.parse(dose.takenAt), dose })),
+    ...sessions.map((session): Entry => ({ type: "exercise", id: session.id, at: Date.parse(session.startedAt), session })),
   ].toSorted((a, b) => b.at - a.at || (a.type === b.type ? 0 : a.type === "meal" ? -1 : 1));
 }
 

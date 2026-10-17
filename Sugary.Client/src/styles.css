@@ -2329,3 +2329,57 @@ h1.marked .icon {
   font-weight: 700;
   color: var(--color-period);
 }
+
+/* Exercise: started with a tap, running in a card of its own until stopped, and a row in the day
+   drawn on the counted green, apart from meals' photos and doses' pink. */
+
+.exercise-start {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.exercise-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.exercise-chip .icon,
+.exercise-mark {
+  color: var(--color-good);
+}
+
+.exercise-mark {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--color-counted);
+}
+
+.exercise-running {
+  margin-bottom: var(--space-3);
+  padding-block: 0;
+}
+
+.exercise-running .item-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.exercise-too-long {
+  flex: 0 1 9rem;
+  text-align: right;
+}
+
+.exercise-elapsed {
+  font-weight: 700;
+  color: var(--color-good);
+}
+
+.exercise-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}

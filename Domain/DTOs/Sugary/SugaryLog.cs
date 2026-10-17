@@ -26,6 +26,14 @@ public enum DoseKind
     Basal
 }
 
+// What she did: the two she does most, by their own kinds, and anything else under a name she gives it.
+public enum ExerciseKind
+{
+    Walk,
+    Gym,
+    Other
+}
+
 // How sure the estimate was of one item. Only an estimated item has one.
 public enum ItemConfidence
 {

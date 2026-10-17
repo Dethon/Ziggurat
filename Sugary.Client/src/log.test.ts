@@ -11,7 +11,7 @@ import {
   withDose,
   withoutDose,
 } from "./log";
-import type { Dose, Meal } from "./types";
+import type { Dose, Exercise, Meal } from "./types";
 
 const now = new Date("2026-10-15T20:00:00Z");
 const meal = (id: string, hoursAgo: number, outcome: Meal["outcome"] = "unknown", names = ["toast"]): Meal => ({
@@ -92,6 +92,15 @@ describe("timeline", () => {
     const lunch = meal("lunch", 6);
     const withIt = { ...dose("bolus", 0), takenAt: lunch.eatenAt };
     expect(timeline([lunch], [withIt]).map((entry) => entry.id)).toEqual(["lunch", "bolus"]);
+  });
+
+  it("puts her exercise among them by when it started, a running session too", () => {
+    const at = (hoursAgo: number) => new Date(now.getTime() - hoursAgo * 3_600_000).toISOString();
+    const walk: Exercise = { id: "walk", kind: "walk", name: null, startedAt: at(5), endedAt: at(4), note: null };
+    const gym: Exercise = { id: "gym", kind: "gym", name: null, startedAt: at(1), endedAt: null, note: null };
+    const entries = timeline([meal("lunch", 6)], [dose("basal", 2, "basal")], [walk, gym]);
+    expect(entries.map((entry) => entry.id)).toEqual(["gym", "basal", "walk", "lunch"]);
+    expect(entries.map((entry) => entry.type)).toEqual(["exercise", "dose", "exercise", "meal"]);
   });
 
   it("orders by the instant, whatever offset each time was written with", () => {

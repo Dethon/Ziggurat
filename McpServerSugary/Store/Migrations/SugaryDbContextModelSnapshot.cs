@@ -62,6 +62,35 @@ namespace McpServerSugary.Store.Migrations
                     b.ToTable("Doses");
                 });
 
+            modelBuilder.Entity("McpServerSugary.Store.ExerciseSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("EndedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StartedAt");
+
+                    b.ToTable("ExerciseSessions");
+                });
+
             modelBuilder.Entity("McpServerSugary.Store.Food", b =>
                 {
                     b.Property<Guid>("Id")

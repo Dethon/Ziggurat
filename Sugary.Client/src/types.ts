@@ -122,6 +122,21 @@ export interface Dose {
 
 export type SaveDose = Omit<Dose, "id">;
 
+export type ExerciseKind = "walk" | "gym" | "other";
+
+// A session of exercise: a walk, the gym, or another kind she named, with no end while it runs.
+export interface Exercise {
+  id: string;
+  kind: ExerciseKind;
+  // Only another kind has one.
+  name: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  note: string | null;
+}
+
+export type SaveExercise = Omit<Exercise, "id">;
+
 // A period as she recorded it: the day it started and the day it ended, both yyyy-MM-dd on her
 // calendar, with no end while it is going.
 export interface Period {

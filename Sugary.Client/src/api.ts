@@ -1,12 +1,14 @@
 import type {
   DayNote,
   Dose,
+  Exercise,
   Food,
   Meal,
   MealEstimate,
   PackagedFood,
   Period,
   SaveDose,
+  SaveExercise,
   SaveFood,
   SaveMeal,
   SavePeriod,
@@ -81,7 +83,8 @@ export function estimateForm(input: EstimateInput): FormData {
   return form;
 }
 
-const DOSE_PAGE = 200;
+// The most the server answers in one page of doses or sessions.
+const RECORD_PAGE = 200;
 
 export const api = {
   session: () => request<SessionState>("/session"),
@@ -106,7 +109,7 @@ export const api = {
   deleteMeal: (id: string) => request<void>(`/meals/${id}`, { method: "DELETE" }),
   photoUrl: (id: string) => `/api/meals/${id}/photo`,
 
-  doses: (from: string | null, skip = 0, take = DOSE_PAGE) =>
+  doses: (from: string | null, skip = 0, take = RECORD_PAGE) =>
     request<Dose[]>(`/doses?skip=${skip}&take=${take}${from ? `&from=${encodeURIComponent(from)}` : ""}`),
   // Every dose since from (all of them, with none), newest first, a page at a time.
   async allDoses(from: string | null): Promise<Dose[]> {
@@ -114,7 +117,7 @@ export const api = {
     for (;;) {
       const page = await api.doses(from, doses.length);
       doses.push(...page);
-      if (page.length < DOSE_PAGE) {
+      if (page.length < RECORD_PAGE) {
         return doses;
       }
     }
@@ -122,6 +125,23 @@ export const api = {
   createDose: (dose: SaveDose) => request<Dose>("/doses", json("POST", dose)),
   updateDose: (id: string, dose: SaveDose) => request<Dose>(`/doses/${id}`, json("PUT", dose)),
   deleteDose: (id: string) => request<void>(`/doses/${id}`, { method: "DELETE" }),
+
+  exercise: (from: string | null, skip = 0, take = RECORD_PAGE) =>
+    request<Exercise[]>(`/exercise?skip=${skip}&take=${take}${from ? `&from=${encodeURIComponent(from)}` : ""}`),
+  // Every session started since from (all of them, with none), newest first, a page at a time.
+  async allExercise(from: string | null): Promise<Exercise[]> {
+    const sessions: Exercise[] = [];
+    for (;;) {
+      const page = await api.exercise(from, sessions.length);
+      sessions.push(...page);
+      if (page.length < RECORD_PAGE) {
+        return sessions;
+      }
+    }
+  },
+  createExercise: (session: SaveExercise) => request<Exercise>("/exercise", json("POST", session)),
+  updateExercise: (id: string, session: SaveExercise) => request<Exercise>(`/exercise/${id}`, json("PUT", session)),
+  deleteExercise: (id: string) => request<void>(`/exercise/${id}`, { method: "DELETE" }),
 
   // All of them, newest first: a few a year, and the forecast reads every one.
   periods: () => request<Period[]>("/periods"),

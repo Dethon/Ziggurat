@@ -4,13 +4,14 @@ using Microsoft.EntityFrameworkCore.Design;
 namespace McpServerSugary.Store;
 
 // The log is meant to be read by other tools next to glucose data, so it is plain tables with
-// plain columns: one row per meal, one row per item, one row per dose, one row per period, one row per noted day, enums,
+// plain columns: one row per meal, one row per item, one row per dose, one row per session of exercise, one row per period, one row per noted day, enums,
 // times and days as readable text.
 public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbContext(options)
 {
     public DbSet<Meal> Meals => Set<Meal>();
     public DbSet<Food> Foods => Set<Food>();
     public DbSet<Dose> Doses => Set<Dose>();
+    public DbSet<ExerciseSession> ExerciseSessions => Set<ExerciseSession>();
     public DbSet<Period> Periods => Set<Period>();
     public DbSet<DayNote> DayNotes => Set<DayNote>();
 
@@ -56,6 +57,16 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
         dose.HasIndex(d => d.TakenAt);
         dose.Property(d => d.Kind).HasConversion<string>();
         dose.HasIndex(d => d.MealId);
+
+        var exercise = modelBuilder.Entity<ExerciseSession>();
+        exercise.Property(e => e.StartedAt).HasConversion(
+            value => value.UtcDateTime,
+            stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
+        exercise.Property(e => e.EndedAt).HasConversion(
+            value => value.HasValue ? value.Value.UtcDateTime : (DateTime?)null,
+            stored => stored.HasValue ? new DateTimeOffset(DateTime.SpecifyKind(stored.Value, DateTimeKind.Utc)) : null);
+        exercise.HasIndex(e => e.StartedAt);
+        exercise.Property(e => e.Kind).HasConversion<string>();
 
         // A day is stored as yyyy-MM-dd text, which sorts as days do.
         modelBuilder.Entity<Period>().HasIndex(p => p.Start);

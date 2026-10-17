@@ -6,6 +6,7 @@ import { Icon, type IconName } from "../components/Icon";
 import { CakeStand } from "../components/Illustrations";
 import { Sheet } from "../components/Sheet";
 import { restored } from "../dose";
+import { canStopNow, duration, elapsedMinutes, running, sessionMinutes, startNow } from "../exercise";
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
 import { localDay } from "../cycle";
@@ -14,15 +15,27 @@ import { bindUnits, sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { Dose, Meal, Outcome, Period } from "../types";
+import type { Dose, Exercise, ExerciseKind, Meal, Outcome, Period } from "../types";
 import { DoseSheet } from "./DoseSheet";
 
 const PAGE = 50;
 const RECORDED: Exclude<Outcome, "unknown">[] = ["low", "inRange", "high"];
-const OUTCOME_ICON: Record<Outcome, IconName> = { low: "arrowDown", inRange: "checkCircle", high: "arrowUp", unknown: "minus" };
+const OUTCOME_ICON: Record<Outcome, IconName> = {
+  low: "arrowDown",
+  inRange: "checkCircle",
+  high: "arrowUp",
+  unknown: "minus",
+};
 
 const names = (meal: Meal) => meal.items.map((item) => sentence(item.name)).join("\u00a0· ");
 const DOSE_ICON = { rapid: "bolt", basal: "clock" } as const;
+export const EXERCISE_ICON: Record<ExerciseKind, IconName> = {
+  walk: "walk",
+  gym: "dumbbell",
+  other: "pulse",
+};
+// The two she does most, a tap each.
+const SHORTCUTS = ["walk", "gym"] as const;
 
 // The start of the phone's day a meal was eaten on, so the doses of that whole day are shown with it.
 function startOfDay(iso: string): string {
@@ -64,6 +77,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   const [meals, setMeals] = useState<Meal[] | null>(null);
   const loaded = useRef<Meal[]>([]);
   const [doses, setDoses] = useState<Dose[]>([]);
+  const [sessions, setSessions] = useState<Exercise[]>([]);
   // Only to mark her period days; the Log reads as it did without them.
   const [periods, setPeriods] = useState<Period[]>([]);
   // The dose sheet: a new dose, one she opened, or closed.
@@ -82,10 +96,12 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
         const hasMore = page.length === PAGE;
         // The doses of the days the loaded meals span, and every dose once there are no older meals.
         const oldest = all.at(-1);
-        const taken = await api.allDoses(hasMore && oldest ? startOfDay(oldest.eatenAt) : null);
+        const since = hasMore && oldest ? startOfDay(oldest.eatenAt) : null;
+        const [taken, done] = await Promise.all([api.allDoses(since), api.allExercise(since)]);
         loaded.current = all;
         setMeals(all);
         setDoses(taken);
+        setSessions(done);
         setMore(hasMore);
         setError(null);
       } catch (failure) {
@@ -159,6 +175,53 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
     }
   }
 
+  // One tap starts it, with nothing asked; the toast takes it back.
+  async function startExercise(kind: (typeof SHORTCUTS)[number]) {
+    try {
+      const started = await api.createExercise(startNow(kind));
+      setSessions((current) => [started, ...current]);
+      toast({
+        text: t("exerciseStarted", { kind: exerciseName(started) }),
+        action: {
+          label: t("undo"),
+          run: () =>
+            void api.deleteExercise(started.id).then(
+              () => setSessions((current) => current.filter((s) => s.id !== started.id)),
+              (failure) => setError(errorMessage(failure, t, "save")),
+            ),
+        },
+      });
+    } catch (failure) {
+      setError(errorMessage(failure, t, "save"));
+    }
+  }
+
+  // One tap ends it now. A session left running past the longest one can be is not ended now: that
+  // would save hours she did not do.
+  async function stopExercise(session: Exercise) {
+    if (!canStopNow(session)) {
+      return;
+    }
+    try {
+      const stopped = await api.updateExercise(session.id, {
+        ...session,
+        endedAt: new Date().toISOString(),
+      });
+      setSessions((current) => current.map((s) => (s.id === stopped.id ? stopped : s)));
+      toast({
+        text: t("exerciseStopped", {
+          kind: exerciseName(stopped),
+          duration: duration(sessionMinutes(stopped) ?? 0, t),
+        }),
+      });
+    } catch (failure) {
+      setError(errorMessage(failure, t, "save"));
+    }
+  }
+
+  const exerciseName = (session: Exercise) => session.name ?? t(`exercise_${session.kind}`);
+  const current = running(sessions);
+
   function dayLabel(date: Date): string {
     const today = new Date();
     const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
@@ -175,8 +238,8 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
   const shown = (meals ?? []).filter((meal) => matches(meal, query));
   const pending = searching ? [] : pendingOutcomes(meals ?? [], now);
   // A search looks through meals by their foods; doses have none, so they step aside while it runs.
-  const days = byDay(timeline(shown, searching ? [] : doses));
-  const empty = meals?.length === 0 && doses.length === 0;
+  const days = byDay(timeline(shown, searching ? [] : doses, searching ? [] : sessions));
+  const empty = meals?.length === 0 && doses.length === 0 && sessions.length === 0;
 
   return (
     <div className="screen">
@@ -205,6 +268,25 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
           <Icon name="plus" size={20} />
         </button>
       )}
+
+      {meals !== null &&
+        (current ? (
+          <RunningCard session={current} now={now} onStop={() => void stopExercise(current)} />
+        ) : (
+          <section className="exercise-start" aria-labelledby="exercise-title">
+            <h2 id="exercise-title" className="section-title">
+              {t("exerciseTitle")}
+            </h2>
+            <div className="chips" role="group" aria-label={t("exerciseStartGroup")}>
+              {SHORTCUTS.map((kind) => (
+                <button key={kind} type="button" className="chip exercise-chip" onClick={() => void startExercise(kind)}>
+                  <Icon name={EXERCISE_ICON[kind]} size={20} />
+                  {t(`exercise_${kind}`)}
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
 
       {meals !== null && meals.length > 0 && (
         <label className="search">
@@ -278,6 +360,13 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
           </header>
           <ul className="card meals">
             {day.entries.map((entry) => {
+              if (entry.type === "exercise") {
+                return (
+                  <li key={entry.id}>
+                    <ExerciseRow session={entry.session} now={now} />
+                  </li>
+                );
+              }
               if (entry.type === "dose") {
                 return (
                   <li key={entry.id}>
@@ -380,6 +469,69 @@ function DoseRow({ dose, onOpen }: { dose: Dose; onOpen: () => void }) {
         </span>
       </span>
     </button>
+  );
+}
+
+// The session going now, in place of the shortcuts: what it is, since when, the minutes so far and
+// Stop. Past the longest a session can be, it says so instead of offering to stop it now.
+function RunningCard({ session, now, onStop }: { session: Exercise; now: Date; onStop: () => void }) {
+  const { t, language } = useSettings();
+  const name = session.name ?? t(`exercise_${session.kind}`);
+  return (
+    <section className="card exercise-running" aria-label={`${name} · ${t("exerciseRunning")}`}>
+      <div className="meal-row">
+        <span className="meal-thumb exercise-mark">
+          <Icon name={EXERCISE_ICON[session.kind]} />
+        </span>
+        <span className="item-text">
+          <span className="item-name">{name}</span>
+          <span className="item-meta">
+            {t("exerciseSince", {
+              time: formatTime(session.startedAt, language),
+            })}
+            <span className="exercise-elapsed">{duration(elapsedMinutes(session, now), t)}</span>
+          </span>
+        </span>
+        {canStopNow(session, now) ? (
+          <button type="button" className="button button-primary exercise-stop" onClick={onStop}>
+            <Icon name="stop" size={20} />
+            {t("exerciseStop")}
+          </button>
+        ) : (
+          <span className="muted small exercise-too-long">{t("exerciseTooLong")}</span>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// A session in the day: its kind or name, when it started and ended, and how long, or that it is
+// still going.
+function ExerciseRow({ session, now }: { session: Exercise; now: Date }) {
+  const { t, language } = useSettings();
+  const minutes = sessionMinutes(session);
+  return (
+    <div className="meal-row exercise-row">
+      <span className="meal-thumb exercise-mark">
+        <Icon name={EXERCISE_ICON[session.kind]} />
+      </span>
+      <span className="item-text">
+        <span className="item-name">{session.name ?? t(`exercise_${session.kind}`)}</span>
+        <span className="item-meta">
+          {session.endedAt === null
+            ? formatTime(session.startedAt, language)
+            : t("exerciseRange", {
+                start: formatTime(session.startedAt, language),
+                end: formatTime(session.endedAt, language),
+              })}
+          {session.note && <span className="dose-note">{session.note}</span>}
+        </span>
+      </span>
+      <span className="item-carbs">
+        <span className="item-grams">{duration(minutes ?? elapsedMinutes(session, now), t)}</span>
+        {minutes === null && <span className="item-best">{t("exerciseRunning")}</span>}
+      </span>
+    </div>
   );
 }
 
@@ -521,7 +673,13 @@ function MealSheet({ meal, onClose, onChanged }: { meal: Meal; onClose: () => vo
           disabled={busy}
           onClick={async () => {
             const body = meal.doses.length > 0 ? t("deleteBodyDoses") : t("deleteBody");
-            if (await confirm({ title: t("deleteTitle"), body, confirm: t("deleteMeal") })) {
+            if (
+              await confirm({
+                title: t("deleteTitle"),
+                body,
+                confirm: t("deleteMeal"),
+              })
+            ) {
               void run(() => api.deleteMeal(meal.id));
             }
           }}

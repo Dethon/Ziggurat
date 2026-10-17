@@ -12,7 +12,6 @@ toast; a session left running past twelve hours is stopped there by saying when 
 Spec: `.scratch/exercise/spec.md`
 
 - [ ] `GET /api/exercise/names` answers the names of her `other` sessions, each once, most recently used first, at most eight, behind the access gate.
-- [ ] `DELETE /api/exercise/{id}` deletes a session, and an unknown one is not found.
 - [ ] Otro opens a sheet with a name field and her earlier names as chips; Start starts the session as the shortcuts do.
 - [ ] Add a past session opens the sheet with the kind, a start an hour ago, minutes empty (never prefilled) and a note; the minutes read as she typed them give the end (vitest), and a refusal says why.
 - [ ] A session opened from its row or the running card can change its kind, name, start, minutes and note; a running one can be given its end there.

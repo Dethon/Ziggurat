@@ -79,6 +79,18 @@ public class Dose
     public string? Note { get; set; }
     public Guid? MealId { get; set; }
 }
+// A session of exercise: a walk, the gym or another kind she named, from when she started it to
+// when she stopped it, with no end while it is running. Instants, as a meal's and a dose's are, so
+// it lines up with her glucose by the hour.
+public class ExerciseSession
+{
+    public Guid Id { get; set; }
+    public ExerciseKind Kind { get; set; }
+    public string? Name { get; set; }
+    public DateTimeOffset StartedAt { get; set; }
+    public DateTimeOffset? EndedAt { get; set; }
+    public string? Note { get; set; }
+}
 // A period, as the days she recorded it on: the day it started and the day it ended, with no end
 // while it is still going. Days on her calendar, not instants, so a reader in any zone sees the
 // same days she lived.
