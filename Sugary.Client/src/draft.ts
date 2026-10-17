@@ -93,19 +93,23 @@ export function reduce(draft: Draft, action: DraftAction): Draft {
   }
 }
 
+// An amount she set on an estimated food, as the fact the model is told.
+export function editFact(item: DraftItem): string {
+  return item.grams !== null
+    ? `Correction: "${item.name}" weighs ${formatGrams(item.grams)} g.`
+    : `Correction: "${item.name}" has ${formatGrams(item.carbs)} g of carbs.`;
+}
+
+export const answerLines = (answers: Record<string, string>) =>
+  Object.entries(answers).map(([question, answer]) => `Q: ${question}\nA: ${answer}`);
+
 // Everything the person has told us since the first estimate, phrased as facts for the model
 // so that asking again builds on their corrections instead of undoing them.
 export function clarifications(draft: Draft): string {
-  const edits = draft.items
-    .filter((item) => item.source === "estimate" && item.edited)
-    .map((item) =>
-      item.grams !== null
-        ? `"${item.name}" weighs ${formatGrams(item.grams)} g.`
-        : `"${item.name}" has ${formatGrams(item.carbs)} g of carbs.`,
-    );
+  const edits = draft.items.filter((item) => item.source === "estimate" && item.edited).map(editFact);
   return [
-    ...Object.entries(draft.answers).map(([question, answer]) => `Q: ${question}\nA: ${answer}`),
-    ...edits.map((edit) => `Correction: ${edit}`),
+    ...answerLines(draft.answers),
+    ...edits,
     ...draft.removed.map((name) => `Correction: the person is not eating "${name}".`),
     ...draft.corrections.map((text) => `Correction: ${text}`),
   ].join("\n");
@@ -114,11 +118,11 @@ export function clarifications(draft: Draft): string {
 // What the person added themselves, from a label, a barcode, their own foods or by hand. The
 // model is told so that a photo showing the same food does not count it a second time.
 export function counted(draft: Draft): string {
-  return draft.items
-    .filter((item) => item.source !== "estimate")
-    .map((item) => `- ${[item.name, item.portion].filter(Boolean).join(", ")}: ${formatGrams(item.carbs)} g of carbs`)
-    .join("\n");
+  return countedLines(draft.items.filter((item) => item.source !== "estimate"));
 }
+
+export const countedLines = (items: readonly DraftItem[]) =>
+  items.map((item) => `- ${[item.name, item.portion].filter(Boolean).join(", ")}: ${formatGrams(item.carbs)} g of carbs`).join("\n");
 
 const STORAGE_KEY = "sugary.draft";
 

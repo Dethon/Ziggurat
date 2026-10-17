@@ -108,6 +108,14 @@ export const api = {
   updateMeal: (id: string, meal: SaveMeal) => request<Meal>(`/meals/${id}`, json("PUT", meal)),
   deleteMeal: (id: string) => request<void>(`/meals/${id}`, { method: "DELETE" }),
   photoUrl: (id: string) => `/api/meals/${id}/photo`,
+  // The photo kept with a meal, to send with a correction of it.
+  async mealPhoto(id: string): Promise<Blob> {
+    const response = await fetch(`/api/meals/${id}/photo`, { credentials: "same-origin" });
+    if (!response.ok) {
+      throw new ApiError(response.status, "");
+    }
+    return response.blob();
+  },
 
   doses: (from: string | null, skip = 0, take = RECORD_PAGE) =>
     request<Dose[]>(`/doses?skip=${skip}&take=${take}${from ? `&from=${encodeURIComponent(from)}` : ""}`),

@@ -23,6 +23,8 @@ import { ExerciseSheet, type ExerciseOpening } from "./ExerciseSheet";
 import { FoodsSheet } from "./FoodsSheet";
 import { ManualSheet } from "./ManualSheet";
 import { PackagedSheet } from "./PackagedSheet";
+import { ReviseSheet } from "./ReviseSheet";
+import type { Revision } from "../revise";
 
 const PAGE = 50;
 const RECORDED: Exclude<Outcome, "unknown">[] = ["low", "inRange", "high"];
@@ -67,8 +69,9 @@ export function OutcomeBadge({ meal }: { meal: Meal }) {
   );
 }
 
-// `labels` says whether the server reads a label yet, as on the meal screen.
-export function LogScreen({ labels, onChanged }: { labels: boolean; onChanged: () => void }) {
+// `estimates` and `labels` say whether the server estimates a meal and reads a label yet, as on the
+// meal screen.
+export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean; labels: boolean; onChanged: () => void }) {
   const { t, language, rationSize } = useSettings();
   const toast = useToast();
   const [meals, setMeals] = useState<Meal[] | null>(null);
@@ -500,6 +503,7 @@ export function LogScreen({ labels, onChanged }: { labels: boolean; onChanged: (
       {open && (
         <MealSheet
           meal={open}
+          estimates={estimates}
           labels={labels}
           meals={meals ?? []}
           doses={doses}
@@ -632,6 +636,7 @@ function Thumb({ meal }: { meal: Meal }) {
 
 function MealSheet({
   meal,
+  estimates,
   labels,
   meals,
   doses,
@@ -641,6 +646,7 @@ function MealSheet({
   onChanged,
 }: {
   meal: Meal;
+  estimates: boolean;
   labels: boolean;
   meals: readonly Meal[];
   doses: readonly Dose[];
@@ -665,6 +671,8 @@ function MealSheet({
   const [editing, setEditing] = useState<string | null>(null);
   // Where a food she forgot is being added from, or none.
   const [adding, setAdding] = useState<"foods" | "packaged" | "manual" | null>(null);
+  // The model asked about the meal again, and what about.
+  const [revising, setRevising] = useState<Revision | null>(null);
   const add = (item: DraftItem) => {
     setItems((current) => [...current, item]);
     setAdding(null);
@@ -785,6 +793,13 @@ function MealSheet({
           </button>
         </section>
 
+        {estimates && items.some((item) => item.source === "estimate") && (
+          <button type="button" className="row-button" aria-haspopup="dialog" onClick={() => setRevising({ kind: "meal" })}>
+            <Icon name="pencil" size={20} />
+            <span>{t("correctionToggle")}</span>
+            <Icon name="chevronRight" size={20} />
+          </button>
+        )}
         {/* Each food opens to change how much she had, as it does before the meal is saved. */}
         <ul className="items">
           {items.map((item) => (
@@ -796,6 +811,13 @@ function MealSheet({
           <h3 id="meal-add-title" className="field-label">
             {t("addMore")}
           </h3>
+          {estimates && (
+            <button type="button" className="row-button" aria-haspopup="dialog" onClick={() => setRevising({ kind: "add" })}>
+              <Icon name="camera" size={20} />
+              <span>{t("reviseAdd")}</span>
+              <Icon name="chevronRight" size={20} />
+            </button>
+          )}
           <div className="tiles">
             <button type="button" className="tile" aria-haspopup="dialog" onClick={() => setAdding("foods")}>
               <Icon name="jar" size={26} />
@@ -862,7 +884,21 @@ function MealSheet({
                 }
               : undefined
           }
+          onAsk={estimates ? () => setRevising({ kind: "food", id: editingItem.id }) : undefined}
           onClose={() => setEditing(null)}
+        />
+      )}
+      {revising && (
+        <ReviseSheet
+          revision={revising}
+          meal={meal}
+          items={items}
+          onApply={(next) => {
+            setItems(next);
+            setRevising(null);
+            setEditing(null);
+          }}
+          onClose={() => setRevising(null)}
         />
       )}
       {adding === "foods" && <FoodsSheet onClose={() => setAdding(null)} onAdd={add} />}

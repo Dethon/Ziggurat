@@ -26,12 +26,21 @@ export async function estimateDraft(
     language,
     conversationId: null,
   };
-  if (!draft.conversation) {
+  return continued(fresh, draft.conversation ?? null, send);
+}
+
+// The next turn of a conversation still open, or the estimate made afresh when it is not.
+export async function continued(
+  fresh: EstimateInput,
+  conversation: string | null,
+  send: (input: EstimateInput) => Promise<MealEstimate>,
+): Promise<MealEstimate> {
+  if (!conversation) {
     return send(fresh);
   }
 
   try {
-    return await send({ ...fresh, photos: [], clip: null, description: "", conversationId: draft.conversation });
+    return await send({ ...fresh, photos: [], clip: null, description: "", conversationId: conversation });
   } catch (failure) {
     if (failure instanceof ApiError && failure.status === 410) {
       return send(fresh);

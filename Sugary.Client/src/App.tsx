@@ -97,7 +97,7 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
             }}
           />
         </div>
-        {tab === "log" && <LogScreen labels={session.labels} onChanged={() => void refreshPending()} />}
+        {tab === "log" && <LogScreen estimates={session.estimates} labels={session.labels} onChanged={() => void refreshPending()} />}
         {tab === "cycle" && <CycleScreen />}
         {tab === "foods" && (
           <FoodsScreen

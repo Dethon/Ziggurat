@@ -12,16 +12,19 @@ const GRAM_STEP = 10;
 
 // One food's amount, changed with the thumb: a big stepper, a few shares of the amount it opened
 // with, or its carbs typed straight in. Every change applies at once; Done only closes. Without
-// onRemove it cannot be taken out, as the one food a logged meal has left.
+// onRemove it cannot be taken out, as the one food a logged meal has left; with onAsk she can tell the
+// model what was off about it.
 export function PortionSheet({
   item,
   onChange,
   onRemove,
+  onAsk,
   onClose,
 }: {
   item: DraftItem;
   onChange: (item: DraftItem) => void;
   onRemove?: () => void;
+  onAsk?: () => void;
   onClose: () => void;
 }) {
   const { t } = useSettings();
@@ -104,6 +107,13 @@ export function PortionSheet({
             label={t("carbs")}
             onPick={(carbs) => onChange(withCarbs(item, carbs))}
           />
+        )}
+        {onAsk && (
+          <button type="button" className="row-button" aria-haspopup="dialog" onClick={onAsk}>
+            <Icon name="pencil" size={20} />
+            <span>{t("reviseFood")}</span>
+            <Icon name="chevronRight" size={20} />
+          </button>
         )}
       </div>
     </Sheet>
