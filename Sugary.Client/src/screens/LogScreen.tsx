@@ -17,9 +17,12 @@ import { sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
-import type { Dose, Exercise, Meal, Outcome, Period } from "../types";
+import type { Dose, DraftItem, Exercise, Meal, Outcome, Period } from "../types";
 import { DoseSheet } from "./DoseSheet";
 import { ExerciseSheet, type ExerciseOpening } from "./ExerciseSheet";
+import { FoodsSheet } from "./FoodsSheet";
+import { ManualSheet } from "./ManualSheet";
+import { PackagedSheet } from "./PackagedSheet";
 
 const PAGE = 50;
 const RECORDED: Exclude<Outcome, "unknown">[] = ["low", "inRange", "high"];
@@ -64,7 +67,8 @@ export function OutcomeBadge({ meal }: { meal: Meal }) {
   );
 }
 
-export function LogScreen({ onChanged }: { onChanged: () => void }) {
+// `labels` says whether the server reads a label yet, as on the meal screen.
+export function LogScreen({ labels, onChanged }: { labels: boolean; onChanged: () => void }) {
   const { t, language, rationSize } = useSettings();
   const toast = useToast();
   const [meals, setMeals] = useState<Meal[] | null>(null);
@@ -496,6 +500,7 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
       {open && (
         <MealSheet
           meal={open}
+          labels={labels}
           meals={meals ?? []}
           doses={doses}
           onDoseSaved={doseSaved}
@@ -627,6 +632,7 @@ function Thumb({ meal }: { meal: Meal }) {
 
 function MealSheet({
   meal,
+  labels,
   meals,
   doses,
   onDoseSaved,
@@ -635,6 +641,7 @@ function MealSheet({
   onChanged,
 }: {
   meal: Meal;
+  labels: boolean;
   meals: readonly Meal[];
   doses: readonly Dose[];
   onDoseSaved: (dose: Dose) => void;
@@ -656,6 +663,12 @@ function MealSheet({
   // Its foods as she is changing them, half of what she shared say, kept with the rest on Save.
   const [items, setItems] = useState(() => meal.items.map(fromLogged));
   const [editing, setEditing] = useState<string | null>(null);
+  // Where a food she forgot is being added from, or none.
+  const [adding, setAdding] = useState<"foods" | "packaged" | "manual" | null>(null);
+  const add = (item: DraftItem) => {
+    setItems((current) => [...current, item]);
+    setAdding(null);
+  };
   const editingItem = items.find((item) => item.id === editing) ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -778,6 +791,26 @@ function MealSheet({
             <ItemRow key={item.id} item={item} onOpen={() => setEditing(item.id)} />
           ))}
         </ul>
+        {/* What she forgot, added the ways a meal is built, with the same sheets. */}
+        <section className="add-more" aria-labelledby="meal-add-title">
+          <h3 id="meal-add-title" className="field-label">
+            {t("addMore")}
+          </h3>
+          <div className="tiles">
+            <button type="button" className="tile" aria-haspopup="dialog" onClick={() => setAdding("foods")}>
+              <Icon name="jar" size={26} />
+              {t("myFoods")}
+            </button>
+            <button type="button" className="tile" aria-haspopup="dialog" onClick={() => setAdding("packaged")}>
+              <Icon name="barcode" size={26} />
+              {t(labels ? "packaged" : "packagedHintBarcode")}
+            </button>
+            <button type="button" className="tile" aria-haspopup="dialog" onClick={() => setAdding("manual")}>
+              <Icon name="pencil" size={26} />
+              {t("manual")}
+            </button>
+          </div>
+        </section>
 
         {meal.hasPhoto && <img className="meal-photo" src={api.photoUrl(meal.id)} alt="" />}
 
@@ -832,6 +865,9 @@ function MealSheet({
           onClose={() => setEditing(null)}
         />
       )}
+      {adding === "foods" && <FoodsSheet onClose={() => setAdding(null)} onAdd={add} />}
+      {adding === "packaged" && <PackagedSheet labels={labels} onClose={() => setAdding(null)} onAdd={add} />}
+      {adding === "manual" && <ManualSheet onClose={() => setAdding(null)} onAdd={add} />}
       {doseOpen && (
         <DoseSheet
           dose={doseOpen === "new" ? undefined : doseOpen}

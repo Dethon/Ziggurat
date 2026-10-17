@@ -40,7 +40,8 @@ unavailable, empty log. Scrolling screens also get a `-full.png`; sheets that sc
   meal's instant as the server makes it). States 33–40c: the Log with doses and exercise, the dose
   sheet new and opened, another exercise, a past one, a running session and its sheet, a meal's sheet
   with its insulin and a dose added from it, the Cycle tab, a day, a period, an empty cycle. The iPhone
-  keyboard states moved to 50/51. Waiting for images is capped at 2.5 s (lazy ones below the fold
+  keyboard states moved to 50/51. States 25b–25g (2026-10-17): a logged meal's food opened from its sheet, halved with ×½, the
+  sheet's figures after it, a food added by hand, one removed, and the last one left, which cannot be. Waiting for images is capped at 2.5 s (lazy ones below the fold
   never load).
 - Button names come from `src/i18n.ts` (imported by Node 25.6 with types stripped), so copy edits do
   not break it; structural changes (the new tab bar, new screens) mean editing the state functions
