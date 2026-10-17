@@ -792,7 +792,6 @@ h1.title-small {
 }
 
 .item + .item,
-.item-line + .item-line,
 .meals li + li {
   border-top: 1px solid var(--color-line);
 }
@@ -883,13 +882,6 @@ h1.title-small {
 .badge-high,
 .badge-counted .icon {
   color: var(--color-good);
-}
-
-.item-line {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 10px 0;
 }
 
 /* A food's amount */

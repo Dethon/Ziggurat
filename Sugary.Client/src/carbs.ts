@@ -147,6 +147,12 @@ export function withCarbs(item: DraftItem, carbs: number): DraftItem {
   return { ...item, carbsLow: carbs, carbs, carbsHigh: carbs, grams: null, portion: null, edited: true };
 }
 
+// An item of a meal already in her log, opened to change it. The model's note is not kept with a
+// saved item, so there is none to show.
+export function fromLogged(item: MealItem): DraftItem {
+  return { ...item, foodId: item.foodId ?? null, id: newId(), note: null };
+}
+
 export function toMealItem(item: DraftItem): MealItem {
   return {
     name: item.name,

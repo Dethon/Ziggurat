@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { formatGrams, isRange, shownTotal } from "../carbs";
+import { formatGrams, fromLogged, isRange, shownTotal, toMealItem } from "../carbs";
 import { useConfirm } from "../components/Confirm";
 import { Icon, type IconName } from "../components/Icon";
 import { CakeStand } from "../components/Illustrations";
+import { ItemRow } from "../components/ItemRow";
+import { PortionSheet } from "../components/PortionSheet";
 import { Sheet } from "../components/Sheet";
 import { restored } from "../dose";
 import { canStopNow, duration, elapsedMinutes, EXERCISE_ICON, restored as restoredSession, running, sessionMinutes, startNow } from "../exercise";
@@ -11,7 +13,7 @@ import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
 import { localDay } from "../cycle";
 import { attachedDoses, byDay, dayKey, dayUnits, insulinBelow, matches, onPeriod, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
-import { bindUnits, sentence } from "../meal";
+import { sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
@@ -651,9 +653,13 @@ function MealSheet({
   const [when, setWhen] = useState(() => toLocalInput(meal.eatenAt));
   const [outcome, setOutcome] = useState(meal.outcome);
   const [notes, setNotes] = useState(meal.notes ?? "");
+  // Its foods as she is changing them, half of what she shared say, kept with the rest on Save.
+  const [items, setItems] = useState(() => meal.items.map(fromLogged));
+  const [editing, setEditing] = useState<string | null>(null);
+  const editingItem = items.find((item) => item.id === editing) ?? null;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const carbs = shownTotal(meal.items);
+  const carbs = shownTotal(items);
 
   async function run(work: () => Promise<unknown>) {
     setBusy(true);
@@ -672,6 +678,7 @@ function MealSheet({
         ...asSaved(meal, outcome),
         eatenAt: when ? new Date(when).toISOString() : meal.eatenAt,
         notes: notes.trim() || null,
+        items: items.map(toMealItem),
       }),
     );
 
@@ -765,15 +772,10 @@ function MealSheet({
           </button>
         </section>
 
-        <ul className="items compact">
-          {meal.items.map((item, index) => (
-            <li key={index} className="item-line">
-              <span className="item-text">
-                <span className="item-name">{sentence(item.name)}</span>
-                {item.portion && <span className="item-meta">{bindUnits(item.portion)}</span>}
-              </span>
-              <span className="item-grams">{formatGrams(item.carbs)}&nbsp;g</span>
-            </li>
+        {/* Each food opens to change how much she had, as it does before the meal is saved. */}
+        <ul className="items">
+          {items.map((item) => (
+            <ItemRow key={item.id} item={item} onOpen={() => setEditing(item.id)} />
           ))}
         </ul>
 
@@ -814,6 +816,22 @@ function MealSheet({
         </button>
       </div>
       {confirming}
+      {editingItem && (
+        <PortionSheet
+          item={editingItem}
+          onChange={(next) => setItems((current) => current.map((item) => (item.id === next.id ? next : item)))}
+          // A meal keeps one food at least; the whole meal goes from Delete.
+          onRemove={
+            items.length > 1
+              ? () => {
+                  setItems((current) => current.filter((item) => item.id !== editingItem.id));
+                  setEditing(null);
+                }
+              : undefined
+          }
+          onClose={() => setEditing(null)}
+        />
+      )}
       {doseOpen && (
         <DoseSheet
           dose={doseOpen === "new" ? undefined : doseOpen}

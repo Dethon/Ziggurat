@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { amountForCarbs, fromEstimate, fromFood, fromPackaged, parseAmount, rations, total, withCarbs, withGrams } from "./carbs";
+import { amountForCarbs, fromEstimate, fromFood, fromLogged, fromPackaged, parseAmount, rations, toMealItem, total, withCarbs, withGrams } from "./carbs";
 import type { EstimatedItem, Food } from "./types";
 
 const rice: EstimatedItem = {
@@ -57,6 +57,24 @@ describe("draft items", () => {
   it("sums ranges across items", () => {
     const items = [fromEstimate(rice), withCarbs(fromEstimate(rice), 10)];
     expect(total(items)).toEqual({ low: 38, best: 52, high: 66 });
+  });
+});
+
+describe("a logged item", () => {
+  const logged = toMealItem(fromEstimate(rice));
+
+  it("comes back as it was saved, so a meal edited from the Log keeps what she did not change", () => {
+    expect(toMealItem(fromLogged(logged))).toEqual(logged);
+  });
+
+  it("can be halved by its weight when she shared it", () => {
+    const half = withGrams(fromLogged(logged), 75);
+    expect([half.carbsLow, half.carbs, half.carbsHigh]).toEqual([21, 21, 21]);
+    expect(half.edited).toBe(true);
+  });
+
+  it("gets an id of its own to be edited by", () => {
+    expect(fromLogged(logged).id).not.toBe(fromLogged(logged).id);
   });
 });
 

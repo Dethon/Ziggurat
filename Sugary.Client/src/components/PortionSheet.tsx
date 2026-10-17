@@ -11,7 +11,8 @@ import { Sheet } from "./Sheet";
 const GRAM_STEP = 10;
 
 // One food's amount, changed with the thumb: a big stepper, a few shares of the amount it opened
-// with, or its carbs typed straight in. Every change applies at once; Done only closes.
+// with, or its carbs typed straight in. Every change applies at once; Done only closes. Without
+// onRemove it cannot be taken out, as the one food a logged meal has left.
 export function PortionSheet({
   item,
   onChange,
@@ -20,11 +21,12 @@ export function PortionSheet({
 }: {
   item: DraftItem;
   onChange: (item: DraftItem) => void;
-  onRemove: () => void;
+  onRemove?: () => void;
   onClose: () => void;
 }) {
   const { t } = useSettings();
   const opened = useRef(item.grams);
+  const openedCarbs = useRef(item.carbs);
   // Read once, so typing the carbs (which drops the weight) does not take the weight field away.
   const byWeight = useRef(item.carbsPer100g !== null && item.grams !== null).current;
   const [low, best, high] = [item.carbsLow, item.carbs, item.carbsHigh].map(formatGrams);
@@ -39,10 +41,12 @@ export function PortionSheet({
       onClose={onClose}
       footer={
         <div className="footer-row">
-          <button type="button" className="button button-quiet danger" onClick={onRemove}>
-            <Icon name="trash" size={20} />
-            {t("removeFromMeal")}
-          </button>
+          {onRemove && (
+            <button type="button" className="button button-quiet danger" onClick={onRemove}>
+              <Icon name="trash" size={20} />
+              {t("removeFromMeal")}
+            </button>
+          )}
           <button type="button" className="button button-primary button-grow" onClick={onClose}>
             {t("done")}
           </button>
@@ -91,6 +95,16 @@ export function PortionSheet({
           unit="g"
           onCommit={(carbs) => onChange(withCarbs(item, carbs))}
         />
+        {/* With no weight to share, the carbs are, so half of what she shared is still a tap. */}
+        {!byWeight && openedCarbs.current > 0 && (
+          <ShareChips
+            base={openedCarbs.current}
+            unit="g"
+            current={item.carbs}
+            label={t("carbs")}
+            onPick={(carbs) => onChange(withCarbs(item, carbs))}
+          />
+        )}
       </div>
     </Sheet>
   );
