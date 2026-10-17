@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { formatGrams, isRange, parseAmount, withCarbs, withGrams } from "../carbs";
+import { formatGrams, isRange, parseAmount, scaled, withCarbs, withGrams } from "../carbs";
 import { bindUnits, sentence } from "../meal";
 import { useSettings } from "../settings";
 import type { DraftItem } from "../types";
@@ -11,7 +11,7 @@ import { Sheet } from "./Sheet";
 const GRAM_STEP = 10;
 
 // One food's amount, changed with the thumb: a big stepper, a few shares of the amount it opened
-// with, or its carbs typed straight in. Every change applies at once; Done only closes. Without
+// with (its range scaled, not collapsed, as a share is not a weighing), or its carbs typed straight in. Every change applies at once; Done only closes. Without
 // onRemove it cannot be taken out, as the one food a logged meal has left; with onAsk she can tell the
 // model what was off about it.
 export function PortionSheet({
@@ -28,8 +28,8 @@ export function PortionSheet({
   onClose: () => void;
 }) {
   const { t } = useSettings();
-  const opened = useRef(item.grams);
-  const openedCarbs = useRef(item.carbs);
+  // The food as it opened, which every share is of.
+  const opening = useRef(item).current;
   // Read once, so typing the carbs (which drops the weight) does not take the weight field away.
   const byWeight = useRef(item.carbsPer100g !== null && item.grams !== null).current;
   const [low, best, high] = [item.carbsLow, item.carbs, item.carbsHigh].map(formatGrams);
@@ -79,13 +79,13 @@ export function PortionSheet({
               big
               onCommit={(grams) => onChange(withGrams(item, grams))}
             />
-            {opened.current !== null && opened.current > 0 && (
+            {opening.grams !== null && opening.grams > 0 && (
               <ShareChips
-                base={opened.current}
+                base={opening.grams}
                 unit={unit}
                 current={item.grams}
                 label={t("portionAmount")}
-                onPick={(grams) => onChange(withGrams(item, grams))}
+                onPick={(_, share) => onChange(scaled(opening, share))}
               />
             )}
             <p className="muted small">{t("per100", { n: formatGrams(item.carbsPer100g ?? 0), unit })}</p>
@@ -99,13 +99,13 @@ export function PortionSheet({
           onCommit={(carbs) => onChange(withCarbs(item, carbs))}
         />
         {/* With no weight to share, the carbs are, so half of what she shared is still a tap. */}
-        {!byWeight && openedCarbs.current > 0 && (
+        {!byWeight && opening.carbs > 0 && (
           <ShareChips
-            base={openedCarbs.current}
+            base={opening.carbs}
             unit="g"
             current={item.carbs}
             label={t("carbs")}
-            onPick={(carbs) => onChange(withCarbs(item, carbs))}
+            onPick={(_, share) => onChange(scaled(opening, share))}
           />
         )}
         {onAsk && (

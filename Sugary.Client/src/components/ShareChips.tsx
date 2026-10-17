@@ -20,7 +20,8 @@ export function ShareChips({
   unit?: string;
   current: number | null;
   label: string;
-  onPick: (amount: number) => void;
+  // The amount, and the share of the base it is.
+  onPick: (amount: number, share: number) => void;
 }) {
   return (
     <div className="chips shares" role="group" aria-label={label}>
@@ -33,7 +34,7 @@ export function ShareChips({
             type="button"
             className={on ? "chip chip-on" : "chip"}
             aria-pressed={on}
-            onClick={() => onPick(amount)}
+            onClick={() => onPick(amount, share)}
           >
             <span className="share">×{fraction}</span>
             {unit && (

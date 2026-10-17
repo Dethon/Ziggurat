@@ -143,6 +143,24 @@ export function withGrams(item: DraftItem, grams: number): DraftItem {
   return { ...item, grams, portion: null, carbsLow: carbs, carbs, carbsHigh: carbs, edited: true };
 }
 
+// A share of the amount: half of a portion she shared, or a second helping. Not a weighing, so the
+// range is kept and scaled with it; the portion text no longer says how much, so it goes.
+export function scaled(item: DraftItem, share: number): DraftItem {
+  if (share === 1) {
+    return item;
+  }
+  const by = (value: number) => round1(value * share);
+  return {
+    ...item,
+    grams: item.grams === null ? null : by(item.grams),
+    portion: null,
+    carbsLow: by(item.carbsLow),
+    carbs: by(item.carbs),
+    carbsHigh: by(item.carbsHigh),
+    edited: true,
+  };
+}
+
 export function withCarbs(item: DraftItem, carbs: number): DraftItem {
   return { ...item, carbsLow: carbs, carbs, carbsHigh: carbs, grams: null, portion: null, edited: true };
 }

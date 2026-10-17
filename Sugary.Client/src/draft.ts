@@ -1,5 +1,5 @@
 import { useEffect, useReducer } from "react";
-import { formatGrams, fromEstimate } from "./carbs";
+import { formatGrams, fromEstimate, isRange } from "./carbs";
 import { load, store } from "./settings";
 import type { DraftItem, Interval, MealEstimate, Question } from "./types";
 
@@ -93,8 +93,15 @@ export function reduce(draft: Draft, action: DraftAction): Draft {
   }
 }
 
-// An amount she set on an estimated food, as the fact the model is told.
+// An amount she set on an estimated food, as the fact the model is told. A share she took keeps
+// its range, and is told with it.
 export function editFact(item: DraftItem): string {
+  const range = `${formatGrams(item.carbsLow)}–${formatGrams(item.carbsHigh)} g of carbs`;
+  if (isRange({ low: item.carbsLow, best: item.carbs, high: item.carbsHigh })) {
+    return item.grams !== null
+      ? `Correction: the person is having about ${formatGrams(item.grams)} g of "${item.name}" (${range}).`
+      : `Correction: the person is having about ${formatGrams(item.carbs)} g of carbs of "${item.name}" (${range}).`;
+  }
   return item.grams !== null
     ? `Correction: "${item.name}" weighs ${formatGrams(item.grams)} g.`
     : `Correction: "${item.name}" has ${formatGrams(item.carbs)} g of carbs.`;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { manualItem, withGrams } from "./carbs";
-import { clarifications, counted, emptyDraft, reduce, type Draft } from "./draft";
+import { fromEstimate, manualItem, scaled, withGrams } from "./carbs";
+import { clarifications, counted, editFact, emptyDraft, reduce, type Draft } from "./draft";
 import type { MealEstimate } from "./types";
 
 const estimate = (names: string[], questions: string[] = []): MealEstimate => ({
@@ -94,5 +94,25 @@ describe("draft", () => {
     draft = reduce(draft, { type: "add", item: manualItem("yoghurt", 12) });
     draft = estimated(draft, ["rice"]);
     expect(draft.insulin).toBe("");
+  });
+});
+
+describe("a share she took of an estimated food", () => {
+  const paella = fromEstimate({
+    name: "paella",
+    portion: "a plate",
+    grams: { low: 200, best: 300, high: 400 },
+    carbsPer100g: 20,
+    carbs: { low: 40, best: 60, high: 80 },
+    confidence: "medium",
+    note: null,
+  });
+
+  it("is told as her amount with the range still around it, not as a weighing", () => {
+    expect(editFact(scaled(paella, 0.5))).toBe('Correction: the person is having about 150 g of "paella" (20–40 g of carbs).');
+  });
+
+  it("leaves a weight she typed told as a weighing", () => {
+    expect(editFact(withGrams(paella, 150))).toBe('Correction: "paella" weighs 150 g.');
   });
 });

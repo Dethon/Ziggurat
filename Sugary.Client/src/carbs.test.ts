@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { amountForCarbs, fromEstimate, fromFood, fromLogged, fromPackaged, parseAmount, rations, toMealItem, total, withCarbs, withGrams } from "./carbs";
+import { amountForCarbs, fromEstimate, fromFood, fromLogged, fromPackaged, manualItem, parseAmount, rations, scaled, toMealItem, total, withCarbs, withGrams } from "./carbs";
 import type { EstimatedItem, Food } from "./types";
 
 const rice: EstimatedItem = {
@@ -75,6 +75,29 @@ describe("a logged item", () => {
 
   it("gets an id of its own to be edited by", () => {
     expect(fromLogged(logged).id).not.toBe(fromLogged(logged).id);
+  });
+});
+
+describe("a share of a food", () => {
+  it("halves the range with the amount, since a shared portion is not a weighing", () => {
+    const half = scaled(fromEstimate(rice), 0.5);
+    expect([half.carbsLow, half.carbs, half.carbsHigh, half.grams]).toEqual([14, 21, 28, 75]);
+    expect(half.edited).toBe(true);
+    expect(half.confidence).toBe("medium");
+  });
+
+  it("drops the portion text, which no longer says how much she had", () => {
+    expect(scaled(fromEstimate(rice), 0.5).portion).toBeNull();
+  });
+
+  it("is the food as it was at the whole of it", () => {
+    const item = fromEstimate(rice);
+    expect(scaled(item, 1)).toBe(item);
+  });
+
+  it("scales a food known only by its carbs", () => {
+    const half = scaled(manualItem("toast", 30), 0.5);
+    expect([half.carbsLow, half.carbs, half.carbsHigh]).toEqual([15, 15, 15]);
   });
 });
 
