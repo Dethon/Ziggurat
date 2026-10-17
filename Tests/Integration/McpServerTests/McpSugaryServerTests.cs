@@ -70,6 +70,22 @@ public class McpSugaryServerTests
         SugarySkill.Description.ShouldContain("insulin");
     }
 
+    // "Did she walk after the paella" is a read of one month beside /ha, and her exercise never turns
+    // into advice about carbs or a dose around it.
+    [Fact]
+    public async Task TheLogSkill_SaysWhereHerExerciseIs_AndThatItIsNeverABasisForAdvice()
+    {
+        await using var server = await SugaryServer.StartAsync();
+
+        var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(SugarySkill.Name));
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+
+        body.ShouldContain("/sugary/exercise/<YYYY-MM>.csv");
+        body.ShouldContain("empty while it is running");
+        body.ShouldContain("no carbs or dose around exercise");
+        SugarySkill.Description.ShouldContain("exercise");
+    }
+
     // "Was she on her period the week her glucose ran high" is a read of one file beside /ha.
     [Fact]
     public async Task TheLogSkill_SaysWhereHerCycleIs_AndThatItsDaysLineUpWithHa()

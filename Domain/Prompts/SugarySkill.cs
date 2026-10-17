@@ -1,7 +1,7 @@
 namespace Domain.Prompts;
 
 // How her carb log is laid out, loaded when a request is about her foods, what she ate, the insulin
-// she recorded taking or her periods. The
+// she recorded taking, her exercise or her periods. The
 // columns themselves are explained by the README the mount serves, which is rendered beside the
 // tables and so can never describe a column that is not there; this says where things are and how
 // to find them (docs/adr/0039).
@@ -11,7 +11,7 @@ public static class SugarySkill
 
     // The whole trigger: the one line about this skill that is in every turn.
     public const string Description =
-        "Reading her carb log under `/sugary` — the foods she keeps, the meals she logged, the foods in each, the insulin doses she recorded and her periods (\"when did she last have paella\", \"how did her glucose do after pizza\", \"how much insulin did she take for it\", \"was she on her period that week\"). Where each table is, where its columns are explained, and how to find a food, a meal's dose or a month.";
+        "Reading her carb log under `/sugary` — the foods she keeps, the meals she logged and the foods in each, her insulin doses, her exercise and her periods (\"when did she last have paella\", \"how did her glucose do after pizza\", \"how much insulin did she take for it\", \"was she on her period that week\"). Where each table is, where its columns are explained, and how to find a food, a dose or a month.";
 
     public const string Body =
         """
@@ -24,11 +24,12 @@ public static class SugarySkill
         - `/sugary/meals/<YYYY-MM>.csv` — one row per meal she logged that month: its carbs as finally logged, the model's first estimate, and what her glucose did afterwards.
         - `/sugary/items/<YYYY-MM>.csv` — one row per food in those meals, with where its numbers came from: an estimate, a label, a barcode, or typed by her.
         - `/sugary/doses/<YYYY-MM>.csv` — one row per insulin dose she took that month: its units, `rapid` or `basal` (long-acting), and the `meal_id` of the meal it was for, if any.
+        - `/sugary/exercise/<YYYY-MM>.csv` — one row per session she started that month: `walk`, `gym` or a named `other`, its start and end, and its `minutes` (empty while it is running).
         - `/sugary/periods.csv` — her menstrual periods: `start_date`, `end_date` (empty while it is going), each one's length and its cycle's. `/sugary/day-notes.csv` — what she wrote about a day. Both are days on the home's calendar: read `/ha` history for those days beside them.
 
         A month with nothing logged has no file, and a row is filed under the month its own time shows. Every time carries its offset in the home's zone, the clock the glucose history under `/ha` is stamped on, so a meal, its dose and the readings after them line up.
 
-        Her doses are her record of what she took, never a basis for advice. Asked what she should take, answer with what she took, the meal's logged carbs and what her glucose did, and give no number of units for any meal — not her ratio applied to its carbs, not even as arithmetic someone asked for — and no correction or timing: her dose is hers and her diabetes team's to decide.
+        Her doses are her record of what she took, never a basis for advice. Asked what she should take, answer with what she took, the meal's logged carbs and what her glucose did, and give no number of units for any meal — not her ratio applied to its carbs, not even as arithmetic someone asked for — and no correction or timing, and no carbs or dose around exercise: her dose is hers and her diabetes team's to decide.
 
         ### Finding things
 
