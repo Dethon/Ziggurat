@@ -2202,14 +2202,11 @@ h1.marked .icon {
   color: var(--color-on-period);
 }
 
+/* Today's change first; another day under it, centred, as wide a target as the first. */
 .cycle-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.cycle-actions .button-primary {
-  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .period-row {
@@ -2437,6 +2434,7 @@ h1.marked .icon {
 }
 
 .exercise-running {
+  margin-bottom: var(--space-2);
   padding-block: 0;
 }
 

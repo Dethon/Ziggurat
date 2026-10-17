@@ -277,31 +277,25 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
         </p>
       )}
 
-      {empty && (
-        <div className="empty">
-          <CakeStand />
-          <p className="empty-title">{t("logEmpty")}</p>
-          <p className="small">{t("logEmptyHint")}</p>
-        </div>
+      {/* The session going now, above all else, until she stops it. */}
+      {meals !== null && current && (
+        <RunningCard
+          session={current}
+          now={now}
+          onStop={() => void stopExercise(current)}
+          onOpen={() => setExerciseSheet({ mode: "edit", session: current })}
+        />
       )}
 
       {meals !== null && (
         <section className="record" aria-labelledby="record-title">
           <h2 id="record-title">{t("recordTitle")}</h2>
           {current ? (
-            <>
-              <RunningCard
-                session={current}
-                now={now}
-                onStop={() => void stopExercise(current)}
-                onOpen={() => setExerciseSheet({ mode: "edit", session: current })}
-              />
-              <button type="button" className="row-button add-dose" aria-haspopup="dialog" onClick={() => setDoseSheet("new")}>
-                <Icon name="insulin" size={20} />
-                <span>{t("addDose")}</span>
-                <Icon name="plus" size={20} />
-              </button>
-            </>
+            <button type="button" className="row-button add-dose" aria-haspopup="dialog" onClick={() => setDoseSheet("new")}>
+              <Icon name="insulin" size={20} />
+              <span>{t("addDose")}</span>
+              <Icon name="plus" size={20} />
+            </button>
           ) : (
             <>
               {/* Insulin opens its sheet; a walk or the gym starts at once, the toast taking it back. */}
@@ -333,6 +327,15 @@ export function LogScreen({ onChanged }: { onChanged: () => void }) {
             </>
           )}
         </section>
+      )}
+
+      {/* Under what she can add, so an empty Log still opens on them. */}
+      {empty && (
+        <div className="empty">
+          <CakeStand />
+          <p className="empty-title">{t("logEmpty")}</p>
+          <p className="small">{t("logEmptyHint")}</p>
+        </div>
       )}
 
       {meals !== null && meals.length > 0 && (
