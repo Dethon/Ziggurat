@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fromEstimate, fromFood, fromPackaged, parseAmount, rations, total, withCarbs, withGrams } from "./carbs";
+import { amountForCarbs, fromEstimate, fromFood, fromPackaged, parseAmount, rations, total, withCarbs, withGrams } from "./carbs";
 import type { EstimatedItem, Food } from "./types";
 
 const rice: EstimatedItem = {
@@ -43,6 +43,15 @@ describe("draft items", () => {
     const item = fromPackaged(food, 45, "Corn Flakes", "barcode");
     expect(item.carbs).toBe(37.8);
     expect(item.carbsLow).toBe(item.carbsHigh);
+  });
+
+  it("works out the amount to weigh for the carbs she wants, in whole grams", () => {
+    expect(amountForCarbs(30, 84)).toBe(36);
+    expect(amountForCarbs(20, 7.3)).toBe(274);
+  });
+
+  it("has no amount to weigh when the food holds no carbs", () => {
+    expect(amountForCarbs(20, 0)).toBeNull();
   });
 
   it("sums ranges across items", () => {

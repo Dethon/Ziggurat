@@ -88,6 +88,12 @@ export function fromPackaged(
   };
 }
 
+// The other way round: how much to weigh out for the carbs she wants. Whole grams, since that is
+// what a kitchen scale shows; a food with no carbs has no amount that reaches any.
+export function amountForCarbs(carbs: number, carbsPer100g: number): number | null {
+  return carbsPer100g > 0 ? Math.round((carbs * 100) / carbsPer100g) : null;
+}
+
 // A food from her own list. With a density the amount is a weight; without one it is how many of
 // her usual portions she is having.
 export function fromFood(food: Food, amount: number): DraftItem {

@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import { readBarcode } from "../barcode";
-import { formatGrams, fromPackaged, parseAmount } from "../carbs";
+import { amountForCarbs, formatGrams, fromPackaged, parseAmount } from "../carbs";
 import { BarcodeScanner, canScanLive, type ScanProblem } from "../components/BarcodeScanner";
 import { CameraButton, CameraFallbackNote } from "../components/Camera";
 import { Icon } from "../components/Icon";
@@ -11,8 +11,13 @@ import { errorMessage, labelFailureMessage, type Asking } from "../errors";
 import { keep } from "../foods";
 import { forUpload } from "../images";
 import { bindUnits } from "../meal";
-import { useSettings } from "../settings";
+import { load, store, useSettings } from "../settings";
 import type { DraftItem, ItemSource, PackagedFood } from "../types";
+
+// Whether she types the amount and is told its carbs, or the carbs she wants and is told what to
+// weigh. Remembered, since whoever counts one way tends to keep counting that way.
+type Entry = "amount" | "carbs";
+const ENTRY_KEY = "sugary.packagedEntry";
 
 interface Found {
   food: PackagedFood;
@@ -44,11 +49,28 @@ export function PackagedSheet({
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [saveFood, setSaveFood] = useState(true);
+  const [entry, setEntry] = useState<Entry>(() => load(ENTRY_KEY, { by: "amount" as Entry }).by);
+  const [wanted, setWanted] = useState("");
 
   function show(next: Found) {
     setFound(next);
     setName(next.food.name ?? "");
     setAmount(next.food.servingGrams ? formatGrams(next.food.servingGrams) : "");
+    setWanted(next.food.servingGrams ? formatGrams((next.food.servingGrams * next.food.carbsPer100g) / 100) : "");
+  }
+
+  // The figure typed in one way carries over to the other; only the field she is going to is
+  // rewritten, so the one she typed keeps its decimals.
+  function enterBy(next: Entry) {
+    if (found && eaten !== null && next !== entry) {
+      if (next === "carbs") {
+        setWanted(formatGrams((eaten * found.food.carbsPer100g) / 100));
+      } else {
+        setAmount(formatGrams(eaten));
+      }
+    }
+    setEntry(next);
+    store(ENTRY_KEY, { by: next });
   }
 
   async function lookUp(code: string): Promise<boolean> {
@@ -118,7 +140,15 @@ export function PackagedSheet({
     setError(t(problem === "denied" ? "scanDenied" : "scanUnavailable"));
   }
 
-  const eaten = parseAmount(amount);
+  // A food with no carbs has no amount that reaches any, so it is only ever weighed.
+  const canAskCarbs = found !== null && found.food.carbsPer100g > 0;
+  const byCarbs = entry === "carbs" && canAskCarbs;
+  const carbsWanted = parseAmount(wanted);
+  const eaten = byCarbs
+    ? carbsWanted === null
+      ? null
+      : amountForCarbs(carbsWanted, found.food.carbsPer100g)
+    : parseAmount(amount);
   const formId = useId();
   const valid = eaten !== null && eaten > 0;
 
@@ -254,27 +284,66 @@ export function PackagedSheet({
               <Icon name="info" size={18} /> <span>{bindUnits(found.food.note)}</span>
             </p>
           )}
-          <label className="field">
-            <span className="field-label">{t(found.food.unit === "ml" ? "amountDrunk" : "amountEaten")}</span>
-            <span className="amount-input">
-              <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
-              <span className="amount-unit">{found.food.unit}</span>
-            </span>
-          </label>
-          {found.food.servingGrams && (
-            <ShareChips
-              base={found.food.servingGrams}
-              unit={found.food.unit}
-              current={eaten}
-              label={t("amountEaten")}
-              onPick={(value) => setAmount(String(value))}
-            />
+          {canAskCarbs && (
+            <div className="field">
+              <span className="field-label" id={`${formId}-entry`}>
+                {t("packagedStartFrom")}
+              </span>
+              <div className="segmented" role="group" aria-labelledby={`${formId}-entry`}>
+                {(["amount", "carbs"] as const).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    className={entry === option ? "segment segment-on" : "segment"}
+                    aria-pressed={entry === option}
+                    onClick={() => enterBy(option)}
+                  >
+                    {t(option === "amount" ? "packagedByAmount" : "packagedByCarbs")}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
-          <p className="packaged-result">
-            {eaten !== null
-              ? t("carbsFromAmount", { carbs: formatGrams((eaten * found.food.carbsPer100g) / 100) })
-              : " "}
-          </p>
+          {byCarbs ? (
+            <>
+              <label className="field">
+                <span className="field-label">{t("carbsWanted")}</span>
+                <span className="amount-input">
+                  <input inputMode="decimal" value={wanted} onChange={(event) => setWanted(event.target.value)} />
+                  <span className="amount-unit">g</span>
+                </span>
+              </label>
+              <p className="packaged-result">
+                {eaten !== null
+                  ? t(found.food.unit === "ml" ? "pourOut" : "weighOut", { amount: formatGrams(eaten), unit: found.food.unit })
+                  : " "}
+              </p>
+            </>
+          ) : (
+            <>
+              <label className="field">
+                <span className="field-label">{t(found.food.unit === "ml" ? "amountDrunk" : "amountEaten")}</span>
+                <span className="amount-input">
+                  <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
+                  <span className="amount-unit">{found.food.unit}</span>
+                </span>
+              </label>
+              {found.food.servingGrams && (
+                <ShareChips
+                  base={found.food.servingGrams}
+                  unit={found.food.unit}
+                  current={eaten}
+                  label={t("amountEaten")}
+                  onPick={(value) => setAmount(String(value))}
+                />
+              )}
+              <p className="packaged-result">
+                {eaten !== null
+                  ? t("carbsFromAmount", { carbs: formatGrams((eaten * found.food.carbsPer100g) / 100) })
+                  : " "}
+              </p>
+            </>
+          )}
           {!found.food.foodId && (
             <label className="check">
               <input type="checkbox" checked={saveFood} onChange={(event) => setSaveFood(event.target.checked)} />
