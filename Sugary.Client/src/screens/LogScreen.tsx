@@ -884,7 +884,10 @@ function MealSheet({
                 }
               : undefined
           }
-          onAsk={estimates ? () => setRevising({ kind: "food", id: editingItem.id }) : undefined}
+          // Only the model's own foods: a label's or her pantry's numbers are exact, and would be lost.
+          onAsk={
+            estimates && editingItem.source === "estimate" ? () => setRevising({ kind: "food", id: editingItem.id }) : undefined
+          }
           onClose={() => setEditing(null)}
         />
       )}
