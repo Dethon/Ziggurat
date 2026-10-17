@@ -11,9 +11,12 @@ import {
   pendingOutcomes,
   rapidUnits,
   timeline,
+  mealEdited,
   withDose,
   withoutDose,
 } from "./log";
+import { fromLogged, scaled } from "./carbs";
+import { toLocalInput } from "./format";
 import type { Dose, Exercise, Meal } from "./types";
 
 const now = new Date("2026-10-15T20:00:00Z");
@@ -248,5 +251,33 @@ describe("insulinBelow", () => {
   it("is false when any of its doses is elsewhere in the day, or it has none", () => {
     expect(insulinBelow(lunch, new Set(["a"]))).toBe(false);
     expect(insulinBelow(meal("tea", 1), new Set())).toBe(false);
+  });
+});
+
+describe("a logged meal open in its sheet", () => {
+  const logged = meal("m", 3, "unknown", ["toast", "jam"]);
+  const opened = () => ({
+    items: logged.items.map(fromLogged),
+    notes: "",
+    when: toLocalInput(logged.eatenAt),
+    outcome: logged.outcome,
+  });
+
+  it("is not edited as it opened", () => {
+    expect(mealEdited(logged, opened())).toBe(false);
+  });
+
+  it("is edited once a food changes, goes or comes", () => {
+    const edit = opened();
+    expect(mealEdited(logged, { ...edit, items: [scaled(edit.items[0], 0.5), edit.items[1]] })).toBe(true);
+    expect(mealEdited(logged, { ...edit, items: edit.items.slice(1) })).toBe(true);
+    expect(mealEdited(logged, { ...edit, items: [...edit.items, edit.items[0]] })).toBe(true);
+  });
+
+  it("is edited by its notes, time or outcome, but not by spaces around the notes", () => {
+    expect(mealEdited(logged, { ...opened(), notes: "  " })).toBe(false);
+    expect(mealEdited(logged, { ...opened(), notes: "shared" })).toBe(true);
+    expect(mealEdited(logged, { ...opened(), when: "2026-01-01T10:00" })).toBe(true);
+    expect(mealEdited(logged, { ...opened(), outcome: "high" })).toBe(true);
   });
 });

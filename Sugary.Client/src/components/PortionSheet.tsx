@@ -115,6 +115,8 @@ export function PortionSheet({
             <Icon name="chevronRight" size={20} />
           </button>
         )}
+        {/* Taken out of a logged meal that has nothing else, the meal would be empty. */}
+        {!onRemove && <p className="muted small">{t("onlyFoodHint")}</p>}
       </div>
     </Sheet>
   );

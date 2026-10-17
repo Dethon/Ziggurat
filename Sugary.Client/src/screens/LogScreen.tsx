@@ -12,7 +12,7 @@ import { canStopNow, duration, elapsedMinutes, EXERCISE_ICON, restored as restor
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
 import { localDay } from "../cycle";
-import { attachedDoses, byDay, dayKey, dayUnits, insulinBelow, matches, onPeriod, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
+import { attachedDoses, byDay, dayKey, dayUnits, insulinBelow, matches, mealEdited, onPeriod, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
 import { sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
@@ -678,6 +678,7 @@ function MealSheet({
     setAdding(null);
   };
   const editingItem = items.find((item) => item.id === editing) ?? null;
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const carbs = shownTotal(items);
@@ -694,19 +695,31 @@ function MealSheet({
   }
 
   const save = () =>
-    run(() =>
-      api.updateMeal(meal.id, {
+    run(async () => {
+      await api.updateMeal(meal.id, {
         ...asSaved(meal, outcome),
         eatenAt: when ? new Date(when).toISOString() : meal.eatenAt,
         notes: notes.trim() || null,
         items: items.map(toMealItem),
-      }),
-    );
+      });
+      toast({ text: t("mealChangesSaved") });
+    });
+
+  // Closed with changes not saved, a food halved or a correction taken, it asks before they go.
+  async function leave() {
+    const lose = mealEdited(meal, { items, notes, when, outcome });
+    if (
+      !lose ||
+      (await confirm({ title: t("editDiscardTitle"), body: t("editDiscardBody"), confirm: t("editDiscardYes"), cancel: t("editDiscardNo") }))
+    ) {
+      onClose();
+    }
+  }
 
   return (
     <Sheet
       title={`${sentence(formatDay(new Date(meal.eatenAt), language))} · ${formatTime(meal.eatenAt, language)}`}
-      onClose={onClose}
+      onClose={() => void leave()}
       footer={
         <button type="button" className="button button-primary button-big" disabled={busy} onClick={save}>
           {t("saveChanges")}
@@ -793,19 +806,24 @@ function MealSheet({
           </button>
         </section>
 
-        {estimates && items.some((item) => item.source === "estimate") && (
-          <button type="button" className="row-button" aria-haspopup="dialog" onClick={() => setRevising({ kind: "meal" })}>
-            <Icon name="pencil" size={20} />
-            <span>{t("correctionToggle")}</span>
-            <Icon name="chevronRight" size={20} />
-          </button>
-        )}
-        {/* Each food opens to change how much she had, as it does before the meal is saved. */}
-        <ul className="items">
-          {items.map((item) => (
-            <ItemRow key={item.id} item={item} onOpen={() => setEditing(item.id)} />
-          ))}
-        </ul>
+        {/* Her foods, each opening to change how much she had, with what was off and what she forgot. */}
+        <section className="meal-foods" aria-labelledby="meal-foods-title">
+          <h3 id="meal-foods-title" className="field-label">
+            {t("itemsTitle")}
+          </h3>
+          <ul className="items">
+            {items.map((item) => (
+              <ItemRow key={item.id} item={item} onOpen={() => setEditing(item.id)} />
+            ))}
+          </ul>
+          {estimates && items.some((item) => item.source === "estimate") && (
+            <button type="button" className="row-button" aria-haspopup="dialog" onClick={() => setRevising({ kind: "meal" })}>
+              <Icon name="pencil" size={20} />
+              <span>{t("correctionToggle")}</span>
+              <Icon name="chevronRight" size={20} />
+            </button>
+          )}
+        </section>
         {/* What she forgot, added the ways a meal is built, with the same sheets. */}
         <section className="add-more" aria-labelledby="meal-add-title">
           <h3 id="meal-add-title" className="field-label">

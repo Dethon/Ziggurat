@@ -1364,8 +1364,9 @@ h1.title-small {
   white-space: nowrap;
 }
 
-/* Her insulin for a meal, in the meal's sheet: each dose a row, and one added from there. */
-.meal-doses {
+/* Her insulin and her foods for a meal, in the meal's sheet: each a row, and more added from there. */
+.meal-doses,
+.meal-foods {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);

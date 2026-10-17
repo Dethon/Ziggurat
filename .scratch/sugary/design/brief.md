@@ -43,7 +43,8 @@ unavailable, empty log. Scrolling screens also get a `-full.png`; sheets that sc
   keyboard states moved to 50/51. States 25b–25g (2026-10-17): a logged meal's food opened from its sheet, halved with ×½, the
   sheet's figures after it, a food added by hand, one removed, and the last one left, which cannot be. States
   26a–26g: the same meal asked about again — a forgotten food described, its estimate with questions,
-  answered, added; one food corrected in words and its estimate; the whole meal corrected in words. Waiting for images is capped at 2.5 s (lazy ones below the fold
+  answered, added; one food corrected in words and its estimate; the whole meal corrected in words. 26h: the sheet
+  closed with a change not saved, asking before it is discarded. Waiting for images is capped at 2.5 s (lazy ones below the fold
   never load).
 - Button names come from `src/i18n.ts` (imported by Node 25.6 with types stripped), so copy edits do
   not break it; structural changes (the new tab bar, new screens) mean editing the state functions

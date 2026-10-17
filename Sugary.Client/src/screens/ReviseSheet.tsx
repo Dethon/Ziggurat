@@ -88,7 +88,8 @@ export function ReviseSheet({
     setError(null);
     try {
       // A correction goes with the meal's own photo, when it has one.
-      const stored = !adding && meal.hasPhoto ? await api.mealPhoto(meal.id) : null;
+      // Without it, if it cannot be fetched: her words lead a correction.
+      const stored = !adding && meal.hasPhoto ? await api.mealPhoto(meal.id).catch(() => null) : null;
       const result = await continued(
         revisionInput(revision, items, { words, photos: photos.map((photo) => photo.blob), answers: answered }, stored, language),
         conversation,
@@ -130,7 +131,7 @@ export function ReviseSheet({
     )
   ) : (
     <button type="button" className="button button-primary button-big" disabled={!canAsk} onClick={() => void ask({}, null)}>
-      {t("estimate")}
+      {t(adding ? "estimate" : "sendCorrection")}
     </button>
   );
 

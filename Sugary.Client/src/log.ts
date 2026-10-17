@@ -1,6 +1,8 @@
 import { covers, localDay } from "./cycle";
 import { plain } from "./foods";
-import type { Dose, Exercise, LinkedDose, Meal, Period } from "./types";
+import { fromLogged, toMealItem } from "./carbs";
+import { toLocalInput } from "./format";
+import type { Dose, DraftItem, Exercise, LinkedDose, Meal, Outcome, Period } from "./types";
 
 const HOUR = 3_600_000;
 // Glucose says little about a meal before about two hours, so a meal is asked about from then on.
@@ -123,4 +125,23 @@ export function withoutDose(meals: readonly Meal[], id: string): Meal[] {
 export function onPeriod(date: Date, periods: readonly Period[], today: string): boolean {
   const day = localDay(date);
   return periods.some((period) => covers(period, day, today));
+}
+
+// A logged meal as its sheet has it, and whether closing it would lose anything: her foods, her
+// notes, its time or its outcome changed and not saved.
+export interface MealEdit {
+  items: readonly DraftItem[];
+  notes: string;
+  when: string;
+  outcome: Outcome;
+}
+
+export function mealEdited(meal: Meal, edit: MealEdit): boolean {
+  const foods = (items: readonly DraftItem[]) => JSON.stringify(items.map(toMealItem));
+  return (
+    foods(edit.items) !== foods(meal.items.map(fromLogged)) ||
+    edit.notes.trim() !== (meal.notes ?? "").trim() ||
+    edit.when !== toLocalInput(meal.eatenAt) ||
+    edit.outcome !== meal.outcome
+  );
 }
