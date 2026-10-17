@@ -9,6 +9,7 @@ import { Drip, Slice } from "../components/Illustrations";
 import { ItemRow } from "../components/ItemRow";
 import { PortionSheet } from "../components/PortionSheet";
 import { axisEnd, TotalCard } from "../components/TotalCard";
+import { UnitsControl } from "../components/UnitsControl";
 import { MAX_UNITS, readUnits } from "../dose";
 import { reduce, useDraft, type DraftAction } from "../draft";
 import { errorMessage } from "../errors";
@@ -655,22 +656,18 @@ export function MealScreen({
 
       {hasMeal && (
         <section className="card insulin-taken" aria-labelledby="insulin-title">
-          <label className="field">
-            <span id="insulin-title" className="field-label">
+          <div className="field">
+            <label id="insulin-title" className="field-label" htmlFor="insulin-units">
               <Icon name="bolt" size={18} />
               {t("insulinTaken")}
-            </span>
-            <span className="amount-input">
-              <input
-                inputMode="decimal"
-                autoComplete="off"
-                value={insulinText}
-                aria-invalid={typeof insulin === "string"}
-                aria-describedby="insulin-hint"
-                onChange={(event) => dispatch({ type: "insulin", text: event.target.value })}
-              />
-              <span className="amount-unit">{t("unitsShort")}</span>
-            </span>
+            </label>
+            <UnitsControl
+              id="insulin-units"
+              text={insulinText}
+              invalid={typeof insulin === "string"}
+              describedBy="insulin-hint"
+              onChange={(text) => dispatch({ type: "insulin", text })}
+            />
             {typeof insulin === "string" ? (
               <span className="field-problem" role="alert">
                 {t(insulin, { max: MAX_UNITS })}
@@ -680,7 +677,7 @@ export function MealScreen({
                 {t("insulinTakenHint")}
               </span>
             )}
-          </label>
+          </div>
         </section>
       )}
 

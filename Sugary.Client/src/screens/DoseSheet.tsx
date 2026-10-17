@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { api } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
+import { UnitsControl } from "../components/UnitsControl";
 import { linkable, MAX_NOTE, MAX_UNITS, readUnits } from "../dose";
 import { errorMessage } from "../errors";
 import { formatTime, formatUnits, toLocalInput } from "../format";
@@ -15,7 +16,7 @@ const KINDS: { kind: DoseKind; icon: "bolt" | "clock"; hint: "doseRapidHint" | "
 ];
 
 // A dose added on its own, or one she recorded opened to change or delete. A new dose's units always
-// start empty, because the number recorded is only ever one she typed; rapid is the usual kind and
+// start empty, because the number recorded is only ever one she typed or stepped to; rapid is the usual kind and
 // now the usual time, and both can be changed. An open dose starts from what she recorded.
 export function DoseSheet({
   dose,
@@ -41,6 +42,7 @@ export function DoseSheet({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formId = useId();
+  const unitsId = useId();
   const read = readUnits(units);
   // Said once she has typed something, not while the field is still empty.
   const problem = typeof read === "string" && units.trim() !== "" ? t(read, { max: MAX_UNITS }) : null;
@@ -90,24 +92,17 @@ export function DoseSheet({
         }}
       >
         <p className="muted small">{t("doseRecordHint")}</p>
-        <label className="field">
-          <span className="field-label">{t("doseUnits")}</span>
-          <span className="amount-input">
-            <input
-              inputMode="decimal"
-              autoComplete="off"
-              value={units}
-              aria-invalid={problem !== null}
-              onChange={(event) => setUnits(event.target.value)}
-            />
-            <span className="amount-unit">{t("unitsShort")}</span>
-          </span>
+        <div className="field">
+          <label className="field-label" htmlFor={unitsId}>
+            {t("doseUnits")}
+          </label>
+          <UnitsControl id={unitsId} text={units} invalid={problem !== null} onChange={setUnits} />
           {problem && (
             <span className="field-problem" role="alert">
               {problem}
             </span>
           )}
-        </label>
+        </div>
         <fieldset className="question">
           <legend>{t("doseKind")}</legend>
           <div className="segmented dose-kinds">

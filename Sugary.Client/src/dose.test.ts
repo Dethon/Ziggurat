@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { linkable, MAX_UNITS, readUnits, restored } from "./dose";
+import { linkable, MAX_UNITS, readUnits, restored, stepUnits } from "./dose";
 import type { Meal } from "./types";
 
 describe("readUnits", () => {
@@ -63,5 +63,44 @@ describe("linkable", () => {
   it("keeps the meal a dose already belongs to on offer", () => {
     const meals = [meal("lunch", 6), meal("old", 30)];
     expect(linkable(meals, now, "old").map((m) => m.id)).toEqual(["lunch", "old"]);
+  });
+});
+
+describe("stepUnits", () => {
+  it("moves what she typed by one unit, written back in her language", () => {
+    expect(stepUnits("4", 1, "en")).toBe("5");
+    expect(stepUnits("4", -1, "en")).toBe("3");
+    expect(stepUnits("4,5", 1, "es")).toBe("5,5");
+    expect(stepUnits("4.5", -1, "en")).toBe("3.5");
+    expect(stepUnits("0,25", 1, "es")).toBe("1,25");
+  });
+
+  // A plus from nothing is her own tap; a minus from nothing has nowhere to go.
+  it("starts an empty field at one unit on a plus and leaves it empty on a minus", () => {
+    expect(stepUnits("", 1, "en")).toBe("1");
+    expect(stepUnits("  ", 1, "en")).toBe("1");
+    expect(stepUnits("", -1, "en")).toBeNull();
+  });
+
+  it("clears the field rather than step to no dose or below", () => {
+    expect(stepUnits("1", -1, "en")).toBe("");
+    expect(stepUnits("0,5", -1, "es")).toBe("");
+    expect(stepUnits("0", -1, "en")).toBe("");
+  });
+
+  it("never steps past the most a dose can be", () => {
+    expect(stepUnits("99", 1, "en")).toBe("100");
+    expect(stepUnits("100", 1, "en")).toBeNull();
+    expect(stepUnits("99,5", 1, "es")).toBeNull();
+    // A slipped digit is hers to retype; stepping down from it would only walk a wrong number.
+    expect(stepUnits("150", -1, "en")).toBeNull();
+    expect(stepUnits("1500", -1, "en")).toBeNull();
+  });
+
+  // Stepping text that is not a dose would mean guessing what she meant.
+  it("leaves alone what it cannot read as she wrote it", () => {
+    expect(stepUnits("4 u", 1, "en")).toBeNull();
+    expect(stepUnits("1,125", 1, "es")).toBeNull();
+    expect(stepUnits("-2", 1, "en")).toBeNull();
   });
 });

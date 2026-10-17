@@ -1,4 +1,5 @@
-import type { StringKey } from "./i18n";
+import { formatUnits } from "./format";
+import type { Language, StringKey } from "./i18n";
 import type { Dose, Meal, SaveDose } from "./types";
 
 // The most one dose can be. It catches a slipped digit, not a clinical limit, and the server holds
@@ -28,6 +29,27 @@ export function readUnits(text: string): number | UnitsProblem {
     return "unitsAtMost";
   }
   return decimals.length > 2 ? "unitsDecimals" : units;
+}
+
+// The units after a tap on + or −, written as the field shows them, or null when the tap has nowhere
+// to go. A plus from an empty field is her own first unit; a step down to no dose empties the field.
+// Text that is not a number with at most two decimals, or is over the most, is left as she wrote it.
+export function stepUnits(text: string, delta: 1 | -1, language: Language): string | null {
+  const typed = text.trim();
+  const match = /^(\d*)(?:[.,](\d{0,2}))?$/.exec(typed);
+  if (!match || (typed !== "" && match[1] === "" && !match[2])) {
+    return null;
+  }
+  if (typed === "" && delta < 0) {
+    return null;
+  }
+  // In hundredths, the smallest step a dose is recorded in, so the sum carries no float noise.
+  const hundredths = Number(match[1] || "0") * 100 + Number((match[2] ?? "").padEnd(2, "0")) + delta * 100;
+  // Past the most, either way: a slipped digit is hers to retype, not to walk down a unit at a time.
+  if (hundredths > MAX_UNITS * 100) {
+    return null;
+  }
+  return hundredths <= 0 ? "" : formatUnits(hundredths / 100, language);
 }
 
 // A deleted dose as it is saved again when she undoes the deletion.
