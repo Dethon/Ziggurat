@@ -56,7 +56,7 @@ public class ApprovalSettingsBindingTests
 
         settings.OpenRouter.ApiKey.ShouldBeEmpty();
         settings.TypeSafe.ApiUrl.ShouldBe("https://openrouter.ai/api/");
-        settings.TypeSafe.Model.ShouldBe("typesafe/jev-1.13-20260917");
+        settings.TypeSafe.Model.ShouldBe("typesafe/jev-1.14-20261014");
         settings.Approval.Judgment.ShouldBe(new ApprovalJudgmentSettings
         {
             Enabled = true,
