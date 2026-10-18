@@ -3,7 +3,9 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
 using Tests.Eval.Harness;
 
 namespace Tests.Eval.Fixtures;
@@ -69,9 +71,9 @@ public static class EvalRun
         var clock = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var response = await agent.RunAsync(
-                Messages(scenario, conversationId, stack.Memory.Context), thread,
-                cancellationToken: cancellation.Token);
+            var messages = Messages(scenario, conversationId, stack.Memory.Context);
+            await LandAsync(agent, thread, messages[^1], stack.Attachments, conversationId, cancellation.Token);
+            var response = await agent.RunAsync(messages, thread, cancellationToken: cancellation.Token);
 
             recording.Reply = response.Text;
             recording.Answer = Answer(response.Messages);
@@ -141,6 +143,31 @@ public static class EvalRun
                 scenario.Turn.SatelliteId)));
 
         return message;
+    }
+
+    // The turn's files put in the sandbox as ConversationGroup puts a channel's there: after the
+    // session is built, because the mounts only exist then, and recorded on the message rather than
+    // written into it. Without it no scenario sends what the model is told about a landed file, and
+    // that note once sent jonas to file_read a photo it could already see (2026-10-18). An agent
+    // with no sandbox lands nothing, as in the deployment.
+    private static async Task LandAsync(
+        DisposableAgent agent, AgentSession thread, ChatMessage turn, EvalAttachments attachments,
+        string conversationId, CancellationToken ct)
+    {
+        if (turn.GetAttachments() is not { Count: > 0 } references)
+        {
+            return;
+        }
+
+        await agent.WarmupSessionAsync(thread, ct);
+        var landed = await AttachmentLanding.LandAsync(
+            new AttachmentLanding.Landing(
+                agent.GetFileSystemRegistry(thread), references, attachments.ReadAsync, conversationId,
+                Guid.NewGuid().ToString("N")),
+            NullLogger.Instance,
+            ct);
+        turn.SetSandboxPaths(landed.Landed);
+        turn.SetLandingFailures(landed.Failed);
     }
 
     // What a channel reads as the answer: the last message that said anything. The Sugary channel

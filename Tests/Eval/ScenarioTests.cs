@@ -31,7 +31,19 @@ public class TimerScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalSco
 [Trait("Tier", "Full")]
 public class ShellScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
 {
-    public static TheoryData<string> Scenarios => EvalSuite.Named(ShellScenarios.All);
+    public static TheoryData<string> Scenarios => EvalSuite.Named(ShellScenarios.All, 0, of: 2);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task AScenario_AtItsDeclaredThreshold_Holds(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
+}
+
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
+public class ShellScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(ShellScenarios.All, 1, of: 2);
 
     [SkippableTheory]
     [MemberData(nameof(Scenarios))]

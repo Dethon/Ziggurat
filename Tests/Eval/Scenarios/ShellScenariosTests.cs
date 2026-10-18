@@ -45,4 +45,26 @@ public class ShellScenariosTests
     public void ACountOfAnotherFolder_IsNotTheCount() =>
         Required(ShellScenarios.WordsAcrossTheVault, "count", "wc -w *.md", path: "/vault/Proyectos")
             .ShouldBeFalse();
+
+    // The copy named by its landed path, converted with ImageMagick.
+    [Fact]
+    public void AConversionOfTheLandedCopy_IsTheConversion() =>
+        Required(ShellScenarios.AnAttachedPhotoIsConvertedInTheSandbox, "convert",
+                "convert /sandbox/home/sandbox_user/uploads/eval-1/abc/meal-photo.jpg /sandbox/home/sandbox_user/meal-photo.png && ls -l /sandbox/home/sandbox_user/meal-photo.png")
+            .ShouldBeTrue();
+
+    // Run from inside the message's directory, the copy is where the command runs.
+    [Fact]
+    public void AConversionRunInTheUploadsDirectory_IsTheConversion() =>
+        Required(ShellScenarios.AnAttachedPhotoIsConvertedInTheSandbox, "convert",
+                "python3 -c \"from PIL import Image; Image.open('foto.jpg').save('foto.png')\" && du -h foto.png",
+                path: "/sandbox/home/sandbox_user/uploads/eval-1/abc")
+            .ShouldBeTrue();
+
+    // A PNG made from something else is not the conversion.
+    [Fact]
+    public void APngOfAnotherFile_IsNotTheConversion() =>
+        Required(ShellScenarios.AnAttachedPhotoIsConvertedInTheSandbox, "convert",
+                "convert /sandbox/home/sandbox_user/other.jpg out.png")
+            .ShouldBeFalse();
 }

@@ -14,8 +14,13 @@ public static class ShellScenarios
 {
     public static IReadOnlyList<Scenario> All =>
     [
-        WordsAcrossTheVault, ADismissInsideAScript, AWriteTheVaultRefuses, AMoveInsideTheVault, AMachineIsNotInTheSandbox
+        WordsAcrossTheVault, ADismissInsideAScript, AWriteTheVaultRefuses, AMoveInsideTheVault, AMachineIsNotInTheSandbox,
+        AnAttachedPhotoIsLookedAt, AnAttachedPhotoIsConvertedInTheSandbox
     ];
+
+    // A plate with a slice of pizza and sliced courgette, the Sugary E2E suite's photo.
+    private static readonly string MealPhoto =
+        Path.Combine(RepositoryRoot.Path, "Tests", "E2E", "Sugary", "meal-photo.jpg");
 
     // An aggregate no single tool answers: the word count of a folder. The notes are read in place
     // at /vault from a command, with nothing copied into the sandbox first — and the number is one
@@ -248,6 +253,72 @@ public static class ShellScenarios
             ]
         },
         Claims = [FileSystemToolFeature.AnOutpostIsNeverInTheSandbox.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // An attached photo is in front of the model and in the sandbox both. Asked what is in it, the
+    // model looks: jonas file_read a photo it had just described when the sandbox path was named
+    // ahead of the picture, a call and the image a second time (prod, 2026-10-18). No call is
+    // permitted, so any read of the copy fails the run.
+    public static Scenario AnAttachedPhotoIsLookedAt => new()
+    {
+        Name = "an attached photo is looked at, not read back from the sandbox",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "¿Qué hay en esta foto?",
+            Sender = "fran",
+            Attachments = [new EvalAttachment(MealPhoto, "image/jpeg")]
+        },
+        Instant = EvalInstant.Evening,
+        CallCeiling = 0,
+        Reply = new ReplyExpectation
+        {
+            Mentions =
+            [
+                new SpokenValue("the pizza", "pizza"),
+                new SpokenValue("the courgette",
+                    "calabacín", "calabacines", "calabacita", "calabacitas", "calabaza", "zucchini", "courgette")
+            ]
+        },
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // The other half of the same note: the sandbox copy is there to run a command against, and
+    // telling the model the photo is already shown must not cost it the copy when a command is what
+    // the person asked for.
+    public static Scenario AnAttachedPhotoIsConvertedInTheSandbox => new()
+    {
+        Name = "an attached photo is converted from its sandbox copy",
+        AgentId = "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "Convierte esta foto a PNG en el sandbox y dime cuánto ocupa el PNG.",
+            Sender = "fran",
+            Attachments = [new EvalAttachment(MealPhoto, "image/jpeg")]
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            new CallExpectation
+            {
+                Label = "convert",
+                Tool = EvalTools.Exec,
+                // The copy is named by the command or is where it runs, and a PNG comes out of it.
+                Arguments =
+                [
+                    Arg.Matches("command", "(?i)png"),
+                    Arg.Any(Arg.Matches("command", "meal-photo|uploads"), Arg.Matches("path", "uploads"))
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.Looking("/sandbox*"),
+            new CallPermission(EvalTools.Exec, "/sandbox*"),
+            CallPermission.Load(SandboxSkill.Name)
+        ],
+        CallCeiling = 6,
         Policy = new RunPolicy(2, 3)
     };
 }

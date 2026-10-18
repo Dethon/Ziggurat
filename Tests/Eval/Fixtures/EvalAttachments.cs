@@ -34,19 +34,27 @@ public sealed class EvalAttachments(EvalTurn turn) : IAttachmentSource
 
     public async Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct)
     {
-        if (channelId != _channel || !_paths.TryGetValue(attachmentId, out var path))
+        if (channelId != _channel)
         {
             return null;
         }
 
-        var bytes = await File.ReadAllBytesAsync(path, ct);
-        lock (_gate)
+        var bytes = await ReadAsync(attachmentId, ct);
+        if (bytes is not null)
         {
-            _served.Add(attachmentId);
+            lock (_gate)
+            {
+                _served.Add(attachmentId);
+            }
         }
 
         return bytes;
     }
+
+    // The same file for the landing, which puts it in the sandbox rather than in front of the
+    // model, so it counts nothing as served.
+    public async Task<byte[]?> ReadAsync(string attachmentId, CancellationToken ct) =>
+        _paths.TryGetValue(attachmentId, out var path) ? await File.ReadAllBytesAsync(path, ct) : null;
 
     // The references the turn carries, built here so the turn and the fetch agree on every id. A
     // clip's stills are named by the ids of the attachments at those paths.

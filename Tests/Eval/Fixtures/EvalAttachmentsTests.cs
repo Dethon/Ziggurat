@@ -36,6 +36,20 @@ public sealed class EvalAttachmentsTests : IDisposable
         source.Served.ShouldBe([id]);
     }
 
+    // The landing fetch is the channel's too, but it puts the file in the sandbox rather than in
+    // front of the model: counted as served, a photo the model never saw would read as seen.
+    [Fact]
+    public async Task AFileReadForLanding_IsNotCountedAsServed()
+    {
+        var source = new EvalAttachments(Turn);
+        var id = EvalAttachments.References(Turn).Single().Id;
+
+        (await source.ReadAsync(id, CancellationToken.None)).ShouldBe([9, 8, 7]);
+        (await source.ReadAsync("not-an-attachment", CancellationToken.None)).ShouldBeNull();
+
+        source.Served.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task AnUnknownId_OrAnotherChannel_IsNothing()
     {
