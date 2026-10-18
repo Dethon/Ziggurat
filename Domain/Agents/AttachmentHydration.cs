@@ -100,14 +100,28 @@ public static class AttachmentHydration
     private static async Task<ChatMessage> HydrateAsync(
         ChatMessage message, IAttachmentSource source, ModelInputs? inputs, bool withinDepth, CancellationToken ct)
     {
-        var contents = new List<AIContent>();
+        // Decided before any byte is fetched, so a still the model will not be sent is never asked
+        // for and a refused turn costs the channel nothing.
+        var attachments = ClipSelection.For(
+            message.GetAttachments() ?? [], inputs ?? ModelInputs.Everything("The model"), withinDepth);
+        var channelId = message.GetAttachmentChannelId();
+        var shown = attachments.Count > 0 && !string.IsNullOrWhiteSpace(channelId)
+            ? await ShowAsync(attachments, source, channelId!, withinDepth, ct)
+            : [];
+
+        // The files first, then where they landed: a path named ahead of a picture the model could
+        // already see read as an errand to fetch it, and jonas file_read a photo it had just
+        // described (2026-10-18). Named as shown only when every file went, because the sandbox
+        // copy is the only one the model has of a file that did not.
+        var contents = new List<AIContent>(shown);
 
         // Where the files landed in the sandbox, named so the model can act on them without
         // being told a tool exists. It survives the hydration distance, because the file stays
         // in the sandbox long after the bytes stop being sent.
         if (message.GetSandboxPaths() is { Count: > 0 } paths)
         {
-            contents.Add(new TextContent(AttachmentLanding.Describe(paths)));
+            contents.Add(new TextContent(AttachmentLanding.Describe(
+                paths, shown: shown.Count > 0 && shown.All(c => c is DataContent))));
         }
 
         // Which files never got there, bounded by the same distance as the bytes rather than by the
@@ -118,26 +132,28 @@ public static class AttachmentHydration
             contents.Add(new TextContent(AttachmentLanding.DescribeFailures(failed)));
         }
 
-        // Decided before any byte is fetched, so a still the model will not be sent is never asked
-        // for and a refused turn costs the channel nothing.
-        var attachments = ClipSelection.For(
-            message.GetAttachments() ?? [], inputs ?? ModelInputs.Everything("The model"), withinDepth);
-        var channelId = message.GetAttachmentChannelId();
-        if (attachments.Count > 0 && string.IsNullOrWhiteSpace(channelId))
-        {
-            return Append(message, contents);
-        }
+        return Append(message, contents);
+    }
+
+    private static async Task<IReadOnlyList<AIContent>> ShowAsync(
+        IReadOnlyList<AttachmentReference> attachments,
+        IAttachmentSource source,
+        string channelId,
+        bool withinDepth,
+        CancellationToken ct)
+    {
+        var contents = new List<AIContent>(attachments.Count);
         foreach (var attachment in attachments)
         {
             var bytes = withinDepth
-                ? await source.FetchAsync(channelId!, attachment.Id, ct)
+                ? await source.FetchAsync(channelId, attachment.Id, ct)
                 : null;
             contents.Add(bytes is not null
                 ? new DataContent(bytes, attachment.MediaType)
                 : new TextContent(Placeholder(attachment)));
         }
 
-        return Append(message, contents);
+        return contents;
     }
 
     private static ChatMessage Append(ChatMessage message, IReadOnlyList<AIContent> contents)

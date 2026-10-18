@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
@@ -77,6 +78,37 @@ public class OpenRouterChatClientHydrationDepthTests
         text.ShouldContain("/sandbox/uploads/7-42/turn/photo.png");
         captured[0].Contents.OfType<DataContent>().ShouldBeEmpty();
         messages[0].Contents.OfType<TextContent>().ShouldAllBe(c => !c.Text.Contains("/sandbox/"));
+    }
+
+    // A photo the model can already see, named only by its sandbox path, read as an errand: jonas
+    // described the picture and then file_read it, a call and the image a second time (prod,
+    // 2026-10-18). Shown first and named as shown, the path is left for what it is for — a command.
+    [Fact]
+    public async Task ASandboxPath_ForAFileShownInTheMessage_FollowsThePictureAndSaysItIsShown()
+    {
+        var messages = Conversation(attachmentAt: 0, length: 1);
+        messages[0].SetSandboxPaths(["/sandbox/uploads/7-42/turn/photo.png"]);
+
+        var captured = await SendAsync(messages);
+
+        var contents = captured[0].Contents;
+        var note = contents.OfType<TextContent>().Single(c => c.Text.Contains("/sandbox/uploads/"));
+        contents.IndexOf(contents.OfType<DataContent>().Single()).ShouldBeLessThan(contents.IndexOf(note));
+        note.Text.ShouldBe(AttachmentLanding.Describe(["/sandbox/uploads/7-42/turn/photo.png"], shown: true));
+    }
+
+    // Where the bytes did not go, the sandbox copy is all the model has, and nothing may tell it the
+    // file is in front of it.
+    [Fact]
+    public async Task ASandboxPath_ForAFileNotShown_IsNamedAsTheOnlyCopy()
+    {
+        var messages = Conversation(attachmentAt: 0, length: 1);
+        messages[0].SetSandboxPaths(["/sandbox/uploads/7-42/turn/photo.png"]);
+
+        var captured = await SendAsync(messages, source: new EmptyAttachmentSource());
+
+        var note = AttachmentLanding.Describe(["/sandbox/uploads/7-42/turn/photo.png"], shown: false);
+        captured[0].Contents.OfType<TextContent>().Select(c => c.Text).ShouldContain(note);
     }
 
     // A file that could not be put in the sandbox is the same kind of claim as the bytes, with the
