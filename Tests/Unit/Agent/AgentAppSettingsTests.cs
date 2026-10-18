@@ -116,6 +116,21 @@ public class AgentAppSettingsTests
         models.ShouldAllBe(m => !m.Contains(":nitro") && !m.Contains(":floor"));
     }
 
+    // Relace serves jonas's model and garbles a photograph on the way in: pinned to it, a plate of
+    // courgette and pizza came back as a blank page watermarked "diet", "diciembre", a tortilla —
+    // seven of eight, where every other provider read it (2026-10-18). Balanced routing reached it
+    // often enough that jonas file_read and cropped photos it had been sent, looking for a picture
+    // it never got. Ignored rather than routed around with `sort`/`order`, so routing stays balanced.
+    [Fact]
+    public void Jonas_IgnoresTheProviderThatGarblesPhotographs()
+    {
+        var jonas = Root()["agents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == "jonas")!;
+
+        var ignored = jonas["providerRouting"]?["ignore"]?.AsArray().Select(p => p!.GetValue<string>()).ToList();
+
+        ignored.ShouldBe(["relace"]);
+    }
+
     // A worker runs its parent's model, served by whoever serves its parent. A key naming either
     // here would bind to nothing and read as a setting that works.
     [Fact]
