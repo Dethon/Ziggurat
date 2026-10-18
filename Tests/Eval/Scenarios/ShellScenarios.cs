@@ -19,7 +19,7 @@ public static class ShellScenarios
     ];
 
     // A plate of sliced courgette and a square of pizza, the Sugary E2E suite's photo.
-    private static readonly string MealPhoto =
+    private static readonly string _mealPhoto =
         Path.Combine(RepositoryRoot.Path, "Tests", "E2E", "Sugary", "meal-photo.jpg");
 
     // An aggregate no single tool answers: the word count of a folder. The notes are read in place
@@ -268,7 +268,7 @@ public static class ShellScenarios
         {
             Text = "¿Qué hay en esta foto?",
             Sender = "fran",
-            Attachments = [new EvalAttachment(MealPhoto, "image/jpeg")]
+            Attachments = [new EvalAttachment(_mealPhoto, "image/jpeg")]
         },
         Instant = EvalInstant.Evening,
         CallCeiling = 0,
@@ -296,7 +296,7 @@ public static class ShellScenarios
         {
             Text = "Convierte esta foto a PNG en el sandbox y dime cuánto ocupa el PNG.",
             Sender = "fran",
-            Attachments = [new EvalAttachment(MealPhoto, "image/jpeg")]
+            Attachments = [new EvalAttachment(_mealPhoto, "image/jpeg")]
         },
         Instant = EvalInstant.Evening,
         Required =
