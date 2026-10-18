@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { api } from "../api";
 import { fromEstimate, shownTotal } from "../carbs";
 import { CameraButton, CameraFallbackNote } from "../components/Camera";
+import { ClipThumb, type Clip } from "../components/ClipThumb";
 import { Icon } from "../components/Icon";
 import { ItemLine } from "../components/ItemRow";
 import { Sheet } from "../components/Sheet";
@@ -20,7 +21,7 @@ interface Photo {
   url: string;
 }
 
-// A logged meal asked about again: what she forgot, from a photo or her words, or what was off
+// A logged meal asked about again: what she forgot, from photos, a clip or her words, or what was off
 // about one food or the whole meal, in her words with the meal's own photo. What the model answers
 // is shown first, with its questions, and goes into the meal only when she takes it.
 export function ReviseSheet({
@@ -39,6 +40,7 @@ export function ReviseSheet({
   const { t, language } = useSettings();
   const [words, setWords] = useState("");
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [clip, setClip] = useState<Clip | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [unsentAnswers, setUnsentAnswers] = useState(false);
   const [estimate, setEstimate] = useState<MealEstimate | null>(null);
@@ -46,10 +48,14 @@ export function ReviseSheet({
   const [error, setError] = useState<string | null>(null);
   const livePhotos = useRef(photos);
   livePhotos.current = photos;
+  const liveClip = useRef(clip);
+  liveClip.current = clip;
 
   useEffect(
     () => () => {
-      livePhotos.current.forEach((photo) => URL.revokeObjectURL(photo.url));
+      [...livePhotos.current, ...(liveClip.current ? [liveClip.current] : [])].forEach((photo) =>
+        URL.revokeObjectURL(photo.url),
+      );
     },
     [],
   );
@@ -57,7 +63,7 @@ export function ReviseSheet({
   const target = revision.kind === "food" ? items.find((item) => item.id === revision.id) : undefined;
   const adding = revision.kind === "add";
   const title = adding ? t("reviseAddTitle") : target ? sentence(target.name) : t("reviseMealTitle");
-  const canAsk = adding ? words.trim() !== "" || photos.length > 0 : words.trim() !== "";
+  const canAsk = adding ? words.trim() !== "" || photos.length > 0 || clip !== null : words.trim() !== "";
   // Made once per answer, so the foods she takes are the ones she was shown.
   const found = useMemo(() => estimate?.items.map(fromEstimate) ?? null, [estimate]);
   const next = found ? applied(revision, items, found) : null;
@@ -82,6 +88,20 @@ export function ReviseSheet({
     setPhotos((current) => current.filter((p) => p !== photo));
   }
 
+  function addClip(file: File, seconds?: number) {
+    if (clip) {
+      URL.revokeObjectURL(clip.url);
+    }
+    setClip({ blob: file, url: URL.createObjectURL(file), seconds });
+  }
+
+  function removeClip() {
+    if (clip) {
+      URL.revokeObjectURL(clip.url);
+    }
+    setClip(null);
+  }
+
   async function ask(answered: Record<string, string>, conversation: string | null) {
     const controller = new AbortController();
     setRunning(controller);
@@ -91,7 +111,7 @@ export function ReviseSheet({
       // Without it, if it cannot be fetched: her words lead a correction.
       const stored = !adding && meal.hasPhoto ? await api.mealPhoto(meal.id).catch(() => null) : null;
       const result = await continued(
-        revisionInput(revision, items, { words, photos: photos.map((photo) => photo.blob), answers: answered }, stored, language),
+        revisionInput(revision, items, { words, photos: photos.map((photo) => photo.blob), clip: clip?.blob ?? null, answers: answered }, stored, language),
         conversation,
         (input) => api.estimate(input, controller.signal),
       );
@@ -225,8 +245,16 @@ export function ReviseSheet({
           <>
             {adding && (
               <>
-                {photos.length > 0 && (
+                {(photos.length > 0 || clip) && (
                   <ul className="photos">
+                    {clip && (
+                      <ClipThumb
+                        key={clip.url}
+                        clip={clip}
+                        onSeconds={(seconds) => setClip((current) => current && { ...current, seconds })}
+                        onRemove={removeClip}
+                      />
+                    )}
                     {photos.map((photo) => (
                       <li key={photo.url}>
                         <img src={photo.url} alt="" />
@@ -237,8 +265,8 @@ export function ReviseSheet({
                     ))}
                   </ul>
                 )}
-                {photos.length < MAX_PHOTOS && (
-                  <div className="capture-row">
+                <div className="capture-row">
+                  {photos.length < MAX_PHOTOS && (
                     <CameraButton
                       mode="photo"
                       icon="camera"
@@ -247,14 +275,24 @@ export function ReviseSheet({
                     >
                       {t(photos.length === 0 ? "takePhoto" : "takeAnother")}
                     </CameraButton>
+                  )}
+                  {!clip && (
+                    <CameraButton mode="video" icon="video" className="button button-secondary tile-button" onClip={addClip}>
+                      <span className="tile-label">
+                        {t("filmPlate")}
+                        <small>{t("filmPlateSub")}</small>
+                      </span>
+                    </CameraButton>
+                  )}
+                  {photos.length < MAX_PHOTOS && (
                     <label className="button button-secondary tile-button">
                       <Icon name="image" />
                       {t("fromGallery")}
                       <input type="file" accept="image/*" multiple hidden onChange={pickPhotos} />
                     </label>
-                  </div>
-                )}
-                <CameraFallbackNote modes={["photo"]} />
+                  )}
+                </div>
+                <CameraFallbackNote modes={["photo", "video"]} />
               </>
             )}
             <label className="field">

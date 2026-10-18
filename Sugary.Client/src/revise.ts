@@ -11,8 +11,10 @@ export type Revision = { kind: "add" } | { kind: "food"; id: string } | { kind: 
 export interface ReviseRequest {
   // What she wrote: the food she forgot, or what was off.
   words: string;
-  // Photos she took of a food she forgot. Only adding takes them; a correction sends the meal's own.
+  // Photos or a clip she took of a food she forgot. Only adding takes them; a correction sends the
+  // meal's own photo.
   photos: Blob[];
+  clip: Blob | null;
   answers: Record<string, string>;
 }
 
@@ -36,6 +38,7 @@ export function revisionInput(
   const correction = request.words.trim() === "" ? [] : [`Correction: ${request.words.trim()}`];
   const asked = (described: readonly DraftItem[], counted: readonly DraftItem[]) => ({
     photos: storedPhoto ? [storedPhoto] : [],
+    clip: null,
     description: described.map(logged).join("; "),
     clarifications: [...answerLines(request.answers), ...facts(described), ...correction].join("\n"),
     counted: countedLines(counted),
@@ -44,6 +47,7 @@ export function revisionInput(
     revision.kind === "add"
       ? {
           photos: request.photos,
+          clip: request.clip,
           description: request.words.trim(),
           clarifications: answerLines(request.answers).join("\n"),
           counted: countedLines(items),
@@ -57,7 +61,7 @@ export function revisionInput(
             items.filter((item) => item.source === "estimate"),
             items.filter((item) => item.source !== "estimate"),
           );
-  return { ...fresh, clip: null, language, conversationId: null };
+  return { ...fresh, language, conversationId: null };
 }
 
 // The meal's foods with what the model found in: a forgotten food after the rest, a food replaced

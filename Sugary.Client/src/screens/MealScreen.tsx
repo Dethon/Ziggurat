@@ -3,6 +3,7 @@ import { api } from "../api";
 import { ActionBar } from "../components/ActionBar";
 import { shownTotal, toMealItem } from "../carbs";
 import { CameraButton, CameraFallbackNote } from "../components/Camera";
+import { ClipThumb, type Clip } from "../components/ClipThumb";
 import { useConfirm } from "../components/Confirm";
 import { Icon } from "../components/Icon";
 import { Drip, Slice } from "../components/Illustrations";
@@ -28,8 +29,6 @@ const MAX_PHOTOS = 4;
 interface Photo {
   blob: Blob;
   url: string;
-  // A clip's length, when known.
-  seconds?: number;
 }
 
 // What the footer says for each action, and the quiet way out it offers beside it.
@@ -63,7 +62,7 @@ export function MealScreen({
   const [confirm, confirming] = useConfirm();
   const [photos, setPhotos] = useState<Photo[]>([]);
   // At most one clip, shown as she filmed it; the server makes it small and takes its stills.
-  const [clip, setClip] = useState<Photo | null>(null);
+  const [clip, setClip] = useState<Clip | null>(null);
   const [running, setRunning] = useState<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   // The last change to an estimate on screen failed: the numbers shown are from before it.
@@ -528,29 +527,12 @@ export function MealScreen({
           {(photos.length > 0 || clip) && (
             <ul className="photos">
               {clip && (
-                <li key={clip.url}>
-                  <video
-                    src={clip.url}
-                    muted
-                    playsInline
-                    preload="metadata"
-                    aria-label={clip.seconds ? t("clipSpoken", { s: clip.seconds }) : t("clip")}
-                    onLoadedMetadata={(event) => {
-                      // From the phone's camera app the length is read from the file, where it is known.
-                      const duration = event.currentTarget.duration;
-                      if (!clip.seconds && Number.isFinite(duration) && duration > 0) {
-                        setClip((current) => current && { ...current, seconds: Math.round(duration) });
-                      }
-                    }}
-                  />
-                  <span className="clip-badge" aria-hidden="true">
-                    <Icon name="play" size={16} />
-                    {clip.seconds ? `${clip.seconds}\u00a0s` : t("clip")}
-                  </span>
-                  <button type="button" className="photo-remove" aria-label={t("removeClip")} onClick={removeClip}>
-                    <Icon name="close" size={16} />
-                  </button>
-                </li>
+                <ClipThumb
+                  key={clip.url}
+                  clip={clip}
+                  onSeconds={(seconds) => setClip((current) => current && { ...current, seconds })}
+                  onRemove={removeClip}
+                />
               )}
               {photos.map((photo) => (
                 <li key={photo.url}>

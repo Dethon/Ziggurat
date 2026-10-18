@@ -23,6 +23,7 @@ const items = [salad, bread, beer];
 const request = (over: Partial<ReviseRequest> = {}): ReviseRequest => ({
   words: "",
   photos: [],
+  clip: null,
   answers: {},
   ...over,
 });
@@ -49,6 +50,11 @@ describe("adding a food she forgot", () => {
     expect(input.clarifications).toBe("");
   });
 
+  it("sends a clip she filmed of it", () => {
+    const clip = new Blob(["v"], { type: "video/mp4" });
+    expect(revisionInput({ kind: "add" }, items, request({ clip }), null, "es").clip).toBe(clip);
+  });
+
   it("puts what the model found after the meal's foods", () => {
     expect(applied({ kind: "add" }, items, answer(["Caña"]).items.map(fromEstimate)).map((i) => i.name)).toEqual([
       "Ensaladilla rusa",
@@ -73,6 +79,7 @@ describe("correcting one food in words", () => {
     expect(input.photos).toEqual([photo]);
     expect(input.clarifications).toBe("Correction: llevaba mucha más patata");
     expect(input.counted.split("\n")).toEqual(["- Pan, una rebanada: 20 g of carbs", "- Caña: 6 g of carbs"]);
+    expect(input.clip).toBeNull();
   });
 
   it("tells the model a weight she set on it as a fact", () => {
