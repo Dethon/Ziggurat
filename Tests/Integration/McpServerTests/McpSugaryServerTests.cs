@@ -43,9 +43,10 @@ public class McpSugaryServerTests
         text.ShouldContain("Never suggest insulin doses, ratios, corrections or timing.");
     }
 
-    // What the server explains on demand: how her foods and the tables are laid out.
+    // What the server explains on demand: her tables, where their columns are explained, and that
+    // they are asked rather than read.
     [Fact]
-    public async Task TheLogSkill_IsServed_PointingAtTheReadmeAndHerFoods()
+    public async Task TheLogSkill_IsServed_PointingAtTheReadmeAndTheQueryTool()
     {
         await using var server = await SugaryServer.StartAsync();
 
@@ -53,10 +54,13 @@ public class McpSugaryServerTests
         var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
 
         body.ShouldContain("/sugary/README.md");
-        body.ShouldContain("/sugary/foods.csv");
+        body.ShouldContain("`domain__filesystem__query`");
+        body.ShouldContain("- `foods` —");
+        body.ShouldNotContain(".csv");
+        body.ShouldNotContain("text_search");
     }
 
-    // "How much did she take for the pizza" is one search, and reading her doses never turns into
+    // "How much did she take for the pizza" is one join, and reading her doses never turns into
     // advising one.
     [Fact]
     public async Task TheLogSkill_SaysWhereHerDosesAre_AndThatTheyAreNeverABasisForAdvice()
@@ -66,15 +70,15 @@ public class McpSugaryServerTests
         var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(SugarySkill.Name));
         var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
 
-        body.ShouldContain("/sugary/doses/<YYYY-MM>.csv");
-        body.ShouldContain("`meal_id`, with `directoryPath` set to `/sugary/doses`");
+        body.ShouldContain("- `doses` —");
+        body.ShouldContain("`doses` joined to `meals` on `meal_id`");
         body.ShouldContain("never a basis for advice");
         body.ShouldContain("not her ratio applied to its carbs");
         SugarySkill.Description.ShouldContain("insulin");
     }
 
-    // "Did she walk after the paella" is a read of one month beside /ha, and her exercise never turns
-    // into advice about carbs or a dose around it.
+    // "Did she walk after the paella" is a query beside /ha, and her exercise never turns into advice
+    // about carbs or a dose around it.
     [Fact]
     public async Task TheLogSkill_SaysWhereHerExerciseIs_AndThatItIsNeverABasisForAdvice()
     {
@@ -83,13 +87,13 @@ public class McpSugaryServerTests
         var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(SugarySkill.Name));
         var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
 
-        body.ShouldContain("/sugary/exercise/<YYYY-MM>.csv");
+        body.ShouldContain("- `exercise` —");
         body.ShouldContain("empty while it is running");
         body.ShouldContain("no carbs or dose around exercise");
         SugarySkill.Description.ShouldContain("exercise");
     }
 
-    // "Was she on her period the week her glucose ran high" is a read of one file beside /ha.
+    // "Was she on her period the week her glucose ran high" is a query beside /ha.
     [Fact]
     public async Task TheLogSkill_SaysWhereHerCycleIs_AndThatItsDaysLineUpWithHa()
     {
@@ -98,8 +102,8 @@ public class McpSugaryServerTests
         var skill = await server.Client.ReadResourceAsync(SkillServerResources.BodyAddress(SugarySkill.Name));
         var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
 
-        body.ShouldContain("/sugary/periods.csv");
-        body.ShouldContain("/sugary/day-notes.csv");
+        body.ShouldContain("- `periods` —");
+        body.ShouldContain("`day_notes`");
         body.ShouldContain("read `/ha` history for those days");
         SugarySkill.Description.ShouldContain("period");
     }

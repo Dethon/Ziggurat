@@ -293,14 +293,15 @@ public sealed record CallPermission(string Tool, string Path = "*", string Comma
         [.. Looking(path), Manual(EvalTools.Exec, path)];
 
     // Looking before acting is tolerated almost everywhere in this suite, and spelling out the
-    // same four lines per scenario is how one of them ends up missing and reporting a glob as a
+    // same five lines per scenario is how one of them ends up missing and reporting a glob as a
     // behavioural failure.
     public static IReadOnlyList<CallPermission> Looking(string path) =>
     [
         new(EvalTools.Glob, path),
         new(EvalTools.Read, path),
         new(EvalTools.Info, path),
-        new(EvalTools.Search, path)
+        new(EvalTools.Search, path),
+        new(EvalTools.Query, path)
     ];
 }
 

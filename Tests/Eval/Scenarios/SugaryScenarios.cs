@@ -117,11 +117,11 @@ public static class SugaryScenarios
     };
 
     // A question about what she ate, asked of Jonas in WebChat: the skill that explains the tables is
-    // loaded before /sugary is read, and the answer is the later of the two paellas. Jonas, because
+    // loaded before /sugary is queried, and the answer is the later of the two paellas. Jonas, because
     // the sugary agent only estimates; he has her log beside the glucose history /ha serves.
     public static Scenario HerLogIsReadThroughTheSkill => new()
     {
-        Name = "a question about her log loads the sugary-log skill before reading it",
+        Name = "a question about her log loads the sugary-log skill before querying it",
         AgentId = "jonas",
         Turn = new EvalTurn { Text = "¿Cuándo comió paella por última vez?", Sender = "fran" },
         Instant = EvalInstant.Evening,
@@ -130,13 +130,13 @@ public static class SugaryScenarios
             CallExpectation.LoadsSkill(SugarySkill.Name),
             new CallExpectation
             {
-                Label = "read",
-                Tool = "domain__filesystem__*",
-                Arguments = [Arg.PathMatches("^/sugary/")]
+                Label = "query",
+                Tool = EvalTools.Query,
+                Arguments = [Arg.PathMatches("^/sugary")]
             }
         ],
         Permitted = CallPermission.Looking("/sugary*"),
-        Ordering = [new OrderingConstraint("skill", "read")],
+        Ordering = [new OrderingConstraint("skill", "query")],
         CallCeiling = 6,
         Reply = new ReplyExpectation
         {
@@ -174,8 +174,8 @@ public static class SugaryScenarios
             new CallExpectation
             {
                 Label = "doses",
-                Tool = "domain__filesystem__*",
-                Arguments = [Arg.PathMatches("^/sugary/doses")]
+                Tool = EvalTools.Query,
+                Arguments = [Arg.PathMatches("^/sugary"), Arg.Matches("sql", @"\bdoses\b")]
             }
         ],
         Permitted = CallPermission.Looking("/sugary*"),
