@@ -4,20 +4,31 @@ import { formatGrams, fromFood, parseAmount } from "../carbs";
 import { useConfirm } from "../components/Confirm";
 import { Icon, type IconName } from "../components/Icon";
 import { Jar } from "../components/Illustrations";
+import { ProductFinder, type Found } from "../components/ProductFinder";
 import { ShareChips } from "../components/ShareChips";
 import { Sheet } from "../components/Sheet";
 import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
-import { search } from "../foods";
+import { fromPack, originOf, search, sourceFor } from "../foods";
+import { bindUnits } from "../meal";
 import { useSettings } from "../settings";
 import type { DraftItem, Food, SaveFood, Unit } from "../types";
 
-type View = { kind: "list" } | { kind: "amount"; food: Food } | { kind: "edit"; food: Food | null };
+type View = { kind: "list" } | { kind: "amount"; food: Food } | { kind: "edit"; food: Food | null; already?: boolean };
 
 const SOURCE_ICON: Record<Food["source"], IconName> = { barcode: "barcode", label: "label", manual: "pencil" };
 
 // Her own foods, opened from a meal to add one to it. Changing them lives on the Foods tab.
-export function FoodsSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (item: DraftItem) => void }) {
+// `labels` says whether a new food can be read off a photo of its nutrition table, as on the meal screen.
+export function FoodsSheet({
+  labels,
+  onClose,
+  onAdd,
+}: {
+  labels: boolean;
+  onClose: () => void;
+  onAdd: (item: DraftItem) => void;
+}) {
   const { t } = useSettings();
   const [foods, setFoods] = useState<Food[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +57,18 @@ export function FoodsSheet({ onClose, onAdd }: { onClose: () => void; onAdd: (it
   }
 
   if (view.kind === "edit") {
-    return <FoodSheet food={view.food} onDone={backToList} onClose={onClose} onBack={backToList} />;
+    return (
+      <FoodSheet
+        key={view.food?.id ?? "new"}
+        food={view.food}
+        already={view.already}
+        labels={labels}
+        onOpen={(food) => setView({ kind: "edit", food, already: true })}
+        onDone={backToList}
+        onClose={onClose}
+        onBack={backToList}
+      />
+    );
   }
 
   return (
@@ -228,14 +250,22 @@ export function AmountSheet({
   );
 }
 
-// A new food or one of hers, to change or delete.
+// A new food or one of hers, to change or delete. A new one can be filled in from a pack, by its
+// barcode or a photo of its nutrition table; a pack she already keeps opens that food instead
+// (`onOpen`), which then says so (`already`).
 export function FoodSheet({
   food,
+  already = false,
+  labels,
+  onOpen,
   onDone,
   onClose,
   onBack,
 }: {
   food: Food | null;
+  already?: boolean;
+  labels: boolean;
+  onOpen: (food: Food) => void;
   onDone: () => void;
   onClose: () => void;
   onBack?: () => void;
@@ -251,6 +281,11 @@ export function FoodSheet({
   const [portionCarbs, setPortionCarbs] = useState(food?.portionCarbs?.toString() ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Where the numbers came from, which a pack read into a new food replaces.
+  const [origin, setOrigin] = useState(() => originOf(food));
+  const [finding, setFinding] = useState(false);
+  // What the label reading had to say about the numbers, beside them.
+  const [packNote, setPackNote] = useState<string | null>(null);
 
   const per100 = parseAmount(density);
   const usual = parseAmount(portion);
@@ -277,13 +312,46 @@ export function FoodSheet({
     unit: byWeight ? unit : "g",
     portionGrams: byWeight ? usual : null,
     portionCarbs: byWeight ? null : fixed,
-    barcode: food?.barcode ?? null,
-    // Numbers she typed or changed are hers; an untouched label or barcode entry keeps its origin.
-    source: food !== null && byWeight && per100 === food.carbsPer100g ? food.source : "manual",
+    barcode: origin.barcode,
+    source: sourceFor(origin, byWeight, per100),
   };
   // One of hers is saved again only once something about it changed.
   const edited = useEdited(next);
   const save = () => run(() => (food ? api.updateFood(food.id, next) : api.createFood(next)));
+
+  async function fromFound(found: Found) {
+    setError(null);
+    if (found.food.foodId) {
+      try {
+        const kept = (await api.foods()).find((f) => f.id === found.food.foodId);
+        if (kept) {
+          onOpen(kept);
+          return;
+        }
+      } catch (failure) {
+        setFinding(false);
+        setError(errorMessage(failure, t));
+        return;
+      }
+    }
+    const pack = fromPack(found.food, found.source, found.barcode ?? null);
+    setName(pack.name);
+    setByWeight(true);
+    setUnit(pack.unit);
+    setDensity(pack.density);
+    setPortion(pack.portion);
+    setOrigin(pack.origin);
+    setPackNote(found.food.note);
+    setFinding(false);
+  }
+
+  if (finding) {
+    return (
+      <Sheet title={t("foodFromPack")} onClose={onClose} onBack={() => setFinding(false)}>
+        <ProductFinder labels={labels} onFound={(found) => void fromFound(found)} />
+      </Sheet>
+    );
+  }
 
   return (
     <Sheet
@@ -306,6 +374,28 @@ export function FoodSheet({
           }
         }}
       >
+        {already && (
+          <p className="notice">
+            <Icon name="jar" size={18} /> <span>{t("foodAlready")}</span>
+          </p>
+        )}
+        {food === null && (
+          <button type="button" className="button button-secondary" onClick={() => setFinding(true)}>
+            <Icon name="barcode" />
+            {t(origin.source === "manual" ? "foodFromPack" : "foodFromPackAgain")}
+          </button>
+        )}
+        {origin.source !== "manual" && food === null && (
+          <p className="muted small provenance-line">
+            <Icon name={origin.source === "barcode" ? "barcode" : "label"} size={18} />
+            <span>{origin.source === "barcode" ? t("sourceProduct", { code: origin.barcode ?? "" }) : t("sourceLabel")}</span>
+          </p>
+        )}
+        {packNote && (
+          <p className="notice">
+            <Icon name="info" size={18} /> <span>{bindUnits(packNote)}</span>
+          </p>
+        )}
         <label className="field">
           <span className="field-label">{t("name")}</span>
           <input value={name} autoFocus={food === null} onChange={(event) => setName(event.target.value)} />

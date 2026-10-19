@@ -101,6 +101,7 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
         {tab === "cycle" && <CycleScreen />}
         {tab === "foods" && (
           <FoodsScreen
+            labels={session.labels}
             onAddToMeal={(item) => {
               adder.current?.(item);
               toast({ text: t("addedToMeal"), action: { label: t("viewMeal"), run: () => setTab("meal") } });

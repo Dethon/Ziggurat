@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existing, search } from "./foods";
+import { existing, fromPack, originOf, search, sourceFor } from "./foods";
 import type { Food } from "./types";
 
 const food = (name: string, more: Partial<Food> = {}): Food => ({
@@ -30,5 +30,38 @@ describe("her own foods", () => {
     expect(existing(foods, { barcode: null, name: " macarrón ", carbsPer100g: 46, unit: "g" })?.name).toBe("Macarrón");
     expect(existing(foods, { barcode: null, name: "Macarrón", carbsPer100g: 70, unit: "g" })).toBeUndefined();
     expect(existing(foods, { barcode: "1234567890123", name: "Nuevo", carbsPer100g: 46, unit: "g" })).toBeUndefined();
+  });
+});
+
+describe("a pack read into her pantry", () => {
+  const pack = { name: "Pan de molde", carbsPer100g: 46.5, servingGrams: 32, unit: "g" as const, note: null };
+
+  it("fills the food with the pack's name, numbers and serving, and keeps its barcode", () => {
+    expect(fromPack(pack, "barcode", "8480000823298")).toEqual({
+      name: "Pan de molde",
+      unit: "g",
+      density: "46.5",
+      portion: "32",
+      origin: { source: "barcode", barcode: "8480000823298", carbsPer100g: 46.5 },
+    });
+  });
+
+  it("leaves what the pack does not say empty, for her to type", () => {
+    expect(fromPack({ ...pack, name: null, servingGrams: null, unit: "ml" }, "label", null)).toMatchObject({
+      name: "",
+      unit: "ml",
+      portion: "",
+      origin: { source: "label", barcode: null },
+    });
+  });
+
+  // The pantry's icon says where a number came from: a pack's, untouched, keeps it; one she changed is hers.
+  it("keeps the pack as the source until she changes its number", () => {
+    const origin = fromPack(pack, "barcode", "8480000823298").origin;
+    expect(sourceFor(origin, true, 46.5)).toBe("barcode");
+    expect(sourceFor(origin, true, 50)).toBe("manual");
+    expect(sourceFor(origin, false, null)).toBe("manual");
+    expect(sourceFor(originOf(null), true, 46.5)).toBe("manual");
+    expect(sourceFor(originOf(food("Pan", { source: "label" })), true, 46)).toBe("label");
   });
 });

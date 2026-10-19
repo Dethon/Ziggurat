@@ -1,5 +1,5 @@
 import { api } from "./api";
-import type { Food, SaveFood } from "./types";
+import type { Food, PackagedFood, SaveFood, Unit } from "./types";
 
 export const plain = (text: string) =>
   text
@@ -36,4 +36,36 @@ export function existing(foods: readonly Food[], candidate: Identity): Food | un
 // Saving from a label or a barcode must not pile up copies of the same product.
 export async function keep(food: SaveFood): Promise<Food> {
   return existing(await api.foods(), food) ?? (await api.createFood(food));
+}
+
+// Where a food's numbers came from, and the barcode that names its product.
+export interface Origin {
+  source: Food["source"];
+  barcode: string | null;
+  carbsPer100g: number | null;
+}
+
+export const originOf = (food: Food | null): Origin =>
+  food
+    ? { source: food.source, barcode: food.barcode, carbsPer100g: food.carbsPer100g }
+    : { source: "manual", barcode: null, carbsPer100g: null };
+
+// A pack read for her pantry, as the food's fields start: what the pack does not say is left for her.
+export function fromPack(
+  pack: PackagedFood,
+  source: "barcode" | "label",
+  barcode: string | null,
+): { name: string; unit: Unit; density: string; portion: string; origin: Origin } {
+  return {
+    name: pack.name ?? "",
+    unit: pack.unit,
+    density: String(pack.carbsPer100g),
+    portion: pack.servingGrams === null ? "" : String(pack.servingGrams),
+    origin: { source, barcode, carbsPer100g: pack.carbsPer100g },
+  };
+}
+
+// Numbers she typed or changed are hers; an untouched label or barcode entry keeps its origin.
+export function sourceFor(origin: Origin, byWeight: boolean, per100: number | null): Food["source"] {
+  return byWeight && per100 !== null && per100 === origin.carbsPer100g ? origin.source : "manual";
 }

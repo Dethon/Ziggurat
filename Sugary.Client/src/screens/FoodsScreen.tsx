@@ -8,11 +8,12 @@ import type { DraftItem, Food } from "../types";
 import { AmountSheet, FoodList, FoodSheet } from "./FoodsSheet";
 
 // Her pantry: everything she keeps, to find, change, or add to the meal in two taps.
-export function FoodsScreen({ onAddToMeal }: { onAddToMeal: (item: DraftItem) => void }) {
+// `labels` says whether a new food can be read off a photo of its nutrition table.
+export function FoodsScreen({ labels, onAddToMeal }: { labels: boolean; onAddToMeal: (item: DraftItem) => void }) {
   const { t } = useSettings();
   const [foods, setFoods] = useState<Food[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ food: Food | null } | null>(null);
+  const [editing, setEditing] = useState<{ food: Food | null; already?: boolean } | null>(null);
   const [adding, setAdding] = useState<Food | null>(null);
 
   const load = useCallback(async () => {
@@ -49,7 +50,11 @@ export function FoodsScreen({ onAddToMeal }: { onAddToMeal: (item: DraftItem) =>
       </ActionBar>
       {editing && (
         <FoodSheet
+          key={editing.food?.id ?? "new"}
           food={editing.food}
+          already={editing.already}
+          labels={labels}
+          onOpen={(food) => setEditing({ food, already: true })}
           onClose={() => setEditing(null)}
           onDone={() => {
             setEditing(null);

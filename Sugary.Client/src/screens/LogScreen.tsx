@@ -913,7 +913,7 @@ function MealSheet({
           onClose={() => setRevising(null)}
         />
       )}
-      {adding === "foods" && <FoodsSheet onClose={() => setAdding(null)} onAdd={add} />}
+      {adding === "foods" && <FoodsSheet labels={labels} onClose={() => setAdding(null)} onAdd={add} />}
       {adding === "packaged" && <PackagedSheet labels={labels} onClose={() => setAdding(null)} onAdd={add} />}
       {adding === "manual" && <ManualSheet onClose={() => setAdding(null)} onAdd={add} />}
       {doseOpen && (

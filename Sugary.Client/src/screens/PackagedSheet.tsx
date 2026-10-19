@@ -1,29 +1,19 @@
-import { useId, useRef, useState } from "react";
-import { api, ApiError } from "../api";
-import { readBarcode } from "../barcode";
+import { useId, useState } from "react";
 import { amountForCarbs, formatGrams, fromPackaged, parseAmount } from "../carbs";
-import { BarcodeScanner, canScanLive, type ScanProblem } from "../components/BarcodeScanner";
-import { CameraButton, CameraFallbackNote } from "../components/Camera";
 import { Icon } from "../components/Icon";
+import { ProductFinder, type Found } from "../components/ProductFinder";
 import { ShareChips } from "../components/ShareChips";
 import { Sheet } from "../components/Sheet";
-import { errorMessage, labelFailureMessage, type Asking } from "../errors";
+import { errorMessage } from "../errors";
 import { keep } from "../foods";
-import { forUpload } from "../images";
 import { bindUnits } from "../meal";
 import { load, store, useSettings } from "../settings";
-import type { DraftItem, ItemSource, PackagedFood } from "../types";
+import type { DraftItem } from "../types";
 
 // Whether she types the amount and is told its carbs, or the carbs she wants and is told what to
 // weigh. Remembered, since whoever counts one way tends to keep counting that way.
 type Entry = "amount" | "carbs";
 const ENTRY_KEY = "sugary.packagedEntry";
-
-interface Found {
-  food: PackagedFood;
-  source: ItemSource;
-  barcode?: string;
-}
 
 // Without `labels` a photo is read for its barcode only, and says so when it has none.
 export function PackagedSheet({
@@ -38,13 +28,6 @@ export function PackagedSheet({
   const { t, language } = useSettings();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [barcode, setBarcode] = useState("");
-  // Which request is under way, so a failure is said for what it was: a lookup, a label, a save.
-  const asking = useRef<Asking>("product");
-  // Scanning with the live camera needs a secure page; without one the photo is the way in.
-  const [live] = useState(canScanLive);
-  // Where the live camera works, the sheet opens scanning: the barcode is the usual way in.
-  const [scanning, setScanning] = useState(live);
   const [found, setFound] = useState<Found | null>(null);
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
@@ -73,71 +56,16 @@ export function PackagedSheet({
     store(ENTRY_KEY, { by: next });
   }
 
-  async function lookUp(code: string): Promise<boolean> {
-    try {
-      asking.current = "product";
-      show({ food: await api.product(code), source: "barcode", barcode: code });
-      return true;
-    } catch (failure) {
-      if (failure instanceof ApiError && failure.status === 404) {
-        return false;
-      }
-      throw failure;
-    }
-  }
-
   async function run(work: () => Promise<void>) {
     setBusy(true);
     setError(null);
     try {
       await work();
     } catch (failure) {
-      setError(asking.current === "label" ? labelFailureMessage(failure, t) : errorMessage(failure, t, asking.current));
+      setError(errorMessage(failure, t, "save"));
     } finally {
       setBusy(false);
     }
-  }
-
-  function fromPhoto(file: Blob) {
-    setScanning(false);
-    void run(async () => {
-      // A barcode is looked for in the photo as taken, since thin bars need the pixels; only a
-      // label is shrunk, for the upload.
-      const code = await readBarcode(file);
-      if (code) {
-        await find(code);
-        return;
-      }
-      if (!labels) {
-        setError(t("labelsUnavailable"));
-        return;
-      }
-      asking.current = "label";
-      show({ food: await api.readLabel(await forUpload(file), language), source: "label" });
-    });
-  }
-
-  // The digits go into the box whatever happens next, so a code that was read but is not in
-  // the database can be checked against the pack.
-  async function find(code: string) {
-    setBarcode(code);
-    if (!(await lookUp(code))) {
-      setError(t("productNotFound"));
-    }
-  }
-
-  function fromCode() {
-    void run(() => find(barcode.trim()));
-  }
-
-  function fromScan(code: string) {
-    setScanning(false);
-    void run(() => find(code));
-  }
-
-  function scanFailed(problem: ScanProblem) {
-    setScanning(false);
-    setError(t(problem === "denied" ? "scanDenied" : "scanUnavailable"));
   }
 
   // A food with no carbs has no amount that reaches any, so it is only ever weighed.
@@ -166,67 +94,7 @@ export function PackagedSheet({
       }
     >
       {found === null ? (
-        <div className="sheet-form">
-          <p className="muted">
-            {t(labels ? (live ? "scanIntro" : "packagedIntro") : live ? "scanIntroBarcode" : "packagedIntroBarcode")}
-          </p>
-          {scanning ? (
-            <BarcodeScanner
-              onDetected={fromScan}
-              onProblem={scanFailed}
-              onStop={() => setScanning(false)}
-            />
-          ) : (
-            live && (
-              <button
-                type="button"
-                className="button button-primary button-big"
-                disabled={busy}
-                onClick={() => {
-                  setError(null);
-                  setScanning(true);
-                }}
-              >
-                <Icon name="barcode" />
-                {busy ? t("reading") : t("scanBarcode")}
-              </button>
-            )
-          )}
-          <CameraButton
-            mode="photo"
-            icon="camera"
-            className={live ? "button button-secondary" : "button button-primary button-big"}
-            disabled={busy}
-            onPhoto={fromPhoto}
-          >
-            {busy && !live ? t("reading") : t(labels ? "packagedPhoto" : "barcodePhoto")}
-          </CameraButton>
-          <CameraFallbackNote modes={["photo"]} />
-          <form
-            className="inline-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              fromCode();
-            }}
-          >
-            <label className="field">
-              <span className="field-label">{t("barcodeManual")}</span>
-              <input
-                inputMode="numeric"
-                value={barcode}
-                onChange={(event) => setBarcode(event.target.value.replace(/\D/g, ""))}
-              />
-            </label>
-            <button type="submit" className="button button-secondary" disabled={busy || barcode.length < 8}>
-              {t("lookUp")}
-            </button>
-          </form>
-          {error && (
-            <p className="notice notice-error" role="alert">
-              <Icon name="alert" size={18} /> <span>{error}</span>
-            </p>
-          )}
-        </div>
+        <ProductFinder labels={labels} onFound={show} />
       ) : (
         <form
           id={formId}
@@ -238,7 +106,6 @@ export function PackagedSheet({
             }
             const named = name.trim() || t("unnamedProduct");
             void run(async () => {
-              asking.current = "save";
               // Kept with this amount as her usual one, so next time it is one tap.
               const foodId =
                 found.food.foodId ??

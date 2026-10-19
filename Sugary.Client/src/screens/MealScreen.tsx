@@ -702,7 +702,7 @@ export function MealScreen({
       )}
       {usual && <AmountSheet food={usual} onAdd={add} onClose={() => setUsual(null)} />}
       {confirming}
-      {sheet === "foods" && <FoodsSheet onClose={() => setSheet(null)} onAdd={add} />}
+      {sheet === "foods" && <FoodsSheet labels={labels} onClose={() => setSheet(null)} onAdd={add} />}
       {sheet === "packaged" && <PackagedSheet labels={labels} onClose={() => setSheet(null)} onAdd={add} />}
       {sheet === "manual" && <ManualSheet onClose={() => setSheet(null)} onAdd={add} />}
     </div>
