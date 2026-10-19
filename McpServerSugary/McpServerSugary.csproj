@@ -22,7 +22,8 @@
          in this project rather than Infrastructure, so no other container carries it. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />
     <!-- Her log's tables are queried on DuckDB, here alone so no other container carries its native
-         library. The sandbox image pins the same DuckDB version, so a statement means the same in both. -->
+         library. The sandbox image pins the same DuckDB version (McpServerSandbox/Dockerfile), so a statement
+         means the same in both. -->
     <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.6" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

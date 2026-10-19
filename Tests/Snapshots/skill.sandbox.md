@@ -1,4 +1,4 @@
-# sandbox — description 124 / 130 tokens, body 1271 / 1350 tokens, served by mcp-sandbox
+# sandbox — description 124 / 130 tokens, body 1291 / 1350 tokens, served by mcp-sandbox
 
 ================================================================================================
 
@@ -17,7 +17,7 @@ description: Running anything in the Linux sandbox — a command, a script, a ch
 
 - **File operations.** Standard read/write/glob/search/move/remove are all available. Scope them deliberately: this mount's root is the whole container, so a recursive glob or search starting at `/sandbox` is a walk over every path in the image. Both stop at a budget and say so, but the answer you get back covers whatever they reached before stopping. Start from the directory you mean — `/sandbox/home/sandbox_user` for your own files.
 - **Command execution.** Commands run via `bash -lc` inside the container. Each call is a fresh shell — environment variables and `cd` do **not** persist between calls; files written to the persistent workspace do. `path` is the working directory as a virtual path (`/sandbox` is the container root; name `/sandbox/home/sandbox_user` to work in the workspace), and `timeoutSeconds` is clamped to the backend's maximum.
-- **Preinstalled tooling.** `bash`, `python3` + `pip` + `venv`, `git`, `curl`, `jq`, `unzip`, plus the standard coreutils. Install extra Python packages with `pip install --user <package>` (user-scope; persists in your home).
+- **Preinstalled tooling.** `bash`, `python3` + `pip` + `venv`, `git`, `curl`, `jq`, `unzip`, plus the standard coreutils. For tables (Parquet, CSV): the `duckdb` CLI and, in Python, `duckdb` and `polars`. Install extra Python packages with `pip install --user <package>` (user-scope; persists in your home).
 - **Network.** Full **outbound** network is available (you can `curl`, `git clone`, `pip install`). The sandbox does **not** publish inbound ports — external clients cannot reach a server you start inside it.
 
 ### Behaviour you should rely on
