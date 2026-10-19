@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Domain.DTOs.Tables;
 
 namespace Domain.Tools.Sugary;
 
@@ -18,12 +19,17 @@ public sealed class SugaryCsv(params string[] columns)
 
     public override string ToString() => _text.ToString();
 
+    public static string Write(Table table) =>
+        table.Rows.Aggregate(new SugaryCsv([.. table.ColumnNames]), (csv, row) => csv.Row([.. row])).ToString();
+
     private static string Cell(object? value) => value switch
     {
         null => "",
         string text => Quote(Defuse(text)),
         bool flag => flag ? "true" : "false",
         double or int => ((IFormattable)value).ToString("0.##", CultureInfo.InvariantCulture),
+        DateTimeOffset instant => instant.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture),
+        DateOnly day => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         _ => Quote(Defuse(value.ToString() ?? ""))
     };
 

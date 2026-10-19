@@ -1,6 +1,7 @@
 using System.Text;
 using Domain.Contracts;
 using Domain.DTOs.Sugary;
+using Domain.DTOs.Tables;
 using Domain.Tools.Sugary;
 using McpServerSugary.Import;
 using Microsoft.AspNetCore.Builder;
@@ -80,8 +81,9 @@ public static class ExportEndpoints
         : null;
 
     // UTF-8 without a byte-order mark, which pandas, DuckDB and a spreadsheet import all read.
-    private static IResult File(string csv, string name) =>
-        Results.File(new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(csv), "text/csv", name);
+    private static IResult File(Table table, string name) =>
+        Results.File(
+            new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(SugaryCsv.Write(table)), "text/csv", name);
 
     private static IResult UnknownClock(string? tz) => Results.Problem(
         $"'{tz}' is not a time zone. Use a name such as Europe/Madrid.", statusCode: StatusCodes.Status400BadRequest);

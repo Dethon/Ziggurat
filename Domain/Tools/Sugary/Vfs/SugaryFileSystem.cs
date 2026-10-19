@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Sugary;
+using Domain.DTOs.Tables;
 using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Sugary.Vfs;
@@ -171,9 +172,15 @@ public sealed class SugaryFileSystem(
             .ToList();
 
     // The file's text, or null where there is no such file.
-    private async Task<string?> RenderAsync(SugaryNode node, CancellationToken ct) => node.Kind switch
+    private async Task<string?> RenderAsync(SugaryNode node, CancellationToken ct) =>
+        node.Kind == SugaryNodeKind.Readme
+            ? SugaryReadme.For(homeZone)
+            : await TableAsync(node, ct) is { } table ? SugaryCsv.Write(table) : null;
+
+    // The table a file holds, or null where there is no such file: a month with nothing logged in it
+    // has none.
+    private async Task<Table?> TableAsync(SugaryNode node, CancellationToken ct) => node.Kind switch
     {
-        SugaryNodeKind.Readme => SugaryReadme.For(homeZone),
         SugaryNodeKind.Foods => SugaryTables.Foods(await log.FoodsAsync(ct)),
         SugaryNodeKind.Periods => SugaryTables.Periods(await log.PeriodsAsync(ct)),
         SugaryNodeKind.DayNotes => SugaryTables.DayNotes(await log.DayNotesAsync(ct)),

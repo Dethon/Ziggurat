@@ -9,12 +9,20 @@ drift.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 Spec: `.scratch/sugary-query/spec.md`
 
-- [ ] A generic table model exists in Domain: a table has a name, ordered columns each with a type (text, integer, decimal, boolean, instant, home-clock timestamp, date) and rows; nothing in it is Sugary's.
-- [ ] Each Sugary table is built as that model from the log, with the same row order, column order and column names as today's CSV.
-- [ ] A CSV encoding of the model reproduces today's output byte for byte for every table, including the offset-carrying stamps, empty cells, enum spellings and formula escaping — pinned by tests written against today's output before the refactor.
-- [ ] `SugaryExportApiTests`, the import tests and `SugaryFileSystemTests` pass unchanged.
-- [ ] Nothing else in the repo calls the old string-returning renderers.
+- [x] A generic table model exists in Domain: a table has a name, ordered columns each with a type (text, integer, decimal, boolean, instant, home-clock timestamp, date) and rows; nothing in it is Sugary's.
+- [x] Each Sugary table is built as that model from the log, with the same row order, column order and column names as today's CSV.
+- [x] A CSV encoding of the model reproduces today's output byte for byte for every table, including the offset-carrying stamps, empty cells, enum spellings and formula escaping — pinned by tests written against today's output before the refactor.
+- [x] `SugaryExportApiTests`, the import tests and `SugaryFileSystemTests` pass unchanged.
+- [x] Nothing else in the repo calls the old string-returning renderers.
+
+## Comments
+
+- The column types are text, integer, decimal, boolean, instant and date: no home-clock timestamp
+  type. An instant is held on the clock the table is read on (its offset is the home's), so the
+  `_local` siblings ticket 02 adds are that instant's wall time, worked out by the engine from any
+  instant column rather than declared per table — the CSV, which carries no `_local` columns, stays
+  as it was without a rule to leave them out.
