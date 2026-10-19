@@ -1519,6 +1519,15 @@ h1.title-small {
   color: var(--color-primary-strong);
 }
 
+.meal-insulin-shared {
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.meal-insulin-shared::before {
+  content: "· ";
+}
+
 .insulin-taken .field-label {
   display: inline-flex;
   align-items: center;

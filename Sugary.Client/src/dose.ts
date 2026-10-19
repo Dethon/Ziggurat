@@ -53,26 +53,26 @@ export function stepUnits(text: string, delta: 1 | -1, language: Language): stri
 }
 
 // A deleted dose as it is saved again when she undoes the deletion.
-export function restored({ takenAt, units, kind, note, mealId }: Dose): SaveDose {
-  return { takenAt, units, kind, note, mealId };
+export function restored({ takenAt, units, kind, note, mealIds }: Dose): SaveDose {
+  return { takenAt, units, kind, note, mealIds };
 }
 
 // Where a new dose starts: now and on its own, or, added from a meal, at the meal's time and linked
 // to it. Never its units, which are only ever what she types.
-export function doseStart(forMeal: Meal | undefined, now: Date): { takenAt: string; mealId: string | null } {
-  return forMeal ? { takenAt: forMeal.eatenAt, mealId: forMeal.id } : { takenAt: now.toISOString(), mealId: null };
+export function doseStart(forMeal: Meal | undefined, now: Date): { takenAt: string; mealIds: string[] } {
+  return forMeal ? { takenAt: forMeal.eatenAt, mealIds: [forMeal.id] } : { takenAt: now.toISOString(), mealIds: [] };
 }
 
 // About a day either side: a dose is linked to a meal she has just eaten, or is about to.
 const LINKABLE_HOURS = 24;
 
 // The meals a dose taken at `takenAt` can be linked to: those of about a day either side of it,
-// the closest to it first, and the meal it already belongs to wherever that is, so opening an older
-// dose never quietly unlinks it. Measured from the dose and not from now, so a dose recorded for
-// another day is offered that day's meals.
-export function linkable(meals: readonly Meal[], takenAt: Date, current: string | null = null): Meal[] {
+// the closest to it first, and the meals it already belongs to wherever they are, so opening an
+// older dose never quietly unlinks one. Measured from the dose and not from now, so a dose recorded
+// for another day is offered that day's meals.
+export function linkable(meals: readonly Meal[], takenAt: Date, current: readonly string[] = []): Meal[] {
   const distance = (meal: Meal) => Math.abs(Date.parse(meal.eatenAt) - takenAt.getTime());
   return meals
-    .filter((meal) => meal.id === current || distance(meal) <= LINKABLE_HOURS * 3_600_000)
+    .filter((meal) => current.includes(meal.id) || distance(meal) <= LINKABLE_HOURS * 3_600_000)
     .toSorted((a, b) => distance(a) - distance(b));
 }

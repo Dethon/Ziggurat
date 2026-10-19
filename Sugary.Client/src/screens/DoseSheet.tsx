@@ -45,8 +45,8 @@ export function DoseSheet({
   const [start] = useState(() => doseStart(forMeal, new Date()));
   const [when, setWhen] = useState(() => toLocalInput(dose?.takenAt ?? start.takenAt));
   const [note, setNote] = useState(dose?.note ?? "");
-  const [mealId, setMealId] = useState(dose ? (dose.mealId ?? "") : (start.mealId ?? ""));
-  const linked = dose ? dose.mealId : start.mealId;
+  const [mealIds, setMealIds] = useState<string[]>(() => (dose ? dose.mealIds : start.mealIds));
+  const [linked] = useState(() => (dose ? dose.mealIds : start.mealIds));
   // Follows the time field, so changing when the dose was taken offers the meals around then.
   const offered = useMemo(() => linkable(meals, when ? new Date(when) : new Date(), linked), [meals, when, linked]);
   const [busy, setBusy] = useState(false);
@@ -61,7 +61,7 @@ export function DoseSheet({
     units: read,
     kind,
     note: note.trim() || null,
-    mealId: mealId || null,
+    mealIds,
   };
   // A recorded dose is saved again only once something about it changed.
   const edited = useEdited(values);
@@ -142,7 +142,15 @@ export function DoseSheet({
           <input type="datetime-local" required value={when} onChange={(event) => setWhen(event.target.value)} />
         </label>
         {offered.length > 0 && (
-          <MealChoice meals={offered} chosen={mealId} takenAt={when} onChoose={setMealId} />
+          <MealChoice
+            meals={offered}
+            chosen={mealIds}
+            takenAt={when}
+            onToggle={(id) =>
+              setMealIds((current) => (current.includes(id) ? current.filter((m) => m !== id) : [...current, id]))
+            }
+            onNone={() => setMealIds([])}
+          />
         )}
         <label className="field">
           <span className="field-label">{t("doseNote")}</span>
@@ -172,35 +180,39 @@ export function DoseSheet({
 // How many of the closest meals are on show before she asks for the rest.
 const CLOSEST = 3;
 
-// The meal a dose is for, picked from the meals around it, the closest first: each as the Log draws
-// it, with its photo, its foods and its time, and "no meal" above them all.
+// The meals a dose is for, picked from the meals around it, the closest first: each as the Log draws
+// it, with its photo, its foods and its time, and "no meal" above them all. One bolus can cover
+// several, a meal and the dessert after it, so each is ticked on and off by itself.
 function MealChoice({
   meals,
   chosen,
   takenAt,
-  onChoose,
+  onToggle,
+  onNone,
 }: {
   meals: readonly Meal[];
-  chosen: string;
+  chosen: readonly string[];
   takenAt: string;
-  onChoose: (mealId: string) => void;
+  onToggle: (mealId: string) => void;
+  onNone: () => void;
 }) {
   const { t, language } = useSettings();
   const [all, setAll] = useState(false);
-  // The chosen meal stays on show however far down the list it is.
-  const shown = all ? meals : meals.filter((meal, index) => index < CLOSEST || meal.id === chosen);
+  // The chosen meals stay on show however far down the list they are.
+  const shown = all ? meals : meals.filter((meal, index) => index < CLOSEST || chosen.includes(meal.id));
   const doseDay = takenAt ? localDay(new Date(takenAt)) : null;
 
   return (
     <fieldset className="question">
       <legend>{t("doseMeal")}</legend>
+      <p className="muted small">{t("doseMealHint")}</p>
       <ul className="meal-choices">
         <li>
           <button
             type="button"
-            className={`meal-choice${chosen === "" ? " meal-choice-on" : ""}`}
-            aria-pressed={chosen === ""}
-            onClick={() => onChoose("")}
+            className={`meal-choice${chosen.length === 0 ? " meal-choice-on" : ""}`}
+            aria-pressed={chosen.length === 0}
+            onClick={onNone}
           >
             <span className="meal-thumb meal-thumb-empty">
               <Icon name="minus" />
@@ -214,7 +226,7 @@ function MealChoice({
           </button>
         </li>
         {shown.map((meal) => {
-          const on = chosen === meal.id;
+          const on = chosen.includes(meal.id);
           const day = localDay(new Date(meal.eatenAt)) === doseDay ? null : formatShortDay(meal.eatenAt, language);
           return (
             <li key={meal.id}>
@@ -222,7 +234,7 @@ function MealChoice({
                 type="button"
                 className={`meal-choice${on ? " meal-choice-on" : ""}`}
                 aria-pressed={on}
-                onClick={() => onChoose(meal.id)}
+                onClick={() => onToggle(meal.id)}
               >
                 <MealThumb meal={meal} />
                 <span className="item-text">

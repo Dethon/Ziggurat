@@ -84,7 +84,7 @@ const dose = (id: string, hoursAgo: number, kind: Dose["kind"] = "rapid"): Dose 
   units: 4,
   kind,
   note: null,
-  mealId: null,
+  mealIds: [],
 });
 
 describe("timeline", () => {
@@ -138,9 +138,9 @@ describe("rapidUnits", () => {
     const lunch = {
       ...meal("lunch", 3),
       doses: [
-        { id: "a", units: 4.5, kind: "rapid" as const },
-        { id: "b", units: 1.25, kind: "rapid" as const },
-        { id: "c", units: 14, kind: "basal" as const },
+        { id: "a", units: 4.5, kind: "rapid" as const, shared: false },
+        { id: "b", units: 1.25, kind: "rapid" as const, shared: false },
+        { id: "c", units: 14, kind: "basal" as const, shared: false },
       ],
     };
     expect(rapidUnits(lunch)).toBe(5.75);
@@ -148,22 +148,33 @@ describe("rapidUnits", () => {
   });
 
   it("does not drift on decimals", () => {
-    const tea = { ...meal("tea", 3), doses: [0.1, 0.2].map((units, i) => ({ id: `${i}`, units, kind: "rapid" as const })) };
+    const tea = { ...meal("tea", 3), doses: [0.1, 0.2].map((units, i) => ({ id: `${i}`, units, kind: "rapid" as const, shared: false })) };
     expect(rapidUnits(tea)).toBe(0.3);
   });
 });
 
 describe("withDose and withoutDose", () => {
-  const lunch = { ...meal("lunch", 3), doses: [{ id: "d", units: 4, kind: "rapid" as const }] };
+  const lunch = { ...meal("lunch", 3), doses: [{ id: "d", units: 4, kind: "rapid" as const, shared: false }] };
   const tea = meal("tea", 1);
 
   it("moves a dose to the meal it now belongs to, and off the one it left", () => {
-    const moved = withDose([lunch, tea], { ...dose("d", 1), units: 5, mealId: "tea" });
-    expect(moved.map((m) => m.doses)).toEqual([[], [{ id: "d", units: 5, kind: "rapid" }]]);
+    const moved = withDose([lunch, tea], { ...dose("d", 1), units: 5, mealIds: ["tea"] });
+    expect(moved.map((m) => m.doses)).toEqual([[], [{ id: "d", units: 5, kind: "rapid", shared: false }]]);
+  });
+
+  // The whole dose on each, said to be shared, never split into shares she did not take.
+  it("puts a dose for two meals on both, whole and marked shared, and unmarks it when it is back to one", () => {
+    const shared = withDose([lunch, tea], { ...dose("d", 1), units: 6, mealIds: ["lunch", "tea"] });
+    expect(shared.map((m) => m.doses)).toEqual([
+      [{ id: "d", units: 6, kind: "rapid", shared: true }],
+      [{ id: "d", units: 6, kind: "rapid", shared: true }],
+    ]);
+    const back = withDose(shared, { ...dose("d", 1), units: 6, mealIds: ["tea"] });
+    expect(back.map((m) => m.doses)).toEqual([[], [{ id: "d", units: 6, kind: "rapid", shared: false }]]);
   });
 
   it("unlinks a dose that belongs to no meal now", () => {
-    expect(withDose([lunch, tea], { ...dose("d", 1), mealId: null }).map((m) => m.doses.length)).toEqual([0, 0]);
+    expect(withDose([lunch, tea], { ...dose("d", 1), mealIds: [] }).map((m) => m.doses.length)).toEqual([0, 0]);
   });
 
   it("takes a deleted dose off its meal", () => {
@@ -193,16 +204,28 @@ describe("onPeriod", () => {
 
 describe("attachedDoses", () => {
   const lunch = meal("lunch", 6);
-  const linked = (id: string, to: string, takenAt = lunch.eatenAt) => ({ ...dose(id, 0), takenAt, mealId: to });
+  const linked = (id: string, to: string | string[], takenAt = lunch.eatenAt) => ({
+    ...dose(id, 0),
+    takenAt,
+    mealIds: typeof to === "string" ? [to] : to,
+  });
 
   // Its own row still, as every dose is, but drawn as part of the meal it was taken for.
   it("attaches a dose to its meal when it sits right under it", () => {
-    expect([...attachedDoses(timeline([lunch], [linked("bolus", "lunch")]))]).toEqual(["bolus"]);
+    expect([...attachedDoses(timeline([lunch], [linked("bolus", "lunch")]))]).toEqual([["bolus", "lunch"]]);
   });
 
   it("attaches every dose of the meal that follows it, one after another", () => {
     const entries = timeline([lunch], [linked("a", "lunch"), linked("b", "lunch")]);
-    expect([...attachedDoses(entries)].toSorted()).toEqual(["a", "b"]);
+    expect([...attachedDoses(entries).keys()].toSorted()).toEqual(["a", "b"]);
+  });
+
+  // One bolus for lunch and the flan after it is drawn under whichever of them it sits right under.
+  it("attaches a dose for several meals under the one of them right above it", () => {
+    const flan = { ...meal("flan", 5.7) };
+    const entries = timeline([lunch, flan], [linked("bolus", ["lunch", "flan"])]);
+    expect(entries.map((entry) => entry.id)).toEqual(["flan", "lunch", "bolus"]);
+    expect([...attachedDoses(entries)]).toEqual([["bolus", "lunch"]]);
   });
 
   it("leaves a linked dose on its own when something else came between", () => {
@@ -234,23 +257,30 @@ describe("dayUnits", () => {
 });
 
 describe("insulinBelow", () => {
-  const lunch = { ...meal("lunch", 3), doses: [{ id: "a", units: 4, kind: "rapid" as const }, { id: "b", units: 1, kind: "rapid" as const }] };
+  const lunch = { ...meal("lunch", 3), doses: [{ id: "a", units: 4, kind: "rapid" as const, shared: false }, { id: "b", units: 1, kind: "rapid" as const, shared: false }] };
 
   // The meal's own count of its insulin would say the same number twice, right above the dose rows.
+  const under = (meal: string, ...doses: string[]) => new Map(doses.map((id) => [id, meal]));
+
   it("is true when every dose of the meal is drawn right under it", () => {
-    expect(insulinBelow(lunch, new Set(["a", "b"]))).toBe(true);
+    expect(insulinBelow(lunch, under("lunch", "a", "b"))).toBe(true);
+  });
+
+  // A shared dose drawn under the other meal leaves this one counting its own insulin.
+  it("is false when its dose is drawn under another meal it was also for", () => {
+    expect(insulinBelow(lunch, under("flan", "a", "b"))).toBe(false);
   });
 
   // As rapidUnits counts: a basal dose linked to the meal never was in its count.
   it("minds only its rapid doses, as the meal's own count does", () => {
-    const withBasal = { ...lunch, doses: [...lunch.doses, { id: "c", units: 14, kind: "basal" as const }] };
-    expect(insulinBelow(withBasal, new Set(["a", "b"]))).toBe(true);
-    expect(insulinBelow({ ...meal("tea", 1), doses: [{ id: "c", units: 14, kind: "basal" as const }] }, new Set(["c"]))).toBe(false);
+    const withBasal = { ...lunch, doses: [...lunch.doses, { id: "c", units: 14, kind: "basal" as const, shared: false }] };
+    expect(insulinBelow(withBasal, under("lunch", "a", "b"))).toBe(true);
+    expect(insulinBelow({ ...meal("tea", 1), doses: [{ id: "c", units: 14, kind: "basal" as const, shared: false }] }, under("tea", "c"))).toBe(false);
   });
 
   it("is false when any of its doses is elsewhere in the day, or it has none", () => {
-    expect(insulinBelow(lunch, new Set(["a"]))).toBe(false);
-    expect(insulinBelow(meal("tea", 1), new Set())).toBe(false);
+    expect(insulinBelow(lunch, under("lunch", "a"))).toBe(false);
+    expect(insulinBelow(meal("tea", 1), new Map())).toBe(false);
   });
 });
 

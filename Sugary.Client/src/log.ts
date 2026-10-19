@@ -54,16 +54,17 @@ export function timeline(meals: readonly Meal[], doses: readonly Dose[], session
   ].toSorted((a, b) => b.at - a.at || (a.type === b.type ? 0 : a.type === "meal" ? -1 : 1));
 }
 
-// The doses drawn as part of the meal they were taken for: linked to the meal right above them, or
-// to the same meal as the linked dose right above them. Each is still a row of its own.
-export function attachedDoses(entries: readonly Entry[]): Set<string> {
-  const attached = new Set<string>();
+// The doses drawn as part of a meal they were taken for, each with the meal it is drawn under: linked
+// to the meal right above them, or to the same meal as the linked dose right above them. A dose for
+// several meals is drawn under whichever of them it sits right under. Each is still a row of its own.
+export function attachedDoses(entries: readonly Entry[]): Map<string, string> {
+  const attached = new Map<string, string>();
   let meal: string | null = null;
   for (const entry of entries) {
     if (entry.type === "meal") {
       meal = entry.meal.id;
-    } else if (entry.type === "dose" && meal !== null && entry.dose.mealId === meal) {
-      attached.add(entry.id);
+    } else if (entry.type === "dose" && meal !== null && entry.dose.mealIds.includes(meal)) {
+      attached.set(entry.id, meal);
     } else {
       meal = null;
     }
@@ -72,10 +73,10 @@ export function attachedDoses(entries: readonly Entry[]): Set<string> {
 }
 
 // Whether every rapid dose of a meal, the ones its own count adds up, is drawn right under it, so the
-// meal need not count them itself.
-export function insulinBelow(meal: Meal, attached: ReadonlySet<string>): boolean {
+// meal need not count them itself. A shared dose drawn under the other meal is not under this one.
+export function insulinBelow(meal: Meal, attached: ReadonlyMap<string, string>): boolean {
   const rapid = meal.doses.filter((dose) => dose.kind === "rapid");
-  return rapid.length > 0 && rapid.every((dose) => attached.has(dose.id));
+  return rapid.length > 0 && rapid.every((dose) => attached.get(dose.id) === meal.id);
 }
 
 // Every unit of insulin in these rows, rapid and basal, summed in hundredths as rapidUnits does.
@@ -111,10 +112,13 @@ export function rapidUnits(meal: Meal): number {
   return meal.doses.filter((dose) => dose.kind === "rapid").reduce((sum, dose) => sum + Math.round(dose.units * 100), 0) / 100;
 }
 
-// The meals as they stand once a dose is saved: off whichever meal it was on, onto the one it names.
+// The meals as they stand once a dose is saved: off whichever meals it was on, onto each it names,
+// whole on each and marked shared where it names more than one.
 export function withDose(meals: readonly Meal[], dose: Dose): Meal[] {
-  const linked: LinkedDose = { id: dose.id, units: dose.units, kind: dose.kind };
-  return withoutDose(meals, dose.id).map((meal) => (meal.id === dose.mealId ? { ...meal, doses: [...meal.doses, linked] } : meal));
+  const linked: LinkedDose = { id: dose.id, units: dose.units, kind: dose.kind, shared: dose.mealIds.length > 1 };
+  return withoutDose(meals, dose.id).map((meal) =>
+    dose.mealIds.includes(meal.id) ? { ...meal, doses: [...meal.doses, linked] } : meal,
+  );
 }
 
 export function withoutDose(meals: readonly Meal[], id: string): Meal[] {

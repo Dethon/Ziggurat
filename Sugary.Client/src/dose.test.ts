@@ -36,8 +36,8 @@ describe("readUnits", () => {
 describe("restored", () => {
   // Undoing a deletion saves the dose again as it was: everything she recorded, a new id.
   it("keeps every value she recorded", () => {
-    const dose = { id: "d1", takenAt: "2026-10-15T08:00:00.000Z", units: 4.5, kind: "basal", note: "night", mealId: "m1" } as const;
-    expect(restored(dose)).toEqual({ takenAt: dose.takenAt, units: 4.5, kind: "basal", note: "night", mealId: "m1" });
+    const dose = { id: "d1", takenAt: "2026-10-15T08:00:00.000Z", units: 4.5, kind: "basal" as const, note: "night", mealIds: ["m1", "m2"] };
+    expect(restored(dose)).toEqual({ takenAt: dose.takenAt, units: 4.5, kind: "basal", note: "night", mealIds: ["m1", "m2"] });
   });
 });
 
@@ -70,10 +70,10 @@ describe("linkable", () => {
     ]);
   });
 
-  // An older dose opened to change keeps its meal on offer, or saving it would quietly unlink it.
-  it("keeps the meal a dose already belongs to on offer", () => {
-    const meals = [meal("lunch", 6), meal("old", 30)];
-    expect(linkable(meals, taken, "old").map((m) => m.id)).toEqual(["lunch", "old"]);
+  // An older dose opened to change keeps its meals on offer, or saving it would quietly unlink them.
+  it("keeps the meals a dose already belongs to on offer", () => {
+    const meals = [meal("lunch", 6), meal("old", 30), meal("older", 40)];
+    expect(linkable(meals, taken, ["old", "older"]).map((m) => m.id)).toEqual(["lunch", "old", "older"]);
   });
 });
 
@@ -130,11 +130,11 @@ describe("doseStart", () => {
   };
 
   it("starts a dose on its own now, linked to nothing", () => {
-    expect(doseStart(undefined, now)).toEqual({ takenAt: now.toISOString(), mealId: null });
+    expect(doseStart(undefined, now)).toEqual({ takenAt: now.toISOString(), mealIds: [] });
   });
 
   // Added later from the meal itself: the insulin for a meal is taken at the meal, and the time stays hers to change.
   it("starts a dose added from a meal at the meal's time, linked to it", () => {
-    expect(doseStart(lunch, now)).toEqual({ takenAt: lunch.eatenAt, mealId: "lunch" });
+    expect(doseStart(lunch, now)).toEqual({ takenAt: lunch.eatenAt, mealIds: ["lunch"] });
   });
 });

@@ -521,7 +521,8 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
   );
 }
 
-// The rapid insulin she took for a meal, beside its time, drawn as a rapid dose is.
+// The rapid insulin she took for a meal, beside its time, drawn as a rapid dose is; a dose she took
+// for other meals too is counted whole and said to be shared.
 function MealInsulin({ meal }: { meal: Meal }) {
   const { t, language } = useSettings();
   const units = rapidUnits(meal);
@@ -529,10 +530,13 @@ function MealInsulin({ meal }: { meal: Meal }) {
     return null;
   }
   const shown = formatUnits(units, language);
+  const shared = meal.doses.some((dose) => dose.kind === "rapid" && dose.shared);
+  const spoken = t("mealInsulinSpoken", { n: shown });
   return (
-    <span className="meal-insulin" aria-label={t("mealInsulinSpoken", { n: shown })}>
+    <span className="meal-insulin" aria-label={shared ? `${spoken}, ${t("doseShared")}` : spoken}>
       <Icon name="bolt" size={16} />
       {t("unitsCount", { n: shown })}
+      {shared && <span className="meal-insulin-shared">{t("doseShared")}</span>}
     </span>
   );
 }
@@ -622,6 +626,14 @@ function ExerciseRow({ session, now, onOpen }: { session: Exercise; now: Date; o
       </span>
     </button>
   );
+}
+
+// The other meals a shared dose was for, by their foods, or by how many where they are not loaded.
+function sharedWith(dose: Dose, meal: Meal, meals: readonly Meal[], t: ReturnType<typeof useSettings>["t"]): string {
+  const others = dose.mealIds.filter((id) => id !== meal.id);
+  const named = others.map((id) => meals.find((m) => m.id === id)).filter((m): m is Meal => m !== undefined);
+  return named.length === others.length ? named.map(mealNames).join(" · ")
+    : others.length === 1 ? t("doseOtherMeal") : t("doseOtherMeals", { n: others.length });
 }
 
 function MealSheet({
@@ -784,6 +796,9 @@ function MealSheet({
                       <span className="item-meta">
                         {formatTime(dose.takenAt, language)} · {t(`dose_${dose.kind}`)}
                       </span>
+                      {dose.mealIds.length > 1 && (
+                        <span className="item-meta">{t("doseSharedWith", { meals: sharedWith(dose, meal, meals, t) })}</span>
+                      )}
                     </span>
                     <Icon name="chevronRight" size={20} />
                   </button>

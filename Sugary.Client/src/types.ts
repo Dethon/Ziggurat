@@ -93,6 +93,8 @@ export interface LinkedDose {
   id: string;
   units: number;
   kind: DoseKind;
+  // Taken for other meals too, whose insulin it also is, whole.
+  shared: boolean;
 }
 
 export interface SaveMeal {
@@ -116,8 +118,8 @@ export interface Dose {
   units: number;
   kind: DoseKind;
   note: string | null;
-  // The meal it was taken for, when she linked one.
-  mealId: string | null;
+  // The meals it was taken for, none where she linked none: one bolus can cover several.
+  mealIds: string[];
 }
 
 export type SaveDose = Omit<Dose, "id">;
