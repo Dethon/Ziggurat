@@ -238,6 +238,19 @@ public class SugaryFileSystemQueryTests
         Rows(after).Single()![0]!.GetValue<int>().ShouldBe(3);
     }
 
+    // A parent and its workers can ask at once: each statement has a database of its own, so two
+    // loading the same tables never meet, and one's write is never the other's answer.
+    [Fact]
+    public async Task StatementsAskedAtOnce_EachSeeTheirOwnTables()
+    {
+        var answers = await Task.WhenAll(Enumerable.Range(0, 8).Select(i => i % 2 == 0
+            ? Query("delete from meals; select count(*) from meals")
+            : Query("select count(*) from meals")));
+
+        answers.Select((answer, i) => Rows(answer).Single()![0]!.GetValue<int>())
+            .ShouldBe([0, 3, 0, 3, 0, 3, 0, 3]);
+    }
+
     [Fact]
     public async Task AMealSavedBetweenTwoQueries_IsInTheSecond()
     {
