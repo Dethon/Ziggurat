@@ -73,9 +73,9 @@ public class SugaryFileSystemQueryTests
     [Fact]
     public async Task AnyPathInsideTheMount_SeesTheWholeLog()
     {
-        var answer = await Query("select count(*) as meals from meals", path: "/sugary/meals/2026-08.csv");
+        var answer = await Query("select count(*) as meals from meals", path: "/sugary/meals/2026-08.parquet");
 
-        answer["path"]!.GetValue<string>().ShouldBe("/sugary/meals/2026-08.csv");
+        answer["path"]!.GetValue<string>().ShouldBe("/sugary/meals/2026-08.parquet");
         Rows(answer).Single()![0]!.GetValue<int>().ShouldBe(3);
     }
 
@@ -163,6 +163,8 @@ public class SugaryFileSystemQueryTests
     }
 
     // The statement is the model's, and a prompt injection can write one: the tables are all it sees.
+    // Refused by the lockdown itself, never by an accident of the machine it ran on (no network, no
+    // such file), which is what the message is checked for.
     [Theory]
     [InlineData("select * from read_csv('/etc/passwd')")]
     [InlineData("select * from read_text('/etc/passwd')")]
@@ -171,12 +173,59 @@ public class SugaryFileSystemQueryTests
     [InlineData("load httpfs")]
     [InlineData("set enable_external_access = true")]
     [InlineData("set memory_limit = '64GB'")]
+    [InlineData("set temp_directory = '/tmp'")]
     [InlineData("copy meals to '/tmp/meals.csv'")]
     public async Task AStatementReachingPastTheTables_IsRefused(string sql)
     {
         var answer = await Query(sql);
 
-        answer["ok"]!.GetValue<bool>().ShouldBeFalse();
+        ShouldBeRefused(answer, "invalid_argument");
+        answer["message"]!.GetValue<string>().ShouldMatch("(?i)disabled (by|through) configuration|configuration has been locked|cannot change");
+    }
+
+    // The store's own database file is the one file that holds everything: as a database, as bytes.
+    [Theory]
+    [InlineData("attach '{0}' as store (type sqlite)")]
+    [InlineData("select * from read_blob('{0}')")]
+    public async Task TheStoresDatabaseFile_IsOutOfReach(string statement)
+    {
+        var store = Path.Combine(Path.GetTempPath(), $"sugary-{Guid.NewGuid():N}.db");
+        await File.WriteAllTextAsync(store, "SQLite format 3");
+        try
+        {
+            var answer = await Query(string.Format(System.Globalization.CultureInfo.InvariantCulture, statement, store));
+
+            ShouldBeRefused(answer, "invalid_argument");
+            answer["message"]!.GetValue<string>().ShouldMatch("(?i)disabled (by|through) configuration");
+        }
+        finally
+        {
+            File.Delete(store);
+        }
+    }
+
+    // Over its memory a statement fails rather than writing what it holds to the server's disk.
+    [Fact]
+    public async Task AStatementHasNowhereToSpill()
+    {
+        var answer = await Query("select count(*) from (select distinct i::varchar from range(40000000) t(i))");
+
+        ShouldBeRefused(answer, "invalid_argument");
+        answer["message"]!.GetValue<string>().ShouldMatch("(?i)\\.tmp.*disabled by configuration|out of memory");
+    }
+
+    // A value the answer cannot be written in is the statement's problem, said once: not an internal
+    // error a model would try again.
+    [Fact]
+    public async Task AValueTheAnswerCannotHold_IsTheStatementsError()
+    {
+        var answer = await Query("select 'infinity'::timestamptz as forever");
+
+        answer["retryable"]?.GetValue<bool>().ShouldBeFalse();
+        if (answer["ok"]?.GetValue<bool>() == false)
+        {
+            answer["errorCode"]!.GetValue<string>().ShouldBe("invalid_argument");
+        }
     }
 
     [Fact]

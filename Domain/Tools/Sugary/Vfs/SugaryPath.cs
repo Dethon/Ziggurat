@@ -27,22 +27,21 @@ public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
         SugaryNodeKind.ItemsDir => "/" + SugaryPath.ItemsDirName,
         SugaryNodeKind.DosesDir => "/" + SugaryPath.DosesDirName,
         SugaryNodeKind.ExerciseDir => "/" + SugaryPath.ExerciseDirName,
-        SugaryNodeKind.MealsMonth => $"/{SugaryPath.MealsDirName}/{Month}.parquet",
-        SugaryNodeKind.ItemsMonth => $"/{SugaryPath.ItemsDirName}/{Month}.parquet",
-        SugaryNodeKind.DosesMonth => $"/{SugaryPath.DosesDirName}/{Month}.parquet",
-        SugaryNodeKind.ExerciseMonth => $"/{SugaryPath.ExerciseDirName}/{Month}.parquet",
+        SugaryNodeKind.MealsMonth => $"/{SugaryPath.MealsDirName}/{Month}{SugaryPath.TableExtension}",
+        SugaryNodeKind.ItemsMonth => $"/{SugaryPath.ItemsDirName}/{Month}{SugaryPath.TableExtension}",
+        SugaryNodeKind.DosesMonth => $"/{SugaryPath.DosesDirName}/{Month}{SugaryPath.TableExtension}",
+        SugaryNodeKind.ExerciseMonth => $"/{SugaryPath.ExerciseDirName}/{Month}{SugaryPath.TableExtension}",
         _ => ""
     };
-
-    public string FileName => Path[(Path.LastIndexOf('/') + 1)..];
 }
 
 public static class SugaryPath
 {
     public const string ReadmeFileName = "README.md";
-    public const string FoodsFileName = "foods.parquet";
-    public const string PeriodsFileName = "periods.parquet";
-    public const string DayNotesFileName = "day-notes.parquet";
+    public const string TableExtension = ".parquet";
+    public const string FoodsFileName = "foods" + TableExtension;
+    public const string PeriodsFileName = "periods" + TableExtension;
+    public const string DayNotesFileName = "day-notes" + TableExtension;
     public const string MealsDirName = "meals";
     public const string ItemsDirName = "items";
     public const string DosesDirName = "doses";
@@ -72,8 +71,6 @@ public static class SugaryPath
             _ => new SugaryNode(SugaryNodeKind.Unknown)
         };
     }
-
-    private const string TableExtension = ".parquet";
 
     // "2026-10.parquet" names October 2026; anything else names nothing.
     private static string? MonthOf(string file) =>

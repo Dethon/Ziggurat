@@ -37,12 +37,18 @@ RUN apt-get update \
 # queries with (DuckDB.NET.Data.Full in McpServerSugary.csproj), so a statement means the same to the
 # query tool and to a command. Into the system's own Python, so they import under the minimal PATH a
 # command gets.
+# The CLI's checksums are GitHub's own digests for those release assets; a version bump changes all three.
 ARG DUCKDB_VERSION=1.5.6
+ARG DUCKDB_CLI_SHA256_AMD64=6e89deac1ebbc36eed0291caf8b567b030c7b86ac35998f71854e22b3c5d5e2f
+ARG DUCKDB_CLI_SHA256_ARM64=c544e92c9b7c31fc53c2139802cabd8e2d1b2b3e3f933117f31611239c1402db
 ARG POLARS_VERSION=1.44.2
 ARG TARGETARCH
 RUN pip install --no-cache-dir --break-system-packages "duckdb==${DUCKDB_VERSION}" "polars==${POLARS_VERSION}" \
+ && arch="${TARGETARCH:-amd64}" \
+ && if [ "$arch" = arm64 ]; then sum="$DUCKDB_CLI_SHA256_ARM64"; else sum="$DUCKDB_CLI_SHA256_AMD64"; fi \
  && curl -fsSL -o /tmp/duckdb.zip \
-        "https://github.com/duckdb/duckdb/releases/download/v${DUCKDB_VERSION}/duckdb_cli-linux-${TARGETARCH:-amd64}.zip" \
+        "https://github.com/duckdb/duckdb/releases/download/v${DUCKDB_VERSION}/duckdb_cli-linux-${arch}.zip" \
+ && echo "$sum  /tmp/duckdb.zip" | sha256sum -c - \
  && unzip -q /tmp/duckdb.zip -d /usr/local/bin \
  && rm /tmp/duckdb.zip \
  && chmod 0755 /usr/local/bin/duckdb

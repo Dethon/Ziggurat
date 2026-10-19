@@ -17,7 +17,7 @@ namespace Domain.Tools.Sugary.Vfs;
 // sandbox; the text read serves the README alone and refuses a table with what works instead.
 // Nothing that writes is overridden, so no writing tool exists on this mount and a write routed here
 // is refused with what it can do.
-public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITableEngine tables) : FileSystemBackendBase
+public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITableEngine engine) : FileSystemBackendBase
 {
     public const string Name = "sugary";
 
@@ -73,7 +73,7 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
 
         return await TableAsync(node, ct) is null
             ? NotFound<FsReadResult>(path)
-            : FsError.QueryOnly<FsReadResult>(MountPoint + "/" + path.TrimStart('/'), MountPoint);
+            : FsError.QueryOnly<FsReadResult>(FileSystemResolution.ToVirtualPath(MountPoint, path), MountPoint);
     }
 
     // What a command in the sandbox reads, through the bridge, which asks a mount for its bytes first.
@@ -131,9 +131,9 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
     public override async Task<FsResult<FsQueryResult>> QueryAsync(
         string path, string sql, int maxRows, CancellationToken ct)
     {
-        var answer = await tables.QueryAsync(await TablesAsync(ct), homeZone, sql, maxRows, ct);
-        return answer.TryGetValue(out var rows, out var error)
-            ? new FsResult<FsQueryResult>.Ok(rows with { Path = path })
+        var result = await engine.QueryAsync(await TablesAsync(ct), homeZone, sql, maxRows, ct);
+        return result.TryGetValue(out var answer, out var error)
+            ? new FsResult<FsQueryResult>.Ok(answer with { Path = path })
             : new FsResult<FsQueryResult>.Err(error.ErrorCode == ToolError.Codes.InvalidArgument
                 ? error with { Hint = $"{MountPoint}/README.md explains every table and column." }
                 : error);
@@ -191,7 +191,7 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
     private async Task<byte[]?> BytesAsync(SugaryNode node, CancellationToken ct) =>
         node.Kind == SugaryNodeKind.Readme
             ? _utf8.GetBytes(SugaryReadme.For(homeZone))
-            : await TableAsync(node, ct) is { } table ? await tables.ParquetAsync(table, ct) : null;
+            : await TableAsync(node, ct) is { } table ? await engine.ParquetAsync(table, ct) : null;
 
     // The table a file holds, or null where there is no such file: a month with nothing logged in it
     // has none.

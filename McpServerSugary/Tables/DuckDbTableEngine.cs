@@ -26,6 +26,7 @@ public sealed class DuckDbTableEngine(TimeSpan? timeout = null) : ITableEngine
         await using var connection = new DuckDBConnection(ConnectionString);
         await connection.OpenAsync(ct);
         Lock(connection, clock);
+        // Each load writes into the open database, an effect with nothing to select.
         foreach (var table in tables)
         {
             Load(connection, table);
@@ -39,6 +40,7 @@ public sealed class DuckDbTableEngine(TimeSpan? timeout = null) : ITableEngine
         await using var interrupt = timer.Token.Register(command.Cancel);
         try
         {
+            // The reader blocks; off this thread, so the interrupt the timer sends can land while it does.
             return await Task.Run(() => Answer(command, clock, maxRows), CancellationToken.None);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
@@ -50,6 +52,13 @@ public sealed class DuckDbTableEngine(TimeSpan? timeout = null) : ITableEngine
         catch (DuckDBException ex)
         {
             return FsError.Invalid<FsQueryResult>(ex.Message);
+        }
+        // A value the answer cannot be written in (an infinite timestamp, a type with no JSON form)
+        // is the statement's to change, as a statement the engine refused is: never an internal
+        // error a model would send again unchanged.
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return FsError.Invalid<FsQueryResult>($"The answer could not be written: {ex.Message}");
         }
     }
 
@@ -80,9 +89,11 @@ public sealed class DuckDbTableEngine(TimeSpan? timeout = null) : ITableEngine
         }
     }
 
+    // A statement past its memory fails rather than spilling onto the server's disk: no file access
+    // already refuses the temporary directory, and its size is held at nothing as well.
     private const string ConnectionString =
         "DataSource=:memory:;enable_external_access=false;autoinstall_known_extensions=false;"
-        + "autoload_known_extensions=false;allow_community_extensions=false;threads=2;memory_limit=256MB";
+        + "autoload_known_extensions=false;allow_community_extensions=false;threads=2;memory_limit=256MB;max_temp_directory_size=0B";
 
     // The clock is the one setting that cannot be given at open, so it is set here and the
     // configuration locked straight after, before anything the model wrote is run.
@@ -103,6 +114,7 @@ public sealed class DuckDbTableEngine(TimeSpan? timeout = null) : ITableEngine
             create.ExecuteNonQuery();
         }
 
+        // The appender is a cursor: each row is begun, filled a cell at a time and ended, in order.
         using var appender = connection.CreateAppender(table.Name);
         foreach (var row in table.Rows)
         {
@@ -138,7 +150,7 @@ public sealed class DuckDbTableEngine(TimeSpan? timeout = null) : ITableEngine
         ColumnType.Instant => row.AppendValue((DateTimeOffset?)value)
             .AppendValue(((DateTimeOffset?)value)?.DateTime),
         ColumnType.Date => row.AppendValue(value is DateOnly day ? DuckDBDateOnly.FromDateOnly(day) : (DuckDBDateOnly?)null),
-        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "No SQL type for this column.")
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, "No way to append a value of this column type.")
     };
 
     private static FsResult<FsQueryResult> Answer(DuckDBCommand command, TimeZoneInfo clock, int maxRows)
@@ -149,7 +161,8 @@ public sealed class DuckDbTableEngine(TimeSpan? timeout = null) : ITableEngine
             .ToList();
         var rows = new List<IReadOnlyList<JsonNode?>>();
         var count = 0;
-        // Counted to the end so a cut answer can say how much was cut; only the first maxRows are kept.
+        // A reader is a cursor, read forward once. Counted to the end so a cut answer can say how much
+        // was cut; only the first maxRows are kept.
         while (reader.Read())
         {
             if (count++ < maxRows)
@@ -186,7 +199,7 @@ public sealed class DuckDbTableEngine(TimeSpan? timeout = null) : ITableEngine
         {
             "TimestampTz" => Stamp(TimeZoneInfo.ConvertTime(
                 new DateTimeOffset(DateTime.SpecifyKind((DateTime)value, DateTimeKind.Utc)), clock)),
-            "Timestamp" => ((DateTime)value).ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
+            "Timestamp" => ((DateTime)value).ToString(TableFormats.WallTime, CultureInfo.InvariantCulture),
             _ => Plain(value)
         };
     }
@@ -200,15 +213,14 @@ public sealed class DuckDbTableEngine(TimeSpan? timeout = null) : ITableEngine
         float number => float.IsFinite(number) ? number : number.ToString(CultureInfo.InvariantCulture),
         decimal number => number,
         BigInteger number => JsonNode.Parse(number.ToString(CultureInfo.InvariantCulture)),
-        DateOnly day => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-        DateTime time => time.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
+        DateOnly day => day.ToString(TableFormats.Date, CultureInfo.InvariantCulture),
+        DateTime time => time.ToString(TableFormats.WallTime, CultureInfo.InvariantCulture),
         TimeSpan span => span.ToString("c", CultureInfo.InvariantCulture),
         Guid id => id.ToString(),
         _ => JsonSerializer.SerializeToNode(value)
     };
 
-    private static string Stamp(DateTimeOffset instant) =>
-        instant.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture);
+    private static string Stamp(DateTimeOffset instant) => instant.ToString(TableFormats.Instant, CultureInfo.InvariantCulture);
 
     private static string Quote(string identifier) => $"\"{identifier.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
 }

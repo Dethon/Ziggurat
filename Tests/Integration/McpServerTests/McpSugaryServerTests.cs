@@ -239,6 +239,24 @@ public class McpSugaryServerTests
             .ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"], ignoreOrder: true);
     }
 
+    // The server holds the row cap to its bounds itself, whoever is calling.
+    [Fact]
+    public async Task AQueryAskingForNoRows_StillGetsOne()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(Meal("2026-10-11T12:00:00Z", null, Item("toast", 30)));
+
+        var answer = await server.CallAsync("fs_query", new Dictionary<string, object?>
+        {
+            ["path"] = "/",
+            ["sql"] = "select name from items",
+            ["maxRows"] = 0
+        });
+
+        answer["rows"]!.AsArray().Count.ShouldBe(1);
+        answer["truncated"]!.GetValue<bool>().ShouldBeFalse();
+    }
+
     // The agent's own proxy for a remote mount, asking the real server: what Jonas's query tool
     // reaches when it asks /sugary.
     [Fact]

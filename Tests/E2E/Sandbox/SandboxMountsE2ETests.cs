@@ -140,10 +140,11 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         var result = await ExecAsync(client,
             "python3 -c \"import polars as pl; print(pl.read_parquet('/sugary/meals/2026-08.parquet')['carbs_g'].sum())\"; "
             + "duckdb -noheader -csv -c \"select string_agg(items, ' then ' order by eaten_at) from '/sugary/meals/*.parquet'\"; "
+            + "python3 -c \"import duckdb; print(duckdb.sql('select count(*) from read_parquet(\\'/sugary/items/*.parquet\\')').fetchone()[0])\"; "
             + "duckdb --version | cut -d' ' -f1",
             call, cts.Token);
 
-        Stdout(result).ShouldBe("100.0\npaella then toast\nv1.5.6\n", result.ToString());
+        Stdout(result).ShouldBe("100.0\npaella then toast\n2\nv1.5.6\n", result.ToString());
     }
 
     [SkippableFact]

@@ -28,8 +28,8 @@ public sealed class SugaryCsv(params string[] columns)
         string text => Quote(Defuse(text)),
         bool flag => flag ? "true" : "false",
         double or int => ((IFormattable)value).ToString("0.##", CultureInfo.InvariantCulture),
-        DateTimeOffset instant => instant.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture),
-        DateOnly day => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+        DateTimeOffset instant => instant.ToString(TableFormats.Instant, CultureInfo.InvariantCulture),
+        DateOnly day => day.ToString(TableFormats.Date, CultureInfo.InvariantCulture),
         _ => Quote(Defuse(value.ToString() ?? ""))
     };
 

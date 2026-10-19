@@ -4,6 +4,7 @@ using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.Tools.FileSystem;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -75,8 +76,11 @@ public static class FileSystemServerTools
                 ToolResponse.Create(await As(b, call).ExecAsync(path, command, timeoutSeconds, ct))),
 
         ["fs_query"] = new(b => b.DescribeQuery, b =>
-            async (RequestContext<CallToolRequestParams> call, string path, string sql, int maxRows = 100, CancellationToken ct = default) =>
-                ToolResponse.Create(await As(b, call).QueryAsync(path, sql, maxRows, ct))),
+            // Held to its bounds here as well as by the agent's tool: the server answers whoever calls.
+            async (RequestContext<CallToolRequestParams> call, string path, string sql, int maxRows = VfsQueryTool.DefaultMaxRows,
+                    CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).QueryAsync(
+                    path, sql, Math.Clamp(maxRows, 1, VfsQueryTool.MaxRowsCeiling), ct))),
 
         ["fs_copy"] = new(b => b.DescribeCopy, b =>
             async (RequestContext<CallToolRequestParams> call, string sourcePath, string destinationPath, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
