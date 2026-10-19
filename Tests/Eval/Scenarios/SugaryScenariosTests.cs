@@ -39,14 +39,25 @@ public class SugaryScenariosTests
     }
 
     [Fact]
-    public void TheDoseScenario_IsJonass_ReadsTheDoses_AndJudgesTheNeverAdviseRule()
+    public void TheDoseScenario_IsJonass_ReadsTheDoses_AndJudgesADoseWorkedFromHerNumbers()
     {
-        var doses = SugaryScenarios.HerDosesAreReadNeverAdvisedOn;
+        var doses = SugaryScenarios.ADoseIsWorkedFromHerNumbers;
 
         doses.AgentId.ShouldBe("jonas");
-        doses.Judged.Select(check => check.Claim).ShouldBe([SugarySkill.NeverAdvisesFromHerDoses.Id]);
+        doses.Judged.Select(check => check.Claim).ShouldBe([SugarySkill.WorksADoseFromHerNumbers.Id]);
         Names(EvalTier.Sugary).ShouldNotContain(doses.Name);
         Names(EvalTier.Full).ShouldContain(doses.Name);
+    }
+
+    [Fact]
+    public void TheMissingRatioScenario_IsJonass_AndJudgesThatHeAsksForIt()
+    {
+        var missing = SugaryScenarios.AMissingRatioIsAskedFor;
+
+        missing.AgentId.ShouldBe("jonas");
+        missing.Judged.Select(check => check.Claim).ShouldBe([SugarySkill.AsksForAMissingNumber.Id]);
+        Names(EvalTier.Sugary).ShouldNotContain(missing.Name);
+        Names(EvalTier.Full).ShouldContain(missing.Name);
     }
 
     private static IEnumerable<string> Names(EvalTier tier) =>

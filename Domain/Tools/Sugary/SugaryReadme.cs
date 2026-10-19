@@ -87,8 +87,7 @@ public static class SugaryReadme
 
           ## doses/<YYYY-MM>.parquet
 
-          Her record of the insulin she took, entered by her: never a recommendation, and never a basis for
-          one.
+          Her record of the insulin she took, entered by her: what she injected, never a recommendation.
 
           - `dose_id` — the dose's identifier.
           - `taken_at` — when she took it, on the same clock as the meals.
@@ -121,8 +120,9 @@ public static class SugaryReadme
 
           ## exercise/<YYYY-MM>.parquet
 
-          Her record of the exercise she did, entered by her as she did it. It is
-          never a basis for suggesting carbs or insulin around exercise.
+          Her record of the exercise she did, entered by her as she did it. How exercise changes what she
+          needs is hers to say: read a session beside a meal or a dose, and adjust nothing for it by a rule
+          of your own.
 
           - `exercise_id` — the session's identifier.
           - `started_at` — when she started it, on the same clock as the meals. Started with a tap as she set

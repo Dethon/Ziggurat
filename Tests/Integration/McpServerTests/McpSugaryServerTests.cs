@@ -60,10 +60,10 @@ public class McpSugaryServerTests
         body.ShouldNotContain("text_search");
     }
 
-    // "How much did she take for the pizza" is one join, and reading her doses never turns into
-    // advising one.
+    // "How much did she take for the pizza" is one join, and a dose for next time is worked out only
+    // from numbers she gave, never from a guessed one.
     [Fact]
-    public async Task TheLogSkill_SaysWhereHerDosesAre_AndThatTheyAreNeverABasisForAdvice()
+    public async Task TheLogSkill_SaysWhereHerDosesAre_AndThatADoseIsWorkedFromHerOwnNumbers()
     {
         await using var server = await SugaryServer.StartAsync();
 
@@ -74,15 +74,18 @@ public class McpSugaryServerTests
         body.ShouldContain("`doses` joined to `dose_meals` on `dose_id`, then to `meals` on `meal_id`");
         body.ShouldContain("so a dose for two meals counts once");
         body.ShouldContain("not only a correction");
-        body.ShouldContain("never a basis for advice");
-        body.ShouldContain("not her ratio applied to its carbs");
+        body.ShouldContain("from her own numbers");
+        body.ShouldContain("ask for any you lack");
+        body.ShouldContain("still on board");
+        body.ShouldContain("similar meals");
+        body.ShouldNotContain("never a basis for advice");
         SugarySkill.Description.ShouldContain("insulin");
     }
 
-    // "Did she walk after the paella" is a query beside /ha, and her exercise never turns into advice
-    // about carbs or a dose around it.
+    // "Did she walk after the paella" is a query beside /ha, and what exercise does to her insulin is
+    // a rule she gives, never one assumed.
     [Fact]
-    public async Task TheLogSkill_SaysWhereHerExerciseIs_AndThatItIsNeverABasisForAdvice()
+    public async Task TheLogSkill_SaysWhereHerExerciseIs_AndThatItsEffectIsHerRuleToGive()
     {
         await using var server = await SugaryServer.StartAsync();
 
@@ -91,7 +94,7 @@ public class McpSugaryServerTests
 
         body.ShouldContain("- `exercise` —");
         body.ShouldContain("empty while it is running");
-        body.ShouldContain("no carbs or dose around exercise");
+        body.ShouldContain("exercise only by a rule she gave");
         SugarySkill.Description.ShouldContain("exercise");
     }
 
@@ -169,6 +172,7 @@ public class McpSugaryServerTests
         readme.ShouldContain("total a day's insulin from `doses` alone");
         readme.ShouldContain("carries the meal's time unless she changed it");
         readme.ShouldContain("never a recommendation");
+        readme.ShouldNotContain("never a basis");
     }
 
     // An ongoing period read as one day long, or a forecast read as a day she recorded, puts the
@@ -616,7 +620,8 @@ public class McpSugaryServerTests
         readme.ShouldContain("`gym`");
         readme.ShouldContain("`other`");
         readme.ShouldContain("empty while it is still running");
-        readme.ShouldContain("never a basis for suggesting carbs or insulin");
+        readme.ShouldContain("is hers to say");
+        readme.ShouldNotContain("never a basis");
     }
 
     // "How much did she take for the pizza" is one join of the meal and its doses.

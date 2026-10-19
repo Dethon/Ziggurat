@@ -114,7 +114,8 @@ rapid or basal. A dose can be linked to a meal or stand alone.
 ### Safety and operating it
 
 31. As the person counting carbs, I want Sugary never to suggest, compute or prefill a dose anywhere,
-    so that the app stays a record and my care team decides my insulin.
+    so that the app stays a record and my care team decides my insulin. (Jonas, outside Sugary, may
+    since 2026-10-19 — see Out of Scope.)
 32. As the operator, I want the `sugary` agent that estimates meals never to see a dose, so that an
     estimate is never influenced by, and never comments on, insulin.
 33. As the operator, I want doses stored in Sugary's own database beside the meals, so that there is
@@ -244,8 +245,11 @@ never on how the server or the app arranges itself inside.
 
 - Glucose: reading the sensor, recording readings, or filling a meal's outcome from them. The sensor
   connected to Home Assistant is the record of glucose.
-- Any dose suggestion, calculation, ratio, correction factor, insulin-on-board figure or prefill,
-  ever, in the app, the server or any agent.
+- Any dose suggestion, calculation, ratio, correction factor, insulin-on-board figure or prefill in
+  the app, the server or the `sugary` agent that estimates meals. (Narrowed 2026-10-19: this used to
+  say "or any agent". Jonas may now work a dose out — from the ratio, correction factor, target and
+  insulin duration she or fran gave him, with the logged carb range, insulin still on board and how
+  similar meals went — asking for any value he lacks and inventing none. See the `sugary-log` skill.)
 - Reading doses from a pump, a smart pen or Home Assistant. Every dose is entered by her.
 - Insulin brands or types beyond rapid and basal, and mixed insulins.
 - Reminders or alerts about doses.
