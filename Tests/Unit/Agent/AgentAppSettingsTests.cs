@@ -121,15 +121,26 @@ public class AgentAppSettingsTests
     // seven of eight, where every other provider read it (2026-10-18). Balanced routing reached it
     // often enough that jonas file_read and cropped photos it had been sent, looking for a picture
     // it never got. Ignored rather than routed around with `sort`/`order`, so routing stays balanced.
+    // Morph serves both agents' models and loses a tool argument mid-flow: after the first
+    // web_action of a form it answers the next ones with the element's ref moved to endRef or left
+    // out (pinned to it, 3 of 12 second calls kept it; DeepInfra 12 of 12), so the browser refuses
+    // and the model retries to its ceiling. Four web scenarios went 0/4 on it (2026-10-19). Ignored
+    // the same way, by both agents: nabu's throughput sort would otherwise prefer it.
     [Fact]
-    public void Jonas_IgnoresTheProviderThatGarblesPhotographs()
+    public void Jonas_IgnoresTheProvidersThatGarblePhotographsAndDropToolArguments()
     {
-        var jonas = Root()["agents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == "jonas")!;
-
-        var ignored = jonas["providerRouting"]?["ignore"]?.AsArray().Select(p => p!.GetValue<string>()).ToList();
-
-        ignored.ShouldBe(["relace"]);
+        Ignored("jonas").ShouldBe(["relace", "morph"]);
     }
+
+    [Fact]
+    public void Nabu_IgnoresTheProviderThatDropsToolArguments()
+    {
+        Ignored("nabu").ShouldBe(["morph"]);
+    }
+
+    private static List<string>? Ignored(string agentId) =>
+        Root()["agents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == agentId)!
+            ["providerRouting"]?["ignore"]?.AsArray().Select(p => p!.GetValue<string>()).ToList();
 
     // A worker runs its parent's model, served by whoever serves its parent. A key naming either
     // here would bind to nothing and read as a setting that works.
