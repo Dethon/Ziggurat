@@ -12,7 +12,7 @@ public static class SandboxSkill
 
     // The whole trigger: the one line about this skill that is in every turn.
     public const string Description =
-        "Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount's files (\"compute the sha256 of that file\", \"run this python\", \"count the words in those notes\"). Not for reading or editing one file, which the file tools do. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command, and how a container path maps to a virtual one.";
+        "Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount's files (\"compute the sha256 of that file\", \"run this python\", \"count the words in those notes\"). Not for reading or editing one file, or for anything on a machine (`outpost:`): the file tools do those. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command.";
 
     // `servesMounts`, as for the prompt: the other-mounts section is taught only where a command
     // will find them.

@@ -1,10 +1,10 @@
-# sandbox — description 124 / 130 tokens, body 1291 / 1350 tokens, served by mcp-sandbox
+# sandbox — description 123 / 130 tokens, body 1291 / 1350 tokens, served by mcp-sandbox
 
 ================================================================================================
 
 ---
 name: sandbox
-description: Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount's files ("compute the sha256 of that file", "run this python", "count the words in those notes"). Not for reading or editing one file, which the file tools do. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command, and how a container path maps to a virtual one.
+description: Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount's files ("compute the sha256 of that file", "run this python", "count the words in those notes"). Not for reading or editing one file, or for anything on a machine (`outpost:`): the file tools do those. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command.
 ---
 
 ### Layout
