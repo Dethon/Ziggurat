@@ -266,13 +266,13 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         var stranger = fixture.Bridge.Mint(BridgeFixtures.Registry(
             (new MemoryDisk("scratch", new Dictionary<string, string> { ["x.txt"] = "x\n" }), "/scratch", null)), BridgeFixtures.Everything, null, null);
         // The bracket keeps the stranger's own command line from matching itself.
-        const string Reach = "sleep 1; for p in /proc/[0-9]*; do "
+        const string reach = "sleep 1; for p in /proc/[0-9]*; do "
                              + "if grep -qa '4\\.3133[7]' $p/cmdline 2>/dev/null; then cat $p/root/vfs/vault/who.txt; ls $p/root/vfs/vault; fi; "
                              + "done 2>&1; echo looked";
 
         var results = await Task.WhenAll(
             ExecAsync(client, "cat /vault/who.txt; sleep 4.31337", owner, cts.Token),
-            ExecAsync(client, Reach, stranger, cts.Token));
+            ExecAsync(client, reach, stranger, cts.Token));
 
         Stdout(results[0]).ShouldBe("the owner's\n", results[0].ToString());
         Stdout(results[1]).ShouldEndWith("looked\n", Case.Sensitive, results[1].ToString());
