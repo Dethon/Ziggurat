@@ -5,6 +5,7 @@ import { useConfirm } from "../components/Confirm";
 import { Icon, type IconName } from "../components/Icon";
 import { CakeStand } from "../components/Illustrations";
 import { ItemRow } from "../components/ItemRow";
+import { MealThumb } from "../components/MealThumb";
 import { PortionSheet } from "../components/PortionSheet";
 import { Sheet } from "../components/Sheet";
 import { restored } from "../dose";
@@ -13,7 +14,7 @@ import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
 import { localDay } from "../cycle";
 import { attachedDoses, byDay, dayKey, dayUnits, insulinBelow, matches, mealEdited, onPeriod, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
-import { sentence } from "../meal";
+import { mealNames, sentence } from "../meal";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
 import { useToast } from "../toast";
@@ -30,7 +31,6 @@ const PAGE = 50;
 const RECORDED: Exclude<Outcome, "unknown">[] = ["low", "inRange", "high"];
 const OUTCOME_ICON: Record<Outcome, IconName> = { low: "arrowDown", inRange: "checkCircle", high: "arrowUp", unknown: "minus" };
 
-const names = (meal: Meal) => meal.items.map((item) => sentence(item.name)).join("\u00a0· ");
 const DOSE_ICON = { rapid: "bolt", basal: "clock" } as const;
 // The two she does most, a tap each.
 const SHORTCUTS = ["walk", "gym"] as const;
@@ -371,11 +371,11 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
           {pending.map((meal) => {
             const carbs = shownTotal(meal.items);
             return (
-              <article key={meal.id} className="card pending-card" aria-label={names(meal)}>
+              <article key={meal.id} className="card pending-card" aria-label={mealNames(meal)}>
                 <button type="button" className="meal-row" onClick={() => setOpenId(meal.id)}>
-                  <Thumb meal={meal} />
+                  <MealThumb meal={meal} />
                   <span className="item-text">
-                    <span className="item-name">{names(meal)}</span>
+                    <span className="item-name">{mealNames(meal)}</span>
                     <span className="item-meta">{formatTime(meal.eatenAt, language)}</span>
                   </span>
                   <span className="item-grams">{formatGrams(carbs.best)}&nbsp;g</span>
@@ -449,9 +449,9 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
               return (
                 <li key={meal.id}>
                   <button type="button" className="meal-row" aria-haspopup="dialog" onClick={() => setOpenId(meal.id)}>
-                    <Thumb meal={meal} />
+                    <MealThumb meal={meal} />
                     <span className="item-text">
-                      <span className="item-name">{names(meal)}</span>
+                      <span className="item-name">{mealNames(meal)}</span>
                       <span className="item-meta">
                         {formatTime(meal.eatenAt, language)}
                         <OutcomeBadge meal={meal} />
@@ -621,16 +621,6 @@ function ExerciseRow({ session, now, onOpen }: { session: Exercise; now: Date; o
         {minutes === null && <span className="item-best">{t("exerciseRunning")}</span>}
       </span>
     </button>
-  );
-}
-
-function Thumb({ meal }: { meal: Meal }) {
-  return meal.hasPhoto ? (
-    <img className="meal-thumb" src={api.photoUrl(meal.id)} alt="" loading="lazy" />
-  ) : (
-    <span className="meal-thumb meal-thumb-empty">
-      <Icon name="plate" />
-    </span>
   );
 }
 

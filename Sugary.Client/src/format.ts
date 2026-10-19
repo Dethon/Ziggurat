@@ -15,6 +15,11 @@ export function formatDay(date: Date, language: Language): string {
   return date.toLocaleDateString(locale(language), { weekday: "long", day: "numeric", month: "long" });
 }
 
+// "mon 13": the day of something near another day, where the time alone would be ambiguous.
+export function formatShortDay(iso: string, language: Language): string {
+  return new Date(iso).toLocaleDateString(locale(language), { weekday: "short", day: "numeric" });
+}
+
 // Units of insulin as she typed them, in her language's decimals: "4,5" in Spanish.
 export function formatUnits(units: number, language: Language): string {
   return units.toLocaleString(locale(language), { maximumFractionDigits: 2 });

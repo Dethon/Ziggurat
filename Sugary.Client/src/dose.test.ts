@@ -42,10 +42,10 @@ describe("restored", () => {
 });
 
 describe("linkable", () => {
-  const now = new Date("2026-10-15T20:00:00Z");
-  const meal = (id: string, hoursAgo: number): Meal => ({
+  const taken = new Date("2026-10-15T20:00:00Z");
+  const meal = (id: string, hoursBefore: number): Meal => ({
     id,
-    eatenAt: new Date(now.getTime() - hoursAgo * 3_600_000).toISOString(),
+    eatenAt: new Date(taken.getTime() - hoursBefore * 3_600_000).toISOString(),
     notes: null,
     outcome: "unknown",
     hasPhoto: false,
@@ -54,15 +54,26 @@ describe("linkable", () => {
     items: [],
   });
 
-  it("offers the meals of about the last day, newest first", () => {
-    const meals = [meal("breakfast", 12), meal("old", 30), meal("lunch", 6)];
-    expect(linkable(meals, now).map((m) => m.id)).toEqual(["lunch", "breakfast"]);
+  it("offers the meals of about a day either side of the dose, closest to it first", () => {
+    const meals = [meal("breakfast", 12), meal("old", 30), meal("lunch", 6), meal("snack", 1), meal("supper", -2)];
+    expect(linkable(meals, taken).map((m) => m.id)).toEqual(["snack", "supper", "lunch", "breakfast"]);
+  });
+
+  // A dose recorded for an earlier day is offered that day's meals, not the ones around today.
+  it("follows the dose's time rather than the newest meals", () => {
+    const yesterday = new Date(taken.getTime() - 24 * 3_600_000);
+    const meals = [meal("today", 0), meal("yesterdayDinner", 23), meal("yesterdayLunch", 30), meal("weekAgo", 168)];
+    expect(linkable(meals, yesterday).map((m) => m.id)).toEqual([
+      "yesterdayDinner",
+      "yesterdayLunch",
+      "today",
+    ]);
   });
 
   // An older dose opened to change keeps its meal on offer, or saving it would quietly unlink it.
   it("keeps the meal a dose already belongs to on offer", () => {
     const meals = [meal("lunch", 6), meal("old", 30)];
-    expect(linkable(meals, now, "old").map((m) => m.id)).toEqual(["lunch", "old"]);
+    expect(linkable(meals, taken, "old").map((m) => m.id)).toEqual(["lunch", "old"]);
   });
 });
 

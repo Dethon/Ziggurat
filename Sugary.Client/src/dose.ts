@@ -63,14 +63,16 @@ export function doseStart(forMeal: Meal | undefined, now: Date): { takenAt: stri
   return forMeal ? { takenAt: forMeal.eatenAt, mealId: forMeal.id } : { takenAt: now.toISOString(), mealId: null };
 }
 
-// About a day: a dose added on its own is linked to a meal she has just eaten, or is about to.
+// About a day either side: a dose is linked to a meal she has just eaten, or is about to.
 const LINKABLE_HOURS = 24;
 
-// The meals a dose can be linked to: those of about the last day, newest first, and the meal it
-// already belongs to wherever that is, so opening an older dose never quietly unlinks it.
-export function linkable(meals: readonly Meal[], now: Date, current: string | null = null): Meal[] {
-  const since = now.getTime() - LINKABLE_HOURS * 3_600_000;
+// The meals a dose taken at `takenAt` can be linked to: those of about a day either side of it,
+// the closest to it first, and the meal it already belongs to wherever that is, so opening an older
+// dose never quietly unlinks it. Measured from the dose and not from now, so a dose recorded for
+// another day is offered that day's meals.
+export function linkable(meals: readonly Meal[], takenAt: Date, current: string | null = null): Meal[] {
+  const distance = (meal: Meal) => Math.abs(Date.parse(meal.eatenAt) - takenAt.getTime());
   return meals
-    .filter((meal) => meal.id === current || Date.parse(meal.eatenAt) >= since)
-    .toSorted((a, b) => Date.parse(b.eatenAt) - Date.parse(a.eatenAt));
+    .filter((meal) => meal.id === current || distance(meal) <= LINKABLE_HOURS * 3_600_000)
+    .toSorted((a, b) => distance(a) - distance(b));
 }

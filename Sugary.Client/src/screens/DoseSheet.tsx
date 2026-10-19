@@ -1,13 +1,16 @@
-import { useId, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { api } from "../api";
 import { Icon } from "../components/Icon";
+import { MealThumb } from "../components/MealThumb";
 import { Sheet } from "../components/Sheet";
 import { UnitsControl } from "../components/UnitsControl";
 import { doseStart, linkable, MAX_NOTE, MAX_UNITS, readUnits } from "../dose";
 import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
-import { formatTime, formatUnits, toLocalInput } from "../format";
-import { sentence } from "../meal";
+import { formatGrams, shownTotal } from "../carbs";
+import { localDay } from "../cycle";
+import { formatShortDay, formatTime, formatUnits, toLocalInput } from "../format";
+import { mealNames } from "../meal";
 import { useSettings } from "../settings";
 import type { Dose, DoseKind, Meal } from "../types";
 
@@ -30,7 +33,7 @@ export function DoseSheet({
   dose?: Dose;
   // A new dose added from this meal's sheet: it starts linked to the meal, at its time.
   forMeal?: Meal;
-  // Her loaded meals, of which those of about the last day are offered to link the dose to.
+  // Her loaded meals, of which those of about a day either side of the dose are offered to link it to.
   meals: readonly Meal[];
   onClose: () => void;
   onSaved: (dose: Dose) => void;
@@ -43,7 +46,9 @@ export function DoseSheet({
   const [when, setWhen] = useState(() => toLocalInput(dose?.takenAt ?? start.takenAt));
   const [note, setNote] = useState(dose?.note ?? "");
   const [mealId, setMealId] = useState(dose ? (dose.mealId ?? "") : (start.mealId ?? ""));
-  const [offered] = useState(() => linkable(meals, new Date(), dose ? dose.mealId : start.mealId));
+  const linked = dose ? dose.mealId : start.mealId;
+  // Follows the time field, so changing when the dose was taken offers the meals around then.
+  const offered = useMemo(() => linkable(meals, when ? new Date(when) : new Date(), linked), [meals, when, linked]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formId = useId();
@@ -137,17 +142,7 @@ export function DoseSheet({
           <input type="datetime-local" required value={when} onChange={(event) => setWhen(event.target.value)} />
         </label>
         {offered.length > 0 && (
-          <label className="field">
-            <span className="field-label">{t("doseMeal")}</span>
-            <select value={mealId} onChange={(event) => setMealId(event.target.value)}>
-              <option value="">{t("doseNoMeal")}</option>
-              {offered.map((meal) => (
-                <option key={meal.id} value={meal.id}>
-                  {`${formatTime(meal.eatenAt, language)} · ${meal.items.map((item) => sentence(item.name)).join(", ")}`}
-                </option>
-              ))}
-            </select>
-          </label>
+          <MealChoice meals={offered} chosen={mealId} takenAt={when} onChoose={setMealId} />
         )}
         <label className="field">
           <span className="field-label">{t("doseNote")}</span>
@@ -171,5 +166,86 @@ export function DoseSheet({
         )}
       </form>
     </Sheet>
+  );
+}
+
+// How many of the closest meals are on show before she asks for the rest.
+const CLOSEST = 3;
+
+// The meal a dose is for, picked from the meals around it, the closest first: each as the Log draws
+// it, with its photo, its foods and its time, and "no meal" above them all.
+function MealChoice({
+  meals,
+  chosen,
+  takenAt,
+  onChoose,
+}: {
+  meals: readonly Meal[];
+  chosen: string;
+  takenAt: string;
+  onChoose: (mealId: string) => void;
+}) {
+  const { t, language } = useSettings();
+  const [all, setAll] = useState(false);
+  // The chosen meal stays on show however far down the list it is.
+  const shown = all ? meals : meals.filter((meal, index) => index < CLOSEST || meal.id === chosen);
+  const doseDay = takenAt ? localDay(new Date(takenAt)) : null;
+
+  return (
+    <fieldset className="question">
+      <legend>{t("doseMeal")}</legend>
+      <ul className="meal-choices">
+        <li>
+          <button
+            type="button"
+            className={`meal-choice${chosen === "" ? " meal-choice-on" : ""}`}
+            aria-pressed={chosen === ""}
+            onClick={() => onChoose("")}
+          >
+            <span className="meal-thumb meal-thumb-empty">
+              <Icon name="minus" />
+            </span>
+            <span className="item-text">
+              <span className="item-name">{t("doseNoMeal")}</span>
+            </span>
+            <span className="meal-choice-tick" aria-hidden="true">
+              <Icon name="check" size={22} />
+            </span>
+          </button>
+        </li>
+        {shown.map((meal) => {
+          const on = chosen === meal.id;
+          const day = localDay(new Date(meal.eatenAt)) === doseDay ? null : formatShortDay(meal.eatenAt, language);
+          return (
+            <li key={meal.id}>
+              <button
+                type="button"
+                className={`meal-choice${on ? " meal-choice-on" : ""}`}
+                aria-pressed={on}
+                onClick={() => onChoose(meal.id)}
+              >
+                <MealThumb meal={meal} />
+                <span className="item-text">
+                  <span className="item-name">{mealNames(meal)}</span>
+                  <span className="item-meta">
+                    {day ? `${day} · ` : ""}
+                    {formatTime(meal.eatenAt, language)} · {formatGrams(shownTotal(meal.items).best)}&nbsp;g
+                  </span>
+                </span>
+                <span className="meal-choice-tick" aria-hidden="true">
+              <Icon name="check" size={22} />
+            </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {shown.length < meals.length && (
+        <button type="button" className="button button-quiet" onClick={() => setAll(true)}>
+          <Icon name="chevron" size={20} />
+          {t("doseMealMore", { n: meals.length - shown.length })}
+        </button>
+      )}
+    </fieldset>
   );
 }

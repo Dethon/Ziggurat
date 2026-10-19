@@ -1,4 +1,4 @@
-import type { DraftItem, Food } from "./types";
+import type { DraftItem, Food, Meal } from "./types";
 
 // The one primary action the meal's footer offers. Whatever would leave the total on screen out of
 // step with what she has told the app comes before saving, so a meal is never saved with her
@@ -64,3 +64,6 @@ export function bindUnits(text: string): string {
 export function sentence(text: string): string {
   return text.charAt(0).toLocaleUpperCase() + text.slice(1);
 }
+
+// What a meal was, by the names of its foods.
+export const mealNames = (meal: Pick<Meal, "items">) => meal.items.map((item) => sentence(item.name)).join("\u00a0· ");
