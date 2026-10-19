@@ -1,6 +1,9 @@
 using System.Text;
+using Domain.DTOs.FileSystem;
 using Domain.DTOs.Sugary;
 using Domain.Prompts;
+using Domain.Tools.Sugary.Vfs;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
 using McpServerSugary.Store;
 using ModelContextProtocol.Client;
@@ -228,7 +231,27 @@ public class McpSugaryServerTests
         var tools = await server.Client.ListToolsAsync();
 
         tools.Select(tool => tool.Name).Where(name => name.StartsWith("fs_", StringComparison.Ordinal))
-            .ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_search"], ignoreOrder: true);
+            .ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_search", "fs_query"], ignoreOrder: true);
+    }
+
+    // The agent's own proxy for a remote mount, asking the real server: what Jonas's query tool
+    // reaches when it asks /sugary.
+    [Fact]
+    public async Task AQuery_ReachesTheServerThroughTheAgentsProxy()
+    {
+        await using var server = await SugaryServer.StartAsync("Europe/Madrid");
+        var paella = Meal("2026-08-09T12:30:00Z", null, Item("paella", 70));
+        await server.SaveAsync(paella, Meal("2026-07-12T12:30:00Z", null, Item("paella", 80)));
+        await server.SaveAsync(Dose("2026-08-09T12:25:00Z", 7, DoseKind.Rapid, paella.Id));
+        var backend = new McpFileSystemBackend(server.Client, SugaryFileSystem.Name, advertisedOperations: null);
+
+        var answer = (await backend.QueryAsync("", """
+            select m.eaten_at, d.units from meals m join doses d using (meal_id)
+            """, 10, CancellationToken.None)).ShouldBeOfType<FsResult<FsQueryResult>.Ok>().Value;
+
+        answer.RowCount.ShouldBe(1);
+        answer.Rows[0][0]!.GetValue<string>().ShouldBe("2026-08-09T14:30:00+02:00");
+        answer.Rows[0][1]!.GetValue<double>().ShouldBe(7);
     }
 
     private static MealItem Item(string name, double carbs, ItemSource source = ItemSource.Estimate, int position = 0) =>

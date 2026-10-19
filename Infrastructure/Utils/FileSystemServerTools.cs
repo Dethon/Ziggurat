@@ -74,6 +74,10 @@ public static class FileSystemServerTools
             async (RequestContext<CallToolRequestParams> call, string path, string command, int? timeoutSeconds = null, CancellationToken ct = default) =>
                 ToolResponse.Create(await As(b, call).ExecAsync(path, command, timeoutSeconds, ct))),
 
+        ["fs_query"] = new(b => b.DescribeQuery, b =>
+            async (RequestContext<CallToolRequestParams> call, string path, string sql, int maxRows = 100, CancellationToken ct = default) =>
+                ToolResponse.Create(await As(b, call).QueryAsync(path, sql, maxRows, ct))),
+
         ["fs_copy"] = new(b => b.DescribeCopy, b =>
             async (RequestContext<CallToolRequestParams> call, string sourcePath, string destinationPath, bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
                 ToolResponse.Create(await As(b, call).CopyAsync(sourcePath, destinationPath, overwrite, createDirectories, ct))),

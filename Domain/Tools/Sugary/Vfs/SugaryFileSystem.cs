@@ -5,6 +5,7 @@ using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Sugary;
 using Domain.DTOs.Tables;
+using Domain.Tools;
 using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Sugary.Vfs;
@@ -14,7 +15,8 @@ namespace Domain.Tools.Sugary.Vfs;
 // Read, glob, info and search are the whole surface — nothing that writes is overridden, so no
 // writing tool exists on this mount and a write routed here is refused with what it can do.
 public sealed class SugaryFileSystem(
-    ISugaryLog log, TimeZoneInfo homeZone, TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
+    ISugaryLog log, TimeZoneInfo homeZone, ITableEngine tables, TimeSpan? regexMatchTimeout = null)
+    : FileSystemBackendBase
 {
     public const string Name = "sugary";
 
@@ -50,6 +52,11 @@ public sealed class SugaryFileSystem(
         + "doses. Scope with path (one file) or directoryPath (meals, items, doses or exercise); omit both to "
         + "search everything. Supports regex, "
         + "filePattern, maxResults, contextLines, and outputMode (content|filesOnly).";
+
+    public override string DescribeQuery =>
+        "Answer one DuckDB SQL statement over her whole log, every month at once: tables meals, items, "
+        + "doses, exercise, foods, periods and day_notes, with the columns README.md explains. Every time "
+        + "column has a `<column>_local` sibling on the home's clock.";
 
     private static readonly UTF8Encoding _utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
@@ -126,6 +133,35 @@ public sealed class SugaryFileSystem(
                 OutputMode = outputMode
             },
             ct);
+    }
+
+    // Whichever path inside the mount it was asked at, a statement sees the whole log: a month is
+    // where a file is filed, not a limit on a question.
+    public override async Task<FsResult<FsQueryResult>> QueryAsync(
+        string path, string sql, int maxRows, CancellationToken ct)
+    {
+        var answer = await tables.QueryAsync(await TablesAsync(ct), homeZone, sql, maxRows, ct);
+        return answer.TryGetValue(out var rows, out var error)
+            ? new FsResult<FsQueryResult>.Ok(rows with { Path = path })
+            : new FsResult<FsQueryResult>.Err(error.ErrorCode == ToolError.Codes.InvalidArgument
+                ? error with { Hint = $"{MountPoint}/README.md explains every table and column." }
+                : error);
+    }
+
+    private async Task<IReadOnlyList<Table>> TablesAsync(CancellationToken ct)
+    {
+        var meals = await log.MealsAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
+        return
+        [
+            SugaryTables.Meals(meals, homeZone),
+            SugaryTables.Items(meals, homeZone),
+            SugaryTables.Doses(await log.DosesAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), homeZone),
+            SugaryTables.Exercise(
+                await log.ExerciseAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), homeZone),
+            SugaryTables.Foods(await log.FoodsAsync(ct)),
+            SugaryTables.Periods(await log.PeriodsAsync(ct)),
+            SugaryTables.DayNotes(await log.DayNotesAsync(ct))
+        ];
     }
 
     private static bool Within(SugaryNode file, SugaryNode scope) => scope.Kind switch

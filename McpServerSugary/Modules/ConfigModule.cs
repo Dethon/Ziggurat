@@ -11,6 +11,7 @@ using McpServerSugary.McpPrompts;
 using McpServerSugary.McpTools;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
+using McpServerSugary.Tables;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace McpServerSugary.Modules;
@@ -24,7 +25,10 @@ public static class ConfigModule
         services
             .AddSugaryStore(settings)
             .AddSingleton<ISugaryLog, SqliteSugaryLog>()
-            .AddSingleton(sp => new SugaryFileSystem(sp.GetRequiredService<ISugaryLog>(), homeZone))
+            // Her log's tables are queried on DuckDB, in this server's image alone.
+            .AddSingleton<ITableEngine, DuckDbTableEngine>()
+            .AddSingleton(sp => new SugaryFileSystem(
+                sp.GetRequiredService<ISugaryLog>(), homeZone, sp.GetRequiredService<ITableEngine>()))
             .AddSingleton(sp => new HomeCalendar(sp.GetRequiredService<TimeProvider>(), homeZone))
             .AddHostedService<SugaryDatabaseMigrator>()
             .AddSingleton(settings.Uploads)

@@ -12,7 +12,7 @@ namespace Tests.Unit.Domain.Sugary;
 // still route a write at /sugary to the backend, and what it answers there is this refusal.
 public class SugaryFileSystemTests
 {
-    private readonly SugaryFileSystem _mount = new(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc);
+    private readonly SugaryFileSystem _mount = new(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>());
 
     public static TheoryData<string> Writes => new() { "create", "move", "delete", "create a dose", "delete a dose", "create exercise" };
 
@@ -49,7 +49,7 @@ public class SugaryFileSystemTests
         log.Setup(l => l.DoseTimesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync([new DateTimeOffset(2026, 8, 30, 21, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 1, 21, 0, 0, TimeSpan.Zero)]);
         log.Setup(l => l.ExerciseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
-        var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc);
+        var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc, Mock.Of<ITableEngine>());
 
         var all = (await mount.GlobAsync("/", "**", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
         var doses = (await mount.GlobAsync("/doses", "*.csv", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
@@ -72,7 +72,7 @@ public class SugaryFileSystemTests
         log.Setup(l => l.MealTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.DoseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.ExerciseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
-        var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc);
+        var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc, Mock.Of<ITableEngine>());
 
         var glob = (await mount.GlobAsync("/", "*.csv", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
         var periods = (await mount.ReadAsync("/periods.csv", null, null, CancellationToken.None))
@@ -94,7 +94,7 @@ public class SugaryFileSystemTests
         log.Setup(l => l.DoseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.ExerciseTimesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync([new DateTimeOffset(2026, 9, 30, 18, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 10, 2, 9, 0, 0, TimeSpan.Zero)]);
-        var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc);
+        var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc, Mock.Of<ITableEngine>());
 
         var exercise = (await mount.GlobAsync("/exercise", "*.csv", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;

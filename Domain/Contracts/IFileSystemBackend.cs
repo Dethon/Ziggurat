@@ -18,6 +18,8 @@ public interface IFileSystemBackend
     Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct);
     Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct);
 
+    Task<FsResult<FsQueryResult>> QueryAsync(string path, string sql, int maxRows, CancellationToken ct);
+
     Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
         bool overwrite, bool createDirectories, CancellationToken ct);
 

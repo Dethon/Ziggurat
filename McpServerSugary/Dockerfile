@@ -19,7 +19,10 @@ FROM dependencies AS publish
 ARG BUILD_CONFIGURATION=Release
 COPY ["McpServerSugary/", "McpServerSugary/"]
 WORKDIR "/src/McpServerSugary"
-RUN dotnet publish "./McpServerSugary.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore
+# DuckDB (her log's queries) ships a native library per platform, a few hundred MB together; a
+# Linux container loads only a Linux one.
+RUN dotnet publish "./McpServerSugary.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false /p:BuildProjectReferences=false --no-restore \
+ && rm -rf /app/publish/runtimes/osx* /app/publish/runtimes/win*
 
 FROM base AS final
 WORKDIR /app

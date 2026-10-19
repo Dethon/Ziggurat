@@ -102,7 +102,7 @@ public class FileSystemServerConformanceTests
             ],
             // Her log, rendered from the database on every read. Nothing that writes: the only way to
             // change it is through Sugary itself.
-            ["sugary"] = ["fs_read", "fs_info", "fs_glob", "fs_search"]
+            ["sugary"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_query"]
         };
 
     // Which mounts say where they can be written, and where. A workspace is the writable, persistent
@@ -254,7 +254,7 @@ public class FileSystemServerConformanceTests
                 "/sandbox/home/sandbox_user"),
             ["outpost"] = new OutpostFileSystem(
                 "outpost", Mock.Of<IFileSystemClient>(), "/home/someone/project", [".py"]),
-            ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc)
+            ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>())
         };
 
     // The other half of the same idea. A mount's identity used to be written three times per server

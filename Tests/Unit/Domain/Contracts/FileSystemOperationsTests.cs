@@ -98,6 +98,9 @@ public class FileSystemOperationsTests
         public override Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct) =>
             base.ExecAsync(path, command, timeoutSeconds, ct);
 
+        public override Task<FsResult<FsQueryResult>> QueryAsync(string path, string sql, int maxRows, CancellationToken ct) =>
+            base.QueryAsync(path, sql, maxRows, ct);
+
         public override Task<FsResult<FsCopyResult>> CopyAsync(string sourcePath, string destinationPath,
             bool overwrite, bool createDirectories, CancellationToken ct) =>
             base.CopyAsync(sourcePath, destinationPath, overwrite, createDirectories, ct);

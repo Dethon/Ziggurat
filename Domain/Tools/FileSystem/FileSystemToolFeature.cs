@@ -158,6 +158,8 @@ public class FileSystemToolFeature(
                 call => touched.Executing(reach, call)),
             (VfsFileInfoTool.Key, () => AIFunctionFactory.Create(new VfsFileInfoTool(registry).RunAsync, name: $"domain__{Feature}__{VfsFileInfoTool.Name}"),
                 call => touched.Reading(call, "path")),
+            (VfsQueryTool.Key, () => AIFunctionFactory.Create(new VfsQueryTool(registry).RunAsync, name: $"domain__{Feature}__{VfsQueryTool.Name}"),
+                call => touched.Reading(call, "path")),
         };
 
         return tools
