@@ -22,19 +22,19 @@ public class SugaryFileSystemTests
     {
         var error = write switch
         {
-            "create" => Error(await _mount.CreateAsync("/meals/2026-10.csv", "x", true, true, CancellationToken.None)),
-            "move" => Error(await _mount.MoveAsync("/foods.csv", "/old.csv", CancellationToken.None)),
-            "create a dose" => Error(await _mount.CreateAsync("/doses/2026-10.csv", "x", true, true, CancellationToken.None)),
-            "delete a dose" => Error(await _mount.DeleteAsync("/doses/2026-10.csv", CancellationToken.None)),
-            "create exercise" => Error(await _mount.CreateAsync("/exercise/2026-10.csv", "x", true, true, CancellationToken.None)),
-            _ => Error(await _mount.DeleteAsync("/meals/2026-10.csv", CancellationToken.None))
+            "create" => Error(await _mount.CreateAsync("/meals/2026-10.parquet", "x", true, true, CancellationToken.None)),
+            "move" => Error(await _mount.MoveAsync("/foods.parquet", "/old.parquet", CancellationToken.None)),
+            "create a dose" => Error(await _mount.CreateAsync("/doses/2026-10.parquet", "x", true, true, CancellationToken.None)),
+            "delete a dose" => Error(await _mount.DeleteAsync("/doses/2026-10.parquet", CancellationToken.None)),
+            "create exercise" => Error(await _mount.CreateAsync("/exercise/2026-10.parquet", "x", true, true, CancellationToken.None)),
+            _ => Error(await _mount.DeleteAsync("/meals/2026-10.parquet", CancellationToken.None))
         };
 
         error.ErrorCode.ShouldBe(ToolError.Codes.UnsupportedOperation);
         error.Hint.ShouldNotBeNull();
         error.Hint.ShouldContain("read");
         error.Hint.ShouldContain("glob");
-        error.Hint.ShouldContain("search");
+        error.Hint.ShouldContain("query");
         error.Hint.ShouldNotContain("create");
     }
 
@@ -52,37 +52,28 @@ public class SugaryFileSystemTests
         var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc, Mock.Of<ITableEngine>());
 
         var all = (await mount.GlobAsync("/", "**", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
-        var doses = (await mount.GlobAsync("/doses", "*.csv", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+        var doses = (await mount.GlobAsync("/doses", "*.parquet", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
         all.Entries.ShouldBe([
-            "/README.md", "/day-notes.csv", "/doses/", "/doses/2026-08.csv", "/doses/2026-09.csv", "/exercise/",
-            "/foods.csv", "/items/", "/items/2026-10.csv", "/meals/", "/meals/2026-10.csv", "/periods.csv"
+            "/README.md", "/day-notes.parquet", "/doses/", "/doses/2026-08.parquet", "/doses/2026-09.parquet", "/exercise/",
+            "/foods.parquet", "/items/", "/items/2026-10.parquet", "/meals/", "/meals/2026-10.parquet", "/periods.parquet"
         ]);
-        doses.Entries.ShouldBe(["/doses/2026-08.csv", "/doses/2026-09.csv"]);
+        doses.Entries.ShouldBe(["/doses/2026-08.parquet", "/doses/2026-09.parquet"]);
     }
 
-    // Her cycle is two tables at the root, there with headers before she has recorded anything.
+    // Her cycle is two tables at the root, there before she has recorded anything.
     [Fact]
-    public async Task HerCycleFiles_AreAtTheRoot_AndReadWithTheirHeaders()
+    public async Task HerCycleFiles_AreAtTheRoot()
     {
         var log = new Mock<ISugaryLog>();
-        log.Setup(l => l.PeriodsAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync([new LoggedPeriod(Guid.Empty, new DateOnly(2026, 10, 8), null)]);
-        log.Setup(l => l.DayNotesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.MealTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.DoseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         log.Setup(l => l.ExerciseTimesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
         var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc, Mock.Of<ITableEngine>());
 
-        var glob = (await mount.GlobAsync("/", "*.csv", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
-        var periods = (await mount.ReadAsync("/periods.csv", null, null, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
-        var notes = (await mount.ReadAsync("/day-notes.csv", null, null, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+        var glob = (await mount.GlobAsync("/", "*.parquet", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
-        glob.Entries.ShouldBe(["/day-notes.csv", "/foods.csv", "/periods.csv"]);
-        periods.Content.ShouldBe($"period_id,start_date,end_date,days,cycle_days\n{Guid.Empty},2026-10-08,,,\n");
-        notes.Content.ShouldBe("date,note\n");
+        glob.Entries.ShouldBe(["/day-notes.parquet", "/foods.parquet", "/periods.parquet"]);
     }
 
     // A month has an exercise file when a session started in it, whatever else she logged then.
@@ -96,10 +87,10 @@ public class SugaryFileSystemTests
             .ReturnsAsync([new DateTimeOffset(2026, 9, 30, 18, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 10, 2, 9, 0, 0, TimeSpan.Zero)]);
         var mount = new SugaryFileSystem(log.Object, TimeZoneInfo.Utc, Mock.Of<ITableEngine>());
 
-        var exercise = (await mount.GlobAsync("/exercise", "*.csv", CancellationToken.None))
+        var exercise = (await mount.GlobAsync("/exercise", "*.parquet", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
-        exercise.Entries.ShouldBe(["/exercise/2026-09.csv", "/exercise/2026-10.csv"]);
+        exercise.Entries.ShouldBe(["/exercise/2026-09.parquet", "/exercise/2026-10.parquet"]);
     }
 
     private static ToolErrorResult Error<T>(FsResult<T> result) where T : class =>

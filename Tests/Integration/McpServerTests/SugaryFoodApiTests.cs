@@ -158,6 +158,7 @@ public class SugaryFoodApiTests
 
         var id = (await ReadAsync(await client.PostAsJsonAsync("/api/foods", Bread())))["id"]!.GetValue<string>();
 
-        (await server.ReadAsync("/foods.csv")).ShouldContain($"{id},Pan de molde,46,g,32,,8480000823298,label");
+        (await server.QueryAsync($"select name, carbs_per_100, unit, portion_amount, barcode, source from foods where food_id = '{id}'"))
+            .Single()!.AsArray().Select(cell => cell!.ToString()).ShouldBe(["Pan de molde", "46", "g", "32", "8480000823298", "label"]);
     }
 }

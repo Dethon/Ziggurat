@@ -53,6 +53,33 @@ public sealed class DuckDbTableEngine(TimeSpan? timeout = null) : ITableEngine
         }
     }
 
+    // Written by DuckDB itself, so a reader of the file meets exactly the table a statement meets.
+    // One thread, because a parallel writer may order its row groups differently from one run to the
+    // next, and the size a stat reported must be the size the read returns. No statement of the
+    // model's runs here: the file access this needs is the engine's own.
+    public async Task<byte[]> ParquetAsync(Table table, CancellationToken ct)
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"table-{Guid.NewGuid():N}.parquet");
+        try
+        {
+            await using (var connection = new DuckDBConnection(
+                             "DataSource=:memory:;threads=1;autoinstall_known_extensions=false;autoload_known_extensions=false"))
+            {
+                await connection.OpenAsync(ct);
+                Load(connection, table);
+                await using var copy = connection.CreateCommand();
+                copy.CommandText = $"COPY {Quote(table.Name)} TO '{file}' (FORMAT parquet)";
+                await copy.ExecuteNonQueryAsync(ct);
+            }
+
+            return await File.ReadAllBytesAsync(file, ct);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
     private const string ConnectionString =
         "DataSource=:memory:;enable_external_access=false;autoinstall_known_extensions=false;"
         + "autoload_known_extensions=false;allow_community_extensions=false;threads=2;memory_limit=256MB";

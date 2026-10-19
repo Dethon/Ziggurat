@@ -686,8 +686,11 @@ public class SugaryEstimateApiTests
         var meal = (await app.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray().ShouldHaveSingleItem()!;
         ShouldBeInterval(meal["firstEstimate"], 39, 47, 59);
         meal["items"]!.AsArray().Sum(i => i!["carbs"]!.GetValue<double>()).ShouldBe(57 + 12);
-        var row = (await server.ReadAsync("/meals/2026-10.csv")).Split('\n')[1].Split(',');
-        row[2..9].ShouldBe(["69", "57", "87", "47", "39", "59", "unknown"]);
+        var row = (await server.QueryAsync("""
+            select carbs_g, carbs_low_g, carbs_high_g, first_estimate_g, first_estimate_low_g, first_estimate_high_g,
+                outcome from meals
+            """)).Single()!.AsArray();
+        row.Select(cell => cell!.ToString()).ShouldBe(["69", "57", "87", "47", "39", "59", "unknown"]);
     }
 
     // A follow-up answers the estimate already made, whose photos the agent already has.

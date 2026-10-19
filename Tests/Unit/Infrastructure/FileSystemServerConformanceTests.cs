@@ -102,7 +102,7 @@ public class FileSystemServerConformanceTests
             ],
             // Her log, rendered from the database on every read. Nothing that writes: the only way to
             // change it is through Sugary itself.
-            ["sugary"] = ["fs_read", "fs_info", "fs_glob", "fs_search", "fs_query"]
+            ["sugary"] = ["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"]
         };
 
     // Which mounts say where they can be written, and where. A workspace is the writable, persistent

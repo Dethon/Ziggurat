@@ -27,10 +27,10 @@ public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
         SugaryNodeKind.ItemsDir => "/" + SugaryPath.ItemsDirName,
         SugaryNodeKind.DosesDir => "/" + SugaryPath.DosesDirName,
         SugaryNodeKind.ExerciseDir => "/" + SugaryPath.ExerciseDirName,
-        SugaryNodeKind.MealsMonth => $"/{SugaryPath.MealsDirName}/{Month}.csv",
-        SugaryNodeKind.ItemsMonth => $"/{SugaryPath.ItemsDirName}/{Month}.csv",
-        SugaryNodeKind.DosesMonth => $"/{SugaryPath.DosesDirName}/{Month}.csv",
-        SugaryNodeKind.ExerciseMonth => $"/{SugaryPath.ExerciseDirName}/{Month}.csv",
+        SugaryNodeKind.MealsMonth => $"/{SugaryPath.MealsDirName}/{Month}.parquet",
+        SugaryNodeKind.ItemsMonth => $"/{SugaryPath.ItemsDirName}/{Month}.parquet",
+        SugaryNodeKind.DosesMonth => $"/{SugaryPath.DosesDirName}/{Month}.parquet",
+        SugaryNodeKind.ExerciseMonth => $"/{SugaryPath.ExerciseDirName}/{Month}.parquet",
         _ => ""
     };
 
@@ -40,9 +40,9 @@ public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
 public static class SugaryPath
 {
     public const string ReadmeFileName = "README.md";
-    public const string FoodsFileName = "foods.csv";
-    public const string PeriodsFileName = "periods.csv";
-    public const string DayNotesFileName = "day-notes.csv";
+    public const string FoodsFileName = "foods.parquet";
+    public const string PeriodsFileName = "periods.parquet";
+    public const string DayNotesFileName = "day-notes.parquet";
     public const string MealsDirName = "meals";
     public const string ItemsDirName = "items";
     public const string DosesDirName = "doses";
@@ -73,10 +73,13 @@ public static class SugaryPath
         };
     }
 
-    // "2026-10.csv" names October 2026; anything else names nothing.
+    private const string TableExtension = ".parquet";
+
+    // "2026-10.parquet" names October 2026; anything else names nothing.
     private static string? MonthOf(string file) =>
-        file.EndsWith(".csv", StringComparison.Ordinal)
-        && DateTime.TryParseExact(file[..^4], "yyyy-MM", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)
-            ? file[..^4]
+        file.EndsWith(TableExtension, StringComparison.Ordinal)
+        && DateTime.TryParseExact(file[..^TableExtension.Length], "yyyy-MM", CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out _)
+            ? file[..^TableExtension.Length]
             : null;
 }

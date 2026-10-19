@@ -225,6 +225,64 @@ public sealed class SugaryServer : IAsyncDisposable
                ?? throw new InvalidOperationException($"reading {path} failed: {read.ToJsonString()}");
     }
 
+    // A table as the app's settings download it: the CSV an import reads back.
+    public async Task<string> ExportAsync(string table, string tz = "Europe/Madrid")
+    {
+        var client = await SignedInAsync();
+        var response = await client.GetAsync($"/api/export/{table}.csv?tz={tz}");
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
+    }
+
+    // Her log asked over MCP, as the agent's query tool asks it; the rows, or the call failing loudly.
+    public async Task<JsonArray> QueryAsync(string sql)
+    {
+        var answer = await CallAsync("fs_query", new Dictionary<string, object?> { ["path"] = "/", ["sql"] = sql });
+        return answer["rows"]?.AsArray()
+               ?? throw new InvalidOperationException($"query failed: {answer.ToJsonString()}");
+    }
+
+    // A table's file as a command reads it: its bytes over the byte read, opened by DuckDB as any
+    // Parquet file. Every value comes back as text, times on UTC's clock.
+    public async Task<IReadOnlyList<string?[]>> TableRowsAsync(string path)
+    {
+        var bytes = new List<byte>();
+        var eof = false;
+        while (!eof)
+        {
+            var chunk = await CallAsync("fs_blob_read", new Dictionary<string, object?>
+            {
+                ["path"] = path,
+                ["offset"] = bytes.Count
+            });
+            bytes.AddRange(Convert.FromBase64String(chunk["contentBase64"]?.GetValue<string>()
+                                                    ?? throw new InvalidOperationException(chunk.ToJsonString())));
+            eof = chunk["eof"]!.GetValue<bool>();
+        }
+
+        var file = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"sugary-{Guid.NewGuid():N}.parquet");
+        await File.WriteAllBytesAsync(file, bytes.ToArray());
+        try
+        {
+            await using var connection = new DuckDB.NET.Data.DuckDBConnection("DataSource=:memory:");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SET TimeZone = 'UTC'; select columns(*)::varchar from read_parquet('{file}')";
+            await using var reader = await command.ExecuteReaderAsync();
+            var rows = new List<string?[]>();
+            while (await reader.ReadAsync())
+            {
+                rows.Add([.. Enumerable.Range(0, reader.FieldCount).Select(i => reader.IsDBNull(i) ? null : reader.GetString(i))]);
+            }
+
+            return rows;
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
     public async Task<IReadOnlyList<string>> GlobAsync(string pattern, string basePath = "")
     {
         var glob = await CallAsync("fs_glob", new Dictionary<string, object?>

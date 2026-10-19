@@ -76,14 +76,11 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         saved.StatusCode.ShouldBe(HttpStatusCode.Created, await saved.Content.ReadAsStringAsync());
         var mealId = (await saved.Content.ReadFromJsonAsync<JsonNode>())!["id"]!.GetValue<string>();
 
-        // Read as an agent with the mount reads it: the server's file tool over MCP behind the
-        // deployment secret. The agent sees this file as /sugary/meals/<month>.csv; the server serves
-        // its own root, so the path here has no mount prefix. The month is the home's.
-        var month = eatenAt.ToString("yyyy-MM");
-        var table = await ReadMountAsync($"/meals/{month}.csv");
-        var row = table.Split('\n').SingleOrDefault(line => line.StartsWith(mealId, StringComparison.Ordinal));
-        row.ShouldNotBeNull($"meal {mealId} is not in /sugary/meals/{month}.csv:\n{table}");
-        row.ShouldContain(tag);
+        // Asked as an agent with the mount asks it: the server's query tool over MCP behind the
+        // deployment secret, the statement the agent's own query tool would send.
+        var rows = await QueryMountAsync($"select notes from meals where meal_id = '{mealId}'");
+        rows.Count.ShouldBe(1, $"meal {mealId} is not in /sugary's meals: {rows.ToJsonString()}");
+        rows[0]![0]!.GetValue<string>().ShouldContain(tag);
 
         await TheReviewTopicShowsTheEstimateAsync(tag);
     }
@@ -168,13 +165,13 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         };
     }
 
-    private async Task<string> ReadMountAsync(string path)
+    private async Task<JsonArray> QueryMountAsync(string sql)
     {
         await using var mcp = await McpClient.CreateAsync(McpTestSecret.Transport(fixture.SugaryMcpEndpoint));
-        var result = await mcp.CallToolAsync("fs_read", new Dictionary<string, object?> { ["path"] = path });
-        var read = JsonNode.Parse(string.Join("", result.Content.OfType<TextContentBlock>().Select(c => c.Text)))!;
-        return read["content"]?.GetValue<string>()
-               ?? throw new ShouldAssertException($"reading {path} over MCP failed: {read.ToJsonString()}");
+        var result = await mcp.CallToolAsync("fs_query", new Dictionary<string, object?> { ["path"] = "/", ["sql"] = sql });
+        var answer = JsonNode.Parse(string.Join("", result.Content.OfType<TextContentBlock>().Select(c => c.Text)))!;
+        return answer["rows"]?.AsArray()
+               ?? throw new ShouldAssertException($"querying /sugary over MCP failed: {answer.ToJsonString()}");
     }
 
     // The review copy is minted in WebChat's default space (another channel's conversation carries no

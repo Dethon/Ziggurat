@@ -222,7 +222,7 @@ public class SugaryExportApiTests
 
     // Days have no clock, so her cycle downloads as the mount renders it, whatever zone is named.
     [Fact]
-    public async Task HerCycle_ExportsAsTheMountRendersIt()
+    public async Task HerCycle_ExportsAsTheMountHoldsIt()
     {
         await using var server = await SugaryServer.StartAsync();
         var client = await server.SignedInAsync();
@@ -232,8 +232,9 @@ public class SugaryExportApiTests
         var periods = await LinesAsync(client, "/api/export/periods.csv?tz=Europe/Madrid");
         var notes = await LinesAsync(client, "/api/export/day-notes.csv");
 
-        periods.ShouldBe((await server.ReadAsync("/periods.csv")).TrimEnd('\n').Split('\n'));
-        periods[1].ShouldEndWith(",2026-09-09,2026-09-14,6,");
+        var held = (await server.TableRowsAsync("/periods.parquet")).Single();
+        periods[1].ShouldBe($"{held[0]},2026-09-09,2026-09-14,6,");
+        held[1..].ShouldBe(["2026-09-09", "2026-09-14", "6", null]);
         notes.ShouldBe(["date,note", "2026-09-10,cramps"]);
     }
 

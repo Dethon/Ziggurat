@@ -12,4 +12,9 @@ public interface ITableEngine
 {
     Task<FsResult<FsQueryResult>> QueryAsync(
         IReadOnlyList<Table> tables, TimeZoneInfo clock, string sql, int maxRows, CancellationToken ct);
+
+    // One table as a Parquet file, with the columns and types a statement sees, so a command reading
+    // the file and a query reading the table read one table. The same table gives the same bytes
+    // every time: a file's size is asked for and its bytes read in two calls.
+    Task<byte[]> ParquetAsync(Table table, CancellationToken ct);
 }

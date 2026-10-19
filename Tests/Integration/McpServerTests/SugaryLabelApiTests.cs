@@ -352,7 +352,8 @@ public class SugaryLabelApiTests
         food["carbsPer100g"]!.GetValue<double>().ShouldBe(61.5);
         food["portionGrams"]!.GetValue<double>().ShouldBe(25);
         food["source"]!.GetValue<string>().ShouldBe("label");
-        (await server.ReadAsync("/foods.csv")).ShouldContain($"{id},Galletas María,61.5,g,25,,,label");
+        (await server.QueryAsync($"select name, carbs_per_100, unit, portion_amount, source from foods where food_id = '{id}'"))
+            .Single()!.AsArray().Select(cell => cell!.ToString()).ShouldBe(["Galletas María", "61.5", "g", "25", "label"]);
     }
 
     // The sugary agent as the agent host registers it: its own model and what it takes, and the label

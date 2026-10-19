@@ -14,6 +14,6 @@ public sealed record FsQueryResult
     public string? Suggestion { get; init; }
 }
 
-// A column as the engine typed it, in the engine's own words (VARCHAR, DOUBLE, TIMESTAMP WITH TIME
-// ZONE): the type is what tells a reader how to compare and add the values.
+// A column as the engine typed it, in the engine's own words (VARCHAR, DOUBLE, TIMESTAMPTZ): the
+// type is what tells a reader how to compare and add the values.
 public sealed record FsQueryColumn(string Name, string Type);

@@ -52,7 +52,7 @@ public class SugaryImportTests : IDisposable
     }
 
     // Identifiers, times, numbers, sources and the defused text all come back exactly as she
-    // exported them, because the mount renders the same columns in the same zone.
+    // exported them, because the export renders the same columns in the same zone.
     [Fact]
     public async Task AnImportedLog_ReadsBackAsItWasExported()
     {
@@ -61,15 +61,13 @@ public class SugaryImportTests : IDisposable
         var (exit, _) = await ImportAsync(server);
 
         exit.ShouldBe(0);
-        (await server.GlobAsync("**/*.csv")).ShouldBe([
-            "/day-notes.csv", "/foods.csv", "/items/2026-09.csv", "/items/2026-10.csv", "/meals/2026-09.csv",
-            "/meals/2026-10.csv", "/periods.csv"
+        (await server.GlobAsync("**/*.parquet")).ShouldBe([
+            "/day-notes.parquet", "/foods.parquet", "/items/2026-09.parquet", "/items/2026-10.parquet",
+            "/meals/2026-09.parquet", "/meals/2026-10.parquet", "/periods.parquet"
         ]);
-        (await server.ReadAsync("/meals/2026-09.csv") + Body(await server.ReadAsync("/meals/2026-10.csv")))
-            .ShouldBe(_meals);
-        (await server.ReadAsync("/items/2026-09.csv") + Body(await server.ReadAsync("/items/2026-10.csv")))
-            .ShouldBe(_items);
-        (await server.ReadAsync("/foods.csv")).ShouldBe(_foods);
+        (await server.ExportAsync("meals")).ShouldBe(_meals);
+        (await server.ExportAsync("items")).ShouldBe(_items);
+        (await server.ExportAsync("foods")).ShouldBe(_foods);
     }
 
     [Fact]
@@ -84,12 +82,9 @@ public class SugaryImportTests : IDisposable
         second.Exit.ShouldBe(0);
         second.Output.ShouldContain("imported 0 meals (0 items) and 0 foods");
         second.Output.ShouldContain("2 meals and 2 foods were already there");
-        (await server.ReadAsync("/meals/2026-10.csv") + Body(await server.ReadAsync("/meals/2026-09.csv")))
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries).Length.ShouldBe(3);
-        Body(await server.ReadAsync("/items/2026-10.csv")).Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Length.ShouldBe(2);
-        Body(await server.ReadAsync("/foods.csv")).Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Length.ShouldBe(2);
+        Body(await server.ExportAsync("meals")).Split('\n', StringSplitOptions.RemoveEmptyEntries).Length.ShouldBe(2);
+        Body(await server.ExportAsync("items")).Split('\n', StringSplitOptions.RemoveEmptyEntries).Length.ShouldBe(3);
+        Body(await server.ExportAsync("foods")).Split('\n', StringSplitOptions.RemoveEmptyEntries).Length.ShouldBe(2);
     }
 
     // A table that cannot be read whole is not read at all: half a log is worse than none, because
@@ -107,7 +102,7 @@ public class SugaryImportTests : IDisposable
         output.ShouldContain("sugary-items.csv");
         output.ShouldContain("line 4");
         (await server.GlobAsync("meals/*")).ShouldBeEmpty();
-        Body(await server.ReadAsync("/foods.csv")).ShouldBeEmpty();
+        Body(await server.ExportAsync("foods")).ShouldBeEmpty();
     }
 
     // A meal's total is what its items add up to, as the app computes it on every save: a row that
@@ -123,7 +118,7 @@ public class SugaryImportTests : IDisposable
         var (exit, _) = await ImportAsync(server);
 
         exit.ShouldBe(0);
-        (await server.ReadAsync("/meals/2026-10.csv")).ShouldContain($"{_lunch},2026-10-11T13:30:00+02:00,67,47,88,");
+        (await server.ExportAsync("meals")).ShouldContain($"{_lunch},2026-10-11T13:30:00+02:00,67,47,88,");
     }
 
     // Numbers a spreadsheet can write but no meal has: each stops the import naming where it is.
@@ -143,7 +138,7 @@ public class SugaryImportTests : IDisposable
         output.ShouldContain("sugary-items.csv line 4");
         output.ShouldContain("carbs_per_100");
         (await server.GlobAsync("meals/*")).ShouldBeEmpty();
-        Body(await server.ReadAsync("/foods.csv")).ShouldBeEmpty();
+        Body(await server.ExportAsync("foods")).ShouldBeEmpty();
     }
 
     // The rules a meal is saved under in the app hold for one carried over, each refusal naming the
@@ -191,7 +186,7 @@ public class SugaryImportTests : IDisposable
         exit.ShouldNotBe(0, what);
         output.ShouldContain(where, customMessage: what);
         (await server.GlobAsync("meals/*")).ShouldBeEmpty(what);
-        Body(await server.ReadAsync("/foods.csv")).ShouldBeEmpty(what);
+        Body(await server.ExportAsync("foods")).ShouldBeEmpty(what);
     }
 
     [Fact]

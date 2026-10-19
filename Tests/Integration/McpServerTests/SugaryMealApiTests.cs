@@ -337,13 +337,21 @@ public class SugaryMealApiTests
 
         var id = (await ReadAsync(await client.PostAsJsonAsync("/api/meals", Meal())))["id"]!.GetValue<string>();
 
-        (await server.ReadAsync("/meals/2026-10.csv")).ShouldContain($"{id},2026-10-11T13:30:00+02:00,42,32,52,");
-        (await server.ReadAsync("/items/2026-10.csv")).ShouldContain($"{id},2026-10-11T13:30:00+02:00,1,rice,a cup,");
+        (await MealAsync(server, id)).ShouldBe(["2026-10-11T13:30:00+02:00", "42", "32", "52", "rice", "unknown"]);
 
         var edit = Meal(carbs: 60);
         edit["outcome"] = "inRange";
         await client.PutAsJsonAsync($"/api/meals/{id}", edit);
 
-        (await server.ReadAsync("/meals/2026-10.csv")).ShouldContain($"{id},2026-10-11T13:30:00+02:00,60,50,70,,,,inRange,");
+        (await MealAsync(server, id)).ShouldBe(["2026-10-11T13:30:00+02:00", "60", "50", "70", "rice", "inRange"]);
+    }
+
+    private static async Task<string[]> MealAsync(SugaryServer server, string id)
+    {
+        var row = (await server.QueryAsync($"""
+            select m.eaten_at, m.carbs_g, m.carbs_low_g, m.carbs_high_g, i.name, m.outcome
+            from meals m join items i using (meal_id) where meal_id = '{id}'
+            """)).Single()!.AsArray();
+        return [.. row.Select(cell => cell!.ToString())];
     }
 }

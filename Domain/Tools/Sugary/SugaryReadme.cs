@@ -1,6 +1,6 @@
 namespace Domain.Tools.Sugary;
 
-// What a reader of /sugary needs before reading a number: columns are easy to misread in ways that
+// What a reader of /sugary needs before reading a number, and how to ask its tables: columns are easy to misread in ways that
 // put a meal on the wrong side of a glucose curve — carbs taken for total carbohydrate, the first
 // estimate taken for the whole meal, basal units taken for a meal dose, and a dose saved with its
 // meal taken as injected at exactly the meal's minute.
@@ -11,36 +11,46 @@ public static class SugaryReadme
           # Sugary — her carb log
 
           The meals she logged in Sugary, the foods in each meal, the insulin doses she recorded, the exercise
-          she did, the foods she keeps, her menstrual periods and the notes she wrote about her days, as tables. They are rendered from Sugary's database each time they are read, so they are
+          she did, the foods she keeps, her menstrual periods and the notes she wrote about her days, as
+          Parquet tables. They are rendered from Sugary's database each time they are read, so they are
           always current. Nothing here can be written: her log changes only through Sugary.
 
-          - `meals/<YYYY-MM>.csv` — one row per meal eaten that month, oldest first.
-          - `items/<YYYY-MM>.csv` — one row per food in those meals, in the order of each meal.
-          - `doses/<YYYY-MM>.csv` — one row per insulin dose she took that month, oldest first.
-          - `exercise/<YYYY-MM>.csv` — one row per session of exercise she started that month, oldest first.
-          - `foods.csv` — one row per food she keeps on her own list.
-          - `periods.csv` — one row per menstrual period she recorded, oldest first.
-          - `day-notes.csv` — one row per day she wrote a note about, oldest first.
+          - `meals/<YYYY-MM>.parquet` — one row per meal eaten that month, oldest first.
+          - `items/<YYYY-MM>.parquet` — one row per food in those meals, in the order of each meal.
+          - `doses/<YYYY-MM>.parquet` — one row per insulin dose she took that month, oldest first.
+          - `exercise/<YYYY-MM>.parquet` — one row per session of exercise she started that month, oldest first.
+          - `foods.parquet` — one row per food she keeps on her own list.
+          - `periods.parquet` — one row per menstrual period she recorded, oldest first.
+          - `day-notes.parquet` — one row per day she wrote a note about, oldest first.
 
           A month with no meals has no meals or items file, a month with no doses no doses file, and a month
           with no exercise no exercise file. A meal belongs to the month its `eaten_at` shows, a dose to the
           month its `taken_at` shows, a session to the month its `started_at` shows.
+
+          ## Asking
+
+          - **`query`** answers one DuckDB SQL statement over the whole log, every month at once, as the
+            tables `meals`, `items`, `doses`, `exercise`, `foods`, `periods` and `day_notes`. Join on
+            `meal_id` (meals, items, doses) and `food_id` (items, foods). Only the rows that answer come back.
+          - **A command in the sandbox** reads the files themselves at these same paths:
+            `duckdb -c "select … from '/sugary/meals/*.parquet'"`, or `polars.scan_parquet` in Python — for
+            an analysis, a chart, or her log beside the glucose history under the Home Assistant mount.
+          - A table is not text: reading one as lines is refused.
 
           ## Conventions
 
           - **Carbs are available carbohydrate, fibre excluded**, in grams — the figure a European label
             gives and the one she counts insulin against. Never compare them with a total that includes fibre.
           - Every carb figure is a range: a best value with a low and a high bound.
-          - Every time is ISO 8601 with its offset, in the home's zone ({{zone.Id}}), the clock the Home
-            Assistant mount's history is stamped on, so a meal lines up with the glucose readings after it.
-            Use the offset as written; do not convert.
-          - Numbers use a point for decimals and at most two decimal places. An empty cell is unknown or
-            does not apply.
-          - RFC 4180: a header row, cells with commas, quotes or line breaks quoted. UTF-8 without a
-            byte-order mark. Text beginning with `=`, `+`, `-` or `@` is written with a leading apostrophe so
-            a spreadsheet shows it rather than running it.
+          - Every time is an instant, read on the home's clock ({{zone.Id}}) — the clock the Home Assistant
+            mount's history is stamped on, so a meal lines up with the glucose readings after it. `query`
+            writes one as ISO 8601 with its offset. Beside each time is `<column>_local`, the wall time on
+            that clock with no offset: filter a day or an hour of her life on it (`eaten_at_local::date`).
+          - Days (`start_date`, `end_date`, `date`) are calendar days with no time and no offset.
+          - Numbers are numbers: carbs, amounts and units are decimals, positions, minutes and day counts
+            whole numbers, `edited` a boolean. An empty cell is unknown or does not apply.
 
-          ## meals/<YYYY-MM>.csv
+          ## meals/<YYYY-MM>.parquet
 
           - `meal_id` — the meal's identifier; the items of the meal carry the same `meal_id`.
           - `eaten_at` — when she ate it.
@@ -56,7 +66,7 @@ public static class SugaryReadme
           - `items` — the names of the meal's foods in order, joined by `; `.
           - `notes` — what she wrote about the meal.
 
-          ## items/<YYYY-MM>.csv
+          ## items/<YYYY-MM>.parquet
 
           - `meal_id` — the meal the food was eaten in.
           - `eaten_at` — when that meal was eaten.
@@ -70,10 +80,10 @@ public static class SugaryReadme
             `barcode` (a product looked up) or `manual` (typed by her or taken from her own foods).
           - `confidence` — how sure the estimate was: `low`, `medium` or `high`. Only on `estimate` items.
           - `edited` — `true` when she changed the item's numbers before saving the meal.
-          - `food_id` — the food on her own list this item was made from, if any (`food_id` in `foods.csv`).
+          - `food_id` — the food on her own list this item was made from, if any (`food_id` in `foods.parquet`).
             The item keeps its own numbers, so a food edited or deleted later does not change it.
 
-          ## doses/<YYYY-MM>.csv
+          ## doses/<YYYY-MM>.parquet
 
           Her record of the insulin she took, entered by her: never a recommendation, and never a basis for
           one.
@@ -84,7 +94,7 @@ public static class SugaryReadme
             - `rapid` — rapid-acting, taken for a meal or as a correction;
             - `basal` — long-acting, her background dose, which belongs to no meal.
           - `units` — how much she took, in insulin units (not grams).
-          - `meal_id` — the meal it was taken for (`meal_id` in `meals/<YYYY-MM>.csv`),
+          - `meal_id` — the meal it was taken for (`meal_id` in `meals/<YYYY-MM>.parquet`),
             empty for a dose not linked to a meal. A meal may have several doses, a split dose or a top-up.
             A meal deleted from the log keeps its doses here, with this cell emptied.
           - `note` — what she wrote about the dose.
@@ -92,7 +102,7 @@ public static class SugaryReadme
           A dose saved together with its meal carries the meal's time unless she changed it, so a gap of
           zero minutes between the two is not a measurement of when she injected.
 
-          ## exercise/<YYYY-MM>.csv
+          ## exercise/<YYYY-MM>.parquet
 
           Her record of the exercise she did, entered by her as she did it. It is
           never a basis for suggesting carbs or insulin around exercise.
@@ -107,7 +117,7 @@ public static class SugaryReadme
           - `name` — what she called an `other` session (a bike ride, a swim); empty for a walk or the gym.
           - `note` — what she wrote about it.
 
-          ## periods.csv
+          ## periods.parquet
 
           Her record of her periods, entered by her. The dates are days on the home's calendar, written
           `YYYY-MM-DD` with no time and no offset: to line a period up with glucose, read the history under
@@ -122,14 +132,14 @@ public static class SugaryReadme
           - `cycle_days` — the days from this period's start to the next one's: the length of the cycle it
             began. Empty for her latest period.
 
-          ## day-notes.csv
+          ## day-notes.parquet
 
           What she wrote about a day — how she felt, what she craved — on a period day or any other.
 
           - `date` — the day, on the home's calendar.
           - `note` — what she wrote.
 
-          ## foods.csv
+          ## foods.parquet
 
           - `food_id` — the food's identifier.
           - `name` — what she calls it.

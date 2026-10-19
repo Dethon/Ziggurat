@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -12,51 +13,47 @@ namespace Domain.Tools.Sugary.Vfs;
 
 // Her carb log as files, rendered from the store on every read and kept nowhere: the database is
 // the only copy, so a meal saved a moment ago is in the next read and nothing on disk can go stale.
-// Read, glob, info and search are the whole surface — nothing that writes is overridden, so no
-// writing tool exists on this mount and a write routed here is refused with what it can do.
-public sealed class SugaryFileSystem(
-    ISugaryLog log, TimeZoneInfo homeZone, ITableEngine tables, TimeSpan? regexMatchTimeout = null)
-    : FileSystemBackendBase
+// Her tables are Parquet, answered by query over the whole log and read whole by a command in the
+// sandbox; the text read serves the README alone and refuses a table with what works instead.
+// Nothing that writes is overridden, so no writing tool exists on this mount and a write routed here
+// is refused with what it can do.
+public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITableEngine tables) : FileSystemBackendBase
 {
     public const string Name = "sugary";
 
     public override string FilesystemName => Name;
 
-    protected override TimeSpan SearchMatchTimeout => regexMatchTimeout ?? base.SearchMatchTimeout;
-
     public override string DescribeMount =>
-        "Her carb-counting log from Sugary (she has type 1 diabetes), read-only and always current: "
-        + "meals/<YYYY-MM>.csv (one row per meal), items/<YYYY-MM>.csv (one row per food in a meal), "
-        + "doses/<YYYY-MM>.csv (one row per insulin dose she recorded taking), "
-        + "exercise/<YYYY-MM>.csv (one row per session of exercise she recorded), "
-        + "foods.csv (the foods she keeps), periods.csv (her menstrual periods), day-notes.csv (what she "
-        + "wrote about a day) and README.md, which explains every column — read it before "
-        + $"reading a number. Times carry their offset in the home's zone ({homeZone.Id}).";
+        "Her carb-counting log from Sugary (she has type 1 diabetes), read-only and always current, as "
+        + "Parquet tables: meals/<YYYY-MM>.parquet (one row per meal), items/<YYYY-MM>.parquet (one row per "
+        + "food in a meal), doses/<YYYY-MM>.parquet (one row per insulin dose she recorded taking), "
+        + "exercise/<YYYY-MM>.parquet (one row per session of exercise she recorded), foods.parquet (the "
+        + "foods she keeps), periods.parquet (her menstrual periods), day-notes.parquet (what she wrote about "
+        + "a day), and README.md, which explains every column — read it before reading a number. Ask with "
+        + "query: tables meals, items, doses, exercise, foods, periods and day_notes, every month at once. "
+        + "A table is not read as text; a command in the sandbox reads the files with duckdb or polars. "
+        + $"Times are on the home's clock ({homeZone.Id}), each with a `<column>_local` wall time beside it.";
 
     public override string DescribeRead =>
-        "Read a file of her carb log: README.md, foods.csv, periods.csv, day-notes.csv, meals/<YYYY-MM>.csv, "
-        + "items/<YYYY-MM>.csv, doses/<YYYY-MM>.csv or exercise/<YYYY-MM>.csv. "
-        + "The CSV comes back exactly as it is; offset and limit (1-based lines) read a window of it.";
+        "Read README.md, which explains every table and column of her carb log. The tables are Parquet "
+        + "and are not read as text: ask them with query.";
 
     public override string DescribeInfo => "Get info about a path of her carb log: exists, isDirectory, size.";
 
     public override string DescribeGlob =>
-        "List the files of her carb log matching a glob under basePath — one meals and one items file "
-        + "per month she logged a meal in, one doses file per month she recorded a dose in, one exercise "
-        + "file per month she started a session in. "
+        "List the files of her carb log matching a glob under basePath — one meals and one items table "
+        + "per month she logged a meal in, one doses table per month she recorded a dose in, one exercise "
+        + "table per month she started a session in. "
         + "`*` matches one path segment, `**` recurses, `?` one char, "
         + "`{a,b}` brace alternation. A trailing slash (e.g. `*/`) lists directories only.";
-
-    public override string DescribeSearch =>
-        "Search the text of her carb log, e.g. a food's name across every month, or a meal_id among the "
-        + "doses. Scope with path (one file) or directoryPath (meals, items, doses or exercise); omit both to "
-        + "search everything. Supports regex, "
-        + "filePattern, maxResults, contextLines, and outputMode (content|filesOnly).";
 
     public override string DescribeQuery =>
         "Answer one DuckDB SQL statement over her whole log, every month at once: tables meals, items, "
         + "doses, exercise, foods, periods and day_notes, with the columns README.md explains. Every time "
         + "column has a `<column>_local` sibling on the home's clock.";
+
+    public override string DescribeBlobRead =>
+        "Read a chunk of a file of her carb log as raw bytes (base64): a table's Parquet, or the README.";
 
     private static readonly UTF8Encoding _utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
@@ -69,22 +66,46 @@ public sealed class SugaryFileSystem(
             return Invalid<FsReadResult>($"'{path}' is a directory; glob it to see its files.");
         }
 
-        return await RenderAsync(node, ct) is { } text
-            ? new FsResult<FsReadResult>.Ok(Window(path, text, offset, limit))
-            : NotFound<FsReadResult>(path);
+        if (node.Kind == SugaryNodeKind.Readme)
+        {
+            return new FsResult<FsReadResult>.Ok(Window(path, SugaryReadme.For(homeZone), offset, limit));
+        }
+
+        return await TableAsync(node, ct) is null
+            ? NotFound<FsReadResult>(path)
+            : FsError.QueryOnly<FsReadResult>(MountPoint + "/" + path.TrimStart('/'), MountPoint);
     }
 
+    // What a command in the sandbox reads, through the bridge, which asks a mount for its bytes first.
+    public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
+        string path, [EnumeratorCancellation] CancellationToken ct)
+    {
+        var bytes = await BytesAsync(SugaryPath.Parse(path), ct);
+        if (bytes is null)
+        {
+            throw new FileSystemOperationException(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.NotFound,
+                Message = $"Path not found: {path}"
+            });
+        }
+
+        yield return bytes;
+    }
+
+    // A table's size is its Parquet's, rendered to be measured: a reader of Parquet seeks to the end
+    // of the file for its footer, so an unknown size would read as a broken file.
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
         var node = SugaryPath.Parse(path);
-        var text = node.IsDirectory ? null : await RenderAsync(node, ct);
-        var exists = node.IsDirectory || text is not null;
+        var bytes = node.IsDirectory ? null : await BytesAsync(node, ct);
+        var exists = node.IsDirectory || bytes is not null;
         return new FsResult<FsInfoResult>.Ok(new FsInfoResult
         {
             Exists = exists,
             Path = path,
             IsDirectory = exists ? node.IsDirectory : null,
-            Size = text is null ? null : _utf8.GetByteCount(text)
+            Size = bytes?.Length
         });
     }
 
@@ -103,36 +124,6 @@ public sealed class SugaryFileSystem(
             .Select(node => node.IsDirectory ? node.Path + "/" : node.Path)
             .OrderBy(entry => entry, StringComparer.Ordinal)
             .ToList());
-    }
-
-    public override async Task<FsResult<FsSearchResult>> SearchAsync(string query, bool regex, string? path,
-        string? directoryPath, string? filePattern, int maxResults, int contextLines,
-        VfsTextSearchOutputMode outputMode, CancellationToken ct)
-    {
-        if (!CompileFilePattern(filePattern).TryGetValue(out var admits, out var patternError))
-        {
-            return new FsResult<FsSearchResult>.Err(patternError);
-        }
-
-        var scope = SugaryPath.Parse(path ?? directoryPath);
-        var files = (await NodesAsync(ct))
-            .Where(node => !node.IsDirectory && Within(node, scope) && admits(node.FileName))
-            .OrderBy(node => node.Path, StringComparer.Ordinal)
-            .ToList();
-
-        return await SearchNodesAsync(
-            files,
-            async (node, token) => (node.Path, await RenderAsync(node, token)),
-            new FsSearchScan
-            {
-                Query = query,
-                Regex = regex,
-                Path = path ?? directoryPath ?? "/",
-                MaxResults = maxResults,
-                ContextLines = contextLines,
-                OutputMode = outputMode
-            },
-            ct);
     }
 
     // Whichever path inside the mount it was asked at, a statement sees the whole log: a month is
@@ -163,17 +154,6 @@ public sealed class SugaryFileSystem(
             SugaryTables.DayNotes(await log.DayNotesAsync(ct))
         ];
     }
-
-    private static bool Within(SugaryNode file, SugaryNode scope) => scope.Kind switch
-    {
-        SugaryNodeKind.Root => true,
-        SugaryNodeKind.MealsDir => file.Kind == SugaryNodeKind.MealsMonth,
-        SugaryNodeKind.ItemsDir => file.Kind == SugaryNodeKind.ItemsMonth,
-        SugaryNodeKind.DosesDir => file.Kind == SugaryNodeKind.DosesMonth,
-        SugaryNodeKind.ExerciseDir => file.Kind == SugaryNodeKind.ExerciseMonth,
-        SugaryNodeKind.Unknown => false,
-        _ => file == scope
-    };
 
     // Every node that exists right now: the fixed ones, a pair of files for each month she ate in and
     // a doses file for each month she took a dose in and an exercise file for each month she started
@@ -207,11 +187,11 @@ public sealed class SugaryFileSystem(
             .Order(StringComparer.Ordinal)
             .ToList();
 
-    // The file's text, or null where there is no such file.
-    private async Task<string?> RenderAsync(SugaryNode node, CancellationToken ct) =>
+    // The file's bytes, or null where there is no such file.
+    private async Task<byte[]?> BytesAsync(SugaryNode node, CancellationToken ct) =>
         node.Kind == SugaryNodeKind.Readme
-            ? SugaryReadme.For(homeZone)
-            : await TableAsync(node, ct) is { } table ? SugaryCsv.Write(table) : null;
+            ? _utf8.GetBytes(SugaryReadme.For(homeZone))
+            : await TableAsync(node, ct) is { } table ? await tables.ParquetAsync(table, ct) : null;
 
     // The table a file holds, or null where there is no such file: a month with nothing logged in it
     // has none.

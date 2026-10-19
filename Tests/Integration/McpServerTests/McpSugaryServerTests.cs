@@ -109,12 +109,13 @@ public class McpSugaryServerTests
     {
         await using var server = await SugaryServer.StartAsync();
 
-        (await server.GlobAsync("**")).ShouldBe(
-            ["/README.md", "/day-notes.csv", "/doses/", "/exercise/", "/foods.csv", "/items/", "/meals/", "/periods.csv"]);
-        (await server.ReadAsync("/foods.csv"))
-            .ShouldBe("food_id,name,carbs_per_100,unit,portion_amount,portion_carbs_g,barcode,source\n");
-        (await server.ReadAsync("/periods.csv")).ShouldBe("period_id,start_date,end_date,days,cycle_days\n");
-        (await server.ReadAsync("/day-notes.csv")).ShouldBe("date,note\n");
+        (await server.GlobAsync("**")).ShouldBe([
+            "/README.md", "/day-notes.parquet", "/doses/", "/exercise/", "/foods.parquet", "/items/", "/meals/",
+            "/periods.parquet"
+        ]);
+        (await server.TableRowsAsync("/foods.parquet")).ShouldBeEmpty();
+        (await server.TableRowsAsync("/periods.parquet")).ShouldBeEmpty();
+        (await server.TableRowsAsync("/day-notes.parquet")).ShouldBeEmpty();
     }
 
     // A reader that takes carbs for total carbohydrate, or the first estimate for the whole meal,
@@ -150,7 +151,7 @@ public class McpSugaryServerTests
 
         var readme = await server.ReadAsync("/README.md");
 
-        readme.ShouldContain("## doses/<YYYY-MM>.csv");
+        readme.ShouldContain("## doses/<YYYY-MM>.parquet");
         readme.ShouldContain("insulin units");
         readme.ShouldContain("`rapid` — rapid-acting");
         readme.ShouldContain("`basal` — long-acting");
@@ -168,15 +169,13 @@ public class McpSugaryServerTests
 
         var readme = await server.ReadAsync("/README.md");
 
-        readme.ShouldContain("## periods.csv");
-        readme.ShouldContain("## day-notes.csv");
+        readme.ShouldContain("## periods.parquet");
+        readme.ShouldContain("## day-notes.parquet");
         readme.ShouldContain("days on the home's calendar");
         readme.ShouldContain("empty while it is still going");
         readme.ShouldContain("forecasts are not in these tables");
     }
 
-    // Her periods with what a reader would otherwise work out by hand: each one's length, and the
-    // cycle it began, both from her own days.
     [Fact]
     public async Task Periods_AreOneRowEach_OldestFirst_WithTheirLengthAndTheirCycle()
     {
@@ -186,43 +185,45 @@ public class McpSugaryServerTests
         var august = Period("2026-08-11", "2026-08-15");
         await server.SaveAsync(september, october, august);
 
-        Lines(await server.ReadAsync("/periods.csv")).ShouldBe([
-            "period_id,start_date,end_date,days,cycle_days",
-            $"{august.Id},2026-08-11,2026-08-15,5,29",
-            $"{september.Id},2026-09-09,2026-09-14,6,29",
-            $"{october.Id},2026-10-08,,,"
+        (await server.TableRowsAsync("/periods.parquet")).ShouldBe([
+            [august.Id.ToString(), "2026-08-11", "2026-08-15", "5", "29"],
+            [september.Id.ToString(), "2026-09-09", "2026-09-14", "6", "29"],
+            [october.Id.ToString(), "2026-10-08", null, null, null]
         ]);
     }
 
+    // A table holds her words as she wrote them: the apostrophe that keeps a spreadsheet from running
+    // a formula belongs to the CSV export, not to the data.
     [Fact]
-    public async Task DayNotes_AreOneRowEach_OldestFirst_AndAFormulaIsWrittenAsText()
+    public async Task DayNotes_AreOneRowEach_OldestFirst_AsSheWroteThem()
     {
         await using var server = await SugaryServer.StartAsync();
         await server.SaveAsync(
             new DayNote { Day = new DateOnly(2026, 10, 6), Text = "craving chocolate, all afternoon" },
             new DayNote { Day = new DateOnly(2026, 10, 2), Text = "=cramps" });
 
-        Lines(await server.ReadAsync("/day-notes.csv")).ShouldBe([
-            "date,note",
-            "2026-10-02,'=cramps",
-            "2026-10-06,\"craving chocolate, all afternoon\""
+        (await server.TableRowsAsync("/day-notes.parquet")).ShouldBe([
+            ["2026-10-02", "=cramps"],
+            ["2026-10-06", "craving chocolate, all afternoon"]
         ]);
     }
 
-    // "What did she write the week of her period" is a search of the notes by the days' month.
+    // "What did she write the week of her period" is one query over the notes' days.
     [Fact]
-    public async Task DayNotes_AreFoundBySearch()
+    public async Task DayNotes_AreFoundByQuery()
     {
         await using var server = await SugaryServer.StartAsync();
-        await server.SaveAsync(new DayNote { Day = new DateOnly(2026, 10, 6), Text = "craving chocolate" });
+        await server.SaveAsync(
+            new DayNote { Day = new DateOnly(2026, 10, 6), Text = "craving chocolate" },
+            new DayNote { Day = new DateOnly(2026, 9, 1), Text = "fine" });
 
-        var hits = await server.CallAsync("fs_search", new Dictionary<string, object?> { ["query"] = "2026-10-" });
+        var rows = await server.QueryAsync("select note from day_notes where date between '2026-10-01' and '2026-10-31'");
 
-        Files(hits).ShouldBe(["/day-notes.csv"]);
+        rows.Select(row => row![0]!.GetValue<string>()).ShouldBe(["craving chocolate"]);
     }
 
     // The only way to change her log is through Sugary itself, so the mount offers nothing that
-    // writes, moves or deletes.
+    // writes, moves or deletes; it is read as Parquet and asked with query.
     [Fact]
     public async Task TheMount_OffersReadingAndNothingThatWrites()
     {
@@ -231,7 +232,7 @@ public class McpSugaryServerTests
         var tools = await server.Client.ListToolsAsync();
 
         tools.Select(tool => tool.Name).Where(name => name.StartsWith("fs_", StringComparison.Ordinal))
-            .ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_search", "fs_query"], ignoreOrder: true);
+            .ShouldBe(["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"], ignoreOrder: true);
     }
 
     // The agent's own proxy for a remote mount, asking the real server: what Jonas's query tool
@@ -302,10 +303,7 @@ public class McpSugaryServerTests
         Note = note
     };
 
-    private static string[] Lines(string csv) => csv.TrimEnd('\n').Split('\n');
-
-    // The standalone app's export, carried over line for line: one file per month, each meal in the
-    // home's clock with its offset.
+    // One file per month on the home's calendar, each meal in it with its time on the home's clock.
     [Fact]
     public async Task Meals_AreOneRowEachInAFilePerMonthInTheHomesClock()
     {
@@ -314,14 +312,14 @@ public class McpSugaryServerTests
         var breakfast = Meal("2026-03-01T07:00:00Z", null, Item("toast", 30));
         await server.SaveAsync(lunch, breakfast);
 
-        (await server.GlobAsync("meals/*")).ShouldBe(["/meals/2026-03.csv", "/meals/2026-10.csv"]);
-        Lines(await server.ReadAsync("/meals/2026-03.csv")).ShouldBe([
-            "meal_id,eaten_at,carbs_g,carbs_low_g,carbs_high_g,first_estimate_g,first_estimate_low_g,first_estimate_high_g,outcome,items,notes",
-            $"{breakfast.Id},2026-03-01T08:00:00+01:00,30,20,40.5,40,30,55,high,toast,"
+        (await server.GlobAsync("meals/*")).ShouldBe(["/meals/2026-03.parquet", "/meals/2026-10.parquet"]);
+        (await server.TableRowsAsync("/meals/2026-03.parquet")).ShouldBe([
+            [breakfast.Id.ToString(), "2026-03-01 07:00:00+00", "2026-03-01 08:00:00", "30.0", "20.0", "40.5", "40.0",
+                "30.0", "55.0", "high", "toast", null]
         ]);
-        Lines(await server.ReadAsync("/meals/2026-10.csv")).ShouldBe([
-            "meal_id,eaten_at,carbs_g,carbs_low_g,carbs_high_g,first_estimate_g,first_estimate_low_g,first_estimate_high_g,outcome,items,notes",
-            $"{lunch.Id},2026-10-11T13:30:00+02:00,67,47,88,40,30,55,high,bread; rice,\"ate out, \"\"menú\"\"\""
+        (await server.TableRowsAsync("/meals/2026-10.parquet")).ShouldBe([
+            [lunch.Id.ToString(), "2026-10-11 11:30:00+00", "2026-10-11 13:30:00", "67.0", "47.0", "88.0", "40.0",
+                "30.0", "55.0", "high", "bread; rice", "ate out, \"menú\""]
         ]);
     }
 
@@ -332,10 +330,11 @@ public class McpSugaryServerTests
         var lunch = Meal("2026-10-11T11:30:00Z", null, Item("bread", 25, ItemSource.Label), Item("rice", 42));
         await server.SaveAsync(lunch);
 
-        Lines(await server.ReadAsync("/items/2026-10.csv")).ShouldBe([
-            "meal_id,eaten_at,position,name,portion,amount,carbs_per_100,carbs_g,carbs_low_g,carbs_high_g,source,confidence,edited,food_id",
-            $"{lunch.Id},2026-10-11T13:30:00+02:00,1,bread,a cup,150,28,25,15,35.5,label,,false,",
-            $"{lunch.Id},2026-10-11T13:30:00+02:00,2,rice,a cup,150,28,42,32,52.5,estimate,medium,false,"
+        (await server.TableRowsAsync("/items/2026-10.parquet")).ShouldBe([
+            [lunch.Id.ToString(), "2026-10-11 11:30:00+00", "2026-10-11 13:30:00", "1", "bread", "a cup", "150.0",
+                "28.0", "25.0", "15.0", "35.5", "label", null, "false", null],
+            [lunch.Id.ToString(), "2026-10-11 11:30:00+00", "2026-10-11 13:30:00", "2", "rice", "a cup", "150.0",
+                "28.0", "42.0", "32.0", "52.5", "estimate", "medium", "false", null]
         ]);
     }
 
@@ -347,22 +346,22 @@ public class McpSugaryServerTests
             Meal("2026-03-10T12:00:00Z", null, Item("toast", 30)),
             Meal("2026-05-10T12:00:00Z", null, Item("toast", 30)));
 
-        (await server.GlobAsync("**/*.csv")).ShouldBe([
-            "/day-notes.csv", "/foods.csv", "/items/2026-03.csv", "/items/2026-05.csv", "/meals/2026-03.csv",
-            "/meals/2026-05.csv", "/periods.csv"
+        (await server.GlobAsync("**/*.parquet")).ShouldBe([
+            "/day-notes.parquet", "/foods.parquet", "/items/2026-03.parquet", "/items/2026-05.parquet",
+            "/meals/2026-03.parquet", "/meals/2026-05.parquet", "/periods.parquet"
         ]);
-        var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/meals/2026-04.csv" });
+        var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/meals/2026-04.parquet" });
         read["errorCode"]!.GetValue<string>().ShouldBe("not_found");
-        var info = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = "/items/2026-04.csv" });
+        var info = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = "/items/2026-04.parquet" });
         info["exists"]!.GetValue<bool>().ShouldBeFalse();
     }
 
     // The calendar's first and last months name a file like any other, and no meal is in them.
     [Theory]
-    [InlineData("/meals/9999-12.csv")]
-    [InlineData("/items/9999-12.csv")]
-    [InlineData("/meals/0001-01.csv")]
-    [InlineData("/items/0001-01.csv")]
+    [InlineData("/meals/9999-12.parquet")]
+    [InlineData("/items/9999-12.parquet")]
+    [InlineData("/meals/0001-01.parquet")]
+    [InlineData("/items/0001-01.parquet")]
     public async Task TheCalendarsEdgeMonths_HaveNoFile(string path)
     {
         await using var server = await SugaryServer.StartAsync();
@@ -374,16 +373,14 @@ public class McpSugaryServerTests
         info["exists"]!.GetValue<bool>().ShouldBeFalse();
     }
 
-    // The month a meal is filed under is the one its eaten_at shows, so a late dinner on the last
-    // night of March in Madrid is in April's file once the clocks have gone forward.
     [Fact]
     public async Task AMeal_IsFiledUnderTheMonthOnTheHomesCalendar()
     {
         await using var server = await SugaryServer.StartAsync("Europe/Madrid");
         await server.SaveAsync(Meal("2026-03-31T22:30:00Z", null, Item("cena", 30)));
 
-        (await server.GlobAsync("meals/*")).ShouldBe(["/meals/2026-04.csv"]);
-        (await server.ReadAsync("/meals/2026-04.csv")).ShouldContain(",2026-04-01T00:30:00+02:00,");
+        (await server.GlobAsync("meals/*")).ShouldBe(["/meals/2026-04.parquet"]);
+        (await server.TableRowsAsync("/meals/2026-04.parquet")).Single()[2].ShouldBe("2026-04-01 00:30:00");
     }
 
     [Fact]
@@ -392,18 +389,10 @@ public class McpSugaryServerTests
         await using var server = await SugaryServer.StartAsync("UTC");
         await server.SaveAsync(Meal("2026-10-11T11:30:00Z", null, Item("rice", 42)));
 
-        (await server.ReadAsync("/meals/2026-10.csv")).ShouldContain(",2026-10-11T11:30:00+00:00,");
-        (await server.ReadAsync("/items/2026-10.csv")).ShouldContain(",2026-10-11T11:30:00+00:00,");
-    }
-
-    [Fact]
-    public async Task TextThatASpreadsheetWouldRunAsAFormula_IsWrittenAsText()
-    {
-        await using var server = await SugaryServer.StartAsync();
-        await server.SaveAsync(Meal("2026-10-11T12:00:00Z", "=HYPERLINK(\"http://x\")", Item("+danger", 10)));
-
-        Lines(await server.ReadAsync("/meals/2026-10.csv"))[1].ShouldEndWith(",'+danger,\"'=HYPERLINK(\"\"http://x\"\")\"");
-        Lines(await server.ReadAsync("/items/2026-10.csv"))[1].Split(',')[3].ShouldBe("'+danger");
+        var row = (await server.QueryAsync("select m.eaten_at, i.eaten_at from meals m join items i using (meal_id)"))
+            .Single()!.AsArray();
+        row[0]!.GetValue<string>().ShouldBe("2026-10-11T11:30:00+00:00");
+        row[1]!.GetValue<string>().ShouldBe("2026-10-11T11:30:00+00:00");
     }
 
     [Fact]
@@ -423,25 +412,40 @@ public class McpSugaryServerTests
         };
         await server.SaveAsync(food);
 
-        Lines(await server.ReadAsync("/foods.csv")).ShouldBe([
-            "food_id,name,carbs_per_100,unit,portion_amount,portion_carbs_g,barcode,source",
-            $"{food.Id},Pan de molde,46,g,32,,8480000823298,label"
+        (await server.TableRowsAsync("/foods.parquet")).ShouldBe([
+            [food.Id.ToString(), "Pan de molde", "46.0", "g", "32.0", null, "8480000823298", "label"]
         ]);
     }
 
-    // What a spreadsheet or pandas opens without being told anything: no byte-order mark in front
-    // of the header, and the size the mount reports is the UTF-8 bytes of exactly that text.
+    // What any reader of Parquet opens without being told anything, and a size a reader can seek by:
+    // the footer it looks for is at the end the size names.
     [Fact]
-    public async Task ATable_IsUtf8WithoutAByteOrderMark()
+    public async Task ATable_IsParquet_AndItsSizeIsItsBytes()
     {
         await using var server = await SugaryServer.StartAsync();
         await server.SaveAsync(Meal("2026-10-11T12:00:00Z", "menú del día", Item("ñoquis", 40)));
 
-        var text = await server.ReadAsync("/meals/2026-10.csv");
-        var info = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = "/meals/2026-10.csv" });
+        var chunk = await server.CallAsync("fs_blob_read", new Dictionary<string, object?> { ["path"] = "/meals/2026-10.parquet" });
+        var info = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = "/meals/2026-10.parquet" });
+        var bytes = Convert.FromBase64String(chunk["contentBase64"]!.GetValue<string>());
 
-        text.ShouldStartWith("meal_id,");
-        info["size"]!.GetValue<long>().ShouldBe(new UTF8Encoding(false).GetByteCount(text));
+        Encoding.ASCII.GetString(bytes[..4]).ShouldBe("PAR1");
+        Encoding.ASCII.GetString(bytes[^4..]).ShouldBe("PAR1");
+        info["size"]!.GetValue<long>().ShouldBe(bytes.Length);
+        (await server.TableRowsAsync("/meals/2026-10.parquet")).Single()[11].ShouldBe("menú del día");
+    }
+
+    // A table is asked, not paged through: reading one as text names the two ways that work.
+    [Fact]
+    public async Task ReadingATableAsText_NamesQueryAndTheSandbox()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(Meal("2026-10-11T12:00:00Z", null, Item("toast", 30)));
+
+        var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/meals/2026-10.parquet" });
+
+        read["errorCode"]!.GetValue<string>().ShouldBe("unsupported_operation");
+        read["hint"]!.GetValue<string>().ShouldContain("query");
     }
 
     // The database is the only store: a meal saved a moment ago is in the very next read, and no
@@ -451,12 +455,13 @@ public class McpSugaryServerTests
     {
         await using var server = await SugaryServer.StartAsync();
         await server.SaveAsync(Meal("2026-10-01T12:00:00Z", null, Item("toast", 30)));
-        (await server.ReadAsync("/meals/2026-10.csv")).ShouldNotContain("paella");
+        (await server.TableRowsAsync("/items/2026-10.parquet")).ShouldNotContain(row => row[4] == "paella");
 
         await server.SaveAsync(Meal("2026-10-11T12:00:00Z", null, Item("paella", 70)));
 
-        (await server.ReadAsync("/meals/2026-10.csv")).ShouldContain("paella");
-        (await server.ReadAsync("/items/2026-10.csv")).ShouldContain("paella");
+        (await server.TableRowsAsync("/items/2026-10.parquet")).ShouldContain(row => row[4] == "paella");
+        (await server.QueryAsync("select count(*) from items where name = 'paella'")).Single()![0]!.GetValue<int>()
+            .ShouldBe(1);
         // The database file and SQLite's write-ahead log beside it, and nothing else — apart from the
         // app's cookie keys, which the host writes on start and no read touches.
         var keys = Path.Combine(server.Directory, "keys");
@@ -466,7 +471,7 @@ public class McpSugaryServerTests
             .ShouldAllBe(name => name == "sugary.db" || name == "sugary.db-wal" || name == "sugary.db-shm");
     }
 
-    // "When did she last eat paella" is one search.
+    // "When did she last eat paella" is one query across every month.
     [Fact]
     public async Task AFood_IsFoundByNameAcrossEveryMonth()
     {
@@ -476,21 +481,10 @@ public class McpSugaryServerTests
             Meal("2026-10-11T12:00:00Z", null, Item("toast", 30)),
             Meal("2026-10-12T12:00:00Z", null, Item("Paella de marisco", 80)));
 
-        var everywhere = await server.CallAsync("fs_search", new Dictionary<string, object?>
-        {
-            ["query"] = "paella",
-            ["outputMode"] = "filesOnly"
-        });
-        var inItems = await server.CallAsync("fs_search", new Dictionary<string, object?>
-        {
-            ["query"] = "paella",
-            ["directoryPath"] = "/items"
-        });
+        var rows = await server.QueryAsync(
+            "select eaten_at_local::date::varchar from items where name ilike '%paella%' order by eaten_at");
 
-        Files(everywhere).ShouldBe(
-            ["/items/2026-09.csv", "/items/2026-10.csv", "/meals/2026-09.csv", "/meals/2026-10.csv"], ignoreOrder: true);
-        Files(inItems).ShouldBe(["/items/2026-09.csv", "/items/2026-10.csv"], ignoreOrder: true);
-        inItems["totalMatches"]!.GetValue<int>().ShouldBe(2);
+        rows.Select(row => row![0]!.GetValue<string>()).ShouldBe(["2026-09-20", "2026-10-12"]);
     }
 
     // Her doses, one file per month they were taken in on the home's calendar, whether or not she
@@ -507,16 +501,15 @@ public class McpSugaryServerTests
         var basal = Dose("2026-08-31T22:30:00Z", 14, DoseKind.Basal);
         await server.SaveAsync(correction, bolus, basal);
 
-        (await server.GlobAsync("doses/*")).ShouldBe(["/doses/2026-09.csv", "/doses/2026-10.csv"]);
-        (await server.GlobAsync("meals/*")).ShouldBe(["/meals/2026-10.csv"]);
-        Lines(await server.ReadAsync("/doses/2026-09.csv")).ShouldBe([
-            "dose_id,taken_at,kind,units,meal_id,note",
-            $"{basal.Id},2026-09-01T00:30:00+02:00,basal,14,,"
+        (await server.GlobAsync("doses/*")).ShouldBe(["/doses/2026-09.parquet", "/doses/2026-10.parquet"]);
+        (await server.GlobAsync("meals/*")).ShouldBe(["/meals/2026-10.parquet"]);
+        (await server.TableRowsAsync("/doses/2026-09.parquet")).ShouldBe([
+            [basal.Id.ToString(), "2026-08-31 22:30:00+00", "2026-09-01 00:30:00", "basal", "14.0", null, null]
         ]);
-        Lines(await server.ReadAsync("/doses/2026-10.csv")).ShouldBe([
-            "dose_id,taken_at,kind,units,meal_id,note",
-            $"{bolus.Id},2026-10-11T13:30:00+02:00,rapid,4.5,{lunch.Id},\"pre-bolus, late\"",
-            $"{correction.Id},2026-10-11T18:00:00+02:00,rapid,1.25,,"
+        (await server.TableRowsAsync("/doses/2026-10.parquet")).ShouldBe([
+            [bolus.Id.ToString(), "2026-10-11 11:30:00+00", "2026-10-11 13:30:00", "rapid", "4.5", lunch.Id.ToString(),
+                "pre-bolus, late"],
+            [correction.Id.ToString(), "2026-10-11 16:00:00+00", "2026-10-11 18:00:00", "rapid", "1.25", null, null]
         ]);
     }
 
@@ -527,22 +520,13 @@ public class McpSugaryServerTests
         await server.SaveAsync(Meal("2026-10-11T12:00:00Z", null, Item("toast", 30)));
         await server.SaveAsync(Dose("2026-09-10T21:00:00Z", 14, DoseKind.Basal));
 
-        (await server.GlobAsync("doses/*")).ShouldBe(["/doses/2026-09.csv"]);
-        var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/doses/2026-10.csv" });
+        (await server.GlobAsync("doses/*")).ShouldBe(["/doses/2026-09.parquet"]);
+        var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/doses/2026-10.parquet" });
         read["errorCode"]!.GetValue<string>().ShouldBe("not_found");
-        var info = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = "/doses/2026-10.csv" });
+        var info = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = "/doses/2026-10.parquet" });
         info["exists"]!.GetValue<bool>().ShouldBeFalse();
-        var exists = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = "/doses/2026-09.csv" });
+        var exists = await server.CallAsync("fs_info", new Dictionary<string, object?> { ["path"] = "/doses/2026-09.parquet" });
         exists["exists"]!.GetValue<bool>().ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task ADoseNoteThatASpreadsheetWouldRunAsAFormula_IsWrittenAsText()
-    {
-        await using var server = await SugaryServer.StartAsync("UTC");
-        await server.SaveAsync(Dose("2026-10-11T12:00:00Z", 2, DoseKind.Rapid, note: "-2 for the walk"));
-
-        Lines(await server.ReadAsync("/doses/2026-10.csv"))[1].ShouldEndWith(",2026-10-11T12:00:00+00:00,rapid,2,,'-2 for the walk");
     }
 
     // Her exercise, one file per month a session started in on the home's calendar, its minutes
@@ -558,29 +542,20 @@ public class McpSugaryServerTests
         var late = Session("2026-08-31T22:15:00Z", "2026-08-31T22:45:00Z", ExerciseKind.Walk);
         await server.SaveAsync(gym, ride, walk, late);
 
-        (await server.GlobAsync("exercise/*")).ShouldBe(["/exercise/2026-09.csv", "/exercise/2026-10.csv"]);
-        Lines(await server.ReadAsync("/exercise/2026-09.csv")).ShouldBe([
-            "exercise_id,started_at,ended_at,minutes,kind,name,note",
-            $"{late.Id},2026-09-01T00:15:00+02:00,2026-09-01T00:45:00+02:00,30,walk,,"
+        (await server.GlobAsync("exercise/*")).ShouldBe(["/exercise/2026-09.parquet", "/exercise/2026-10.parquet"]);
+        (await server.TableRowsAsync("/exercise/2026-09.parquet")).ShouldBe([
+            [late.Id.ToString(), "2026-08-31 22:15:00+00", "2026-09-01 00:15:00", "2026-08-31 22:45:00+00",
+                "2026-09-01 00:45:00", "30", "walk", null, null]
         ]);
-        Lines(await server.ReadAsync("/exercise/2026-10.csv")).ShouldBe([
-            "exercise_id,started_at,ended_at,minutes,kind,name,note",
-            $"{walk.Id},2026-10-11T10:00:00+02:00,2026-10-11T10:44:31+02:00,45,walk,,",
-            $"{ride.Id},2026-10-11T18:00:00+02:00,2026-10-11T19:30:00+02:00,90,other,bici,\"con Ana, cuesta\"",
-            $"{gym.Id},2026-10-12T19:00:00+02:00,,,gym,,"
-        ]);
+        (await server.TableRowsAsync("/exercise/2026-10.parquet")).Select(row => (row[0], row[5], row[6], row[7], row[8]))
+            .ShouldBe([
+                (walk.Id.ToString(), "45", "walk", null, null),
+                (ride.Id.ToString(), "90", "other", "bici", "con Ana, cuesta"),
+                (gym.Id.ToString(), null, "gym", null, null)
+            ]);
     }
 
-    [Fact]
-    public async Task AnExerciseNameOrNoteThatASpreadsheetWouldRunAsAFormula_IsWrittenAsText()
-    {
-        await using var server = await SugaryServer.StartAsync("UTC");
-        await server.SaveAsync(Session("2026-10-11T12:00:00Z", "2026-10-11T12:30:00Z", ExerciseKind.Other, "+pesas", "=suave"));
-
-        Lines(await server.ReadAsync("/exercise/2026-10.csv"))[1].ShouldEndWith(",30,other,'+pesas,'=suave");
-    }
-
-    // "When did she last ride her bike" is one search across the months of exercise.
+    // "When did she last ride her bike" is one query across the months of exercise.
     [Fact]
     public async Task HerSessions_AreFoundByName()
     {
@@ -590,13 +565,9 @@ public class McpSugaryServerTests
             Session("2026-10-11T08:00:00Z", "2026-10-11T09:00:00Z", ExerciseKind.Other, "bici"),
             Session("2026-10-12T08:00:00Z", "2026-10-12T09:00:00Z", ExerciseKind.Walk));
 
-        var hits = await server.CallAsync("fs_search", new Dictionary<string, object?>
-        {
-            ["query"] = "bici",
-            ["directoryPath"] = "/exercise"
-        });
+        var rows = await server.QueryAsync("select max(started_at_local)::date::varchar from exercise where name = 'bici'");
 
-        Files(hits).ShouldBe(["/exercise/2026-09.csv", "/exercise/2026-10.csv"], ignoreOrder: true);
+        rows.Single()![0]!.GetValue<string>().ShouldBe("2026-10-11");
     }
 
     // A running session read as zero minutes, or the table read as advice, puts the wrong thing beside
@@ -608,7 +579,7 @@ public class McpSugaryServerTests
 
         var readme = await server.ReadAsync("/README.md");
 
-        readme.ShouldContain("## exercise/<YYYY-MM>.csv");
+        readme.ShouldContain("## exercise/<YYYY-MM>.parquet");
         readme.ShouldContain("`walk`");
         readme.ShouldContain("`gym`");
         readme.ShouldContain("`other`");
@@ -616,7 +587,7 @@ public class McpSugaryServerTests
         readme.ShouldContain("never a basis for suggesting carbs or insulin");
     }
 
-    // "How much did she take for the pizza" is a search for the meal's id among the doses.
+    // "How much did she take for the pizza" is one join of the meal and its doses.
     [Fact]
     public async Task AMealsDoses_AreFoundByItsMealId()
     {
@@ -628,14 +599,11 @@ public class McpSugaryServerTests
             Dose("2026-10-11T21:00:00Z", 2, DoseKind.Rapid, pizza.Id, "top-up"),
             Dose("2026-10-11T22:00:00Z", 14, DoseKind.Basal));
 
-        var hits = await server.CallAsync("fs_search", new Dictionary<string, object?>
-        {
-            ["query"] = pizza.Id.ToString(),
-            ["directoryPath"] = "/doses"
-        });
+        var rows = await server.QueryAsync(
+            "select count(*), sum(units) from doses join meals using (meal_id) where meals.items = 'pizza'");
 
-        Files(hits).ShouldBe(["/doses/2026-10.csv"]);
-        hits["totalMatches"]!.GetValue<int>().ShouldBe(2);
+        rows.Single()![0]!.GetValue<int>().ShouldBe(2);
+        rows.Single()![1]!.GetValue<double>().ShouldBe(10);
     }
 
     [Fact]
@@ -649,7 +617,4 @@ public class McpSugaryServerTests
             info["isDirectory"]!.GetValue<bool>().ShouldBeTrue(path);
         }
     }
-
-    private static IReadOnlyList<string> Files(System.Text.Json.Nodes.JsonNode search) =>
-        search["results"]!.AsArray().Select(result => result!["file"]!.GetValue<string>()).ToList();
 }
