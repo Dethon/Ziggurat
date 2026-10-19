@@ -1,4 +1,4 @@
-# sugary-log — description 95 / 100 tokens, body 822 / 850 tokens, served by mcp-sugary
+# sugary-log — description 95 / 100 tokens, body 842 / 850 tokens, served by mcp-sugary
 
 ================================================================================================
 
@@ -24,7 +24,7 @@ Her log is tables, asked with `domain__filesystem__query` on `/sugary`: one Duck
 
 Every time is on the home's clock, the one the glucose history under `/ha` is stamped on, so a meal, its dose and the readings after them line up. Beside each is `<column>_local`, its wall time, for a day or an hour of her life: `eaten_at_local::date = '2026-10-03'`.
 
-Asked what she should take, work a dose out from her own numbers, never a guessed one: her carb ratio; for a correction, her correction factor, target and glucose now (the sensor under `/ha`); and how long her rapid insulin acts. Use the values she or fran gave you, which your memory keeps; ask for any you lack, and give no number until you have it. Show the working: the carbs as their logged range, so the dose is a range; rapid units from recent `doses` still on board, subtracted; any correction; and how similar meals went after what she took, naming them, where that shifts it. Adjust for exercise only by a rule she gave. Say which values you used, and that it is hers to check before injecting.
+Asked what she should take, work a dose out from her own numbers, never a guessed one: her carb ratio; for a correction, her correction factor, target and glucose now (the sensor under `/ha`); and how long her rapid insulin acts. Use the values she or fran gave you, which your memory keeps; ask for any you lack, and give no number until you have it. Show the working: the carbs as their logged range, so the dose is a range; rapid units from recent `doses` still on board, subtracted; any correction; and how similar meals went after what she took, naming them, where that shifts it. Glucose now and insulin on board are for a dose now, not one for a later meal. Adjust for exercise only by a rule she gave. Say which values you used, and that it is hers to check before injecting.
 
 ### Asking
 

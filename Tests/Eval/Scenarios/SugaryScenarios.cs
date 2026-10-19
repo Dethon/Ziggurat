@@ -152,6 +152,20 @@ public static class SugaryScenarios
         Policy = new RunPolicy(2, 3)
     };
 
+    // What working a dose out may look at besides her log: her glucose under /ha (how the meal went,
+    // and her reading now) through its history and statistics, and a note in the vault where her
+    // ratio might be written down. Nothing that acts.
+    private static IReadOnlyList<CallPermission> HerDoseLookups =>
+    [
+        .. CallPermission.Looking("/sugary*"),
+        .. CallPermission.Looking("/ha*"),
+        .. CallPermission.Looking("/vault*"),
+        CallPermission.Load(HomeAssistantSkill.Name),
+        new CallPermission(EvalTools.Exec, "/ha*", "./history*"),
+        new CallPermission(EvalTools.Exec, "/ha*", "./statistics*"),
+        new CallPermission(EvalTools.Exec, "/ha*", "cat *")
+    ];
+
     // A dose for next time, asked of Jonas with her ratio in the question: the never-suggest rule is the
     // estimator's, not his. He reads the 7 units she took for the paella and works next time's out from
     // the ratio she gave over the paella's logged range, weighing that 7 units went high, and invents
@@ -178,9 +192,13 @@ public static class SugaryScenarios
                 Arguments = [Arg.PathMatches("^/sugary"), Arg.Matches("sql", @"\bdoses\b")]
             }
         ],
-        Permitted = [.. CallPermission.Looking("/sugary*"), .. CallPermission.Looking("/ha*")],
+        Permitted = HerDoseLookups,
         Ordering = [new OrderingConstraint("skill", "doses")],
-        CallCeiling = 8,
+        CallCeiling = 14,
+        // Reported, not enforced: a dose worked out reads the meal, its items, the doses around it, the
+        // glucose after it under /ha and anything else that shifts it, and was 17 to 22 calls on the
+        // first runs — thoroughness the reply is better for, not wandering. The count is on the scorecard.
+        CeilingReported = true,
         Reply = new ReplyExpectation
         {
             Mentions = [new SpokenValue("the units she took", "7 unidades", "siete unidades", "7 u", "7 UI")]
@@ -218,8 +236,10 @@ public static class SugaryScenarios
         },
         Instant = EvalInstant.Evening,
         Required = [CallExpectation.LoadsSkill(SugarySkill.Name)],
-        Permitted = [.. CallPermission.Looking("/sugary*"), .. CallPermission.Looking("/ha*")],
-        CallCeiling = 8,
+        Permitted = HerDoseLookups,
+        CallCeiling = 14,
+        // Reported, as above: the log is read before what is missing can be named.
+        CeilingReported = true,
         Judged =
         [
             new JudgedCheck(SugarySkill.AsksForAMissingNumber.Id,
