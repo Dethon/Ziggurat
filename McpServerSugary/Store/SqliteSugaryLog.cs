@@ -50,7 +50,7 @@ public sealed class SqliteSugaryLog(IDbContextFactory<SugaryDbContext> contexts)
             .Where(d => d.TakenAt >= from && d.TakenAt < to)
             .OrderBy(d => d.TakenAt)
             .ToListAsync(ct);
-        return doses.Select(d => new LoggedDose(d.Id, d.TakenAt, d.Units, d.Kind, d.MealId, d.Note)).ToList();
+        return doses.Select(d => new LoggedDose(d.Id, d.TakenAt, d.Units, d.Kind, d.MealIds, d.Note)).ToList();
     }
 
     public async Task<IReadOnlyList<DateTimeOffset>> ExerciseTimesAsync(CancellationToken ct)

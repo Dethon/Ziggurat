@@ -25,7 +25,7 @@ public static class SugarySkill
 
         - `meals` — one row per meal she logged: its carbs as finally logged, the model's first estimate, and what her glucose did afterwards (`outcome`).
         - `items` — one row per food in those meals, with where its numbers came from: an estimate, a label, a barcode, or typed by her. `meal_id` joins it to `meals`.
-        - `doses` — one row per insulin dose she took: its `units`, `rapid` or `basal` (long-acting), and the `meal_id` of the meal it was for, if any.
+        - `doses` — one row per insulin dose she took: its `units`, `rapid` or `basal` (long-acting). `dose_meals` links it to each meal it was for, maybe several.
         - `exercise` — one row per session she started: `walk`, `gym` or a named `other`, its start and end, and its `minutes` (empty while it is running).
         - `foods` — the foods she keeps, one row each: what she calls it, its carbs per 100 g or ml, the amount she usually has and, for a food kept only as a portion, the carbs in that portion.
         - `periods` — her menstrual periods: `start_date`, `end_date` (empty while it is going), each one's length and its cycle's. `day_notes` — what she wrote about a day. Both are days on the home's calendar: read `/ha` history for those days beside them.
@@ -37,7 +37,7 @@ public static class SugarySkill
         ### Asking
 
         - When she last ate something: `select eaten_at from items where name ilike '%lentejas%' order by eaten_at desc limit 1`.
-        - What she took for a meal: `doses` joined to `meals` on `meal_id`.
+        - What she took for a meal: `doses` joined to `dose_meals` on `dose_id`, then to `meals` on `meal_id`. A day's units: `doses` alone, so a dose for two meals counts once.
         - A total, an average or a count: one statement that computes it, never a table read whole to add up by hand.
         - A table is not text, and reading one as a file is refused. For a chart, a longer analysis or her log beside `/ha` history, run a command in the sandbox: `duckdb` and Python's `polars` read `/sugary/meals/*.parquet` and the other tables' files directly.
         """;

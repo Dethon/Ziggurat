@@ -9,7 +9,8 @@ namespace Domain.Tools.Sugary;
 // with a row per food eaten, one with her saved foods, one with a row per insulin dose, one with a
 // row per session of exercise, one with a row per period and one with a row per day she wrote a note on. The first three's columns, order
 // and spelling are the standalone app's export, so a reader of either reads both; the rest are
-// Sugary's own, the doses joined to a meal by meal_id.
+// Sugary's own. A dose is joined to the meals it was for through dose_meals, a row per link, so
+// doses stays a row per dose and a sum of its units counts a bolus for two meals once.
 public static class SugaryTables
 {
     private static readonly TableColumn[] _mealColumns =
@@ -41,8 +42,10 @@ public static class SugaryTables
     private static readonly TableColumn[] _doseColumns =
     [
         new("dose_id", ColumnType.Text), new("taken_at", ColumnType.Instant), new("kind", ColumnType.Text),
-        new("units", ColumnType.Decimal), new("meal_id", ColumnType.Text), new("note", ColumnType.Text)
+        new("units", ColumnType.Decimal), new("note", ColumnType.Text)
     ];
+
+    private static readonly TableColumn[] _doseMealColumns = [new("dose_id", ColumnType.Text), new("meal_id", ColumnType.Text)];
 
     private static readonly TableColumn[] _exerciseColumns =
     [
@@ -83,8 +86,12 @@ public static class SugaryTables
 
     public static Table Doses(IEnumerable<LoggedDose> doses, TimeZoneInfo zone) =>
         new("doses", _doseColumns, [.. doses.OrderBy(dose => dose.TakenAt).Select(dose => Row(
-            dose.Id.ToString(), On(dose.TakenAt, zone), Word(dose.Kind), dose.Units, dose.MealId?.ToString(),
-            dose.Note))]);
+            dose.Id.ToString(), On(dose.TakenAt, zone), Word(dose.Kind), dose.Units, dose.Note))]);
+
+    // In the doses' order, each dose's meals in the order she picked them.
+    public static Table DoseMeals(IEnumerable<LoggedDose> doses) =>
+        new("dose_meals", _doseMealColumns, [.. doses.OrderBy(dose => dose.TakenAt)
+            .SelectMany(dose => dose.MealIds.Select(meal => Row(dose.Id.ToString(), meal.ToString())))]);
 
     // A session's minutes are worked out from its two times on every read, rounded to the whole
     // minute, so they never disagree with them; a running session has neither an end nor minutes.

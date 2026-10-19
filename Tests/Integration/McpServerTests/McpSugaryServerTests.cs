@@ -71,7 +71,8 @@ public class McpSugaryServerTests
         var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
 
         body.ShouldContain("- `doses` —");
-        body.ShouldContain("`doses` joined to `meals` on `meal_id`");
+        body.ShouldContain("`doses` joined to `dose_meals` on `dose_id`, then to `meals` on `meal_id`");
+        body.ShouldContain("so a dose for two meals counts once");
         body.ShouldContain("never a basis for advice");
         body.ShouldContain("not her ratio applied to its carbs");
         SugarySkill.Description.ShouldContain("insulin");
@@ -114,9 +115,10 @@ public class McpSugaryServerTests
         await using var server = await SugaryServer.StartAsync();
 
         (await server.GlobAsync("**")).ShouldBe([
-            "/README.md", "/day-notes.parquet", "/doses/", "/exercise/", "/foods.parquet", "/items/", "/meals/",
-            "/periods.parquet"
+            "/README.md", "/day-notes.parquet", "/dose-meals.parquet", "/doses/", "/exercise/", "/foods.parquet",
+            "/items/", "/meals/", "/periods.parquet"
         ]);
+        (await server.TableRowsAsync("/dose-meals.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/foods.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/periods.parquet")).ShouldBeEmpty();
         (await server.TableRowsAsync("/day-notes.parquet")).ShouldBeEmpty();
@@ -159,7 +161,9 @@ public class McpSugaryServerTests
         readme.ShouldContain("insulin units");
         readme.ShouldContain("`rapid` — rapid-acting");
         readme.ShouldContain("`basal` — long-acting");
-        readme.ShouldContain("empty for a dose not linked to a meal");
+        readme.ShouldContain("## dose-meals.parquet");
+        readme.ShouldContain("A dose for no meal has no row");
+        readme.ShouldContain("total a day's insulin from `doses` alone");
         readme.ShouldContain("carries the meal's time unless she changed it");
         readme.ShouldContain("never a recommendation");
     }
@@ -269,7 +273,7 @@ public class McpSugaryServerTests
         var backend = new McpFileSystemBackend(server.Client, SugaryFileSystem.Name, advertisedOperations: null);
 
         var answer = (await backend.QueryAsync("", """
-            select m.eaten_at, d.units from meals m join doses d using (meal_id)
+            select m.eaten_at, d.units from meals m join dose_meals using (meal_id) join doses d using (dose_id)
             """, 10, CancellationToken.None)).ShouldBeOfType<FsResult<FsQueryResult>.Ok>().Value;
 
         answer.RowCount.ShouldBe(1);
@@ -315,13 +319,16 @@ public class McpSugaryServerTests
             Note = note
         };
 
-    private static Dose Dose(string takenAt, double units, DoseKind kind, Guid? mealId = null, string? note = null) => new()
+    private static Dose Dose(string takenAt, double units, DoseKind kind, Guid? mealId = null, string? note = null) =>
+        Dose(takenAt, units, kind, mealId is { } meal ? [meal] : [], note);
+
+    private static Dose Dose(string takenAt, double units, DoseKind kind, List<Guid> mealIds, string? note = null) => new()
     {
         Id = Guid.NewGuid(),
         TakenAt = DateTimeOffset.Parse(takenAt),
         Units = units,
         Kind = kind,
-        MealId = mealId,
+        MealIds = mealIds,
         Note = note
     };
 
@@ -369,7 +376,7 @@ public class McpSugaryServerTests
             Meal("2026-05-10T12:00:00Z", null, Item("toast", 30)));
 
         (await server.GlobAsync("**/*.parquet")).ShouldBe([
-            "/day-notes.parquet", "/foods.parquet", "/items/2026-03.parquet", "/items/2026-05.parquet",
+            "/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/items/2026-03.parquet", "/items/2026-05.parquet",
             "/meals/2026-03.parquet", "/meals/2026-05.parquet", "/periods.parquet"
         ]);
         var read = await server.CallAsync("fs_read", new Dictionary<string, object?> { ["path"] = "/meals/2026-04.parquet" });
@@ -526,13 +533,13 @@ public class McpSugaryServerTests
         (await server.GlobAsync("doses/*")).ShouldBe(["/doses/2026-09.parquet", "/doses/2026-10.parquet"]);
         (await server.GlobAsync("meals/*")).ShouldBe(["/meals/2026-10.parquet"]);
         (await server.TableRowsAsync("/doses/2026-09.parquet")).ShouldBe([
-            [basal.Id.ToString(), "2026-08-31 22:30:00+00", "2026-09-01 00:30:00", "basal", "14.0", null, null]
+            [basal.Id.ToString(), "2026-08-31 22:30:00+00", "2026-09-01 00:30:00", "basal", "14.0", null]
         ]);
         (await server.TableRowsAsync("/doses/2026-10.parquet")).ShouldBe([
-            [bolus.Id.ToString(), "2026-10-11 11:30:00+00", "2026-10-11 13:30:00", "rapid", "4.5", lunch.Id.ToString(),
-                "pre-bolus, late"],
-            [correction.Id.ToString(), "2026-10-11 16:00:00+00", "2026-10-11 18:00:00", "rapid", "1.25", null, null]
+            [bolus.Id.ToString(), "2026-10-11 11:30:00+00", "2026-10-11 13:30:00", "rapid", "4.5", "pre-bolus, late"],
+            [correction.Id.ToString(), "2026-10-11 16:00:00+00", "2026-10-11 18:00:00", "rapid", "1.25", null]
         ]);
+        (await server.TableRowsAsync("/dose-meals.parquet")).ShouldBe([[bolus.Id.ToString(), lunch.Id.ToString()]]);
     }
 
     [Fact]
@@ -622,10 +629,31 @@ public class McpSugaryServerTests
             Dose("2026-10-11T22:00:00Z", 14, DoseKind.Basal));
 
         var rows = await server.QueryAsync(
-            "select count(*), sum(units) from doses join meals using (meal_id) where meals.items = 'pizza'");
+            "select count(*), sum(units) from doses join dose_meals using (dose_id) join meals using (meal_id) "
+            + "where meals.items = 'pizza'");
 
         rows.Single()![0]!.GetValue<int>().ShouldBe(2);
         rows.Single()![1]!.GetValue<double>().ShouldBe(10);
+    }
+
+    // One bolus for the pizza and the tiramisu after it is each meal's, and still one dose: a day's
+    // units count it once.
+    [Fact]
+    public async Task ADoseForTwoMeals_IsFoundFromEach_AndCountedOnce()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var pizza = Meal("2026-10-11T19:00:00Z", null, Item("pizza", 90));
+        var tiramisu = Meal("2026-10-11T19:40:00Z", null, Item("tiramisu", 35));
+        await server.SaveAsync(pizza, tiramisu);
+        await server.SaveAsync(Dose("2026-10-11T19:00:00Z", 11, DoseKind.Rapid, [pizza.Id, tiramisu.Id]));
+
+        var perMeal = await server.QueryAsync(
+            "select meals.items, sum(units) from doses join dose_meals using (dose_id) join meals using (meal_id) "
+            + "group by meals.items order by meals.items");
+        var day = await server.QueryAsync("select sum(units) from doses");
+
+        perMeal.Select(row => $"{row![0]!.GetValue<string>()}:{row[1]!.GetValue<double>()}").ShouldBe(["pizza:11", "tiramisu:11"]);
+        day.Single()![0]!.GetValue<double>().ShouldBe(11);
     }
 
     [Fact]

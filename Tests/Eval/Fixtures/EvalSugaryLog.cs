@@ -73,7 +73,7 @@ public static class EvalSugaryLog
         new()
         {
             Id = Guid.Parse("6b1f0c2e-0000-4000-8000-000000000201"), TakenAt = LastPaella, Units = 7,
-            Kind = DoseKind.Rapid, MealId = Guid.Parse("6b1f0c2e-0000-4000-8000-000000000103")
+            Kind = DoseKind.Rapid, MealIds = [Guid.Parse("6b1f0c2e-0000-4000-8000-000000000103")]
         },
         new()
         {

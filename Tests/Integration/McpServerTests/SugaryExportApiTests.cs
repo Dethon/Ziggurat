@@ -156,11 +156,35 @@ public class SugaryExportApiTests
         var utc = await LinesAsync(client, "/api/export/doses.csv");
 
         madrid.ShouldBe([
-            "dose_id,taken_at,kind,units,meal_id,note",
-            $"{basal},2026-03-01T22:00:00+01:00,basal,14,,",
-            $"{correction},2026-10-11T18:00:00+02:00,rapid,1.5,,'=1+1"
+            "dose_id,taken_at,kind,units,note",
+            $"{basal},2026-03-01T22:00:00+01:00,basal,14,",
+            $"{correction},2026-10-11T18:00:00+02:00,rapid,1.5,'=1+1"
         ]);
-        utc[1].ShouldBe($"{basal},2026-03-01T21:00:00+00:00,basal,14,,");
+        utc[1].ShouldBe($"{basal},2026-03-01T21:00:00+00:00,basal,14,");
+    }
+
+    // The meals each dose was for leave with the doses, a row per link, so one bolus for two meals is
+    // still one row of doses.csv.
+    [Fact]
+    public async Task TheMealsADoseWasFor_ExportAsARowPerLink()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var lunch = await SaveAsync(client, Meal("2026-10-11T11:30:00Z", null, Item("rice", 42)));
+        var dessert = await SaveAsync(client, Meal("2026-10-11T11:50:00Z", null, Item("flan", 30)));
+        var bolus = (await (await client.PostAsJsonAsync("/api/doses", new JsonObject
+        {
+            ["takenAt"] = "2026-10-11T11:30:00Z",
+            ["units"] = 6,
+            ["kind"] = "rapid",
+            ["mealIds"] = new JsonArray(lunch, dessert)
+        })).Content.ReadFromJsonAsync<JsonNode>())!["id"]!.GetValue<string>();
+        await SaveDoseAsync(client, "2026-10-11T21:00:00Z", 14, "basal");
+
+        var lines = await LinesAsync(client, "/api/export/dose-meals.csv");
+
+        lines.ShouldBe(["dose_id,meal_id", $"{bolus},{lunch}", $"{bolus},{dessert}"]);
+        (await LinesAsync(client, "/api/export/doses.csv")).Length.ShouldBe(3);
     }
 
     [Fact]

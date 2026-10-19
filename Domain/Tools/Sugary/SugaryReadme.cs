@@ -18,6 +18,7 @@ public static class SugaryReadme
           - `meals/<YYYY-MM>.parquet` — one row per meal eaten that month, oldest first.
           - `items/<YYYY-MM>.parquet` — one row per food in those meals, in the order of each meal.
           - `doses/<YYYY-MM>.parquet` — one row per insulin dose she took that month, oldest first.
+          - `dose-meals.parquet` — one row per meal a dose was taken for.
           - `exercise/<YYYY-MM>.parquet` — one row per session of exercise she started that month, oldest first.
           - `foods.parquet` — one row per food she keeps on her own list.
           - `periods.parquet` — one row per menstrual period she recorded, oldest first.
@@ -30,8 +31,9 @@ public static class SugaryReadme
           ## Asking
 
           - **`query`** answers one DuckDB SQL statement over the whole log, every month at once, as the
-            tables `meals`, `items`, `doses`, `exercise`, `foods`, `periods` and `day_notes`. Join on
-            `meal_id` (meals, items, doses) and `food_id` (items, foods). Only the rows that answer come back.
+            tables `meals`, `items`, `doses`, `dose_meals`, `exercise`, `foods`, `periods` and `day_notes`.
+            Join on `meal_id` (meals, items, dose_meals), `dose_id` (doses, dose_meals) and `food_id`
+            (items, foods). Only the rows that answer come back.
           - **A command in the sandbox** reads the files themselves at these same paths:
             `duckdb -c "select … from '/sugary/meals/*.parquet'"`, or `polars.scan_parquet` in Python — for
             an analysis, a chart, or her log beside the glucose history under the Home Assistant mount.
@@ -94,13 +96,25 @@ public static class SugaryReadme
             - `rapid` — rapid-acting, taken for a meal or as a correction;
             - `basal` — long-acting, her background dose, which belongs to no meal.
           - `units` — how much she took, in insulin units (not grams).
-          - `meal_id` — the meal it was taken for (`meal_id` in `meals/<YYYY-MM>.parquet`),
-            empty for a dose not linked to a meal. A meal may have several doses, a split dose or a top-up.
-            A meal deleted from the log keeps its doses here, with this cell emptied.
           - `note` — what she wrote about the dose.
+
+          The meals a dose was for are in `dose-meals.parquet`.
 
           A dose saved together with its meal carries the meal's time unless she changed it, so a gap of
           zero minutes between the two is not a measurement of when she injected.
+
+          ## dose-meals.parquet
+
+          Which meals each dose was taken for, one row per link.
+
+          - `dose_id` — the dose (`dose_id` in `doses/<YYYY-MM>.parquet`).
+          - `meal_id` — a meal it was for (`meal_id` in `meals/<YYYY-MM>.parquet`).
+
+          A meal may have several doses, a split dose or a top-up, and one dose may be for several meals, a
+          meal and the dessert logged after it: that dose is all of each meal's insulin, never a share of
+          it. A dose for no meal has no row. A sum of `units` over this table joined to `doses` counts a dose
+          for two meals twice; total a day's insulin from `doses` alone. A meal deleted from the log loses
+          its rows here, and its doses stay in `doses`.
 
           ## exercise/<YYYY-MM>.parquet
 

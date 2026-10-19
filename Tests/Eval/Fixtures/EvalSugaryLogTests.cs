@@ -56,8 +56,8 @@ public sealed class EvalSugaryLogTests : IAsyncLifetime
     public async Task TheSeededDoses_AreReadUnderTheMount_TheLastPaellasLinkedToIt()
     {
         var rows = await QueryAsync("""
-            select d.taken_at, d.kind, d.units, d.meal_id, m.items, m.outcome
-            from doses d left join meals m using (meal_id)
+            select d.taken_at, d.kind, d.units, l.meal_id, m.items, m.outcome
+            from doses d left join dose_meals l using (dose_id) left join meals m using (meal_id)
             where d.taken_at_local::date = DATE '2026-08-09' order by d.taken_at
             """);
 

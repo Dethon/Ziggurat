@@ -22,6 +22,7 @@ public static class ExportEndpoints
         export.MapGet("/items.csv", ItemsAsync);
         export.MapGet("/foods.csv", FoodsAsync);
         export.MapGet("/doses.csv", DosesAsync);
+        export.MapGet("/dose-meals.csv", DoseMealsAsync);
         export.MapGet("/exercise.csv", ExerciseAsync);
         export.MapGet("/periods.csv", PeriodsAsync);
         export.MapGet("/day-notes.csv", DayNotesAsync);
@@ -51,6 +52,12 @@ public static class ExportEndpoints
             ? File(SugaryTables.Doses(
                 await log.DosesAsync(from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct), zone), DosesFile)
             : UnknownClock(tz);
+
+    // Bounded by the doses' times, as doses.csv is, so the two files of one period agree.
+    private static async Task<IResult> DoseMealsAsync(
+        ISugaryLog log, CancellationToken ct, DateTimeOffset? from = null, DateTimeOffset? to = null) =>
+        File(SugaryTables.DoseMeals(
+            await log.DosesAsync(from ?? DateTimeOffset.MinValue, to ?? DateTimeOffset.MaxValue, ct)), "sugary-dose-meals.csv");
 
     private static async Task<IResult> ExerciseAsync(
         ISugaryLog log, CancellationToken ct, DateTimeOffset? from = null, DateTimeOffset? to = null,

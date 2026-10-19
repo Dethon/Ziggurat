@@ -142,7 +142,7 @@ public class SugaryMealApiTests
         dose["units"]!.GetValue<double>().ShouldBe(4.5);
         dose["kind"]!.GetValue<string>().ShouldBe("rapid");
         dose["note"]!.GetValue<string>().ShouldBe("for the rice");
-        dose["mealId"]!.GetValue<string>().ShouldBe(id);
+        dose["mealIds"]!.AsArray().Single()!.GetValue<string>().ShouldBe(id);
         DateTimeOffset.Parse(dose["takenAt"]!.GetValue<string>(), CultureInfo.InvariantCulture)
             .ShouldBe(DateTimeOffset.Parse("2026-10-11T13:30:00+02:00", CultureInfo.InvariantCulture));
         saved["doses"]!.AsArray().Single()!["units"]!.GetValue<double>().ShouldBe(4.5);
@@ -204,7 +204,7 @@ public class SugaryMealApiTests
 
         var dose = (await client.GetFromJsonAsync<JsonNode>("/api/doses"))!.AsArray().Single()!;
         dose["units"]!.GetValue<double>().ShouldBe(6);
-        dose["mealId"]!.GetValue<string>().ShouldBe(id);
+        dose["mealIds"]!.AsArray().Single()!.GetValue<string>().ShouldBe(id);
         DateTimeOffset.Parse(dose["takenAt"]!.GetValue<string>(), CultureInfo.InvariantCulture)
             .ShouldBe(DateTimeOffset.Parse("2026-10-11T13:30:00+02:00", CultureInfo.InvariantCulture));
     }
@@ -225,7 +225,7 @@ public class SugaryMealApiTests
             ["takenAt"] = "2026-10-11T15:00:00+02:00",
             ["units"] = 1.5,
             ["kind"] = "rapid",
-            ["mealId"] = lunchId
+            ["mealIds"] = new JsonArray(lunchId)
         }));
 
         var meals = (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray();
@@ -234,7 +234,44 @@ public class SugaryMealApiTests
         doses.Select(d => d!["units"]!.GetValue<double>()).Order().ShouldBe([1.5, 5]);
         doses.Select(d => d!["kind"]!.GetValue<string>()).ShouldAllBe(kind => kind == "rapid");
         doses.Select(d => d!["id"]!.GetValue<string>()).ShouldContain(topUp["id"]!.GetValue<string>());
+        doses.Select(d => d!["shared"]!.GetValue<bool>()).ShouldAllBe(shared => !shared);
         meals[1]!["doses"]!.AsArray().ShouldBeEmpty();
+    }
+
+    // One bolus for two meals is each meal's insulin, whole, and each says it is shared: the units
+    // are what she injected, never split into shares she did not take.
+    [Fact]
+    public async Task ASharedDose_IsOnEachOfItsMeals_MarkedShared()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var lunch = (await ReadAsync(await client.PostAsJsonAsync("/api/meals", Meal("2026-10-11T13:30:00+02:00"))))["id"]!
+            .GetValue<string>();
+        var dessert = (await ReadAsync(await client.PostAsJsonAsync("/api/meals", Meal("2026-10-11T13:50:00+02:00"))))["id"]!
+            .GetValue<string>();
+        await client.PostAsJsonAsync("/api/doses", new JsonObject
+        {
+            ["takenAt"] = "2026-10-11T13:30:00+02:00",
+            ["units"] = 6,
+            ["kind"] = "rapid",
+            ["mealIds"] = new JsonArray(lunch, dessert)
+        });
+
+        var meals = (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray();
+
+        meals.Select(m => m!["id"]!.GetValue<string>()).ShouldBe([dessert, lunch]);
+        foreach (var meal in meals)
+        {
+            var dose = meal!["doses"]!.AsArray().Single()!;
+            dose["units"]!.GetValue<double>().ShouldBe(6);
+            dose["shared"]!.GetValue<bool>().ShouldBeTrue();
+        }
+
+        (await client.DeleteAsync($"/api/meals/{dessert}")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        var left = (await client.GetFromJsonAsync<JsonNode>("/api/doses"))!.AsArray().Single()!;
+        left["mealIds"]!.AsArray().Select(id => id!.GetValue<string>()).ShouldBe([lunch]);
+        var kept = (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray().Single()!["doses"]!.AsArray().Single()!;
+        kept["shared"]!.GetValue<bool>().ShouldBeFalse();
     }
 
     // Insulin she really took is never erased with a meal she logged wrongly: the dose stays, no
@@ -252,7 +289,7 @@ public class SugaryMealApiTests
 
         var dose = (await client.GetFromJsonAsync<JsonNode>("/api/doses"))!.AsArray().Single()!;
         dose["units"]!.GetValue<double>().ShouldBe(7);
-        dose["mealId"].ShouldBeNull();
+        dose["mealIds"]!.AsArray().ShouldBeEmpty();
         (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray().ShouldBeEmpty();
     }
 

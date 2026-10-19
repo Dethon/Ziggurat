@@ -17,8 +17,9 @@ public record MealDto(
     IReadOnlyList<MealItem> Items,
     IReadOnlyList<LinkedDose> Doses);
 
-// A dose linked to a meal, as much of it as the Log needs to show the meal's insulin.
-public record LinkedDose(Guid Id, double Units, DoseKind Kind);
+// A dose linked to a meal, as much of it as the Log needs to show the meal's insulin. Shared says it
+// was for other meals too, whose insulin it also is, whole.
+public record LinkedDose(Guid Id, double Units, DoseKind Kind, bool Shared = false);
 
 public record SaveMealRequest(
     DateTimeOffset EatenAt,
@@ -102,7 +103,7 @@ public static class MealEndpoints
                 Units = taken.Units!.Value,
                 Kind = DoseKind.Rapid,
                 Note = DoseRules.Note(taken.Note),
-                MealId = meal.Id
+                MealIds = [meal.Id]
             }
             : null;
         if (dose is not null)
@@ -135,13 +136,14 @@ public static class MealEndpoints
         return Results.Ok(ToDto(meal, (await LinkedAsync(db, [meal.Id], ct))[meal.Id].ToList()));
     }
 
-    // A dose is a fact of what she injected, so it outlives a meal logged wrongly: its link is
-    // cleared in the same transaction the meal goes in.
+    // A dose is a fact of what she injected, so it outlives a meal logged wrongly: the meal comes off
+    // its list in the same transaction the meal goes in, and any other meal it was for keeps it.
     private static async Task<IResult> DeleteAsync(Guid id, SugaryDbContext db, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        await db.Doses.Where(d => d.MealId == id)
-            .ExecuteUpdateAsync(set => set.SetProperty(d => d.MealId, (Guid?)null), ct);
+        var linked = await db.Doses.Where(d => d.MealIds.Contains(id)).ToListAsync(ct);
+        linked.ForEach(dose => dose.MealIds = [.. dose.MealIds.Where(meal => meal != id)]);
+        await db.SaveChangesAsync(ct);
         if (await db.Meals.Where(m => m.Id == id).ExecuteDeleteAsync(ct) == 0)
         {
             return Results.NotFound();
@@ -156,11 +158,13 @@ public static class MealEndpoints
         SugaryDbContext db, IReadOnlyList<Guid> meals, CancellationToken ct)
     {
         var doses = await db.Doses.AsNoTracking()
-            .Where(d => d.MealId != null && meals.Contains(d.MealId.Value))
+            .Where(d => d.MealIds.Any(meal => meals.Contains(meal)))
             .OrderBy(d => d.TakenAt)
-            .Select(d => new { MealId = d.MealId!.Value, d.Id, d.Units, d.Kind })
             .ToListAsync(ct);
-        return doses.ToLookup(d => d.MealId, d => new LinkedDose(d.Id, d.Units, d.Kind));
+        return doses
+            .SelectMany(d => d.MealIds.Where(meals.Contains)
+                .Select(meal => (meal, linked: new LinkedDose(d.Id, d.Units, d.Kind, d.MealIds.Count > 1))))
+            .ToLookup(entry => entry.meal, entry => entry.linked);
     }
 
     private static string? DoseProblem(MealDoseRequest? dose) =>

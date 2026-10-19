@@ -27,10 +27,11 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
         "Her carb-counting log from Sugary (she has type 1 diabetes), read-only and always current, as "
         + "Parquet tables: meals/<YYYY-MM>.parquet (one row per meal), items/<YYYY-MM>.parquet (one row per "
         + "food in a meal), doses/<YYYY-MM>.parquet (one row per insulin dose she recorded taking), "
+        + "dose-meals.parquet (which meals each dose was for), "
         + "exercise/<YYYY-MM>.parquet (one row per session of exercise she recorded), foods.parquet (the "
         + "foods she keeps), periods.parquet (her menstrual periods), day-notes.parquet (what she wrote about "
         + "a day), and README.md, which explains every column — read it before reading a number. Ask with "
-        + "query: tables meals, items, doses, exercise, foods, periods and day_notes, every month at once. "
+        + "query: tables meals, items, doses, dose_meals, exercise, foods, periods and day_notes, every month at once. "
         + "A table is not read as text; a command in the sandbox reads the files with duckdb or polars. "
         + $"Times are on the home's clock ({homeZone.Id}), each with a `<column>_local` wall time beside it.";
 
@@ -49,7 +50,7 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
 
     public override string DescribeQuery =>
         "Answer one DuckDB SQL statement over her whole log, every month at once: tables meals, items, "
-        + "doses, exercise, foods, periods and day_notes, with the columns README.md explains. Every time "
+        + "doses, dose_meals, exercise, foods, periods and day_notes, with the columns README.md explains. Every time "
         + "column has a `<column>_local` sibling on the home's clock.";
 
     public override string DescribeBlobRead =>
@@ -142,11 +143,13 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
     private async Task<IReadOnlyList<Table>> TablesAsync(CancellationToken ct)
     {
         var meals = await log.MealsAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
+        var doses = await log.DosesAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
         return
         [
             SugaryTables.Meals(meals, homeZone),
             SugaryTables.Items(meals, homeZone),
-            SugaryTables.Doses(await log.DosesAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), homeZone),
+            SugaryTables.Doses(doses, homeZone),
+            SugaryTables.DoseMeals(doses),
             SugaryTables.Exercise(
                 await log.ExerciseAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), homeZone),
             SugaryTables.Foods(await log.FoodsAsync(ct)),
@@ -166,7 +169,7 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
         SugaryNode[] fixedNodes =
         [
             new(SugaryNodeKind.Root), new(SugaryNodeKind.Readme), new(SugaryNodeKind.Foods),
-            new(SugaryNodeKind.Periods), new(SugaryNodeKind.DayNotes),
+            new(SugaryNodeKind.Periods), new(SugaryNodeKind.DayNotes), new(SugaryNodeKind.DoseMeals),
             new(SugaryNodeKind.MealsDir), new(SugaryNodeKind.ItemsDir), new(SugaryNodeKind.DosesDir),
             new(SugaryNodeKind.ExerciseDir)
         ];
@@ -200,6 +203,8 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
         SugaryNodeKind.Foods => SugaryTables.Foods(await log.FoodsAsync(ct)),
         SugaryNodeKind.Periods => SugaryTables.Periods(await log.PeriodsAsync(ct)),
         SugaryNodeKind.DayNotes => SugaryTables.DayNotes(await log.DayNotesAsync(ct)),
+        SugaryNodeKind.DoseMeals => SugaryTables.DoseMeals(
+            await log.DosesAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct)),
         SugaryNodeKind.MealsMonth => await MealsInAsync(node.Month!, ct) is { Count: > 0 } meals
             ? SugaryTables.Meals(meals, homeZone)
             : null,

@@ -30,7 +30,7 @@ public class SugaryFileSystemQueryTests
             Meal(_laterPaella, "2026-08-09T12:30:00Z", 70, MealOutcome.High, "paella")
         ]);
         _log.Doses.Add(new LoggedDose(Guid.NewGuid(), DateTimeOffset.Parse("2026-08-09T12:25:00Z"), 7,
-            DoseKind.Rapid, _laterPaella, null));
+            DoseKind.Rapid, [_laterPaella], null));
     }
 
     private async Task<JsonNode> Query(
@@ -60,10 +60,11 @@ public class SugaryFileSystemQueryTests
     }
 
     [Fact]
-    public async Task WhatSheTookForAMeal_IsOneJoin()
+    public async Task WhatSheTookForAMeal_IsOneJoinThroughItsLinks()
     {
         var answer = await Query(
-            "select m.carbs_g, d.units from meals m join doses d using (meal_id) where m.outcome = 'high'");
+            "select m.carbs_g, d.units from meals m join dose_meals using (meal_id) join doses d using (dose_id) "
+            + "where m.outcome = 'high'");
 
         var row = Rows(answer).Single()!.AsArray();
         row[0]!.GetValue<double>().ShouldBe(70);

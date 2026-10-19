@@ -68,8 +68,10 @@ public class Food
     public ItemSource Source { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
-// A dose of insulin she took. MealId is a plain column and not a relationship: a dose is a fact of
-// what she injected, so it outlives a meal deleted from the log, which only clears the link.
+// A dose of insulin she took. MealIds are the meals it was for, as plain values and not a
+// relationship: a dose is a fact of what she injected, so it outlives a meal deleted from the log,
+// which only takes that meal off the list. One bolus can cover several meals, a meal and the
+// dessert logged after it.
 public class Dose
 {
     public Guid Id { get; set; }
@@ -77,7 +79,7 @@ public class Dose
     public double Units { get; set; }
     public DoseKind Kind { get; set; }
     public string? Note { get; set; }
-    public Guid? MealId { get; set; }
+    public List<Guid> MealIds { get; set; } = [];
 }
 // A session of exercise: a walk, the gym or another kind she named, from when she started it to
 // when she stopped it, with no end while it is running. Instants, as a meal's and a dose's are, so

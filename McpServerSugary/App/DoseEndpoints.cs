@@ -7,12 +7,21 @@ using Microsoft.EntityFrameworkCore;
 
 namespace McpServerSugary.App;
 
-public record DoseDto(Guid Id, DateTimeOffset TakenAt, double Units, DoseKind Kind, string? Note, Guid? MealId);
+public record DoseDto(
+    Guid Id, DateTimeOffset TakenAt, double Units, DoseKind Kind, string? Note, IReadOnlyList<Guid> MealIds);
 
 // Kind is text rather than the enum so a kind the app does not know is refused with a sentence,
 // where a failed bind would be a bare 400; the time and the units are nullable for the same reason,
-// and so a missing time is refused rather than stored as the first day of the calendar.
-public record SaveDoseRequest(DateTimeOffset? TakenAt, double? Units, string? Kind, string? Note, Guid? MealId);
+// and so a missing time is refused rather than stored as the first day of the calendar. MealId is
+// what an installed app from before a dose could be for several meals still sends, and is heard as
+// a list of one.
+public record SaveDoseRequest(
+    DateTimeOffset? TakenAt, double? Units, string? Kind, string? Note, IReadOnlyList<Guid>? MealIds = null,
+    Guid? MealId = null)
+{
+    // Each meal once, in the order she picked them.
+    public IReadOnlyList<Guid> Meals => [.. (MealIds ?? (MealId is { } one ? [one] : [])).Distinct()];
+}
 
 // Her insulin doses, recorded by her and only ever recorded: nothing here computes, suggests or
 // fills in a number of units.
@@ -85,16 +94,17 @@ public static class DoseEndpoints
         dose.Units = request.Units!.Value;
         dose.Kind = DoseRules.Kind(request.Kind)!.Value;
         dose.Note = DoseRules.Note(request.Note);
-        dose.MealId = request.MealId;
+        dose.MealIds = [.. request.Meals];
     }
 
     private static async Task<string?> ValidateAsync(SaveDoseRequest request, SugaryDbContext db, CancellationToken ct) =>
         (request.TakenAt is null ? DoseRules.NoTime : null)
         ?? DoseRules.Problem(request.Units, DoseRules.Kind(request.Kind), request.Note)
-        ?? (request.MealId is { } mealId && !await db.Meals.AnyAsync(m => m.Id == mealId, ct)
-            ? DoseRules.UnknownMeal
-            : null);
+        ?? (await KnownMealsAsync(request.Meals, db, ct) ? null : DoseRules.UnknownMeal);
+
+    private static async Task<bool> KnownMealsAsync(IReadOnlyList<Guid> meals, SugaryDbContext db, CancellationToken ct) =>
+        meals.Count == 0 || await db.Meals.CountAsync(m => meals.Contains(m.Id), ct) == meals.Count;
 
     public static DoseDto ToDto(Dose dose) =>
-        new(dose.Id, dose.TakenAt, dose.Units, dose.Kind, dose.Note, dose.MealId);
+        new(dose.Id, dose.TakenAt, dose.Units, dose.Kind, dose.Note, dose.MealIds);
 }

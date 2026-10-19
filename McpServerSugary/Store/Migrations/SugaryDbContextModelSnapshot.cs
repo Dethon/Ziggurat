@@ -41,7 +41,8 @@ namespace McpServerSugary.Store.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid?>("MealId")
+                    b.PrimitiveCollection<string>("MealIds")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Note")
@@ -54,8 +55,6 @@ namespace McpServerSugary.Store.Migrations
                         .HasColumnType("REAL");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("MealId");
 
                     b.HasIndex("TakenAt");
 

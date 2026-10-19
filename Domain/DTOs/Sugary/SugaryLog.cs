@@ -70,13 +70,13 @@ public sealed record LoggedMeal(
     IReadOnlyList<LoggedItem> Items);
 
 // A dose of insulin she recorded taking: her record of what she injected, never a recommendation.
-// MealId is the meal it was taken for, when she linked one.
+// MealIds are the meals it was taken for, none where she linked none: one bolus can cover several.
 public sealed record LoggedDose(
     Guid Id,
     DateTimeOffset TakenAt,
     double Units,
     DoseKind Kind,
-    Guid? MealId,
+    IReadOnlyList<Guid> MealIds,
     string? Note);
 
 // A session of exercise she recorded: a walk, the gym, or another kind under the name she gave it,

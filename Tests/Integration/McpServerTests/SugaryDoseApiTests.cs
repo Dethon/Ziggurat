@@ -50,7 +50,7 @@ public class SugaryDoseApiTests
         listed["units"]!.GetValue<double>().ShouldBe(4.5);
         listed["kind"]!.GetValue<string>().ShouldBe("rapid");
         listed["note"]!.GetValue<string>().ShouldBe("correction");
-        listed["mealId"].ShouldBeNull();
+        listed["mealIds"]!.AsArray().ShouldBeEmpty();
         DateTimeOffset.Parse(listed["takenAt"]!.GetValue<string>(), CultureInfo.InvariantCulture)
             .ShouldBe(DateTimeOffset.Parse("2026-10-11T20:00:00Z", CultureInfo.InvariantCulture));
     }
@@ -96,7 +96,8 @@ public class SugaryDoseApiTests
         { "no kind", Without(Dose(), "kind"), "A dose is rapid or basal." },
         { "no time", Without(Dose(), "takenAt"), "A dose needs the time it was taken." },
         { "long note", Dose(note: new string('x', 201)), "A note can be at most 200 characters." },
-        { "unknown meal", With(Dose(), "mealId", Guid.NewGuid().ToString()), "There is no such meal to link the dose to." }
+        { "unknown meal", WithMeals(Dose(), Guid.NewGuid().ToString()), "There is no such meal to link the dose to." },
+        { "unknown meal, sent the old way", With(Dose(), "mealId", Guid.NewGuid().ToString()), "There is no such meal to link the dose to." }
     };
 
     [Theory]
@@ -180,6 +181,87 @@ public class SugaryDoseApiTests
         (await client.DeleteAsync($"/api/doses/{Guid.NewGuid()}")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
+    // One bolus for a meal and the dessert logged after it: the dose is linked to both, each once,
+    // in the order she picked them.
+    [Fact]
+    public async Task ADose_CanBeForSeveralMeals()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var lunch = await MealAsync(client, "2026-10-11T13:30:00+02:00");
+        var dessert = await MealAsync(client, "2026-10-11T13:50:00+02:00");
+
+        var created = await client.PostAsJsonAsync("/api/doses", WithMeals(Dose(kind: "rapid"), dessert, lunch, dessert));
+
+        created.StatusCode.ShouldBe(HttpStatusCode.Created);
+        (await ListAsync(client)).Single()!["mealIds"]!.AsArray().Select(id => id!.GetValue<string>())
+            .ShouldBe([dessert, lunch]);
+        var id = (await ReadAsync(created))["id"]!.GetValue<string>();
+        await client.PutAsJsonAsync($"/api/doses/{id}", WithMeals(Dose(kind: "rapid"), lunch));
+        (await ListAsync(client)).Single()!["mealIds"]!.AsArray().Select(m => m!.GetValue<string>()).ShouldBe([lunch]);
+    }
+
+    // An installed app from before a dose could be for several meals still sends the one it picked,
+    // and that link is kept rather than dropped.
+    [Fact]
+    public async Task AnOlderApp_LinkingOneMeal_IsStillHeard()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var lunch = await MealAsync(client, "2026-10-11T13:30:00+02:00");
+
+        (await client.PostAsJsonAsync("/api/doses", With(Dose(kind: "rapid"), "mealId", lunch))).StatusCode
+            .ShouldBe(HttpStatusCode.Created);
+
+        (await ListAsync(client)).Single()!["mealIds"]!.AsArray().Select(id => id!.GetValue<string>()).ShouldBe([lunch]);
+    }
+
+    // A log from before a dose could be for several meals keeps every link it had.
+    [Fact]
+    public async Task ALogWithLinkedDoses_KeepsEachDosesMeal()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "sugary-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "sugary.db");
+        var mealId = Guid.NewGuid();
+        await using (var db = new SugaryDbContext(
+                         new DbContextOptionsBuilder<SugaryDbContext>().UseSqlite($"Data Source={path}").Options))
+        {
+            await db.GetService<IMigrator>().MigrateAsync("20261017102454_Exercise");
+            await db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO Meals (Id, EatenAt, Outcome, CarbsLow, Carbs, CarbsHigh) "
+                + "VALUES ({0}, '2026-10-01 12:00:00', 'Unknown', 40, 50, 60)",
+                mealId.ToString().ToUpperInvariant());
+            await db.Database.ExecuteSqlRawAsync(
+                "INSERT INTO Doses (Id, TakenAt, Units, Kind, MealId) VALUES ({0}, '2026-10-01 12:00:00', 6, 'Rapid', {1}), "
+                + "({2}, '2026-10-01 22:00:00', 14, 'Basal', NULL)",
+                Guid.NewGuid().ToString().ToUpperInvariant(), mealId.ToString().ToUpperInvariant(),
+                Guid.NewGuid().ToString().ToUpperInvariant());
+        }
+
+        SqliteConnection.ClearAllPools();
+
+        try
+        {
+            await using var server = await SugaryServer.StartAsync(configure: settings => settings with
+            {
+                DatabasePath = path
+            });
+            var client = await server.SignedInAsync();
+
+            var doses = await ListAsync(client);
+            doses.Select(d => d!["mealIds"]!.AsArray().Select(id => id!.GetValue<string>()).ToList())
+                .ShouldBe([[], [mealId.ToString()]]);
+            var meal = (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray().Single()!;
+            meal["doses"]!.AsArray().Single()!["units"]!.GetValue<double>().ShouldBe(6);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     // An existing log upgrades in place: the server opens a database made before doses existed,
     // gains the table and loses no meal.
     [Fact]
@@ -226,6 +308,23 @@ public class SugaryDoseApiTests
         dose.Remove(field);
         return dose;
     }
+
+    private static JsonObject WithMeals(JsonObject dose, params string[] mealIds)
+    {
+        dose["mealIds"] = new JsonArray([.. mealIds.Select(id => JsonValue.Create(id))]);
+        return dose;
+    }
+
+    private static async Task<string> MealAsync(HttpClient client, string eatenAt) =>
+        (await ReadAsync(await client.PostAsJsonAsync("/api/meals", new JsonObject
+        {
+            ["eatenAt"] = eatenAt,
+            ["outcome"] = "unknown",
+            ["items"] = new JsonArray(new JsonObject
+            {
+                ["name"] = "rice", ["carbsLow"] = 30, ["carbs"] = 40, ["carbsHigh"] = 50, ["source"] = "manual"
+            })
+        })))["id"]!.GetValue<string>();
 
     private static JsonObject With(JsonObject dose, string field, string value)
     {

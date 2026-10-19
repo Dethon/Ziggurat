@@ -42,6 +42,7 @@ public class SugaryAppAccessTests
         { "GET", "/api/export/items.csv" },
         { "GET", "/api/export/foods.csv" },
         { "GET", "/api/export/doses.csv" },
+        { "GET", "/api/export/dose-meals.csv" },
         { "GET", "/api/export/exercise.csv" },
         { "GET", "/api/export/periods.csv" },
         { "GET", "/api/export/day-notes.csv" },

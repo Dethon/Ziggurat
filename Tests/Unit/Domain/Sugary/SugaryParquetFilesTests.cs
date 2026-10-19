@@ -37,7 +37,7 @@ public class SugaryParquetFilesTests
                 [new LoggedItem(0, "toast", null, null, null, new CarbRange(20, 30, 40), ItemSource.Label, null, false, null)])
         ]);
         _log.Doses.Add(new LoggedDose(Guid.NewGuid(), DateTimeOffset.Parse("2026-08-09T12:25:00Z"), 7, DoseKind.Rapid,
-            _paella, null));
+            [_paella], null));
         _mount = new SugaryFileSystem(_log, _madrid, new DuckDbTableEngine());
         _registry.Mount(new FileSystemMount(SugaryFileSystem.Name, "/sugary", "her log"), _mount);
     }
@@ -48,7 +48,7 @@ public class SugaryParquetFilesTests
         var glob = await new VfsGlobFilesTool(_registry).RunAsync("/sugary", "**");
 
         glob["entries"]!.AsArray().Select(e => e!.GetValue<string>()).ShouldBe([
-            "/sugary/README.md", "/sugary/day-notes.parquet", "/sugary/doses/", "/sugary/doses/2026-08.parquet",
+            "/sugary/README.md", "/sugary/day-notes.parquet", "/sugary/dose-meals.parquet", "/sugary/doses/", "/sugary/doses/2026-08.parquet",
             "/sugary/exercise/", "/sugary/foods.parquet", "/sugary/items/", "/sugary/items/2026-07.parquet",
             "/sugary/items/2026-08.parquet", "/sugary/meals/", "/sugary/meals/2026-07.parquet",
             "/sugary/meals/2026-08.parquet", "/sugary/periods.parquet"

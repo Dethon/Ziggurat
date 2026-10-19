@@ -56,7 +56,6 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
             stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
         dose.HasIndex(d => d.TakenAt);
         dose.Property(d => d.Kind).HasConversion<string>();
-        dose.HasIndex(d => d.MealId);
 
         var exercise = modelBuilder.Entity<ExerciseSession>();
         exercise.Property(e => e.StartedAt).HasConversion(

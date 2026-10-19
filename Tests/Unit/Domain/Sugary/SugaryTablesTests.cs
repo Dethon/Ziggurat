@@ -54,13 +54,35 @@ public class SugaryTablesTests
         SugaryCsv.Write(SugaryTables.Doses(
         [
             new LoggedDose(Guid.Parse("44444444-4444-4444-4444-444444444444"),
-                DateTimeOffset.Parse("2026-08-09T12:25:00Z"), 7, DoseKind.Rapid, _paella, "+1 for the wine"),
+                DateTimeOffset.Parse("2026-08-09T12:25:00Z"), 7, DoseKind.Rapid, [_paella], "+1 for the wine"),
             new LoggedDose(Guid.Parse("55555555-5555-5555-5555-555555555555"),
-                DateTimeOffset.Parse("2026-08-08T21:00:00Z"), 14.5, DoseKind.Basal, null, null)
+                DateTimeOffset.Parse("2026-08-08T21:00:00Z"), 14.5, DoseKind.Basal, [], null)
         ], _madrid)).ShouldBe(""""
-            dose_id,taken_at,kind,units,meal_id,note
-            55555555-5555-5555-5555-555555555555,2026-08-08T23:00:00+02:00,basal,14.5,,
-            44444444-4444-4444-4444-444444444444,2026-08-09T14:25:00+02:00,rapid,7,11111111-1111-1111-1111-111111111111,'+1 for the wine
+            dose_id,taken_at,kind,units,note
+            55555555-5555-5555-5555-555555555555,2026-08-08T23:00:00+02:00,basal,14.5,
+            44444444-4444-4444-4444-444444444444,2026-08-09T14:25:00+02:00,rapid,7,'+1 for the wine
+
+            """");
+
+    // One bolus for the paella and the flan after it is two rows here and still one dose in doses,
+    // so a sum of units counts it once.
+    [Fact]
+    public void DoseMeals_AreARowPerMealADoseWasFor_InTheDosesOrder() =>
+        SugaryCsv.Write(SugaryTables.DoseMeals(
+        [
+            new LoggedDose(Guid.Parse("44444444-4444-4444-4444-444444444444"),
+                DateTimeOffset.Parse("2026-08-09T12:25:00Z"), 7, DoseKind.Rapid,
+                [_paella, Guid.Parse("99999999-9999-9999-9999-999999999999")], null),
+            new LoggedDose(Guid.Parse("55555555-5555-5555-5555-555555555555"),
+                DateTimeOffset.Parse("2026-08-08T21:00:00Z"), 14.5, DoseKind.Basal, [], null),
+            new LoggedDose(Guid.Parse("66666666-6666-6666-6666-666666666666"),
+                DateTimeOffset.Parse("2026-08-08T08:00:00Z"), 3, DoseKind.Rapid,
+                [Guid.Parse("22222222-2222-2222-2222-222222222222")], null)
+        ])).ShouldBe(""""
+            dose_id,meal_id
+            66666666-6666-6666-6666-666666666666,22222222-2222-2222-2222-222222222222
+            44444444-4444-4444-4444-444444444444,11111111-1111-1111-1111-111111111111
+            44444444-4444-4444-4444-444444444444,99999999-9999-9999-9999-999999999999
 
             """");
 

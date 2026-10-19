@@ -55,7 +55,7 @@ public class SugaryFileSystemTests
         var doses = (await mount.GlobAsync("/doses", "*.parquet", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
         all.Entries.ShouldBe([
-            "/README.md", "/day-notes.parquet", "/doses/", "/doses/2026-08.parquet", "/doses/2026-09.parquet", "/exercise/",
+            "/README.md", "/day-notes.parquet", "/dose-meals.parquet", "/doses/", "/doses/2026-08.parquet", "/doses/2026-09.parquet", "/exercise/",
             "/foods.parquet", "/items/", "/items/2026-10.parquet", "/meals/", "/meals/2026-10.parquet", "/periods.parquet"
         ]);
         doses.Entries.ShouldBe(["/doses/2026-08.parquet", "/doses/2026-09.parquet"]);
@@ -73,7 +73,7 @@ public class SugaryFileSystemTests
 
         var glob = (await mount.GlobAsync("/", "*.parquet", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
 
-        glob.Entries.ShouldBe(["/day-notes.parquet", "/foods.parquet", "/periods.parquet"]);
+        glob.Entries.ShouldBe(["/day-notes.parquet", "/dose-meals.parquet", "/foods.parquet", "/periods.parquet"]);
     }
 
     // A month has an exercise file when a session started in it, whatever else she logged then.
