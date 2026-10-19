@@ -1,4 +1,4 @@
-# sugary-log — description 95 / 100 tokens, body 739 / 750 tokens, served by mcp-sugary
+# sugary-log — description 95 / 100 tokens, body 750 / 750 tokens, served by mcp-sugary
 
 ================================================================================================
 
@@ -17,7 +17,7 @@ Her log is tables, asked with `domain__filesystem__query` on `/sugary`: one Duck
 
 - `meals` — one row per meal she logged: its carbs as finally logged, the model's first estimate, and what her glucose did afterwards (`outcome`).
 - `items` — one row per food in those meals, with where its numbers came from: an estimate, a label, a barcode, or typed by her. `meal_id` joins it to `meals`.
-- `doses` — one row per insulin dose she took: its `units`, `rapid` or `basal` (long-acting). `dose_meals` links it to each meal it was for, maybe several.
+- `doses` — one row per insulin dose she took: its `units`, `rapid` or `basal` (long-acting). `dose_meals` links it to meals; unlinked, a rapid dose may be for a nearby meal, not only a correction.
 - `exercise` — one row per session she started: `walk`, `gym` or a named `other`, its start and end, and its `minutes` (empty while it is running).
 - `foods` — the foods she keeps, one row each: what she calls it, its carbs per 100 g or ml, the amount she usually has and, for a food kept only as a portion, the carbs in that portion.
 - `periods` — her menstrual periods: `start_date`, `end_date` (empty while it is going), each one's length and its cycle's. `day_notes` — what she wrote about a day. Both are days on the home's calendar: read `/ha` history for those days beside them.

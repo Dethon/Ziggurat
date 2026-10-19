@@ -93,7 +93,7 @@ public static class SugaryReadme
           - `dose_id` — the dose's identifier.
           - `taken_at` — when she took it, on the same clock as the meals.
           - `kind` — which insulin it was:
-            - `rapid` — rapid-acting, taken for a meal or as a correction;
+            - `rapid` — rapid-acting, taken for a meal, as a correction, or both;
             - `basal` — long-acting, her background dose, which belongs to no meal.
           - `units` — how much she took, in insulin units (not grams).
           - `note` — what she wrote about the dose.
@@ -112,7 +112,10 @@ public static class SugaryReadme
 
           A meal may have several doses, a split dose or a top-up, and one dose may be for several meals, a
           meal and the dessert logged after it: that dose is all of each meal's insulin, never a share of
-          it. A dose for no meal has no row. A sum of `units` over this table joined to `doses` counts a dose
+          it. A dose she linked to no meal has no row, which does not make it a correction: linking is
+          optional and often skipped, so a rapid dose near a meal may well be for it. Match those by time,
+          `taken_at` against `eaten_at` (a bolus is usually from about 30 minutes before a meal to an hour
+          after it), and say that the match is yours, not hers. A sum of `units` over this table joined to `doses` counts a dose
           for two meals twice; total a day's insulin from `doses` alone. A meal deleted from the log loses
           its rows here, and its doses stay in `doses`.
 

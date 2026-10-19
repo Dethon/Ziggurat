@@ -73,6 +73,7 @@ public class McpSugaryServerTests
         body.ShouldContain("- `doses` —");
         body.ShouldContain("`doses` joined to `dose_meals` on `dose_id`, then to `meals` on `meal_id`");
         body.ShouldContain("so a dose for two meals counts once");
+        body.ShouldContain("not only a correction");
         body.ShouldContain("never a basis for advice");
         body.ShouldContain("not her ratio applied to its carbs");
         SugarySkill.Description.ShouldContain("insulin");
@@ -162,7 +163,9 @@ public class McpSugaryServerTests
         readme.ShouldContain("`rapid` — rapid-acting");
         readme.ShouldContain("`basal` — long-acting");
         readme.ShouldContain("## dose-meals.parquet");
-        readme.ShouldContain("A dose for no meal has no row");
+        readme.ShouldContain("A dose she linked to no meal has no row");
+        readme.ShouldContain("does not make it a correction");
+        readme.ShouldContain("by time");
         readme.ShouldContain("total a day's insulin from `doses` alone");
         readme.ShouldContain("carries the meal's time unless she changed it");
         readme.ShouldContain("never a recommendation");

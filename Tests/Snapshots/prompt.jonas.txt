@@ -24,7 +24,7 @@
   home-assistant           Skill                 150 / 150    body 3588 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1121 / 1300, served by mcp-scheduling
   countdown-timers         Skill                 126 / 130    body 640 / 900, served by mcp-timers
-  sugary-log               Skill                  95 / 100    body 739 / 750, served by mcp-sugary
+  sugary-log               Skill                  95 / 100    body 750 / 750, served by mcp-sugary
 
 ================================================================================================
 
