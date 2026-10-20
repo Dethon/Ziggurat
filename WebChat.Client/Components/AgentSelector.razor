@@ -6,7 +6,9 @@
 
 @if (Mode == SwitcherMode.Segmented)
 {
-    <div class="agent-segmented" role="radiogroup" aria-label="Select agent">
+    var rail = AgentRailLayout.For(Agents.Count);
+    <div class="agent-segmented @(rail.Stacked ? "stacked" : "")" style="--agent-cols:@rail.Columns"
+         role="radiogroup" aria-label="Select agent">
         @foreach (var agent in Agents)
         {
             <button class="agent-seg @(agent.Id == SelectedAgentId ? "on" : "")"
