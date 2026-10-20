@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.DTOs.WebChat;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
@@ -38,6 +39,7 @@ internal sealed class WebChatStack
     private IContainer? _agent;
     private IContainer? _webui;
     private IContainer? _caddy;
+    private IContainer? _mcpSugary;
     private WebApplication? _whisper;
 
     private int _sliceIndex = -1;
@@ -62,6 +64,21 @@ internal sealed class WebChatStack
     public const int UserCount = UsersPerCollection * CollectionSlices;
 
     public string WebChatUrl { get; private set; } = "";
+
+    // Her app and its API, published as compose publishes them (port 6017 there): straight from the
+    // Sugary server, not through the Caddy site her phone uses.
+    public string SugaryUrl { get; private set; } = "";
+
+    // The Sugary server's /mcp, where the tables an agent reads under /sugary are served.
+    public string SugaryMcpEndpoint { get; private set; } = "";
+
+    // The code the app asks for once per phone. A test value, as the deployment secret is.
+    public const string SugaryAccessCode = "e2e-sugary-code";
+
+    // How long the Sugary server waits on the agent's estimate before answering 504. An estimate is
+    // a real model's answer over the network, so it is bounded by the provider, as the chat E2E's
+    // reply is (three minutes), and not by the shipped two minutes meant for her phone.
+    public static TimeSpan SugaryTurnTimeout { get; } = TimeSpan.FromMinutes(3);
 
     // What the stubbed whisper answers, per test. No model and no GPU are involved: the browser,
     // the channel server, the ticket and the upload are all real, and only the transcription is
@@ -216,7 +233,8 @@ internal sealed class WebChatStack
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpVault, ct),
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.ChannelSignalR, ct),
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Agent, ct),
-            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.WebUi, ct));
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.WebUi, ct),
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpSugary, ct));
     }
 
     private static async Task<WebChatStack> StartAsync(CancellationToken ct)
@@ -270,13 +288,33 @@ internal sealed class WebChatStack
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
             .Build();
 
-        // Started together because nothing here waits on anything else here: redis and the vault
-        // are roots of the graph and the whisper stub runs in this process. Starting them in a line
-        // spent each one's wait doing nothing, and redis alone is the longest of the three.
+        // Her carb log's server, wired as compose wires it: the deployment secret on /mcp, the app's
+        // access code, and the home's zone (a meal is filed under the month it was eaten in Madrid).
+        // Compose mounts ./volumes/sugary at /data; a tmpfs stands in, world-writable as Docker makes
+        // one, so the log, the cookie keys and the uploads keep their shipped paths and start empty.
+        _mcpSugary = TestContainers.Container(E2EImages.McpSugary.ImageName)
+            .WithNetwork(_network)
+            .WithNetworkAliases("mcp-sugary")
+            .WithTmpfsMount("/data")
+            .WithEnvironment("TZ", "Europe/Madrid")
+            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
+            .WithEnvironment("SUGARYAPP__ACCESSCODE", SugaryAccessCode)
+            .WithEnvironment("TURNTIMEOUTSECONDS", ((int)SugaryTurnTimeout.TotalSeconds).ToString())
+            .WithPortBinding(8080, true)
+            // The app's session route answers once the database is migrated and the routes are bound.
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/api/session")))
+            .Build();
+
+        // Started together because nothing here waits on anything else here: redis, the vault and
+        // the Sugary server are roots of the graph and the whisper stub runs in this process.
+        // Starting them in a line spent each one's wait doing nothing, and redis alone is the
+        // longest of them.
         var whisperPortTask = StartWhisperStubAsync();
         await Task.WhenAll(
             E2ETrace.TimeAsync("start:redis", () => _redis.StartAsync(ct)),
             E2ETrace.TimeAsync("start:vault", () => _mcpVault.StartAsync(ct)),
+            E2ETrace.TimeAsync("start:sugary", () => _mcpSugary.StartAsync(ct)),
             whisperPortTask);
         var whisperPort = await whisperPortTask;
 
@@ -313,6 +351,7 @@ internal sealed class WebChatStack
         // Raise with E2E_AGENT_LOG_LEVEL=Debug when a failing run needs the agent's own account
         // of a turn rather than the browser's.
         var agentLogLevel = Environment.GetEnvironmentVariable("E2E_AGENT_LOG_LEVEL") ?? "Information";
+        var sugaryAgent = ShippedAgent("sugary");
         // Without this, the default appsettings.json baked into the image also registers
         // channels for telegram/servicebus and extra MCP endpoints that don't exist here.
         var e2EAppSettings = Encoding.UTF8.GetBytes($$"""
@@ -348,10 +387,18 @@ internal sealed class WebChatStack
                   "model": "google/gemini-3.1-flash-lite",
                   "mcpServerEndpoints": [],
                   "whitelistPatterns": ["__none__"]
-                }
+                },
+                // Her carb-counting agent as the deployment defines it — model, effort, prompt
+                // server, features — read from Agent/appsettings.json rather than restated, so the
+                // Sugary E2E estimates with the agent she uses.
+                {{sugaryAgent}}
               ],
+              // The app's messages name no agent; the deployment routes the channel to sugary.
+              "agentDefaults": { "byChannel": { "sugary": "sugary" } },
               "channelEndpoints": [
-                { "channelId": "Web", "endpoint": "http://mcp-channel-signalr:8080/mcp" }
+                // WebChat hosts the review copy of every estimate, as it does in the deployment.
+                { "channelId": "Web", "endpoint": "http://mcp-channel-signalr:8080/mcp", "hostsReviewCopies": true },
+                { "channelId": "sugary", "endpoint": "http://mcp-sugary:8080/mcp" }
               ],
               "Logging": { "LogLevel": { "Default": "{{agentLogLevel}}" } }
             }
@@ -467,7 +514,26 @@ internal sealed class WebChatStack
         }
 
         E2ETrace.Write("start:total", stackElapsed.Elapsed.TotalSeconds);
+        SugaryUrl = $"http://{_mcpSugary.Hostname}:{_mcpSugary.GetMappedPublicPort(8080)}";
+        SugaryMcpEndpoint = $"{SugaryUrl}/mcp";
         WebChatUrl = $"{baseUrl}/";
+    }
+
+    // An agent's definition as Agent/appsettings.json ships it, as JSON to splice into the agent's
+    // settings. Every WebChat collection's stack starts through this, so a shape it cannot read
+    // fails them all (WebChatStackTests pins it).
+    internal static string ShippedAgent(string id)
+    {
+        var path = Path.Combine(TestHelpers.FindSolutionRoot(), "Agent", "appsettings.json");
+        var shipped = JsonNode.Parse(
+            File.ReadAllText(path),
+            documentOptions: new JsonDocumentOptions
+            {
+                CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true
+            })!;
+        return shipped["agents"]!.AsArray()
+            .Single(agent => agent!["id"]!.GetValue<string>() == id)!
+            .ToJsonString();
     }
 
     // whisper-server's own route, answered in process. The channel container reaches it through
@@ -547,6 +613,7 @@ internal sealed class WebChatStack
         await Task.WhenAll(
             _whisper is null ? Task.CompletedTask : _whisper.DisposeAsync().AsTask(),
             _caddy is null ? Task.CompletedTask : _caddy.DisposeAsync().AsTask(),
+            _mcpSugary is null ? Task.CompletedTask : _mcpSugary.DisposeAsync().AsTask(),
             _webui is null ? Task.CompletedTask : _webui.DisposeAsync().AsTask(),
             _agent is null ? Task.CompletedTask : _agent.DisposeAsync().AsTask(),
             _mcpChannelSignalR is null ? Task.CompletedTask : _mcpChannelSignalR.DisposeAsync().AsTask(),

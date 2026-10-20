@@ -234,6 +234,7 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 | **mcp-scheduling** | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_exec                                  | `filesystem://schedules` | Manage cron/one-shot scheduled agent tasks as a virtual filesystem; also runs as a channel that fires due schedules (see [Scheduled Tasks](#scheduled-tasks)) |
 | **mcp-printer**   | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_edit, fs_copy, fs_delete, fs_blob_read, fs_blob_write              | `filesystem://print-queue` | Print plain text/JPEG to a configured IPP/CUPS printer as a virtual filesystem — copy/create to submit, remove to cancel (see [Printing](#printing)) |
 | **mcp-timers**    | fs_glob, fs_read, fs_info, fs_search, fs_create, fs_delete, fs_exec                                                    | `filesystem://timers`      | Hub-local countdown timers as a virtual filesystem — create to arm, read status.json for time left, remove to cancel, exec dismiss.sh to stop ringing; rings on the voice satellites via the voice hub |
+| **mcp-sugary**    | fs_glob, fs_read, fs_info, fs_query, fs_blob_read                                                                       | `filesystem://sugary`      | Her carb-counting log from Sugary, rendered read-only from the server's own SQLite database on every read as Parquet tables — `meals/<YYYY-MM>.parquet`, `items/`, `doses/`, `exercise/`, `foods.parquet`, `periods.parquet`, `day-notes.parquet` — asked with `query` (DuckDB SQL over the whole log) and read whole by a sandbox command, plus a README explaining every column (see `docs/adr/0043`); `import <dir>` carries the standalone app's downloads over once |
 | **outpost**       | fs_glob, fs_read, fs_search, fs_create, fs_edit, fs_move, fs_delete, fs_copy, fs_info, fs_blob_read, fs_blob_write, fs_move_out_check, (fs_exec with `--exec`) | `filesystem://<name>` | A real machine's own filesystem, served by a single-file binary somebody copies onto it and runs. **Not a container**: no Dockerfile, no compose service, no appsettings — it takes flags, registers itself with the hub and expires on its own when the machine sleeps (see [Outposts](#outposts)) |
 
 ### MCP Channel Servers
@@ -288,6 +289,7 @@ Agent routing:
 | `McpServerScheduling`    | MCP server for scheduled tasks (`filesystem://schedules` + channel) |
 | `McpServerPrinter`       | MCP server exposing a print queue as `filesystem://print-queue` (IPP/CUPS) |
 | `McpServerTimers`        | MCP server exposing countdown timers as `filesystem://timers`; rings via the voice hub's HTTP endpoints |
+| `McpServerSugary`        | MCP server exposing her carb log as `filesystem://sugary`, stored in SQLite in its own volume |
 | `McpServerOutpost`       | MCP server for a real machine's own filesystem — self-contained single-file `linux-x64` binary, self-registering, the one server with no Dockerfile and no compose service |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
@@ -429,6 +431,7 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | MCP Printer              | 6014 | Print queue MCP server         |
 | MCP Channel Voice        | 6015 | Voice channel server (Wyoming satellite hub) |
 | MCP Timers               | 6016 | Countdown timers MCP server    |
+| MCP Sugary               | 6017 | Carb log MCP server (SQLite)   |
 | Lemonade                 | 13305| STT/TTS server (OpenAI-compatible) |
 | TSE Extractor            | 9098 | Target-speech-extraction service |
 | Camoufox                 | 9377 | Anti-detect browser (WebSocket)|

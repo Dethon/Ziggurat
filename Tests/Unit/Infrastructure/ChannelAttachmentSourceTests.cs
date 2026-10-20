@@ -78,6 +78,8 @@ public class ChannelAttachmentSourceTests
 
         public bool AttachOnly => false;
 
+        public bool HostsReviewCopies => false;
+
         public IAsyncEnumerable<ChannelMessage> Messages => AsyncEnumerable.Empty<ChannelMessage>();
 
         public async Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
@@ -92,6 +94,10 @@ public class ChannelAttachmentSourceTests
         }
 
         public Task SendReplyAsync(SendReplyParams reply, CancellationToken ct) => Task.CompletedTask;
+
+        public Task<bool> StoreAttachmentAsync(
+            string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct) =>
+            Task.FromResult(false);
 
         public Task<ToolApprovalResult> RequestApprovalAsync(
             string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct) =>

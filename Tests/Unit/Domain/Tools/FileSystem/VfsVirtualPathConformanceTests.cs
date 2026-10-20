@@ -146,6 +146,7 @@ public class VfsVirtualPathConformanceTests
             // Two segments deep so the bare mount-relative spelling still carries a slash — one
             // segment would make the check vacuous for this tool.
             "exec" => await new VfsExecTool(vfs).RunAsync($"{mount}/docs/sub", "ls"),
+            "query" => await new VfsQueryTool(vfs).RunAsync($"{mount}/docs/sub", "select 1"),
             _ => throw new ArgumentOutOfRangeException(nameof(toolKey), toolKey, "No case for this tool.")
         };
     }
@@ -266,6 +267,17 @@ public class VfsVirtualPathConformanceTests
                 TimedOut = false,
                 DurationMs = 1,
                 Cwd = spell(path)
+            }));
+
+        // The rows carry no slash, so the answer's one path is the one it was asked at.
+        public override Task<FsResult<FsQueryResult>> QueryAsync(string path, string sql, int maxRows, CancellationToken ct) =>
+            Task.FromResult<FsResult<FsQueryResult>>(new FsResult<FsQueryResult>.Ok(new FsQueryResult
+            {
+                Path = spell(path),
+                Columns = [new FsQueryColumn("one", "INTEGER")],
+                Rows = [[System.Text.Json.Nodes.JsonValue.Create(1)]],
+                RowCount = 1,
+                Truncated = false
             }));
 
         public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(

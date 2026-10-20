@@ -23,6 +23,7 @@ internal static class AgentSpecProjection
         DeploymentEndpoints deployment,
         ILogger? logger) => new()
         {
+            NoTools = RefuseFeaturesWithoutTools(definition),
             AgentId = definition.Id,
             DisplayName = $"{definition.Name}-{agentKey.ConversationId}",
             PromptName = definition.Name,
@@ -132,6 +133,15 @@ internal static class AgentSpecProjection
             LemonadeHostAddress = lemonadeHostAddress
         };
     }
+
+    // A feature is tools, and an outpost is a mount; an agent that calls nothing given either would
+    // be configured for something it silently never does. Refused where it was written.
+    private static bool RefuseFeaturesWithoutTools(AgentDefinition definition) =>
+        !definition.NoTools || (definition.EnabledFeatures.Length == 0 && !definition.UsesOutposts)
+            ? definition.NoTools
+            : throw new InvalidOperationException(
+                $"Agent '{definition.Id}' calls no tools (noTools) and yet enables " +
+                $"{(definition.UsesOutposts ? "outposts" : string.Join(", ", definition.EnabledFeatures))}.");
 
     // A name nothing declares is a configuration error and is refused here, where the name was
     // written. Assembling the rest and going on would start an agent missing exactly the behaviour

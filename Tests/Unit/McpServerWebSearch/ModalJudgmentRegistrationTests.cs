@@ -60,7 +60,7 @@ public class ModalJudgmentRegistrationTests
 
         settings.OpenRouter.ApiKey.ShouldBeEmpty();
         settings.TypeSafe.ApiUrl.ShouldBe("https://openrouter.ai/api/");
-        settings.TypeSafe.Model.ShouldBe("typesafe/jev-1.13-20260917");
+        settings.TypeSafe.Model.ShouldBe("typesafe/jev-1.14-20261014");
         settings.Judgment.ShouldBe(new ModalJudgmentSettings { DeadlineMs = 1000, Confidence = 0.6, MaxControls = 20 });
     }
 

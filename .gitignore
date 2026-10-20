@@ -15,3 +15,13 @@ temp
 # Superpowers brainstorming visual companion
 .superpowers/
 .eval-output/
+
+# The Sugary app (Sugary.Client): its packages, and the build it writes into the server's web root
+/Sugary.Client/node_modules/
+/McpServerSugary/wwwroot/
+
+# The Sugary benchmark's photos: large, and under licences that restrict redistribution
+# (Tests/Eval/Sugary/README.md says where they come from)
+/Tests/Eval/Sugary/photos
+# ...and the clips and stills of its video cases, made from Nutrition5k by Tests/Eval/Sugary/fetch-clips.sh
+/Tests/Eval/Sugary/clips

@@ -5,7 +5,7 @@ using Shouldly;
 
 namespace Tests.Unit.Infrastructure;
 
-// Not connected is five behaviours, one per member, and they differ because their callers differ.
+// Not connected is a behaviour per member, and they differ because their callers differ.
 // They are stated on IMcpChannelConnection and pinned here, so a later tidy-up that unifies them
 // fails a test rather than the delivery path.
 // See docs/adr/0011-not-connected-is-five-behaviours-and-stays-that-way.md.
@@ -43,6 +43,20 @@ public class McpChannelConnectionNotConnectedTests
         // the throwing side of the rule and nothing may quietly move it to the silent side.
         await Should.ThrowAsync<InvalidOperationException>(() => NeverConnected().NotifyAutoApprovedAsync(
             "conv-1", [], CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task StoreAttachmentAsync_NotConnected_ReturnsFalse()
+    {
+        // A sixth member, on the silent side: its one caller copies a review's files in the
+        // background and can do nothing with a failure but log it, so "not kept" is the answer.
+        var kept = await NeverConnected().StoreAttachmentAsync(
+            "11:22",
+            new AttachmentReference { Id = "11-22/a", FileName = "a.jpg", MediaType = "image/jpeg", SizeBytes = 1 },
+            [1],
+            CancellationToken.None);
+
+        kept.ShouldBeFalse();
     }
 
     [Fact]

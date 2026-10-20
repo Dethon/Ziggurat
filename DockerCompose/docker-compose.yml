@@ -586,6 +586,72 @@ services:
       mcp-channel-voice:
         condition: service_started
 
+  # Docker creates a missing bind-mount folder as root, and mcp-sugary runs as PUID, so on a fresh
+  # host it could not create its database and restarted forever. This one-shot step, from the same
+  # image, hands ./volumes/sugary to PUID:PGID and exits before the server starts. It touches only
+  # that folder's own owner, never her files, and is a no-op on every later start.
+  mcp-sugary-volume:
+    image: mcp-sugary:latest
+    container_name: mcp-sugary-volume
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerSugary/Dockerfile
+    user: "0:0"
+    entrypoint: ["chown", "${PUID:-1654}:${PGID:-1654}", "/data"]
+    volumes:
+      - ./volumes/sugary:/data
+    restart: "no"
+    depends_on:
+      base-sdk:
+        condition: service_started
+
+  mcp-sugary:
+    image: mcp-sugary:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: mcp-sugary
+    # Her phone reaches the app through Caddy at sugary.herfluffness.com. The port is published on
+    # loopback only, for local runs and the E2E: the sign-in limit counts by X-Forwarded-For, which a
+    # caller on the LAN could otherwise set to anything.
+    ports:
+      - "127.0.0.1:6017:8080"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerSugary/Dockerfile
+    restart: unless-stopped
+    # Her carb log is a SQLite file in this volume (docs/adr/0043), so it is backed up with the
+    # volume and not with Redis. PUID/PGID in .env own ./volumes/sugary; mcp-sugary-volume above
+    # sees to that before every start.
+    # Carrying the standalone app's log over is one command: put its three downloads
+    # (sugary-meals.csv, sugary-items.csv, sugary-foods.csv) in ./volumes/sugary/import, then
+    #   docker exec mcp-sugary dotnet McpServerSugary.dll import /data/import
+    # A meal or food already here is left alone, so running it twice adds nothing.
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/sugary:/data
+    env_file:
+      - .env
+    environment:
+      # Also the zone the tables' times are written in (HomeZone empty): the same anchor the Home
+      # Assistant container runs on, so a meal lines up with the glucose history /ha serves.
+      <<: *timezone
+      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      # Her app is served on this port too (every route but /mcp), and through Caddy over HTTPS,
+      # which installing it and live scanning need. This deployment is reached only through the VPN,
+      # so the app's own access code is switched off; set it back to true (and SUGARYAPP__ACCESSCODE
+      # in .env) for a deployment the open network can reach. /mcp keeps the deployment secret.
+      SUGARYAPP__REQUIREACCESSCODE: "false"
+      SUGARYAPP__ACCESSCODE: ${SUGARYAPP__ACCESSCODE}
+    networks:
+      - jackbot
+    depends_on:
+      mcp-sugary-volume:
+        condition: service_completed_successfully
+      base-sdk:
+        condition: service_started
+
   mcp-channel-voice:
     image: mcp-channel-voice:latest
     logging:
@@ -779,6 +845,8 @@ services:
         condition: service_started
       mcp-channel-voice:
         condition: service_started
+      mcp-sugary:
+        condition: service_started
       redis:
         condition: service_healthy
       base-sdk:
@@ -861,6 +929,7 @@ services:
     depends_on:
       - webui
       - agent
+      - mcp-sugary
 
 networks:
   jackbot:

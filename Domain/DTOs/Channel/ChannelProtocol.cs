@@ -22,6 +22,12 @@ public static class ChannelProtocol
     // every conversation, so a visible mount would be a read over everyone else's files (ADR 0021).
     public const string FetchAttachmentTool = "fetch_attachment";
 
+    // The other direction, and only for a review copy: the review host keeps its own copy of an
+    // attachment another channel holds, under the same reference id, so the history the two share
+    // names a file the host can show (ADR 0046). The agent hands the bytes over because it is the
+    // one party connected to both channels; the message and the history still carry references.
+    public const string StoreAttachmentTool = "store_attachment";
+
     // How long a channel_receive call may be held open server-side before returning an empty
     // batch. Verified safe: a 45s hold completes on the SDK's default client timeout, and no
     // reverse proxy sits between the agent and a channel server (ChannelEndpoints are

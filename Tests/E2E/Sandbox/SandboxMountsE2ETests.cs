@@ -2,11 +2,15 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Sugary;
 using Domain.Tools.FileSystem.Bridge;
+using Domain.Tools.Sugary.Vfs;
+using McpServerSugary.Tables;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
 using Tests.E2E.Fixtures;
+using Tests.Unit.Domain.Sugary;
 using Tests.Unit.Domain.Tools.FileSystem.Bridge;
 
 namespace Tests.E2E.Sandbox;
@@ -109,6 +113,38 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
             call, cts.Token);
 
         Stdout(result).ShouldBe("120\n37\n{\"label\":\"tea\",\"remainingSeconds\":30}\n", result.ToString());
+    }
+
+    // Her log's tables are Parquet a command reads with what the image carries: Polars and DuckDB,
+    // the CLI at the version the Sugary server queries with. A reader of Parquet seeks to the footer
+    // at the end of the file, so this is what proves the mount's sizes and the bridge's bytes agree.
+    [SkippableFact]
+    public async Task HerTables_AreReadByPolarsAndDuckDb()
+    {
+        Skip.IfNot(fixture.Available, "Docker is not available");
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using var client = await fixture.ConnectAsync(cts.Token);
+        var log = new InMemorySugaryLog();
+        log.Meals.AddRange(
+        [
+            new LoggedMeal(Guid.NewGuid(), DateTimeOffset.Parse("2026-08-09T12:30:00Z"), new CarbRange(42, 70, 112), null,
+                MealOutcome.High, null,
+                [new LoggedItem(0, "paella", null, null, null, new CarbRange(42, 70, 112), ItemSource.Estimate, null, false, null)]),
+            new LoggedMeal(Guid.NewGuid(), DateTimeOffset.Parse("2026-08-10T07:00:00Z"), new CarbRange(20, 30, 40), null,
+                MealOutcome.InRange, null,
+                [new LoggedItem(0, "toast", null, null, null, new CarbRange(20, 30, 40), ItemSource.Label, null, false, null)])
+        ]);
+        var sugary = new SugaryFileSystem(log, TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"), new DuckDbTableEngine());
+        var call = Mint((sugary, "/sugary", null));
+
+        var result = await ExecAsync(client,
+            "python3 -c \"import polars as pl; print(pl.read_parquet('/sugary/meals/2026-08.parquet')['carbs_g'].sum())\"; "
+            + "duckdb -noheader -csv -c \"select string_agg(items, ' then ' order by eaten_at) from '/sugary/meals/*.parquet'\"; "
+            + "python3 -c \"import duckdb; print(duckdb.sql('select count(*) from read_parquet(\\'/sugary/items/*.parquet\\')').fetchone()[0])\"; "
+            + "duckdb --version | cut -d' ' -f1",
+            call, cts.Token);
+
+        Stdout(result).ShouldBe("100.0\npaella then toast\n2\nv1.5.6\n", result.ToString());
     }
 
     [SkippableFact]
@@ -230,13 +266,13 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         var stranger = fixture.Bridge.Mint(BridgeFixtures.Registry(
             (new MemoryDisk("scratch", new Dictionary<string, string> { ["x.txt"] = "x\n" }), "/scratch", null)), BridgeFixtures.Everything, null, null);
         // The bracket keeps the stranger's own command line from matching itself.
-        const string Reach = "sleep 1; for p in /proc/[0-9]*; do "
+        const string reach = "sleep 1; for p in /proc/[0-9]*; do "
                              + "if grep -qa '4\\.3133[7]' $p/cmdline 2>/dev/null; then cat $p/root/vfs/vault/who.txt; ls $p/root/vfs/vault; fi; "
                              + "done 2>&1; echo looked";
 
         var results = await Task.WhenAll(
             ExecAsync(client, "cat /vault/who.txt; sleep 4.31337", owner, cts.Token),
-            ExecAsync(client, Reach, stranger, cts.Token));
+            ExecAsync(client, reach, stranger, cts.Token));
 
         Stdout(results[0]).ShouldBe("the owner's\n", results[0].ToString());
         Stdout(results[1]).ShouldEndWith("looked\n", Case.Sensitive, results[1].ToString());

@@ -75,13 +75,14 @@ internal static class AgentPromptFixture
             [HomeAssistantPrompt.Name] = HomeAssistantPrompt.SystemPrompt,
             [SchedulingPrompt.Name] = SchedulingPrompt.Prompt,
             [PrintingPrompt.Name] = PrintingPrompt.Build("text,jpeg"),
-            [TimerPrompt.Name] = TimerPrompt.Build([])
+            [TimerPrompt.Name] = TimerPrompt.Build([]),
+            [SugaryPrompt.Name] = SugaryPrompt.Prompt
         };
 
     // What each server ships as skills, bound to the manifest exactly as the client manager binds
     // what it reads off the wire: the served description and the served body, under the declaration.
     public static IReadOnlyDictionary<string, PromptSkill> ServedSkills { get; } =
-        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid"), SandboxSkill.For("/sandbox", "home/sandbox_user", servesMounts: true), CountdownTimersSkill.Text }
+        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid"), SandboxSkill.For("/sandbox", "home/sandbox_user", servesMounts: true), CountdownTimersSkill.Text, SugarySkill.Text }
             .ToDictionary(
                 text => text.Name,
                 text => PromptManifest.BindSkill(text.Name, text.Description, text.Body),
@@ -105,9 +106,9 @@ internal static class AgentPromptFixture
     public static AgentDefaults AgentDefaults { get; } =
         Config().GetSection("agentDefaults").Get<AgentDefaults>() ?? new AgentDefaults();
 
-    // Every agent and worker a snapshot is kept for: the two people talk to, and the worker the
-    // delegating ones spawn.
-    public static IReadOnlyList<string> SnapshotIds { get; } = ["jonas", "nabu", "jonas-worker"];
+    // Every agent and worker a snapshot is kept for: the two people talk to, the worker the
+    // delegating ones spawn, and the one her carb-counting app reaches.
+    public static IReadOnlyList<string> SnapshotIds { get; } = ["jonas", "nabu", "jonas-worker", "sugary"];
 
     public static PromptAssembly Assemble(string id)
     {
@@ -118,12 +119,12 @@ internal static class AgentPromptFixture
             ? Compose(
                 agent.Id, agent.Name, agent.Description, agent.McpServerEndpoints,
                 agent.EnabledFeatures, agent.PromptSections, agent.CustomInstructions, agent.Language,
-                agent.UsesOutposts)
+                agent.UsesOutposts, agent.NoTools)
             : worker is not null
                 ? Compose(
                     worker.Id, worker.Name, worker.Description, worker.McpServerEndpoints,
                     worker.EnabledFeatures, worker.PromptSections, worker.CustomInstructions,
-                    worker.Language, worker.UsesOutposts)
+                    worker.Language, worker.UsesOutposts, noTools: false)
                 : throw new InvalidOperationException($"No agent or subagent '{id}' in appsettings.json");
     }
 
@@ -136,7 +137,8 @@ internal static class AgentPromptFixture
         IEnumerable<string> selected,
         string? customInstructions,
         string? language,
-        bool usesOutposts) =>
+        bool usesOutposts,
+        bool noTools) =>
         PromptComposer.Compose(new PromptContext
         {
             AgentId = id,
@@ -158,7 +160,9 @@ internal static class AgentPromptFixture
                 PromptManifest.Bind(PromptManifest.UserContext, SampleUserContext),
                 .. ServedSections(endpoints)
             ],
-            Skills = [.. SkillsOf(endpoints)],
+            // An agent that calls nothing is dialled for its servers' prompts alone, and is offered
+            // none of their skills.
+            Skills = noTools ? [] : [.. SkillsOf(endpoints)],
             Selected = [.. selected.Select(s => PromptManifest.Selected(s)!)],
             CustomInstructions = customInstructions,
             Language = language,

@@ -1514,6 +1514,14 @@ h1, h2, h3 {
     object-fit: cover;
 }
 
+.attachment-clip {
+    display: block;
+    max-width: min(320px, 100%);
+    max-height: 320px;
+    border-radius: 10px;
+    background-color: #000;
+}
+
 .attachment-chip {
     display: inline-flex;
     align-items: center;
@@ -2571,13 +2579,18 @@ select:focus:not(:focus-visible) {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* agent switcher — segmented (desktop) */
-.agent-segmented { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr)); gap: 0.25rem;
+/* --agent-cols and .stacked come from AgentRailLayout, which knows how many agents there are */
+.agent-segmented { display: grid; grid-template-columns: repeat(var(--agent-cols, 3), minmax(0, 1fr)); gap: 0.25rem;
     background: var(--bg-tertiary); border-radius: 12px; padding: 0.25rem; }
 .agent-seg { min-width: 0; display: flex; align-items: center; gap: 0.4rem; justify-content: center;
     padding: 0.4rem 0.5rem; border: none; background: transparent; border-radius: 9px;
     color: var(--text-secondary); font-family: inherit; font-weight: 600; cursor: pointer; position: relative; }
 .agent-seg.on { background: var(--accent); color: var(--user-text); }
 .agent-seg-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-segmented.stacked .agent-seg { flex-direction: column; gap: 0.2rem; padding: 0.45rem 0.25rem 0.35rem;
+    font-size: 0.75rem; line-height: 1.2; }
+.agent-segmented.stacked .agent-seg-name { max-width: 100%; }
+.agent-segmented.stacked .agent-activity-dot { position: absolute; top: 5px; right: 5px; }
 .agent-mono { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center;
     color: #fff; font-family: 'Fraunces', serif; font-weight: 600; font-size: 0.7rem; flex: 0 0 auto; }
 

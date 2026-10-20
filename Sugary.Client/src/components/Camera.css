@@ -1,0 +1,138 @@
+/* The camera fills the screen, above any sheet it was opened from. */
+.camera {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #000;
+  color: #fff;
+}
+
+.camera::backdrop {
+  background: #000;
+}
+
+.camera-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100dvh;
+}
+
+/* All of the picture is shown, so what she frames is what is taken. */
+.camera video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.camera-mirrored {
+  transform: scaleX(-1);
+}
+
+/* Read over a bright plate as well as a dark table: always on its own dark pill. */
+.camera-status {
+  justify-self: center;
+  max-width: calc(100% - 32px);
+  min-height: 2em;
+  margin: calc(12px + env(safe-area-inset-top)) 16px 12px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 60%);
+  font-size: var(--text-meta);
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.camera-status:empty {
+  visibility: hidden;
+}
+
+.camera-status-recording {
+  background: #d93025;
+}
+
+.camera-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 20px 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.camera-icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 45%);
+  color: #fff;
+  cursor: pointer;
+}
+
+.camera-icon:focus-visible,
+.camera-shutter:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
+.camera-icon:disabled {
+  opacity: 0.4;
+}
+
+.camera-shutter {
+  width: 78px;
+  height: 78px;
+  padding: 0;
+  border: 4px solid #fff;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: inset 0 0 0 4px #000;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.camera-shutter:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.camera-shutter:disabled {
+  opacity: 0.5;
+}
+
+.camera-record {
+  position: relative;
+  background: transparent;
+  box-shadow: none;
+}
+
+.camera-record::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  background: #d93025;
+  transition:
+    inset 0.15s,
+    border-radius 0.15s;
+}
+
+.camera-recording::after {
+  inset: 20px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .camera-shutter,
+  .camera-record::after {
+    transition: none;
+  }
+}

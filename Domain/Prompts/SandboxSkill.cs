@@ -12,7 +12,7 @@ public static class SandboxSkill
 
     // The whole trigger: the one line about this skill that is in every turn.
     public const string Description =
-        "Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount's files (\"compute the sha256 of that file\", \"run this python\", \"count the words in those notes\"). Not for reading or editing one file, which the file tools do. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command, and how a container path maps to a virtual one.";
+        "Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount's files (\"compute the sha256 of that file\", \"run this python\", \"count the words in those notes\"). Not for reading or editing one file, or for anything on a machine (`outpost:`): the file tools do those. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command.";
 
     // `servesMounts`, as for the prompt: the other-mounts section is taught only where a command
     // will find them.
@@ -33,7 +33,7 @@ public static class SandboxSkill
 
             - **File operations.** Standard read/write/glob/search/move/remove are all available. Scope them deliberately: this mount's root is the whole container, so a recursive glob or search starting at `{mountPoint}` is a walk over every path in the image. Both stop at a budget and say so, but the answer you get back covers whatever they reached before stopping. Start from the directory you mean — `{home}` for your own files.
             - **Command execution.** Commands run via `bash -lc` inside the container. Each call is a fresh shell — environment variables and `cd` do **not** persist between calls; files written to the persistent workspace do. `path` is the working directory as a virtual path (`{mountPoint}` is the container root; name `{home}` to work in the workspace), and `timeoutSeconds` is clamped to the backend's maximum.
-            - **Preinstalled tooling.** `bash`, `python3` + `pip` + `venv`, `git`, `curl`, `jq`, `unzip`, plus the standard coreutils. Install extra Python packages with `pip install --user <package>` (user-scope; persists in your home).
+            - **Preinstalled tooling.** `bash`, `python3` + `pip` + `venv`, `git`, `curl`, `jq`, `unzip`, plus the standard coreutils. For tables (Parquet, CSV): the `duckdb` CLI and, in Python, `duckdb` and `polars`. Install extra Python packages with `pip install --user <package>` (user-scope; persists in your home).
             - **Network.** Full **outbound** network is available (you can `curl`, `git clone`, `pip install`). The sandbox does **not** publish inbound ports — external clients cannot reach a server you start inside it.
 
             ### Behaviour you should rely on

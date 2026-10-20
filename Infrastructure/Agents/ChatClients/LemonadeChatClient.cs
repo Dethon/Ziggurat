@@ -20,6 +20,7 @@ namespace Infrastructure.Agents.ChatClients;
 // sent only when a key is set, and any failure to get an answer — refused connection, timeout,
 // non-2xx, or the error event the box streams inside a 200 — becomes one named error, with no
 // retry and no fallback. The OpenRouter-only body fields are left in place; the box tolerates them.
+// Provider routing is the exception, removed because it has nothing to route among here.
 public sealed class LemonadeChatClient : IChatClient
 {
     private readonly OpenRouterChatClient _pipeline;
@@ -34,7 +35,8 @@ public sealed class LemonadeChatClient : IChatClient
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
-        Func<string, int?>? contextWindowFor = null)
+        Func<string, int?>? contextWindowFor = null,
+        Func<string, bool>? modelAcceptsVideo = null)
     {
         _address = host.Address;
         var hasKey = !string.IsNullOrWhiteSpace(host.ApiKey);
@@ -60,7 +62,8 @@ public sealed class LemonadeChatClient : IChatClient
             contextWindowFor: contextWindowFor,
             // A timed-out turn is one the SDK would otherwise send again; the box must never see
             // a turn twice, so the wire's own failures are the only ones and each is thrown once.
-            maxRetries: 0);
+            maxRetries: 0,
+            modelAcceptsVideo: modelAcceptsVideo);
     }
 
     public async Task<ChatResponse> GetResponseAsync(
@@ -155,7 +158,7 @@ public sealed class LemonadeChatClient : IChatClient
             return response;
         }
 
-        // The model id as the box advertised it, and no `reasoning` input items: the adapter
+        // The model id as the box advertised it, no provider routing, and no `reasoning` input items: the adapter
         // replays reasoning text that carries its item id as a reasoning item, and the box's
         // backend refuses one ("item['content'] is not an array") — with content, empty, too.
         private static async Task RewriteForTheHostAsync(HttpRequestMessage request, CancellationToken ct)
@@ -177,6 +180,11 @@ public sealed class LemonadeChatClient : IChatClient
             {
                 obj["model"] = LemonadeModelId.Bare(model);
             }
+
+            // Provider routing is OpenRouter's, and the box has no providers to choose among. The
+            // pipeline stamps a requirement on a turn that asks for a strict response format; it
+            // means nothing here and is not sent.
+            obj.Remove("provider");
 
             if (obj["input"] is JsonArray input)
             {

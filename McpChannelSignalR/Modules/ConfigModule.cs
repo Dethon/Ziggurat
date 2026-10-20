@@ -80,6 +80,7 @@ public static class ConfigModule
             // here also broadcasts OnAgentsUpdated so WebChat refreshes live.
             .WithTools<McpTools.RegisterAgentsTool>()
             .WithTools<FetchAttachmentTool>()
+            .WithTools<StoreAttachmentTool>()
             // Broadcast: a subscriber that is idle but not yet pruned still receives, so a brief
             // agent gap does not lose a message the browser has already been told was sent.
             .AddChannelServer(DeliveryPolicy.Broadcast);

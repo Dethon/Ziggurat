@@ -19,7 +19,7 @@ public class TypeSafeJudgeTests
     {
         ApiUrl = "https://openrouter.test/api/",
         ApiKey = "or-key",
-        Model = "typesafe/jev-1.13-20260917"
+        Model = "typesafe/jev-1.14-20261014"
     };
 
     private const string Answered =
@@ -27,7 +27,7 @@ public class TypeSafeJudgeTests
         {
           "id": "gen-dec-1789826426-0nnqQUgqMzcRqozyBPDe",
           "provider": "TypeSafe",
-          "model": "typesafe/jev-1.13-20260917",
+          "model": "typesafe/jev-1.14-20261014",
           "answers": {
             "skill": { "type": "choice", "choice": "timers", "confidence": 0.93,
                        "probabilities": { "none": 0.02, "home": 0.05, "timers": 0.93 } },
@@ -73,7 +73,7 @@ public class TypeSafeJudgeTests
 
         var body = JsonNode.Parse(sent.Body)!.AsObject();
         body["state"]!["request"]!.GetValue<string>().ShouldBe("pon un temporizador de ocho minutos");
-        body["model"]!.GetValue<string>().ShouldBe("typesafe/jev-1.13-20260917");
+        body["model"]!.GetValue<string>().ShouldBe("typesafe/jev-1.14-20261014");
         var questions = body["questions"]!.AsObject();
         questions.Count.ShouldBe(3);
         questions["skill"]!["type"]!.GetValue<string>().ShouldBe("choice");
@@ -93,7 +93,7 @@ public class TypeSafeJudgeTests
         var outcome = await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
 
         var judgment = outcome.ShouldBeOfType<JudgmentOutcome.Answered>().Judgment;
-        judgment.Model.ShouldBe("typesafe/jev-1.13-20260917");
+        judgment.Model.ShouldBe("typesafe/jev-1.14-20261014");
         judgment.Usage.InputTokens.ShouldBe(372);
         judgment.Usage.OutputTokens.ShouldBe(59);
         judgment.Usage.Cost.ShouldBe(0.000015624m);
@@ -122,7 +122,7 @@ public class TypeSafeJudgeTests
             CancellationToken.None);
 
         var usage = metrics.Published.OfType<TokenUsageEvent>().ShouldHaveSingleItem();
-        usage.Model.ShouldBe("typesafe/jev-1.13-20260917");
+        usage.Model.ShouldBe("typesafe/jev-1.14-20261014");
         usage.InputTokens.ShouldBe(372);
         usage.OutputTokens.ShouldBe(59);
         usage.Cost.ShouldBe(0.000015624m);

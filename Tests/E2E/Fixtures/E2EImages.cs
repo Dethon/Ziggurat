@@ -39,6 +39,12 @@ internal static class E2EImages
         "Observability/Dockerfile", "observability:latest",
         ["Domain", "Infrastructure", "Dashboard.Client", "Observability"]);
 
+    // Her app is built into this image from Sugary.Client by a node stage, so an edit to the app
+    // has to rebuild it as an edit to the server does.
+    internal static E2EImageSpec McpSugary { get; } = new(
+        "McpServerSugary/Dockerfile", "mcp-sugary:latest",
+        ["Domain", "Infrastructure", "Mcp.Hosting", "McpServerSugary", "Sugary.Client"]);
+
     internal static IReadOnlyList<E2EImageSpec> All { get; } =
-        [BaseSdk, McpVault, McpSandbox, ChannelSignalR, Agent, WebUi, Observability];
+        [BaseSdk, McpVault, McpSandbox, ChannelSignalR, Agent, WebUi, Observability, McpSugary];
 }

@@ -59,3 +59,23 @@ sexy.herfluffness.com {
         reverse_proxy sexytime:8080
     }
 }
+
+sugary.herfluffness.com {
+    tls {
+        dns cloudflare {env.CF_API_TOKEN}
+    }
+
+    # The agent's /mcp is for the deployment alone; her phone only ever needs the app and its API.
+    handle /mcp* {
+        respond 404
+    }
+
+    handle {
+        # A filmed meal is up to 200 MiB plus four photos (McpServerSugary's MaxClipBytes).
+        request_body {
+            max_size 230MiB
+        }
+        # Caddy sets X-Forwarded-For itself, which is the address the sign-in limit counts by.
+        reverse_proxy mcp-sugary:8080
+    }
+}

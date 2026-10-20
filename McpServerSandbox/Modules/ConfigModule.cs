@@ -35,7 +35,7 @@ public static class ConfigModule
                 "sandbox",
                 // The reusable disk root takes the mount's prose the same way it takes its name.
                 "Linux sandbox container — supports command execution via fs_exec (bash, python3, "
-                + "pip, git, curl, jq). Persistent /home/sandbox_user (named volume), ephemeral "
+                + "pip, git, curl, jq, and duckdb and polars for tables). Persistent /home/sandbox_user (named volume), ephemeral "
                 + "system dirs, full outbound network, no inbound ports. Inside a command, the "
                 + "session's other mounts are directories too. See the Sandbox Filesystem prompt "
                 + "for limits.",

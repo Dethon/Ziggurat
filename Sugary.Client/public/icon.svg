@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#fbf5ec"/>
+  <ellipse cx="262" cy="372" rx="168" ry="16" fill="#3b2219" opacity="0.1"/>
+  <g transform="translate(0 -44)">
+    <polygon points="318,322 408,226 408,314 318,410" fill="#e3a84f"/>
+    <polygon points="318,322 408,226 408,246 318,342" fill="#8e1a3f"/>
+    <polygon points="104,320 318,380 318,410 104,350" fill="#f2c879"/>
+    <polygon points="104,306 318,366 318,380 104,320" fill="#fffdf9"/>
+    <polygon points="104,280 318,340 318,366 104,306" fill="#f2c879"/>
+    <polygon points="104,262 318,322 318,342 104,282" fill="#b0234f"/>
+    <path d="M156 296 L188 305 L188 324 a16 16 0 0 1 -32 0 Z" fill="#b0234f"/>
+    <path d="M248 322 L272 328.7 L272 343 a12 12 0 0 1 -24 0 Z" fill="#b0234f"/>
+    <polygon points="104,262 318,322 408,226" fill="#c42d5c"/>
+    <rect x="150" y="258" width="22" height="7" rx="3.5" fill="#7db38a" transform="rotate(-24 161 261)"/>
+    <rect x="206" y="276" width="22" height="7" rx="3.5" fill="#e9b949" transform="rotate(18 217 279)"/>
+    <rect x="232" y="252" width="22" height="7" rx="3.5" fill="#fffdf9" transform="rotate(-8 243 255)"/>
+    <rect x="344" y="262" width="22" height="7" rx="3.5" fill="#e9b949" transform="rotate(-40 355 265)"/>
+    <rect x="330" y="236" width="22" height="7" rx="3.5" fill="#7db38a" transform="rotate(30 341 239)"/>
+    <path d="M294 236 C296 214 306 200 324 190" fill="none" stroke="#3b2219" stroke-width="7" stroke-linecap="round"/>
+    <circle cx="292" cy="258" r="26" fill="#8e1a3f"/>
+    <ellipse cx="283" cy="249" rx="8" ry="6" fill="#fffdf9" opacity="0.45"/>
+  </g>
+</svg>

@@ -34,6 +34,14 @@ binding its text, never an argument about where a `Prepend` goes.
   instead (`promptSections`), resolved against `PromptManifest.SelectableSections` — validated for
   the whole deployment at startup and again per agent as its spec is projected. `VoicePrompt` is
   the worked example: it was three kilobytes of JSON string.
+- **A served section reaches every agent that dials its server, unless it names an audience.**
+  `PromptAudience.ForAgents(...)` is filtered in `PromptAssembly.Build`: `sugary_prompt` is the
+  `sugary` agent's, though Jonas dials `mcp-sugary` too for her log. `PromptAudienceTests` checks an
+  audience names a configured agent.
+- **An agent may dial its servers for their prompts alone.** `noTools` on a definition: the session
+  offers no tool, no skill and no mount, so no `load_skill`, no `skills` section and no preload is
+  asked (`sugary`, a one-answer estimator). It enables no features and no outposts, or the
+  projection refuses it.
 - **Over budget is reported, never thrown.** `McpAgent` logs the assembly's warnings once per
   distinct set — a prompt that grew is a worse outcome than a turn that fails, and a server that
   grows its prompt must not take the agent down. What fails a build is `PromptBudgetTests`.

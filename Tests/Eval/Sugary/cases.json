@@ -1,0 +1,888 @@
+[
+  {
+    "name": "n5k 1565987054: spinach salad with chicken",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1565987054.jpg"
+    ],
+    "description": null,
+    "hint": "spinach salad with chicken",
+    "carbs": 0.9,
+    "totalCarbs": 2.3,
+    "grams": 213,
+    "truth": "spinach (raw) 64 g; chicken 149 g"
+  },
+  {
+    "name": "n5k 1563205903: egg whites and chicken sausage",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1563205903.jpg"
+    ],
+    "description": null,
+    "hint": "egg whites and chicken sausage",
+    "carbs": 1.7,
+    "totalCarbs": 1.7,
+    "grams": 122,
+    "truth": "chicken apple sausage 35 g; egg whites 87 g"
+  },
+  {
+    "name": "n5k 1564170880: salmon with wheat berries and brown rice",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1564170880.jpg"
+    ],
+    "description": null,
+    "hint": "salmon with wheat berries and brown rice",
+    "carbs": 18.7,
+    "totalCarbs": 22.9,
+    "grams": 230,
+    "truth": "salmon 101 g; pepper 5 g; arugula 4 g; brown rice 20 g; wheat berry 92 g; olive oil 7 g"
+  },
+  {
+    "name": "n5k 1568061145: a slice of cheese pizza with squash",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1568061145.jpg"
+    ],
+    "description": null,
+    "hint": "a slice of cheese pizza with squash",
+    "carbs": 20.5,
+    "totalCarbs": 23.2,
+    "grams": 196,
+    "truth": "cheese pizza 55 g; squash 139 g"
+  },
+  {
+    "name": "n5k 1562691441: scrambled eggs, roasted yam and broccoli",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1562691441.jpg"
+    ],
+    "description": null,
+    "hint": "scrambled eggs, roasted yam and broccoli",
+    "carbs": 22.2,
+    "totalCarbs": 26.7,
+    "grams": 232,
+    "truth": "broccoli 66 g; scrambled eggs 94 g; yam 70 g"
+  },
+  {
+    "name": "n5k 1565379827: rice noodle salad with cabbage, and carrots",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1565379827.jpg"
+    ],
+    "description": null,
+    "hint": "rice noodle salad with cabbage, and carrots",
+    "carbs": 22.1,
+    "totalCarbs": 27.1,
+    "grams": 235,
+    "truth": "vinegar 5 g; radishes 5 g; mixed greens 26 g; carrot 112 g; cabbage 26 g; olive oil 4 g; rice noodles 52 g"
+  },
+  {
+    "name": "n5k 1558375886: sausage, almonds and grapes",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1558375886.jpg"
+    ],
+    "description": null,
+    "hint": "sausage, almonds and grapes",
+    "carbs": 27.3,
+    "totalCarbs": 42.8,
+    "grams": 277,
+    "truth": "almonds 119 g; sausage 92 g; grapes 66 g"
+  },
+  {
+    "name": "n5k 1558641320: an apple, corn on the cob, cherry tomatoes and carrot",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1558641320.jpg"
+    ],
+    "description": null,
+    "hint": "an apple, corn on the cob, cherry tomatoes and carrot",
+    "carbs": 41.7,
+    "totalCarbs": 49.1,
+    "grams": 336,
+    "truth": "apple 154 g; carrot 8 g; corn on the cob 110 g; cherry tomatoes 64 g"
+  },
+  {
+    "name": "n5k 1566588066: salmon with pineapple, carrots and a little brown rice",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1566588066.jpg"
+    ],
+    "description": null,
+    "hint": "salmon with pineapple, carrots and a little brown rice",
+    "carbs": 40.4,
+    "totalCarbs": 48.1,
+    "grams": 562,
+    "truth": "carrot 148 g; pineapple 188 g; olive oil 8 g; arugula 7 g; brown rice 34 g; pepper 9 g; salmon 168 g"
+  },
+  {
+    "name": "n5k 1560874751: half a bagel with cream cheese, roasted yam, berries and bacon",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1560874751.jpg"
+    ],
+    "description": null,
+    "hint": "half a bagel with cream cheese, roasted yam, berries and bacon",
+    "carbs": 52.7,
+    "totalCarbs": 58.7,
+    "grams": 220,
+    "truth": "bacon 11 g; berries 72 g; bagels 60 g; cream cheese 15 g; yam 62 g"
+  },
+  {
+    "name": "n5k 1562603895: scrambled eggs, sausage, hash browns, salad and a little granola",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1562603895.jpg"
+    ],
+    "description": null,
+    "hint": "scrambled eggs, sausage, hash browns, salad and a little granola",
+    "carbs": 61.4,
+    "totalCarbs": 68.6,
+    "grams": 517,
+    "truth": "blackberries 6 g; mixed greens 59 g; vinaigrette 6 g; hash browns 146 g; scrambled eggs 148 g; raspberries 6 g; granola 15 g; sausage 132 g"
+  },
+  {
+    "name": "n5k 1563909580: fried rice, cheese pizza and green beans with spinach",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1563909580.jpg"
+    ],
+    "description": null,
+    "hint": "fried rice, cheese pizza and green beans with spinach",
+    "carbs": 67.1,
+    "totalCarbs": 74.1,
+    "grams": 361,
+    "truth": "mustard greens 8 g; cucumbers 7 g; tomatoes 4 g; fried rice 122 g; cheese pizza 88 g; vinegar 3 g; spinach (raw) 33 g; green beans 85 g; olive oil 9 g"
+  },
+  {
+    "name": "n5k 1566328776: pizza, chicken and cherry tomatoes",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1566328776.jpg"
+    ],
+    "description": null,
+    "hint": "pizza, chicken and cherry tomatoes",
+    "carbs": 72.5,
+    "totalCarbs": 78.3,
+    "grams": 436,
+    "truth": "chicken 167 g; cherry tomatoes 36 g; pizza 233 g"
+  },
+  {
+    "name": "n5k 1561739760: fruit salad with melon and berries, broccoli, sweet potato and greens",
+    "set": "n5k",
+    "photos": [
+      "photos/n5k-1561739760.jpg"
+    ],
+    "description": null,
+    "hint": "fruit salad with melon and berries, broccoli, sweet potato and greens",
+    "carbs": 77.5,
+    "totalCarbs": 98.6,
+    "grams": 937,
+    "truth": "granola 6 g; berries 249 g; mixed greens 26 g; broccoli 264 g; cantaloupe 300 g; sweet potato 84 g"
+  },
+  {
+    "name": "nvr 41: a chicken leg and a chicken wing",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-41a.jpg",
+      "photos/nvr-41b.jpg",
+      "photos/nvr-41c.jpg",
+      "photos/nvr-41d.jpg"
+    ],
+    "description": null,
+    "hint": "a chicken leg and a chicken wing",
+    "carbs": 4.8,
+    "totalCarbs": 4.8,
+    "grams": 162,
+    "truth": "chicken leg 119 g; chicken wing 43 g"
+  },
+  {
+    "name": "nvr 23: pork ribs",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-23a.jpg",
+      "photos/nvr-23b.jpg",
+      "photos/nvr-23c.jpg",
+      "photos/nvr-23d.jpg"
+    ],
+    "description": null,
+    "hint": "pork ribs",
+    "carbs": 0.0,
+    "totalCarbs": 0.0,
+    "grams": 266,
+    "truth": "rib 266 g"
+  },
+  {
+    "name": "nvr 217: chicken wings, a chicken leg, steak and a fried shrimp ball",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-217a.jpg",
+      "photos/nvr-217b.jpg",
+      "photos/nvr-217c.jpg",
+      "photos/nvr-217d.jpg"
+    ],
+    "description": null,
+    "hint": "chicken wings, a chicken leg, steak and a fried shrimp ball",
+    "carbs": 19.4,
+    "totalCarbs": 19.4,
+    "grams": 453,
+    "truth": "chicken wing 129 g; fried minced shrimp ball 42 g; salad beef strip 10 g; steak 153 g; chicken leg 119 g"
+  },
+  {
+    "name": "nvr 57: lobster tail, pork trotters, lamb shank, egg bites and a couple of fries",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-57a.jpg",
+      "photos/nvr-57b.jpg",
+      "photos/nvr-57c.jpg",
+      "photos/nvr-57d.jpg"
+    ],
+    "description": null,
+    "hint": "lobster tail, pork trotters, lamb shank, egg bites and a couple of fries",
+    "carbs": 5.2,
+    "totalCarbs": 5.5,
+    "grams": 457,
+    "truth": "lobster 84 g; pork feet 44 g; egg 118 g; french fry 10 g; lamb shank 201 g"
+  },
+  {
+    "name": "nvr 49: lamb shank, corn on the cob, cucumber and chicken strips",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-49a.jpg",
+      "photos/nvr-49b.jpg",
+      "photos/nvr-49c.jpg",
+      "photos/nvr-49d.jpg"
+    ],
+    "description": null,
+    "hint": "lamb shank, corn on the cob, cucumber and chicken strips",
+    "carbs": 16.2,
+    "totalCarbs": 18.3,
+    "grams": 365,
+    "truth": "corn 79 g; cucumber piece 27 g; lamb shank 201 g; salad chicken strip 58 g"
+  },
+  {
+    "name": "nvr 101: cucumber sushi rolls",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-101a.jpg",
+      "photos/nvr-101b.jpg",
+      "photos/nvr-101c.jpg",
+      "photos/nvr-101d.jpg"
+    ],
+    "description": null,
+    "hint": "cucumber sushi rolls",
+    "carbs": 7.2,
+    "totalCarbs": 7.2,
+    "grams": 28,
+    "truth": "cucumber sushi roll 28 g"
+  },
+  {
+    "name": "nvr 153: pork trotters, lamb shank and an apple",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-153a.jpg",
+      "photos/nvr-153b.jpg",
+      "photos/nvr-153c.jpg",
+      "photos/nvr-153d.jpg"
+    ],
+    "description": null,
+    "hint": "pork trotters, lamb shank and an apple",
+    "carbs": 18.2,
+    "totalCarbs": 21.9,
+    "grams": 533,
+    "truth": "red apple 156 g; pork feet 176 g; lamb shank 201 g"
+  },
+  {
+    "name": "nvr 163: lamb shank, tuna nigiri sushi, chicken and cucumber",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-163a.jpg",
+      "photos/nvr-163b.jpg",
+      "photos/nvr-163c.jpg",
+      "photos/nvr-163d.jpg"
+    ],
+    "description": null,
+    "hint": "lamb shank, tuna nigiri sushi, chicken and cucumber",
+    "carbs": 29.7,
+    "totalCarbs": 30.0,
+    "grams": 435,
+    "truth": "lamb shank 201 g; cucumber piece 54 g; tuna rice ball 84 g; chicken breast 96 g"
+  },
+  {
+    "name": "nvr 72: pork ribs and a bread roll",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-72a.jpg",
+      "photos/nvr-72b.jpg",
+      "photos/nvr-72c.jpg",
+      "photos/nvr-72d.jpg"
+    ],
+    "description": null,
+    "hint": "pork ribs and a bread roll",
+    "carbs": 20.1,
+    "totalCarbs": 21.2,
+    "grams": 309,
+    "truth": "rib 266 g; white bread roll 43 g"
+  },
+  {
+    "name": "nvr 157: pork trotters, an apple and a granola bar",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-157a.jpg",
+      "photos/nvr-157b.jpg",
+      "photos/nvr-157c.jpg",
+      "photos/nvr-157d.jpg"
+    ],
+    "description": null,
+    "hint": "pork trotters, an apple and a granola bar",
+    "carbs": 33.5,
+    "totalCarbs": 38.0,
+    "grams": 357,
+    "truth": "pork feet 176 g; captain crunch granola bar 25 g; red apple 156 g"
+  },
+  {
+    "name": "nvr 204: pork ribs, a chicken wing, steak and sushi rolls",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-204a.jpg",
+      "photos/nvr-204b.jpg",
+      "photos/nvr-204c.jpg",
+      "photos/nvr-204d.jpg"
+    ],
+    "description": null,
+    "hint": "pork ribs, a chicken wing, steak and sushi rolls",
+    "carbs": 21.4,
+    "totalCarbs": 21.4,
+    "grams": 385,
+    "truth": "rib 133 g; chicken wing 43 g; shrimp sushi roll 29 g; salad sushi roll 27 g; steak 153 g"
+  },
+  {
+    "name": "nvr 176: fried tofu, meatballs and chicken wings",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-176a.jpg",
+      "photos/nvr-176b.jpg",
+      "photos/nvr-176c.jpg",
+      "photos/nvr-176d.jpg"
+    ],
+    "description": null,
+    "hint": "fried tofu, meatballs and chicken wings",
+    "carbs": 24.7,
+    "totalCarbs": 26.6,
+    "grams": 350,
+    "truth": "meatball 74 g; fried tofu 190 g; chicken wing 86 g"
+  },
+  {
+    "name": "nvr 70: an apple and an Asian pear",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-70a.jpg",
+      "photos/nvr-70b.jpg",
+      "photos/nvr-70c.jpg",
+      "photos/nvr-70d.jpg"
+    ],
+    "description": null,
+    "hint": "an apple and an Asian pear",
+    "carbs": 42.7,
+    "totalCarbs": 59.0,
+    "grams": 504,
+    "truth": "red apple 156 g; asian pear 348 g"
+  },
+  {
+    "name": "nvr 179: an apple, granola bars and chicken wings",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-179a.jpg",
+      "photos/nvr-179b.jpg",
+      "photos/nvr-179c.jpg",
+      "photos/nvr-179d.jpg"
+    ],
+    "description": null,
+    "hint": "an apple, granola bars and chicken wings",
+    "carbs": 51.2,
+    "totalCarbs": 57.3,
+    "grams": 282,
+    "truth": "red apple 156 g; nature valley granola bar 40 g; chicken wing 86 g"
+  },
+  {
+    "name": "nvr 165: lamb shank, tuna nigiri sushi, egg bites and an apple",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-165a.jpg",
+      "photos/nvr-165b.jpg",
+      "photos/nvr-165c.jpg",
+      "photos/nvr-165d.jpg"
+    ],
+    "description": null,
+    "hint": "lamb shank, tuna nigiri sushi, egg bites and an apple",
+    "carbs": 47.6,
+    "totalCarbs": 51.4,
+    "grams": 559,
+    "truth": "lamb shank 201 g; red apple 156 g; tuna rice ball 84 g; egg 118 g"
+  },
+  {
+    "name": "nvr 114: lasagna, a piece of bread and steak",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-114a.jpg",
+      "photos/nvr-114b.jpg",
+      "photos/nvr-114c.jpg",
+      "photos/nvr-114d.jpg"
+    ],
+    "description": null,
+    "hint": "lasagna, a piece of bread and steak",
+    "carbs": 58.0,
+    "totalCarbs": 63.6,
+    "grams": 446,
+    "truth": "lasagna 307 g; white bread roll 43 g; steak piece 96 g"
+  },
+  {
+    "name": "nvr 133: granola bars, a bread roll and chicken strips",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-133a.jpg",
+      "photos/nvr-133b.jpg",
+      "photos/nvr-133c.jpg",
+      "photos/nvr-133d.jpg"
+    ],
+    "description": null,
+    "hint": "granola bars, a bread roll and chicken strips",
+    "carbs": 68.7,
+    "totalCarbs": 73.6,
+    "grams": 178,
+    "truth": "nature valley granola bar 40 g; chocolate granola bar 37 g; white bread roll 43 g; salad chicken strip 58 g"
+  },
+  {
+    "name": "nvr 247: an Asian pear, an apple, toast, a chicken wing and a fry",
+    "set": "nvr",
+    "photos": [
+      "photos/nvr-247a.jpg",
+      "photos/nvr-247b.jpg",
+      "photos/nvr-247c.jpg",
+      "photos/nvr-247d.jpg"
+    ],
+    "description": null,
+    "hint": "an Asian pear, an apple, toast, a chicken wing and a fry",
+    "carbs": 73.6,
+    "totalCarbs": 92.0,
+    "grams": 630,
+    "truth": "french fry 5 g; chicken wing 43 g; asian pear 348 g; red yellow apple 194 g; plain toast 40 g"
+  },
+  {
+    "name": "snap 99ef806c: scrambled eggs with sautéed spinach",
+    "set": "snap",
+    "photos": [
+      "photos/snap-99ef806c.jpg"
+    ],
+    "description": null,
+    "hint": "scrambled eggs with sautéed spinach",
+    "carbs": 1.6,
+    "totalCarbs": 2.6,
+    "grams": 133,
+    "truth": "Egg, whole, cooked, NS as to cooking method 88 g; Spinach, cooked, from fresh, made with oil 45 g"
+  },
+  {
+    "name": "snap 75349515: instant coffee with milk",
+    "set": "snap",
+    "photos": [
+      "photos/snap-75349515.jpg"
+    ],
+    "description": null,
+    "hint": "instant coffee with milk",
+    "carbs": 2.7,
+    "totalCarbs": 2.7,
+    "grams": 222,
+    "truth": "Coffee, instant, reconstituted 192 g; Milk, NFS 30 g"
+  },
+  {
+    "name": "snap 6bda161d: coffee with milk",
+    "set": "snap",
+    "photos": [
+      "photos/snap-6bda161d.jpg"
+    ],
+    "description": null,
+    "hint": "coffee with milk",
+    "carbs": 2.9,
+    "totalCarbs": 2.9,
+    "grams": 385,
+    "truth": "Coffee, brewed 324 g; Milk, reduced fat (2%) 61 g"
+  },
+  {
+    "name": "snap 442c40d3: scrambled eggs with cheese",
+    "set": "snap",
+    "photos": [
+      "photos/snap-442c40d3.jpg"
+    ],
+    "description": null,
+    "hint": "scrambled eggs with cheese",
+    "carbs": 2.7,
+    "totalCarbs": 2.7,
+    "grams": 123,
+    "truth": "Egg omelet or scrambled egg, with cheese, made without fat 116 g; Cheese, Cheddar 7 g"
+  },
+  {
+    "name": "snap 411dc721: omelette with onions, peppers and cheddar",
+    "set": "snap",
+    "photos": [
+      "photos/snap-411dc721.jpg"
+    ],
+    "description": null,
+    "hint": "omelette with onions, peppers and cheddar",
+    "carbs": 10.3,
+    "totalCarbs": 11.5,
+    "grams": 279,
+    "truth": "Egg omelet or scrambled egg, made without fat 116 g; Onions, cooked, from fresh, fat not added in cooking 24 g; Peppers, green, cooked, fat not added in cooking 78 g; Cheese, Cheddar 56 g; Olive oil 4 g"
+  },
+  {
+    "name": "snap c022f325: pear slices and grapes",
+    "set": "snap",
+    "photos": [
+      "photos/snap-c022f325.jpg"
+    ],
+    "description": null,
+    "hint": "pear slices and grapes",
+    "carbs": 23.8,
+    "totalCarbs": 27.2,
+    "grams": 164,
+    "truth": "Pear, raw 89 g; Grapes, raw, NS as to type 76 g"
+  },
+  {
+    "name": "snap f17f699c: flour tortilla with scrambled eggs, cheese and salsa",
+    "set": "snap",
+    "photos": [
+      "photos/snap-f17f699c.jpg"
+    ],
+    "description": null,
+    "hint": "flour tortilla with scrambled eggs, cheese and salsa",
+    "carbs": 25.4,
+    "totalCarbs": 27.6,
+    "grams": 236,
+    "truth": "Tortilla, flour 45 g; Egg omelet or scrambled egg, with cheese, made without fat 132 g; Cheese, Mexican blend 28 g; Salsa, red, commercially-prepared 31 g"
+  },
+  {
+    "name": "snap c814e5ec: veggie burger patty with brie, roasted carrots and mushrooms",
+    "set": "snap",
+    "photos": [
+      "photos/snap-c814e5ec.jpg"
+    ],
+    "description": null,
+    "hint": "veggie burger patty with brie, roasted carrots and mushrooms",
+    "carbs": 12.1,
+    "totalCarbs": 18.8,
+    "grams": 232,
+    "truth": "Carrots, cooked, from fresh, made with oil 80 g; Mushrooms, cooked, from fresh, made with oil 40 g; Vinegar 5 g; Soy sauce 3 g; Vegetarian burger or patty, meatless, no bun 70 g; Cheese, Brie 34 g"
+  },
+  {
+    "name": "snap e6937561: scrambled eggs and grapes",
+    "set": "snap",
+    "photos": [
+      "photos/snap-e6937561.jpg"
+    ],
+    "description": null,
+    "hint": "scrambled eggs and grapes",
+    "carbs": 12.5,
+    "totalCarbs": 13.1,
+    "grams": 176,
+    "truth": "Egg omelet or scrambled egg, made without fat 116 g; Grapes, raw, NS as to type 60 g"
+  },
+  {
+    "name": "snap f2437cd1: avocado toast on sprouted wheat bread with egg, olives and goat cheese",
+    "set": "snap",
+    "photos": [
+      "photos/snap-f2437cd1.jpg"
+    ],
+    "description": null,
+    "hint": "avocado toast on sprouted wheat bread with egg, olives and goat cheese",
+    "carbs": 17.0,
+    "totalCarbs": 26.8,
+    "grams": 170,
+    "truth": "Avocado, raw 100 g; Bread, sprouted wheat 52 g; Olives, black 9 g; Cheese, goat 9 g"
+  },
+  {
+    "name": "snap 7d8c86dc: rotisserie chicken with white rice",
+    "set": "snap",
+    "photos": [
+      "photos/snap-7d8c86dc.jpg"
+    ],
+    "description": null,
+    "hint": "rotisserie chicken with white rice",
+    "carbs": 22.2,
+    "totalCarbs": 22.5,
+    "grams": 254,
+    "truth": "Chicken leg, drumstick and thigh, rotisserie, skin eaten 140 g; Rice, white, cooked, fat not added in cooking 79 g; Chicken wing, rotisserie 35 g"
+  },
+  {
+    "name": "snap c0f9e8c0: waffle with cream cheese and strawberries",
+    "set": "snap",
+    "photos": [
+      "photos/snap-c0f9e8c0.jpg"
+    ],
+    "description": null,
+    "hint": "waffle with cream cheese and strawberries",
+    "carbs": 31.4,
+    "totalCarbs": 33.8,
+    "grams": 114,
+    "truth": "Waffle, plain 75 g; Cheese, cream 14 g; Strawberries, raw 24 g"
+  },
+  {
+    "name": "snap 03e580b9: teriyaki salmon with cheese and spinach ravioli in pesto, tomatoes and onions",
+    "set": "snap",
+    "photos": [
+      "photos/snap-03e580b9.jpg"
+    ],
+    "description": null,
+    "hint": "teriyaki salmon with cheese and spinach ravioli in pesto, tomatoes and onions",
+    "carbs": 40.2,
+    "totalCarbs": 43.9,
+    "grams": 521,
+    "truth": "Salmon, baked or broiled, made with oil 170 g; Teriyaki sauce 18 g; Garlic, cooked 4 g; Ravioli, cheese and spinach-filled, no sauce 120 g; Onions, cooked, from fresh, made with oil 105 g; Tomatoes, cooked, from fresh, NS as to method 60 g; Pesto sauce 44 g"
+  },
+  {
+    "name": "snap c22aae57: snack mix: Chex cereal, pretzels, crackers, bagel chips and peanuts",
+    "set": "snap",
+    "photos": [
+      "photos/snap-c22aae57.jpg"
+    ],
+    "description": null,
+    "hint": "snack mix: Chex cereal, pretzels, crackers, bagel chips and peanuts",
+    "carbs": 46.2,
+    "totalCarbs": 51.2,
+    "grams": 80,
+    "truth": "Crackers, NFS 12 g; Pretzels, hard, plain, salted 10 g; Cereal (General Mills Chex Rice) 7 g; Peanuts, dry roasted, unsalted 14 g; Cereal (General Mills Cheerios) 7 g; Cereal (General Mills Chex Wheat) 14 g; Bagel chips 15 g"
+  },
+  {
+    "name": "snap 7eabc94a: crepes with bacon and honey",
+    "set": "snap",
+    "photos": [
+      "photos/snap-7eabc94a.jpg"
+    ],
+    "description": null,
+    "hint": "crepes with bacon and honey",
+    "carbs": 36.5,
+    "totalCarbs": 37.3,
+    "grams": 164,
+    "truth": "Crepe, plain 130 g; Pork bacon, NS as to fresh, smoked or cured, cooked 24 g; Honey 10 g"
+  },
+  {
+    "name": "snap b2833025: baked cod with white rice and okra",
+    "set": "snap",
+    "photos": [
+      "photos/snap-b2833025.jpg"
+    ],
+    "description": null,
+    "hint": "baked cod with white rice and okra",
+    "carbs": 45.8,
+    "totalCarbs": 48.8,
+    "grams": 594,
+    "truth": "Okra, cooked, from fresh, made with oil 96 g; Rice, white, cooked, fat not added in cooking 158 g; Cod, baked or broiled, made with butter 340 g"
+  },
+  {
+    "name": "snap 4007eb95: Greek yogurt with granola",
+    "set": "snap",
+    "photos": [
+      "photos/snap-4007eb95.jpg"
+    ],
+    "description": null,
+    "hint": "Greek yogurt with granola",
+    "carbs": 38.3,
+    "totalCarbs": 41.3,
+    "grams": 212,
+    "truth": "Yogurt, Greek, nonfat milk, flavors other than fruit 184 g; Cereal, granola 28 g"
+  },
+  {
+    "name": "snap f95481ed: rice with tomato, pork, boiled potato, tofu and a boiled egg",
+    "set": "snap",
+    "photos": [
+      "photos/snap-f95481ed.jpg"
+    ],
+    "description": null,
+    "hint": "rice with tomato, pork, boiled potato, tofu and a boiled egg",
+    "carbs": 47.7,
+    "totalCarbs": 50.9,
+    "grams": 477,
+    "truth": "Rice, white, with tomatoes and/or tomato-based sauce, NS as to fat added in cooking 104 g; Pork steak or cutlet, NS as to cooking method, lean and fat eaten 57 g; Potato, boiled, from fresh, peel not eaten, fat not added in cooking 130 g; Egg, whole, boiled or poached 50 g; Soybean curd 120 g; Soy sauce, reduced sodium 16 g"
+  },
+  {
+    "name": "snap 96444b38: pancakes with banana and walnuts, scrambled eggs and a hash brown",
+    "set": "snap",
+    "photos": [
+      "photos/snap-96444b38.jpg"
+    ],
+    "description": null,
+    "hint": "pancakes with banana and walnuts, scrambled eggs and a hash brown",
+    "carbs": 54.7,
+    "totalCarbs": 61.0,
+    "grams": 404,
+    "truth": "Banana, raw 59 g; Walnuts 30 g; Pancakes, plain 60 g; Milk, whole 92 g; Potato, hash brown, from fast food 55 g; Egg omelet or scrambled egg, made with oil 108 g"
+  },
+  {
+    "name": "snap f767e9a7: fried wontons with vegetable fried rice",
+    "set": "snap",
+    "photos": [
+      "photos/snap-f767e9a7.jpg"
+    ],
+    "description": null,
+    "hint": "fried wontons with vegetable fried rice",
+    "carbs": 64.0,
+    "totalCarbs": 69.4,
+    "grams": 434,
+    "truth": "Wonton, fried, filled with meat, poultry, or seafood, and vegetable 210 g; Soy sauce 16 g; Rice, white, with vegetables, soy-based sauce, fat added in cooking 194 g; Sesame oil 2 g; Seaweed, cooked, NS as to fat added in cooking 12 g"
+  },
+  {
+    "name": "snap a4268e27: mashed potatoes, roasted broccoli and a chicken patty with cheese",
+    "set": "snap",
+    "photos": [
+      "photos/snap-a4268e27.jpg"
+    ],
+    "description": null,
+    "hint": "mashed potatoes, roasted broccoli and a chicken patty with cheese",
+    "carbs": 52.7,
+    "totalCarbs": 63.6,
+    "grams": 598,
+    "truth": "Broccoli, cooked, from fresh, made with oil 242 g; Potato, mashed, from fresh, made with milk 250 g; Chicken or turkey cake, patty, or croquette 85 g; Cheese, Provolone 21 g"
+  },
+  {
+    "name": "snap cca4e402: steak with a baked potato, mushrooms and green beans",
+    "set": "snap",
+    "photos": [
+      "photos/snap-cca4e402.jpg"
+    ],
+    "description": null,
+    "hint": "steak with a baked potato, mushrooms and green beans",
+    "carbs": 73.3,
+    "totalCarbs": 86.6,
+    "grams": 753,
+    "truth": "Beef steak, broiled or baked, lean and fat eaten 170 g; Beans, string, green, cooked, from fresh, made with oil 77 g; Mushrooms, cooked, from fresh, made with oil 161 g; Potato, baked, peel eaten 345 g"
+  },
+  {
+    "name": "snap e5edf5ff: burrito with pork, rice, refried beans and cheese",
+    "set": "snap",
+    "photos": [
+      "photos/snap-e5edf5ff.jpg"
+    ],
+    "description": null,
+    "hint": "burrito with pork, rice, refried beans and cheese",
+    "carbs": 58.5,
+    "totalCarbs": 63.0,
+    "grams": 310,
+    "truth": "Tortilla, flour 71 g; Pork, NS as to cut, cooked, NS as to fat eaten 100 g; Refried beans, fat added in cooking, NS as to type of fat 32 g; Cheese, Monterey 28 g; Rice, cooked, NFS 79 g"
+  },
+  {
+    "name": "snap fb4dd958: waffle with syrup, bacon and scrambled eggs with salsa",
+    "set": "snap",
+    "photos": [
+      "photos/snap-fb4dd958.jpg"
+    ],
+    "description": null,
+    "hint": "waffle with syrup, bacon and scrambled eggs with salsa",
+    "carbs": 66.0,
+    "totalCarbs": 68.0,
+    "grams": 294,
+    "truth": "Egg omelet or scrambled egg, made with butter 122 g; Pork bacon, NS as to fresh, smoked or cured, cooked 32 g; Waffle, fruit 62 g; Cilantro, raw 1 g; Queso Fresco 8 g; Salsa, red, commercially-prepared 8 g; Maple and corn and/or cane pancake syrup blends 60 g"
+  },
+  {
+    "name": "snap ae63b84b: yogurt with granola and blueberries",
+    "set": "snap",
+    "photos": [
+      "photos/snap-ae63b84b.jpg"
+    ],
+    "description": null,
+    "hint": "yogurt with granola and blueberries",
+    "carbs": 71.7,
+    "totalCarbs": 80.0,
+    "grams": 380,
+    "truth": "Yogurt, low fat milk, flavors other than fruit 170 g; Blueberries, frozen, unsweetened 155 g; Cereal, granola 56 g"
+  },
+  {
+    "name": "snap 79f2f2ae: bagel sandwich with egg, tomato and avocado",
+    "set": "snap",
+    "photos": [
+      "photos/snap-79f2f2ae.jpg"
+    ],
+    "description": null,
+    "hint": "bagel sandwich with egg, tomato and avocado",
+    "carbs": 56.9,
+    "totalCarbs": 65.6,
+    "grams": 290,
+    "truth": "Bagel 105 g; Egg omelet or scrambled egg, made with oil 61 g; Tomatoes, raw 24 g; Avocado, raw 100 g"
+  },
+  {
+    "name": "snap 0708b83b: spaghetti with meat and tomato sauce and parmesan",
+    "set": "snap",
+    "photos": [
+      "photos/snap-0708b83b.jpg"
+    ],
+    "description": null,
+    "hint": "spaghetti with meat and tomato sauce and parmesan",
+    "carbs": 128.3,
+    "totalCarbs": 140.3,
+    "grams": 755,
+    "truth": "Pasta with tomato-based sauce, meat, and added vegetables, home recipe 750 g; Cheese, Parmesan, hard 5 g"
+  },
+  {
+    "name": "snap 19447547: white rice with chicken and cucumber, soy and vinegar sauce",
+    "set": "snap",
+    "photos": [
+      "photos/snap-19447547.jpg"
+    ],
+    "description": null,
+    "hint": "white rice with chicken and cucumber, soy and vinegar sauce",
+    "carbs": 96.8,
+    "totalCarbs": 98.4,
+    "grams": 524,
+    "truth": "Rice, white, cooked, fat not added in cooking 314 g; Chicken, NS as to part and cooking method, NS as to skin eaten 135 g; Lettuce, raw 4 g; Soy sauce 32 g; Vinegar 30 g; Sugar, white, granulated or lump 8 g"
+  },
+  {
+    "name": "snap 8577c098: chicken taquitos with guacamole",
+    "set": "snap",
+    "photos": [
+      "photos/snap-8577c098.jpg"
+    ],
+    "description": null,
+    "hint": "chicken taquitos with guacamole",
+    "carbs": 92.2,
+    "totalCarbs": 114.0,
+    "grams": 489,
+    "truth": "Taquito or flauta with chicken 288 g; Avocado, raw 201 g"
+  },
+  {
+    "name": "snap 062206b6: peanut butter and jam sandwiches on whole wheat bread",
+    "set": "snap",
+    "photos": [
+      "photos/snap-062206b6.jpg"
+    ],
+    "description": null,
+    "hint": "peanut butter and jam sandwiches on whole wheat bread",
+    "carbs": 88.3,
+    "totalCarbs": 99.8,
+    "grams": 232,
+    "truth": "Bread, whole wheat 144 g; Peanut butter 48 g; Jam, preserve, all flavors 40 g"
+  },
+  {
+    "name": "snap 073062b5: falafel with rice pilaf",
+    "set": "snap",
+    "photos": [
+      "photos/snap-073062b5.jpg"
+    ],
+    "description": null,
+    "hint": "falafel with rice pilaf",
+    "carbs": 89.8,
+    "totalCarbs": 94.4,
+    "grams": 377,
+    "truth": "Rice pilaf 309 g; Falafel 68 g"
+  },
+  {
+    "name": "snap 818f45be: breaded chicken breast with white rice, bok choy and corn",
+    "set": "snap",
+    "photos": [
+      "photos/snap-818f45be.jpg"
+    ],
+    "description": null,
+    "hint": "breaded chicken breast with white rice, bok choy and corn",
+    "carbs": 86.7,
+    "totalCarbs": 90.9,
+    "grams": 587,
+    "truth": "Chicken breast, baked, coated, skin / coating eaten 170 g; Rice, white, cooked, fat not added in cooking 237 g; Cabbage, Chinese, raw 98 g; Corn, yellow, cooked, from frozen, fat not added in cooking 82 g"
+  }
+]

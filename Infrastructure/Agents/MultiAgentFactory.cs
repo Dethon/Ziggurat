@@ -201,18 +201,22 @@ public sealed class MultiAgentFactory(
             MaxBytes = openRouterConfig.MaxInlineImageBytes
         };
 
+    private bool AcceptsImages(string model) => Accepts(model, AttachmentKind.Image);
+
+    private bool AcceptsVideo(string model) => Accepts(model, AttachmentKind.Video);
+
     // Permissive wherever the catalogue is silent, the same rule AttachmentCapability states: model
     // capability is discovered from the provider, and a lookup that has not answered yet must not
     // remove the feature from everyone. A Lemonade model is answered by the host that has it.
-    private bool AcceptsImages(string model)
+    private bool Accepts(string model, AttachmentKind kind)
     {
         if (LemonadeModelId.IsLemonade(model))
         {
-            return LemonadeModelOf(model)?.AcceptedAttachmentKinds.Contains(AttachmentKind.Image) ?? true;
+            return LemonadeModelOf(model)?.AcceptedAttachmentKinds.Contains(kind) ?? true;
         }
 
         return serviceProvider?.GetService<IModelCapabilityCatalog>() is not { } catalog
-               || catalog.GetAcceptedAttachmentKinds(model).Contains(AttachmentKind.Image);
+               || catalog.GetAcceptedAttachmentKinds(model).Contains(kind);
     }
 
     // The smaller of the agent's window and the one the box loaded the model with; a model whose
@@ -245,8 +249,8 @@ public sealed class MultiAgentFactory(
         var attachmentSource = serviceProvider?.GetService<IAttachmentSource>();
         // The other half of the same pass: the tool writes the bytes here and this send reads
         // them back, so both ends have to be handed the one store or neither works. The
-        // capability lookup rides along, because the send must not put an image part in front
-        // of a patched model that cannot take it — the wire rejects the whole request.
+        // capability lookups ride along, because the send must not put an image or a video part
+        // in front of a patched model that cannot take it — the wire rejects the whole request.
         var readImageStore = serviceProvider?.GetService<IReadImageStore>();
 
         var openRouter = new OpenRouterChatClient(
@@ -261,7 +265,8 @@ public sealed class MultiAgentFactory(
             attachmentSource: attachmentSource,
             hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
             readImageStore: readImageStore,
-            modelAcceptsImages: AcceptsImages);
+            modelAcceptsImages: AcceptsImages,
+            modelAcceptsVideo: AcceptsVideo);
 
         if (_lemonadeHost is not { IsConfigured: true } host)
         {
@@ -277,7 +282,8 @@ public sealed class MultiAgentFactory(
             hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
             readImageStore: readImageStore,
             modelAcceptsImages: AcceptsImages,
-            contextWindowFor: model => LemonadeWindow(model, effectiveContext));
+            contextWindowFor: model => LemonadeWindow(model, effectiveContext),
+            modelAcceptsVideo: AcceptsVideo);
 
         return new HostRoutingChatClient(openRouter, lemonade);
     }

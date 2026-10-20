@@ -11,6 +11,7 @@ using McpServerOutpost.Modules;
 using McpServerPrinter.Modules;
 using McpServerSandbox.Modules;
 using McpServerScheduling.Modules;
+using McpServerSugary.Modules;
 using McpServerTimers.Modules;
 using McpServerVault.Modules;
 using McpServerWebSearch.Modules;
@@ -26,6 +27,7 @@ using ServiceBusSettings = McpChannelServiceBus.Settings;
 // Aliased because Tests.Integration has sibling namespaces named after the server projects, which
 // shadow the project namespaces from inside Tests.
 using SignalRSettings = McpChannelSignalR.Settings;
+using SugarySettings = McpServerSugary.Settings;
 using TelegramSettings = McpChannelTelegram.Settings;
 using TimersSettings = McpServerTimers.Settings;
 using VaultSettings = McpServerVault.Settings;
@@ -90,7 +92,7 @@ public static class McpServerRegistrations
     // Broadcast for the two chat-shaped transports whose callers cannot retry; gate-on-live for
     // the three whose callers settle a durable record on a confirmed delivery — a schedule, a
     // routing entry, a broker message — and would otherwise keep the record *and* leave a buffered
-    // duplicate behind; buffer-always for the one transport with no way to tell a sender to try
+    // duplicate behind, and for Sugary, whose app waits on its own request; buffer-always for the one transport with no way to tell a sender to try
     // again later.
     //
     // The tool servers all take unreachable-but-well-formed connection details for the same reason
@@ -216,6 +218,16 @@ public static class McpServerRegistrations
                 Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureMcp(settings)),
+
+        // The database is never opened at registration: the context factory opens it per read, and
+        // the schema is applied when the host starts. Dual-role: the mount, prompt and skill for the
+        // agent, and the channel her app's estimates reach the sugary agent through. Gate-on-live,
+        // because the app waits on its own request: an estimate nobody is polling for is answered
+        // as an error at once rather than buffered for an agent that may never come.
+        Row("sugary", "McpServerSugary", McpServerRole.DualRole,
+            new SugarySettings.SugarySettings { DatabasePath = "/data/sugary.db", Mcp = DeploymentGate },
+            (services, settings) => services.ConfigureSugary(settings),
+            DeliveryPolicy.GateOnLive),
 
         // The voice hub is reached through a named HttpClient, which never dials at registration.
         Row("timers", "McpServerTimers", McpServerRole.Tool,

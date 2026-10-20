@@ -32,6 +32,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly IAttachmentSource? _attachmentSource;
     private readonly IReadImageStore? _readImageStore;
     private readonly Func<string, bool> _modelAcceptsImages;
+    private readonly Func<string, bool> _modelAcceptsVideo;
     private readonly int _hydrationDepthMessages;
 
     public OpenRouterChatClient(
@@ -49,7 +50,8 @@ public sealed class OpenRouterChatClient : IChatClient
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
-        int? maxRetries = null)
+        int? maxRetries = null,
+        Func<string, bool>? modelAcceptsVideo = null)
     {
         _model = model;
         _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
@@ -58,6 +60,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _attachmentSource = attachmentSource;
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
+        _modelAcceptsVideo = modelAcceptsVideo ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
         _httpClient = CreateHttpClient(
             _costQueue, _cachedTokenQueue, _routeSink, sessionId, providerRouting, transportHandler);
@@ -75,7 +78,8 @@ public sealed class OpenRouterChatClient : IChatClient
         int hydrationDepthMessages = AttachmentHydration.DefaultDepthMessages,
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
-        Func<string, int?>? contextWindowFor = null)
+        Func<string, int?>? contextWindowFor = null,
+        Func<string, bool>? modelAcceptsVideo = null)
     {
         _model = model;
         _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
@@ -84,6 +88,7 @@ public sealed class OpenRouterChatClient : IChatClient
         _attachmentSource = attachmentSource;
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
+        _modelAcceptsVideo = modelAcceptsVideo ?? (_ => true);
         _hydrationDepthMessages = hydrationDepthMessages;
         _client = innerClient;
     }
@@ -115,8 +120,11 @@ public sealed class OpenRouterChatClient : IChatClient
         // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on
         // and a concurrent turn has nothing shared to overwrite. Resolved before hydration,
         // because whether an image part may travel at all depends on it: the wire rejects a
-        // request carrying an image the model cannot take rather than stripping it.
+        // request carrying an image the model cannot take rather than stripping it. Whether a clip
+        // or its stills go is the same question asked about video.
         var effectiveModel = options?.ModelId ?? _model;
+        var inputs = new ModelInputs(
+            effectiveModel, _modelAcceptsImages(effectiveModel), _modelAcceptsVideo(effectiveModel));
 
         // The conversation reaches this send on the turn's own options, the way MCP tool metadata
         // already does: a chat client is built per model from DI, so there is nothing per
@@ -127,9 +135,10 @@ public sealed class OpenRouterChatClient : IChatClient
             new ReadImageContext(
                 _readImageStore,
                 ConversationContextMeta.TryRead(options)?.ConversationId,
-                _modelAcceptsImages(effectiveModel)),
+                inputs.Images),
             _hydrationDepthMessages,
-            ct);
+            ct,
+            inputs);
 
         var sender = transformedMessages
             .LastOrDefault(m => m.Role == ChatRole.User)
@@ -160,11 +169,11 @@ public sealed class OpenRouterChatClient : IChatClient
         // Last, on what is left to send: a preload is recorded as a pair and sent as a note, and
         // everything above — who is speaking, what is pinned, what a group weighs — is asked of
         // the record, where the last user-role message is still the person's.
-        var sent = SkillPreloadNote.AsSent(truncated);
+        var sent = VideoInputParts.AsSent(SkillPreloadNote.AsSent(truncated));
 
         UsageContent? usage = null;
 
-        await foreach (var update in _client.GetStreamingResponseAsync(sent, options, ct))
+        await foreach (var update in _client.GetStreamingResponseAsync(sent, WithVerbatimStrictSchema(options), ct))
         {
             // The Responses adapter leaves MessageId empty where the chat wire stamped the
             // completion id, and everything that reassembles a streamed turn keys on it. The
@@ -195,6 +204,43 @@ public sealed class OpenRouterChatClient : IChatClient
             });
         }
     }
+
+    // A strict schema goes out as it was written. The adapter would otherwise rewrite it into the
+    // subset it assumes strict mode takes — moving `minimum`, `maximum` and their kind into the
+    // description, where nothing enforces them — and the schema a channel asked for is a contract
+    // it parses the answer against, not a hint. Pre-setting the text format through the raw
+    // options is the adapter's own way in; it only fills a format nobody set. A non-strict
+    // schema keeps the adapter's handling, which is what memory's lenient readers were built on.
+    private static ChatOptions? WithVerbatimStrictSchema(ChatOptions? options)
+    {
+        if (options is not { ResponseFormat: ChatResponseFormatJson { Schema: { } schema } json } ||
+            options.AdditionalProperties?.TryGetValue(StrictResponseFormatKey, out var strict) != true ||
+            strict is not true)
+        {
+            return options;
+        }
+
+        var verbatim = options.Clone();
+        var inner = options.RawRepresentationFactory;
+        verbatim.RawRepresentationFactory = client =>
+        {
+            var raw = inner?.Invoke(client) as CreateResponseOptions ?? new CreateResponseOptions();
+            raw.TextOptions ??= new ResponseTextOptions();
+            raw.TextOptions.TextFormat = ResponseTextFormat.CreateJsonSchemaFormat(
+                json.SchemaName ?? "json_schema",
+                BinaryData.FromString(schema.GetRawText()),
+                json.SchemaDescription,
+                jsonSchemaIsStrict: true);
+            return raw;
+        };
+        return verbatim;
+    }
+
+    // Set by McpAgent on a turn whose message asked for a format. Deliberately not the adapter's
+    // own `strict` key: that one is a single switch for the format and every tool, and a strict
+    // tool has its parameter schema rewritten — an optional parameter made required. Only the
+    // answer's schema is asked to be strict; the tools go out as they would on any other turn.
+    internal const string StrictResponseFormatKey = "ziggurat.strictResponseFormat";
 
     // Matched on the key name rather than a fixed constant: the provider/SDK spelling of this
     // counter has moved between versions (prompt_tokens_details.cached_tokens ->

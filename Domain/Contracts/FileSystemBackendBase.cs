@@ -109,6 +109,9 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
         bool overwrite, bool createDirectories, CancellationToken ct) =>
         Task.FromResult(Unsupported<FsCopyResult>(VfsCopyTool.Name));
 
+    public virtual Task<FsResult<FsQueryResult>> QueryAsync(string path, string sql, int maxRows, CancellationToken ct) =>
+        Task.FromResult(Unsupported<FsQueryResult>(VfsQueryTool.Name));
+
     // The one operation whose override means the opposite of every other's. Elsewhere overriding
     // declares "I can do this"; here it declares "I have something to refuse", because the default
     // is to allow. A mount with no rule about what may leave it needs no code and registers no
@@ -222,6 +225,7 @@ public abstract class FileSystemBackendBase : IFileSystemBackend
     public virtual string DescribeDelete => "Delete a file or directory from this filesystem.";
     public virtual string DescribeExec => "Run a command in this filesystem.";
     public virtual string DescribeCopy => "Copy a file or directory within this filesystem.";
+    public virtual string DescribeQuery => "Answer one SQL statement over this filesystem's tables.";
 
     public virtual string DescribeBlobRead =>
         "Read a chunk of a file's raw bytes as base64. Returns { contentBase64, eof, totalBytes }.";

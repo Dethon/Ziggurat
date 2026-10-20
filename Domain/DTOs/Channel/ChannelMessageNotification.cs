@@ -26,6 +26,15 @@ public record ChannelMessageNotification
     // Optional per-message config override (model, reasoning effort). Part of the shared protocol
     // but currently only populated by the SignalR channel; other channels leave it null.
     public AgentConfigPatch? ConfigPatch { get; init; }
+    // Optional structured-output request for this turn's final answer, beside the config patch and
+    // like it honoured for this message only. Part of the shared protocol; populated by a channel
+    // that parses the reply (Sugary), left null by every other.
+    public ResponseFormat? ResponseFormat { get; init; }
+    // Optional request that the conversation also be shown on the deployment's review host
+    // (WebChat), with this channel kept as the conversation's first target. Asked for by a channel
+    // sending on a person's behalf whose conversations are worth reading afterwards (Sugary); left
+    // null by every other.
+    public ReviewCopy? ReviewCopy { get; init; }
     // Optional key naming the turn this message opens, for a channel that has to recognise the
     // answer to it later. Voice-only today; every other channel leaves it null and the conversation
     // group mints one.

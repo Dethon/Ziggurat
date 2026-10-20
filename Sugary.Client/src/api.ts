@@ -1,0 +1,173 @@
+import type {
+  DayNote,
+  Dose,
+  Exercise,
+  Food,
+  Meal,
+  MealEstimate,
+  PackagedFood,
+  Period,
+  SaveDose,
+  SaveExercise,
+  SaveFood,
+  SaveMeal,
+  SavePeriod,
+  SessionState,
+} from "./types";
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export const UNAUTHORIZED_EVENT = "sugary:unauthorized";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`/api${path}`, { credentials: "same-origin", ...init });
+  } catch {
+    throw new ApiError(0, "");
+  }
+
+  if (response.status === 401 && !path.startsWith("/session")) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
+  if (!response.ok) {
+    const problem = await response.json().catch(() => null);
+    throw new ApiError(response.status, problem?.detail ?? problem?.title ?? "");
+  }
+  return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+}
+
+const json = (method: string, body: unknown): RequestInit => ({
+  method,
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify(body),
+});
+
+export interface EstimateInput {
+  photos: Blob[];
+  // A short film around the plate, as the phone recorded it. The server makes it small, drops its
+  // sound and takes stills from it, so it goes as it is.
+  clip: Blob | null;
+  description: string;
+  clarifications: string;
+  // What the person has already added themselves, so the model leaves it out.
+  counted: string;
+  language: string;
+  // The conversation the meal's first estimate opened. Set, the request is her answers to it.
+  conversationId: string | null;
+}
+
+// Her answers continue the conversation, whose first message already holds the photos, the clip
+// and her words, so a follow-up sends none of them again.
+export function estimateForm(input: EstimateInput): FormData {
+  const form = new FormData();
+  if (input.conversationId) {
+    form.append("conversationId", input.conversationId);
+  } else {
+    input.photos.forEach((photo, index) => form.append("photos", photo, `meal-${index}.jpg`));
+    if (input.clip) {
+      form.append("clip", input.clip, input.clip instanceof File ? input.clip.name : "meal.mp4");
+    }
+    form.append("description", input.description);
+  }
+  form.append("clarifications", input.clarifications);
+  form.append("counted", input.counted);
+  form.append("language", input.language);
+  return form;
+}
+
+// The most the server answers in one page of doses or sessions.
+const RECORD_PAGE = 200;
+
+export const api = {
+  session: () => request<SessionState>("/session"),
+  signIn: (code: string) => request<void>("/session", json("POST", { code })),
+  signOut: () => request<void>("/session", { method: "DELETE" }),
+
+  estimate: (input: EstimateInput, signal?: AbortSignal) =>
+    request<MealEstimate>("/estimates", { method: "POST", body: estimateForm(input), signal }),
+
+  readLabel(photo: Blob, language: string) {
+    const form = new FormData();
+    form.append("photo", photo, "label.jpg");
+    form.append("language", language);
+    return request<PackagedFood>("/labels", { method: "POST", body: form });
+  },
+
+  product: (barcode: string) => request<PackagedFood>(`/products/${encodeURIComponent(barcode)}`),
+
+  meals: (skip = 0, take = 50) => request<Meal[]>(`/meals?skip=${skip}&take=${take}`),
+  createMeal: (meal: SaveMeal) => request<Meal>("/meals", json("POST", meal)),
+  updateMeal: (id: string, meal: SaveMeal) => request<Meal>(`/meals/${id}`, json("PUT", meal)),
+  deleteMeal: (id: string) => request<void>(`/meals/${id}`, { method: "DELETE" }),
+  photoUrl: (id: string) => `/api/meals/${id}/photo`,
+  // The photo kept with a meal, to send with a correction of it.
+  async mealPhoto(id: string): Promise<Blob> {
+    const response = await fetch(`/api/meals/${id}/photo`, { credentials: "same-origin" });
+    if (!response.ok) {
+      throw new ApiError(response.status, "");
+    }
+    return response.blob();
+  },
+
+  doses: (from: string | null, skip = 0, take = RECORD_PAGE) =>
+    request<Dose[]>(`/doses?skip=${skip}&take=${take}${from ? `&from=${encodeURIComponent(from)}` : ""}`),
+  // Every dose since from (all of them, with none), newest first, a page at a time.
+  async allDoses(from: string | null): Promise<Dose[]> {
+    const doses: Dose[] = [];
+    for (;;) {
+      const page = await api.doses(from, doses.length);
+      doses.push(...page);
+      if (page.length < RECORD_PAGE) {
+        return doses;
+      }
+    }
+  },
+  createDose: (dose: SaveDose) => request<Dose>("/doses", json("POST", dose)),
+  updateDose: (id: string, dose: SaveDose) => request<Dose>(`/doses/${id}`, json("PUT", dose)),
+  deleteDose: (id: string) => request<void>(`/doses/${id}`, { method: "DELETE" }),
+
+  exercise: (from: string | null, skip = 0, take = RECORD_PAGE) =>
+    request<Exercise[]>(`/exercise?skip=${skip}&take=${take}${from ? `&from=${encodeURIComponent(from)}` : ""}`),
+  // Every session started since from (all of them, with none), newest first, a page at a time.
+  async allExercise(from: string | null): Promise<Exercise[]> {
+    const sessions: Exercise[] = [];
+    for (;;) {
+      const page = await api.exercise(from, sessions.length);
+      sessions.push(...page);
+      if (page.length < RECORD_PAGE) {
+        return sessions;
+      }
+    }
+  },
+  createExercise: (session: SaveExercise) => request<Exercise>("/exercise", json("POST", session)),
+  updateExercise: (id: string, session: SaveExercise) => request<Exercise>(`/exercise/${id}`, json("PUT", session)),
+  deleteExercise: (id: string) => request<void>(`/exercise/${id}`, { method: "DELETE" }),
+  // What she called her other sessions, the latest first, for Otro to offer back.
+  exerciseNames: () => request<string[]>("/exercise/names"),
+
+  // All of them, newest first: a few a year, and the forecast reads every one.
+  periods: () => request<Period[]>("/periods"),
+  createPeriod: (period: SavePeriod) => request<Period>("/periods", json("POST", period)),
+  updatePeriod: (id: string, period: SavePeriod) => request<Period>(`/periods/${id}`, json("PUT", period)),
+  deletePeriod: (id: string) => request<void>(`/periods/${id}`, { method: "DELETE" }),
+  dayNotes: () => request<DayNote[]>("/day-notes"),
+  // Empty text deletes the note; the server then answers with nothing.
+  setDayNote: (day: string, text: string) => request<DayNote | undefined>(`/day-notes/${day}`, json("PUT", { text })),
+
+  foods: () => request<Food[]>("/foods"),
+  createFood: (food: SaveFood) => request<Food>("/foods", json("POST", food)),
+  updateFood: (id: string, food: SaveFood) => request<Food>(`/foods/${id}`, json("PUT", food)),
+  deleteFood: (id: string) => request<void>(`/foods/${id}`, { method: "DELETE" }),
+
+  // Each time carries its offset in the phone's own zone, so the file reads like the clock on the wall.
+  exportUrl: (table: "meals" | "items" | "doses" | "exercise" | "periods" | "day-notes" | "foods") =>
+    `/api/export/${table}.csv?tz=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone)}`,
+};

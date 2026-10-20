@@ -116,6 +116,14 @@ internal class McpFileSystemBackend(
             ["timeoutSeconds"] = timeoutSeconds
         }), ct);
 
+    public Task<FsResult<FsQueryResult>> QueryAsync(string path, string sql, int maxRows, CancellationToken ct) =>
+        CallTypedAsync<FsQueryResult>("fs_query", WithFilesystem(new Dictionary<string, object?>
+        {
+            ["path"] = path,
+            ["sql"] = sql,
+            ["maxRows"] = maxRows
+        }), ct);
+
     // The same fs_exec, with this call's token beside the conversation context on `_meta`: the
     // schema the server reflects stays as it is, and the token reaches nothing but the server.
     public async Task<FsResult<FsExecResult>> ExecAsync(

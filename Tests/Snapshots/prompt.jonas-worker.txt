@@ -1,4 +1,4 @@
-# jonas-worker — 4117 tokens across 12 sections and 5 skills
+# jonas-worker — 4116 tokens across 12 sections and 5 skills
 
   core_directive           CoreDirective         524 / 550    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               26 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -13,7 +13,7 @@
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
   language                 Language              132 / 300    The reply language, stated absolutely, against a request that is otherwise all English.
   obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
-  sandbox                  Skill                 124 / 130    body 1271 / 1350, served by mcp-sandbox
+  sandbox                  Skill                 123 / 130    body 1291 / 1350, served by mcp-sandbox
   web-browsing             Skill                 102 / 130    body 1594 / 1600, served by mcp-websearch
   home-watches             Skill                 104 / 120    body 1671 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 150 / 150    body 3588 / 3600, served by mcp-homeassistant
@@ -220,7 +220,7 @@ Proper nouns (people, places, titles of works) stay as they are -- do not transl
   </skill>
   <skill>
     <name>sandbox</name>
-    <description>Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount&apos;s files (&quot;compute the sha256 of that file&quot;, &quot;run this python&quot;, &quot;count the words in those notes&quot;). Not for reading or editing one file, which the file tools do. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command, and how a container path maps to a virtual one.</description>
+    <description>Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount&apos;s files (&quot;compute the sha256 of that file&quot;, &quot;run this python&quot;, &quot;count the words in those notes&quot;). Not for reading or editing one file, or for anything on a machine (`outpost:`): the file tools do those. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command.</description>
   </skill>
   <skill>
     <name>web-browsing</name>

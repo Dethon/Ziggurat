@@ -103,6 +103,40 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         response.Content.Headers.ContentType?.MediaType.ShouldBe("application/pdf");
     }
 
+    // A clip is kept only as a review copy (ADR 0046); a person still cannot upload one, and the
+    // composer, reading the same limits, refuses it at pick time.
+    [Fact]
+    public async Task AClipUploadedHere_IsRefusedAsAKindThisChatDoesNotAccept()
+    {
+        var ticket = _tickets.MintUpload(TopicId, _conversationId, "default");
+
+        var response = await UploadAsync(ticket.Token, TopicId, "x"u8.ToArray(), "meal.mp4", "video/mp4");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.UnsupportedMediaType);
+        _settings.Limits.AllowedMediaTypes.ShouldNotContain("video/mp4");
+    }
+
+    // A <video> element asks for byte ranges to start playing and to seek, and plays only what is
+    // answered as video.
+    [Fact]
+    public async Task ADownloadAskedForARange_IsAnsweredWithThatRangeAndTheFilesType()
+    {
+        var store = _app.Services.GetRequiredService<AttachmentStore>();
+        var payload = Enumerable.Range(0, 100).Select(i => (byte)i).ToArray();
+        (await store.SaveCopyAsync("7-42/clip", _conversationId.ConversationId, "default", "meal.mp4", "video/mp4",
+            payload, CancellationToken.None)).ShouldBeTrue();
+        var download = _tickets.MintDownload("7-42/clip");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/attachments/7-42/clip?ticket={download.Token}");
+        request.Headers.Range = new RangeHeaderValue(10, 19);
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.PartialContent);
+        response.Content.Headers.ContentType?.MediaType.ShouldBe("video/mp4");
+        response.Content.Headers.ContentRange.ShouldNotBeNull().Length.ShouldBe(100);
+        (await response.Content.ReadAsByteArrayAsync()).ShouldBe(payload[10..20]);
+    }
+
     [Fact]
     public async Task AnUploadWithNoTicket_IsRefused()
     {

@@ -1,0 +1,313 @@
+import { describe, expect, it } from "vitest";
+import {
+  attachedDoses,
+  byDay,
+  insulinBelow,
+  dayUnits,
+  onPeriod,
+  matches,
+  OUTCOME_AFTER_HOURS,
+  outcomeState,
+  pendingOutcomes,
+  rapidUnits,
+  timeline,
+  mealEdited,
+  withDose,
+  withoutDose,
+} from "./log";
+import { fromLogged, scaled } from "./carbs";
+import { toLocalInput } from "./format";
+import type { Dose, Exercise, Meal } from "./types";
+
+const now = new Date("2026-10-15T20:00:00Z");
+const meal = (id: string, hoursAgo: number, outcome: Meal["outcome"] = "unknown", names = ["toast"]): Meal => ({
+  id,
+  eatenAt: new Date(now.getTime() - hoursAgo * 3_600_000).toISOString(),
+  notes: null,
+  outcome,
+  hasPhoto: false,
+  firstEstimate: null,
+  doses: [],
+  items: names.map((name) => ({
+    name,
+    portion: null,
+    grams: null,
+    carbsPer100g: null,
+    carbsLow: 10,
+    carbs: 10,
+    carbsHigh: 10,
+    source: "manual",
+    confidence: null,
+    edited: false,
+  })),
+});
+
+describe("pendingOutcomes", () => {
+  it("asks about the last two days' meals with no outcome, newest first", () => {
+    const meals = [meal("old", 50), meal("lunch", 6), meal("noted", 3, "inRange"), meal("breakfast", 12), meal("tea", 2.5)];
+    expect(pendingOutcomes(meals, now).map((m) => m.id)).toEqual(["tea", "lunch", "breakfast"]);
+  });
+
+  it("leaves out a meal dated in the future", () => {
+    expect(pendingOutcomes([meal("later", -2)], now)).toEqual([]);
+  });
+
+  it("does not ask about a meal saved moments ago, only once its glucose can say something", () => {
+    expect(OUTCOME_AFTER_HOURS).toBe(2);
+    expect(pendingOutcomes([meal("just saved", 0.1), meal("an hour ago", 1.9)], now)).toEqual([]);
+    expect(pendingOutcomes([meal("two hours ago", 2)], now).map((m) => m.id)).toEqual(["two hours ago"]);
+  });
+});
+
+describe("outcomeState", () => {
+  it("tells noted, waiting, too early and never noted apart", () => {
+    expect(outcomeState(meal("noted", 3, "high"), now)).toBe("noted");
+    expect(outcomeState(meal("early", 1), now)).toBe("early");
+    expect(outcomeState(meal("waiting", 5), now)).toBe("waiting");
+    expect(outcomeState(meal("old", 60), now)).toBe("unnoted");
+  });
+});
+
+describe("matches", () => {
+  it("finds a meal by any of its foods, ignoring accents and case", () => {
+    const paella = meal("p", 1, "unknown", ["Paella de marisco", "Plátano"]);
+    expect(matches(paella, "platano")).toBe(true);
+    expect(matches(paella, "MARISCO")).toBe(true);
+    expect(matches(paella, "pizza")).toBe(false);
+    expect(matches(paella, "  ")).toBe(true);
+  });
+});
+
+const dose = (id: string, hoursAgo: number, kind: Dose["kind"] = "rapid"): Dose => ({
+  id,
+  takenAt: new Date(now.getTime() - hoursAgo * 3_600_000).toISOString(),
+  units: 4,
+  kind,
+  note: null,
+  mealIds: [],
+});
+
+describe("timeline", () => {
+  it("lists meals and doses together, newest first, as the day happened", () => {
+    const entries = timeline([meal("lunch", 6), meal("breakfast", 12)], [dose("basal", 2, "basal"), dose("correction", 9)]);
+    expect(entries.map((entry) => entry.id)).toEqual(["basal", "lunch", "correction", "breakfast"]);
+    expect(entries.map((entry) => entry.type)).toEqual(["dose", "meal", "dose", "meal"]);
+  });
+
+  it("puts a meal above a dose taken at the same moment, which reads as the dose taken for it", () => {
+    const lunch = meal("lunch", 6);
+    const withIt = { ...dose("bolus", 0), takenAt: lunch.eatenAt };
+    expect(timeline([lunch], [withIt]).map((entry) => entry.id)).toEqual(["lunch", "bolus"]);
+  });
+
+  it("puts her exercise among them by when it started, a running session too", () => {
+    const at = (hoursAgo: number) => new Date(now.getTime() - hoursAgo * 3_600_000).toISOString();
+    const walk: Exercise = { id: "walk", kind: "walk", name: null, startedAt: at(5), endedAt: at(4), note: null };
+    const gym: Exercise = { id: "gym", kind: "gym", name: null, startedAt: at(1), endedAt: null, note: null };
+    const entries = timeline([meal("lunch", 6)], [dose("basal", 2, "basal")], [walk, gym]);
+    expect(entries.map((entry) => entry.id)).toEqual(["gym", "basal", "walk", "lunch"]);
+    expect(entries.map((entry) => entry.type)).toEqual(["exercise", "dose", "exercise", "meal"]);
+  });
+
+  it("orders by the instant, whatever offset each time was written with", () => {
+    const early = { ...meal("early", 0), eatenAt: "2026-10-15T10:00:00+02:00" };
+    const late = { ...dose("late", 0), takenAt: "2026-10-15T09:30:00Z" };
+    expect(timeline([early], [late]).map((entry) => entry.id)).toEqual(["late", "early"]);
+  });
+});
+
+describe("byDay", () => {
+  // Built on the phone's own clock, so the days are the same wherever the tests run.
+  const at = (day: number, hour: number) => new Date(2026, 9, day, hour, 0).toISOString();
+
+  it("groups the timeline by the day on the phone's calendar, keeping its order", () => {
+    const meals = [{ ...meal("lunch", 0), eatenAt: at(15, 14) }, { ...meal("yesterday", 0), eatenAt: at(14, 23) }];
+    const doses = [{ ...dose("night", 0, "basal"), takenAt: at(15, 22) }];
+    const days = byDay(timeline(meals, doses));
+    expect(days.map((day) => day.entries.map((entry) => entry.id))).toEqual([["night", "lunch"], ["yesterday"]]);
+    expect(days[0].date.getDate()).toBe(15);
+  });
+
+  it("gives a day of doses alone a day of its own", () => {
+    expect(byDay(timeline([], [dose("basal", 2, "basal")])).map((day) => day.entries.length)).toEqual([1]);
+  });
+});
+
+describe("rapidUnits", () => {
+  it("adds up the rapid insulin linked to a meal, and leaves basal out", () => {
+    const lunch = {
+      ...meal("lunch", 3),
+      doses: [
+        { id: "a", units: 4.5, kind: "rapid" as const, shared: false },
+        { id: "b", units: 1.25, kind: "rapid" as const, shared: false },
+        { id: "c", units: 14, kind: "basal" as const, shared: false },
+      ],
+    };
+    expect(rapidUnits(lunch)).toBe(5.75);
+    expect(rapidUnits(meal("none", 3))).toBe(0);
+  });
+
+  it("does not drift on decimals", () => {
+    const tea = { ...meal("tea", 3), doses: [0.1, 0.2].map((units, i) => ({ id: `${i}`, units, kind: "rapid" as const, shared: false })) };
+    expect(rapidUnits(tea)).toBe(0.3);
+  });
+});
+
+describe("withDose and withoutDose", () => {
+  const lunch = { ...meal("lunch", 3), doses: [{ id: "d", units: 4, kind: "rapid" as const, shared: false }] };
+  const tea = meal("tea", 1);
+
+  it("moves a dose to the meal it now belongs to, and off the one it left", () => {
+    const moved = withDose([lunch, tea], { ...dose("d", 1), units: 5, mealIds: ["tea"] });
+    expect(moved.map((m) => m.doses)).toEqual([[], [{ id: "d", units: 5, kind: "rapid", shared: false }]]);
+  });
+
+  // The whole dose on each, said to be shared, never split into shares she did not take.
+  it("puts a dose for two meals on both, whole and marked shared, and unmarks it when it is back to one", () => {
+    const shared = withDose([lunch, tea], { ...dose("d", 1), units: 6, mealIds: ["lunch", "tea"] });
+    expect(shared.map((m) => m.doses)).toEqual([
+      [{ id: "d", units: 6, kind: "rapid", shared: true }],
+      [{ id: "d", units: 6, kind: "rapid", shared: true }],
+    ]);
+    const back = withDose(shared, { ...dose("d", 1), units: 6, mealIds: ["tea"] });
+    expect(back.map((m) => m.doses)).toEqual([[], [{ id: "d", units: 6, kind: "rapid", shared: false }]]);
+  });
+
+  it("unlinks a dose that belongs to no meal now", () => {
+    expect(withDose([lunch, tea], { ...dose("d", 1), mealIds: [] }).map((m) => m.doses.length)).toEqual([0, 0]);
+  });
+
+  it("takes a deleted dose off its meal", () => {
+    expect(withoutDose([lunch, tea], "d").map((m) => m.doses.length)).toEqual([0, 0]);
+  });
+});
+
+describe("onPeriod", () => {
+  const periods = [
+    { id: "p1", start: "2026-09-09", end: "2026-09-14" },
+    { id: "p2", start: "2026-10-14", end: null },
+  ];
+  const today = "2026-10-16";
+
+  // The Log's days are the phone's calendar days, and so are a period's.
+  it("marks a day inside a recorded period, by the phone's calendar", () => {
+    expect(onPeriod(new Date(2026, 8, 9, 0, 10), periods, today)).toBe(true);
+    expect(onPeriod(new Date(2026, 8, 14, 23, 50), periods, today)).toBe(true);
+    expect(onPeriod(new Date(2026, 8, 15, 0, 10), periods, today)).toBe(false);
+  });
+
+  it("marks an ongoing period up to today and no further", () => {
+    expect(onPeriod(new Date(2026, 9, 16, 12), periods, today)).toBe(true);
+    expect(onPeriod(new Date(2026, 9, 17, 12), periods, today)).toBe(false);
+  });
+});
+
+describe("attachedDoses", () => {
+  const lunch = meal("lunch", 6);
+  const linked = (id: string, to: string | string[], takenAt = lunch.eatenAt) => ({
+    ...dose(id, 0),
+    takenAt,
+    mealIds: typeof to === "string" ? [to] : to,
+  });
+
+  // Its own row still, as every dose is, but drawn as part of the meal it was taken for.
+  it("attaches a dose to its meal when it sits right under it", () => {
+    expect([...attachedDoses(timeline([lunch], [linked("bolus", "lunch")]))]).toEqual([["bolus", "lunch"]]);
+  });
+
+  it("attaches every dose of the meal that follows it, one after another", () => {
+    const entries = timeline([lunch], [linked("a", "lunch"), linked("b", "lunch")]);
+    expect([...attachedDoses(entries).keys()].toSorted()).toEqual(["a", "b"]);
+  });
+
+  // One bolus for lunch and the flan after it is drawn under whichever of them it sits right under.
+  it("attaches a dose for several meals under the one of them right above it", () => {
+    const flan = { ...meal("flan", 5.7) };
+    const entries = timeline([lunch, flan], [linked("bolus", ["lunch", "flan"])]);
+    expect(entries.map((entry) => entry.id)).toEqual(["flan", "lunch", "bolus"]);
+    expect([...attachedDoses(entries)]).toEqual([["bolus", "lunch"]]);
+  });
+
+  it("leaves a linked dose on its own when something else came between", () => {
+    const later = new Date(Date.parse(lunch.eatenAt) + 3_600_000).toISOString();
+    const entries = timeline([lunch, meal("tea", 4)], [linked("bolus", "lunch", later)]);
+    expect(entries.map((entry) => entry.id)).toEqual(["tea", "bolus", "lunch"]);
+    expect(attachedDoses(entries).size).toBe(0);
+  });
+
+  it("never attaches a dose linked to no meal, or to another meal", () => {
+    const entries = timeline([lunch], [{ ...dose("free", 0), takenAt: lunch.eatenAt }, linked("other", "breakfast")]);
+    expect(attachedDoses(entries).size).toBe(0);
+  });
+});
+
+describe("dayUnits", () => {
+  it("adds up every dose of the day, rapid and basal, without drift", () => {
+    const entries = timeline([meal("lunch", 6)], [dose("a", 1, "basal"), { ...dose("b", 2), units: 0.1 }, { ...dose("c", 3), units: 0.2 }]);
+    const basal = entries.find((entry) => entry.id === "a");
+    if (basal?.type === "dose") {
+      basal.dose.units = 14;
+    }
+    expect(dayUnits(entries)).toBe(14.3);
+  });
+
+  it("is nothing on a day without doses", () => {
+    expect(dayUnits(timeline([meal("lunch", 6)], []))).toBe(0);
+  });
+});
+
+describe("insulinBelow", () => {
+  const lunch = { ...meal("lunch", 3), doses: [{ id: "a", units: 4, kind: "rapid" as const, shared: false }, { id: "b", units: 1, kind: "rapid" as const, shared: false }] };
+
+  // The meal's own count of its insulin would say the same number twice, right above the dose rows.
+  const under = (meal: string, ...doses: string[]) => new Map(doses.map((id) => [id, meal]));
+
+  it("is true when every dose of the meal is drawn right under it", () => {
+    expect(insulinBelow(lunch, under("lunch", "a", "b"))).toBe(true);
+  });
+
+  // A shared dose drawn under the other meal leaves this one counting its own insulin.
+  it("is false when its dose is drawn under another meal it was also for", () => {
+    expect(insulinBelow(lunch, under("flan", "a", "b"))).toBe(false);
+  });
+
+  // As rapidUnits counts: a basal dose linked to the meal never was in its count.
+  it("minds only its rapid doses, as the meal's own count does", () => {
+    const withBasal = { ...lunch, doses: [...lunch.doses, { id: "c", units: 14, kind: "basal" as const, shared: false }] };
+    expect(insulinBelow(withBasal, under("lunch", "a", "b"))).toBe(true);
+    expect(insulinBelow({ ...meal("tea", 1), doses: [{ id: "c", units: 14, kind: "basal" as const, shared: false }] }, under("tea", "c"))).toBe(false);
+  });
+
+  it("is false when any of its doses is elsewhere in the day, or it has none", () => {
+    expect(insulinBelow(lunch, under("lunch", "a"))).toBe(false);
+    expect(insulinBelow(meal("tea", 1), new Map())).toBe(false);
+  });
+});
+
+describe("a logged meal open in its sheet", () => {
+  const logged = meal("m", 3, "unknown", ["toast", "jam"]);
+  const opened = () => ({
+    items: logged.items.map(fromLogged),
+    notes: "",
+    when: toLocalInput(logged.eatenAt),
+    outcome: logged.outcome,
+  });
+
+  it("is not edited as it opened", () => {
+    expect(mealEdited(logged, opened())).toBe(false);
+  });
+
+  it("is edited once a food changes, goes or comes", () => {
+    const edit = opened();
+    expect(mealEdited(logged, { ...edit, items: [scaled(edit.items[0], 0.5), edit.items[1]] })).toBe(true);
+    expect(mealEdited(logged, { ...edit, items: edit.items.slice(1) })).toBe(true);
+    expect(mealEdited(logged, { ...edit, items: [...edit.items, edit.items[0]] })).toBe(true);
+  });
+
+  it("is edited by its notes, time or outcome, but not by spaces around the notes", () => {
+    expect(mealEdited(logged, { ...opened(), notes: "  " })).toBe(false);
+    expect(mealEdited(logged, { ...opened(), notes: "shared" })).toBe(true);
+    expect(mealEdited(logged, { ...opened(), when: "2026-01-01T10:00" })).toBe(true);
+    expect(mealEdited(logged, { ...opened(), outcome: "high" })).toBe(true);
+  });
+});

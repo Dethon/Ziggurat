@@ -77,6 +77,8 @@ public static class FileSystemOperations
             VfsFileInfoTool.Key, VfsFileInfoTool.Name),
         Op("fs_exec", nameof(IFileSystemBackend.ExecAsync), typeof(FsExecResult),
             VfsExecTool.Key, VfsExecTool.Name),
+        Op("fs_query", nameof(IFileSystemBackend.QueryAsync), typeof(FsQueryResult),
+            VfsQueryTool.Key, VfsQueryTool.Name),
         Op("fs_blob_read", nameof(IFileSystemBackend.ReadChunksAsync), typeof(FsBlobReadResult),
             alternate: nameof(FileSystemBackendBase.ReadBlobAsync)),
         Op("fs_blob_write", nameof(FileSystemBackendBase.WriteBlobAsync), typeof(FsBlobWriteResult)),

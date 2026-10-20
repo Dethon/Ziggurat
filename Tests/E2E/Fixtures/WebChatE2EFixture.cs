@@ -16,6 +16,14 @@ public class WebChatE2EFixture : E2EFixtureBase
     public string WebChatUrl =>
         _stack is { WebChatUrl: { Length: > 0 } url } ? url + _space : "";
 
+    // The default space, which is where a review copy's topic is minted (another channel's
+    // conversation carries no space of WebChat's). Only the Sugary collection goes there.
+    public string DefaultSpaceUrl => _stack?.WebChatUrl ?? "";
+
+    public string SugaryUrl => _stack?.SugaryUrl ?? "";
+
+    public string SugaryMcpEndpoint => _stack?.SugaryMcpEndpoint ?? "";
+
     // Scoped to this collection's space, so a test says what the transcriber answers without
     // knowing that another collection is dictating beside it.
     public string Transcript
@@ -93,6 +101,11 @@ public class WebChatE2ETopicsCollection : ICollectionFixture<WebChatE2EFixture>;
 [CollectionDefinition(WebChatE2ECollections.Attachments)]
 public class WebChatE2EAttachmentsCollection : ICollectionFixture<WebChatE2EFixture>;
 
+// The tenth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
+// collection needs a space name and CollectionSlices raised.
+[CollectionDefinition(WebChatE2ECollections.Sugary)]
+public class WebChatE2ESugaryCollection : ICollectionFixture<WebChatE2EFixture>;
+
 public static class WebChatE2ECollections
 {
     public const string Chat = "WebChatE2E.Chat";
@@ -104,4 +117,5 @@ public static class WebChatE2ECollections
     public const string Topics = "WebChatE2E.Topics";
     public const string Attachments = "WebChatE2E.Attachments";
     public const string DictationMicrophone = "WebChatE2E.DictationMicrophone";
+    public const string Sugary = "WebChatE2E.Sugary";
 }

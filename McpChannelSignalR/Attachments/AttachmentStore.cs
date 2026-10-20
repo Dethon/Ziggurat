@@ -69,6 +69,38 @@ public sealed class AttachmentStore(
         };
     }
 
+    // A copy of a file another channel holds, kept under that channel's own reference so the history
+    // the two share names something here (ADR 0046). False for an id that cannot name a file here,
+    // for one under another conversation's directory (it would be removed with that topic, not this
+    // one), and for one this store already holds: whatever rests under it — somebody's upload, or the
+    // same copy kept before — is never written over.
+    public async Task<bool> SaveCopyAsync(
+        string id,
+        string conversationId,
+        string? spaceSlug,
+        string fileName,
+        string mediaType,
+        byte[] bytes,
+        CancellationToken ct)
+    {
+        var directory = ResolveDirectory(id);
+        if (directory is null
+            || id.Split('/')[0] != ConversationKey(conversationId)
+            || Directory.Exists(directory))
+        {
+            return false;
+        }
+
+        Directory.CreateDirectory(directory);
+        var safeName = SafeFileName(fileName);
+        await File.WriteAllBytesAsync(Path.Combine(directory, safeName), bytes, ct);
+        var metadata = new Metadata(
+            safeName, mediaType, bytes.LongLength, conversationId, spaceSlug, timeProvider.GetUtcNow());
+        await File.WriteAllTextAsync(
+            Path.Combine(directory, MetadataFileName), JsonSerializer.Serialize(metadata), ct);
+        return true;
+    }
+
     public Record? Find(string id)
     {
         var directory = ResolveDirectory(id);

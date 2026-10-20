@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Domain.DTOs;
+using Domain.Tools.Sugary.Estimation;
 using Domain.Tools.Web;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Utils;
@@ -27,7 +28,8 @@ public static class ScenarioChecks
         .. Delegated(scenario, recording),
         .. ConditionallyDelegated(scenario, recording),
         .. Forgot(scenario, recording),
-        .. Dated(scenario, recording)
+        .. Dated(scenario, recording),
+        .. Estimated(scenario, recording)
     ];
 
     // What a failure says when the host, not the model, made the call. One spelling, because the
@@ -267,6 +269,34 @@ public static class ScenarioChecks
                && told.Value != pinned
             ? [$"the prompt said '{told.Value}' to a turn pinned to {scenario.Instant:yyyy-MM-dd}: {MisDated}, so this run says nothing about the model"]
             : [];
+    }
+
+    // The answer as the Sugary channel reads it — the last message, parsed whole — so a reply the
+    // app would refuse fails the run rather than being searched for words.
+    private static IEnumerable<string> Estimated(Scenario scenario, Recording recording)
+    {
+        if (scenario.Estimate is not { } expected)
+        {
+            return [];
+        }
+
+        if (string.IsNullOrWhiteSpace(recording.Answer))
+        {
+            return ["the turn gave no answer to read as an estimate"];
+        }
+
+        try
+        {
+            return MealEstimateReply.Read(recording.Answer).Items
+                .Where(item => expected.NeverListed.Any(word =>
+                    item.Name.Contains(word, StringComparison.OrdinalIgnoreCase)))
+                .Select(item => $"the estimate lists '{item.Name}', which the turn said was already counted")
+                .ToList();
+        }
+        catch (UnreadableEstimateException e)
+        {
+            return [$"{e.Message} The answer was: {recording.Answer}"];
+        }
     }
 
     private static IReadOnlyList<string> Answered(Scenario scenario, Recording recording) =>

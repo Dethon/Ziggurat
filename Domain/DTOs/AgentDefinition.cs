@@ -28,6 +28,12 @@ public record AgentDefinition
     // reaching somebody's laptop, and a new machine appearing on the network must not silently
     // widen what any agent can touch.
     public bool UsesOutposts { get; init; }
+
+    // An agent that calls nothing: its servers are dialled for the prompts they serve, and no tool,
+    // skill or mount of theirs reaches its requests. For an agent whose every turn is one answer —
+    // sugary estimates a meal, and a turn that stopped to read her log cost three times as much and
+    // sometimes ended with no answer at all. It enables no features, since every one is tools.
+    public bool NoTools { get; init; }
     public int? MaxContextTokens { get; init; }
     public string? ReasoningEffort { get; init; }
     public ProviderRouting? ProviderRouting { get; init; }

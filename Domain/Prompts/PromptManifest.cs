@@ -213,6 +213,23 @@ public static class PromptManifest
         },
         new()
         {
+            Name = SugaryPrompt.Name,
+            Purpose = "How a meal's carbs are estimated for her, item by item with honest ranges, and that no insulin dose is ever suggested.",
+            Priority = PromptPriority.Client,
+            // The standalone Sugary app's system prompt as it was measured on the benchmark meals,
+            // whole: every sentence of it is read while estimating, so none of it is a skill.
+            TokenBudget = 1_200,
+            ServedBy = "mcp-sugary",
+            // Jonas dials the same server for her log; these words are for the agent that
+            // estimates, and a reader of the log is not one.
+            Audience = PromptAudience.ForAgents("sugary"),
+            // The dose rule is a refusal, and the one thing the core directive's "do not refuse"
+            // must lose to: it is read later, and it governs every turn of this agent.
+            Conflict = ConflictPolicy.Governs(PromptRules.Refusals).Beating(CoreDirective),
+            Claims = SugaryPrompt.Claims
+        },
+        new()
+        {
             Name = Date,
             Purpose = "Today's date. Last of the static sections, because it is the only one that changes on its own.",
             Priority = PromptPriority.Date,
@@ -317,6 +334,20 @@ public static class PromptManifest
             BodyBudget = 1_350,
             ServedBy = "mcp-sandbox",
             Claims = SandboxSkill.Claims
+        },
+        new()
+        {
+            Name = SugarySkill.Name,
+            Description = SugarySkill.Description,
+            DescriptionBudget = 100,
+            // Raised from 500 for her insulin doses: where they are and how a meal's are found. Raised
+            // again to 700 for her periods and day notes, the tables a cycle question reads beside /ha,
+            // and to 750 for her exercise. Raised to 850 when a dose stopped being refused and started
+            // being worked out (2026-10-19): only from numbers she gave, missing ones asked for, the
+            // working shown — the rule here that guards her safety, and not one to cut thin.
+            BodyBudget = 850,
+            ServedBy = "mcp-sugary",
+            Claims = SugarySkill.Claims
         },
         new()
         {

@@ -1,0 +1,131 @@
+/* The live scanner, inside the packaged-food sheet. Over the picture, black and white are the
+   viewfinder's own colours in both schemes; around it, the app's tokens. */
+.scanner {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.scanner-frame {
+  --guide: #fff;
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: var(--radius-l);
+  background: #000;
+}
+
+.scanner-frame video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The barcode goes between the four corners. Everything around it is dimmed by the box's own
+   shadow. */
+.scanner-guide {
+  position: absolute;
+  inset: 27% 7%;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  box-shadow: 0 0 0 100vmax rgb(0 0 0 / 45%);
+  background:
+    linear-gradient(var(--guide), var(--guide)) top left / 32px 4px,
+    linear-gradient(var(--guide), var(--guide)) top left / 4px 32px,
+    linear-gradient(var(--guide), var(--guide)) top right / 32px 4px,
+    linear-gradient(var(--guide), var(--guide)) top right / 4px 32px,
+    linear-gradient(var(--guide), var(--guide)) bottom left / 32px 4px,
+    linear-gradient(var(--guide), var(--guide)) bottom left / 4px 32px,
+    linear-gradient(var(--guide), var(--guide)) bottom right / 32px 4px,
+    linear-gradient(var(--guide), var(--guide)) bottom right / 4px 32px;
+  background-repeat: no-repeat;
+  transition: background-color var(--dur) var(--ease-out);
+}
+
+.scanner-scanning .scanner-guide::after {
+  content: "";
+  position: absolute;
+  inset: 0 8%;
+  height: 2px;
+  margin: auto;
+  background: #ff5a4d;
+  box-shadow: 0 0 8px #ff5a4d;
+  animation: scanner-sweep 1.6s ease-in-out infinite alternate;
+}
+
+.scanner-starting {
+  --guide: rgb(255 255 255 / 45%);
+}
+
+.scanner-found {
+  --guide: #4ade80;
+}
+
+.scanner-found .scanner-guide {
+  background-color: rgb(74 222 128 / 22%);
+}
+
+.scanner-check {
+  width: 56px;
+  height: 56px;
+  fill: none;
+  stroke: #4ade80;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.scanner-light {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 1.5px solid rgb(255 255 255 / 35%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  cursor: pointer;
+}
+
+.scanner-light-on {
+  background: #fff;
+  color: #000;
+}
+
+.scanner-status {
+  min-height: 2.6em;
+  margin: 0;
+  font-weight: 700;
+  text-align: center;
+  color: var(--color-ink);
+}
+
+.scanner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.scanner-actions .button {
+  flex: 1 1 auto;
+}
+
+@keyframes scanner-sweep {
+  from {
+    transform: translateY(-40px);
+  }
+  to {
+    transform: translateY(40px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scanner-scanning .scanner-guide::after {
+    animation: none;
+  }
+}

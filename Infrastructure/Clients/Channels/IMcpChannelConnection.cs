@@ -6,8 +6,8 @@ namespace Infrastructure.Clients.Channels;
 // is one sequence and it belongs to the connection: a caller that could connect, register, check
 // health and reconnect in some other order would be a caller that can get the order wrong.
 //
-// Being **not connected** — before the first connect, and for the whole of a reconnect — is five
-// behaviours, one per member, and they differ because their callers differ
+// Being **not connected** — before the first connect, and for the whole of a reconnect — is a
+// behaviour per member, and they differ because their callers differ
 // (docs/adr/0011-not-connected-is-five-behaviours-and-stays-that-way.md):
 //
 // - SendReplyAsync, RequestApprovalAsync and NotifyAutoApprovedAsync throw. They are called by an
@@ -18,6 +18,9 @@ namespace Infrastructure.Clients.Channels;
 //   to continue.
 // - RegisterAgentsAsync returns silently and IsHealthyAsync returns false. Both are called by the
 //   connection's own supervision, which reacts to the answer rather than to an exception.
+// - FetchAttachmentAsync returns null and StoreAttachmentAsync false, the same answers as a file the
+//   channel cannot hand over or will not keep: hydration turns the first into a placeholder, and a
+//   review copy's background copy only logs the second (ADR 0046).
 // - Messages yields forever. The agent's read loop awaits messages for the process lifetime, so a
 //   reconnect is invisible to it; a completed sequence would end the loop.
 //

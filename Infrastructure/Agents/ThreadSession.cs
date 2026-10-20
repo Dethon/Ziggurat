@@ -16,7 +16,8 @@ internal sealed record ThreadSessionData(
     IVirtualFileSystemRegistry? FileSystemRegistry,
     IReadOnlyList<PromptSection> FileSystemPrompts,
     IReadOnlyList<string> MountedNames,
-    IReadOnlyList<string> ShadowedNames);
+    IReadOnlyList<string> ShadowedNames,
+    IReadOnlyList<PromptSkill> Skills);
 
 internal sealed class ThreadSession : IAsyncDisposable
 {
@@ -29,7 +30,7 @@ internal sealed class ThreadSession : IAsyncDisposable
 
     // The skills this session's servers ship, granted by granting the servers: a worker allowed a
     // server is taught its skills, and one that is not is not.
-    public IReadOnlyList<PromptSkill> Skills => _data.ClientManager.Skills;
+    public IReadOnlyList<PromptSkill> Skills => _data.Skills;
     public IVirtualFileSystemRegistry? FileSystemRegistry => _data.FileSystemRegistry;
 
     // What this build made of the filesystems it found. Read once, by the step that writes each
@@ -53,10 +54,11 @@ internal sealed class ThreadSession : IAsyncDisposable
         CancellationToken ct,
         McpPromptCache? promptCache = null,
         ReadImageSupport? readImages = null,
-        IVfsBridge? bridge = null)
+        IVfsBridge? bridge = null,
+        bool noTools = false)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
-            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge);
+            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge, noTools);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -82,7 +84,8 @@ internal sealed class ThreadSessionBuilder(
     ILoggerFactory? loggerFactory,
     McpPromptCache? promptCache = null,
     ReadImageSupport? readImages = null,
-    IVfsBridge? bridge = null)
+    IVfsBridge? bridge = null,
+    bool noTools = false)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 
@@ -96,7 +99,8 @@ internal sealed class ThreadSessionBuilder(
         ChannelProtocol.CreateConversationTool,
         ChannelProtocol.RegisterAgentsTool,
         ChannelProtocol.ReceiveTool,
-        ChannelProtocol.FetchAttachmentTool
+        ChannelProtocol.FetchAttachmentTool,
+        ChannelProtocol.StoreAttachmentTool
     ];
 
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
@@ -107,6 +111,14 @@ internal sealed class ThreadSessionBuilder(
         var clientManager = await McpClientManager.CreateAsync(
             name, userId, description, endpoints, new McpClientHandlers(), promptCache, dialLogger,
             readImages?.Store, ct);
+
+        // Dialled for its prompts alone: the servers still say how this agent works, but nothing
+        // they offer to call or to load reaches it, and no mount is made that no tool could read.
+        // No skills is also what keeps the preload judge from being asked on its turns.
+        if (noTools)
+        {
+            return new ThreadSessionData(clientManager, [], null, [], [], [], []);
+        }
 
         IVirtualFileSystemRegistry? registry = null;
         IReadOnlyList<AIFunction> fileSystemTools = [];
@@ -146,7 +158,7 @@ internal sealed class ThreadSessionBuilder(
 
         return new ThreadSessionData(
             clientManager, tools, registry, fileSystemPrompts,
-            [.. fsRegistry.GetMounts().Select(m => m.Name)], shadowed);
+            [.. fsRegistry.GetMounts().Select(m => m.Name)], shadowed, clientManager.Skills);
     }
 
     // The filesystem tools lead; the rest keep the order they had. The list is read in order, and

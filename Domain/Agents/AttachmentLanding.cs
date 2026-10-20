@@ -194,8 +194,12 @@ public static class AttachmentLanding
         }
     }
 
-    public static string Describe(IReadOnlyList<string> paths) =>
-        $"[The attached files are in the sandbox at: {string.Join(", ", paths)}]";
+    // Shown, the files are already in front of the model and the copy exists for commands; reading
+    // it back would only send the same bytes again.
+    public static string Describe(IReadOnlyList<string> paths, bool shown) => shown
+        ? $"[The attached files are shown in this message, and a copy is in the sandbox at: {string.Join(", ", paths)}. "
+          + "Look at them here; use the sandbox copy only to run a command against a file, not to read it again.]"
+        : $"[The attached files are in the sandbox at: {string.Join(", ", paths)}]";
 
     // Named rather than counted: a partly landed message is where a count would make the model
     // guess which file it lost.

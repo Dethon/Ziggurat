@@ -524,6 +524,7 @@ internal sealed class ConversationGroup(
         userMessage.SetSatelliteId(message.SatelliteId);
         userMessage.SetDismissedAlert(message.DismissedAlert);
         userMessage.SetConfigPatch(message.ConfigPatch);
+        userMessage.SetResponseFormat(message.ResponseFormat);
         // References only. The bytes rest wherever the channel keeps them and are put back on the
         // way to the model, so a history read costs the same whether or not files were sent
         // (ADR 0020). The channel id rides along because it names who still holds them.

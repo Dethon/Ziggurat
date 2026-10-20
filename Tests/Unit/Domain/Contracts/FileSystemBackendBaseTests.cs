@@ -46,7 +46,8 @@ public class FileSystemBackendBaseTests
         { VfsMoveTool.Name, async b => ErrorOf(await b.MoveAsync("/a", "/b", default)) },
         { VfsRemoveTool.Name, async b => ErrorOf(await b.DeleteAsync("/x", default)) },
         { VfsExecTool.Name, async b => ErrorOf(await b.ExecAsync("/", "c", null, default)) },
-        { VfsCopyTool.Name, async b => ErrorOf(await b.CopyAsync("/a", "/b", false, true, default)) }
+        { VfsCopyTool.Name, async b => ErrorOf(await b.CopyAsync("/a", "/b", false, true, default)) },
+        { VfsQueryTool.Name, async b => ErrorOf(await b.QueryAsync("/", "select 1", 10, default)) }
     };
 
     [Theory]

@@ -116,6 +116,32 @@ public class AgentAppSettingsTests
         models.ShouldAllBe(m => !m.Contains(":nitro") && !m.Contains(":floor"));
     }
 
+    // Relace serves jonas's model and garbles a photograph on the way in: pinned to it, a plate of
+    // courgette and pizza came back as a blank page watermarked "diet", "diciembre", a tortilla —
+    // seven of eight, where every other provider read it (2026-10-18). Balanced routing reached it
+    // often enough that jonas file_read and cropped photos it had been sent, looking for a picture
+    // it never got. Ignored rather than routed around with `sort`/`order`, so routing stays balanced.
+    // Morph serves both agents' models and loses a tool argument mid-flow: after the first
+    // web_action of a form it answers the next ones with the element's ref moved to endRef or left
+    // out (pinned to it, 3 of 12 second calls kept it; DeepInfra 12 of 12), so the browser refuses
+    // and the model retries to its ceiling. Four web scenarios went 0/4 on it (2026-10-19). Ignored
+    // the same way, by both agents: nabu's throughput sort would otherwise prefer it.
+    [Fact]
+    public void Jonas_IgnoresTheProvidersThatGarblePhotographsAndDropToolArguments()
+    {
+        Ignored("jonas").ShouldBe(["relace", "morph"]);
+    }
+
+    [Fact]
+    public void Nabu_IgnoresTheProviderThatDropsToolArguments()
+    {
+        Ignored("nabu").ShouldBe(["morph"]);
+    }
+
+    private static List<string>? Ignored(string agentId) =>
+        Root()["agents"]!.AsArray().Single(a => a!["id"]!.GetValue<string>() == agentId)!
+            ["providerRouting"]?["ignore"]?.AsArray().Select(p => p!.GetValue<string>()).ToList();
+
     // A worker runs its parent's model, served by whoever serves its parent. A key naming either
     // here would bind to nothing and read as a setting that works.
     [Fact]
@@ -193,6 +219,92 @@ public class AgentAppSettingsTests
 
         settings.AgentDefaults.For("voice").ShouldBe("nabu");
         settings.AgentDefaults.For("telegram").ShouldBe("jonas");
+    }
+
+    // Her estimates run on an agent of their own that only estimates: the Sugary server is dialled
+    // for the estimating words it serves, and nothing reaches the model to call — not her log, not a
+    // skill, not memory to recall an old meal into a new estimate, not a worker. A turn that read
+    // her log first cost three times as much and sometimes answered nothing (the first paid pass,
+    // 2026-10-15). That is a rule about her health data and her bill, not a setting.
+    [Fact]
+    public void Sugary_DialsTheSugaryServerAloneForItsPrompt_AndCallsNothing()
+    {
+        var sugary = BoundAgents().Single(a => a.Id == "sugary");
+
+        sugary.McpServerEndpoints.ShouldBe(["http://mcp-sugary:8080/mcp"]);
+        sugary.NoTools.ShouldBeTrue();
+        sugary.EnabledFeatures.ShouldBeEmpty();
+        sugary.WhitelistPatterns.ShouldBeEmpty();
+        sugary.UsesOutposts.ShouldBeFalse();
+    }
+
+    // Her log is Jonas's to read, beside the glucose history /ha serves, so a meal can be lined up
+    // with what her glucose did after it. Dialling the server is not consuming its channel: the
+    // estimates it sends stay routed to sugary, whoever else reads the mount.
+    [Fact]
+    public void Jonas_DialsTheSugaryServerForHerLog_AndHerEstimatesStaySugarys()
+    {
+        var settings = BoundConfig().Get<AgentSettings>()!;
+        var jonas = BoundAgents().Single(a => a.Id == "jonas");
+
+        jonas.McpServerEndpoints.ShouldContain("http://mcp-sugary:8080/mcp");
+        jonas.McpServerEndpoints.ShouldContain("http://mcp-homeassistant:8080/mcp");
+        settings.AgentDefaults.For("sugary").ShouldBe("sugary");
+    }
+
+    // The app's channel is connected, and a meal sent on it is answered by the agent that estimates:
+    // left to the fallback it would be answered by the general assistant, in prose no schema reads.
+    [Fact]
+    public void TheSugaryChannel_IsConnectedAndAnsweredBySugary()
+    {
+        var settings = BoundConfig().Get<AgentSettings>()!;
+
+        settings.AgentDefaults.For("sugary").ShouldBe("sugary");
+        Root()["channelEndpoints"]!.AsArray()
+            .Single(e => e!["channelId"]!.GetValue<string>() == "sugary")!["endpoint"]!.GetValue<string>()
+            .ShouldBe("http://mcp-sugary:8080/mcp");
+    }
+
+    // The Sugary server refuses a photo for a model that cannot see one, and asks the catalogue about
+    // the agent its turns are answered by. The message names no agent — routing is agentDefaults' —
+    // so the server's setting is a second spelling of that route, and the two must not drift: asked
+    // about any other agent, the refusal would judge the wrong model.
+    [Fact]
+    public void TheSugaryServer_AsksAboutTheAgentItsChannelIsRoutedTo()
+    {
+        var settings = BoundConfig().Get<AgentSettings>()!;
+        var server = JsonNode.Parse(
+            File.ReadAllText(Path.Combine(RepoRoot(), "McpServerSugary", "appsettings.json")))!;
+
+        server["Agent"]!.GetValue<string>().ShouldBe(settings.AgentDefaults.For("sugary"));
+    }
+
+    // A label turn's patch is honoured only for a model on the patchable list; off it, the agent
+    // would read the label on its own cheaper model and the server would refuse every label.
+    [Fact]
+    public void TheSugaryServersLabelModel_IsOneTheAgentMaySwitchTo()
+    {
+        var settings = BoundConfig().Get<AgentSettings>()!;
+        var server = JsonNode.Parse(
+            File.ReadAllText(Path.Combine(RepoRoot(), "McpServerSugary", "appsettings.json")))!;
+
+        var labelModel = server["LabelModel"]!.GetValue<string>();
+        labelModel.ShouldBe("anthropic/claude-opus-5.5");
+        settings.PatchableModels.Select(m => m.Id).ShouldContain(labelModel);
+        new global::McpServerSugary.Settings.SugarySettings().LabelModel.ShouldBe(labelModel);
+    }
+
+    // Her estimates are read back in WebChat. A review copy names no channel, so the deployment
+    // declares the one that shows them: one, so a turn cannot be shown twice, and one that owns its
+    // topics, since an attach-only channel has nothing to show a conversation in.
+    [Fact]
+    public void ReviewCopies_AreHostedByWebChatAlone()
+    {
+        var hosts = BoundConfig().Get<AgentSettings>()!.ChannelEndpoints.Where(e => e.HostsReviewCopies).ToList();
+
+        var host = hosts.ShouldHaveSingleItem();
+        host.ChannelId.ShouldBe("signalr");
+        host.AttachOnly.ShouldBeFalse();
     }
 
     private static AgentSettings BindSettings(params (string Key, string? Value)[] entries)

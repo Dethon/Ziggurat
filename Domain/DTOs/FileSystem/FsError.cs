@@ -23,6 +23,14 @@ public static class FsError
             $"{path} is executable-only: an action file runs, it cannot be read or written.",
             $"Run it with exec ./{actionName} from its directory (--help, where the action takes arguments, lists them).");
 
+    // A table is data to ask questions of, not text to page through: reading one as text is refused,
+    // with the two ways that work named — a statement over the mount, or a command reading the file.
+    public static FsResult<T> QueryOnly<T>(string path, string mountPoint) where T : class =>
+        Fail<T>(ToolError.Codes.UnsupportedOperation,
+            $"{path} is a table, not text: it cannot be read as lines.",
+            $"Ask it with query on {mountPoint}, or read it from a command in the sandbox at {path} "
+            + "(duckdb or polars read Parquet).");
+
     public static FsResult<T> AlreadyExists<T>(string message) where T : class =>
         Fail<T>(ToolError.Codes.AlreadyExists, message);
 

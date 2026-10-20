@@ -11,6 +11,7 @@ using Domain.Tools.HomeAssistant.Vfs;
 using Domain.Tools.Printing;
 using Domain.Tools.Printing.Vfs;
 using Domain.Tools.Scheduling.Vfs;
+using Domain.Tools.Sugary.Vfs;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
@@ -40,7 +41,8 @@ public class FileSystemServerConformanceTests
         { "media", "library", typeof(MediaLibraryDiskFileSystem) },
         { "vault", "vault", typeof(TextDiskFileSystem) },
         { "sandbox", "sandbox", typeof(SandboxFileSystem) },
-        { "outpost", "outpost", typeof(OutpostFileSystem) }
+        { "outpost", "outpost", typeof(OutpostFileSystem) },
+        { "sugary", "sugary", typeof(SugaryFileSystem) }
     };
 
     // What each mount is expected to advertise, written out rather than derived. Everything else in
@@ -97,7 +99,10 @@ public class FileSystemServerConformanceTests
             [
                 "fs_read", "fs_info", "fs_glob", "fs_search", "fs_create", "fs_edit", "fs_move",
                 "fs_delete", "fs_copy", "fs_blob_read", "fs_blob_write", "fs_move_out_check"
-            ]
+            ],
+            // Her log, rendered from the database on every read. Nothing that writes: the only way to
+            // change it is through Sugary itself.
+            ["sugary"] = ["fs_read", "fs_info", "fs_glob", "fs_query", "fs_blob_read"]
         };
 
     // Which mounts say where they can be written, and where. A workspace is the writable, persistent
@@ -115,7 +120,8 @@ public class FileSystemServerConformanceTests
             ["vault"] = null,
             ["sandbox"] = "home/sandbox_user",
             // The working directory it was started with: where files land and commands run.
-            ["outpost"] = "home/someone/project"
+            ["outpost"] = "home/someone/project",
+            ["sugary"] = null
         };
 
     // Which mounts accept a person's attachments. The sandbox alone, and deliberately not by way of
@@ -134,7 +140,8 @@ public class FileSystemServerConformanceTests
             ["sandbox"] = true,
             // Never, exec or not. A person's attachments belong in the deployment's own container,
             // not on whichever of their machines happens to be switched on.
-            ["outpost"] = false
+            ["outpost"] = false,
+            ["sugary"] = false
         };
 
     // How far each mount's shell reaches, which is what the exec screen asks before a command runs
@@ -152,7 +159,8 @@ public class FileSystemServerConformanceTests
             ["media"] = null,
             ["vault"] = null,
             ["sandbox"] = ShellReach.Contained,
-            ["outpost"] = null
+            ["outpost"] = null,
+            ["sugary"] = null
         };
 
     // The shipped server, not a re-registration of it: each row drives the ConfigModule that runs in
@@ -245,7 +253,8 @@ public class FileSystemServerConformanceTests
                 new LibraryPathConfig("/sandbox"), [".py"], Mock.Of<ICommandRunner>(),
                 "/sandbox/home/sandbox_user"),
             ["outpost"] = new OutpostFileSystem(
-                "outpost", Mock.Of<IFileSystemClient>(), "/home/someone/project", [".py"])
+                "outpost", Mock.Of<IFileSystemClient>(), "/home/someone/project", [".py"]),
+            ["sugary"] = new SugaryFileSystem(Mock.Of<ISugaryLog>(), TimeZoneInfo.Utc, Mock.Of<ITableEngine>())
         };
 
     // The other half of the same idea. A mount's identity used to be written three times per server

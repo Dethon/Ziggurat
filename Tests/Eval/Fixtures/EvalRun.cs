@@ -3,7 +3,9 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
 using Tests.Eval.Harness;
 
 namespace Tests.Eval.Fixtures;
@@ -64,13 +66,17 @@ public static class EvalRun
         // A deadline reached is a result, not an accident: the scenario keeps its row and says
         // the turn never finished. Throwing here dropped the scenario off the scorecard entirely,
         // which reads as a scenario nobody ran rather than one the model could not finish.
+        // The turn alone, as the standalone benchmark timed an estimate: the stack standing up is
+        // the harness's time, not the person's wait.
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var response = await agent.RunAsync(
-                Messages(scenario, conversationId, stack.Memory.Context), thread,
-                cancellationToken: cancellation.Token);
+            var messages = Messages(scenario, conversationId, stack.Memory.Context);
+            await LandAsync(agent, thread, messages[^1], stack.Attachments, conversationId, cancellation.Token);
+            var response = await agent.RunAsync(messages, thread, cancellationToken: cancellation.Token);
 
             recording.Reply = response.Text;
+            recording.Answer = Answer(response.Messages);
         }
         catch (Exception ex) when (ex is OperationCanceledException or TaskCanceledException
                                    && cancellation.IsCancellationRequested)
@@ -84,6 +90,8 @@ public static class EvalRun
         {
             recording.ProviderError = ex.Message.ReplaceLineEndings(" ").Trim();
         }
+        recording.Elapsed = clock.Elapsed;
+        recording.AttachmentsServed = stack.Attachments.Served;
         recording.StateAfter = stack.Home.Snapshot();
         recording.FilesAfter = EvalVault.Read(stack.VaultPath);
         recording.Delegations = scenario.Workers == WorkerMode.Real
@@ -118,18 +126,57 @@ public static class EvalRun
         var message = Decorate(
             new ChatMessage(ChatRole.User, scenario.Turn.Text), scenario, scenario.Instant);
         message.SetDismissedAlert(scenario.Turn.DismissedAlert);
+        // As ConversationGroup stamps a channel's message: the format for this turn alone, and the
+        // files as references of the channel that holds them — never bytes on the turn (ADR-0020).
+        message.SetResponseFormat(scenario.Turn.ResponseFormat);
+        var attachments = EvalAttachments.References(scenario.Turn);
+        message.SetAttachments(attachments.Count > 0 ? attachments : null);
+        message.SetAttachmentChannelId(attachments.Count > 0 ? EvalAttachments.Channel(scenario.Turn) : null);
         // Set on the message the recall hook would have set it on, so the block reaches the model
         // through the decoration that renders it in production rather than through a second path.
         message.SetMemoryContext(memories);
         message.SetConversationContext(new ConversationContext(
             scenario.AgentId, conversationId, UserId,
             new ReplyTarget(
-                scenario.Turn.Channel ?? (scenario.Turn.SatelliteId is null ? "signalr" : "voice"),
+                EvalAttachments.Channel(scenario.Turn),
                 conversationId,
                 scenario.Turn.SatelliteId)));
 
         return message;
     }
+
+    // The turn's files put in the sandbox as ConversationGroup puts a channel's there: after the
+    // session is built, because the mounts only exist then, and recorded on the message rather than
+    // written into it. Without it no scenario sends what the model is told about a landed file, and
+    // that note once sent jonas to file_read a photo it could already see (2026-10-18). An agent
+    // with no sandbox lands nothing, as in the deployment.
+    private static async Task LandAsync(
+        DisposableAgent agent, AgentSession thread, ChatMessage turn, EvalAttachments attachments,
+        string conversationId, CancellationToken ct)
+    {
+        if (turn.GetAttachments() is not { Count: > 0 } references)
+        {
+            return;
+        }
+
+        await agent.WarmupSessionAsync(thread, ct);
+        var landed = await AttachmentLanding.LandAsync(
+            new AttachmentLanding.Landing(
+                agent.GetFileSystemRegistry(thread), references, attachments.ReadAsync, conversationId,
+                Guid.NewGuid().ToString("N")),
+            NullLogger.Instance,
+            ct);
+        turn.SetSandboxPaths(landed.Landed);
+        turn.SetLandingFailures(landed.Failed);
+    }
+
+    // What a channel reads as the answer: the last message that said anything. The Sugary channel
+    // collects text per message and parses the last one, so a line written before a tool call is
+    // never read as the estimate — and the benchmark reads the same message the app would.
+    public static string? Answer(IEnumerable<ChatMessage> messages) =>
+        messages
+            .LastOrDefault(message => message.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(message.Text))
+            ?.Text;
 
     private static ChatMessage Decorate(ChatMessage message, Scenario scenario, DateTimeOffset at)
     {

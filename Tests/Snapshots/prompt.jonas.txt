@@ -1,4 +1,4 @@
-# jonas — 6569 tokens across 17 sections and 7 skills
+# jonas — 6663 tokens across 17 sections and 8 skills
 
   core_directive           CoreDirective         524 / 550    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               30 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -18,12 +18,13 @@
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
   language                 Language              132 / 300    The reply language, stated absolutely, against a request that is otherwise all English.
   obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
-  sandbox                  Skill                 124 / 130    body 1271 / 1350, served by mcp-sandbox
+  sandbox                  Skill                 123 / 130    body 1291 / 1350, served by mcp-sandbox
   web-browsing             Skill                 102 / 130    body 1594 / 1600, served by mcp-websearch
   home-watches             Skill                 104 / 120    body 1671 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 150 / 150    body 3588 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1121 / 1300, served by mcp-scheduling
   countdown-timers         Skill                 126 / 130    body 640 / 900, served by mcp-timers
+  sugary-log               Skill                  95 / 100    body 842 / 850, served by mcp-sugary
 
 ================================================================================================
 
@@ -356,11 +357,15 @@ Proper nouns (people, places, titles of works) stay as they are -- do not transl
   </skill>
   <skill>
     <name>sandbox</name>
-    <description>Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount&apos;s files (&quot;compute the sha256 of that file&quot;, &quot;run this python&quot;, &quot;count the words in those notes&quot;). Not for reading or editing one file, which the file tools do. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command, and how a container path maps to a virtual one.</description>
+    <description>Running anything in the Linux sandbox — a command, a script, a checksum, a pip install, a git clone, a count or a rewrite over another mount&apos;s files (&quot;compute the sha256 of that file&quot;, &quot;run this python&quot;, &quot;count the words in those notes&quot;). Not for reading or editing one file, or for anything on a machine (`outpost:`): the file tools do those. The layout, what persists, what is preinstalled, how exit codes, output caps and timeouts come back, how the other mounts appear inside a command.</description>
   </skill>
   <skill>
     <name>scheduling</name>
     <description>Creating, changing, running now or removing a scheduled task under `/schedules` — an action the agent itself performs later, once or on a cron (&quot;turn the air off in an hour&quot;, &quot;every morning at nine send me the news&quot;, &quot;cancel the nightly check&quot;). Not for a human alarm, reminder or timer. The layout, which agent&apos;s directory, the schedule.json fields, cron and runAt in the local zone, delivery targets, and the managing actions.</description>
+  </skill>
+  <skill>
+    <name>sugary-log</name>
+    <description>Reading her carb log under `/sugary` — the foods she keeps, the meals she logged and the foods in each, her insulin doses, her exercise and her periods (&quot;when did she last have paella&quot;, &quot;how did her glucose do after pizza&quot;, &quot;how much insulin did she take for it&quot;, &quot;was she on her period that week&quot;). Which tables there are, where their columns are explained, and how to ask them.</description>
   </skill>
   <skill>
     <name>web-browsing</name>

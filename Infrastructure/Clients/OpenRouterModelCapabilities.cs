@@ -96,6 +96,7 @@ public sealed class OpenRouterModelCapabilities(
     {
         "image" => AttachmentKind.Image,
         "file" => AttachmentKind.Document,
+        "video" => AttachmentKind.Video,
         _ => null
     };
 

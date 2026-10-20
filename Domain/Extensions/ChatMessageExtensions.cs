@@ -16,6 +16,7 @@ public static class ChatMessageExtensions
     private const string DismissedAlertKey = "DismissedAlert";
     private const string ConversationContextKey = "ConversationContext";
     private const string ConfigPatchKey = "ConfigPatch";
+    private const string ResponseFormatKey = "ResponseFormat";
     private const string AttachmentsKey = "Attachments";
     private const string AttachmentChannelIdKey = "AttachmentChannelId";
     private const string SandboxPathsKey = "SandboxPaths";
@@ -197,6 +198,30 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[ConfigPatchKey] = patch;
+        }
+
+        // Read by the agent off the turn's own user message only. A persisted message keeps it as
+        // the record of what that turn asked for, and a later turn never looks back for one.
+        public ResponseFormat? GetResponseFormat()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(ResponseFormatKey);
+            return value switch
+            {
+                ResponseFormat format => format,
+                JsonElement je => je.Deserialize<ResponseFormat>(ChannelProtocol.SerializerOptions),
+                _ => null
+            };
+        }
+
+        public void SetResponseFormat(ResponseFormat? format)
+        {
+            if (format is null)
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[ResponseFormatKey] = format;
         }
 
         // References, never bytes: this is what the persisted message carries, so a history read

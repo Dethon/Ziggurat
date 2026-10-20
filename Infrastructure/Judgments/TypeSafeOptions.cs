@@ -2,7 +2,7 @@ namespace Infrastructure.Judgments;
 
 // Where Jev is asked and which Jev answers. It is asked through OpenRouter, on the key every other
 // hosted call uses, so there is one provider to pay and one connection to keep warm. The model is
-// pinned to a dated snapshot, never `typesafe/jev-latest` and not the bare `typesafe/jev-1.13`
+// pinned to a dated snapshot, never `typesafe/jev-latest` and not the bare `typesafe/jev-1.14`
 // either, which moves when TypeSafe patches it: a bump changes what every judgment says and is a
 // deliberate edit with a probe run and an eval pass behind it.
 // Bound straight from each host's `typeSafe` section, so the address and the pinned model are
@@ -13,7 +13,7 @@ public sealed record TypeSafeOptions
 {
     public string ApiUrl { get; init; } = "https://openrouter.ai/api/";
     public string ApiKey { get; init; } = "";
-    public string Model { get; init; } = "typesafe/jev-1.13-20260917";
+    public string Model { get; init; } = "typesafe/jev-1.14-20261014";
 
     public bool IsConfigured => !string.IsNullOrWhiteSpace(ApiKey);
 

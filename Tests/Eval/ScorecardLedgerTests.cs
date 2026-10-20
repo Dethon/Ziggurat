@@ -69,6 +69,34 @@ public class ScorecardLedgerTests : IDisposable
         Read("scorecard-full.json").GetProperty("scenarios").TryGetProperty(rung.Name, out _).ShouldBeFalse();
     }
 
+    // The Sugary tier scores a model on the benchmark meals beside the sugary agent's own
+    // scenarios, and is compared across models like the research tier: one file per model, the
+    // benchmark's figures in it, and nothing of any other agent's.
+    [Fact]
+    public void ASugaryPass_IsFiledUnderItsModel_WithTheBenchmarkBesideTheSugaryAgentsScenarios()
+    {
+        var meal = new Sugary.SugaryCase { Name = "n5k 1: rice", Set = "n5k", Photos = ["photos/n5k-1.jpg"], Carbs = 20, Grams = 200 };
+        _ledger.RecordBenchmark([Sugary.SugaryReading.Of(meal, null, TimeSpan.Zero, Spend.Nothing, 1, 1)]);
+        _ledger.Record(EvalTier.Full, _first, new ScenarioResult(true, 1, 1, []));
+        _ledger.Observe(new ServedRoute("google/gemini-3.8-flash", "Google"));
+        _ledger.WriteAll(_output, Unresolved);
+
+        var card = Read("scorecard-sugary-google-gemini-3.8-flash.json");
+        card.GetProperty("tier").GetString().ShouldBe("sugary");
+        card.GetProperty("benchmark").GetProperty("overall").GetProperty("meals").GetInt32().ShouldBe(1);
+        card.GetProperty("benchmark").GetProperty("meals")[0].GetProperty("failure").GetString()
+            .ShouldBe("The model returned no answer.");
+
+        var sugarys = EvalSuite.All.Where(s => s.AgentId == Sugary.SugaryBenchmark.Agent).ToList();
+        card.GetProperty("scenarios").EnumerateObject().Select(row => row.Name)
+            .ShouldBe(sugarys.Select(s => s.Name), ignoreOrder: true);
+        card.GetProperty("claims").EnumerateObject().Select(row => row.Name)
+            .ShouldBe(sugarys.SelectMany(s => s.Claims.Concat(s.Judged.Select(check => check.Claim))
+                .Concat(s.Guards.Select(guard => guard.Claim))).Distinct(), ignoreOrder: true);
+
+        Read("scorecard-full.json").TryGetProperty("benchmark", out _).ShouldBeFalse();
+    }
+
     [Fact]
     public void NothingRecorded_WritesNoFile()
     {

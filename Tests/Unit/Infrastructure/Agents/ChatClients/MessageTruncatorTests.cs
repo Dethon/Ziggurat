@@ -96,6 +96,22 @@ public class MessageTruncatorTests
         MessageTruncator.EstimateMessageTokens(small).ShouldBeGreaterThan(100);
     }
 
+    // A provider bills a clip by how long it runs, not by how many bytes the encoder spent, so a
+    // clip's size says nothing either — and counting it as a document would put a 4 MB clip at the
+    // whole attachment ceiling and drop history to make room for it.
+    [Fact]
+    public void EstimateMessageTokens_AClip_CountsTheSameWhateverItsSizeAndMoreThanAPicture()
+    {
+        var small = new ChatMessage(ChatRole.User, [new DataContent(new byte[400_000], "video/mp4")]);
+        var large = new ChatMessage(ChatRole.User, [new DataContent(new byte[4_000_000], "video/mp4")]);
+        var picture = new ChatMessage(ChatRole.User, [new DataContent(new byte[400_000], "image/jpeg")]);
+
+        MessageTruncator.EstimateMessageTokens(small)
+            .ShouldBe(MessageTruncator.EstimateMessageTokens(large));
+        MessageTruncator.EstimateMessageTokens(small)
+            .ShouldBeGreaterThan(MessageTruncator.EstimateMessageTokens(picture));
+    }
+
     // A document's file size tracks its images far more than its text, so an uncapped estimate
     // would put a 20 MB scan past the whole context window and make the truncator drop every
     // earlier message to make room for one attachment.
