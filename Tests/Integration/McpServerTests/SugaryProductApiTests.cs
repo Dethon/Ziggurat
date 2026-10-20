@@ -59,7 +59,7 @@ public sealed class SugaryProductApiTests : IDisposable
 
         await client.GetAsync("/api/products/8410188012092");
 
-        _openFoodFacts.LogEntries.Single().RequestMessage.Headers!["User-Agent"].ShouldContain(agent => agent.Contains("Sugary"));
+        _openFoodFacts.LogEntries.Single().RequestMessage!.Headers!["User-Agent"].ShouldContain(agent => agent.Contains("Sugary"));
     }
 
     // A product with no carbohydrate value is as good as unknown: 0 g would pass for a real zero.
