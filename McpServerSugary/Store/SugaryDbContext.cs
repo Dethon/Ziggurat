@@ -42,6 +42,7 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
             item.Property(i => i.Source).HasConversion<string>();
             item.Property(i => i.Confidence).HasConversion<string>();
             item.HasIndex(i => i.FoodId);
+            item.HasIndex(i => i.RecipeId);
         });
 
         var food = modelBuilder.Entity<Food>();

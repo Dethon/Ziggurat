@@ -278,6 +278,9 @@ namespace McpServerSugary.Store.Migrations
                             b1.Property<int>("Position")
                                 .HasColumnType("INTEGER");
 
+                            b1.Property<Guid?>("RecipeId")
+                                .HasColumnType("TEXT");
+
                             b1.Property<string>("Source")
                                 .IsRequired()
                                 .HasColumnType("TEXT");
@@ -285,6 +288,8 @@ namespace McpServerSugary.Store.Migrations
                             b1.HasKey("Id");
 
                             b1.HasIndex("FoodId");
+
+                            b1.HasIndex("RecipeId");
 
                             b1.HasIndex("MealId", "Position");
 

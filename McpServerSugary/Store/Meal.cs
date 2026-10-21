@@ -18,7 +18,9 @@ public record MealItem(
     bool Edited = false,
     // The food from her own list this item was made from, if any. Not a foreign key: the item
     // keeps its own numbers and outlives the food.
-    Guid? FoodId = null)
+    Guid? FoodId = null,
+    // The recipe of hers this item was a helping of, if any, kept the same way.
+    Guid? RecipeId = null)
 {
     // Where the item sits in its meal, from zero. Set on save from the order the app sent, so it is
     // not the caller's to give.

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -123,4 +124,62 @@ public class SugaryRecipeApiTests
         (await client.PostAsJsonAsync("/api/recipes", Stew((lentils, 0))))
             .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
+
+    [Fact]
+    public async Task AFoodInARecipe_CannotBeDeletedUntilTheRecipeLetsGoOfIt()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var lentils = await FoodAsync(client, Lentils());
+        var recipe = (await ReadAsync(await client.PostAsJsonAsync("/api/recipes", Stew((lentils, 300)))))["id"]!
+            .GetValue<string>();
+
+        (await client.DeleteAsync($"/api/foods/{lentils}")).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await ReadAsync(await client.GetAsync("/api/foods"))).AsArray().ShouldHaveSingleItem();
+
+        (await client.DeleteAsync($"/api/recipes/{recipe}")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        (await client.DeleteAsync($"/api/foods/{lentils}")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task Recipes_AreListedWithTheOnesEatenMostRecentlyFirst()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var lentils = await FoodAsync(client, Lentils());
+        var stew = (await ReadAsync(await client.PostAsJsonAsync("/api/recipes", Stew((lentils, 300)))))["id"]!
+            .GetValue<string>();
+        var other = Stew((lentils, 100));
+        other["name"] = "Algo de lentejas";
+        await client.PostAsJsonAsync("/api/recipes", other);
+        await client.PostAsJsonAsync("/api/meals", HelpingOf(stew, "2026-10-10T14:00:00+02:00"));
+        await client.PostAsJsonAsync("/api/meals", HelpingOf(stew, "2026-10-11T14:00:00+02:00"));
+
+        var recipes = (await ReadAsync(await client.GetAsync("/api/recipes"))).AsArray();
+
+        recipes.Select(r => r!["name"]!.GetValue<string>()).ShouldBe(["Lentejas de la abuela", "Algo de lentejas"]);
+        recipes[0]!["uses"]!.GetValue<int>().ShouldBe(2);
+        recipes[0]!["lastUsedAt"]!.GetValue<DateTimeOffset>()
+            .ShouldBe(DateTimeOffset.Parse("2026-10-11T12:00:00Z", CultureInfo.InvariantCulture));
+        recipes[1]!["lastUsedAt"].ShouldBeNull();
+        (await ReadAsync(await client.GetAsync("/api/meals")))[0]!["items"]![0]!["recipeId"]!.GetValue<string>()
+            .ShouldBe(stew);
+    }
+
+    private static JsonObject HelpingOf(string recipeId, string eatenAt) => new()
+    {
+        ["eatenAt"] = eatenAt,
+        ["outcome"] = "unknown",
+        ["items"] = new JsonArray(new JsonObject
+        {
+            ["name"] = "Lentejas de la abuela",
+            ["grams"] = 300,
+            ["carbsPer100g"] = 8,
+            ["carbsLow"] = 24,
+            ["carbs"] = 24,
+            ["carbsHigh"] = 24,
+            ["source"] = "manual",
+            ["recipeId"] = recipeId
+        })
+    };
 }

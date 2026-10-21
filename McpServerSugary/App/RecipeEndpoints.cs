@@ -39,12 +39,23 @@ public static class RecipeEndpoints
         recipes.MapDelete("/{id:guid}", DeleteAsync);
     }
 
+    // Most recently eaten first, as her foods are, so the two sit in one list.
     private static async Task<IReadOnlyList<RecipeDto>> ListAsync(SugaryDbContext db, CancellationToken ct)
     {
         var recipes = await db.Recipes.AsNoTracking().ToListAsync(ct);
+        var eaten = await db.Meals.AsNoTracking()
+            .SelectMany(meal => meal.Items, (meal, item) => new { item.RecipeId, meal.EatenAt })
+            .Where(use => use.RecipeId != null)
+            .ToListAsync(ct);
+        var uses = eaten.GroupBy(use => use.RecipeId!.Value)
+            .ToDictionary(group => group.Key, group => (Count: group.Count(), Last: group.Max(use => use.EatenAt)));
+
         return [.. recipes
-            .Select(recipe => ToDto(recipe, 0, null))
-            .OrderBy(recipe => recipe.Name, StringComparer.CurrentCultureIgnoreCase)];
+            .Select(recipe => uses.TryGetValue(recipe.Id, out var use)
+                ? ToDto(recipe, use.Count, use.Last)
+                : ToDto(recipe, 0, null))
+            .OrderByDescending(recipe => recipe.LastUsedAt ?? DateTimeOffset.MinValue)
+            .ThenBy(recipe => recipe.Name, StringComparer.CurrentCultureIgnoreCase)];
     }
 
     private static async Task<IResult> CreateAsync(
