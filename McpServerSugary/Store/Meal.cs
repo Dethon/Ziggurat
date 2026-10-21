@@ -68,6 +68,27 @@ public class Food
     public ItemSource Source { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
+// Something she cooks from foods she keeps: each ingredient a food of hers and how much of it, and
+// what the pot makes, as its cooked weight or its servings — one of the two. The ingredients point at
+// the foods themselves, so a recipe always counts with her current numbers; its carbs are worked out
+// by the app, which already has them.
+public class Recipe
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public double? CookedGrams { get; set; }
+    public double? Servings { get; set; }
+    public List<RecipeIngredient> Ingredients { get; set; } = [];
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+// How much of a food goes in: in its unit for a food by weight, how many of its portions for one by portion.
+public record RecipeIngredient(Guid FoodId, double Amount)
+{
+    // Where the ingredient sits in its recipe, from zero, as a meal item's position is.
+    [JsonIgnore]
+    public int Position { get; init; }
+}
 // A dose of insulin she took. MealIds are the meals it was for, as plain values and not a
 // relationship: a dose is a fact of what she injected, so it outlives a meal deleted from the log,
 // which only takes that meal off the list. One bolus can cover several meals, a meal and the

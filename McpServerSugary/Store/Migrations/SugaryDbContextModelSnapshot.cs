@@ -15,7 +15,7 @@ namespace McpServerSugary.Store.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
             modelBuilder.Entity("McpServerSugary.Store.DayNote", b =>
                 {
@@ -184,6 +184,30 @@ namespace McpServerSugary.Store.Migrations
                     b.ToTable("Periods");
                 });
 
+            modelBuilder.Entity("McpServerSugary.Store.Recipe", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("CookedGrams")
+                        .HasColumnType("REAL");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("Servings")
+                        .HasColumnType("REAL");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Recipes");
+                });
+
             modelBuilder.Entity("McpServerSugary.Store.Meal", b =>
                 {
                     b.OwnsOne("McpServerSugary.Store.Interval", "FirstEstimate", b1 =>
@@ -273,6 +297,47 @@ namespace McpServerSugary.Store.Migrations
                     b.Navigation("FirstEstimate");
 
                     b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("McpServerSugary.Store.Recipe", b =>
+                {
+                    b.OwnsMany("McpServerSugary.Store.RecipeIngredient", "Ingredients", b1 =>
+                        {
+                            b1.Property<int>("Id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<double>("Amount")
+                                .HasColumnType("REAL");
+
+                            b1.Property<Guid>("FoodId")
+                                .HasColumnType("TEXT");
+
+                            b1.Property<int>("Position")
+                                .HasColumnType("INTEGER");
+
+                            b1.Property<Guid>("RecipeId")
+                                .HasColumnType("TEXT");
+
+                            b1.HasKey("Id");
+
+                            b1.HasIndex("FoodId");
+
+                            b1.HasIndex("RecipeId", "Position");
+
+                            b1.ToTable("RecipeIngredients", (string)null);
+
+                            b1.HasOne("McpServerSugary.Store.Food", null)
+                                .WithMany()
+                                .HasForeignKey("FoodId")
+                                .OnDelete(DeleteBehavior.Restrict)
+                                .IsRequired();
+
+                            b1.WithOwner()
+                                .HasForeignKey("RecipeId");
+                        });
+
+                    b.Navigation("Ingredients");
                 });
 #pragma warning restore 612, 618
         }
