@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import { api } from "../api";
 import { formatGrams, fromFood, parseAmount } from "../carbs";
 import { useConfirm } from "../components/Confirm";
@@ -9,9 +9,11 @@ import { ShareChips } from "../components/ShareChips";
 import { Sheet } from "../components/Sheet";
 import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
-import { fromPack, originOf, plain, sourceFor } from "../foods";
+import { countedByPortion, fromPack, originOf, search, sourceFor } from "../foods";
 import { bindUnits } from "../meal";
-import { asFood, helping, shelf } from "../recipes";
+import { usePantry } from "../pantry";
+import { asFood, describeRecipe, helping, shelf, usedIn, type ShelfEntry } from "../recipes";
+import { useSaving } from "../saving";
 import { useSettings } from "../settings";
 import type { DraftItem, Food, Recipe, SaveFood, Unit } from "../types";
 
@@ -35,29 +37,12 @@ export function FoodsSheet({
   onAdd: (item: DraftItem) => void;
 }) {
   const { t } = useSettings();
-  const [foods, setFoods] = useState<Food[] | null>(null);
-  const [recipes, setRecipes] = useState<Recipe[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { foods, recipes, error, reload } = usePantry(t);
   const [view, setView] = useState<View>({ kind: "list" });
-
-  const load = useCallback(async () => {
-    try {
-      const [kept, cooked] = await Promise.all([api.foods(), api.recipes()]);
-      setFoods(kept);
-      setRecipes(cooked);
-      setError(null);
-    } catch (failure) {
-      setError(errorMessage(failure, t));
-    }
-  }, [t]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const backToList = () => {
     setView({ kind: "list" });
-    void load();
+    void reload();
   };
 
   if (view.kind === "amount") {
@@ -75,6 +60,7 @@ export function FoodsSheet({
         food={view.food}
         already={view.already}
         labels={labels}
+        usedBy={view.food ? usedIn(recipes ?? [], view.food.id).map((recipe) => recipe.name) : []}
         onOpen={(food) => setView({ kind: "edit", food, already: true })}
         onDone={backToList}
         onClose={onClose}
@@ -89,8 +75,9 @@ export function FoodsSheet({
         foods={foods}
         recipes={recipes}
         error={error}
-        onPick={(food) => setView({ kind: "amount", food })}
-        onPickRecipe={(recipe) => setView({ kind: "helping", recipe })}
+        onPick={(entry) =>
+          setView(entry.kind === "food" ? { kind: "amount", food: entry.food } : { kind: "helping", recipe: entry.recipe })
+        }
         onNew={() => setView({ kind: "edit", food: null })}
       />
     </Sheet>
@@ -98,31 +85,20 @@ export function FoodsSheet({
 }
 
 export function describe(food: Food, t: ReturnType<typeof useSettings>["t"], language: string): string {
-  if (food.carbsPer100g === null) {
+  if (countedByPortion(food)) {
     return t("foodPerPortion", { n: formatGrams(food.portionCarbs ?? 0) });
   }
-  const density = t("per100", { n: food.carbsPer100g.toLocaleString(language), unit: food.unit });
+  const density = t("per100", { n: food.carbsPer100g!.toLocaleString(language), unit: food.unit });
   return food.portionGrams === null
     ? density
     : `${density} · ${t("foodUsual", { n: formatGrams(food.portionGrams), unit: food.unit })}`;
 }
 
-// A recipe in the list: what a helping of it carries, or that it cannot be counted.
-export function describeRecipe(
-  recipe: Recipe,
-  foods: readonly Food[],
-  t: ReturnType<typeof useSettings>["t"],
-  language: string,
-): string {
-  const food = asFood(recipe, foods);
-  if (food === null) {
-    return t("recipeIncomplete");
-  }
-  const detail =
-    food.carbsPer100g === null
-      ? t("recipePerServing", { n: formatGrams(food.portionCarbs ?? 0) })
-      : t("per100", { n: food.carbsPer100g.toLocaleString(language), unit: food.unit });
-  return t("recipeMeta", { detail });
+// One row of the list, decided once: what it shows and what it is.
+function rowOf(entry: ShelfEntry, foods: readonly Food[], t: ReturnType<typeof useSettings>["t"], language: string) {
+  return entry.kind === "food"
+    ? { key: `food-${entry.food.id}`, icon: SOURCE_ICON[entry.food.source], meta: describe(entry.food, t, language) }
+    : { key: `recipe-${entry.recipe.id}`, icon: "pot" as const, meta: describeRecipe(entry.recipe, foods, t, language) };
 }
 
 export function FoodList({
@@ -130,9 +106,7 @@ export function FoodList({
   recipes,
   error,
   onPick,
-  onPickRecipe,
   onAdd,
-  onAddRecipe,
   onNew,
   framed = false,
 }: {
@@ -140,11 +114,9 @@ export function FoodList({
   // Her recipes, listed among her foods; left out where only a food will do.
   recipes?: Recipe[] | null;
   error: string | null;
-  onPick: (food: Food) => void;
-  onPickRecipe?: (recipe: Recipe) => void;
+  onPick: (entry: ShelfEntry) => void;
   // A separate "+" on each row, where tapping the row itself does something else.
-  onAdd?: (food: Food) => void;
-  onAddRecipe?: (recipe: Recipe) => void;
+  onAdd?: (entry: ShelfEntry) => void;
   // Without it the list offers no button of its own (the screen pins one instead).
   onNew?: () => void;
   // On a screen the list sits on a card; in a sheet it sits on the sheet.
@@ -153,9 +125,8 @@ export function FoodList({
   const { t, language } = useSettings();
   const [query, setQuery] = useState("");
   const loaded = foods !== null && recipes !== null;
-  const entries = loaded ? (recipes === undefined ? shelf(foods, []) : shelf(foods, recipes)) : [];
-  const wanted = plain(query);
-  const shown = entries.filter((entry) => plain(entry.name).includes(wanted));
+  const entries = loaded ? shelf(foods, recipes ?? []) : [];
+  const shown = search(entries, query);
 
   return (
     <div className="sheet-form">
@@ -186,33 +157,25 @@ export function FoodList({
           {shown.length === 0 && <p className="muted">{t("foodNone")}</p>}
           <ul className={framed ? "foods card foods-card" : "foods"}>
             {shown.map((entry) => {
-              const food = entry.kind === "food" ? entry.food : null;
-              const recipe = entry.kind === "recipe" ? entry.recipe : null;
-              const add = food && onAdd ? () => onAdd(food) : recipe && onAddRecipe ? () => onAddRecipe(recipe) : null;
+              const row = rowOf(entry, foods ?? [], t, language);
               return (
-                <li key={`${entry.kind}-${food?.id ?? recipe!.id}`} className="food-item">
-                  <button
-                    type="button"
-                    className="food-row"
-                    onClick={() => (food ? onPick(food) : onPickRecipe?.(recipe!))}
-                  >
+                <li key={row.key} className="food-item">
+                  <button type="button" className="food-row" onClick={() => onPick(entry)}>
                     <span className="food-source" aria-hidden="true">
-                      <Icon name={food ? SOURCE_ICON[food.source] : "pot"} size={20} />
+                      <Icon name={row.icon} size={20} />
                     </span>
                     <span className="item-text">
                       <span className="item-name">{entry.name}</span>
-                      <span className="item-meta">
-                        {food ? describe(food, t, language) : describeRecipe(recipe!, foods ?? [], t, language)}
-                      </span>
+                      <span className="item-meta">{row.meta}</span>
                     </span>
-                    {!add && <Icon name="chevronRight" size={20} />}
+                    {!onAdd && <Icon name="chevronRight" size={20} />}
                   </button>
-                  {add && (
+                  {onAdd && (
                     <button
                       type="button"
                       className="food-add"
                       aria-label={t("addFoodToMeal", { name: entry.name })}
-                      onClick={add}
+                      onClick={() => onAdd(entry)}
                     >
                       <Icon name="plus" size={22} />
                     </button>
@@ -260,6 +223,7 @@ export function AmountSheet({
   const eaten = parseAmount(amount);
   const carbs = eaten === null ? null : toItem(eaten).carbs;
   const valid = eaten !== null && eaten > 0;
+  const howMany = servings ? "recipeHowMany" : "foodHowMany";
 
   return (
     <Sheet
@@ -285,7 +249,7 @@ export function AmountSheet({
         <p className="per100">{describe(food, t, language)}</p>
         <label className="field">
           <span className="field-label">
-            {t(!byWeight ? (servings ? "recipeHowMany" : "foodHowMany") : food.unit === "ml" ? "amountDrunk" : "amountEaten")}
+            {t(!byWeight ? howMany : food.unit === "ml" ? "amountDrunk" : "amountEaten")}
           </span>
           <span className="amount-input">
             <input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
@@ -297,7 +261,7 @@ export function AmountSheet({
             base={usual}
             unit={byWeight ? food.unit : undefined}
             current={eaten}
-            label={t(byWeight ? "amountEaten" : servings ? "recipeHowMany" : "foodHowMany")}
+            label={t(byWeight ? "amountEaten" : howMany)}
             onPick={(value) => setAmount(String(value))}
           />
         )}
@@ -380,8 +344,7 @@ export function FoodSheet({
   const [density, setDensity] = useState(food?.carbsPer100g?.toString() ?? "");
   const [portion, setPortion] = useState(food?.portionGrams?.toString() ?? "");
   const [portionCarbs, setPortionCarbs] = useState(food?.portionCarbs?.toString() ?? "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { busy, error, setError, run } = useSaving(t);
   // Where the numbers came from, which a pack read into a new food replaces.
   const [origin, setOrigin] = useState(() => originOf(food));
   const [finding, setFinding] = useState(false);
@@ -395,17 +358,6 @@ export function FoodSheet({
     name.trim() !== "" &&
     (byWeight ? per100 !== null && per100 <= 100 && (portion.trim() === "" || (usual !== null && usual > 0)) : fixed !== null);
 
-  async function run(work: () => Promise<Food | void>) {
-    setBusy(true);
-    setError(null);
-    try {
-      onDone((await work()) ?? null);
-    } catch (failure) {
-      setError(errorMessage(failure, t, "save"));
-      setBusy(false);
-    }
-  }
-
   const next: SaveFood = {
     name: name.trim(),
     carbsPer100g: byWeight ? per100 : null,
@@ -417,7 +369,7 @@ export function FoodSheet({
   };
   // One of hers is saved again only once something about it changed.
   const edited = useEdited(next);
-  const save = () => run(() => (food ? api.updateFood(food.id, next) : api.createFood(next)));
+  const save = () => run(() => (food ? api.updateFood(food.id, next) : api.createFood(next)), onDone);
 
   async function fromFound(found: Found) {
     setError(null);
@@ -575,7 +527,7 @@ export function FoodSheet({
             disabled={busy || usedBy.length > 0}
             onClick={async () => {
               if (await confirm({ title: t("foodDeleteTitle"), body: t("foodDeleteBody"), confirm: t("foodDelete") })) {
-                void run(() => api.deleteFood(food.id));
+                void run(() => api.deleteFood(food.id), () => onDone(null), "deleteFood");
               }
             }}
           >

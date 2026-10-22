@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
-import { api } from "../api";
+import { useState } from "react";
 import { ActionBar } from "../components/ActionBar";
 import { Icon } from "../components/Icon";
-import { errorMessage } from "../errors";
-import { usedIn } from "../recipes";
+import { usePantry } from "../pantry";
+import { usedIn, type ShelfEntry } from "../recipes";
 import { useSettings } from "../settings";
 import type { DraftItem, Food, Recipe } from "../types";
 import { AmountSheet, FoodList, FoodSheet, HelpingSheet } from "./FoodsSheet";
@@ -13,29 +12,12 @@ import { RecipeSheet } from "./RecipeSheet";
 // `labels` says whether a new food can be read off a photo of its nutrition table.
 export function FoodsScreen({ labels, onAddToMeal }: { labels: boolean; onAddToMeal: (item: DraftItem) => void }) {
   const { t } = useSettings();
-  const [foods, setFoods] = useState<Food[] | null>(null);
-  const [recipes, setRecipes] = useState<Recipe[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { foods, recipes, error, reload } = usePantry(t);
   const [editing, setEditing] = useState<{ food: Food | null; already?: boolean } | null>(null);
   const [cooking, setCooking] = useState<{ recipe: Recipe | null } | null>(null);
-  const [adding, setAdding] = useState<{ food: Food } | { recipe: Recipe } | null>(null);
+  const [adding, setAdding] = useState<ShelfEntry | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const [kept, cooked] = await Promise.all([api.foods(), api.recipes()]);
-      setFoods(kept);
-      setRecipes(cooked);
-      setError(null);
-    } catch (failure) {
-      setError(errorMessage(failure, t));
-    }
-  }, [t]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const added = (item: DraftItem) => {
+  const addToMeal = (item: DraftItem) => {
     setAdding(null);
     onAddToMeal(item);
   };
@@ -51,10 +33,8 @@ export function FoodsScreen({ labels, onAddToMeal }: { labels: boolean; onAddToM
         foods={foods}
         recipes={recipes}
         error={error}
-        onPick={(food) => setEditing({ food })}
-        onPickRecipe={(recipe) => setCooking({ recipe })}
-        onAdd={(food) => setAdding({ food })}
-        onAddRecipe={(recipe) => setAdding({ recipe })}
+        onPick={(entry) => (entry.kind === "food" ? setEditing({ food: entry.food }) : setCooking({ recipe: entry.recipe }))}
+        onAdd={setAdding}
       />
       <ActionBar active>
         <div className="footer-row">
@@ -84,7 +64,7 @@ export function FoodsScreen({ labels, onAddToMeal }: { labels: boolean; onAddToM
           onClose={() => setEditing(null)}
           onDone={() => {
             setEditing(null);
-            void load();
+            void reload();
           }}
         />
       )}
@@ -97,19 +77,17 @@ export function FoodsScreen({ labels, onAddToMeal }: { labels: boolean; onAddToM
           onClose={() => {
             setCooking(null);
             // A food made from the recipe stays in the pantry even if the recipe was not saved.
-            void load();
+            void reload();
           }}
           onDone={() => {
             setCooking(null);
-            void load();
+            void reload();
           }}
         />
       )}
-      {adding && "food" in adding && (
-        <AmountSheet food={adding.food} onClose={() => setAdding(null)} onAdd={added} />
-      )}
-      {adding && "recipe" in adding && (
-        <HelpingSheet recipe={adding.recipe} foods={foods ?? []} onClose={() => setAdding(null)} onAdd={added} />
+      {adding?.kind === "food" && <AmountSheet food={adding.food} onClose={() => setAdding(null)} onAdd={addToMeal} />}
+      {adding?.kind === "recipe" && (
+        <HelpingSheet recipe={adding.recipe} foods={foods ?? []} onClose={() => setAdding(null)} onAdd={addToMeal} />
       )}
     </div>
   );

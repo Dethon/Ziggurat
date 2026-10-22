@@ -8,10 +8,14 @@ export const plain = (text: string) =>
     .toLowerCase()
     .trim();
 
-export function search(foods: readonly Food[], text: string): Food[] {
+// Anything of hers with a name, foods and recipes alike, by any part of it.
+export function search<T extends { name: string }>(items: readonly T[], text: string): T[] {
   const wanted = plain(text);
-  return wanted === "" ? [...foods] : foods.filter((food) => plain(food.name).includes(wanted));
+  return wanted === "" ? [...items] : items.filter((item) => plain(item.name).includes(wanted));
 }
+
+// A food with no density is a fixed portion she counts; one with a density is weighed or measured.
+export const countedByPortion = (food: Pick<Food, "carbsPer100g">): boolean => food.carbsPer100g === null;
 
 type Identity = Pick<SaveFood, "barcode" | "name" | "carbsPer100g" | "unit">;
 

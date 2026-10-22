@@ -20,7 +20,7 @@ describe("no server sentence reaches the screen", () => {
     [502, "The model returned no answer."],
     [504, "Reading the label took too long. Try again, or add the food by hand."],
   ] as const;
-  const askings: Asking[] = ["estimate", "label", "product", "save", "load", "signIn"];
+  const askings: Asking[] = ["estimate", "label", "product", "save", "deleteFood", "load", "signIn"];
 
   it.each(askings)("asking for %s", (asking) => {
     for (const [status, sentence] of sentences) {
@@ -33,6 +33,11 @@ describe("no server sentence reaches the screen", () => {
   it("says a failed product lookup as one, not as a label", () => {
     expect(errorMessage(new ApiError(502, "The product database could not be reached."), es, "product")).toBe(es("productNoAnswer"));
     expect(errorMessage(new ApiError(400, "That is not a product barcode."), es, "product")).toBe(es("productBadCode"));
+  });
+
+  it("says a food a recipe still uses as that, and only when deleting a food", () => {
+    expect(errorMessage(new ApiError(409, "A recipe uses this food."), es, "deleteFood")).toBe(es("foodInRecipe"));
+    expect(errorMessage(new ApiError(409, "Conflict"), es, "save")).not.toBe(es("foodInRecipe"));
   });
 
   it("keeps the model's own reason for a label it could not read, in her language", () => {

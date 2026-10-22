@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { toMealItem } from "./carbs";
-import { asFood, carbsOf, helping, missing, shelf, usedIn } from "./recipes";
+import { translator } from "./i18n";
+import {
+  asFood,
+  carbsOf,
+  describeRecipe,
+  helping,
+  ingredientUnit,
+  missing,
+  readDraft,
+  shelf,
+  startingAmount,
+  usedIn,
+  withIngredient,
+  type DraftIngredient,
+} from "./recipes";
 import type { Food, Recipe } from "./types";
 
 const food = (id: string, more: Partial<Food> = {}): Food => ({
@@ -103,5 +117,61 @@ describe("her pantry's shelf", () => {
     ];
     const recipes = [recipe({ name: "Lentejas", lastUsedAt: "2026-10-11T12:00:00Z" }), recipe({ id: "b", name: "Bizcocho" })];
     expect(shelf(eaten, recipes).map((entry) => entry.name)).toEqual(["Lentejas", "Arroz", "Avena", "Bizcocho", "Zanahoria"]);
+  });
+});
+
+describe("a recipe being written", () => {
+  const rows: DraftIngredient[] = [{ key: "a", foodId: "Lentejas", amount: "300" }];
+
+  it("takes a food in at her usual amount, one portion of a food by portion, or empty", () => {
+    expect(startingAmount(food("Arroz", { carbsPer100g: 77, portionGrams: 80 }))).toBe("80");
+    expect(startingAmount(lentils)).toBe("");
+    expect(startingAmount(stock)).toBe("1");
+  });
+
+  it("takes each food once: one already in stays as it is", () => {
+    expect(withIngredient(rows, milk, "b")).toEqual([...rows, { key: "b", foodId: "Leche", amount: "" }]);
+    expect(withIngredient(rows, lentils, "b")).toBe(rows);
+  });
+
+  it("measures each ingredient in its unit, or as a count of portions", () => {
+    expect(ingredientUnit(milk)).toBe("ml");
+    expect(ingredientUnit(stock)).toBe("×");
+  });
+
+  it("is a recipe to save once it has a name, every amount and what the pot makes", () => {
+    const draft = { name: " Lentejas ", rows, byWeight: true, yieldText: "1800" };
+    expect(readDraft(draft)).toEqual({
+      recipe: { name: "Lentejas", cookedGrams: 1800, servings: null, ingredients: [{ foodId: "Lentejas", amount: 300 }] },
+      counted: true,
+      valid: true,
+    });
+    expect(readDraft({ ...draft, byWeight: false, yieldText: "4" }).recipe).toMatchObject({ cookedGrams: null, servings: 4 });
+    expect(readDraft({ ...draft, name: " " }).valid).toBe(false);
+    expect(readDraft({ ...draft, yieldText: "0" }).valid).toBe(false);
+    expect(readDraft({ ...draft, rows: [] })).toMatchObject({ counted: false, valid: false });
+  });
+
+  it("is not counted while an amount is still being typed", () => {
+    const draft = readDraft({ name: "Lentejas", rows: [...rows, { key: "b", foodId: "Leche", amount: "" }], byWeight: true, yieldText: "1800" });
+    expect(draft).toMatchObject({ counted: false, valid: false });
+  });
+
+  it("shows what a helping carries before it is saved", () => {
+    const { recipe: unsaved } = readDraft({ name: "Lentejas", rows, byWeight: false, yieldText: "4" });
+    expect(asFood(unsaved, foods)).toMatchObject({ portionCarbs: 36 });
+  });
+});
+
+describe("a recipe in the pantry list", () => {
+  const en = translator("en");
+
+  it("says what a helping carries, per 100 g or per serving", () => {
+    expect(describeRecipe(recipe(), foods, en, "en")).toBe("Recipe · 8.9\u00a0g carbs per 100\u00a0g");
+    expect(describeRecipe(recipe({ cookedGrams: null, servings: 4 }), foods, en, "en")).toBe("Recipe · 40\u00a0g carbs per serving");
+  });
+
+  it("says when it cannot be counted", () => {
+    expect(describeRecipe(recipe(), [lentils], en, "en")).toBe(en("recipeIncomplete"));
   });
 });
