@@ -7,11 +7,13 @@ import type {
   MealEstimate,
   PackagedFood,
   Period,
+  Recipe,
   SaveDose,
   SaveExercise,
   SaveFood,
   SaveMeal,
   SavePeriod,
+  SaveRecipe,
   SessionState,
 } from "./types";
 
@@ -166,6 +168,10 @@ export const api = {
   createFood: (food: SaveFood) => request<Food>("/foods", json("POST", food)),
   updateFood: (id: string, food: SaveFood) => request<Food>(`/foods/${id}`, json("PUT", food)),
   deleteFood: (id: string) => request<void>(`/foods/${id}`, { method: "DELETE" }),
+  recipes: () => request<Recipe[]>("/recipes"),
+  createRecipe: (recipe: SaveRecipe) => request<Recipe>("/recipes", json("POST", recipe)),
+  updateRecipe: (id: string, recipe: SaveRecipe) => request<Recipe>(`/recipes/${id}`, json("PUT", recipe)),
+  deleteRecipe: (id: string) => request<void>(`/recipes/${id}`, { method: "DELETE" }),
 
   // Each time carries its offset in the phone's own zone, so the file reads like the clock on the wall.
   exportUrl: (table: "meals" | "items" | "doses" | "exercise" | "periods" | "day-notes" | "foods") =>

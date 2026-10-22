@@ -61,6 +61,27 @@ export interface Food {
 
 export type SaveFood = Omit<Food, "id" | "uses" | "lastUsedAt">;
 
+// How much of one of her foods goes in: in its unit for a food by weight, how many of its portions
+// for one by portion.
+export interface RecipeIngredient {
+  foodId: string;
+  amount: number;
+}
+
+// Something she cooks from her foods, and what the pot makes: its cooked weight in grams, or how
+// many servings — one of the two. Its carbs are worked out from her foods as they are now.
+export interface Recipe {
+  id: string;
+  name: string;
+  cookedGrams: number | null;
+  servings: number | null;
+  ingredients: RecipeIngredient[];
+  uses: number;
+  lastUsedAt: string | null;
+}
+
+export type SaveRecipe = Omit<Recipe, "id" | "uses" | "lastUsedAt">;
+
 export interface MealItem {
   name: string;
   portion: string | null;
@@ -75,6 +96,8 @@ export interface MealItem {
   edited: boolean;
   // The food from her own list this item was made from, if any.
   foodId?: string | null;
+  // The recipe of hers this item was a helping of, if any.
+  recipeId?: string | null;
 }
 
 export interface Meal {

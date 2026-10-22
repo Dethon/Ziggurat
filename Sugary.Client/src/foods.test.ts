@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existing, fromPack, originOf, search, sourceFor } from "./foods";
+import { countedByPortion, existing, fromPack, originOf, search, sourceFor } from "./foods";
 import type { Food } from "./types";
 
 const food = (name: string, more: Partial<Food> = {}): Food => ({
@@ -23,6 +23,16 @@ describe("her own foods", () => {
     expect(search(foods, "macarron").map((f) => f.name)).toEqual(["Macarrón"]);
     expect(search(foods, "  DE mol ").map((f) => f.name)).toEqual(["Pan de molde"]);
     expect(search(foods, "")).toHaveLength(3);
+  });
+
+  it("are found the same way among anything with a name, recipes too", () => {
+    const shelf = [{ kind: "recipe", name: "Lentejas de la abuela" }, { kind: "food", name: "Leche" }];
+    expect(search(shelf, "ABUELA")).toEqual([{ kind: "recipe", name: "Lentejas de la abuela" }]);
+  });
+
+  it("are counted by portion when they have no density, and weighed when they have one", () => {
+    expect(countedByPortion(food("Tostada", { carbsPer100g: null, portionCarbs: 28 }))).toBe(true);
+    expect(countedByPortion(food("Pan de molde"))).toBe(false);
   });
 
   it("are not saved twice: the same barcode, or the same name and numbers, is the food she already has", () => {

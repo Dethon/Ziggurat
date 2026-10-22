@@ -4,12 +4,13 @@ using Microsoft.EntityFrameworkCore.Design;
 namespace McpServerSugary.Store;
 
 // The log is meant to be read by other tools next to glucose data, so it is plain tables with
-// plain columns: one row per meal, one row per item, one row per dose, one row per session of exercise, one row per period, one row per noted day, enums,
+// plain columns: one row per meal, one row per item, one row per recipe and per ingredient, one row per dose, one row per session of exercise, one row per period, one row per noted day, enums,
 // times and days as readable text.
 public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbContext(options)
 {
     public DbSet<Meal> Meals => Set<Meal>();
     public DbSet<Food> Foods => Set<Food>();
+    public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<Dose> Doses => Set<Dose>();
     public DbSet<ExerciseSession> ExerciseSessions => Set<ExerciseSession>();
     public DbSet<Period> Periods => Set<Period>();
@@ -41,6 +42,7 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
             item.Property(i => i.Source).HasConversion<string>();
             item.Property(i => i.Confidence).HasConversion<string>();
             item.HasIndex(i => i.FoodId);
+            item.HasIndex(i => i.RecipeId);
         });
 
         var food = modelBuilder.Entity<Food>();
@@ -49,6 +51,21 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
             value => value.UtcDateTime,
             stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
         food.HasIndex(f => f.Barcode);
+
+        var recipe = modelBuilder.Entity<Recipe>();
+        recipe.Property(r => r.CreatedAt).HasConversion(
+            value => value.UtcDateTime,
+            stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
+        recipe.OwnsMany(r => r.Ingredients, ingredient =>
+        {
+            ingredient.ToTable("RecipeIngredients");
+            ingredient.WithOwner().HasForeignKey("RecipeId");
+            ingredient.Property<int>("Id");
+            ingredient.HasKey("Id");
+            ingredient.HasIndex("RecipeId", nameof(RecipeIngredient.Position));
+            // A food a recipe uses cannot go: the recipe would quietly lose its carbs.
+            ingredient.HasOne<Food>().WithMany().HasForeignKey(i => i.FoodId).OnDelete(DeleteBehavior.Restrict);
+        });
 
         var dose = modelBuilder.Entity<Dose>();
         dose.Property(d => d.TakenAt).HasConversion(

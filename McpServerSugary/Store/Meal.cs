@@ -18,7 +18,9 @@ public record MealItem(
     bool Edited = false,
     // The food from her own list this item was made from, if any. Not a foreign key: the item
     // keeps its own numbers and outlives the food.
-    Guid? FoodId = null)
+    Guid? FoodId = null,
+    // The recipe of hers this item was a helping of, if any, kept the same way.
+    Guid? RecipeId = null)
 {
     // Where the item sits in its meal, from zero. Set on save from the order the app sent, so it is
     // not the caller's to give.
@@ -67,6 +69,27 @@ public class Food
     // Where the numbers came from, which is what a meal item made from this food reports.
     public ItemSource Source { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
+}
+// Something she cooks from foods she keeps: each ingredient a food of hers and how much of it, and
+// what the pot makes, as its cooked weight or its servings — one of the two. The ingredients point at
+// the foods themselves, so a recipe always counts with her current numbers; its carbs are worked out
+// by the app, which already has them.
+public class Recipe
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public double? CookedGrams { get; set; }
+    public double? Servings { get; set; }
+    public List<RecipeIngredient> Ingredients { get; set; } = [];
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+// How much of a food goes in: in its unit for a food by weight, how many of its portions for one by portion.
+public record RecipeIngredient(Guid FoodId, double Amount)
+{
+    // Where the ingredient sits in its recipe, from zero, as a meal item's position is.
+    [JsonIgnore]
+    public int Position { get; init; }
 }
 // A dose of insulin she took. MealIds are the meals it was for, as plain values and not a
 // relationship: a dose is a fact of what she injected, so it outlives a meal deleted from the log,

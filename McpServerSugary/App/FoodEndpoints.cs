@@ -97,8 +97,17 @@ public static class FoodEndpoints
     }
 
     // Meals that used the food keep their own copy of its numbers, so removing it changes no log entry.
-    private static async Task<IResult> DeleteAsync(Guid id, SugaryDbContext db, CancellationToken ct) =>
-        await db.Foods.Where(f => f.Id == id).ExecuteDeleteAsync(ct) > 0 ? Results.NoContent() : Results.NotFound();
+    // A recipe counts with it as it is now, so a food a recipe uses stays until the recipe lets it go;
+    // the app says which recipes, and this is the backstop.
+    private static async Task<IResult> DeleteAsync(Guid id, SugaryDbContext db, CancellationToken ct)
+    {
+        if (await db.Recipes.AnyAsync(r => r.Ingredients.Any(i => i.FoodId == id), ct))
+        {
+            return Results.Problem("A recipe uses this food.", statusCode: StatusCodes.Status409Conflict);
+        }
+
+        return await db.Foods.Where(f => f.Id == id).ExecuteDeleteAsync(ct) > 0 ? Results.NoContent() : Results.NotFound();
+    }
 
     private static void Apply(SaveFoodRequest request, Food food)
     {
