@@ -24,7 +24,7 @@ const row = (foodId: string, amount: string): Row => ({ key: newId(), foodId, am
 const startingAmount = (food: Food) =>
   food.carbsPer100g === null ? "1" : food.portionGrams === null ? "" : String(food.portionGrams);
 
-type View = { kind: "edit" } | { kind: "pick" } | { kind: "new"; food: Food | null; already?: boolean };
+type View = { kind: "edit" } | { kind: "pick" } | { kind: "new" };
 
 // A new recipe or one of hers, to change or delete. Its ingredients come from her pantry; one that is
 // not there yet is made with the ordinary new-food sheet, which keeps it in the pantry there and then.
@@ -107,21 +107,19 @@ export function RecipeSheet({
           foods={foods}
           error={null}
           onPick={include}
-          onNew={() => setView({ kind: "new", food: null })}
+          onNew={() => setView({ kind: "new" })}
         />
       </Sheet>
     );
   }
 
   if (view.kind === "new") {
-    // A pack she already keeps opens that food, which she can take as it is.
+    // A pack she already keeps is that food, so it goes in as it is rather than opening to be edited.
     return (
       <FoodSheet
-        key={view.food?.id ?? "new"}
-        food={view.food}
-        already={view.already}
+        food={null}
         labels={labels}
-        onOpen={(food) => setView({ kind: "new", food, already: true })}
+        onOpen={include}
         onDone={(saved) => (saved ? include(saved) : back())}
         onClose={onClose}
         onBack={back}
