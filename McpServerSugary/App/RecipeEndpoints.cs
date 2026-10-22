@@ -43,17 +43,9 @@ public static class RecipeEndpoints
     private static async Task<IReadOnlyList<RecipeDto>> ListAsync(SugaryDbContext db, CancellationToken ct)
     {
         var recipes = await db.Recipes.AsNoTracking().ToListAsync(ct);
-        var eaten = await db.Meals.AsNoTracking()
-            .SelectMany(meal => meal.Items, (meal, item) => new { item.RecipeId, meal.EatenAt })
-            .Where(use => use.RecipeId != null)
-            .ToListAsync(ct);
-        var uses = eaten.GroupBy(use => use.RecipeId!.Value)
-            .ToDictionary(group => group.Key, group => (Count: group.Count(), Last: group.Max(use => use.EatenAt)));
-
+        var uses = await UsesAsync(db, null, ct);
         return [.. recipes
-            .Select(recipe => uses.TryGetValue(recipe.Id, out var use)
-                ? ToDto(recipe, use.Count, use.Last)
-                : ToDto(recipe, 0, null))
+            .Select(recipe => ToDto(recipe, uses))
             .OrderByDescending(recipe => recipe.LastUsedAt ?? DateTimeOffset.MinValue)
             .ThenBy(recipe => recipe.Name, StringComparer.CurrentCultureIgnoreCase)];
     }
@@ -70,7 +62,7 @@ public static class RecipeEndpoints
         Apply(request, recipe);
         db.Recipes.Add(recipe);
         await db.SaveChangesAsync(ct);
-        return Results.Created($"/api/recipes/{recipe.Id}", ToDto(recipe, 0, null));
+        return Results.Created($"/api/recipes/{recipe.Id}", ToDto(recipe, new Dictionary<Guid, Use>()));
     }
 
     private static async Task<IResult> UpdateAsync(
@@ -88,7 +80,21 @@ public static class RecipeEndpoints
 
         Apply(request, recipe);
         await db.SaveChangesAsync(ct);
-        return Results.Ok(ToDto(recipe, 0, null));
+        return Results.Ok(ToDto(recipe, await UsesAsync(db, id, ct)));
+    }
+
+    private record Use(int Count, DateTimeOffset Last);
+
+    // How often she had each recipe, and when last: every recipe's, or the one asked for.
+    private static async Task<IReadOnlyDictionary<Guid, Use>> UsesAsync(
+        SugaryDbContext db, Guid? recipe, CancellationToken ct)
+    {
+        var eaten = await db.Meals.AsNoTracking()
+            .SelectMany(meal => meal.Items, (meal, item) => new { item.RecipeId, meal.EatenAt })
+            .Where(use => use.RecipeId != null && (recipe == null || use.RecipeId == recipe))
+            .ToListAsync(ct);
+        return eaten.GroupBy(use => use.RecipeId!.Value)
+            .ToDictionary(group => group.Key, group => new Use(group.Count(), group.Max(use => use.EatenAt)));
     }
 
     // Meals that had a helping keep their own copy of its numbers, so removing it changes no log entry.
@@ -103,9 +109,13 @@ public static class RecipeEndpoints
         recipe.Ingredients = [.. request.Ingredients!.Select((ingredient, position) => ingredient with { Position = position })];
     }
 
-    private static RecipeDto ToDto(Recipe recipe, int uses, DateTimeOffset? lastUsedAt) => new(
-        recipe.Id, recipe.Name, recipe.CookedGrams, recipe.Servings,
-        [.. recipe.Ingredients.OrderBy(i => i.Position)], uses, lastUsedAt);
+    private static RecipeDto ToDto(Recipe recipe, IReadOnlyDictionary<Guid, Use> uses)
+    {
+        var use = uses.GetValueOrDefault(recipe.Id);
+        return new RecipeDto(
+            recipe.Id, recipe.Name, recipe.CookedGrams, recipe.Servings,
+            [.. recipe.Ingredients.OrderBy(i => i.Position)], use?.Count ?? 0, use?.Last);
+    }
 
     private static async Task<string?> ValidateAsync(SaveRecipeRequest request, SugaryDbContext db, CancellationToken ct)
     {
@@ -132,6 +142,9 @@ public static class RecipeEndpoints
         { Ingredients.Count: > MaxIngredients } => $"A recipe takes at most {MaxIngredients} ingredients.",
         _ when request.Ingredients.Any(i => i.Amount is <= 0 or > MaxAmount) =>
             $"An ingredient's amount must be above 0 and at most {MaxAmount}.",
+        // Twice the same food would count it twice; she changes its amount instead.
+        _ when request.Ingredients.DistinctBy(i => i.FoodId).Count() < request.Ingredients.Count =>
+            "A recipe takes each food once.",
         _ => null
     };
 }

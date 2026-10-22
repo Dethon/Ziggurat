@@ -11,10 +11,10 @@ namespace Tests.Integration.McpServerTests;
 // server's HTTP boundary. The server keeps a recipe's shape; the app works out its carbs.
 public class SugaryRecipeApiTests
 {
-    private static JsonObject Lentils() => new()
+    private static JsonObject Food(string name, double carbsPer100g) => new()
     {
-        ["name"] = "Lentejas",
-        ["carbsPer100g"] = 48,
+        ["name"] = name,
+        ["carbsPer100g"] = carbsPer100g,
         ["unit"] = "g",
         ["portionGrams"] = null,
         ["portionCarbs"] = null,
@@ -22,16 +22,9 @@ public class SugaryRecipeApiTests
         ["source"] = "manual"
     };
 
-    private static JsonObject Potato() => new()
-    {
-        ["name"] = "Patata",
-        ["carbsPer100g"] = 17,
-        ["unit"] = "g",
-        ["portionGrams"] = null,
-        ["portionCarbs"] = null,
-        ["barcode"] = null,
-        ["source"] = "manual"
-    };
+    private static JsonObject Lentils() => Food("Lentejas", 48);
+
+    private static JsonObject Potato() => Food("Patata", 17);
 
     private static JsonObject Stew(params (string FoodId, double Amount)[] ingredients) => new()
     {
@@ -123,6 +116,34 @@ public class SugaryRecipeApiTests
             .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await client.PostAsJsonAsync("/api/recipes", Stew((lentils, 0))))
             .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task ARecipe_TakesEachFoodOnce()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var lentils = await FoodAsync(client, Lentils());
+
+        (await client.PostAsJsonAsync("/api/recipes", Stew((lentils, 300), (lentils, 100))))
+            .StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task ARecipeChanged_StillSaysHowOftenSheHadIt()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var lentils = await FoodAsync(client, Lentils());
+        var stew = (await ReadAsync(await client.PostAsJsonAsync("/api/recipes", Stew((lentils, 300)))))["id"]!
+            .GetValue<string>();
+        await client.PostAsJsonAsync("/api/meals", HelpingOf(stew, "2026-10-11T14:00:00+02:00"));
+
+        var changed = await ReadAsync(await client.PutAsJsonAsync($"/api/recipes/{stew}", Stew((lentils, 350))));
+
+        changed["uses"]!.GetValue<int>().ShouldBe(1);
+        changed["lastUsedAt"]!.GetValue<DateTimeOffset>()
+            .ShouldBe(DateTimeOffset.Parse("2026-10-11T12:00:00Z", CultureInfo.InvariantCulture));
     }
 
     [Fact]
