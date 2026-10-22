@@ -2186,6 +2186,25 @@ h1.marked .icon {
   color: var(--color-primary-strong);
 }
 
+/* A recipe's ingredients: the food, how much of it, and a way to take it out. */
+.recipe-ingredient {
+  min-height: 64px;
+  padding: 8px 0;
+}
+
+.recipe-amount {
+  flex: 0 0 112px;
+}
+
+.recipe-total {
+  font-size: 1.4rem;
+}
+
+.recipe-share {
+  display: block;
+  font-weight: 600;
+}
+
 .provenance {
   display: flex;
   flex-direction: column;
