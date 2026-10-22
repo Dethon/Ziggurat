@@ -19,9 +19,12 @@ export default defineConfig({
         id: "/",
         start_url: "/",
         scope: "/",
-        // Cream, as the light app and its status bar are, so the splash and the bar match.
-        background_color: "#fbf5ec",
-        theme_color: "#fbf5ec",
+        // Dark, as the dark app is. An installed app's Android navigation bar is painted from these, once,
+        // with no dark variant a manifest can give and no meta tag that changes it later, so cream
+        // left a white strip under the dark app; WebChat's dark manifest never had one. The status bar
+        // still follows the theme, from the theme-color meta settings.tsx keeps.
+        background_color: "#1c1310",
+        theme_color: "#1c1310",
         icons: [
           { src: "icon-192.png", sizes: "192x192", type: "image/png" },
           { src: "icon-512.png", sizes: "512x512", type: "image/png" },
