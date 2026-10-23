@@ -165,6 +165,42 @@ namespace McpServerSugary.Store.Migrations
                     b.ToTable("Meals");
                 });
 
+            modelBuilder.Entity("McpServerSugary.Store.Pen", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Days")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Insulin")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly>("OpenedOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("ReplacedOn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("TodaySentFor")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateOnly?>("TomorrowSentFor")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Kind");
+
+                    b.ToTable("Pens");
+                });
+
             modelBuilder.Entity("McpServerSugary.Store.Period", b =>
                 {
                     b.Property<Guid>("Id")
