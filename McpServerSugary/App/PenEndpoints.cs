@@ -19,7 +19,7 @@ public record SavePenRequest(string? Kind, string? Insulin, DateOnly? OpenedOn, 
 public static class PenEndpoints
 {
     public const string UnknownKind = "A pen is rapid or basal.";
-    public const string OpenedBeforeCurrent = "A new pen can't be first used before the one it replaces.";
+    public const string OpenedBeforeCurrent = "A new pen is first used after the day the one it replaces was.";
     public const string OpenedAfterReplaced = "A pen can't be first used after the day it was replaced.";
 
     public static void MapPenEndpoints(this IEndpointRouteBuilder api)
@@ -38,7 +38,8 @@ public static class PenEndpoints
         return [.. rows.OrderByDescending(p => p.OpenedOn).ThenBy(p => p.ReplacedOn is not null).Select(ToDto)];
     }
 
-    // A new pen of a kind replaces the open one, on the day the new one was first used.
+    // A new pen of a kind replaces the open one, on the day the new one was first used. The same day
+    // is refused too: a second tap would keep a pen used for no days at all.
     private static async Task<IResult> CreateAsync(
         SavePenRequest request, SugaryDbContext db, HomeCalendar calendar, CancellationToken ct)
     {
@@ -54,7 +55,7 @@ public static class PenEndpoints
 
         var openedOn = request.OpenedOn!.Value;
         var open = await db.Pens.Where(p => p.Kind == kind && p.ReplacedOn == null).ToListAsync(ct);
-        if (open.Any(p => p.OpenedOn > openedOn))
+        if (open.Any(p => p.OpenedOn >= openedOn))
         {
             return Refuse(OpenedBeforeCurrent);
         }

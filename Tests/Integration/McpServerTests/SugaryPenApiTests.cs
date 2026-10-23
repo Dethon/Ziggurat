@@ -89,6 +89,21 @@ public class SugaryPenApiTests
         (await ListAsync(client)).Count.ShouldBe(1);
     }
 
+    // A second tap on "New pen" the same day would keep a pen used for no days at all.
+    [Fact]
+    public async Task ANewPen_OpenedTheSameDayAsTheOpenOne_IsRefused()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        await client.PostAsJsonAsync("/api/pens", Pen());
+
+        var again = await client.PostAsJsonAsync("/api/pens", Pen());
+
+        again.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        Text(await ReadAsync(again), "detail").ShouldBe(PenEndpoints.OpenedBeforeCurrent);
+        (await ListAsync(client)).Single()!["replacedOn"].ShouldBeNull();
+    }
+
     [Theory]
     [InlineData(null, "2026-10-01", 28, PenRules.NoInsulin)]
     [InlineData("Fiasp", null, 28, PenRules.NoOpenedOn)]
