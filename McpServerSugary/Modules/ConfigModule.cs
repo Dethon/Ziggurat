@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.Prompts;
 using Domain.Tools.Sugary.Vfs;
+using Infrastructure.Clients.Push;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerSugary.App;
@@ -9,6 +10,7 @@ using McpServerSugary.Channel;
 using McpServerSugary.Clips;
 using McpServerSugary.McpPrompts;
 using McpServerSugary.McpTools;
+using McpServerSugary.Reminders;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
 using McpServerSugary.Tables;
@@ -48,6 +50,18 @@ public static class ConfigModule
             .AddSingleton<OpenEstimates>()
             .AddSingleton<SugaryChannel>()
             .AddSugaryApp(settings);
+
+        // Pen reminders are pushed with the deployment's VAPID keys, and without them there are none.
+        if (settings.WebPush.IsConfigured)
+        {
+            services.AddHttpClient("WebPush");
+            services
+                .AddSingleton<IPushMessageSender>(sp => new ModernWebPushSender(
+                    sp.GetRequiredService<IHttpClientFactory>().CreateClient("WebPush"),
+                    settings.WebPush.PublicKey!, settings.WebPush.PrivateKey!, settings.WebPush.Subject!))
+                .AddSingleton<PenReminders>()
+                .AddHostedService<PenReminderLoop>();
+        }
 
         services
             .AddToolServer(settings, ToolResponse.Create)

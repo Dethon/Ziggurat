@@ -220,6 +220,28 @@ namespace McpServerSugary.Store.Migrations
                     b.ToTable("Periods");
                 });
 
+            modelBuilder.Entity("McpServerSugary.Store.PushSubscription", b =>
+                {
+                    b.Property<string>("Endpoint")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Auth")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Language")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("P256dh")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Endpoint");
+
+                    b.ToTable("PushSubscriptions");
+                });
+
             modelBuilder.Entity("McpServerSugary.Store.Recipe", b =>
                 {
                     b.Property<Guid>("Id")

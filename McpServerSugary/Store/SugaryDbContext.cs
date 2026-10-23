@@ -13,6 +13,7 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<Dose> Doses => Set<Dose>();
     public DbSet<Pen> Pens => Set<Pen>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<ExerciseSession> ExerciseSessions => Set<ExerciseSession>();
     public DbSet<Period> Periods => Set<Period>();
     public DbSet<DayNote> DayNotes => Set<DayNote>();
@@ -78,6 +79,7 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
         var pen = modelBuilder.Entity<Pen>();
         pen.Property(p => p.Kind).HasConversion<string>();
         pen.HasIndex(p => p.Kind);
+        modelBuilder.Entity<PushSubscription>().HasKey(s => s.Endpoint);
 
         var exercise = modelBuilder.Entity<ExerciseSession>();
         exercise.Property(e => e.StartedAt).HasConversion(

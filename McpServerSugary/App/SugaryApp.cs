@@ -98,6 +98,7 @@ public static class SugaryApp
         guarded.MapMealEndpoints();
         guarded.MapDoseEndpoints();
         guarded.MapPenEndpoints();
+        guarded.MapPushEndpoints();
         guarded.MapExerciseEndpoints();
         guarded.MapPeriodEndpoints();
         guarded.MapDayNoteEndpoints();

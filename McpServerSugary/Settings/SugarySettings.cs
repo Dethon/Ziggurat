@@ -45,6 +45,14 @@ public record SugarySettings : IMcpHostSettings
     // test keeps it so), and a label is refused when the agent's catalogue says it is not.
     public string LabelModel { get; init; } = "anthropic/claude-opus-5.5";
 
+    // The deployment's VAPID keys (WEBPUSH__*, the ones WebChat pushes with). Unset, the app offers
+    // no reminders and none are sent.
+    public WebPushConfig WebPush { get; init; } = new();
+
+    // The hour on the home's clock from which a pen's reminder is sent: not in the night, and early
+    // enough to pick up a new pen on the way out.
+    public int PenReminderHour { get; init; } = 9;
+
     // Where the photos of a meal being estimated rest while the agent may still ask for them.
     public UploadSettings Uploads { get; init; } = new();
 
