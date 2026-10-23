@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["icon.svg", "favicon.svg", "apple-touch-icon.png"],
+      includeAssets: ["icon.svg", "favicon.svg", "apple-touch-icon.png", "push-handler.js"],
       manifest: {
         name: "Sugary",
         short_name: "Sugary",
@@ -36,6 +36,8 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // The API is never served from cache: a stale estimate or log would be worse than an error.
         navigateFallbackDenylist: [/^\/api\//, /^\/mcp/],
+        // The pen reminders' push and click handlers, kept beside the generated worker in public/.
+        importScripts: ["push-handler.js"],
       },
     }),
   ],

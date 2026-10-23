@@ -2586,3 +2586,71 @@ h1.marked .icon {
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* Insulin pens: the open pen of each kind, the day it is replaced, and the tap that starts the next,
+   under the pen's text so a long insulin name and its day never squeeze into a column. */
+.pen-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding-bottom: var(--space-2);
+}
+
+.pen-row > .row-link {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.pen-row .row-link > .dose-mark-small {
+  flex: none;
+  width: 36px;
+  height: 36px;
+}
+
+.pen-row > .button {
+  margin-left: calc(36px + var(--space-3));
+}
+
+.pen-row .item-meta.pen-due {
+  color: var(--color-primary-strong);
+  font-weight: 700;
+}
+
+.pen-history summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.pen-history summary::-webkit-details-marker {
+  display: none;
+}
+
+.pen-history[open] summary .icon {
+  transform: rotate(180deg);
+}
+
+.pen-history-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+
+.pen-history-row .item-meta {
+  color: var(--color-muted);
+}
+
+.pen-reminders {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pen-reminders > span {
+  flex: 1;
+}

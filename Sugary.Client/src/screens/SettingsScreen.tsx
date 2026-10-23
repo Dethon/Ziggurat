@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon";
 import type { Language } from "../i18n";
 import { useSettings, type RationSize } from "../settings";
 import { THEMES } from "../theme";
+import { PensCard } from "./PensCard";
 
 const EXPORTS = [
   { table: "meals", label: "exportMeals" },
@@ -31,6 +32,8 @@ export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }
         <Icon name="slice" size={28} />
         {t("settingsTitle")}
       </h1>
+
+      <PensCard />
 
       <section className="card setting" aria-labelledby="ration-title">
         <h2 id="ration-title">{t("rationSize")}</h2>
