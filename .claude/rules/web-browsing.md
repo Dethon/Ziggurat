@@ -13,6 +13,13 @@ paths:
 
 McpServerWebSearch exposes the `web_*` browse tools. The `websearch_prompt` (`Domain/Prompts/WebBrowsingPrompt.cs`) is the standing stub — the browser exists, a url comes from a search, no call is a probe — and the workflow, principles, error recovery and answer style are the `web-browsing` skill (`Domain/Prompts/WebBrowsingSkill.cs`, shipped through `AddSkills`; `docs/adr/0039`). The tools run over `PlaywrightWebBrowser`, a WebSocket to Camoufox. The accessibility snapshot assigns interactive element refs (`e-1`, `e-2`, …) that `web_action` then addresses, pages are kept alive per session with cookie persistence, and cookie banners, newsletters and age gates are auto-dismissed.
 
+**A page whose own script moved it onto an error is asked for once more.** A bot check answers
+200, sends the page on, and has the server refuse that follow-up while leaving behind what lets the
+next visit through — Reddit's "You've been blocked by network security" on a fresh session's first
+browse. `BrowsePageAsync` reads the settled document's status (`performance`'s navigation entry,
+since the commit's response belongs to the page that left) and browses the caller's address once
+more; a second landing reports the error. `HttpStatus` is that settled status, not the commit's.
+
 ## Overlays
 
 `ModalDismisser` runs on every navigation and closes an overlay in three steps, each costing more

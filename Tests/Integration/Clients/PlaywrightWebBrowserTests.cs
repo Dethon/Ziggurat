@@ -433,15 +433,14 @@ public class PlaywrightWebBrowserTests(
                 result.Status != BrowseStatus.Success,
                 $"reddit did not serve the thread ({result.Status}: {result.ErrorMessage})");
 
-            // Reddit answers this URL with one of four documents, and only one of them is this
+            // Reddit answers this URL with one of three documents, and only one of them is this
             // test's subject. Which one arrives is decided by how hard the suite has been hitting
             // reddit, not by anything in the browse.
             //
             //   - The thread: 20-35k characters with the comments in it. What the case wants.
             //   - A bot challenge: ~134 characters, "Complete the challenge below and let us know
-            //     you're a real person", or a network block: ~250 characters, "You've been blocked
-            //     by network security", served to an address reddit has flagged. No comments and no
-            //     notice — neither says anything about the extractor either way.
+            //     you're a real person". No comments and no notice — it says nothing about the
+            //     extractor either way.
             //   - A consent page: ~735 characters that are entirely cookie prose. This one IS the
             //     regression: readability discarded the <shreddit-comment> elements as non-content
             //     and settled on the only ordinary prose on the page.
@@ -451,16 +450,24 @@ public class PlaywrightWebBrowserTests(
             // why widening ModalDismisser's detection window would not change the outcome. There is
             // nothing on the page to dismiss.
             //
-            // Recognised by what each says rather than by how short it is, because three of the four
+            // Recognised by what each says rather than by how short it is, because two of the three
             // are short and they want opposite treatment.
             var content = result.Content ?? "";
             var looksLikeConsent = content.Contains("cookie", StringComparison.OrdinalIgnoreCase);
             var challenged = content.Contains("not for bots", StringComparison.OrdinalIgnoreCase)
-                || content.Contains("a real person", StringComparison.OrdinalIgnoreCase)
-                || content.Contains("blocked by network security", StringComparison.OrdinalIgnoreCase);
+                || content.Contains("a real person", StringComparison.OrdinalIgnoreCase);
             Skip.If(
                 challenged,
-                $"reddit served its bot challenge or network block rather than the thread ({content.Length} chars).");
+                $"reddit served its bot challenge rather than the thread ({content.Length} chars).");
+
+            // Reddit's network block ("You've been blocked by network security") greets the first
+            // browse of a fresh session on a flagged address and lets the next one through; the
+            // browser asks again on its own (SelfNavigatedErrorBrowseTests), so the thread arrives
+            // here. A block that outlasts the second ask is reddit refusing the address outright,
+            // and the browse reports the 403 it settled on.
+            Skip.If(
+                result.HttpStatus >= 400,
+                $"reddit refused the thread twice (http {result.HttpStatus}, {content.Length} chars).");
             Skip.If(
                 content.Length < 1000
                     && !looksLikeConsent

@@ -114,7 +114,7 @@ public class PlaywrightWebBrowser(
     }
 
     private async Task<BrowseResult> BrowsePageAsync(
-        BrowseRequest request, TabWorkContext ctx, CancellationToken ct)
+        BrowseRequest request, TabWorkContext ctx, CancellationToken ct, bool mayAskAgain = true)
     {
         var page = ctx.Page;
         var navigationTimedOut = false;
@@ -253,6 +253,18 @@ public class PlaywrightWebBrowser(
 
         await WaitForDomStabilityAsync(page, ct: ct);
 
+        // A bot check answers 200, its script sends the page on, and the server refuses that
+        // follow-up while leaving behind what lets the next visit through — Reddit did this to the
+        // first browse of every session, which read "You've been blocked by network security"
+        // while every later one read the thread. So a page whose own script moved it onto an error
+        // is asked for once more, by the address the caller gave; a page that lands there again
+        // reports the error it settled on.
+        var settledStatus = await SettledStatusAsync(page, response);
+        if (mayAskAgain && settledStatus >= 400 && response is { Status: < 400 })
+        {
+            return await BrowsePageAsync(request, ctx, ct, mayAskAgain: false);
+        }
+
         // Strip hidden overlays, dismissed modals, and non-content noise from DOM to prevent them
         // from consuming the content budget during HTML processing. After the scroll and the
         // stability wait, so images the scroll lazy-loaded are measured and stamped rather than
@@ -290,8 +302,29 @@ public class PlaywrightWebBrowser(
             ImageCount = processed.ImageCount,
             ImagesBeyondWindow = processed.ImagesBeyondWindow,
             NextOffset = processed.NextOffset,
-            HttpStatus = response?.Status
+            HttpStatus = settledStatus
         };
+    }
+
+    // The status of the document on screen, which is the committed response's unless the page has
+    // since navigated itself to another. Then only the page can say what the server answered, and
+    // a page that cannot (an image document, a context torn down mid-read) keeps the commit's.
+    private static async Task<int?> SettledStatusAsync(IPage page, IResponse? response)
+    {
+        if (response is null || page.Url == response.Url)
+        {
+            return response?.Status;
+        }
+
+        try
+        {
+            return await page.EvaluateAsync<int?>(
+                "() => performance.getEntriesByType('navigation')[0]?.responseStatus || null") ?? response.Status;
+        }
+        catch (PlaywrightException)
+        {
+            return response.Status;
+        }
     }
 
     public async Task<BrowseResult> GetCurrentPageAsync(string sessionId, CancellationToken ct = default)
