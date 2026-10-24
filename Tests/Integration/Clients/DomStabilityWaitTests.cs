@@ -64,11 +64,12 @@ public class DomStabilityWaitTests(QuietBrowserFixture fixture) : IAsyncLifetime
         // while the old floor costs an extra 200ms sleep however busy the host is. The old loop
         // slept before its first reading and so wasted a comparison: three 200ms sleeps to settle,
         // which is three stable readings here.
-        var current = await LatencyBudget.FastestAsync(() => TimeSettledWaitAsync(
-            page => PlaywrightWebBrowser.WaitForDomStabilityAsync(page, CancellationToken.None)));
-        var old = await LatencyBudget.FastestAsync(() => TimeSettledWaitAsync(
-            page => PlaywrightWebBrowser.WaitForDomStabilityAsync(
-                page, CancellationToken.None, stableCountRequired: 3, intervalsMs: [200, 200, 200, 200, 200, 200])));
+        var (current, old) = await LatencyBudget.FastestOfEachAsync(
+            () => TimeSettledWaitAsync(
+                page => PlaywrightWebBrowser.WaitForDomStabilityAsync(page, CancellationToken.None)),
+            () => TimeSettledWaitAsync(
+                page => PlaywrightWebBrowser.WaitForDomStabilityAsync(
+                    page, CancellationToken.None, stableCountRequired: 3, intervalsMs: [200, 200, 200, 200, 200, 200])));
 
         current.ShouldBeLessThan(old - 100);
     }
@@ -154,32 +155,46 @@ public class DomStabilityWaitTests(QuietBrowserFixture fixture) : IAsyncLifetime
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var fastest = await LatencyBudget.FastestAsync(async () =>
-        {
-            var page = await _context!.NewPageAsync();
-            await page.SetContentAsync(
-                "<!doctype html><html><body><p>article body</p><div id='spinner'></div></body></html>");
-            await page.EvaluateAsync(
-                """
-                () => {
-                    let deg = 0;
-                    setInterval(() => {
-                        const s = document.getElementById('spinner');
-                        deg = (deg + 7) % 360;
-                        s.style.transform = 'rotate(' + deg + 'deg)';
-                        s.className = 'spin-' + deg;
-                    }, 30);
-                }
-                """);
+        // Against a page whose text never stops changing, timed beside it, rather than a fixed
+        // budget: a full-suite run read 829ms off a wait that settles in ~420ms alone. That page
+        // waits out the whole 1200ms of sleeps, so a spinner counted as rendering would cost the
+        // same ~800ms over a settling page however busy the host is.
+        var (cosmetic, neverSettles) = await LatencyBudget.FastestOfEachAsync(
+            () => TimeChurningWaitAsync(
+            """
+            () => {
+                let deg = 0;
+                setInterval(() => {
+                    const s = document.getElementById('spinner');
+                    deg = (deg + 7) % 360;
+                    s.style.transform = 'rotate(' + deg + 'deg)';
+                    s.className = 'spin-' + deg;
+                }, 30);
+            }
+            """),
+            () => TimeChurningWaitAsync(
+            """
+            () => {
+                let n = 0;
+                setInterval(() => { document.getElementById('spinner').textContent = 'tick ' + ++n; }, 30);
+            }
+            """));
 
-            var sw = Stopwatch.StartNew();
-            await PlaywrightWebBrowser.WaitForDomStabilityAsync(page, CancellationToken.None);
-            sw.Stop();
+        cosmetic.ShouldBeLessThan(neverSettles - 400);
+    }
 
-            await page.CloseAsync();
-            return sw.ElapsedMilliseconds;
-        });
+    private async Task<long> TimeChurningWaitAsync(string churn)
+    {
+        var page = await _context!.NewPageAsync();
+        await page.SetContentAsync(
+            "<!doctype html><html><body><p>article body</p><div id='spinner'></div></body></html>");
+        await page.EvaluateAsync(churn);
 
-        fastest.ShouldBeLessThan(700);
+        var sw = Stopwatch.StartNew();
+        await PlaywrightWebBrowser.WaitForDomStabilityAsync(page, CancellationToken.None);
+        sw.Stop();
+
+        await page.CloseAsync();
+        return sw.ElapsedMilliseconds;
     }
 }

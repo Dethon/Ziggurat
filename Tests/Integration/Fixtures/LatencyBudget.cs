@@ -25,4 +25,20 @@ internal static class LatencyBudget
 
         return fastest;
     }
+
+    // Two readings meant to be compared, taken in turns so both see the same machine. Taking all of
+    // one and then all of the other let the load shift between the blocks: the settled-page wait
+    // read 712ms against the old schedule's 611ms in a run where alone it is ~200ms the faster.
+    internal static async Task<(long First, long Second)> FastestOfEachAsync(
+        Func<Task<long>> first, Func<Task<long>> second)
+    {
+        var (fastestFirst, fastestSecond) = (long.MaxValue, long.MaxValue);
+        foreach (var _ in Enumerable.Range(0, Attempts))
+        {
+            fastestFirst = Math.Min(fastestFirst, await first());
+            fastestSecond = Math.Min(fastestSecond, await second());
+        }
+
+        return (fastestFirst, fastestSecond);
+    }
 }
