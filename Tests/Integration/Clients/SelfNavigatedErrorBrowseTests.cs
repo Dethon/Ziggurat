@@ -36,8 +36,8 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
         await fixture.Browser.RouteOnContextAsync($"{host}/**", route =>
             route.Request.Url.Contains("solution=")
                 ? Interlocked.Increment(ref refusals) == 1
-                    ? FulfillAsync(route, 403, BlockPage)
-                    : FulfillAsync(route, 200, RealPage)
+                    ? FulfillLateAsync(route, 403, BlockPage)
+                    : FulfillLateAsync(route, 200, RealPage)
                 : FulfillAsync(route, 200, ChallengePage));
 
         var sessionId = $"test-{Guid.NewGuid():N}";
@@ -46,7 +46,7 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
             var result = await fixture.Browser.NavigateAsync(
                 new BrowseRequest(sessionId, $"{host}/thread") { Caller = JudgmentCaller.None });
 
-            result.Status.ShouldBe(BrowseStatus.Success);
+            result.Status.ShouldBe(BrowseStatus.Success, result.ErrorMessage);
             result.Content.ShouldNotBeNull().ShouldContain("The comments a reader came for");
             result.HttpStatus.ShouldBe(200);
         }
@@ -70,7 +70,7 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
         {
             if (route.Request.Url.Contains("solution="))
             {
-                return FulfillAsync(route, 403, BlockPage);
+                return FulfillLateAsync(route, 403, BlockPage);
             }
 
             Interlocked.Increment(ref asked);
@@ -95,4 +95,14 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
 
     private static Task FulfillAsync(IRoute route, int status, string body) =>
         route.FulfillAsync(new() { Status = status, ContentType = "text/html", Body = body });
+
+    // The follow-up is answered slower than the page takes to look settled, as a challenge
+    // server under load does: a browse that read the page while that navigation was still in
+    // flight answered with the challenge itself, or with an error from a read the navigation
+    // tore down — both only when the suite was busy enough to delay the answer by chance.
+    private static async Task FulfillLateAsync(IRoute route, int status, string body)
+    {
+        await Task.Delay(TimeSpan.FromMilliseconds(1500));
+        await FulfillAsync(route, status, body);
+    }
 }

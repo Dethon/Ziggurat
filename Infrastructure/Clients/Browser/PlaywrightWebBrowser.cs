@@ -35,6 +35,11 @@ public class PlaywrightWebBrowser(
     // connection another caller already re-established.
     private long _connectionGeneration;
     private const int MaxCaptchaRetries = 2;
+    private const int MaxFollowedNavigations = 3;
+
+    // How long a navigation the page started on its own is waited for before the page is read as
+    // it stands. Short of the 30s navigation cap: a server that never answers costs this, not that.
+    private static readonly TimeSpan _selfNavigationDeadline = TimeSpan.FromSeconds(10);
     private const int DefaultOperationTimeoutMs = 15_000;
     private const int ConnectionRetryAttempts = 3;
     private const int ConnectionRetryDelayMs = 2_000;
@@ -119,6 +124,9 @@ public class PlaywrightWebBrowser(
         var page = ctx.Page;
         var navigationTimedOut = false;
         IResponse? response = null;
+
+        // Before the goto: a page's inline script can send it on before GotoAsync returns.
+        using var selfNavigation = new MainFrameNavigationWatch(page);
 
         try
         {
@@ -252,6 +260,15 @@ public class PlaywrightWebBrowser(
         }
 
         await WaitForDomStabilityAsync(page, ct: ct);
+
+        // A page that looks settled may already have sent itself on, its next document not yet
+        // answered — a bot check whose server is slow. Read now, the browse would extract the check.
+        for (var followed = 0; !navigationTimedOut && followed < MaxFollowedNavigations && selfNavigation.InFlight; followed++)
+        {
+            await selfNavigation.WaitAsync(_selfNavigationDeadline, ct);
+            await WaitForReadyStateAsync(page);
+            await WaitForDomStabilityAsync(page, ct: ct);
+        }
 
         // A bot check answers 200, its script sends the page on, and the server refuses that
         // follow-up while leaving behind what lets the next visit through — Reddit did this to the
@@ -1295,7 +1312,7 @@ public class PlaywrightWebBrowser(
         IReadOnlyList<int>? intervalsMs = null)
     {
         var intervals = intervalsMs ?? _stabilityIntervalsMs;
-        var previousHtml = await page.EvaluateAsync<string>(DomFingerprintScript);
+        var previousHtml = await ReadFingerprintAsync(page);
         var stableCount = 0;
 
         foreach (var interval in intervals)
@@ -1303,9 +1320,9 @@ public class PlaywrightWebBrowser(
             ct.ThrowIfCancellationRequested();
 
             await Task.Delay(interval, ct);
-            var currentHtml = await page.EvaluateAsync<string>(DomFingerprintScript);
+            var currentHtml = await ReadFingerprintAsync(page);
 
-            if (currentHtml == previousHtml)
+            if (currentHtml is not null && currentHtml == previousHtml)
             {
                 stableCount++;
                 if (stableCount >= stableCountRequired)
@@ -1319,6 +1336,37 @@ public class PlaywrightWebBrowser(
             }
 
             previousHtml = currentHtml;
+        }
+    }
+
+    // Null when the page navigated while the reading was taken: the document the script ran in is
+    // gone, which is a change like any other rather than a failed browse. A closed page or a dead
+    // connection still throws, because no later reading can answer that.
+    private static async Task<string?> ReadFingerprintAsync(IPage page)
+    {
+        try
+        {
+            return await page.EvaluateAsync<string>(DomFingerprintScript);
+        }
+        catch (PlaywrightException ex) when (!IsConnectionClosed(ex))
+        {
+            return null;
+        }
+    }
+
+    // The same readiness the first document is waited for with, for one the page navigated to.
+    private static async Task WaitForReadyStateAsync(IPage page)
+    {
+        try
+        {
+            await page.WaitForFunctionAsync(
+                "() => document.readyState === 'interactive' || document.readyState === 'complete'",
+                null,
+                new() { Timeout = (float)_selfNavigationDeadline.TotalMilliseconds });
+        }
+        catch (Exception ex) when (ex is TimeoutException || (ex is PlaywrightException && !IsConnectionClosed(ex)))
+        {
+            // Read as it stands: the stability wait after this one still runs.
         }
     }
 

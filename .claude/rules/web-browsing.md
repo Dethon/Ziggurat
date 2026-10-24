@@ -19,6 +19,9 @@ next visit through — Reddit's "You've been blocked by network security" on a f
 browse. `BrowsePageAsync` reads the settled document's status (`performance`'s navigation entry,
 since the commit's response belongs to the page that left) and browses the caller's address once
 more; a second landing reports the error. `HttpStatus` is that settled status, not the commit's.
+A navigation the page's script has started but the server has not yet answered is waited for
+(`MainFrameNavigationWatch`, up to 10s) before the page is read — read early, the browse extracted
+the check itself — and a stability reading torn down by a navigation counts as a change, not an error.
 
 ## Overlays
 
