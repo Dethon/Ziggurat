@@ -58,20 +58,32 @@ public class DomStabilityWaitTests(QuietBrowserFixture fixture) : IAsyncLifetime
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var fastest = await LatencyBudget.FastestAsync(async () =>
-        {
-            var page = await _context!.NewPageAsync();
-            await page.SetContentAsync("<!doctype html><html><body><p>static content</p></body></html>");
+        // Against the old schedule timed beside it rather than a fixed budget: alone the settled
+        // wait reads ~420ms, but a full-suite run read 618ms off the same code, since each of its
+        // readings is a round trip to a browser sharing the host. Load inflates both sides alike,
+        // while the old floor costs an extra 200ms sleep however busy the host is. The old loop
+        // slept before its first reading and so wasted a comparison: three 200ms sleeps to settle,
+        // which is three stable readings here.
+        var current = await LatencyBudget.FastestAsync(() => TimeSettledWaitAsync(
+            page => PlaywrightWebBrowser.WaitForDomStabilityAsync(page, CancellationToken.None)));
+        var old = await LatencyBudget.FastestAsync(() => TimeSettledWaitAsync(
+            page => PlaywrightWebBrowser.WaitForDomStabilityAsync(
+                page, CancellationToken.None, stableCountRequired: 3, intervalsMs: [200, 200, 200, 200, 200, 200])));
 
-            var sw = Stopwatch.StartNew();
-            await PlaywrightWebBrowser.WaitForDomStabilityAsync(page, CancellationToken.None);
-            sw.Stop();
+        current.ShouldBeLessThan(old - 100);
+    }
 
-            await page.CloseAsync();
-            return sw.ElapsedMilliseconds;
-        });
+    private async Task<long> TimeSettledWaitAsync(Func<IPage, Task> wait)
+    {
+        var page = await _context!.NewPageAsync();
+        await page.SetContentAsync("<!doctype html><html><body><p>static content</p></body></html>");
 
-        fastest.ShouldBeLessThan(550);
+        var sw = Stopwatch.StartNew();
+        await wait(page);
+        sw.Stop();
+
+        await page.CloseAsync();
+        return sw.ElapsedMilliseconds;
     }
 
     // The coverage half of the trade: content injected repeatedly after DOMContentLoaded must be
