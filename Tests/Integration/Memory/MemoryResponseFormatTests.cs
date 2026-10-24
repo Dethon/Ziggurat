@@ -292,8 +292,10 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
         var result = await LlmAttempt.UntilAsync(
             () => LlmAttempt.WithinAsync(
                 LlmAttempt.Budget, ct => consolidator.SynthesizeProfileAsync("test_user", memories, ct)),
+            // The preference is asked of the retry too: about one answer in three files "prefers
+            // concise, direct answers" under avoidances and appreciated alone, leaving it empty.
             profile => !string.IsNullOrWhiteSpace(profile.Summary)
-                       && profile.CommunicationStyle is not null
+                       && !string.IsNullOrWhiteSpace(profile.CommunicationStyle?.Preference)
                        && profile.TechnicalContext is not null);
 
         result.UserId.ShouldBe("test_user");
