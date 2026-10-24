@@ -7,6 +7,9 @@ import type { Dose, Meal, SaveDose } from "./types";
 export const MAX_UNITS = 100;
 export const MAX_NOTE = 200;
 
+// Rapid and basal are told apart by a bolt and a clock as well as by tint.
+export const DOSE_ICON = { rapid: "bolt", basal: "clock" } as const;
+
 export type UnitsProblem = Extract<StringKey, "unitsMissing" | "unitsNotANumber" | "unitsAboveZero" | "unitsAtMost" | "unitsDecimals">;
 
 // The units she typed, read as she wrote them (a comma or a point for the decimals, as the portion

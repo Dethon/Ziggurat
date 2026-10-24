@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Design;
 namespace McpServerSugary.Store;
 
 // The log is meant to be read by other tools next to glucose data, so it is plain tables with
-// plain columns: one row per meal, one row per item, one row per recipe and per ingredient, one row per dose, one row per session of exercise, one row per period, one row per noted day, enums,
+// plain columns: one row per meal, one row per item, one row per recipe and per ingredient, one row per dose, one row per insulin pen, one row per session of exercise, one row per period, one row per noted day, enums,
 // times and days as readable text.
 public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbContext(options)
 {
@@ -12,6 +12,8 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
     public DbSet<Food> Foods => Set<Food>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<Dose> Doses => Set<Dose>();
+    public DbSet<Pen> Pens => Set<Pen>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
     public DbSet<ExerciseSession> ExerciseSessions => Set<ExerciseSession>();
     public DbSet<Period> Periods => Set<Period>();
     public DbSet<DayNote> DayNotes => Set<DayNote>();
@@ -73,6 +75,11 @@ public class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbCont
             stored => new DateTimeOffset(DateTime.SpecifyKind(stored, DateTimeKind.Utc)));
         dose.HasIndex(d => d.TakenAt);
         dose.Property(d => d.Kind).HasConversion<string>();
+
+        var pen = modelBuilder.Entity<Pen>();
+        pen.Property(p => p.Kind).HasConversion<string>();
+        pen.HasIndex(p => p.Kind);
+        modelBuilder.Entity<PushSubscription>().HasKey(s => s.Endpoint);
 
         var exercise = modelBuilder.Entity<ExerciseSession>();
         exercise.Property(e => e.StartedAt).HasConversion(

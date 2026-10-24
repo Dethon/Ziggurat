@@ -63,7 +63,7 @@ public sealed class SugaryServer : IAsyncDisposable
     public static async Task<SugaryServer> StartAsync(
         string homeZone = "Europe/Madrid", string accessCode = AccessCode, string? openFoodFacts = null,
         string? webRoot = null, TimeProvider? turnClock = null, TimeProvider? estimateClock = null,
-        Func<SugarySettings, SugarySettings>? configure = null)
+        Func<SugarySettings, SugarySettings>? configure = null, Action<IServiceCollection>? services = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "sugary-tests", Guid.NewGuid().ToString("N"));
         System.IO.Directory.CreateDirectory(directory);
@@ -79,20 +79,23 @@ public sealed class SugaryServer : IAsyncDisposable
         settings = configure?.Invoke(settings) ?? settings;
 
         var server = await InMemoryMcpServer.StartAsync(
-            services =>
+            collection =>
             {
-                services.ConfigureSugary(settings);
+                collection.ConfigureSugary(settings);
                 if (turnClock is not null)
                 {
-                    services.AddSingleton(sp => ActivatorUtilities.CreateInstance<SugaryChannel>(sp, turnClock));
+                    collection.AddSingleton(sp => ActivatorUtilities.CreateInstance<SugaryChannel>(sp, turnClock));
                 }
 
                 // How long her answers may follow an estimate, on a clock of its own for the same
                 // reason: nothing else may see time jump.
                 if (estimateClock is not null)
                 {
-                    services.AddSingleton(sp => ActivatorUtilities.CreateInstance<OpenEstimates>(sp, estimateClock));
+                    collection.AddSingleton(sp => ActivatorUtilities.CreateInstance<OpenEstimates>(sp, estimateClock));
                 }
+
+                // A test's own stand-ins, registered last so they win.
+                services?.Invoke(collection);
             },
             map: app => app.MapSugaryApp(), webRoot: webRoot);
         return new SugaryServer(server, settings, directory);
@@ -292,6 +295,8 @@ public sealed class SugaryServer : IAsyncDisposable
         });
         return glob["entries"]!.AsArray().Select(e => e!.GetValue<string>()).ToList();
     }
+
+    public IServiceProvider Services => _server.App.Services;
 
     private IDbContextFactory<SugaryDbContext> Contexts =>
         _server.App.Services.GetRequiredService<IDbContextFactory<SugaryDbContext>>();

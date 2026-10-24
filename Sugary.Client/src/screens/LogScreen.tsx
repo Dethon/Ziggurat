@@ -8,7 +8,7 @@ import { ItemRow } from "../components/ItemRow";
 import { MealThumb } from "../components/MealThumb";
 import { PortionSheet } from "../components/PortionSheet";
 import { Sheet } from "../components/Sheet";
-import { restored } from "../dose";
+import { DOSE_ICON, restored } from "../dose";
 import { canStopNow, duration, elapsedMinutes, EXERCISE_ICON, restored as restoredSession, running, sessionMinutes, startNow } from "../exercise";
 import { errorMessage } from "../errors";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
@@ -31,7 +31,6 @@ const PAGE = 50;
 const RECORDED: Exclude<Outcome, "unknown">[] = ["low", "inRange", "high"];
 const OUTCOME_ICON: Record<Outcome, IconName> = { low: "arrowDown", inRange: "checkCircle", high: "arrowUp", unknown: "minus" };
 
-const DOSE_ICON = { rapid: "bolt", basal: "clock" } as const;
 // The two she does most, a tap each.
 const SHORTCUTS = ["walk", "gym"] as const;
 

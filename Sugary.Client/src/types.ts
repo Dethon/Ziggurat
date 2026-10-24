@@ -147,6 +147,29 @@ export interface Dose {
 
 export type SaveDose = Omit<Dose, "id">;
 
+// An insulin pen she opened: which insulin, the day she first used it and how many days it lasts
+// open. The server says the day it is replaced (openedOn + days) and, once a newer pen of its kind
+// took its place, the day that happened.
+export interface Pen {
+  id: string;
+  kind: DoseKind;
+  insulin: string;
+  openedOn: string;
+  days: number;
+  replaceOn: string;
+  replacedOn: string | null;
+}
+
+export type SavePen = Pick<Pen, "kind" | "insulin" | "openedOn" | "days">;
+
+// A phone's push subscription as the server keeps it, with the language its reminders are written in.
+export interface SavePushSubscription {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  language: string;
+}
+
 export type ExerciseKind = "walk" | "gym" | "other";
 
 // A session of exercise: a walk, the gym, or another kind she named, with no end while it runs.

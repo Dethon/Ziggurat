@@ -6,13 +6,16 @@ import type {
   Meal,
   MealEstimate,
   PackagedFood,
+  Pen,
   Period,
   Recipe,
   SaveDose,
   SaveExercise,
   SaveFood,
   SaveMeal,
+  SavePen,
   SavePeriod,
+  SavePushSubscription,
   SaveRecipe,
   SessionState,
 } from "./types";
@@ -156,6 +159,15 @@ export const api = {
   exerciseNames: () => request<string[]>("/exercise/names"),
 
   // All of them, newest first: a few a year, and the forecast reads every one.
+  pens: () => request<Pen[]>("/pens"),
+  createPen: (pen: SavePen) => request<Pen>("/pens", json("POST", pen)),
+  updatePen: (id: string, pen: SavePen) => request<Pen>(`/pens/${id}`, json("PUT", pen)),
+  deletePen: (id: string) => request<void>(`/pens/${id}`, { method: "DELETE" }),
+  push: () => request<{ publicKey: string | null }>("/push"),
+  savePushSubscription: (subscription: SavePushSubscription) =>
+    request<void>("/push/subscription", json("PUT", subscription)),
+  deletePushSubscription: (endpoint: string) =>
+    request<void>(`/push/subscription?endpoint=${encodeURIComponent(endpoint)}`, { method: "DELETE" }),
   periods: () => request<Period[]>("/periods"),
   createPeriod: (period: SavePeriod) => request<Period>("/periods", json("POST", period)),
   updatePeriod: (id: string, period: SavePeriod) => request<Period>(`/periods/${id}`, json("PUT", period)),

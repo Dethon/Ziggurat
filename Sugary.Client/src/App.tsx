@@ -4,6 +4,7 @@ import { Icon, type IconName } from "./components/Icon";
 import type { StringKey } from "./i18n";
 import { useMinute } from "./clock";
 import { pendingOutcomes } from "./log";
+import { resync } from "./push";
 import { CycleScreen } from "./screens/CycleScreen";
 import { FoodsScreen } from "./screens/FoodsScreen";
 import { LogScreen } from "./screens/LogScreen";
@@ -62,7 +63,7 @@ export function App() {
 }
 
 function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() => void) | null }) {
-  const { t } = useSettings();
+  const { t, language } = useSettings();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("meal");
   const adder = useRef<((item: DraftItem) => void) | null>(null);
@@ -79,6 +80,11 @@ function Shell({ session, onSignOut }: { session: SessionState; onSignOut: (() =
   useEffect(() => {
     void refreshPending();
   }, [refreshPending, minute]);
+
+  // The pen reminders' subscription, handed over again in the language they are to be written in.
+  useEffect(() => {
+    resync(language).catch(() => {});
+  }, [language]);
 
   return (
     <>
