@@ -51,8 +51,21 @@ public sealed class LoginHandoffs(
     public async Task<string> BeginAsync(
         string person, ConversationContext context, string url, string? inWebChatOf, CancellationToken ct)
     {
-        var id = await browser.OpenHandoffAsync(person, url, ct);
+        // Counted before the tab opens: the login page's own requests must not arm a save of a
+        // login nobody has finished.
+        logins.BeginHandoff(person);
+        string id;
         string token;
+        try
+        {
+            id = await browser.OpenHandoffAsync(person, url, ct);
+        }
+        catch
+        {
+            await logins.AbandonHandoffAsync(person, [], CancellationToken.None);
+            throw;
+        }
+
         try
         {
             token = await links.MintAsync(new OneTimeLinks.Ticket(TicketKind, id), TicketLifetime);
@@ -60,11 +73,11 @@ public sealed class LoginHandoffs(
         catch
         {
             // No link, no handoff: the tab nobody can reach goes with it.
+            await logins.AbandonHandoffAsync(person, browser.HandoffVisitedHosts(id), CancellationToken.None);
             await browser.CloseHandoffAsync(id);
             throw;
         }
 
-        logins.BeginHandoff(person);
         var handoff = new LiveHandoff(id, person, context, url, token);
         _live[id] = handoff;
         handoff.Expiry = time.CreateTimer(_ => _ = ExpireAsync(id), null, TicketLifetime, Timeout.InfiniteTimeSpan);
