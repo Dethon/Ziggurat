@@ -133,7 +133,11 @@ public enum BrowseStatus
     Partial,
     Error,
     SessionNotFound,
-    CaptchaRequired
+    CaptchaRequired,
+
+    // A browse as a person whose remembered logins the server cannot open — no key, or the wrong
+    // one. Refused rather than browsed logged out, and not worth retrying.
+    LoginsUnreadable
 }
 
 public record ModalDismissed(ModalType Type, string Selector, string? ButtonText);

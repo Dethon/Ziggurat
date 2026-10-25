@@ -56,13 +56,16 @@ public class WebBrowseTool(IWebBrowser browser)
 
         var result = await browser.NavigateAsync(request, ct);
 
-        if (result.Status is BrowseStatus.Error or BrowseStatus.SessionNotFound)
+        if (result.Status is BrowseStatus.Error or BrowseStatus.SessionNotFound or BrowseStatus.LoginsUnreadable)
         {
             var (code, hint) = result.Status switch
             {
                 BrowseStatus.SessionNotFound => (
                     ToolError.Codes.SessionNotFound,
                     "The browser session has expired. Call web_browse again with a fresh sessionId."),
+                BrowseStatus.LoginsUnreadable => (
+                    ToolError.Codes.UnsupportedOperation,
+                    "Tell the person their saved logins cannot be opened on this server until the operator fixes the key; do not browse as them meanwhile."),
                 _ => (ToolError.Codes.InternalError, (string?)null)
             };
             var error = ToolError.Create(

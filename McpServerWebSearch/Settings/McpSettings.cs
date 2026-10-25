@@ -22,8 +22,13 @@ public record McpSettings : IMcpHostSettings
     // The login handoff's link and lifetimes.
     public HandoffConfiguration Handoff { get; init; } = new();
 
+    // Remembered logins: the key their records are sealed with, and how soon after use a person's
+    // context is saved again.
+    public LoginsConfiguration Logins { get; init; } = new();
+
     // Metrics ride this connection — one event per overlay the browser met — and so do the login
-    // handoff's one-time links. Page images still cross to Redis at the agent's bridge, never here.
+    // handoff's one-time links and each person's remembered logins, sealed. Page images still cross
+    // to Redis at the agent's bridge, never here.
     public string RedisConnectionString { get; init; } = "redis:6379";
 
     // Jev, the hosted judge this server asks which of a wall's buttons closes it. It is asked
@@ -61,6 +66,14 @@ public record HandoffConfiguration
     // How long a handoff link can be opened, and how long the view lives once it is.
     public int TicketMinutes { get; init; } = 10;
     public int ViewMinutes { get; init; } = 30;
+}
+
+public record LoginsConfiguration
+{
+    // The base64 of 32 random bytes, from secrets (LOGINS__STATEKEY); empty is remembering off.
+    public string StateKey { get; init; } = "";
+
+    public int SaveDebounceSeconds { get; init; } = 5;
 }
 
 public record BraveSearchConfiguration

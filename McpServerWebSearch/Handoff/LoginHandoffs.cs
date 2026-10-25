@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Infrastructure.Clients.Browser;
 using Mcp.Hosting;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,7 @@ public sealed class LoginHandoffs(
     IHandoffBrowser browser,
     OneTimeLinks links,
     ChannelNotificationEmitter wakes,
+    PersonLogins logins,
     HandoffConfiguration settings,
     TimeProvider time,
     ILogger<LoginHandoffs> logger)
@@ -46,6 +48,7 @@ public sealed class LoginHandoffs(
         string person, ConversationContext context, string url, CancellationToken ct)
     {
         var id = await browser.OpenHandoffAsync(person, url, ct);
+        logins.BeginHandoff(person);
         var token = await links.MintAsync(new OneTimeLinks.Ticket(TicketKind, id), TicketLifetime);
         var handoff = new LiveHandoff(id, person, context, url, token);
         _live[id] = handoff;
@@ -78,9 +81,11 @@ public sealed class LoginHandoffs(
 
     public bool IsOpen(LiveHandoff handoff) => _live.ContainsKey(handoff.Id) && browser.IsHandoffOpen(handoff.Id);
 
-    // The person pressed Done: the login now lives in their context, the tab is closed, and the
-    // agent is woken where it was asked.
-    public async Task<bool> CompleteAsync(LiveHandoff handoff)
+    public bool CanRemember => logins.CanRemember;
+
+    // The person pressed Done: the login now lives in their context — remembered, or only until
+    // the browser restarts — the tab is closed, and the agent is woken where it was asked.
+    public async Task<bool> CompleteAsync(LiveHandoff handoff, bool remember)
     {
         if (!_live.TryRemove(handoff.Id, out _))
         {
@@ -88,7 +93,19 @@ public sealed class LoginHandoffs(
         }
 
         handoff.Expiry?.Dispose();
+        // Read before the close, which forgets the handoff and the hosts with it.
+        var hosts = browser.HandoffVisitedHosts(handoff.Id);
         await browser.CloseHandoffAsync(handoff.Id);
+        try
+        {
+            await logins.CompleteHandoffAsync(handoff.Person, hosts, remember);
+        }
+        catch (Exception ex)
+        {
+            // The login is in the person's context either way; only its surviving a restart is lost.
+            logger.LogWarning(ex, "Saving the login {Person} handed off failed", handoff.Person);
+        }
+
         await wakes.EmitAsync(LoginWake.Compose(handoff, time.GetUtcNow()));
         return true;
     }
@@ -102,6 +119,7 @@ public sealed class LoginHandoffs(
         }
 
         handoff.Expiry?.Dispose();
+        logins.AbandonHandoff(handoff.Person);
         try
         {
             await links.RevokeAsync(handoff.Token);

@@ -5,8 +5,26 @@ namespace Tests.Integration.McpServerTests;
 
 // Handoff tabs with no browser behind them: which were opened, for whom, at what url, and which
 // are still open. A test closes one itself to stage the browser restarting under it.
-internal sealed class FakeHandoffBrowser : IHandoffBrowser
+internal sealed class FakeHandoffBrowser : IHandoffBrowser, IPersonContexts
 {
+    // What the person's context would export now; null is no context on this connection.
+    public string? State { get; set; }
+
+    // Thrown by the next open, as the browser does for a person whose saved logins will not open.
+    public Exception? OpenFails { get; set; }
+
+    public event Action<string, string>? PersonActivity;
+
+    public void RaiseActivity(string person, string url) => PersonActivity?.Invoke(person, url);
+
+    public Task<string?> ExportStateAsync(string person, CancellationToken ct = default) => Task.FromResult(State);
+
+    public Task ReplaceStateAsync(string person, string storageState, CancellationToken ct = default)
+    {
+        State = storageState;
+        return Task.CompletedTask;
+    }
+
     public sealed record Opened(string Id, string Person, string Url);
 
     private readonly ConcurrentDictionary<string, Opened> _open = new();
@@ -20,6 +38,11 @@ internal sealed class FakeHandoffBrowser : IHandoffBrowser
 
     public Task<string> OpenHandoffAsync(string person, string url, CancellationToken ct = default)
     {
+        if (OpenFails is { } fails)
+        {
+            throw fails;
+        }
+
         var opened = new Opened(Guid.NewGuid().ToString("N"), person, url);
         _open[opened.Id] = opened;
         _opened.Enqueue(opened);

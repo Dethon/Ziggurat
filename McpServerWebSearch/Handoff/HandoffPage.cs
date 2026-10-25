@@ -33,7 +33,8 @@ public static class HandoffPage
         button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
                          font-weight: 600; }
         button:disabled { opacity: .55; cursor: default; }
-        label.remember { display:flex; gap:8px; align-items:center; color: var(--muted); }
+        label.remember { display:flex; gap:8px; align-items:center; color: var(--muted); margin-right:auto; }
+        .note { color: var(--muted); font-size: 13px; flex-basis: 100%; }
         .done { padding: 32px 0; }
         .error { color: var(--error); }
         """;
@@ -61,6 +62,8 @@ public static class HandoffPage
             <button type="button" data-key="Enter">Enter</button>
           </div>
           <div class="bar" id="actions">
+            <label class="remember"><input type="checkbox" id="remember" checked> Remember this login</label>
+            <span class="note" id="remember-note" hidden>Remembering is off on this server: this login lasts until the browser restarts.</span>
             <button type="button" class="primary" id="done" disabled>Done</button>
           </div>
         </main>
@@ -145,8 +148,13 @@ public static class HandoffPage
           (async () => {
             const claim = await fetch('/browse/handoff/' + encodeURIComponent(token) + '/claim', { method: 'POST' });
             if (!claim.ok) { finish(['This link has been used or has run out', 'Each login link opens once and for ten minutes. Ask again and you will get a fresh one.']); return; }
-            const { site } = await claim.json();
+            const { site, canRemember } = await claim.json();
             document.getElementById('title').textContent = 'Log in to ' + site;
+            if (!canRemember) {
+              const box = document.getElementById('remember');
+              box.checked = false; box.disabled = true;
+              document.getElementById('remember-note').hidden = false;
+            }
             done.disabled = false;
             connect();
           })();
