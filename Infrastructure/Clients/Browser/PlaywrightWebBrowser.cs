@@ -16,7 +16,7 @@ public class PlaywrightWebBrowser(
     TimeSpan? idleTimeout = null,
     ModalDismisser? modalDismisser = null,
     IMetricsPublisher? metricsPublisher = null)
-    : IWebBrowser, IAsyncDisposable
+    : IWebBrowser, IHandoffBrowser, IAsyncDisposable
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -56,6 +56,26 @@ public class PlaywrightWebBrowser(
     // browser reports one only when the new page says it is ready: tens of milliseconds usually,
     // past a second on a cold one.
     private static readonly TimeSpan _popupGrace = TimeSpan.FromMilliseconds(1500);
+
+    private PlaywrightHandoffTabs? _handoffTabs;
+
+    private PlaywrightHandoffTabs HandoffTabs => _handoffTabs ??= new PlaywrightHandoffTabs(ContextForAsync);
+
+    public Task<string> OpenHandoffAsync(string person, string url, CancellationToken ct = default) =>
+        ExecuteWithReconnectAsync(() => HandoffTabs.OpenAsync(person, url, ct));
+
+    public bool IsHandoffOpen(string handoffId) => HandoffTabs.IsOpen(handoffId);
+
+    public Task CloseHandoffAsync(string handoffId) => HandoffTabs.CloseAsync(handoffId);
+
+    public Task<IAsyncDisposable> StreamHandoffAsync(
+        string handoffId, Func<HandoffFrame, Task> onFrame, CancellationToken ct = default) =>
+        HandoffTabs.StreamAsync(handoffId, onFrame, ct);
+
+    public Task SendHandoffInputAsync(string handoffId, HandoffInput input, CancellationToken ct = default) =>
+        HandoffTabs.SendInputAsync(handoffId, input, ct);
+
+    public IReadOnlyList<string> HandoffVisitedHosts(string handoffId) => HandoffTabs.VisitedHosts(handoffId);
 
     public async Task<BrowseResult> NavigateAsync(BrowseRequest request, CancellationToken ct = default)
     {

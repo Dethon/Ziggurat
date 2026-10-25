@@ -19,8 +19,11 @@ public record McpSettings : IMcpHostSettings
     // values in the compose environment only; empty is the feature off.
     public IdentityConfiguration Identity { get; init; } = new();
 
-    // Metrics alone ride this connection: one event per overlay the browser met. Nothing else on
-    // this server may use it — page images cross to Redis at the agent's bridge, never here.
+    // The login handoff's link and lifetimes.
+    public HandoffConfiguration Handoff { get; init; } = new();
+
+    // Metrics ride this connection — one event per overlay the browser met — and so do the login
+    // handoff's one-time links. Page images still cross to Redis at the agent's bridge, never here.
     public string RedisConnectionString { get; init; } = "redis:6379";
 
     // Jev, the hosted judge this server asks which of a wall's buttons closes it. It is asked
@@ -47,6 +50,17 @@ public record BrowsingConfiguration
 public record IdentityConfiguration
 {
     public IReadOnlyList<PersonIdentity> People { get; init; } = [];
+}
+
+public record HandoffConfiguration
+{
+    // Where people reach this server's /browse pages: the assistants host, behind Caddy. Per
+    // deployment, a compose entry; empty is the handoff off.
+    public string PublicBaseUrl { get; init; } = "";
+
+    // How long a handoff link can be opened, and how long the view lives once it is.
+    public int TicketMinutes { get; init; } = 10;
+    public int ViewMinutes { get; init; } = 30;
 }
 
 public record BraveSearchConfiguration

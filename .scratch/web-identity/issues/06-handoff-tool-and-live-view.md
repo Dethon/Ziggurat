@@ -4,12 +4,12 @@
 
 **Blocked by:** 03, 05
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Demo: hand off a hermetic login page through the link, press Done, and the next `asMe` browse of that site is logged in
-- [ ] A second open of a link, or an open after ten minutes, is refused; the handoff tab is gone after expiry
-- [ ] The handoff tab is unreachable from any ref, browse or action of the browse session
-- [ ] Forwarded typing lands in a field and frames arrive (real Camoufox)
-- [ ] `web_login` refuses on a schedule or watch fire's turn and for an unmapped user
-- [ ] Caddy routes `/browse` on the assistants host to the browse server; the public base address is a compose environment entry with a placeholder
-- [ ] Ticket rules and refusals tested on the server surface with a fake browser (prior art: the websearch session scope tests, the watch-fired endpoint tests)
+- [x] Demo: hand off a hermetic login page through the link, press Done, and the next `asMe` browse of that site is logged in
+- [x] A second open of a link, or an open after ten minutes, is refused; the handoff tab is gone after expiry
+- [x] The handoff tab is unreachable from any ref, browse or action of the browse session
+- [x] Forwarded typing lands in a field and frames arrive (real Camoufox)
+- [x] `web_login` refuses on a schedule or watch fire's turn and for an unmapped user
+- [x] Caddy routes `/browse` on the assistants host to the browse server; the public base address is a compose environment entry with a placeholder
+- [x] Ticket rules and refusals tested on the server surface with a fake browser (prior art: the websearch session scope tests, the watch-fired endpoint tests)

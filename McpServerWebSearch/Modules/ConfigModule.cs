@@ -10,6 +10,7 @@ using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Mcp.Hosting;
+using McpServerWebSearch.Handoff;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
@@ -32,6 +33,10 @@ public static class ConfigModule
                 .AddMetricsPublishing("mcp-websearch")
                 .AddTypeSafeJudge(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey))
                 .AddSingleton(new IdentityMap(settings.Identity.People))
+                .AddSingleton(settings.Handoff)
+                .AddSingleton(TimeProvider.System)
+                .AddSingleton<OneTimeLinks>()
+                .AddSingleton<LoginHandoffs>()
                 .AddWebSearchClients(settings)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()
@@ -39,6 +44,7 @@ public static class ConfigModule
                 .WithTools<McpWebSnapshotTool>()
                 .WithTools<McpWebActionTool>()
                 .WithTools<McpViewImageTool>()
+                .WithTools<McpWebLoginTool>()
                 // The skill that teaches this server's tools ships beside them, so a deployment
                 // without the browser cannot advertise how to drive one.
                 .AddSkills(WebBrowsingSkill.Text)
@@ -70,7 +76,7 @@ public static class ConfigModule
                 });
             }
 
-            services.AddSingleton<IWebBrowser>(sp =>
+            services.AddSingleton(sp =>
             {
                 var captchaSolver = sp.GetService<ICaptchaSolver>();
                 return new PlaywrightWebBrowser(
@@ -87,6 +93,10 @@ public static class ConfigModule
                             : null),
                     metricsPublisher: sp.GetRequiredService<IMetricsPublisher>());
             });
+            // One browser: the tabs the agent browses and the tabs people log in on share its
+            // contexts.
+            services.AddSingleton<IWebBrowser>(sp => sp.GetRequiredService<PlaywrightWebBrowser>());
+            services.AddSingleton<IHandoffBrowser>(sp => sp.GetRequiredService<PlaywrightWebBrowser>());
 
             return services;
         }

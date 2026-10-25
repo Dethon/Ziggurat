@@ -374,6 +374,9 @@ services:
       IDENTITY__PEOPLE__0__TELEGRAM: ""
       IDENTITY__PEOPLE__0__WEBCHAT: ""
       IDENTITY__PEOPLE__0__VOICE: ""
+      # Where people open a login handoff's link: the assistants host Caddy routes /browse/ to this
+      # server on (e.g. https://assistants.example.com). Per deployment; empty is the handoff off.
+      HANDOFF__PUBLICBASEURL: ""
     networks:
       - jackbot
     depends_on:
