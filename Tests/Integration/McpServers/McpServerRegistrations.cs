@@ -240,15 +240,18 @@ public static class McpServerRegistrations
 
         // CapSolver and Camoufox left absent, which is how a deployment without them runs: the
         // solver client is not registered and the browser gets a null endpoint. PlaywrightWebBrowser
-        // launches nothing until its first navigation.
-        Row("websearch", "McpServerWebSearch", McpServerRole.Tool,
+        // launches nothing until its first navigation. Dual-role since the login handoff: Done wakes
+        // the agent in the conversation that asked, buffered always, because a person pressing
+        // Done cannot be told to try again while the agent reconnects.
+        Row("websearch", "McpServerWebSearch", McpServerRole.DualRole,
             new WebSearchSettings.McpSettings
             {
                 BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
                 RedisConnectionString = UnreachableRedis,
                 Mcp = DeploymentGate
             },
-            (services, settings) => services.ConfigureMcp(settings))
+            (services, settings) => services.ConfigureMcp(settings),
+            DeliveryPolicy.BufferAlways)
     ];
 
     public static IReadOnlyList<McpServerRow> ChannelServers =>

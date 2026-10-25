@@ -33,6 +33,7 @@ public static class WebLoginTool
         MessageOriginKind.Schedule => "a schedule",
         MessageOriginKind.Watch => "a home watch",
         MessageOriginKind.Download => "a finished download",
+        MessageOriginKind.Login => "a finished login",
         _ => "something other than the person"
     };
 }

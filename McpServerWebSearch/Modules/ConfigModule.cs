@@ -1,4 +1,6 @@
+using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.Judgments;
 using Domain.Prompts;
 using Domain.Tools.Web;
@@ -45,6 +47,14 @@ public static class ConfigModule
                 .WithTools<McpWebActionTool>()
                 .WithTools<McpViewImageTool>()
                 .WithTools<McpWebLoginTool>()
+                // A channel too, for the login wake: Done raises a turn in the conversation that
+                // asked. Buffered always, because the person pressing Done cannot be told to try
+                // again while the agent reconnects; the target is the id the agent's connection
+                // derives for the "websearch" endpoint.
+                .AddChannelServer(
+                    DeliveryPolicy.BufferAlways,
+                    ChannelProtocol.ChannelClientNamePrefix + "websearch",
+                    noOutboundSurface: true)
                 // The skill that teaches this server's tools ships beside them, so a deployment
                 // without the browser cannot advertise how to drive one.
                 .AddSkills(WebBrowsingSkill.Text)
