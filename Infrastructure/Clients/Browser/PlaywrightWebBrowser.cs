@@ -20,7 +20,11 @@ public class PlaywrightWebBrowser(
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
-    private IBrowserContext? _context;
+    // The anonymous context, shared by every browse that is not made as a person; it carries no
+    // person's cookies. Further contexts join _contexts as they are made, and every one of them
+    // dies with the connection that made it.
+    private IBrowserContext? _anonymous;
+    private readonly List<IBrowserContext> _contexts = [];
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private readonly BrowserSessionManager _sessions = new(
         idleTimeout: idleTimeout ?? TimeSpan.FromMinutes(30),
@@ -99,7 +103,7 @@ public class PlaywrightWebBrowser(
         // GotoAsync — it just no longer costs anything on top of work already happening.
         var jitter = Task.Delay(Random.Shared.Next(50, 150), ct);
 
-        var outcome = await _sessions.BrowseAsync(request.SessionId, request.Url, _context!,
+        var outcome = await _sessions.BrowseAsync(request.SessionId, request.Url, _anonymous!,
             async ctx =>
             {
                 await jitter;
@@ -400,7 +404,7 @@ public class PlaywrightWebBrowser(
             Task<SnapshotResult> capture(TabWorkContext ctx) => CaptureSnapshotAsync(request, ctx);
             var outcome = request.ForUrl is { } url
                 ? await _sessions.OnUrlAsync(
-                    request.SessionId, url, StampPolicy.Restamp(RefNamespace.Element), capture, ct)
+                    request.SessionId, url, _anonymous!, StampPolicy.Restamp(RefNamespace.Element), capture, ct)
                 : await _sessions.OnCurrentTabAsync(
                     request.SessionId, StampPolicy.Restamp(RefNamespace.Element), capture, ct);
 
@@ -885,7 +889,7 @@ public class PlaywrightWebBrowser(
     internal async Task RouteOnContextAsync(string url, Func<IRoute, Task> handler)
     {
         await EnsureInitializedAsync();
-        await _context!.RouteAsync(url, handler);
+        await _anonymous!.RouteAsync(url, handler);
     }
 
     // The arranging half of the escape hatch: lets a test answer a fake CDN address from inside
@@ -979,19 +983,50 @@ public class PlaywrightWebBrowser(
 
     public async Task ClearCookiesAsync()
     {
-        if (_context == null)
+        foreach (var context in LiveContexts())
         {
-            return;
+            try
+            {
+                await context.ClearCookiesAsync();
+            }
+            catch (PlaywrightException)
+            {
+                // Context may be closed, ignore
+            }
+        }
+    }
+
+    private IReadOnlyList<IBrowserContext> LiveContexts()
+    {
+        lock (_contexts)
+        {
+            return [.. _contexts];
+        }
+    }
+
+    private async Task<IBrowserContext> NewContextAsync(IBrowser browser)
+    {
+        var context = await browser.NewContextAsync(new BrowserNewContextOptions
+        {
+            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+            Locale = "en-US",
+            TimezoneId = "America/New_York",
+            HasTouch = false,
+            IsMobile = false,
+            JavaScriptEnabled = true,
+            ExtraHTTPHeaders = new Dictionary<string, string>
+            {
+                ["Accept-Language"] = "en-US,en;q=0.9"
+            }
+        });
+
+        context.SetDefaultTimeout(DefaultOperationTimeoutMs);
+        lock (_contexts)
+        {
+            _contexts.Add(context);
         }
 
-        try
-        {
-            await _context.ClearCookiesAsync();
-        }
-        catch (PlaywrightException)
-        {
-            // Context may be closed, ignore
-        }
+        return context;
     }
 
     // Runs a browser operation, and if the connection turns out to be dead (the Camoufox
@@ -1058,21 +1093,7 @@ public class PlaywrightWebBrowser(
 
             _browser = await ConnectBrowserAsync();
 
-            _context = await _browser.NewContextAsync(new BrowserNewContextOptions
-            {
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
-                Locale = "en-US",
-                TimezoneId = "America/New_York",
-                HasTouch = false,
-                IsMobile = false,
-                JavaScriptEnabled = true,
-                ExtraHTTPHeaders = new Dictionary<string, string>
-                {
-                    ["Accept-Language"] = "en-US,en;q=0.9"
-                }
-            });
-
-            _context.SetDefaultTimeout(DefaultOperationTimeoutMs);
+            _anonymous = await NewContextAsync(_browser);
 
             _initialized = true;
             return ++_connectionGeneration;
@@ -1092,10 +1113,7 @@ public class PlaywrightWebBrowser(
 
         try
         {
-            if (_context is not null)
-            {
-                await _context.CloseAsync();
-            }
+            await CloseContextsAsync();
 
             if (_browser is not null)
             {
@@ -1108,7 +1126,7 @@ public class PlaywrightWebBrowser(
         }
         finally
         {
-            _context = null;
+            _anonymous = null;
             _browser = null;
         }
     }
@@ -1540,7 +1558,7 @@ public class PlaywrightWebBrowser(
             return (false, solution.ErrorMessage ?? "CAPTCHA solving failed");
         }
 
-        await SetDataDomeCookieAsync(websiteUrl, solution.Cookie);
+        await SetDataDomeCookieAsync(page.Context, websiteUrl, solution.Cookie);
         return (true, "CAPTCHA solved successfully");
     }
 
@@ -1560,7 +1578,9 @@ public class PlaywrightWebBrowser(
             .FirstOrDefault();
     }
 
-    private async Task SetDataDomeCookieAsync(string websiteUrl, string cookieValue)
+    // Into the solving page's own context: a cookie solved for a person's tab belongs to that
+    // person, and one solved anonymously to nobody.
+    private static async Task SetDataDomeCookieAsync(IBrowserContext context, string websiteUrl, string cookieValue)
     {
         var uri = new Uri(websiteUrl);
 
@@ -1569,7 +1589,7 @@ public class PlaywrightWebBrowser(
         var cookieName = cookieParts.Length > 0 ? cookieParts[0] : "datadome";
         var cookieVal = cookieParts.Length > 1 ? cookieParts[1] : cookieValue;
 
-        await _context!.AddCookiesAsync(
+        await context.AddCookiesAsync(
         [
             new Cookie
             {
@@ -1583,16 +1603,37 @@ public class PlaywrightWebBrowser(
         ]);
     }
 
+    // Every context the connection made, each closed on its own so one already dead does not keep
+    // the rest open.
+    private async Task CloseContextsAsync()
+    {
+        IReadOnlyList<IBrowserContext> contexts;
+        lock (_contexts)
+        {
+            contexts = [.. _contexts];
+            _contexts.Clear();
+        }
+
+        foreach (var context in contexts)
+        {
+            try
+            {
+                await context.CloseAsync();
+            }
+            catch (PlaywrightException)
+            {
+                // Already gone with its connection.
+            }
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _sessions.DisposeAsync();
 
         try
         {
-            if (_context != null)
-            {
-                await _context.CloseAsync();
-            }
+            await CloseContextsAsync();
 
             if (_browser != null)
             {

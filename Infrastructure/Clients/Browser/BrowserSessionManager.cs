@@ -164,10 +164,12 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // The composed-snapshot exception: addressed to the tab holding that URL, refusing when the
     // session no longer holds it — falling back to another tab would attach that page's refs to
-    // this page's text, the silent wrong-target answer the address exists to prevent.
+    // this page's text, the silent wrong-target answer the address exists to prevent. The context
+    // is part of the address: one URL may be open both anonymously and as a person.
     public async Task<TabOutcome<T>> OnUrlAsync<T>(
         string sessionId,
         string url,
+        IBrowserContext context,
         StampPolicy stamping,
         Func<TabWorkContext, Task<T>> work,
         CancellationToken ct = default)
@@ -178,7 +180,7 @@ public class BrowserSessionManager : IAsyncDisposable
             return new TabOutcome<T>.NoSession();
         }
 
-        if (session.FindByUrl(url) is not { } tab)
+        if (session.FindByUrl(url, context) is not { } tab)
         {
             return new TabOutcome<T>.AddressedTabGone(url);
         }
@@ -482,7 +484,7 @@ public class BrowserSessionManager : IAsyncDisposable
         {
             session.DropClosedTabs();
 
-            if (session.FindByUrl(url) is { } match)
+            if (session.FindByUrl(url, context) is { } match)
             {
                 // The address the model just asked with becomes the one the tab is known by, so
                 // a later closed-wall names the URL the model most recently used.
@@ -495,7 +497,7 @@ public class BrowserSessionManager : IAsyncDisposable
             // already killed an innocent tab and its refs.
             var page = await context.NewPageAsync();
             evicted = session.EvictLruIfAtCap(_tabCap);
-            return new TabAcquisition(session, Admit(session, sessionId, page, url), Reused: false);
+            return new TabAcquisition(session, Admit(session, sessionId, page, url, context), Reused: false);
         }
         finally
         {
@@ -539,7 +541,9 @@ public class BrowserSessionManager : IAsyncDisposable
         {
             session.DropClosedTabs();
             evicted = session.EvictLruIfAtCap(_tabCap);
-            var tab = Admit(session, sessionId, popup, SafeUrl(popup));
+            // The opener's context, never a default: the browser opened the popup in the opener's
+            // cookies, and a tab misfiled under another context would be reused by its browses.
+            var tab = Admit(session, sessionId, popup, SafeUrl(popup), opener?.Context ?? popup.Context);
 
             // Pending on the tab whose click spawned it, so the popup answers that click's action
             // and no other — a session-global handoff let a parallel action on another tab swallow
@@ -569,9 +573,10 @@ public class BrowserSessionManager : IAsyncDisposable
         }
     }
 
-    private BrowserTab Admit(BrowserSession session, string sessionId, IPage page, string url)
+    private BrowserTab Admit(
+        BrowserSession session, string sessionId, IPage page, string url, IBrowserContext context)
     {
-        var tab = new BrowserTab(page, url);
+        var tab = new BrowserTab(page, url, context);
         HandlePageEvents(sessionId, tab);
         session.AddTab(tab);
         Touch(session, tab);
@@ -1011,9 +1016,13 @@ public sealed class TabWorkContext
 
 // One live page in a session's pool. The model never sees it: a tab is addressed only through the
 // refs it stamped, or by being the tab last touched.
-internal class BrowserTab(IPage page, string requestedUrl)
+internal class BrowserTab(IPage page, string requestedUrl, IBrowserContext context)
 {
     public IPage Page { get; } = page;
+
+    // The browser context the tab opened in, for life: whose cookies its requests carry. Reuse
+    // matches only within it, and a popup joins its opener's.
+    public IBrowserContext Context { get; } = context;
 
     // The address the model asked for, verbatim — the one it knows to ask for again.
     public string RequestedUrl { get; internal set; } = requestedUrl;
@@ -1161,11 +1170,12 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
         }
     }
 
-    internal BrowserTab? FindByUrl(string url)
+    internal BrowserTab? FindByUrl(string url, IBrowserContext context)
     {
         lock (_ranges)
         {
-            return _tabs.FirstOrDefault(t => t.RequestedUrl == url || t.FinalUrl == url);
+            return _tabs.FirstOrDefault(t =>
+                ReferenceEquals(t.Context, context) && (t.RequestedUrl == url || t.FinalUrl == url));
         }
     }
 

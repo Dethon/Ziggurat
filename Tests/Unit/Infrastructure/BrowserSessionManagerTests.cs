@@ -59,8 +59,7 @@ public class BrowserSessionManagerTests
         pages[0].Mock.Verify(p => p.CloseAsync(It.IsAny<PageCloseOptions?>()), Times.Never);
 
         // The first page still answers a call addressed to its URL.
-        var onFirst = await manager.OnUrlAsync(
-            "s1", "https://a.test/", StampPolicy.None, cx => Task.FromResult(cx.Page));
+        var onFirst = await manager.OnUrlAsync("s1", "https://a.test/", ctx.Object, StampPolicy.None, cx => Task.FromResult(cx.Page));
         RanOn(onFirst).ShouldBeSameAs(pages[0].Mock.Object);
     }
 
@@ -114,7 +113,7 @@ public class BrowserSessionManagerTests
 
         // The oldest-created tab is touched again by a routed call, so the least-recently-touched
         // is now b.
-        await manager.OnUrlAsync("s1", "https://a.test/", StampPolicy.None, _ => Task.FromResult(true));
+        await manager.OnUrlAsync("s1", "https://a.test/", ctx.Object, StampPolicy.None, _ => Task.FromResult(true));
         time.Advance(TimeSpan.FromSeconds(1));
 
         await BrowseAsync(manager, ctx, "s1", "https://d.test/");
@@ -173,7 +172,7 @@ public class BrowserSessionManagerTests
         (await CurrentPageAsync(manager, "s1")).ShouldBeSameAs(pages[1].Mock.Object);
 
         // A routed call to the older tab — a view_image, an action — refocuses it.
-        await manager.OnUrlAsync("s1", "https://a.test/", StampPolicy.None, _ => Task.FromResult(true));
+        await manager.OnUrlAsync("s1", "https://a.test/", ctx.Object, StampPolicy.None, _ => Task.FromResult(true));
 
         (await CurrentPageAsync(manager, "s1")).ShouldBeSameAs(pages[0].Mock.Object);
     }
@@ -393,8 +392,7 @@ public class BrowserSessionManagerTests
 
         // It became the tab the next ref-less call addresses, and it answers by its URL.
         (await CurrentPageAsync(manager, "s1")).ShouldBeSameAs(popup.Mock.Object);
-        var byUrl = await manager.OnUrlAsync(
-            "s1", "https://popup.test/window", StampPolicy.None, cx => Task.FromResult(cx.Page));
+        var byUrl = await manager.OnUrlAsync("s1", "https://popup.test/window", ctx.Object, StampPolicy.None, cx => Task.FromResult(cx.Page));
         RanOn(byUrl).ShouldBeSameAs(popup.Mock.Object);
     }
 
@@ -480,8 +478,7 @@ public class BrowserSessionManagerTests
         outcome.ShouldBeOfType<TabOutcome<string>.Ran>().PopupAnswered.ShouldBeTrue();
 
         // The landed address is the one the popup is now known by.
-        var byUrl = await manager.OnUrlAsync(
-            "s1", "https://popup.test/landed", StampPolicy.None, cx => Task.FromResult(cx.Page));
+        var byUrl = await manager.OnUrlAsync("s1", "https://popup.test/landed", ctx.Object, StampPolicy.None, cx => Task.FromResult(cx.Page));
         RanOn(byUrl).ShouldBeSameAs(popup.Mock.Object);
     }
 
@@ -664,13 +661,13 @@ public class BrowserSessionManagerTests
         await BrowseAsync(manager, ctx, "s1", "https://b.test/");
 
         var releaseFirst = new TaskCompletionSource();
-        var first = manager.OnUrlAsync("s1", "https://a.test/", StampPolicy.None, async _ =>
+        var first = manager.OnUrlAsync("s1", "https://a.test/", ctx.Object, StampPolicy.None, async _ =>
         {
             await releaseFirst.Task;
             return true;
         });
 
-        var second = manager.OnUrlAsync("s1", "https://b.test/", StampPolicy.None, _ => Task.FromResult(true));
+        var second = manager.OnUrlAsync("s1", "https://b.test/", ctx.Object, StampPolicy.None, _ => Task.FromResult(true));
 
         (await Task.WhenAny(second, Task.Delay(1000))).ShouldBe(second);
 
@@ -743,8 +740,7 @@ public class BrowserSessionManagerTests
 
         var firstStamping = new TaskCompletionSource();
         var releaseFirst = new TaskCompletionSource();
-        var first = manager.OnUrlAsync(
-            "s1", "https://a.test/", StampPolicy.Restamp(RefNamespace.Element),
+        var first = manager.OnUrlAsync("s1", "https://a.test/", ctx.Object, StampPolicy.Restamp(RefNamespace.Element),
             async cx =>
             {
                 await cx.StampAsync(async _ =>
@@ -758,8 +754,7 @@ public class BrowserSessionManagerTests
         await firstStamping.Task;
 
         var secondStart = 0;
-        var second = manager.OnUrlAsync(
-            "s1", "https://b.test/", StampPolicy.Restamp(RefNamespace.Element),
+        var second = manager.OnUrlAsync("s1", "https://b.test/", ctx.Object, StampPolicy.Restamp(RefNamespace.Element),
             async cx =>
             {
                 await cx.StampAsync(s =>
