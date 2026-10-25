@@ -140,7 +140,8 @@ public static class EvalRun
             new ReplyTarget(
                 EvalAttachments.Channel(scenario.Turn),
                 conversationId,
-                scenario.Turn.SatelliteId)));
+                scenario.Turn.SatelliteId),
+            OriginKind: scenario.Turn.Origin));
 
         return message;
     }

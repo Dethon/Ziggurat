@@ -176,6 +176,10 @@ public sealed record EvalTurn
     // turn answered in prose, which is every channel but Sugary's.
     public ResponseFormat? ResponseFormat { get; init; }
 
+    // What raised the turn when nobody sent it — a schedule, a watch — as a fire's conversation
+    // context carries it to every server the turn calls. Null is a person's own message.
+    public MessageOriginKind? Origin { get; init; }
+
     // Files the channel holds for this turn, in the order the person sent them. They reach the
     // agent as references of the turn's channel, and the stack answers the fetch hydration makes.
     public IReadOnlyList<EvalAttachment> Attachments { get; init; } = [];
