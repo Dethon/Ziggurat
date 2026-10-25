@@ -559,4 +559,20 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         await Should.ThrowAsync<WebSocketException>(() => socket.ConnectAsync(
             new Uri($"{_server.BaseAddress.Replace("http", "ws")}/browse/handoff/live"), CancellationToken.None));
     }
+
+    // The login page's own requests must not arm a save that writes the half-made login while the
+    // person is still typing it.
+    [Fact]
+    public async Task NothingIsSavedWhileTheHandoffIsOpen()
+    {
+        _browser.State = ShopState;
+
+        await StartHandoffAsync();
+        _time.Advance(TimeSpan.FromSeconds(5));
+        _browser.RaiseActivity("fran", "https://shop.test/login?step=2");
+        _time.Advance(TimeSpan.FromSeconds(5));
+
+        await Eventually.Settle();
+        (await Store.LoadAsync("fran")).ShouldBeNull();
+    }
 }

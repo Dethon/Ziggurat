@@ -48,6 +48,9 @@ internal sealed class FakeHandoffBrowser : IHandoffBrowser, IPersonContexts
             throw fails;
         }
 
+        // Opening a tab loads its page, and the page's requests finish in the person's context
+        // before the open returns.
+        PersonActivity?.Invoke(person, url);
         var opened = new Opened(Guid.NewGuid().ToString("N"), person, url);
         _open[opened.Id] = opened;
         _opened.Enqueue(opened);

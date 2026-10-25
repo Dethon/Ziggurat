@@ -245,6 +245,17 @@ public sealed class PersonLogins : IDisposable
 
     private async Task SaveQuietlyAsync(string person, Person entry)
     {
+        // A handoff opened while this save waited: Done decides what of it to keep.
+        lock (entry)
+        {
+            if (entry.OpenHandoffs > 0)
+            {
+                entry.PendingSave?.Dispose();
+                entry.PendingSave = null;
+                return;
+            }
+        }
+
         try
         {
             await SaveAsync(person, entry, _ => { }, CancellationToken.None);
