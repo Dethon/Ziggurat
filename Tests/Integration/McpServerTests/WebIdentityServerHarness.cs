@@ -6,6 +6,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Tools.Web;
+using McpServerWebSearch.Handoff;
 using McpServerWebSearch.Modules;
 using McpServerWebSearch.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -71,7 +72,9 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
         configure?.Invoke(builder.Services);
 
         var app = builder.Build();
+        app.UseWebSockets();
         app.MapMcp("/mcp");
+        app.MapHandoff();
         await app.StartAsync();
         return new WebIdentityServerHarness(app, baseAddress, browser);
     }

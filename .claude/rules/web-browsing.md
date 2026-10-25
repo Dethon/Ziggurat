@@ -58,8 +58,8 @@ one `ModalOverlayOutcome` per overlay the last pass detected — `selector`, `te
 container selectors overlap, so one wall matches several patterns; after any dismissal the page is
 rescanned and a kind whose container is gone is dropped rather than counted as left standing, while
 one still there is a separate wall and goes to the judge like any other. A judgment nobody asked
-reports no latency, so a page with no key cannot drag the judgment average to zero. That is why this server now holds a
-Redis connection: it carries metrics alone, and page images still cross at the agent's bridge.
+reports no latency, so a page with no key cannot drag the judgment average to zero. That is why this server holds a
+Redis connection: it carries metrics and the login handoff's state (see Browsing as a person), and page images still cross at the agent's bridge.
 `.scratch/jev-modal-dismissal/probe/README.md` is the probe the questions were measured on, kept as
 `ModalJudgeJevTests`; change a question's wording only with that test green.
 
@@ -107,7 +107,7 @@ A browse session holds up to three live tabs, and a ref finds its own (`docs/adr
 
 **`view_image` takes a list, capped at 8.** Over the cap, the first eight are fetched and the rest named in the envelope — partial success, so a greedy call progresses. The cap counts images, not bytes; eight full-size images can still fail as an oversized request, and that is accepted (`docs/adr/0033`).
 
-**The bytes cross at the bridge, not here.** The MCP server returns a protocol image block and knows nothing of Redis, conversation ids or tool call ids. `QualifiedMcpTool` lifts the `DataContent` out into `IReadImageStore` and substitutes the envelope, so the history stays text-only and hydration treats a page image exactly like a `file_read` image — same 20-message distance, same forget-on-exit, same placeholder. Do not give this server a Redis connection to shortcut that — the one it holds carries metrics alone.
+**The bytes cross at the bridge, not here.** The MCP server returns a protocol image block and knows nothing of Redis, conversation ids or tool call ids. `QualifiedMcpTool` lifts the `DataContent` out into `IReadImageStore` and substitutes the envelope, so the history stays text-only and hydration treats a page image exactly like a `file_read` image — same 20-message distance, same forget-on-exit, same placeholder. Do not use this server's Redis connection to shortcut that — the one it holds carries metrics and the handoff's own state, never page images.
 
 **One call can answer with several pictures, so a key carries an index.** `IReadImageStore` holds one image per key and `file_read` depends on that, so `view_image`'s pictures are keyed `<callId>#<n>` rather than widening the store. **`n` counts blank-line-separated paragraphs that start with `{`, not pictures and not content blocks** — the call's own envelope leads each result and takes index 0, and a refused image takes a slot with no bytes behind it. The unit is deliberately the paragraph: a `{`-paragraph embedded inside a foreign text block takes a slot on both sides, so "fixing" either side to count `AIContent` blocks instead would silently re-offset every key. `McpImageLift` and `ReadImageHydration` compute that number independently on either side of the wire, so they must ask the same question the same way; `PageImageRoundTripTests` drives both halves over a real `ToolResponse.Create` result and is what stops them drifting. They already had: counting pictures on one side and blocks on the other put every image one key off its bytes, and every one of them hydrated as "no longer in view".
 

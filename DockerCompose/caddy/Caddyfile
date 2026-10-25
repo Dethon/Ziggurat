@@ -19,6 +19,12 @@ assistants.herfluffness.com {
         reverse_proxy agent:8080
     }
 
+    # A login handoff's live view and a person's logins page (the browse server). Before the
+    # WebChat catch-all; reverse_proxy carries the live view's WebSocket upgrade as it is.
+    handle /browse/* {
+        reverse_proxy mcp-websearch:8080
+    }
+
     handle {
         reverse_proxy webui:8080
     }
