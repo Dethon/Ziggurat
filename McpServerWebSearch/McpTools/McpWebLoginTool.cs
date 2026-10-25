@@ -5,6 +5,7 @@ using Domain.Contracts;
 using Domain.Tools;
 using Domain.Tools.Web;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using McpServerWebSearch.Handoff;
 using McpServerWebSearch.Settings;
 using ModelContextProtocol.Protocol;
@@ -13,7 +14,12 @@ using ModelContextProtocol.Server;
 namespace McpServerWebSearch.McpTools;
 
 [McpServerToolType]
-public class McpWebLoginTool(IdentityMap identities, LoginHandoffs handoffs, HandoffConfiguration settings)
+public class McpWebLoginTool(
+    IdentityMap identities,
+    LoginHandoffs handoffs,
+    HandoffConfiguration settings,
+    ChannelNotificationEmitter emitter,
+    TimeProvider time)
 {
     [McpServerTool(Name = WebLoginTool.Name)]
     [Description(WebLoginTool.Description)]
@@ -50,6 +56,16 @@ public class McpWebLoginTool(IdentityMap identities, LoginHandoffs handoffs, Han
                 "Tell the person their account cannot be reached until the operator sets the handoff address."));
         }
 
+        var voice = conversation.Origin.ChannelId == WebLoginTool.VoiceChannelId;
+        var webChatName = identities.WebChatNameOf(person);
+        if (voice && webChatName is null)
+        {
+            return ToolResponse.Create(ToolError.Create(
+                ToolError.Codes.UnsupportedOperation,
+                $"A login from voice is sent to the person's WebChat, and '{person}' has no WebChat name in this deployment's identity map.",
+                "Tell them to ask from Telegram or WebChat instead, where the link can be given to them directly."));
+        }
+
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
         {
             return ToolResponse.Create(ToolError.Create(
@@ -66,6 +82,20 @@ public class McpWebLoginTool(IdentityMap identities, LoginHandoffs handoffs, Han
             return ToolResponse.Create(ToolError.Create(
                 ToolError.Codes.UnsupportedOperation, ex.Message,
                 "Tell the person their saved logins cannot be opened on this server until the operator fixes the key."));
+        }
+
+        if (voice)
+        {
+            await emitter.EmitAsync(LoginWake.LinkInWebChat(
+                handoff, handoffs.LinkFor(handoff.Token), webChatName!, settings.TicketMinutes, time.GetUtcNow()));
+            return ToolResponse.Create(new JsonObject
+            {
+                ["status"] = "handoff_started",
+                ["deliveredTo"] = "webchat",
+                ["site"] = uri.Host,
+                ["hint"] = "The link is in a new WebChat conversation for them. Tell them to open WebChat to log "
+                           + "in, and stop; you are woken here, on this satellite, when they press Done."
+            });
         }
 
         return ToolResponse.Create(new JsonObject
