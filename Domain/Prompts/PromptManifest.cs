@@ -315,9 +315,10 @@ public static class PromptManifest
             // Raised from 1,400 when the web tools' descriptions gave up the snippet rule, the
             // browse options, the other action verbs and the force essay: ~700 tokens that every
             // request of every conversation paid, now ~250 paid once by a conversation that browses.
-            // Raised again to 1,900 for browsing as the person: asMe, the login handoff, and the
-            // two turns that must report a login wall instead (~290 tokens, paid only on a load).
-            BodyBudget = 1_900,
+            // Raised again to 1,950 for browsing as the person: asMe, the login handoff, the logins
+            // page and the two turns that must report a login wall instead (~330 tokens, paid only
+            // on a load).
+            BodyBudget = 1_950,
             ServedBy = "mcp-websearch",
             Claims = WebBrowsingSkill.Claims
         },

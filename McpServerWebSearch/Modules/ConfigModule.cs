@@ -49,7 +49,9 @@ public static class ConfigModule
                     TimeSpan.FromSeconds(settings.Logins.SaveDebounceSeconds),
                     sp.GetRequiredService<ILogger<PersonLogins>>()))
                 .AddSingleton<LoginHandoffs>()
+                .AddSingleton<ILoginHandoffs>(sp => sp.GetRequiredService<LoginHandoffs>())
                 .AddSingleton<LoginsPages>()
+                .AddSingleton<ILoginsPages>(sp => sp.GetRequiredService<LoginsPages>())
                 .AddWebSearchClients(settings)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()

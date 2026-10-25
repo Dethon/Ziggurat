@@ -143,4 +143,68 @@ public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, Red
         }).GetAwaiter().GetResult();
         return result.Content ?? "";
     }
+
+    // A sign-in window the login page opens is what the view shows and types into, and the
+    // handoff knows the hosts it passed through.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task APopupTheHandoffOpens_JoinsTheView_AndTakesTheTyping()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        const string sso = "https://handoff-sso.test";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = $"<!DOCTYPE html><html><body style='margin:0'><button style='position:absolute;left:0;top:0;width:100%;height:400px' onclick=\"window.open('{sso}/signin')\">Sign in with SSO</button></body></html>"
+        }), person);
+        await fixture.Browser.RouteOnContextAsync($"{sso}/**", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = "<!DOCTYPE html><html><body><input id='u' autofocus oninput=\"document.cookie='sso='+this.value+'; path=/'\"></body></html>"
+        }), person);
+
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/start");
+        try
+        {
+            var frames = 0;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff, _ =>
+            {
+                Interlocked.Increment(ref frames);
+                return Task.CompletedTask;
+            });
+            await Eventually.Until(() => Volatile.Read(ref frames) > 0, "a frame of the handoff tab");
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseDown(0.5, 0.1));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseUp(0.5, 0.1));
+            await Eventually.Until(() => fixture.Browser.HandoffVisitedHosts(handoff).Contains("handoff-sso.test"),
+                "the sign-in window to open");
+
+            await Eventually.Until(() =>
+            {
+                fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Text("x")).GetAwaiter().GetResult();
+                return WhoAmIOn(sso, person).Contains("sso=x");
+            }, "typing to land in the sign-in window");
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
+    private string WhoAmIOn(string site, string person)
+    {
+        fixture.Browser.RouteOnContextAsync($"{site}/whoami*", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = "<!DOCTYPE html><html><body><p id='c'></p><script>document.getElementById('c').textContent='cookies:'+(document.cookie||'none')</script></body></html>"
+        }), person).GetAwaiter().GetResult();
+        var result = fixture.Browser.NavigateAsync(new BrowseRequest($"probe-{Guid.NewGuid():N}", $"{site}/whoami?{Guid.NewGuid():N}")
+        {
+            Caller = JudgmentCaller.None,
+            Person = person
+        }).GetAwaiter().GetResult();
+        return result.Content ?? "";
+    }
 }

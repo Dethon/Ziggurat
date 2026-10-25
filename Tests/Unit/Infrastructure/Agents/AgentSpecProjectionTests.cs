@@ -103,7 +103,7 @@ public sealed class AgentSpecProjectionTests
         // parent's context, so the server cannot tell them apart; the worker is simply not given
         // the tool, and reports a login wall to its parent instead.
         Row("withheld tools", s => s.WithheldTools.Order().ToArray(),
-            Array.Empty<string>(), new[] { WebLoginTool.Name }),
+            Array.Empty<string>(), new[] { WebLoginTool.Name, WebLoginsTool.Name }.Order().ToArray()),
         // Routing says who serves a model, so it travels with the model: the worker gets what
         // its parent resolved, not the global default it would fall back to on its own.
         Row("provider routing", s => s.ProviderRouting, _declaredRouting, _declaredRouting),

@@ -178,14 +178,17 @@ internal sealed class PlaywrightHandoffTabs(Func<string, Task<IBrowserContext>> 
             }
 
             Record(page.Url);
-            // Playwright holds the page until a dialog is answered; a login's "are you sure" must
-            // not freeze the person's view.
-            page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
-            page.FrameNavigated += (_, frame) =>
+            // Playwright holds the page until a dialog is answered, and the person never sees one
+            // through the screencast: it is dismissed, so nothing is agreed to on their behalf.
+            page.Dialog += async (_, dialog) => await dialog.DismissAsync();
+            // Every main-frame navigation request, redirect hops included — a single sign-on's
+            // intermediate pages set cookies of their own, and an unticked login must leave
+            // those out of every save too.
+            page.Request += (_, request) =>
             {
-                if (frame.ParentFrame is null)
+                if (request.IsNavigationRequest && request.Frame.ParentFrame is null)
                 {
-                    Record(frame.Url);
+                    Record(request.Url);
                 }
             };
             page.Popup += (_, popup) =>

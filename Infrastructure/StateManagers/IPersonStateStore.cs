@@ -1,4 +1,4 @@
-namespace Domain.Contracts;
+namespace Infrastructure.StateManagers;
 
 // Where a person's remembered logins rest between restarts: their browser context's storage state
 // and the sites they handed off, encrypted at rest. No model tool reads or writes it.
@@ -22,9 +22,3 @@ public interface IPersonStateStore
 public record PersonState(string StorageState, IReadOnlyList<RememberedSite> Sites);
 
 public record RememberedSite(string Domain, DateTimeOffset HandedOffAt, DateTimeOffset? LastUsedAt);
-
-public class PersonStateUnreadableException(string person, string reason)
-    : Exception($"The remembered logins of '{person}' cannot be read: {reason}.")
-{
-    public string Person { get; } = person;
-}

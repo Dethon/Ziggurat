@@ -7,6 +7,8 @@ using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Tools;
+using Infrastructure.Clients.Browser;
+using Infrastructure.StateManagers;
 using McpServerWebSearch.Handoff;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -478,5 +480,83 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         var wake = (await DrainAsync()).ShouldHaveSingleItem();
         wake.ConversationId.ShouldBe("voice-9");
         wake.ReplyTo.ShouldBe([new ReplyTarget("voice", "voice-9", "kitchen-01")]);
+    }
+
+    // The tab died under the view — the browser restarted — so there is no login to keep and
+    // nothing to wake the agent about.
+    [Fact]
+    public async Task DoneAfterTheTabWasLost_IsRefused_AndWakesNobody()
+    {
+        var path = PathOf(await StartHandoffAsync());
+        var (client, _) = NewBrowserSession();
+        (await client.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
+        await _browser.CloseHandoffAsync(_browser.OpenedTabs.Single().Id);
+
+        (await client.PostAsync("/browse/handoff/done", Json("{}"))).StatusCode.ShouldBe(HttpStatusCode.Gone);
+
+        await Eventually.Settle();
+        (await DrainAsync()).ShouldBeEmpty();
+    }
+
+    // A login nobody finished stays in the context only until the browser restarts: the save the
+    // next use triggers leaves its cookies out.
+    [Fact]
+    public async Task AnAbandonedHandoffsSite_IsLeftOutOfTheNextSave()
+    {
+        _browser.State = ShopState;
+        _browser.Hosts = ["shop.test"];
+        await StartHandoffAsync();
+        _time.Advance(TimeSpan.FromMinutes(10));
+        await Eventually.Until(() => _browser.OpenedTabs.All(t => !_browser.IsHandoffOpen(t.Id)), "the handoff to run out");
+
+        await Eventually.Until(() =>
+        {
+            _browser.RaiseActivity("fran", "https://elsewhere.test/");
+            _time.Advance(TimeSpan.FromSeconds(5));
+            return Store.LoadAsync("fran").GetAwaiter().GetResult() is not null;
+        }, "a save to run");
+
+        (await Store.LoadAsync("fran"))!.StorageState.ShouldNotContain("shop-session");
+    }
+
+    [Fact]
+    public async Task Forget_IsRefusedWhileTheirHandoffIsOpen()
+    {
+        _browser.State = ShopState;
+        _browser.Hosts = ["shop.test"];
+        await FinishHandoffAsync("""{"remember":true}""");
+        await StartHandoffAsync();
+        var page = await OpenLoginsPageAsync("fran_tg");
+
+        (await page.PostAsync("/browse/logins/forget", Json("""{"site":"shop.test"}"""))).StatusCode
+            .ShouldBe(HttpStatusCode.Conflict);
+        (await Store.LoadAsync("fran"))!.Sites.Select(site => site.Domain).ShouldBe(["shop.test"]);
+    }
+
+    [Theory]
+    [InlineData("telegram", MessageOriginKind.Schedule)]
+    [InlineData("voice", null)]
+    public async Task TheLoginsLink_IsRefusedWhereNobodyCanOpenIt(string channelId, MessageOriginKind? origin)
+    {
+        var envelope = Envelope(await _server.CallAsync("web_logins", [],
+            Context("fran_tg", channelId: channelId, originKind: origin)));
+
+        envelope["errorCode"].ShouldNotBeNull();
+        envelope["link"].ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task TheLiveView_RefusesASocketFromAnotherSite()
+    {
+        var path = PathOf(await StartHandoffAsync());
+        var (claimer, cookies) = NewBrowserSession();
+        (await claimer.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
+
+        using var socket = new ClientWebSocket();
+        socket.Options.Cookies = cookies;
+        socket.Options.SetRequestHeader("Origin", "https://evil.example");
+
+        await Should.ThrowAsync<WebSocketException>(() => socket.ConnectAsync(
+            new Uri($"{_server.BaseAddress.Replace("http", "ws")}/browse/handoff/live"), CancellationToken.None));
     }
 }

@@ -1,4 +1,4 @@
-# web-browsing — description 121 / 130 tokens, body 1869 / 1900 tokens, served by mcp-websearch
+# web-browsing — description 121 / 130 tokens, body 1922 / 1950 tokens, served by mcp-websearch
 
 ================================================================================================
 
@@ -16,6 +16,8 @@ description: Any task on the web: searching for something, reading a page or its
 - **view_image** — look at pictures on the page you browsed, by their image refs.
 - **web_login** — hand a login to the person: a one-time link to a live view of the site
   in their own browser, where they sign in themselves.
+- **web_logins** — a one-time link to the page where the person sees and forgets the
+  sites you are logged into as them; give it when they ask what you can reach.
 
 The parameters carry the arguments and their defaults — read them there rather than from
 memory.
@@ -62,7 +64,8 @@ ArrowDown); `select` takes the option's text; `drag` takes the destination ref i
 
 **Browsing as the person.** Pass `asMe` to web_browse only when the task needs the
 person's own account on a site — orders, bookings, statements, settings. Every other page,
-a search result included, is browsed without it. Refs from an `asMe` tab need no flag.
+a search result included, is browsed without it. Act on an `asMe` page's refs as on any
+other — every web_action still names its ref.
 
 **A login page means hand off.** When an `asMe` page asks the person to sign in, never type
 into it or ask for their password: call web_login with its url, give them the link (on

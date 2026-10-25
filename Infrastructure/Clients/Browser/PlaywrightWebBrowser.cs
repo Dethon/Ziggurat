@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.Judgments;
 using Infrastructure.HtmlProcessing;
 using Infrastructure.Metrics;
+using Infrastructure.StateManagers;
 using Microsoft.Playwright;
 
 namespace Infrastructure.Clients.Browser;
@@ -1058,6 +1059,8 @@ public class PlaywrightWebBrowser(
 
     public event Action<string, string>? PersonActivity;
 
+    public event Action? ContextsClosed;
+
     // Restored from what the person has remembered, when no state is handed in.
     private async Task<IBrowserContext> NewPersonContextAsync(string person, string? storageState)
     {
@@ -1104,15 +1107,16 @@ public class PlaywrightWebBrowser(
     public async Task ReplaceStateAsync(string person, string storageState, CancellationToken ct = default)
     {
         await EnsureInitializedAsync();
+        // Made before the swap: a context that fails to come up leaves the old one in place
+        // rather than a faulted entry and an untracked context still open.
+        var made = await NewPersonContextAsync(person, storageState);
         Task<IBrowserContext>? old;
-        var made = NewPersonContextAsync(person, storageState);
         lock (_contexts)
         {
             old = _personContexts.GetValueOrDefault(person);
-            _personContexts[person] = made;
+            _personContexts[person] = Task.FromResult(made);
         }
 
-        await made;
         if (old is { IsCompletedSuccessfully: true })
         {
             lock (_contexts)
@@ -1761,6 +1765,15 @@ public class PlaywrightWebBrowser(
             {
                 // Already gone with its connection.
             }
+        }
+
+        try
+        {
+            ContextsClosed?.Invoke();
+        }
+        catch
+        {
+            // A listener's failure must not keep the connection from being replaced.
         }
     }
 

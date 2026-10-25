@@ -37,8 +37,8 @@ public sealed record AgentSpec
     public bool NoTools { get; init; }
 
     // Tools its servers offer that this agent is not given, by bare name. Empty for an agent; a
-    // subagent is denied the login handoff, because its calls carry its parent's conversation
-    // context and only a turn a person is in may send them a link.
+    // subagent is denied the login links (the handoff and the logins page), because its calls
+    // carry its parent's conversation context and only a turn a person is in may send them one.
     public required IReadOnlySet<string> WithheldTools { get; init; }
     public required IReadOnlyList<string> EnabledFeatures { get; init; }
 

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Domain.Contracts;
+using Infrastructure.Clients.Browser;
 
 namespace Tests.Integration.McpServerTests;
 
@@ -14,6 +15,10 @@ internal sealed class FakeHandoffBrowser : IHandoffBrowser, IPersonContexts
     public Exception? OpenFails { get; set; }
 
     public event Action<string, string>? PersonActivity;
+
+#pragma warning disable CS0067 // Nothing here restarts.
+    public event Action? ContextsClosed;
+#pragma warning restore CS0067
 
     public void RaiseActivity(string person, string url) => PersonActivity?.Invoke(person, url);
 

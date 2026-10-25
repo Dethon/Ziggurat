@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Domain.Contracts;
 using Domain.Tools.Web;
+using Infrastructure.StateManagers;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Clients.Browser;
@@ -29,6 +30,7 @@ public sealed class PersonLogins : IDisposable
         _debounce = debounce;
         _logger = logger;
         _contexts.PersonActivity += OnActivity;
+        _contexts.ContextsClosed += OnContextsClosed;
     }
 
     // One person's in-memory half: the sites that live only until the browser restarts, the
@@ -59,12 +61,48 @@ public sealed class PersonLogins : IDisposable
         }
     }
 
-    public void AbandonHandoff(string person)
+    // A handoff nobody finished — out of time, or its tab lost: whatever it set in the person's
+    // context stays there only until the browser restarts. Its sites are live-only unless the
+    // person already remembered them, so no later save carries a half-made login.
+    public async Task AbandonHandoffAsync(
+        string person, IReadOnlyCollection<string> visitedHosts, CancellationToken ct = default)
     {
         var entry = For(person);
+        EndHandoff(entry);
+        if (visitedHosts.Count == 0)
+        {
+            return;
+        }
+
+        var remembered = (await _store.LoadAsync(person, ct))?.Sites.Select(s => s.Domain).ToHashSet() ?? [];
+        var now = _time.GetUtcNow();
+        lock (entry)
+        {
+            foreach (var site in visitedHosts.Select(RegistrableDomain.Of).Where(site => !remembered.Contains(site)))
+            {
+                entry.LiveOnly.TryAdd(site, new LiveOnlySite(now, null));
+            }
+        }
+    }
+
+    private static void EndHandoff(Person entry)
+    {
         lock (entry)
         {
             entry.OpenHandoffs = Math.Max(0, entry.OpenHandoffs - 1);
+        }
+    }
+
+    // The browser restarted: every live-only login went with its context.
+    private void OnContextsClosed()
+    {
+        foreach (var entry in _people.Values)
+        {
+            lock (entry)
+            {
+                entry.LiveOnly.Clear();
+                entry.Used.Clear();
+            }
         }
     }
 
@@ -74,7 +112,7 @@ public sealed class PersonLogins : IDisposable
         var entry = For(person);
         var now = _time.GetUtcNow();
         HashSet<string> sites = [.. visitedHosts.Select(RegistrableDomain.Of)];
-        AbandonHandoff(person);
+        EndHandoff(entry);
 
         // Saved ticked or not: an unticked Done scrubs from the record whatever a save made before
         // it may have caught of the login.
@@ -125,11 +163,20 @@ public sealed class PersonLogins : IDisposable
 
     // The site's cookies and storage leave the person's live context — rebuilt from its state
     // without them, which closes the person's tabs — and the saved record, so the person is
-    // logged out of it now and after a restart.
-    public async Task ForgetAsync(string person, string site, CancellationToken ct = default)
+    // logged out of it now and after a restart. Refused while one of their handoffs is open: the
+    // rebuild would close the tab they are typing into.
+    public async Task<bool> ForgetAsync(string person, string site, CancellationToken ct = default)
     {
         var entry = For(person);
         var domain = RegistrableDomain.Of(site);
+        lock (entry)
+        {
+            if (entry.OpenHandoffs > 0)
+            {
+                return false;
+            }
+        }
+
         await entry.Gate.WaitAsync(ct);
         try
         {
@@ -155,6 +202,8 @@ public sealed class PersonLogins : IDisposable
                     StorageStateFilter.Without(state, [.. liveOnly, domain]),
                     [.. (record?.Sites ?? []).Where(s => s.Domain != domain)]), ct);
             }
+
+            return true;
         }
         finally
         {
@@ -262,6 +311,7 @@ public sealed class PersonLogins : IDisposable
     public void Dispose()
     {
         _contexts.PersonActivity -= OnActivity;
+        _contexts.ContextsClosed -= OnContextsClosed;
         foreach (var entry in _people.Values)
         {
             entry.PendingSave?.Dispose();
