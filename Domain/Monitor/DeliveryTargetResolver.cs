@@ -197,6 +197,7 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
             conversationId,
             message.UserId ?? message.Sender,
             new ReplyTarget(channelId, conversationId, address),
-            message.ConfigPatch?.Model);
+            message.ConfigPatch?.Model,
+            message.Origin?.Kind);
     }
 }

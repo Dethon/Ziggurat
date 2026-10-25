@@ -106,4 +106,27 @@ public class ChatMonitorConversationContextTests
 
         context.UserId.ShouldBe("test");
     }
+
+    // A server answering one of the turn's calls can tell a fire from a person: the handoff tool
+    // refuses to mint a login link on a turn nobody is present for.
+    [Theory]
+    [InlineData(MessageOriginKind.Schedule)]
+    [InlineData(MessageOriginKind.Watch)]
+    public void BuildConversationContext_AFire_CarriesItsOriginKind(MessageOriginKind kind)
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "fire-1", channelId: "scheduling", agentId: "jonas") with
+        { Origin = new MessageOrigin(kind, "s-1") };
+
+        DeliveryTargetResolver.BuildConversationContext(message, []).OriginKind.ShouldBe(kind);
+    }
+
+    [Fact]
+    public void BuildConversationContext_APersonsMessage_CarriesNoOriginKind()
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "conv-1", channelId: "signalr", agentId: "jonas");
+
+        DeliveryTargetResolver.BuildConversationContext(message, []).OriginKind.ShouldBeNull();
+    }
 }

@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A scheduled fire's turn carries origin kind `Schedule` in every call's conversation context; a watch fire's carries `Watch`
-- [ ] A person's message carries none
-- [ ] Older senders and receivers without the field keep working (the field is optional)
-- [ ] Covered where the conversation context is built and where it is lifted into `_meta`
+- [x] A scheduled fire's turn carries origin kind `Schedule` in every call's conversation context; a watch fire's carries `Watch`
+- [x] A person's message carries none
+- [x] Older senders and receivers without the field keep working (the field is optional)
+- [x] Covered where the conversation context is built and where it is lifted into `_meta`

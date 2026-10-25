@@ -1,3 +1,5 @@
+using System.Text.Json.Nodes;
+using Domain.Channels;
 using Domain.DTOs.Channel;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.AI;
@@ -28,6 +30,34 @@ public class ConversationContextMetaTests
         node["agentId"]!.GetValue<string>().ShouldBe("jack");
         node["userId"]!.GetValue<string>().ShouldBe("fran");
         node["origin"]!["channelId"]!.GetValue<string>().ShouldBe("signalr");
+    }
+
+    [Fact]
+    public void Build_AFiresContext_SpellsItsOriginKind()
+    {
+        var meta = ConversationContextMeta.Build(_context with { OriginKind = MessageOriginKind.Schedule })
+            .ShouldNotBeNull();
+
+        meta[ConversationContextMeta.MetaKey]!["originKind"]!.GetValue<string>().ShouldBe("Schedule");
+        ConversationScope.Parse(meta)!.OriginKind.ShouldBe(MessageOriginKind.Schedule);
+    }
+
+    // The field is optional both ways: a sender from before it sends none, and a person's own
+    // turn reads back as no origin at all.
+    [Fact]
+    public void Parse_AContextWithoutAnOriginKind_ReadsAsAPersonsTurn()
+    {
+        var meta = JsonNode.Parse(
+            """
+            { "com.herfluffness/conversationContext": {
+                "agentId": "jack", "conversationId": "conv-9", "userId": "fran",
+                "origin": { "channelId": "signalr", "conversationId": "conv-9" } } }
+            """)!.AsObject();
+
+        var context = ConversationScope.Parse(meta).ShouldNotBeNull();
+
+        context.OriginKind.ShouldBeNull();
+        context.UserId.ShouldBe("fran");
     }
 
     [Fact]
