@@ -47,9 +47,9 @@ RUN node check-fingerprint.js
 
 COPY fingerprint.js server.js ./
 
-# Where the fingerprint lives; the compose service mounts its volume here.
+# Where the fingerprint lives; the compose service mounts its named volume here. No VOLUME line:
+# that would hand every ad-hoc container (a test fixture, a docker run) an anonymous volume.
 RUN mkdir -p /data
-VOLUME /data
 
 EXPOSE 9377
 
