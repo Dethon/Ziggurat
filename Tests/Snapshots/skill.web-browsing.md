@@ -1,10 +1,10 @@
-# web-browsing — description 102 / 130 tokens, body 1594 / 1600 tokens, served by mcp-websearch
+# web-browsing — description 121 / 130 tokens, body 1869 / 1900 tokens, served by mcp-websearch
 
 ================================================================================================
 
 ---
 name: web-browsing
-description: Any task on the web: searching for something, reading a page or its pictures, filling or submitting a form, navigating a site ("look up how long the gazpacho rests", "book a place on that course", "what does the site say about opening hours"). The tools at a glance, the read-then-act workflow, chaining actions from a snapshot's refs, error recovery, and how a written or spoken answer cites what it found.
+description: Any task on the web: searching for something, reading a page or its pictures, filling or submitting a form, navigating a site, or checking an account of the person's on a site ("look up how long the gazpacho rests", "book a place on that course", "has my order shipped"). The tools at a glance, the read-then-act workflow, chaining actions from a snapshot's refs, browsing as the person and handing them a login, error recovery, and how a written or spoken answer cites what it found.
 ---
 
 ### Tools at a glance
@@ -14,6 +14,8 @@ description: Any task on the web: searching for something, reading a page or its
 - **web_snapshot** — see the current page's interactive elements with refs.
 - **web_action** — interact with an element (or navigate back) by ref.
 - **view_image** — look at pictures on the page you browsed, by their image refs.
+- **web_login** — hand a login to the person: a one-time link to a live view of the site
+  in their own browser, where they sign in themselves.
 
 The parameters carry the arguments and their defaults — read them there rather than from
 memory.
@@ -57,6 +59,19 @@ Focus does the same for a datepicker or a dropdown that opens on focus.
 **The other verbs.** `press` takes the key's name in `value` (Enter, Tab, Escape,
 ArrowDown); `select` takes the option's text; `drag` takes the destination ref in `endRef`;
 `clear` empties a field; `back` needs no ref.
+
+**Browsing as the person.** Pass `asMe` to web_browse only when the task needs the
+person's own account on a site — orders, bookings, statements, settings. Every other page,
+a search result included, is browsed without it. Refs from an `asMe` tab need no flag.
+
+**A login page means hand off.** When an `asMe` page asks the person to sign in, never type
+into it or ask for their password: call web_login with its url, give them the link (on
+voice it is already in their WebChat — say so), and stop. You are woken here when they
+press Done; carry on with `asMe` without asking them anything.
+
+**Nobody to hand it to.** On a turn a schedule or a watch started, web_login refuses: report
+that they need to log in to the site again by asking you directly. A worker has no
+web_login: it reports the login page in its answer, and the parent hands it off.
 
 **Multi-page navigation.** Click links/buttons normally. Going back is web_action's back
 action, never a second web_browse of a page you already visited — knowing its URL does not
@@ -106,5 +121,6 @@ change that; a re-browse starts the page over and loses its state.
 
 - Cannot access pages requiring CAPTCHA (unless CapSolver configured).
 - Cannot interact with file download dialogs.
-- Session is per-conversation — resets between conversations.
+- The anonymous session is per-conversation and resets between conversations; the
+  person's own logins (`asMe`) are theirs across conversations until they forget them.
 - Some sites may block automated access.

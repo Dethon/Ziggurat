@@ -12,6 +12,7 @@ using Domain.DTOs.Voice;
 using Domain.Tools.FileSystem.Bridge;
 using Domain.Tools.Memory;
 using Domain.Tools.Timers.Vfs;
+using Domain.Tools.Web;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients.Browser;
@@ -184,7 +185,7 @@ public sealed class EvalStack : IAsyncDisposable
 
         if (dialled.Contains("mcp-websearch"))
         {
-            hosted["mcp-websearch"] = await stack.StartWebSearchAsync();
+            hosted["mcp-websearch"] = await stack.StartWebSearchAsync(redisConnectionString);
         }
 
         if (dialled.Contains(Sugary))
@@ -346,7 +347,7 @@ public sealed class EvalStack : IAsyncDisposable
     // from a table, and the browser is a local Chromium rather than the remote hardened Firefox a
     // deployment connects to. Everything between them — the tools, the session manager, the
     // accessibility snapshot, the modal dismisser — is the deployment's own.
-    private async Task<string> StartWebSearchAsync()
+    private async Task<string> StartWebSearchAsync(string redisConnectionString)
     {
         Web = await EvalWeb.StartAsync();
 
@@ -360,15 +361,26 @@ public sealed class EvalStack : IAsyncDisposable
                 ApiKey = "eval",
                 ApiUrl = EvalWeb.SearchApiUrl
             },
-            Mcp = McpTestSecret.Gate
+            Mcp = McpTestSecret.Gate,
+            // The run's user is a person of this deployment, so a turn can browse as them and
+            // hand them a login; the link's address is a placeholder nothing opens. No state key:
+            // nothing is remembered between runs. The handoff's links live on the run's Redis.
+            RedisConnectionString = redisConnectionString,
+            Identity = new IdentityConfiguration
+            {
+                People = [new PersonIdentity { Name = "fran", Telegram = EvalRun.UserId, WebChat = EvalRun.UserId }]
+            },
+            Handoff = new HandoffConfiguration { PublicBaseUrl = EvalWeb.HandoffBase }
         });
 
         // The typed client keeps its name from the interface it is registered against.
         builder.Services.AddHttpClient(nameof(IWebSearchClient))
             .ConfigurePrimaryHttpMessageHandler(() => Web.SearchTransport);
 
-        builder.Services.Replace(ServiceDescriptor.Singleton<IWebBrowser>(
-            _ => new PlaywrightWebBrowser(browserFactory: LaunchAsync)));
+        // The one browser behind every role the module gives it — the tabs browsed, the tabs a
+        // person logs in on, their contexts — so a handoff opens in the browser the turn reads.
+        builder.Services.Replace(ServiceDescriptor.Singleton(sp => new PlaywrightWebBrowser(
+            browserFactory: LaunchAsync, personStates: sp.GetRequiredService<IPersonStateStore>())));
 
         return await StartAsync(builder, port);
     }

@@ -1,4 +1,4 @@
-# jonas-worker — 4234 tokens across 12 sections and 5 skills
+# jonas-worker — 4253 tokens across 12 sections and 5 skills
 
   core_directive           CoreDirective         642 / 650    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               26 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -14,7 +14,7 @@
   language                 Language              132 / 300    The reply language, stated absolutely, against a request that is otherwise all English.
   obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
   sandbox                  Skill                 123 / 130    body 1291 / 1350, served by mcp-sandbox
-  web-browsing             Skill                 102 / 130    body 1594 / 1600, served by mcp-websearch
+  web-browsing             Skill                 121 / 130    body 1869 / 1900, served by mcp-websearch
   home-watches             Skill                 104 / 120    body 1671 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 150 / 150    body 3588 / 3600, served by mcp-homeassistant
 
@@ -231,5 +231,5 @@ Proper nouns (people, places, titles of works) stay as they are -- do not transl
   </skill>
   <skill>
     <name>web-browsing</name>
-    <description>Any task on the web: searching for something, reading a page or its pictures, filling or submitting a form, navigating a site (&quot;look up how long the gazpacho rests&quot;, &quot;book a place on that course&quot;, &quot;what does the site say about opening hours&quot;). The tools at a glance, the read-then-act workflow, chaining actions from a snapshot&apos;s refs, error recovery, and how a written or spoken answer cites what it found.</description>
+    <description>Any task on the web: searching for something, reading a page or its pictures, filling or submitting a form, navigating a site, or checking an account of the person&apos;s on a site (&quot;look up how long the gazpacho rests&quot;, &quot;book a place on that course&quot;, &quot;has my order shipped&quot;). The tools at a glance, the read-then-act workflow, chaining actions from a snapshot&apos;s refs, browsing as the person and handing them a login, error recovery, and how a written or spoken answer cites what it found.</description>
   </skill>

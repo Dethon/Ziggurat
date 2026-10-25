@@ -61,6 +61,13 @@ public static class Arg
     // a timer's target is a room *or* an exact satellite id, and both honour the same rule — so a
     // scenario that pinned one spelling would be asserting on the model's choice between two
     // things the prose says are equally correct.
+    // A flag that is not set to this value: absent, or the other one. What "browsed without asMe"
+    // means, since a model leaving an optional flag out is the same browse as one passing false.
+    public static ArgumentMatcher FlagNot(string name, bool value) =>
+        new($"{name} != {value.ToString().ToLowerInvariant()}",
+            args => Read(args, name) is not { } element
+                    || element.ValueKind != (value ? JsonValueKind.True : JsonValueKind.False));
+
     public static ArgumentMatcher Any(params ArgumentMatcher[] alternatives) =>
         new(string.Join(" or ", alternatives.Select(m => m.Description)),
             args => alternatives.Any(m => m.Matches(args)));

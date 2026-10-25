@@ -9,7 +9,7 @@ public static class WebBrowsingSkill
 
     // The whole trigger: the one line about this skill that is in every turn.
     public const string Description =
-        "Any task on the web: searching for something, reading a page or its pictures, filling or submitting a form, navigating a site (\"look up how long the gazpacho rests\", \"book a place on that course\", \"what does the site say about opening hours\"). The tools at a glance, the read-then-act workflow, chaining actions from a snapshot's refs, error recovery, and how a written or spoken answer cites what it found.";
+        "Any task on the web: searching for something, reading a page or its pictures, filling or submitting a form, navigating a site, or checking an account of the person's on a site (\"look up how long the gazpacho rests\", \"book a place on that course\", \"has my order shipped\"). The tools at a glance, the read-then-act workflow, chaining actions from a snapshot's refs, browsing as the person and handing them a login, error recovery, and how a written or spoken answer cites what it found.";
 
     public const string Body =
         """
@@ -20,6 +20,8 @@ public static class WebBrowsingSkill
         - **web_snapshot** — see the current page's interactive elements with refs.
         - **web_action** — interact with an element (or navigate back) by ref.
         - **view_image** — look at pictures on the page you browsed, by their image refs.
+        - **web_login** — hand a login to the person: a one-time link to a live view of the site
+          in their own browser, where they sign in themselves.
 
         The parameters carry the arguments and their defaults — read them there rather than from
         memory.
@@ -63,6 +65,19 @@ public static class WebBrowsingSkill
         **The other verbs.** `press` takes the key's name in `value` (Enter, Tab, Escape,
         ArrowDown); `select` takes the option's text; `drag` takes the destination ref in `endRef`;
         `clear` empties a field; `back` needs no ref.
+
+        **Browsing as the person.** Pass `asMe` to web_browse only when the task needs the
+        person's own account on a site — orders, bookings, statements, settings. Every other page,
+        a search result included, is browsed without it. Refs from an `asMe` tab need no flag.
+
+        **A login page means hand off.** When an `asMe` page asks the person to sign in, never type
+        into it or ask for their password: call web_login with its url, give them the link (on
+        voice it is already in their WebChat — say so), and stop. You are woken here when they
+        press Done; carry on with `asMe` without asking them anything.
+
+        **Nobody to hand it to.** On a turn a schedule or a watch started, web_login refuses: report
+        that they need to log in to the site again by asking you directly. A worker has no
+        web_login: it reports the login page in its answer, and the parent hands it off.
 
         **Multi-page navigation.** Click links/buttons normally. Going back is web_action's back
         action, never a second web_browse of a page you already visited — knowing its URL does not
@@ -112,7 +127,8 @@ public static class WebBrowsingSkill
 
         - Cannot access pages requiring CAPTCHA (unless CapSolver configured).
         - Cannot interact with file download dialogs.
-        - Session is per-conversation — resets between conversations.
+        - The anonymous session is per-conversation and resets between conversations; the
+          person's own logins (`asMe`) are theirs across conversations until they forget them.
         - Some sites may block automated access.
         """;
 
@@ -163,6 +179,22 @@ public static class WebBrowsingSkill
         new("web-browsing.partial-content-is-fetched-once",
             "Truncated content is fetched once more and then answered from, never offered to be fetched again.");
 
+    public static readonly PromptClaim AsMeOnlyForThePersonsAccount =
+        new("web-browsing.as-me-only-for-the-persons-account",
+            "A browse carries asMe when the task needs the person's own account on the site, and a public page is browsed without it.");
+
+    public static readonly PromptClaim ALoginPageIsHandedOff =
+        new("web-browsing.a-login-page-is-handed-off",
+            "A page browsed as the person that asks them to sign in is handed off with web_login, its link given and the turn stopped, never typed into.");
+
+    public static readonly PromptClaim AFireReportsALoginWall =
+        new("web-browsing.a-fire-reports-a-login-wall",
+            "A turn a schedule or a watch started reports that the person must log in again rather than starting a handoff.");
+
+    public static readonly PromptClaim AWorkerReportsALoginWall =
+        new("web-browsing.a-worker-reports-a-login-wall",
+            "A worker that meets a login page says so in its answer, and its parent starts the handoff.");
+
     public static readonly PromptClaim BackIsAnAction =
         new("web-browsing.back-is-an-action",
             "Going back to the previous page is the browser's own back rather than a second browse of its url.");
@@ -179,6 +211,10 @@ public static class WebBrowsingSkill
         UrlsAreCitedOnlyInWriting,
         StepsAreNotReported,
         PartialContentIsFetchedOnce,
-        BackIsAnAction
+        BackIsAnAction,
+        AsMeOnlyForThePersonsAccount,
+        ALoginPageIsHandedOff,
+        AFireReportsALoginWall,
+        AWorkerReportsALoginWall
     ];
 }
