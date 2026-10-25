@@ -44,6 +44,8 @@ public sealed class PersonLogins : IDisposable
 
     private sealed record LiveOnlySite(DateTimeOffset HandedOffAt, DateTimeOffset? LastUsedAt);
 
+    public sealed record LoginSite(string Domain, bool Remembered, DateTimeOffset HandedOffAt, DateTimeOffset? LastUsedAt);
+
     public bool CanRemember => _store.CanWrite;
 
     // While a handoff is open the person's context holds a login half made; nothing is saved
@@ -98,6 +100,66 @@ public sealed class PersonLogins : IDisposable
                 }
             }
         }, ct);
+    }
+
+    // Everything the person is logged into that the agent can reach: remembered, and live-only
+    // until the browser restarts.
+    public async Task<IReadOnlyList<LoginSite>> SitesAsync(string person, CancellationToken ct = default)
+    {
+        var entry = For(person);
+        var record = await _store.LoadAsync(person, ct);
+        List<LoginSite> sites;
+        lock (entry)
+        {
+            sites =
+            [
+                .. (record?.Sites ?? []).Where(s => !entry.LiveOnly.ContainsKey(s.Domain))
+                    .Select(s => new LoginSite(s.Domain, true, s.HandedOffAt,
+                        entry.Used.TryGetValue(s.Domain, out var used) ? used : s.LastUsedAt)),
+                .. entry.LiveOnly.Select(l => new LoginSite(l.Key, false, l.Value.HandedOffAt, l.Value.LastUsedAt))
+            ];
+        }
+
+        return [.. sites.OrderBy(s => s.Domain, StringComparer.Ordinal)];
+    }
+
+    // The site's cookies and storage leave the person's live context — rebuilt from its state
+    // without them, which closes the person's tabs — and the saved record, so the person is
+    // logged out of it now and after a restart.
+    public async Task ForgetAsync(string person, string site, CancellationToken ct = default)
+    {
+        var entry = For(person);
+        var domain = RegistrableDomain.Of(site);
+        await entry.Gate.WaitAsync(ct);
+        try
+        {
+            var record = await _store.LoadAsync(person, ct);
+            HashSet<string> liveOnly;
+            lock (entry)
+            {
+                entry.LiveOnly.Remove(domain);
+                entry.Used.Remove(domain);
+                liveOnly = [.. entry.LiveOnly.Keys];
+            }
+
+            var live = await _contexts.ExportStateAsync(person, ct);
+            if (live is not null)
+            {
+                await _contexts.ReplaceStateAsync(person, StorageStateFilter.Without(live, [domain]), ct);
+            }
+
+            var state = live ?? record?.StorageState;
+            if (CanRemember && state is not null)
+            {
+                await _store.SaveAsync(person, new PersonState(
+                    StorageStateFilter.Without(state, [.. liveOnly, domain]),
+                    [.. (record?.Sites ?? []).Where(s => s.Domain != domain)]), ct);
+            }
+        }
+        finally
+        {
+            entry.Gate.Release();
+        }
     }
 
     private void OnActivity(string person, string url)

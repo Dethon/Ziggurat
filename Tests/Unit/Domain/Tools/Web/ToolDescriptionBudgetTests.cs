@@ -24,6 +24,7 @@ public class ToolDescriptionBudgetTests
         { WebSearchToolName(typeof(McpWebActionTool)), 90 },
         { WebSearchToolName(typeof(McpViewImageTool)), 60 },
         { WebSearchToolName(typeof(McpWebLoginTool)), 60 },
+        { WebSearchToolName(typeof(McpWebLoginsTool)), 60 },
     };
 
     [Theory]
@@ -49,7 +50,8 @@ public class ToolDescriptionBudgetTests
     private static readonly Dictionary<string, string> _descriptions = new[]
         {
             typeof(McpWebSearchTool), typeof(McpWebBrowseTool), typeof(McpWebSnapshotTool),
-            typeof(McpWebActionTool), typeof(McpViewImageTool), typeof(McpWebLoginTool)
+            typeof(McpWebActionTool), typeof(McpViewImageTool), typeof(McpWebLoginTool),
+            typeof(McpWebLoginsTool)
         }
         .Select(t => t.GetMethods().Single(m => m.GetCustomAttribute<McpServerToolAttribute>() is not null))
         .ToDictionary(

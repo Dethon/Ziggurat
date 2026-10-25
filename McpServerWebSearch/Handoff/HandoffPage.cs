@@ -36,6 +36,8 @@ public static class HandoffPage
         label.remember { display:flex; gap:8px; align-items:center; color: var(--muted); margin-right:auto; }
         .note { color: var(--muted); font-size: 13px; flex-basis: 100%; }
         .done { padding: 32px 0; }
+        .site { display:flex; gap:12px; align-items:center; justify-content:space-between; padding:12px 14px;
+                background: var(--panel); border:1px solid var(--line); border-radius:10px; margin-bottom:8px; }
         .error { color: var(--error); }
         """;
 
@@ -157,6 +159,56 @@ public static class HandoffPage
             }
             done.disabled = false;
             connect();
+          })();
+        })();
+        </script>
+        """);
+
+    public static string Logins(string token) => Page("Your logins",
+        $$"""
+        <main>
+          <h1>Sites the agent can reach as you</h1>
+          <p class="lead">Forget one and the agent is logged out of it, now and after a restart.</p>
+          <div id="sites"><p class="lead">Loading...</p></div>
+        </main>
+        <script>
+        (() => {
+          const token = {{System.Text.Json.JsonSerializer.Serialize(token)}};
+          const list = document.getElementById('sites');
+          const when = at => at ? new Date(at).toLocaleString() : 'not yet';
+          const say = (title, text) => {
+            document.querySelector('main').innerHTML = '<div class="done"><h1></h1><p class="lead"></p></div>';
+            document.querySelector('.done h1').textContent = title;
+            document.querySelector('.done p').textContent = text;
+          };
+          const render = sites => {
+            list.innerHTML = '';
+            if (!sites.length) { list.innerHTML = '<p class="lead">The agent is not logged into anything as you.</p>'; return; }
+            for (const s of sites) {
+              const row = document.createElement('div'); row.className = 'site';
+              const text = document.createElement('div');
+              const name = document.createElement('strong'); name.textContent = s.site;
+              const meta = document.createElement('div'); meta.className = 'note';
+              meta.textContent = (s.remembered ? 'Remembered' : 'Until the browser restarts') + ' · last used ' + when(s.lastUsedAt);
+              text.append(name, meta);
+              const forget = document.createElement('button'); forget.type = 'button'; forget.textContent = 'Forget';
+              forget.addEventListener('click', async () => {
+                forget.disabled = true;
+                const answer = await fetch('/browse/logins/forget', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site: s.site }) });
+                if (answer.ok) load(); else say('This page has run out', 'Ask the agent for a fresh link to your logins.');
+              });
+              row.append(text, forget); list.append(row);
+            }
+          };
+          const load = async () => {
+            const answer = await fetch('/browse/logins/sites');
+            if (!answer.ok) { say('This page has run out', 'Ask the agent for a fresh link to your logins.'); return; }
+            render(await answer.json());
+          };
+          (async () => {
+            const claim = await fetch('/browse/logins/' + encodeURIComponent(token) + '/claim', { method: 'POST' });
+            if (!claim.ok) { say('This link has been used or has run out', 'Each link opens once and for ten minutes. Ask again and you will get a fresh one.'); return; }
+            load();
           })();
         })();
         </script>

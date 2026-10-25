@@ -4,9 +4,9 @@
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The page lists exactly the asking person's sites, never another person's
-- [ ] After Forget, an `asMe` browse of the site is logged out, both before and after a browser restart
-- [ ] The link follows the handoff ticket rules (single use, ten minutes, bound to the person)
-- [ ] `web_logins` refuses for an unmapped user
+- [x] The page lists exactly the asking person's sites, never another person's
+- [x] After Forget, an `asMe` browse of the site is logged out, both before and after a browser restart
+- [x] The link follows the handoff ticket rules (single use, ten minutes, bound to the person)
+- [x] `web_logins` refuses for an unmapped user

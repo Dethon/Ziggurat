@@ -52,9 +52,10 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
     private IPersonStateStore Store => _server.Services.GetRequiredService<IPersonStateStore>();
 
-    private async Task FinishHandoffAsync(string doneBody)
+    private async Task FinishHandoffAsync(string doneBody, string userId = "fran_tg", string url = "https://shop.test/login")
     {
-        var path = PathOf(await StartHandoffAsync());
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(url), Context(userId)));
+        var path = PathOf(envelope["link"]!.GetValue<string>());
         var (client, _) = NewBrowserSession();
         (await client.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
         (await client.PostAsync("/browse/handoff/done", Json(doneBody))).EnsureSuccessStatusCode();
@@ -344,7 +345,76 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         tools.Order().ShouldBe(new[]
         {
             "channel_receive", "request_approval", "send_reply",
-            "view_image", "web_action", "web_browse", "web_login", "web_search", "web_snapshot"
+            "view_image", "web_action", "web_browse", "web_login", "web_logins", "web_search", "web_snapshot"
         }.Order());
+    }
+
+    private async Task<HttpClient> OpenLoginsPageAsync(string userId)
+    {
+        var envelope = Envelope(await _server.CallAsync("web_logins", [], Context(userId)));
+        var link = envelope["link"]!.GetValue<string>();
+        link.ShouldStartWith($"{PublicBase}/browse/logins/");
+        var (client, _) = NewBrowserSession();
+        (await client.GetAsync(PathOf(link))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await client.PostAsync($"{PathOf(link)}/claim", null)).EnsureSuccessStatusCode();
+        return client;
+    }
+
+    private static async Task<IReadOnlyList<string>> SitesAsync(HttpClient page) =>
+        JsonNode.Parse(await page.GetStringAsync("/browse/logins/sites"))!.AsArray()
+            .Select(site => site!["site"]!.GetValue<string>()).ToList();
+
+    [Fact]
+    public async Task TheLoginsPage_ListsTheAskingPersonsSitesAndNobodyElses()
+    {
+        _browser.State = ShopState;
+        _browser.Hosts = ["shop.test"];
+        await FinishHandoffAsync("""{"remember":true}""");
+        _browser.Hosts = ["bank.test"];
+        await FinishHandoffAsync("""{"remember":false}""", userId: "ana_tg", url: "https://bank.test/login");
+
+        (await SitesAsync(await OpenLoginsPageAsync("fran_tg"))).ShouldBe(["shop.test"]);
+        (await SitesAsync(await OpenLoginsPageAsync("ana_tg"))).ShouldBe(["bank.test"]);
+    }
+
+    [Fact]
+    public async Task Forget_DropsTheSiteFromTheLiveContextAndTheRecord()
+    {
+        _browser.State = ShopState;
+        _browser.Hosts = ["shop.test"];
+        await FinishHandoffAsync("""{"remember":true}""");
+        var page = await OpenLoginsPageAsync("fran_tg");
+
+        (await page.PostAsync("/browse/logins/forget", Json("""{"site":"shop.test"}"""))).EnsureSuccessStatusCode();
+
+        _browser.State.ShouldNotBeNull().ShouldNotContain("shop-session");
+        var record = (await Store.LoadAsync("fran")).ShouldNotBeNull();
+        record.Sites.ShouldBeEmpty();
+        record.StorageState.ShouldNotContain("shop-session");
+        (await SitesAsync(page)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task TheLoginsLink_OpensOnce_AndRunsOutInTenMinutes()
+    {
+        var once = PathOf(Envelope(await _server.CallAsync("web_logins", [], Context("fran_tg")))["link"]!.GetValue<string>());
+        var late = PathOf(Envelope(await _server.CallAsync("web_logins", [], Context("fran_tg")))["link"]!.GetValue<string>());
+        var (first, _) = NewBrowserSession();
+        var (second, _) = NewBrowserSession();
+
+        (await first.PostAsync($"{once}/claim", null)).EnsureSuccessStatusCode();
+        (await second.PostAsync($"{once}/claim", null)).StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await second.GetAsync("/browse/logins/sites")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+
+        _time.Advance(TimeSpan.FromMinutes(10));
+        (await second.PostAsync($"{late}/claim", null)).StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await first.GetAsync("/browse/logins/sites")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task TheLoginsLink_IsRefusedForAnUnmappedUser()
+    {
+        Envelope(await _server.CallAsync("web_logins", [], Context("stranger")))["errorCode"]!
+            .GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
     }
 }
