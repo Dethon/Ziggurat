@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Tools;
@@ -78,6 +79,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     [Theory]
     [InlineData(MessageOriginKind.Schedule)]
     [InlineData(MessageOriginKind.Watch)]
+    [InlineData(MessageOriginKind.Login)]
     public async Task ALoginOnAFiresTurn_IsRefused_AndOpensNothing(MessageOriginKind kind)
     {
         var envelope = Envelope(await _server.CallAsync("web_login", Login(), Context("fran_tg", originKind: kind)));
@@ -203,4 +205,48 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     }
 
     private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
+
+    private async Task<IReadOnlyList<ChannelMessageNotification>> DrainAsync() =>
+        (await _server.Services.GetRequiredService<ChannelInbox>()
+            .ReceiveAsync(ChannelProtocol.ChannelClientNamePrefix + "websearch", TimeSpan.Zero, CancellationToken.None))
+        .Where(i => i.Kind == ChannelInboxItemKind.Message).Select(i => i.Message!).ToList();
+
+    // Done wakes the agent where the login was asked for: the same conversation, agent and person,
+    // answering to the same reply target, raised by a login.
+    [Fact]
+    public async Task Done_EmitsOneWake_IntoTheConversationThatAsked()
+    {
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(),
+            Context("fran_tg", conversationId: "tg-77", channelId: "telegram")));
+        var path = PathOf(envelope["link"]!.GetValue<string>());
+        var (client, _) = NewBrowserSession();
+        (await client.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
+
+        (await client.PostAsync("/browse/handoff/done", Json("{}"))).EnsureSuccessStatusCode();
+
+        var wake = (await DrainAsync()).ShouldHaveSingleItem();
+        wake.ConversationId.ShouldBe("tg-77");
+        wake.AgentId.ShouldBe("jonas");
+        wake.UserId.ShouldBe("fran_tg");
+        wake.ReplyTo.ShouldBe([new ReplyTarget("telegram", "tg-77")]);
+        wake.Origin!.Kind.ShouldBe(MessageOriginKind.Login);
+        wake.Content.ShouldContain("shop.test");
+        wake.Content.ShouldContain("logged in");
+    }
+
+    [Fact]
+    public async Task AnAbandonedOrExpiredHandoff_EmitsNothing()
+    {
+        var abandoned = PathOf(await StartHandoffAsync());
+        var (client, _) = NewBrowserSession();
+        (await client.PostAsync($"{abandoned}/claim", null)).EnsureSuccessStatusCode();
+        await StartHandoffAsync();
+
+        _time.Advance(TimeSpan.FromMinutes(30));
+        await Eventually.Until(() => _browser.OpenedTabs.All(t => !_browser.IsHandoffOpen(t.Id)),
+            "both handoffs to run out");
+
+        await Eventually.Settle();
+        (await DrainAsync()).ShouldBeEmpty();
+    }
 }

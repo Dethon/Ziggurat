@@ -4,10 +4,10 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Done emits exactly one wake with the original conversation id, reply target and `Login` origin (drained inbox test, prior art: the watch-fired endpoint tests)
-- [ ] An abandoned or expired handoff emits nothing
-- [ ] The browse server's registration row moves to the channel role and passes the channel receive contract tests
-- [ ] The agent's channel endpoints include the browse server
-- [ ] A turn woken by a login carries origin kind `Login` and so cannot start another handoff
+- [x] Done emits exactly one wake with the original conversation id, reply target and `Login` origin (drained inbox test, prior art: the watch-fired endpoint tests)
+- [x] An abandoned or expired handoff emits nothing
+- [x] The browse server's registration row moves to the channel role and passes the channel receive contract tests
+- [x] The agent's channel endpoints include the browse server
+- [x] A turn woken by a login carries origin kind `Login` and so cannot start another handoff

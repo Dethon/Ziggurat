@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.Logging;
 
@@ -15,6 +17,7 @@ namespace McpServerWebSearch.Handoff;
 public sealed class LoginHandoffs(
     IHandoffBrowser browser,
     OneTimeLinks links,
+    ChannelNotificationEmitter wakes,
     HandoffConfiguration settings,
     TimeProvider time,
     ILogger<LoginHandoffs> logger)
@@ -75,7 +78,8 @@ public sealed class LoginHandoffs(
 
     public bool IsOpen(LiveHandoff handoff) => _live.ContainsKey(handoff.Id) && browser.IsHandoffOpen(handoff.Id);
 
-    // The person pressed Done: the login now lives in their context, and the tab is closed.
+    // The person pressed Done: the login now lives in their context, the tab is closed, and the
+    // agent is woken where it was asked.
     public async Task<bool> CompleteAsync(LiveHandoff handoff)
     {
         if (!_live.TryRemove(handoff.Id, out _))
@@ -85,6 +89,7 @@ public sealed class LoginHandoffs(
 
         handoff.Expiry?.Dispose();
         await browser.CloseHandoffAsync(handoff.Id);
+        await wakes.EmitAsync(LoginWake.Compose(handoff, time.GetUtcNow()));
         return true;
     }
 
