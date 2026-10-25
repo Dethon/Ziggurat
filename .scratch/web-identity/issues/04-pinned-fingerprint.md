@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Two launches over the same volume report identical user agent, platform, screen size, core count and fonts
-- [ ] A fresh volume generates a fingerprint on first launch and reuses it afterwards
-- [ ] The image build fails if the pinned package no longer accepts the saved fingerprint
-- [ ] An integration test compares two launches' fingerprints
-- [ ] Compose declares the volume; no new environment entry unless a per-deployment value is needed
+- [x] Two launches over the same volume report identical user agent, platform, screen size, core count and fonts
+- [x] A fresh volume generates a fingerprint on first launch and reuses it afterwards
+- [x] The image build fails if the pinned package no longer accepts the saved fingerprint
+- [x] An integration test compares two launches' fingerprints
+- [x] Compose declares the volume; no new environment entry unless a per-deployment value is needed
