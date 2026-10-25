@@ -5,7 +5,11 @@ namespace Infrastructure.Clients.Browser;
 
 public class AccessibilitySnapshotService
 {
-    private const string SnapshotScript = """
+    // What a filled password field reads as, in every snapshot and every action's diff. Fixed,
+    // so it says nothing of the length either.
+    public const string MaskedPassword = "(password hidden)";
+
+    private const string SnapshotScript = $$"""
         (args) => {
             const selectorScope = typeof args === 'string' ? args : args?.scope;
             const preserveRefs = args?.preserveRefs === true;
@@ -16,6 +20,7 @@ public class AccessibilitySnapshotService
             // Numbers continue from where the session last stopped, so a ref stamped here is a
             // number no earlier page or snapshot in the session ever answered to.
             const startNumber = args?.startNumber ?? 1;
+            const maskedPassword = '{{MaskedPassword}}';
             if (!preserveRefs && !augmentRefs) {
                 document.querySelectorAll('[data-ref]').forEach(el => el.removeAttribute('data-ref'));
             }
@@ -127,7 +132,12 @@ public class AccessibilitySnapshotService
                 return s;
             }
 
+            // A password field says whether it is filled and never what with — whoever typed it,
+            // the model, the person on a handoff or the page's own script.
             function getValue(el) {
+                if (el.tagName === 'INPUT' && (el.type || '').toLowerCase() === 'password') {
+                    return el.value ? maskedPassword : null;
+                }
                 if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return el.value || null;
                 if (el.tagName === 'SELECT') {
                     const opt = el.options[el.selectedIndex];
