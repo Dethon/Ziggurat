@@ -4,12 +4,12 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `asMe` from a mapped user opens the tab in that person's context; the tool envelope names `asMe`
-- [ ] `asMe` from an unmapped user, from `household`, or with an empty map is refused with a message naming the reason; nothing falls back to the anonymous context or another person
-- [ ] A cookie set in a person's context is absent from the anonymous context and from another person's (real Camoufox)
-- [ ] Refs stamped in a person-context tab route back to it from `web_action`, `view_image`, `web_snapshot` and `back` without a flag; popups stay in the person context
-- [ ] Two user ids mapped to one person share one context
-- [ ] Identity map wired as compose environment entries with placeholders, per the project's per-deployment rule
-- [ ] Server surface tested with a real MCP client and a fake browser (prior art: the websearch session scope tests)
+- [x] `asMe` from a mapped user opens the tab in that person's context; the tool envelope names `asMe`
+- [x] `asMe` from an unmapped user, from `household`, or with an empty map is refused with a message naming the reason; nothing falls back to the anonymous context or another person
+- [x] A cookie set in a person's context is absent from the anonymous context and from another person's (real Camoufox)
+- [x] Refs stamped in a person-context tab route back to it from `web_action`, `view_image`, `web_snapshot` and `back` without a flag; popups stay in the person context
+- [x] Two user ids mapped to one person share one context
+- [x] Identity map wired as compose environment entries with placeholders, per the project's per-deployment rule
+- [x] Server surface tested with a real MCP client and a fake browser (prior art: the websearch session scope tests)

@@ -126,7 +126,7 @@ public class WebBrowseToolTests
     {
         public Task<WebBrowseToolResult> RunAsync(
             int offset = 0, bool snapshot = false, JudgmentCaller? caller = null) =>
-            RunAsync("s", caller ?? JudgmentCaller.None, "https://a.test/", null, 10000, offset,
+            RunAsync("s", caller ?? JudgmentCaller.None, null, "https://a.test/", null, 10000, offset,
                 useReadability: false, scrollToLoad: false, scrollSteps: 3, snapshot,
                 CancellationToken.None);
     }

@@ -15,6 +15,10 @@ public record McpSettings : IMcpHostSettings
     public CamoufoxConfiguration? Camoufox { get; init; }
     public BrowsingConfiguration Browsing { get; init; } = new();
 
+    // Who the deployment's people are on each channel, for browsing as one of them. Per-deployment
+    // values in the compose environment only; empty is the feature off.
+    public IdentityConfiguration Identity { get; init; } = new();
+
     // Metrics alone ride this connection: one event per overlay the browser met. Nothing else on
     // this server may use it — page images cross to Redis at the agent's bridge, never here.
     public string RedisConnectionString { get; init; } = "redis:6379";
@@ -38,6 +42,11 @@ public record BrowsingConfiguration
 
     // The session's one idle clock, refreshed by every routed call.
     public int SessionIdleTimeoutMinutes { get; init; } = 30;
+}
+
+public record IdentityConfiguration
+{
+    public IReadOnlyList<PersonIdentity> People { get; init; } = [];
 }
 
 public record BraveSearchConfiguration
