@@ -29,6 +29,9 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
 
     public static readonly PersonIdentity Ana = new() { Name = "ana", Telegram = "ana_tg", WebChat = "Ana" };
 
+    // Enrolled on voice and nowhere else: there is no WebChat to put a voice handoff's link in.
+    public static readonly PersonIdentity Mo = new() { Name = "mo", Voice = "mo" };
+
     private readonly WebApplication _app;
     private readonly string _endpoint;
 
@@ -64,7 +67,7 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
             CapSolver = null,
             RedisConnectionString = McpServerRegistrations.UnreachableRedis,
             Mcp = McpTestSecret.Gate,
-            Identity = new IdentityConfiguration { People = people ?? [Fran, Ana] }
+            Identity = new IdentityConfiguration { People = people ?? [Fran, Ana, Mo] }
         };
         builder.Services.ConfigureMcp(settings?.Invoke(configured) ?? configured);
         builder.Services.RemoveAll<IWebBrowser>();

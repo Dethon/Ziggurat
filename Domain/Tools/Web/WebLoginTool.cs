@@ -10,6 +10,11 @@ public static class WebLoginTool
 {
     public const string Name = "web_login";
 
+    // The agent's channel endpoint ids for the satellites and for WebChat: a voice turn cannot
+    // speak a link, so its handoff is put in a WebChat conversation of the person's instead.
+    public const string VoiceChannelId = "voice";
+    public const string WebChatChannelId = "signalr";
+
     // What it does and what comes back; when to reach for it, and what to do with the link, is
     // the web-browsing skill's.
     public const string Description =

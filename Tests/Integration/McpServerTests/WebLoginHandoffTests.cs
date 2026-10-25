@@ -417,4 +417,66 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         Envelope(await _server.CallAsync("web_logins", [], Context("stranger")))["errorCode"]!
             .GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
     }
+
+    // nabu cannot speak a link, so a voice login puts it in a new WebChat conversation of the
+    // person's — whose end-of-stream Web Push pings them — and tells nabu so.
+    [Fact]
+    public async Task AVoiceLogin_PutsTheLinkInANewWebChatConversationOfThePersons()
+    {
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(),
+            Context("fran", conversationId: "voice-9", channelId: "voice", address: "kitchen-01")));
+
+        envelope["status"]!.GetValue<string>().ShouldBe("handoff_started");
+        envelope["deliveredTo"]!.GetValue<string>().ShouldBe("webchat");
+        envelope["link"].ShouldBeNull();
+        envelope["hint"]!.GetValue<string>().ShouldContain("WebChat");
+
+        var fire = (await DrainAsync()).ShouldHaveSingleItem();
+        fire.ReplyTo.ShouldBe([new ReplyTarget("signalr", null)]);
+        fire.ConversationId.ShouldNotBe("voice-9");
+        fire.Sender.ShouldBe("Fran");
+        fire.UserId.ShouldBe("Fran");
+        fire.AgentId.ShouldBe("jonas");
+        fire.Origin!.Kind.ShouldBe(MessageOriginKind.Login);
+        fire.Content.ShouldContain($"{PublicBase}/browse/handoff/");
+    }
+
+    [Fact]
+    public async Task ATextLogin_EmitsNoWebChatFire()
+    {
+        await StartHandoffAsync();
+
+        await Eventually.Settle();
+        (await DrainAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AVoiceLoginForAPersonWithNoWebChatName_IsRefusedNamingThat_AndOpensNothing()
+    {
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(),
+            Context("mo", channelId: "voice", address: "kitchen-01")));
+
+        envelope["errorCode"].ShouldNotBeNull();
+        envelope["message"]!.GetValue<string>().ShouldContain("WebChat");
+        _browser.OpenedTabs.ShouldBeEmpty();
+        (await DrainAsync()).ShouldBeEmpty();
+    }
+
+    // The answer comes back on the satellite the request came from: the wake keeps the voice
+    // target with its address, and the voice channel's own announcement path speaks it there.
+    [Fact]
+    public async Task AVoiceLoginsWake_AnswersToTheSatelliteItCameFrom()
+    {
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(),
+            Context("fran", conversationId: "voice-9", channelId: "voice", address: "kitchen-01")));
+        var link = (await DrainAsync()).Single().Content.Split(' ', '\n').First(w => w.StartsWith(PublicBase));
+        var (client, _) = NewBrowserSession();
+        (await client.PostAsync($"{PathOf(link.TrimEnd('.', ')'))}/claim", null)).EnsureSuccessStatusCode();
+
+        (await client.PostAsync("/browse/handoff/done", Json("{}"))).EnsureSuccessStatusCode();
+
+        var wake = (await DrainAsync()).ShouldHaveSingleItem();
+        wake.ConversationId.ShouldBe("voice-9");
+        wake.ReplyTo.ShouldBe([new ReplyTarget("voice", "voice-9", "kitchen-01")]);
+    }
 }

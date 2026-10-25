@@ -4,9 +4,9 @@
 
 **Blocked by:** 07
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A voice `web_login` emits one fire targeting a new WebChat conversation for the person, carrying the link (drained inbox test)
-- [ ] The tool answer on voice says the link is in WebChat; on text channels no WebChat fire is emitted
-- [ ] A person with no WebChat name in the map gets a refusal naming that
-- [ ] The wake's reply target keeps the satellite address; with no live session the existing announcement speaks it on that satellite only
+- [x] A voice `web_login` emits one fire targeting a new WebChat conversation for the person, carrying the link (drained inbox test)
+- [x] The tool answer on voice says the link is in WebChat; on text channels no WebChat fire is emitted
+- [x] A person with no WebChat name in the map gets a refusal naming that
+- [x] The wake's reply target keeps the satellite address; with no live session the existing announcement speaks it on that satellite only
