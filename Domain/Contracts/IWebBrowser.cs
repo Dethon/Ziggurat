@@ -86,6 +86,10 @@ public record BrowseRequest(
     // cannot be built without saying who is behind it; `JudgmentCaller.None` is a browse with no
     // turn (a fixture, a harness).
     public required JudgmentCaller Caller { get; init; }
+
+    // The person whose own browser context the tab opens in, resolved from the turn through the
+    // identity map; null is the anonymous context, which carries nobody's cookies.
+    public string? Person { get; init; }
 }
 
 public record BrowseResult(
@@ -135,11 +139,13 @@ public enum BrowseStatus
 public record ModalDismissed(ModalType Type, string Selector, string? ButtonText);
 
 // ForUrl: the page whose refs the caller wants, for a snapshot composed with a browse — without
-// it the snapshot reads the session's current tab, which a parallel browse may have moved.
+// it the snapshot reads the session's current tab, which a parallel browse may have moved. Person
+// is the context that browse opened in, since one url may be open both anonymously and as a person.
 public record SnapshotRequest(
     string SessionId,
     string? Selector = null,
-    string? ForUrl = null);
+    string? ForUrl = null,
+    string? Person = null);
 
 public record SnapshotResult(
     string SessionId,

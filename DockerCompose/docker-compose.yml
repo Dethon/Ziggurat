@@ -361,6 +361,15 @@ services:
     environment:
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      # The identity map: who each of the household's people is on every channel, so a browse
+      # made as one of them opens in their own browser context. Per deployment; a slot whose
+      # NAME is empty is no person, and no person at all is the feature off. Copy the block per
+      # person (__1__, __2__ ...). TELEGRAM is the Telegram username, WEBCHAT the WebChat name,
+      # VOICE the enrolled speaker's identity.
+      IDENTITY__PEOPLE__0__NAME: ""
+      IDENTITY__PEOPLE__0__TELEGRAM: ""
+      IDENTITY__PEOPLE__0__WEBCHAT: ""
+      IDENTITY__PEOPLE__0__VOICE: ""
     networks:
       - jackbot
     depends_on:

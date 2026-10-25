@@ -20,10 +20,12 @@ public class WebBrowseTool(IWebBrowser browser)
         dismissed on the way in.
         """;
 
-    // caller is the turn behind the call, from its `_meta` (BrowseRequest).
+    // caller is the turn behind the call, from its `_meta` (BrowseRequest); person is whose own
+    // context the tab opens in, already resolved through the identity map, or null for anonymous.
     protected async Task<WebBrowseToolResult> RunAsync(
         string sessionId,
         JudgmentCaller caller,
+        string? person,
         string url,
         string? selector,
         int maxLength,
@@ -48,7 +50,8 @@ public class WebBrowseTool(IWebBrowser browser)
             ScrollToLoad: scrollToLoad,
             ScrollSteps: scrollSteps)
         {
-            Caller = caller
+            Caller = caller,
+            Person = person
         };
 
         var result = await browser.NavigateAsync(request, ct);
@@ -90,6 +93,12 @@ public class WebBrowseTool(IWebBrowser browser)
             ["contentLength"] = result.ContentLength,
             ["truncated"] = result.Truncated
         };
+
+        // So the transcript shows what was done as the person.
+        if (person is not null)
+        {
+            envelope["asMe"] = true;
+        }
 
         if (result.HttpStatus is { } httpStatus)
         {
@@ -174,7 +183,7 @@ public class WebBrowseTool(IWebBrowser browser)
             // session's current tab, and its refs on this page's text would be the silent
             // wrong-target answer.
             var snapshotResult = await browser.SnapshotAsync(
-                new SnapshotRequest(sessionId, selector, ForUrl: result.Url), ct);
+                new SnapshotRequest(sessionId, selector, ForUrl: result.Url, Person: person), ct);
             if (snapshotResult.ErrorMessage is null)
             {
                 envelope["refCount"] = snapshotResult.RefCount;

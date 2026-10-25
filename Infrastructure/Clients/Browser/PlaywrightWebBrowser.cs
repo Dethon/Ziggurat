@@ -25,6 +25,10 @@ public class PlaywrightWebBrowser(
     // dies with the connection that made it.
     private IBrowserContext? _anonymous;
     private readonly List<IBrowserContext> _contexts = [];
+
+    // One context per person, made on that person's first browse over this connection. A task, so
+    // two parallel first browses share one context rather than racing to make two.
+    private readonly Dictionary<string, Task<IBrowserContext>> _personContexts = [];
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private readonly BrowserSessionManager _sessions = new(
         idleTimeout: idleTimeout ?? TimeSpan.FromMinutes(30),
@@ -103,7 +107,8 @@ public class PlaywrightWebBrowser(
         // GotoAsync — it just no longer costs anything on top of work already happening.
         var jitter = Task.Delay(Random.Shared.Next(50, 150), ct);
 
-        var outcome = await _sessions.BrowseAsync(request.SessionId, request.Url, _anonymous!,
+        var context = await ContextForAsync(request.Person);
+        var outcome = await _sessions.BrowseAsync(request.SessionId, request.Url, context,
             async ctx =>
             {
                 await jitter;
@@ -404,7 +409,8 @@ public class PlaywrightWebBrowser(
             Task<SnapshotResult> capture(TabWorkContext ctx) => CaptureSnapshotAsync(request, ctx);
             var outcome = request.ForUrl is { } url
                 ? await _sessions.OnUrlAsync(
-                    request.SessionId, url, _anonymous!, StampPolicy.Restamp(RefNamespace.Element), capture, ct)
+                    request.SessionId, url, await ContextForAsync(request.Person),
+                    StampPolicy.Restamp(RefNamespace.Element), capture, ct)
                 : await _sessions.OnCurrentTabAsync(
                     request.SessionId, StampPolicy.Restamp(RefNamespace.Element), capture, ct);
 
@@ -886,10 +892,11 @@ public class PlaywrightWebBrowser(
     // The context-level arranging half: answers an address before any page asks for it, so a
     // hermetic test can navigate to a route-fulfilled page instead of borrowing a live third
     // party as its anchor. Routes die with the context on reconnect; register before navigating.
-    internal async Task RouteOnContextAsync(string url, Func<IRoute, Task> handler)
+    // A person's context is its own, so a page served to a person is routed on theirs.
+    internal async Task RouteOnContextAsync(string url, Func<IRoute, Task> handler, string? person = null)
     {
         await EnsureInitializedAsync();
-        await _anonymous!.RouteAsync(url, handler);
+        await (await ContextForAsync(person)).RouteAsync(url, handler);
     }
 
     // The arranging half of the escape hatch: lets a test answer a fake CDN address from inside
@@ -994,6 +1001,29 @@ public class PlaywrightWebBrowser(
                 // Context may be closed, ignore
             }
         }
+    }
+
+    // The context a browse opens its tab in: the person's own, or the anonymous one. Asked inside
+    // the reconnect-retried operation, so a retry after a dropped connection gets the new
+    // connection's context rather than the dead one's.
+    internal async Task<IBrowserContext> ContextForAsync(string? person)
+    {
+        if (person is null)
+        {
+            return _anonymous!;
+        }
+
+        Task<IBrowserContext> made;
+        lock (_contexts)
+        {
+            if (!_personContexts.TryGetValue(person, out made!) || made.IsFaulted || made.IsCanceled)
+            {
+                made = NewContextAsync(_browser!);
+                _personContexts[person] = made;
+            }
+        }
+
+        return await made;
     }
 
     private IReadOnlyList<IBrowserContext> LiveContexts()
@@ -1612,6 +1642,7 @@ public class PlaywrightWebBrowser(
         {
             contexts = [.. _contexts];
             _contexts.Clear();
+            _personContexts.Clear();
         }
 
         foreach (var context in contexts)

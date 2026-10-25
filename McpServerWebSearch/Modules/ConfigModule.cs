@@ -31,6 +31,7 @@ public static class ConfigModule
                     _ => RedisConnection.ConnectResiliently(settings.RedisConnectionString))
                 .AddMetricsPublishing("mcp-websearch")
                 .AddTypeSafeJudge(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey))
+                .AddSingleton(new IdentityMap(settings.Identity.People))
                 .AddWebSearchClients(settings)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()

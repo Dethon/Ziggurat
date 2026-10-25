@@ -267,6 +267,45 @@ public class PlaywrightWebBrowserTests : IAsyncLifetime
         connections.Count.ShouldBe(2);
     }
 
+    // A reconnect replaces every context the dead connection made, a person's included: the next
+    // browse as that person gets a context on the new connection, and the old ones are closed.
+    [Fact]
+    public async Task EnsureInitializedAsync_AfterBrowserDisconnects_ClosesEveryContextAndMakesThePersonsAfresh()
+    {
+        var connections = new List<(Mock<IBrowser> Browser, List<Mock<IBrowserContext>> Contexts)>();
+        Func<Task<IBrowser>> factory = () =>
+        {
+            var made = new List<Mock<IBrowserContext>>();
+            var browser = new Mock<IBrowser>();
+            browser.SetupGet(b => b.IsConnected).Returns(true);
+            browser.Setup(b => b.NewContextAsync(It.IsAny<BrowserNewContextOptions?>()))
+                .ReturnsAsync(() =>
+                {
+                    var context = new Mock<IBrowserContext>();
+                    made.Add(context);
+                    return context.Object;
+                });
+            connections.Add((browser, made));
+            return Task.FromResult(browser.Object);
+        };
+
+        await using var browser = new PlaywrightWebBrowser(
+            wsEndpoint: "ws://dummy:9377/browser", browserFactory: factory);
+
+        await browser.EnsureInitializedAsync();
+        var fran = await browser.ContextForAsync("fran");
+        (await browser.ContextForAsync("fran")).ShouldBeSameAs(fran);
+        connections[0].Contexts.Count.ShouldBe(2);
+
+        connections[0].Browser.SetupGet(b => b.IsConnected).Returns(false);
+        await browser.EnsureInitializedAsync();
+        var franAgain = await browser.ContextForAsync("fran");
+
+        connections[0].Contexts.ShouldAllBe(c => c.Invocations.Any(i => i.Method.Name == nameof(IBrowserContext.CloseAsync)));
+        franAgain.ShouldNotBeSameAs(fran);
+        connections[1].Contexts.Select(c => c.Object).ShouldContain(franAgain);
+    }
+
     [Fact]
     public async Task NavigateAsync_WhenConnectionClosedMidNavigation_ReconnectsAndRetries()
     {
