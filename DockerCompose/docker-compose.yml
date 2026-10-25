@@ -339,6 +339,10 @@ services:
       retries: 3
     environment:
       <<: *timezone
+    # The browser's one fingerprint, drawn on the first launch and kept, so every restart presents
+    # the same device to the sites people are logged into (DockerCompose/camoufox/fingerprint.js).
+    volumes:
+      - camoufox-identity:/data
     restart: unless-stopped
     networks:
       - jackbot
@@ -946,3 +950,4 @@ networks:
 volumes:
   printer-spool:
   chat-uploads:
+  camoufox-identity:

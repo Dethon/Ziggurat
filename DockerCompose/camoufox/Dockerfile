@@ -40,7 +40,16 @@ RUN node patch-playwright.js
 COPY patch-viewport.js .
 RUN node patch-viewport.js
 
-COPY server.js .
+# The device is pinned (see fingerprint.js): a package that no longer accepts a saved
+# fingerprint, or presents it differently from one launch to the next, fails the build here.
+COPY check-fingerprint.js fingerprint-fixture.json.gz ./
+RUN node check-fingerprint.js
+
+COPY fingerprint.js server.js ./
+
+# Where the fingerprint lives; the compose service mounts its volume here.
+RUN mkdir -p /data
+VOLUME /data
 
 EXPOSE 9377
 
