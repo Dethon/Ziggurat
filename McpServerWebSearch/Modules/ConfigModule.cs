@@ -49,6 +49,7 @@ public static class ConfigModule
                     TimeSpan.FromSeconds(settings.Logins.SaveDebounceSeconds),
                     sp.GetRequiredService<ILogger<PersonLogins>>()))
                 .AddSingleton<LoginHandoffs>()
+                .AddSingleton<LoginsPages>()
                 .AddWebSearchClients(settings)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()
@@ -57,6 +58,7 @@ public static class ConfigModule
                 .WithTools<McpWebActionTool>()
                 .WithTools<McpViewImageTool>()
                 .WithTools<McpWebLoginTool>()
+                .WithTools<McpWebLoginsTool>()
                 // A channel too, for the login wake: Done raises a turn in the conversation that
                 // asked. Buffered always, because the person pressing Done cannot be told to try
                 // again while the agent reconnects; the target is the id the agent's connection

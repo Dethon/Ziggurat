@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text.Json;
 using Domain.Contracts;
+using Infrastructure.Clients.Browser;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -15,6 +16,16 @@ namespace McpServerWebSearch.Handoff;
 public static class HandoffEndpoints
 {
     public const string ViewCookie = "zg_handoff";
+    public const string LoginsCookie = "zg_logins";
+
+    private static CookieOptions ViewCookieOptions(HttpContext http) => new()
+    {
+        HttpOnly = true,
+        SameSite = SameSiteMode.Strict,
+        Path = "/browse",
+        // Behind Caddy the request arrives as plain http; the person's browser spoke https.
+        Secure = http.Request.IsHttps || http.Request.Headers["X-Forwarded-Proto"] == "https"
+    };
 
     public static IEndpointRouteBuilder MapHandoff(this IEndpointRouteBuilder app)
     {
@@ -30,16 +41,52 @@ public static class HandoffEndpoints
                 return Results.StatusCode(StatusCodes.Status410Gone);
             }
 
-            http.Response.Cookies.Append(ViewCookie, viewKey, new CookieOptions
-            {
-                HttpOnly = true,
-                SameSite = SameSiteMode.Strict,
-                Path = "/browse",
-                // Behind Caddy the request arrives as plain http; the person's browser spoke https.
-                Secure = http.Request.IsHttps
-                         || http.Request.Headers["X-Forwarded-Proto"] == "https"
-            });
+            http.Response.Cookies.Append(ViewCookie, viewKey, ViewCookieOptions(http));
             return Results.Json(new { site = new Uri(handoff.Url).Host, canRemember = handoffs.CanRemember });
+        });
+
+        app.MapGet("/browse/logins/{token}", async (string token, LoginsPages pages) =>
+            await pages.IsLinkLiveAsync(token)
+                ? Results.Content(HandoffPage.Logins(token), "text/html")
+                : Gone());
+
+        app.MapPost("/browse/logins/{token}/claim", async (string token, HttpContext http, LoginsPages pages) =>
+        {
+            if (await pages.ClaimAsync(token) is not { } viewKey)
+            {
+                return Results.StatusCode(StatusCodes.Status410Gone);
+            }
+
+            http.Response.Cookies.Append(LoginsCookie, viewKey, ViewCookieOptions(http));
+            return Results.NoContent();
+        });
+
+        app.MapGet("/browse/logins/sites", async (HttpContext http, LoginsPages pages, PersonLogins logins) =>
+            pages.PersonOf(http.Request.Cookies[LoginsCookie]) is { } person
+                ? Results.Json((await logins.SitesAsync(person)).Select(site => new
+                {
+                    site = site.Domain,
+                    remembered = site.Remembered,
+                    handedOffAt = site.HandedOffAt,
+                    lastUsedAt = site.LastUsedAt
+                }))
+                : Results.Unauthorized());
+
+        app.MapPost("/browse/logins/forget", async (HttpContext http, LoginsPages pages, PersonLogins logins) =>
+        {
+            if (pages.PersonOf(http.Request.Cookies[LoginsCookie]) is not { } person)
+            {
+                return Results.Unauthorized();
+            }
+
+            using var body = await JsonDocument.ParseAsync(http.Request.Body);
+            if (!body.RootElement.TryGetProperty("site", out var site) || site.GetString() is not { Length: > 0 } domain)
+            {
+                return Results.BadRequest();
+            }
+
+            await logins.ForgetAsync(person, domain);
+            return Results.NoContent();
         });
 
         app.MapPost("/browse/handoff/done", async (HttpContext http, LoginHandoffs handoffs) =>

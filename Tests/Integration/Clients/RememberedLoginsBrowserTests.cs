@@ -184,4 +184,31 @@ public class RememberedLoginsBrowserTests(IsolatedSessionBrowserFixture fixture,
         refused.Status.ShouldBe(BrowseStatus.LoginsUnreadable);
         refused.ErrorMessage.ShouldNotBeNull().ShouldContain("does not open");
     }
+
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task AForgottenSite_IsLoggedOutNowAndAfterTheBrowserReconnects_AndTheRestStays()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var store = Store(RandomNumberGenerator.GetBytes(32));
+        var person = $"fran-{Guid.NewGuid():N}";
+        var forgotten = Site();
+        var kept = Site();
+        await using (var first = NewBrowser(store))
+        {
+            await HandOffAsync(first, forgotten, person, "fran", remember: true);
+            await HandOffAsync(first, kept, person, "fran", remember: true);
+
+            await first.Logins.ForgetAsync(person, new Uri(forgotten).Host);
+
+            (await WhoAmIAsync(first.Browser, forgotten, person)).ShouldNotContain("session=fran");
+            (await WhoAmIAsync(first.Browser, kept, person)).ShouldContain("session=fran");
+            (await first.Logins.SitesAsync(person)).Select(site => site.Domain).ShouldBe([new Uri(kept).Host]);
+        }
+
+        await using var second = NewBrowser(store);
+        (await WhoAmIAsync(second.Browser, forgotten, person)).ShouldNotContain("session=fran");
+        (await WhoAmIAsync(second.Browser, kept, person)).ShouldContain("session=fran");
+    }
 }

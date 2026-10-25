@@ -35,12 +35,13 @@ public class McpWebLoginTool(IdentityMap identities, LoginHandoffs handoffs, Han
             return ToolResponse.Create(fire);
         }
 
-        if (identities.Resolve(conversation) is PersonResolution.Refused refused)
+        var resolution = identities.Resolve(conversation);
+        if (resolution is PersonResolution.Refused refused)
         {
             return ToolResponse.Create(refused.Error);
         }
 
-        var person = ((PersonResolution.Found)identities.Resolve(conversation)).Person;
+        var person = ((PersonResolution.Found)resolution).Person;
         if (string.IsNullOrWhiteSpace(settings.PublicBaseUrl))
         {
             return ToolResponse.Create(ToolError.Create(
