@@ -35,6 +35,11 @@ public sealed record AgentSpec
     // Whether the servers above are dialled for their prompts alone. A subagent always calls
     // tools — it exists to do a delegated task — so only a definition can set it.
     public bool NoTools { get; init; }
+
+    // Tools its servers offer that this agent is not given, by bare name. Empty for an agent; a
+    // subagent is denied the login handoff, because its calls carry its parent's conversation
+    // context and only a turn a person is in may send them a link.
+    public required IReadOnlySet<string> WithheldTools { get; init; }
     public required IReadOnlyList<string> EnabledFeatures { get; init; }
 
     // Derived from the enabled features by the projection rather than handed to the agent

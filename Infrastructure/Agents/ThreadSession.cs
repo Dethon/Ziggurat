@@ -55,10 +55,12 @@ internal sealed class ThreadSession : IAsyncDisposable
         McpPromptCache? promptCache = null,
         ReadImageSupport? readImages = null,
         IVfsBridge? bridge = null,
-        bool noTools = false)
+        bool noTools = false,
+        IReadOnlySet<string>? withheldTools = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
-            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge, noTools);
+            userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge, noTools,
+            withheldTools);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -85,7 +87,8 @@ internal sealed class ThreadSessionBuilder(
     McpPromptCache? promptCache = null,
     ReadImageSupport? readImages = null,
     IVfsBridge? bridge = null,
-    bool noTools = false)
+    bool noTools = false,
+    IReadOnlySet<string>? withheldTools = null)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 
@@ -153,7 +156,7 @@ internal sealed class ThreadSessionBuilder(
 
         // Channel-protocol tools are always stripped; raw fs_* tools are stripped when their
         // domain filesystem wrappers are active, to avoid exposing duplicate functionality to the LLM.
-        var mcpTools = FilterMcpTools(clientManager.Tools, fileSystemTools.Count > 0);
+        var mcpTools = FilterMcpTools(clientManager.Tools, fileSystemTools.Count > 0, withheldTools);
         var tools = Offered(mcpTools, domainTools, fileSystemTools);
 
         return new ThreadSessionData(
@@ -172,10 +175,13 @@ internal sealed class ThreadSessionBuilder(
         IReadOnlyList<AITool> fileSystemTools) =>
         [.. fileSystemTools, .. mcpTools, .. domainTools];
 
-    internal static IReadOnlyList<AITool> FilterMcpTools(IReadOnlyList<AITool> mcpTools, bool filesystemToolsActive)
+    internal static IReadOnlyList<AITool> FilterMcpTools(
+        IReadOnlyList<AITool> mcpTools, bool filesystemToolsActive, IReadOnlySet<string>? withheld = null)
     {
+        HashSet<string> withheldNames = [.. withheld ?? new HashSet<string>()];
         return mcpTools
             .Where(t => !HasReservedSuffix(t.Name, _channelProtocolToolNames))
+            .Where(t => !HasReservedSuffix(t.Name, withheldNames))
             .Where(t => !filesystemToolsActive || !HasReservedSuffix(t.Name, _fileSystemMcpToolNames))
             .ToList();
     }

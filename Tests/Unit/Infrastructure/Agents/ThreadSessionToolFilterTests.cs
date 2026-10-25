@@ -34,6 +34,21 @@ public class ThreadSessionToolFilterTests
     }
 
     [Fact]
+    public void FilterMcpTools_AWithheldTool_IsRemoved_AndItsServersOtherToolsStay()
+    {
+        AITool[] tools =
+        [
+            Tool("mcp__mcp-websearch__web_browse"),
+            Tool("mcp__mcp-websearch__web_login"),
+            Tool("mcp__mcp-websearch__web_action")
+        ];
+
+        var result = ThreadSessionBuilder.FilterMcpTools(tools, filesystemToolsActive: false, withheld: new HashSet<string> { "web_login" });
+
+        result.Select(t => t.Name).ShouldBe(["mcp__mcp-websearch__web_browse", "mcp__mcp-websearch__web_action"]);
+    }
+
+    [Fact]
     public void FilterMcpTools_ChannelReceiveTool_IsAlwaysRemoved()
     {
         AITool[] tools =

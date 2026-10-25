@@ -4,8 +4,8 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A spawned worker's tool set lacks `web_login` while keeping the other web tools
-- [ ] The parent's tool set is unchanged
-- [ ] Tested where a subagent's tools are projected from its parent
+- [x] A spawned worker's tool set lacks `web_login` while keeping the other web tools
+- [x] The parent's tool set is unchanged
+- [x] Tested where a subagent's tools are projected from its parent
