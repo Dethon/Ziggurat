@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools.Web;
 using Infrastructure.Agents;
 using Shouldly;
 
@@ -98,6 +99,11 @@ public sealed class AgentSpecProjectionTests
             new[] { "text_read" }, new[] { "text_read" }),
         Row("whitelist patterns", s => s.WhitelistPatterns,
             new[] { "allow-*" }, new[] { "allow-*" }),
+        // A handoff only ever comes from a conversation a person is in. A worker's calls carry its
+        // parent's context, so the server cannot tell them apart; the worker is simply not given
+        // the tool, and reports a login wall to its parent instead.
+        Row("withheld tools", s => s.WithheldTools.Order().ToArray(),
+            Array.Empty<string>(), new[] { WebLoginTool.Name }),
         // Routing says who serves a model, so it travels with the model: the worker gets what
         // its parent resolved, not the global default it would fall back to on its own.
         Row("provider routing", s => s.ProviderRouting, _declaredRouting, _declaredRouting),

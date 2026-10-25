@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Prompts;
 using Domain.Tools.FileSystem;
+using Domain.Tools.Web;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
@@ -24,6 +25,7 @@ internal static class AgentSpecProjection
         ILogger? logger) => new()
         {
             NoTools = RefuseFeaturesWithoutTools(definition),
+            WithheldTools = new HashSet<string>(),
             AgentId = definition.Id,
             DisplayName = $"{definition.Name}-{agentKey.ConversationId}",
             PromptName = definition.Name,
@@ -112,6 +114,9 @@ internal static class AgentSpecProjection
             // and never a set of machines: the session build below asks the registry itself, so
             // a subagent mounts whatever is live when it is spawned. See docs/adr/0028.
             UsesOutposts = spawn.UsesOutposts && definition.UsesOutposts,
+            // A worker that meets a login wall reports it to its parent, which can start the
+            // handoff in the conversation the person is in.
+            WithheldTools = new HashSet<string> { WebLoginTool.Name },
             EnabledFeatures = enabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures),
             WhitelistPatterns = spawn.WhitelistPatterns,

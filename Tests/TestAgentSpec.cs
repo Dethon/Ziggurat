@@ -21,6 +21,7 @@ internal static class TestAgentSpec
         PromptName = "test-agent",
         Description = "",
         MetricsAgentId = "test-agent",
+        WithheldTools = new HashSet<string>(),
         RoutingSessionId = $"test-agent:{conversationId}",
         ConversationId = conversationId,
         UserId = "test-user",
