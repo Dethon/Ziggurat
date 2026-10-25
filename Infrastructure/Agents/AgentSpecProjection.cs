@@ -115,8 +115,8 @@ internal static class AgentSpecProjection
             // a subagent mounts whatever is live when it is spawned. See docs/adr/0028.
             UsesOutposts = spawn.UsesOutposts && definition.UsesOutposts,
             // A worker that meets a login wall reports it to its parent, which can start the
-            // handoff in the conversation the person is in.
-            WithheldTools = new HashSet<string> { WebLoginTool.Name },
+            // handoff in the conversation the person is in; the logins page is the person's too.
+            WithheldTools = new HashSet<string> { WebLoginTool.Name, WebLoginsTool.Name },
             EnabledFeatures = enabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(enabledFeatures),
             WhitelistPatterns = spawn.WhitelistPatterns,

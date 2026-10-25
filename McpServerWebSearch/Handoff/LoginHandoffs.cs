@@ -22,7 +22,7 @@ public sealed class LoginHandoffs(
     PersonLogins logins,
     HandoffConfiguration settings,
     TimeProvider time,
-    ILogger<LoginHandoffs> logger)
+    ILogger<LoginHandoffs> logger) : ILoginHandoffs
 {
     public const string TicketKind = "handoff";
 
@@ -42,18 +42,40 @@ public sealed class LoginHandoffs(
         internal ITimer? Expiry { get; set; }
     }
 
-    public string LinkFor(string token) => $"{settings.PublicBaseUrl.TrimEnd('/')}/browse/handoff/{token}";
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(settings.PublicBaseUrl);
 
-    public async Task<LiveHandoff> BeginAsync(
-        string person, ConversationContext context, string url, CancellationToken ct)
+    public int LinkMinutes => settings.TicketMinutes;
+
+    public string LinkFor(string token) => BrowseLinks.For(settings, "handoff", token);
+
+    public async Task<string> BeginAsync(
+        string person, ConversationContext context, string url, string? inWebChatOf, CancellationToken ct)
     {
         var id = await browser.OpenHandoffAsync(person, url, ct);
+        string token;
+        try
+        {
+            token = await links.MintAsync(new OneTimeLinks.Ticket(TicketKind, id), TicketLifetime);
+        }
+        catch
+        {
+            // No link, no handoff: the tab nobody can reach goes with it.
+            await browser.CloseHandoffAsync(id);
+            throw;
+        }
+
         logins.BeginHandoff(person);
-        var token = await links.MintAsync(new OneTimeLinks.Ticket(TicketKind, id), TicketLifetime);
         var handoff = new LiveHandoff(id, person, context, url, token);
         _live[id] = handoff;
         handoff.Expiry = time.CreateTimer(_ => _ = ExpireAsync(id), null, TicketLifetime, Timeout.InfiniteTimeSpan);
-        return handoff;
+
+        var link = LinkFor(token);
+        if (inWebChatOf is not null)
+        {
+            await wakes.EmitAsync(LoginWake.LinkInWebChat(handoff, link, inWebChatOf, LinkMinutes, time.GetUtcNow()));
+        }
+
+        return link;
     }
 
     public Task<bool> IsLinkLiveAsync(string token) => links.IsLiveAsync(token);
@@ -69,7 +91,7 @@ public sealed class LoginHandoffs(
             return null;
         }
 
-        var viewKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        var viewKey = BrowseLinks.NewViewKey();
         handoff.ViewKey = viewKey;
         handoff.Expiry?.Change(ViewLifetime, Timeout.InfiniteTimeSpan);
         return (handoff, viewKey);
@@ -93,6 +115,14 @@ public sealed class LoginHandoffs(
         }
 
         handoff.Expiry?.Dispose();
+        // The tab died under the view — the browser restarted — so there is no login to keep and
+        // nothing to wake the agent about.
+        if (!browser.IsHandoffOpen(handoff.Id))
+        {
+            await logins.AbandonHandoffAsync(handoff.Person, []);
+            return false;
+        }
+
         // Read before the close, which forgets the handoff and the hosts with it.
         var hosts = browser.HandoffVisitedHosts(handoff.Id);
         await browser.CloseHandoffAsync(handoff.Id);
@@ -110,7 +140,9 @@ public sealed class LoginHandoffs(
         return true;
     }
 
-    // Abandoned or out of time: the tab goes, the link goes, and nothing else happens.
+    // Abandoned or out of time: the tab goes, the link goes, and nothing is emitted. Whatever the
+    // person half did there stays in their context only until the browser restarts — no save
+    // carries a login nobody finished.
     private async Task ExpireAsync(string id)
     {
         if (!_live.TryRemove(id, out var handoff))
@@ -119,9 +151,9 @@ public sealed class LoginHandoffs(
         }
 
         handoff.Expiry?.Dispose();
-        logins.AbandonHandoff(handoff.Person);
         try
         {
+            await logins.AbandonHandoffAsync(handoff.Person, browser.HandoffVisitedHosts(id));
             await links.RevokeAsync(handoff.Token);
             await browser.CloseHandoffAsync(id);
         }

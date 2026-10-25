@@ -41,14 +41,14 @@ public static class HandoffPage
         .error { color: var(--error); }
         """;
 
-    public static string Gone =>
+    public static string Gone(int minutes) =>
         Page("Link no longer valid",
-            """
+            $"""
             <main class="done"><h1>This link has been used or has run out</h1>
-            <p class="lead">Each login link opens once and for ten minutes. Ask again and you will get a fresh one.</p></main>
+            <p class="lead">Each link opens once and for {minutes} minutes. Ask again and you will get a fresh one.</p></main>
             """);
 
-    public static string Viewer(string token) => Page("Log in",
+    public static string Viewer(string token, int minutes) => Page("Log in",
         $$"""
         <main>
           <h1 id="title">Log in</h1>
@@ -149,7 +149,7 @@ public static class HandoffPage
 
           (async () => {
             const claim = await fetch('/browse/handoff/' + encodeURIComponent(token) + '/claim', { method: 'POST' });
-            if (!claim.ok) { finish(['This link has been used or has run out', 'Each login link opens once and for ten minutes. Ask again and you will get a fresh one.']); return; }
+            if (!claim.ok) { finish(['This link has been used or has run out', 'Each link opens once and for {{minutes}} minutes. Ask again and you will get a fresh one.']); return; }
             const { site, canRemember } = await claim.json();
             document.getElementById('title').textContent = 'Log in to ' + site;
             if (!canRemember) {
@@ -164,7 +164,7 @@ public static class HandoffPage
         </script>
         """);
 
-    public static string Logins(string token) => Page("Your logins",
+    public static string Logins(string token, int minutes) => Page("Your logins",
         $$"""
         <main>
           <h1>Sites the agent can reach as you</h1>
@@ -176,6 +176,7 @@ public static class HandoffPage
           const token = {{System.Text.Json.JsonSerializer.Serialize(token)}};
           const list = document.getElementById('sites');
           const when = at => at ? new Date(at).toLocaleString() : 'not yet';
+          const alertNote = (row, text) => { const n = document.createElement('div'); n.className = 'note error'; n.textContent = text; row.append(n); };
           const say = (title, text) => {
             document.querySelector('main').innerHTML = '<div class="done"><h1></h1><p class="lead"></p></div>';
             document.querySelector('.done h1').textContent = title;
@@ -195,7 +196,9 @@ public static class HandoffPage
               forget.addEventListener('click', async () => {
                 forget.disabled = true;
                 const answer = await fetch('/browse/logins/forget', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site: s.site }) });
-                if (answer.ok) load(); else say('This page has run out', 'Ask the agent for a fresh link to your logins.');
+                if (answer.ok) load();
+                else if (answer.status === 409) { forget.disabled = false; alertNote(row, 'Finish or leave the login you have open first.'); }
+                else say('This page has run out', 'Ask the agent for a fresh link to your logins.');
               });
               row.append(text, forget); list.append(row);
             }
@@ -207,7 +210,7 @@ public static class HandoffPage
           };
           (async () => {
             const claim = await fetch('/browse/logins/' + encodeURIComponent(token) + '/claim', { method: 'POST' });
-            if (!claim.ok) { say('This link has been used or has run out', 'Each link opens once and for ten minutes. Ask again and you will get a fresh one.'); return; }
+            if (!claim.ok) { say('This link has been used or has run out', 'Each link opens once and for {{minutes}} minutes. Ask again and you will get a fresh one.'); return; }
             load();
           })();
         })();

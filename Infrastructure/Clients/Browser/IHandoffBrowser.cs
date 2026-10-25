@@ -1,4 +1,4 @@
-namespace Domain.Contracts;
+namespace Infrastructure.Clients.Browser;
 
 // The tab a person logs in on. It opens in that person's own browser context but outside every
 // browse session's tab pool, so no ref, browse or action of the agent can reach it while the

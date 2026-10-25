@@ -18,6 +18,7 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients.Browser;
 using Infrastructure.Clients.HomeAssistant;
 using Infrastructure.Clients.Voice;
+using Infrastructure.StateManagers;
 using Mcp.Hosting;
 using McpServerHomeAssistant.Modules;
 using McpServerHomeAssistant.Settings;

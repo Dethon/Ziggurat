@@ -151,10 +151,13 @@ public class RememberedLoginsBrowserTests(IsolatedSessionBrowserFixture fixture,
             });
             rotated.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
-            first.Time.Advance(_debounce);
-            await Eventually.Until(
-                () => store.LoadAsync(person).GetAwaiter().GetResult()!.StorageState.Contains("rotated"),
-                "the rotated cookie to be saved");
+            // The debounce is armed by the rotation's request finishing, which may land after the
+            // browse returned, so the clock is moved on until the save it schedules has run.
+            await Eventually.Until(() =>
+            {
+                first.Time.Advance(_debounce);
+                return store.LoadAsync(person).GetAwaiter().GetResult()!.StorageState.Contains("rotated");
+            }, "the rotated cookie to be saved");
         }
 
         await using var second = NewBrowser(store);

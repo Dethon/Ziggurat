@@ -31,8 +31,8 @@ public static class HandoffEndpoints
     {
         app.MapGet("/browse/handoff/{token}", async (string token, LoginHandoffs handoffs) =>
             await handoffs.IsLinkLiveAsync(token)
-                ? Results.Content(HandoffPage.Viewer(token), "text/html")
-                : Gone());
+                ? Results.Content(HandoffPage.Viewer(token, handoffs.LinkMinutes), "text/html")
+                : Gone(handoffs.LinkMinutes));
 
         app.MapPost("/browse/handoff/{token}/claim", async (string token, HttpContext http, LoginHandoffs handoffs) =>
         {
@@ -47,8 +47,8 @@ public static class HandoffEndpoints
 
         app.MapGet("/browse/logins/{token}", async (string token, LoginsPages pages) =>
             await pages.IsLinkLiveAsync(token)
-                ? Results.Content(HandoffPage.Logins(token), "text/html")
-                : Gone());
+                ? Results.Content(HandoffPage.Logins(token, pages.LinkMinutes), "text/html")
+                : Gone(pages.LinkMinutes));
 
         app.MapPost("/browse/logins/{token}/claim", async (string token, HttpContext http, LoginsPages pages) =>
         {
@@ -85,8 +85,9 @@ public static class HandoffEndpoints
                 return Results.BadRequest();
             }
 
-            await logins.ForgetAsync(person, domain);
-            return Results.NoContent();
+            return await logins.ForgetAsync(person, domain)
+                ? Results.NoContent()
+                : Results.Conflict();
         });
 
         app.MapPost("/browse/handoff/done", async (HttpContext http, LoginHandoffs handoffs) =>
@@ -101,11 +102,22 @@ public static class HandoffEndpoints
                 : Results.StatusCode(StatusCodes.Status410Gone);
         });
 
-        app.Map("/browse/handoff/live", async (HttpContext http, LoginHandoffs handoffs, IHandoffBrowser browser) =>
+        app.Map("/browse/handoff/live", async (
+            HttpContext http, LoginHandoffs handoffs, IHandoffBrowser browser, TimeProvider time) =>
         {
             if (!http.WebSockets.IsWebSocketRequest)
             {
                 http.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+
+            // A socket opened by another site's page: SameSite already keeps the cookie off it, and
+            // this says so without leaning on the browser.
+            if (http.Request.Headers.Origin is [{ } origin]
+                && !(Uri.TryCreate(origin, UriKind.Absolute, out var from)
+                     && string.Equals(from.Authority, http.Request.Host.Value, StringComparison.OrdinalIgnoreCase)))
+            {
+                http.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
             }
 
@@ -116,7 +128,7 @@ public static class HandoffEndpoints
             }
 
             using var socket = await http.WebSockets.AcceptWebSocketAsync();
-            await RunViewAsync(socket, handoff, handoffs, browser, http.RequestAborted);
+            await RunViewAsync(socket, handoff, handoffs, browser, time, http.RequestAborted);
         });
 
         return app;
@@ -137,40 +149,44 @@ public static class HandoffEndpoints
         }
     }
 
-    private static IResult Gone() =>
-        Results.Content(HandoffPage.Gone, "text/html", statusCode: StatusCodes.Status410Gone);
+    private static IResult Gone(int minutes) =>
+        Results.Content(HandoffPage.Gone(minutes), "text/html", statusCode: StatusCodes.Status410Gone);
 
     // Frames go out as binary messages, the newest only: a frame arriving while the last is still
     // being sent is dropped, so a slow phone sees the page late rather than ever later. Input comes
-    // back as one JSON object per message.
+    // back as one JSON object per message. One send at a time — a WebSocket takes no concurrent
+    // sends — so the close a finished handoff sends waits for the frame in flight.
     private static async Task RunViewAsync(
         WebSocket socket, LoginHandoffs.LiveHandoff handoff, LoginHandoffs handoffs,
-        IHandoffBrowser browser, CancellationToken aborted)
+        IHandoffBrowser browser, TimeProvider time, CancellationToken aborted)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(aborted);
-        var sending = 0;
+        using var sending = new SemaphoreSlim(1, 1);
         await using var stream = await browser.StreamHandoffAsync(handoff.Id, async frame =>
         {
-            if (Interlocked.CompareExchange(ref sending, 1, 0) != 0 || socket.State != WebSocketState.Open)
+            if (!await sending.WaitAsync(0))
             {
                 return;
             }
 
             try
             {
-                await socket.SendAsync(frame.Jpeg, WebSocketMessageType.Binary, true, cts.Token);
+                if (socket.State == WebSocketState.Open)
+                {
+                    await socket.SendAsync(frame.Jpeg, WebSocketMessageType.Binary, true, cts.Token);
+                }
             }
-            catch (Exception ex) when (ex is WebSocketException or OperationCanceledException)
+            catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
             {
                 // The view went away; the receive loop ends the session.
             }
             finally
             {
-                Volatile.Write(ref sending, 0);
+                sending.Release();
             }
         }, cts.Token);
 
-        var watch = WatchEndAsync(socket, handoff, handoffs, cts.Token);
+        var watch = WatchEndAsync(socket, handoff, handoffs, sending, time, cts.Token);
         var buffer = new byte[16 * 1024];
         try
         {
@@ -210,26 +226,36 @@ public static class HandoffEndpoints
     // A handoff that ends while its view is open — Done from another request, its time running
     // out, the browser restarting — closes the view with a reason the page can show.
     private static async Task WatchEndAsync(
-        WebSocket socket, LoginHandoffs.LiveHandoff handoff, LoginHandoffs handoffs, CancellationToken ct)
+        WebSocket socket, LoginHandoffs.LiveHandoff handoff, LoginHandoffs handoffs, SemaphoreSlim sending,
+        TimeProvider time, CancellationToken ct)
     {
         try
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1), time);
             while (await timer.WaitForNextTickAsync(ct))
             {
-                if (!handoffs.IsOpen(handoff))
+                if (handoffs.IsOpen(handoff))
+                {
+                    continue;
+                }
+
+                await sending.WaitAsync(ct);
+                try
                 {
                     if (socket.State == WebSocketState.Open)
                     {
-                        await socket.CloseOutputAsync(
-                            WebSocketCloseStatus.NormalClosure, "ended", CancellationToken.None);
+                        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "ended", CancellationToken.None);
                     }
-
-                    return;
                 }
+                finally
+                {
+                    sending.Release();
+                }
+
+                return;
             }
         }
-        catch (Exception ex) when (ex is OperationCanceledException or WebSocketException)
+        catch (Exception ex) when (ex is OperationCanceledException or WebSocketException or ObjectDisposedException)
         {
             // The view ended first.
         }

@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
+using Domain.Contracts;
 using McpServerWebSearch.Settings;
 
 namespace McpServerWebSearch.Handoff;
@@ -8,22 +8,42 @@ namespace McpServerWebSearch.Handoff;
 // claim, ten minutes, bound to the person — and a claimed page answers its own browser for as
 // long again. The person is fixed when the link is minted, so nothing the page sends can name
 // somebody else.
-public sealed class LoginsPages(OneTimeLinks links, HandoffConfiguration settings, TimeProvider time)
+public sealed class LoginsPages(OneTimeLinks links, HandoffConfiguration settings, TimeProvider time) : ILoginsPages
 {
     public const string TicketKind = "logins";
 
-    private readonly ConcurrentDictionary<string, (string Person, DateTimeOffset Until)> _minted = new();
-    private readonly ConcurrentDictionary<string, (string Person, DateTimeOffset Until)> _views = new();
+    // A link or a claimed page: whose it is, and until when.
+    private sealed record Grant(string Person, DateTimeOffset Until);
+
+    private readonly ConcurrentDictionary<string, Grant> _minted = new();
+    private readonly ConcurrentDictionary<string, Grant> _views = new();
 
     private TimeSpan Lifetime => TimeSpan.FromMinutes(settings.TicketMinutes);
 
-    public string LinkFor(string token) => $"{settings.PublicBaseUrl.TrimEnd('/')}/browse/logins/{token}";
+    public int LinkMinutes => settings.TicketMinutes;
 
-    public async Task<string> MintAsync(string person)
+    public async Task<string> MintAsync(string person, CancellationToken ct)
     {
+        Prune();
         var token = await links.MintAsync(new OneTimeLinks.Ticket(TicketKind, person), Lifetime);
-        _minted[token] = (person, time.GetUtcNow() + Lifetime);
-        return token;
+        _minted[token] = new Grant(person, time.GetUtcNow() + Lifetime);
+        return BrowseLinks.For(settings, "logins", token);
+    }
+
+    // Links nobody claimed and pages left open are dropped once they run out, so neither table
+    // grows with every link ever minted.
+    private void Prune()
+    {
+        var now = time.GetUtcNow();
+        foreach (var (key, _) in _minted.Where(entry => entry.Value.Until <= now))
+        {
+            _minted.TryRemove(key, out _);
+        }
+
+        foreach (var (key, _) in _views.Where(entry => entry.Value.Until <= now))
+        {
+            _views.TryRemove(key, out _);
+        }
     }
 
     public async Task<bool> IsLinkLiveAsync(string token) =>
@@ -40,8 +60,8 @@ public sealed class LoginsPages(OneTimeLinks links, HandoffConfiguration setting
             return null;
         }
 
-        var viewKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
-        _views[viewKey] = (minted.Person, time.GetUtcNow() + Lifetime);
+        var viewKey = BrowseLinks.NewViewKey();
+        _views[viewKey] = new Grant(minted!.Person, time.GetUtcNow() + Lifetime);
         return viewKey;
     }
 
