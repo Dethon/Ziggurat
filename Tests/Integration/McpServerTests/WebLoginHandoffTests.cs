@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.WebSockets;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json.Nodes;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
@@ -31,14 +33,32 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         {
             services.RemoveAll<IHandoffBrowser>();
             services.AddSingleton<IHandoffBrowser>(_browser);
+            services.RemoveAll<IPersonContexts>();
+            services.AddSingleton<IPersonContexts>(_browser);
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(_time);
         },
         settings: s => s with
         {
             RedisConnectionString = redis.ConnectionString,
-            Handoff = s.Handoff with { PublicBaseUrl = PublicBase }
+            Handoff = s.Handoff with { PublicBaseUrl = PublicBase },
+            Logins = s.Logins with { StateKey = StateKey }
         });
+
+    private static readonly string StateKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
+    private const string ShopState =
+        """{"cookies":[{"name":"sid","value":"shop-session","domain":".shop.test","path":"/"}],"origins":[]}""";
+
+    private IPersonStateStore Store => _server.Services.GetRequiredService<IPersonStateStore>();
+
+    private async Task FinishHandoffAsync(string doneBody)
+    {
+        var path = PathOf(await StartHandoffAsync());
+        var (client, _) = NewBrowserSession();
+        (await client.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
+        (await client.PostAsync("/browse/handoff/done", Json(doneBody))).EnsureSuccessStatusCode();
+    }
 
     public async Task DisposeAsync() => await _server.DisposeAsync();
 
@@ -248,5 +268,83 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         await Eventually.Settle();
         (await DrainAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ATickedDone_RemembersTheSitesTheHandoffVisited_WithTheContextsState()
+    {
+        _browser.State = ShopState;
+        _browser.Hosts = ["accounts.shop.test", "shop.test"];
+
+        await FinishHandoffAsync("""{"remember":true}""");
+
+        var record = (await Store.LoadAsync("fran")).ShouldNotBeNull();
+        record.Sites.Select(site => site.Domain).ShouldBe(["shop.test"]);
+        record.StorageState.ShouldContain("shop-session");
+    }
+
+    [Fact]
+    public async Task AnUntickedDone_LeavesTheSiteAndItsCookiesOutOfTheRecord()
+    {
+        _browser.State = ShopState;
+        _browser.Hosts = ["shop.test"];
+
+        await FinishHandoffAsync("""{"remember":false}""");
+
+        var record = await Store.LoadAsync("fran");
+        (record?.Sites ?? []).ShouldBeEmpty();
+        (record?.StorageState ?? "").ShouldNotContain("shop-session");
+    }
+
+    [Fact]
+    public async Task UseOfARememberedSite_IsSavedOnceTheDebounceRunsOut()
+    {
+        _browser.State = ShopState;
+        _browser.Hosts = ["shop.test"];
+        await FinishHandoffAsync("""{"remember":true}""");
+        _browser.State = ShopState.Replace("shop-session", "rotated-session");
+
+        _browser.RaiseActivity("fran", "https://shop.test/orders");
+        _time.Advance(TimeSpan.FromSeconds(5));
+
+        await Eventually.Until(() => Store.LoadAsync("fran").GetAwaiter().GetResult()!.StorageState.Contains("rotated-session"),
+            "the rotated cookie to be saved");
+        (await Store.LoadAsync("fran"))!.Sites.Single().LastUsedAt.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task TheClaim_SaysWhetherThisServerCanRemember()
+    {
+        var path = PathOf(await StartHandoffAsync());
+        var (client, _) = NewBrowserSession();
+
+        var claim = JsonNode.Parse(await (await client.PostAsync($"{path}/claim", null)).Content.ReadAsStringAsync())!;
+
+        claim["canRemember"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ALoginForAPersonWhoseSavedLoginsWillNotOpen_IsRefusedNamingWhy()
+    {
+        _browser.OpenFails = new PersonStateUnreadableException("fran", "the configured key does not open them");
+
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(), Context("fran_tg")));
+
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
+        envelope["message"]!.GetValue<string>().ShouldContain("cannot be read");
+    }
+
+    // No tool the model can call touches the store: nothing reads a person's saved logins back and
+    // nothing forgets one.
+    [Fact]
+    public async Task TheServersTools_AreTheWebToolsTheLoginAndTheChannelProtocolAlone()
+    {
+        var tools = await _server.ToolNamesAsync();
+
+        tools.Order().ShouldBe(new[]
+        {
+            "channel_receive", "request_approval", "send_reply",
+            "view_image", "web_action", "web_browse", "web_login", "web_search", "web_snapshot"
+        }.Order());
     }
 }

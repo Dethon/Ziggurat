@@ -4,10 +4,10 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Remembered: after the browser reconnects, an `asMe` browse of the site is still logged in (real Camoufox)
-- [ ] Unticked: the site is logged in until the browser restarts, never written to the store, and its cookies are absent from saves made afterwards for other sites
-- [ ] The stored record is unreadable without the key; a wrong or missing key refuses to restore and says so rather than starting silently logged out
-- [ ] A cookie the site rotates during `asMe` use is in the next restore
-- [ ] No MCP tool exposes the store
+- [x] Remembered: after the browser reconnects, an `asMe` browse of the site is still logged in (real Camoufox)
+- [x] Unticked: the site is logged in until the browser restarts, never written to the store, and its cookies are absent from saves made afterwards for other sites
+- [x] The stored record is unreadable without the key; a wrong or missing key refuses to restore and says so rather than starting silently logged out
+- [x] A cookie the site rotates during `asMe` use is in the next restore
+- [x] No MCP tool exposes the store

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Channels;
+using Domain.Contracts;
 using Domain.Tools;
 using Domain.Tools.Web;
 using Infrastructure.Utils;
@@ -54,7 +55,18 @@ public class McpWebLoginTool(IdentityMap identities, LoginHandoffs handoffs, Han
                 ToolError.Codes.InvalidArgument, "Only an http or https url can be handed off."));
         }
 
-        var handoff = await handoffs.BeginAsync(person, conversation, uri.ToString(), ct);
+        LoginHandoffs.LiveHandoff handoff;
+        try
+        {
+            handoff = await handoffs.BeginAsync(person, conversation, uri.ToString(), ct);
+        }
+        catch (PersonStateUnreadableException ex)
+        {
+            return ToolResponse.Create(ToolError.Create(
+                ToolError.Codes.UnsupportedOperation, ex.Message,
+                "Tell the person their saved logins cannot be opened on this server until the operator fixes the key."));
+        }
+
         return ToolResponse.Create(new JsonObject
         {
             ["status"] = "handoff_started",

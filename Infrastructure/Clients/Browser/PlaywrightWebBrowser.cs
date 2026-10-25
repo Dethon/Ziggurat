@@ -15,8 +15,9 @@ public class PlaywrightWebBrowser(
     int tabCap = BrowserSessionManager.DefaultTabCap,
     TimeSpan? idleTimeout = null,
     ModalDismisser? modalDismisser = null,
-    IMetricsPublisher? metricsPublisher = null)
-    : IWebBrowser, IHandoffBrowser, IAsyncDisposable
+    IMetricsPublisher? metricsPublisher = null,
+    IPersonStateStore? personStates = null)
+    : IWebBrowser, IHandoffBrowser, IPersonContexts, IAsyncDisposable
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -92,6 +93,13 @@ public class PlaywrightWebBrowser(
             // "Target page, context or browser has been closed" to the caller. Serialization is
             // per tab, inside NavigateOnceAsync — browses of different URLs run in parallel.
             return await ExecuteWithReconnectAsync(() => NavigateOnceAsync(request, ct));
+        }
+        catch (PersonStateUnreadableException ex)
+        {
+            return CreateErrorResult(request.SessionId, request.Url, ex.Message) with
+            {
+                Status = BrowseStatus.LoginsUnreadable
+            };
         }
         catch (PlaywrightException ex) when (IsConnectionClosed(ex))
         {
@@ -1036,14 +1044,91 @@ public class PlaywrightWebBrowser(
         Task<IBrowserContext> made;
         lock (_contexts)
         {
+            // A faulted one is asked again: a record that would not open refuses every browse as
+            // the person rather than leaving them a context logged out of everything.
             if (!_personContexts.TryGetValue(person, out made!) || made.IsFaulted || made.IsCanceled)
             {
-                made = NewContextAsync(_browser!);
+                made = NewPersonContextAsync(person, storageState: null);
                 _personContexts[person] = made;
             }
         }
 
         return await made;
+    }
+
+    public event Action<string, string>? PersonActivity;
+
+    // Restored from what the person has remembered, when no state is handed in.
+    private async Task<IBrowserContext> NewPersonContextAsync(string person, string? storageState)
+    {
+        storageState ??= personStates is null ? null : (await personStates.LoadAsync(person))?.StorageState;
+        var context = await NewContextAsync(_browser!, storageState);
+        context.RequestFinished += (_, request) =>
+        {
+            try
+            {
+                PersonActivity?.Invoke(person, request.Url);
+            }
+            catch
+            {
+                // A listener's failure must not reach the browser's event loop.
+            }
+        };
+        return context;
+    }
+
+    public async Task<string?> ExportStateAsync(string person, CancellationToken ct = default)
+    {
+        Task<IBrowserContext>? made;
+        lock (_contexts)
+        {
+            made = _personContexts.GetValueOrDefault(person);
+        }
+
+        if (made is not { IsCompletedSuccessfully: true })
+        {
+            return null;
+        }
+
+        try
+        {
+            return await made.Result.StorageStateAsync(new BrowserContextStorageStateOptions { IndexedDB = true });
+        }
+        catch (PlaywrightException)
+        {
+            // The context died with its connection; nothing it held is left to save.
+            return null;
+        }
+    }
+
+    public async Task ReplaceStateAsync(string person, string storageState, CancellationToken ct = default)
+    {
+        await EnsureInitializedAsync();
+        Task<IBrowserContext>? old;
+        var made = NewPersonContextAsync(person, storageState);
+        lock (_contexts)
+        {
+            old = _personContexts.GetValueOrDefault(person);
+            _personContexts[person] = made;
+        }
+
+        await made;
+        if (old is { IsCompletedSuccessfully: true })
+        {
+            lock (_contexts)
+            {
+                _contexts.Remove(old.Result);
+            }
+
+            try
+            {
+                await old.Result.CloseAsync();
+            }
+            catch (PlaywrightException)
+            {
+                // Already gone.
+            }
+        }
     }
 
     private IReadOnlyList<IBrowserContext> LiveContexts()
@@ -1054,10 +1139,11 @@ public class PlaywrightWebBrowser(
         }
     }
 
-    private async Task<IBrowserContext> NewContextAsync(IBrowser browser)
+    private async Task<IBrowserContext> NewContextAsync(IBrowser browser, string? storageState = null)
     {
         var context = await browser.NewContextAsync(new BrowserNewContextOptions
         {
+            StorageState = storageState,
             ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
             Locale = "en-US",
             TimezoneId = "America/New_York",

@@ -365,6 +365,9 @@ services:
     environment:
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      # Seals each person's remembered logins in Redis (base64 of 32 random bytes; empty is
+      # remembering off). Changing it makes every saved login refuse until it is put back.
+      LOGINS__STATEKEY: ${LOGINS__STATEKEY}
       # The identity map: who each of the household's people is on every channel, so a browse
       # made as one of them opens in their own browser context. Per deployment; a slot whose
       # NAME is empty is no person, and no person at all is the feature off. Copy the block per

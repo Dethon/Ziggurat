@@ -17,6 +17,7 @@ using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace McpServerWebSearch.Modules;
@@ -38,6 +39,15 @@ public static class ConfigModule
                 .AddSingleton(settings.Handoff)
                 .AddSingleton(TimeProvider.System)
                 .AddSingleton<OneTimeLinks>()
+                .AddSingleton<IPersonStateStore>(sp => new RedisPersonStateStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    RedisPersonStateStore.ParseKey(settings.Logins.StateKey, "Logins:StateKey")))
+                .AddSingleton(sp => new PersonLogins(
+                    sp.GetRequiredService<IPersonContexts>(),
+                    sp.GetRequiredService<IPersonStateStore>(),
+                    sp.GetRequiredService<TimeProvider>(),
+                    TimeSpan.FromSeconds(settings.Logins.SaveDebounceSeconds),
+                    sp.GetRequiredService<ILogger<PersonLogins>>()))
                 .AddSingleton<LoginHandoffs>()
                 .AddWebSearchClients(settings)
                 .AddToolServer(settings, ToolResponse.Create)
@@ -101,12 +111,14 @@ public static class ConfigModule
                         !string.IsNullOrWhiteSpace(settings.OpenRouter.ApiKey)
                             ? new ModalJudge(sp.GetRequiredService<IJudge>(), settings.Judgment, TimeProvider.System)
                             : null),
-                    metricsPublisher: sp.GetRequiredService<IMetricsPublisher>());
+                    metricsPublisher: sp.GetRequiredService<IMetricsPublisher>(),
+                    personStates: sp.GetRequiredService<IPersonStateStore>());
             });
             // One browser: the tabs the agent browses and the tabs people log in on share its
             // contexts.
             services.AddSingleton<IWebBrowser>(sp => sp.GetRequiredService<PlaywrightWebBrowser>());
             services.AddSingleton<IHandoffBrowser>(sp => sp.GetRequiredService<PlaywrightWebBrowser>());
+            services.AddSingleton<IPersonContexts>(sp => sp.GetRequiredService<PlaywrightWebBrowser>());
 
             return services;
         }

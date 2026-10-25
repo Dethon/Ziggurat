@@ -39,7 +39,7 @@ public static class HandoffEndpoints
                 Secure = http.Request.IsHttps
                          || http.Request.Headers["X-Forwarded-Proto"] == "https"
             });
-            return Results.Json(new { site = new Uri(handoff.Url).Host });
+            return Results.Json(new { site = new Uri(handoff.Url).Host, canRemember = handoffs.CanRemember });
         });
 
         app.MapPost("/browse/handoff/done", async (HttpContext http, LoginHandoffs handoffs) =>
@@ -49,7 +49,7 @@ public static class HandoffEndpoints
                 return Results.Unauthorized();
             }
 
-            return await handoffs.CompleteAsync(handoff)
+            return await handoffs.CompleteAsync(handoff, await RememberAsync(http))
                 ? Results.NoContent()
                 : Results.StatusCode(StatusCodes.Status410Gone);
         });
@@ -73,6 +73,21 @@ public static class HandoffEndpoints
         });
 
         return app;
+    }
+
+    // Ticked unless the page said otherwise: remembering is the default.
+    private static async Task<bool> RememberAsync(HttpContext http)
+    {
+        try
+        {
+            using var body = await JsonDocument.ParseAsync(http.Request.Body);
+            return !body.RootElement.TryGetProperty("remember", out var remember)
+                   || remember.ValueKind != JsonValueKind.False;
+        }
+        catch (JsonException)
+        {
+            return true;
+        }
     }
 
     private static IResult Gone() =>
