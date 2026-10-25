@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Every existing tab protocol and browser integration test passes unchanged
-- [ ] A tab protocol test shows a URL open in one context is not reused for a browse addressed to another
-- [ ] A tab protocol test shows a popup is adopted into its opener's context
-- [ ] The browser's reconnect and stale-connection teardown handle more than one context
+- [x] Every existing tab protocol and browser integration test passes unchanged
+- [x] A tab protocol test shows a URL open in one context is not reused for a browse addressed to another
+- [x] A tab protocol test shows a popup is adopted into its opener's context
+- [x] The browser's reconnect and stale-connection teardown handle more than one context
