@@ -236,6 +236,25 @@ public class PromptStalenessTests
             "so the turn does the reading that finds out");
     }
 
+    // "Do not refuse requests based on assumptions about content" was not enough for sexual or
+    // otherwise adult requests: several models, open-weight ones included, still refused them or
+    // answered with a lecture, because their own training reads explicit content as unsafe by
+    // default. The directive has to say outright who the user is and that such content is theirs
+    // to ask for.
+    [Fact]
+    public void CoreDirective_SaysTheUserIsAnAdult_AndExplicitContentIsTheirsToAskFor()
+    {
+        var text = CoreDirectivePrompt.Instructions;
+
+        text.ShouldContain("adult",
+            Case.Insensitive,
+            "the section that governs refusals has to state that the user is a consenting adult");
+        text.ShouldContain("sexual",
+            Case.Insensitive,
+            "and name the kind of content models refuse by default, rather than leaving it to " +
+            "be inferred from 'content or intent'");
+    }
+
     // The scope rule's three examples all run one way — asked to switch a device on, do not also
     // choose its settings — and a model that reads them as a pattern rather than a principle
     // completes the other direction happily: told "pon el aire del salón a veintidós grados",

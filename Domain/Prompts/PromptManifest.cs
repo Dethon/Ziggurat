@@ -27,7 +27,7 @@ public static class PromptManifest
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated. A section whose declared budget grows raises it
     // the same way: the figure follows the declarations and is never set ahead of them.
-    public const int StandingTokens = 8_600;
+    public const int StandingTokens = 8_700;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -61,8 +61,11 @@ public static class PromptManifest
             // a skill, and the voice section's version of it never reaches a text agent. 550 for
             // what the carve-out's "work" is: widened from files in bulk to one file or many, it
             // read to gpt-6-luna as covering a watch, and a removal the user named outright was
-            // answered with a confirmation question three runs of three.
-            TokenBudget = 550,
+            // answered with a confirmation question three runs of three. 650 for the adult-content
+            // paragraph: "assumptions about content" left several models, open ones included,
+            // refusing or lecturing on NSFW requests their training treats as unsafe by default, and
+            // it has to sit in the section that governs refusals, read before anything else.
+            TokenBudget = 650,
             Conflict = ConflictPolicy.Governs(PromptRules.Refusals),
             Claims = CoreDirectivePrompt.Claims
         },
