@@ -36,7 +36,13 @@ public interface IMemoryStore
     Task<IReadOnlyList<string>> GetAllUserIdsAsync(CancellationToken ct = default);
 }
 
-public record MemorySearchResult(MemoryEntry Memory, double Relevance);
+// Relevance is what results are ranked by: similarity weighted by importance. Similarity is the
+// raw cosine a vector search measured, which is what says whether a memory is about the query at
+// all; null where the search measured none, as the keyword path does.
+public record MemorySearchResult(MemoryEntry Memory, double Relevance)
+{
+    public double? Similarity { get; init; }
+}
 
 public record MemoryStats(
     int TotalMemories,

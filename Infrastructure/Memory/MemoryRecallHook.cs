@@ -19,6 +19,13 @@ public record MemoryRecallOptions
     public bool IncludePersonalityProfile { get; init; } = true;
     public int WindowUserTurns { get; init; } = 3;
     public int RecallTailMessages { get; init; } = 200;
+
+    // The raw cosine a memory must reach to be recalled at all. Without it every turn carried its
+    // ten nearest memories however far they were: on eighty labelled prod turns (2026-10-26) the
+    // sixty-eight that needed no memory got ten each, and a porn search arrived beside "Likes game
+    // meat". At 0.40 with the instructed query those turns kept 36 irrelevant memories between
+    // them, and 14 of the 19 relevant ones survived — the misses were anime-history lists.
+    public double MinSimilarity { get; init; } = 0.40;
 }
 
 public class MemoryRecallHook(
@@ -32,6 +39,15 @@ public class MemoryRecallHook(
     MemoryRecallOptions options) : IMemoryRecallHook
 {
     public const string EmbeddingErrorService = "memory-embedding";
+
+    // Qwen3-Embedding searches with an instruction on the query and none on the documents, which
+    // is how the stored memories were embedded and stay. Recall alone is a query: extraction's
+    // duplicate check and dreaming's merge compare memory with memory, and the forget tool's
+    // search was calibrated bare, so none of them carries it. Changing these words moves every
+    // similarity the floor is held against — measure again before editing.
+    public const string QueryInstruction =
+        "Instruct: Given a person's message to their personal assistant, retrieve the stored facts "
+        + "about that person that would change how the assistant answers it\nQuery: ";
 
     public async Task EnrichAsync(
         ChatMessage message,
@@ -168,7 +184,7 @@ public class MemoryRecallHook(
             return [];
         }
 
-        var embeddingInput = BuildRecallWindowText(messageText, persisted, options.WindowUserTurns);
+        var embeddingInput = QueryInstruction + BuildRecallWindowText(messageText, persisted, options.WindowUserTurns);
 
         // Timed on its own so an operator can say how much of a recall was the embedding
         // round trip and how much was everything else, rather than inferring it from the
@@ -183,9 +199,16 @@ public class MemoryRecallHook(
         // An embedding outage costs the turn its recall block and nothing else. Throwing
         // here would carry the extraction enqueue below out with it, so an outage would stop
         // the write path too and everything said during it would be dropped for good.
-        return embedding is null
-            ? []
-            : await store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
+        if (embedding is null)
+        {
+            return [];
+        }
+
+        var found = await store.SearchAsync(userId, queryEmbedding: embedding, limit: options.DefaultLimit, ct: ct);
+
+        // A result with no measured similarity came from a search that took none, and is passed
+        // on as found rather than judged by a number it does not have.
+        return [.. found.Where(r => r.Similarity is not { } similarity || similarity >= options.MinSimilarity)];
     }
 
     // Never faults. It runs alongside the search rather than after it, so a search that

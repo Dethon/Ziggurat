@@ -90,7 +90,8 @@ public static class MemoryModule
             {
                 DefaultLimit = memoryConfig.GetValue("Recall:DefaultLimit", 10),
                 IncludePersonalityProfile = memoryConfig.GetValue("Recall:IncludePersonalityProfile", true),
-                WindowUserTurns = memoryConfig.GetValue("Recall:WindowUserTurns", 3)
+                WindowUserTurns = memoryConfig.GetValue("Recall:WindowUserTurns", 3),
+                MinSimilarity = memoryConfig.GetValue("Recall:MinSimilarity", 0.40)
             };
             services.AddSingleton(recallOptions);
 

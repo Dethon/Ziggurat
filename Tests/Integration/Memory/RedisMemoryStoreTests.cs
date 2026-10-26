@@ -315,6 +315,40 @@ public class RedisMemoryStoreTests(MemorySearchFixture redisFixture) : IClassFix
         results[0].Memory.Content.ShouldBe("Similar content"); // Higher similarity first
     }
 
+    // Recall holds a memory to a floor on how close it is, and Relevance cannot answer that: it is
+    // weighted by importance, so a far memory that matters scores like a near one that does not.
+    // The raw cosine is carried beside it, unweighted.
+    [Fact]
+    public async Task SearchAsync_WithEmbedding_CarriesTheUnweightedSimilarity()
+    {
+        var store = CreateStore();
+        var userId = $"user_{Guid.NewGuid():N}";
+        var vector = CreateTestEmbedding();
+        await store.StoreAsync(CreateMemory(userId, "Same direction", importance: 0.5, embedding: vector));
+        await store.StoreAsync(CreateMemory(userId, "Orthogonal", importance: 0.9,
+            embedding: CreateTestEmbedding(1.0f, 500)));
+
+        var results = await store.SearchAsync(userId, queryEmbedding: vector);
+
+        var same = results.Single(r => r.Memory.Content == "Same direction");
+        same.Similarity.ShouldNotBeNull().ShouldBe(1.0, tolerance: 0.001);
+        same.Relevance.ShouldBe(0.5, tolerance: 0.001);
+        results.Single(r => r.Memory.Content == "Orthogonal").Similarity.ShouldNotBeNull().ShouldBeLessThan(0.1);
+    }
+
+    // The keyword path measures no distance, so it has no similarity to report.
+    [Fact]
+    public async Task SearchAsync_WithoutEmbedding_ReportsNoSimilarity()
+    {
+        var store = CreateStore();
+        var userId = $"user_{Guid.NewGuid():N}";
+        await store.StoreAsync(CreateMemory(userId, "Tiene un gato"));
+
+        var results = await store.SearchAsync(userId, query: "gato");
+
+        results.ShouldHaveSingleItem().Similarity.ShouldBeNull();
+    }
+
     [Fact]
     public async Task SearchAsync_WithLimit_ReturnsLimitedResults()
     {

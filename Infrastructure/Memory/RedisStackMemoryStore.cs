@@ -276,7 +276,7 @@ public class RedisStackMemoryStore : IMemoryStore
         var similarity = 1.0 - distance;
         var weightedScore = memory is not null ? similarity * memory.Importance : 0;
 
-        return new MemorySearchResult(memory!, weightedScore);
+        return new MemorySearchResult(memory!, weightedScore) { Similarity = similarity };
     }
 
     private async Task EnsureIndexCreatedAsync()

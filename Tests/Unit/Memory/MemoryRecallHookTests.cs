@@ -649,7 +649,7 @@ public class MemoryRecallHookTests
 
         if (cause == ExtractionFallbackCause.ThreadStoreThrows)
         {
-            capturedEmbeddingInput.ShouldBe("hello");
+            capturedEmbeddingInput.ShouldBe(MemoryRecallHook.QueryInstruction + "hello");
         }
         else
         {
@@ -699,4 +699,128 @@ public class MemoryRecallHookTests
         request.Anchor.PersistedMessageCount.ShouldBe(500);
         _threadStateStore.Verify(s => s.GetMessagesAsync(It.IsAny<string>()), Times.Never);
     }
+
+    // Measured on prod (2026-10-26): with no floor, every turn carried its ten nearest memories
+    // however far they were, and a request for porn videos arrived beside "Likes game meat" and
+    // the user's partner. The floor is on the raw similarity the store measured, not on
+    // Relevance, which is weighted by importance and would let an important memory through for
+    // being important rather than for being about the turn.
+    [Fact]
+    public async Task EnrichAsync_DropsMemoriesBelowTheSimilarityFloor()
+    {
+        var message = new ChatMessage(ChatRole.User, "¿Cómo está el azúcar de Laura?");
+        SetUpSearchReturning(
+            Recalled("mem_near", "Laura tiene diabetes", similarity: 0.55),
+            Recalled("mem_far", "Likes game meat.", similarity: 0.31));
+
+        await CreateHook(new MemoryRecallOptions { MinSimilarity = 0.40 })
+            .EnrichAsync(message, "user1", "conv_1", null, CreateSessionWithStateKey("state-floor"), CancellationToken.None);
+
+        var context = message.GetMemoryContext();
+        context.ShouldNotBeNull();
+        context.Memories.Select(m => m.Memory.Id).ShouldBe(["mem_near"]);
+    }
+
+    // A turn nothing is about still carries the profile: on the voice path it is what says how
+    // the agent should speak to this person, and it was never a search result.
+    [Fact]
+    public async Task EnrichAsync_NothingAboveTheFloor_StillAttachesTheProfileAlone()
+    {
+        var message = new ChatMessage(ChatRole.User, "Apaga el aire.");
+        SetUpSearchReturning(Recalled("mem_far", "Likes game meat.", similarity: 0.22));
+        _store.Setup(s => s.GetProfileAsync("user1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new PersonalityProfile { UserId = "user1", Summary = "Prefiere respuestas breves", LastUpdated = DateTimeOffset.UtcNow });
+
+        await CreateHook(new MemoryRecallOptions { MinSimilarity = 0.40 })
+            .EnrichAsync(message, "user1", "conv_1", null, CreateSessionWithStateKey("state-floor"), CancellationToken.None);
+
+        var context = message.GetMemoryContext();
+        context.ShouldNotBeNull();
+        context.Memories.ShouldBeEmpty();
+        context.Profile.ShouldNotBeNull();
+    }
+
+    // Only the access timestamps of what was recalled are refreshed: a memory below the floor was
+    // not used, and refreshing it would keep it from ever ageing under the dreaming decay.
+    [Fact]
+    public async Task EnrichAsync_RefreshesAccessOnlyForMemoriesAboveTheFloor()
+    {
+        var message = new ChatMessage(ChatRole.User, "¿Cuánto pesa el gato?");
+        SetUpSearchReturning(
+            Recalled("mem_near", "Tiene un gato.", similarity: 0.62),
+            Recalled("mem_far", "Likes game meat.", similarity: 0.30));
+        _store.Setup(s => s.UpdateAccessAsync("user1", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        await CreateHook(new MemoryRecallOptions { MinSimilarity = 0.40 })
+            .EnrichAsync(message, "user1", "conv_1", null, CreateSessionWithStateKey("state-floor"), CancellationToken.None);
+
+        await Eventually.Until(
+            () => _store.Invocations.Any(i => i.Method.Name == nameof(IMemoryStore.UpdateAccessAsync)),
+            "the recalled memory's access is refreshed in the background");
+        await Eventually.Settle();
+        _store.Verify(s => s.UpdateAccessAsync("user1", "mem_near", It.IsAny<CancellationToken>()), Times.Once);
+        _store.Verify(s => s.UpdateAccessAsync("user1", "mem_far", It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // A store that searched without measuring a vector distance — the keyword path — has no
+    // similarity to hold against the floor, and what it found is passed on as found.
+    [Fact]
+    public async Task EnrichAsync_AResultWithNoMeasuredSimilarity_IsNotHeldToTheFloor()
+    {
+        var message = new ChatMessage(ChatRole.User, "¿Cuánto pesa el gato?");
+        SetUpSearchReturning(Recalled("mem_unmeasured", "Tiene un gato.", similarity: null));
+
+        await CreateHook(new MemoryRecallOptions { MinSimilarity = 0.40 })
+            .EnrichAsync(message, "user1", "conv_1", null, CreateSessionWithStateKey("state-floor"), CancellationToken.None);
+
+        message.GetMemoryContext()!.Memories.Select(m => m.Memory.Id).ShouldBe(["mem_unmeasured"]);
+    }
+
+    // Qwen3-Embedding is trained to search with an instruction on the query side and none on the
+    // document side. Measured on eighty prod turns, it took the irrelevant memories that clear a
+    // 0.40 floor from 69 to 36 ("pon un temporizador para la pasta" stopped reaching "le gusta
+    // TypeScript", 0.50 to 0.32). The stored memories were embedded bare and stay so.
+    [Fact]
+    public async Task EnrichAsync_EmbedsTheRecallWindowAsAnInstructedQuery()
+    {
+        var message = new ChatMessage(ChatRole.User, "pon un temporizador para la pasta");
+        string? captured = null;
+        _embeddingService
+            .Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<string, CancellationToken>((text, _) => captured = text)
+            .ReturnsAsync(_testEmbedding);
+        _store.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<float[]>(),
+                It.IsAny<IEnumerable<MemoryCategory>>(), It.IsAny<IEnumerable<string>>(), It.IsAny<double?>(),
+                It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        await _hook.EnrichAsync(message, "user1", "conv_1", null, CreateSessionWithStateKey("state-instruct"), CancellationToken.None);
+
+        captured.ShouldNotBeNull();
+        captured.ShouldStartWith("Instruct: ");
+        captured.ShouldEndWith("\nQuery: pon un temporizador para la pasta");
+    }
+
+    private void SetUpSearchReturning(params MemorySearchResult[] results)
+    {
+        _threadStateStore.Setup(s => s.GetMessageCountAsync(It.IsAny<string>())).ReturnsAsync(0L);
+        _threadStateStore.Setup(s => s.GetTailMessagesAsync(It.IsAny<string>(), It.IsAny<int>()))
+            .ReturnsAsync((ChatMessage[]?)null);
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_testEmbedding);
+        _store.Setup(s => s.SearchAsync("user1", null, _testEmbedding, null, null, null, 10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(results);
+    }
+
+    private static MemorySearchResult Recalled(string id, string content, double? similarity) =>
+        new(new MemoryEntry
+        {
+            Id = id, UserId = "user1", Category = MemoryCategory.Fact,
+            Content = content, Importance = 0.9, Confidence = 0.9,
+            CreatedAt = DateTimeOffset.UtcNow, LastAccessedAt = DateTimeOffset.UtcNow
+        }, (similarity ?? 0.5) * 0.9)
+        {
+            Similarity = similarity
+        };
 }
