@@ -39,10 +39,6 @@ services:
     ports:
       - "127.0.0.1:6011:8080"
 
-  mcp-channel-servicebus:
-    ports:
-      - "127.0.0.1:6012:8080"
-
   mcp-scheduling:
     ports:
       - "127.0.0.1:6013:8080"

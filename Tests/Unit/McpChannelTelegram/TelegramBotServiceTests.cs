@@ -118,7 +118,7 @@ public class TelegramBotServiceTests : IDisposable
     // waiting for a reply. Before that, the same scenario buffered the message and delivered it
     // late on the agent's next reconnect poll (the stable "channel-telegram" subscriber id survives
     // the disconnect). Telegram's own emit path has no way to signal failure back to the sender
-    // (unlike ServiceBus's broker-level abandon/redeliver, or Schedule/Library's durable record),
+    // (unlike Schedule/Library's durable record),
     // so buffering — not dropping — is the correct behavior here: the message must always reach the
     // inbox, regardless of whether anyone is known to be listening right now.
     [Fact]

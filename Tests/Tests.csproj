@@ -51,7 +51,6 @@
     <ProjectReference Include="..\Dashboard.Client\Dashboard.Client.csproj" />
     <ProjectReference Include="..\McpChannelSignalR\McpChannelSignalR.csproj" />
     <ProjectReference Include="..\McpChannelTelegram\McpChannelTelegram.csproj" />
-    <ProjectReference Include="..\McpChannelServiceBus\McpChannelServiceBus.csproj" />
     <ProjectReference Include="..\McpChannelVoice\McpChannelVoice.csproj" />
     <ProjectReference Include="..\McpServerScheduling\McpServerScheduling.csproj" />
     <ProjectReference Include="..\McpServerTimers\McpServerTimers.csproj" />

@@ -36,10 +36,10 @@ public class ChannelServerExtensionsTests
             .ShouldContain(ChannelProtocol.ReceiveTool);
     }
 
-    // McpChannelTelegram and McpChannelServiceBus reference Domain and this project alone. A
-    // reference from here to Infrastructure would hand both of them a browser automation library,
-    // a cache client, a printing library, a console UI toolkit and the whole agent stack as
-    // transitive dependencies, and nothing else in the build would object.
+    // A server takes Infrastructure only when it needs one of its adapters, and says why. A
+    // reference from here would make that choice for every server at once, handing each a browser
+    // automation library, a cache client, a printing library, a console UI toolkit and the whole
+    // agent stack as transitive dependencies, and nothing else in the build would object.
     [Fact]
     public void McpHosting_ReferencesNothingFromInfrastructure() =>
         typeof(ChannelServerExtensions).Assembly

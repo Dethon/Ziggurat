@@ -10,7 +10,7 @@ paths:
 
 `Mcp.Hosting` holds what being an MCP server means, so no server hand-writes it. The project
 references Domain, the MCP server package and the configuration binder alone, never Infrastructure —
-the ServiceBus channel server depends on Domain only and must stay that way. A server that needs an
+a reference there would hand every server Infrastructure's whole stack. A server that needs an
 Infrastructure adapter takes the reference itself and says why (Telegram dictates, so it holds the
 shared transcription client); `Mcp.Hosting` must never make that choice on a server's behalf.
 
@@ -28,8 +28,8 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   `--jailed` somebody typed. `McpServerTableTests` names that exemption by file; nothing else may
   copy it. Nested sections bind through
   the plain call. A `required` member that bound to null fails startup naming it; **null only, never
-  empty** — six shipped servers carry required members that ship as `""` and are filled from secrets
-  (ServiceBus, Telegram, WebSearch, HomeAssistant, Idealista, Library).
+  empty** — five shipped servers carry required members that ship as `""` and are filled from secrets
+  (Telegram, WebSearch, HomeAssistant, Idealista, Library).
 - **`IServiceCollection.AddMcpHost(settings)`** is the four things every server has: the settings
   singleton, the server, the HTTP transport and the gate on `/mcp`. All fourteen use it.
 - **Every `/mcp` asks for a secret, and the host installs the gate, not the server.** A tool

@@ -217,7 +217,7 @@ public sealed class TelegramBotService : BackgroundService
             }
         }
 
-        // Unlike ServiceBus (broker-level abandon/redeliver) or Schedule/Library (a durable record
+        // Unlike Schedule/Library (a durable record
         // that simply stays due), Telegram has no channel-level way to signal "try again later" back
         // to the sender — so nothing here gates on liveness. The buffer-always policy targets the
         // well-known "channel-telegram" subscriber id and creates its queue on demand, so buffering

@@ -15,7 +15,6 @@
         "Docker: MCP Sandbox",
         "Docker: MCP Channel SignalR",
         "Docker: MCP Channel Telegram",
-        "Docker: MCP Channel ServiceBus",
         "Docker: MCP Channel Voice",
         "Docker: MCP Scheduling",
         "Docker: MCP Printer",
@@ -38,7 +37,6 @@
         "Local: MCP Sandbox",
         "Local: MCP Channel SignalR",
         "Local: MCP Channel Telegram",
-        "Local: MCP Channel ServiceBus",
         "Local: MCP Channel Voice",
         "Local: MCP Scheduling",
         "Local: MCP Printer",
@@ -359,19 +357,6 @@
       }
     },
     {
-      "name": "Local: MCP Channel ServiceBus",
-      "type": "coreclr",
-      "request": "launch",
-      "program": "${workspaceFolder}/McpChannelServiceBus/bin/Debug/net10.0/McpChannelServiceBus.dll",
-      "cwd": "${workspaceFolder}/McpChannelServiceBus",
-      "env": {
-        "DOTNET_ENVIRONMENT": "Local",
-        "MCP__SHAREDSECRET": "local-mcp-secret",
-        "MCP__SECRETS__localhost": "local-mcp-secret",
-        "ASPNETCORE_URLS": "http://localhost:6012"
-      }
-    },
-    {
       "name": "Local: MCP Channel Voice",
       "type": "coreclr",
       "request": "launch",
@@ -432,21 +417,6 @@
         "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6016",
         "VoiceHub__BaseUrl": "http://localhost:6015"
-      }
-    },
-    {
-      "name": "Docker: MCP Channel ServiceBus",
-      "type": "coreclr",
-      "request": "attach",
-      "processId": 1,
-      "pipeTransport": {
-        "pipeProgram": "docker",
-        "pipeArgs": ["exec", "-i", "mcp-channel-servicebus"],
-        "debuggerPath": "/remote_debugger/vsdbg",
-        "quoteArgs": false
-      },
-      "sourceFileMap": {
-        "/src": "${workspaceFolder}"
       }
     },
     {

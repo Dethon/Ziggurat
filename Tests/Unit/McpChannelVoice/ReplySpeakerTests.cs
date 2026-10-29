@@ -228,7 +228,7 @@ public class ReplySpeakerTests
         // Faulted agent run as ChatMonitor emits it: buffered Text (never isComplete) -> Error
         // (isComplete=false) -> trailing StreamComplete. The partial answer and the error must be
         // spoken together, in order, as a SINGLE utterance — never the error first with the leftover
-        // partial spoken after it (the divergence from the Telegram/ServiceBus flush-on-error contract).
+        // partial spoken after it (the divergence from the Telegram flush-on-error contract).
         Say(_speaker, "El tiempo es", ReplyContentType.Text, false);
         Say(_speaker, "boom", ReplyContentType.Error, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);

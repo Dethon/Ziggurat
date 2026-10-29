@@ -42,7 +42,6 @@ SERVICES=(
   "homeassistant|McpServerHomeAssistant|6006|no|no||"
   "signalr|McpChannelSignalR|6010|yes|no||"
   "telegram|McpChannelTelegram|6011|no|no||"
-  "servicebus|McpChannelServiceBus|6012|no|no||"
   "scheduling|McpServerScheduling|6013|no|no|RedisConnectionString=localhost:6379,password=local-redis-password|"
   "printer|McpServerPrinter|6014|no|no|SPOOLPATH=$ROOT/McpServerPrinter/.spool|"
   "voice|McpChannelVoice|6015|yes|yes|RedisConnectionString=localhost:6379,password=local-redis-password;Satellites__kitchen-01__Identity=household;Satellites__kitchen-01__Room=Kitchen;Satellites__kitchen-01__WakeWord=hey_jarvis;Satellites__kitchen-01__Address=tcp://127.0.0.1:10800|"
