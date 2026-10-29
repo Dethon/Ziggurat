@@ -4,6 +4,8 @@ paths:
   - "Tests/Integration/Accounts/**"
   - "Tests/Integration/Fixtures/AccountsServer.cs"
   - "Agent/App/AgentApi.cs"
+  - "Infrastructure/Clients/Accounts/**"
+  - "Domain/Contracts/IAccountResolver.cs"
 ---
 
 # The accounts service
@@ -54,6 +56,16 @@ SexyTime (the `sexytime` upstream, not in this repo) is behind the same check: `
 
 `GET /accounts/me` answers a valid session with JSON `{ userId, tenantId, displayName, avatarUrl, roles }`, `no-store`, and anything else with 401 — never a redirect, since the asker is an app's script. It sits under `/accounts/*`, so it is **not** behind the session check: the chat client reaches it same-origin on the main host, where the proxy routes `/accounts/*`, with the session cookie riding along; another host's app needs that route too, or asks across origins with credentials. The chat client names and draws its person from it, and a 401 is what sends the page to sign in.
 
+## Resolving a channel identity
+
+`POST /accounts/internal/resolve` (`Internal/IdentityResolution`) is how a channel server learns whose account the identity it saw is: `{ channel, identity }` answered `{ tenantId, userId, displayName }`, or 404 for an identity nobody holds. `signalr` and `voice` identities are the account's own id (the chat client's turns carry the id the session check named; a voice profile is named after its user id), `telegram` is a linked numeric id and answers 404 until the bot writes the linked-identity rows, and any other channel is 400. It is **server to server only**:
+
+- A caller presents `Authorization: Bearer <credential>`, matched against every `Callers` entry (`CALLERS__<host>`), and anything else is 401 before a row is read. The credential is the one the caller already holds for its own `/mcp` — compose feeds `CALLERS__mcp-channel-signalr` the same `${MCP_SECRET_CHANNEL_SIGNALR}` that server's `MCP__SHAREDSECRET` reads, and likewise Telegram, voice and Sugary — so no secret exists for this alone; `DeploymentConformanceTests` holds each entry to its server's variable. An empty entry admits nobody. Any listed caller may ask about any channel: Sugary is a caller and not a channel, and nothing here needs a caller confined to its own.
+- The comparison is `Internal/CallerCredential`, `Domain.Security.SharedSecret`'s rule spelled again because this service references no project; `CallerCredentialTests` holds the two to the same answers.
+- Every Caddy host that reaches this service answers `handle /accounts/internal/*` with `respond 404` **before** `/accounts/*` (conformance-checked), so a browser never reaches it; a new host routing `/accounts/*` needs the same block.
+
+The client every channel server shares is `IAccountResolver` (`Domain/Contracts`), implemented by `AccountsResolverClient` (`Infrastructure/Clients/Accounts`, registered by `AddAccountResolver(config, ownMcpCredential)`, `Accounts:BaseUrl` defaulting to `http://accounts:8080`): null is nobody, and a call the service could not answer throws, so a caller never takes an outage for a stranger.
+
 ## Ceremonies
 
 Fido2 (`Fido2`/`Fido2.AspNet`): discoverable credentials (resident key required), user verification preferred, attestation none, the relying party the parent domain (`WebAuthn:RelyingPartyId`) and `AllowedOrigins` the ceremony's accepted origins. Sign-in sends no allowed credentials, and the assertion's user handle — the UTF-8 of the user id — says whose passkey it is. A ceremony's options are held server-side between its two requests (`CeremonyStore`, in memory, five minutes, taken once), because the finish must be checked against the challenge the server issued. The pages are server-rendered with one script (`PasskeyScript`), which converts base64url by hand rather than with `parseCreationOptionsFromJSON`, absent from older phone browsers; they send a strict CSP and `no-referrer`, since the enrollment page's address carries its token.
@@ -64,7 +76,7 @@ Fido2 (`Fido2`/`Fido2.AspNet`): discoverable credentials (resident key required)
 
 ## Configuration and time
 
-Per-deployment values are compose environment entries, not secrets: `WEBAUTHN__RELYINGPARTYID`, `ALLOWEDORIGINS__n`, `SESSIONCOOKIE__DOMAIN`, `PUBLICBASEURL` (links and the sign-in redirect are built on it); `DeploymentConformanceTests` checks they describe hosts the Caddyfile serves. Missing ones refuse startup. `Telegram:BotUsername` (`TELEGRAM__BOTUSERNAME`) is per-deployment too, but optional: empty shows the bare code. The service needs no secret yet. Its clock is `AccountsClock`, a type of its own rather than the container's `TimeProvider`, so a test moves the service's time without moving Kestrel's.
+Per-deployment values are compose environment entries, not secrets: `WEBAUTHN__RELYINGPARTYID`, `ALLOWEDORIGINS__n`, `SESSIONCOOKIE__DOMAIN`, `PUBLICBASEURL` (links and the sign-in redirect are built on it); `DeploymentConformanceTests` checks they describe hosts the Caddyfile serves. Missing ones refuse startup. `Telegram:BotUsername` (`TELEGRAM__BOTUSERNAME`) is per-deployment too, but optional: empty shows the bare code. The service has no secret of its own; its `CALLERS__<host>` are its callers' existing credentials (above), and a host run takes them from the launch configuration as `local-mcp-secret`. Its clock is `AccountsClock`, a type of its own rather than the container's `TimeProvider`, so a test moves the service's time without moving Kestrel's.
 
 ## Tests
 

@@ -1,5 +1,6 @@
 using Domain.DTOs;
 using Domain.Security;
+using Infrastructure.Clients.Accounts;
 using Mcp.Hosting;
 
 namespace McpChannelSignalR.Settings;
@@ -17,6 +18,10 @@ public record ChannelSettings : IMcpHostSettings
     public WebPushConfig? WebPush { get; init; }
     public AttachmentSettings Attachments { get; init; } = new();
     public DictationSettings Dictation { get; init; } = new();
+
+    // The accounts service, asked the name of each connection's account with this server's own
+    // credential (Mcp:SharedSecret).
+    public AccountsClientConfig Accounts { get; init; } = new();
 
     // The same block the Agent host binds, so the two processes writing topics agree about how
     // long a conversation lives and where the archive begins.

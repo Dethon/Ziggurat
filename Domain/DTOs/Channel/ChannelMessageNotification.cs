@@ -14,8 +14,10 @@ public record ChannelMessageNotification
     public string? UserId { get; init; }
     // Who the turn acts for, as the channel that vouched for them (Principal): stamped by a server
     // that fires on somebody's behalf from the turn that set it going, never from what the model
-    // wrote. Null on a person's own message, whose channel is the voucher, and on a fire nobody's
-    // own turn stands behind.
+    // wrote, and by a channel that knows the person's account on their own message (the chat
+    // client, from the proxy's session check), so the account rides with it. Null on a person's own
+    // message from a channel that knows no account yet, whose channel and sender are the voucher, and
+    // on a fire nobody's own turn stands behind.
     public Principal? Principal { get; init; }
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }

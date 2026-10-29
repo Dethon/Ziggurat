@@ -1,3 +1,5 @@
+using Domain.DTOs.Channel;
+
 namespace Domain.Security;
 
 // Who the proxy's session check says a request is from: the accounts service answers forward_auth
@@ -15,6 +17,10 @@ public sealed record ForwardedAccount(string UserId, string TenantId, IReadOnlyL
     public const string RolesHeader = "X-Ziggurat-Roles";
 
     public static IReadOnlyList<string> Headers { get; } = [UserHeader, TenantHeader, RolesHeader];
+
+    // A turn this person sent on a channel behind the proxy: the account the check named, and the
+    // account's id as the channel's own name for them, since such a channel knows them by nothing else.
+    public Principal PrincipalOn(string channelId) => new(channelId, UserId, new Account(TenantId, UserId));
 
     // All three or nobody: the check always answers all three, so a request carrying fewer did not
     // come through it.

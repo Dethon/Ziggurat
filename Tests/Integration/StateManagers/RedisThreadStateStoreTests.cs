@@ -209,6 +209,38 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         read.Attachments!.Single().MediaType.ShouldBe("application/pdf");
     }
 
+    // A chat-client turn's sender is the name its account goes by, but the client tells its own
+    // messages from others' by the account's id, so a person's own message is read back under the
+    // account it acted for. A fire's message is nobody's own, whoever's account it runs as, and a
+    // message from a channel that knows no account is read back under its sender.
+    [Fact]
+    public async Task GetHistoryAsync_APersonsOwnMessage_IsReadBackUnderTheAccountItActedFor()
+    {
+        var store = NewStore();
+        var account = new Account("t-1", "u-1");
+        var own = Sent("hello", "Fran", new ConversationContext(
+            "jack", "903:0", "Fran", new ReplyTarget("signalr", "903:0"),
+            Principal: new Principal("signalr", "u-1", account)));
+        var fire = Sent("check my orders", "scheduler", new ConversationContext(
+            "jack", "903:0", "fran", new ReplyTarget("signalr", "903:0"),
+            OriginKind: MessageOriginKind.Schedule, Principal: new Principal("signalr", "u-1", account)));
+        var telegram = Sent("hola", "FranTG", new ConversationContext(
+            "jack", "903:0", "FranTG", new ReplyTarget("telegram", "903:0")));
+
+        await store.AppendMessagesAsync(HistoryKey("agent-sender", 903), [own, fire, telegram]);
+
+        (await store.GetHistoryAsync("agent-sender", 903, 0)).Select(h => h.SenderId)
+            .ShouldBe(["u-1", "scheduler", "FranTG"]);
+    }
+
+    private static ChatMessage Sent(string text, string sender, ConversationContext context)
+    {
+        var message = new ChatMessage(ChatRole.User, text);
+        message.SetSenderId(sender);
+        message.SetConversationContext(context);
+        return message;
+    }
+
     // A topic driven by voice or by a schedule has no browser writing its last-message time, so
     // before this it sorted and aged by when it was created however much was said in it.
     [Fact]

@@ -122,6 +122,21 @@ public class ChatMonitorConversationContextTests
         context.Principal.ShouldBe(new Principal("telegram", "FranTG"));
     }
 
+    // A channel that knows the person's account stamps it on their own message, and the turn acts
+    // for that account rather than for the sender label the channel shows.
+    [Fact]
+    public void BuildConversationContext_APersonsStampedPrincipal_KeepsItsAccount()
+    {
+        var stamped = new Principal("signalr", "u-1", new Account("t-1", "u-1"));
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "7:42", channelId: "signalr", agentId: "jonas") with
+        { Sender = "Fran", UserId = null, Principal = stamped };
+
+        var context = DeliveryTargetResolver.BuildConversationContext(message, []);
+
+        context.Principal.ShouldBe(stamped);
+    }
+
     // A fire's principal is the one its server stamped from the turn that set it going; its
     // userId and its delivery channel are no evidence of who that was.
     [Fact]

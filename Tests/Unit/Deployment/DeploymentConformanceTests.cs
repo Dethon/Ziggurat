@@ -206,6 +206,54 @@ public class DeploymentConformanceTests
         host.Routes.ShouldContain(r => r.Matcher == "/accounts/*" && r.Upstream == "accounts:8080");
     }
 
+    // Who holds which identity is asked server to server and never by a browser: every host that
+    // reaches the accounts service answers its internal API 404 first, before the accounts route
+    // could hand the path on.
+    [Fact]
+    public void TheAccountsInternalApi_IsAnswered404OnEveryHostThatReachesTheService()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts
+            .Where(h => h.Routes.Any(r => r.Upstream == "accounts:8080"))
+            .ToList();
+
+        hosts.ShouldNotBeEmpty();
+        hosts.ShouldAllBe(h => h.Routes.Any(r => r.Matcher == "/accounts/internal/*"), "a host routes the internal API");
+        foreach (var host in hosts)
+        {
+            var routes = host.Routes.ToList();
+            var refusal = routes.FindIndex(r => r.Matcher == "/accounts/internal/*");
+            routes[refusal].Upstream.ShouldBeNull();
+            routes[refusal].Body.ShouldContain("respond 404");
+            refusal.ShouldBeLessThan(routes.FindIndex(r => r.Upstream == "accounts:8080"), host.Name);
+        }
+    }
+
+    // A server asks the accounts service with the credential it already holds for its own /mcp, so
+    // each caller the service admits is fed exactly the variable that server's own gate reads.
+    [Theory]
+    [InlineData("mcp-channel-signalr")]
+    [InlineData("mcp-channel-telegram")]
+    [InlineData("mcp-channel-voice")]
+    [InlineData("mcp-sugary")]
+    public void TheAccountsServicesCallers_PresentTheirOwnMcpCredential(string caller)
+    {
+        var compose = DeploymentFiles.Compose();
+
+        compose.Service("accounts").Environment.GetValueOrDefault($"CALLERS__{caller}")
+            .ShouldBe(compose.Service(caller).Environment["MCP__SHAREDSECRET"]);
+    }
+
+    [Fact]
+    public void TheAccountsService_AdmitsNoCallerThatIsNotADeploymentServer()
+    {
+        var compose = DeploymentFiles.Compose();
+
+        compose.Service("accounts").Environment.Keys
+            .Where(k => k.StartsWith("CALLERS__", StringComparison.Ordinal))
+            .Select(k => k["CALLERS__".Length..])
+            .ShouldAllBe(caller => compose.Services.ContainsKey(caller));
+    }
+
     // Memory text and usage per person are the operator's alone: every request to the dashboard is
     // checked for the operator's session first, and the identity the check answers is what the
     // dashboard is handed.

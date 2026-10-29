@@ -38,6 +38,14 @@ public sealed class ChatHub(
     // also what says it may call anything (RegisteredConnectionFilter).
     internal const string AccountItem = "Account";
 
+    // Where it keeps the name that account goes by, asked of the accounts service as it arrived;
+    // absent when the service could not say.
+    internal const string DisplayNameItem = "DisplayName";
+
+    // This channel's own name, as the agent's channel endpoints call it and as a principal names the
+    // channel that vouched for it.
+    internal const string ChannelId = "signalr";
+
     private string? CurrentSpaceSlug =>
         Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
 
@@ -45,6 +53,14 @@ public sealed class ChatHub(
     private ForwardedAccount Account => (ForwardedAccount)Context.Items[AccountItem]!;
 
     private string RegisteredUserId => Account.UserId;
+
+    // Who a turn sent from here acts for: the account itself, never the name, which only labels it.
+    private Principal TurnPrincipal => Account.PrincipalOn(ChannelId);
+
+    // What a turn's sender shows the agent: the account's name, or its id when no name was learned.
+    private string TurnSender => Context.Items.TryGetValue(DisplayNameItem, out var name) && name is string { Length: > 0 } shown
+        ? shown
+        : Account.UserId;
 
     public IReadOnlyList<AgentCatalogEntry> GetAgents()
     {
@@ -223,7 +239,8 @@ public sealed class ChatHub(
             new ChannelMessageNotification
             {
                 ConversationId = conversationId,
-                Sender = userId,
+                Sender = TurnSender,
+                Principal = TurnPrincipal,
                 Content = message,
                 AgentId = session.AgentId,
                 ConfigPatch = configPatch,
@@ -287,7 +304,8 @@ public sealed class ChatHub(
         var delivered = await notificationEmitter.EmitAsync(new ChannelMessageNotification
         {
             ConversationId = conversationId,
-            Sender = userId,
+            Sender = TurnSender,
+            Principal = TurnPrincipal,
             Content = message,
             AgentId = session.AgentId,
             ConfigPatch = configPatch,

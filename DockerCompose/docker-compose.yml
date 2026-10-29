@@ -963,6 +963,13 @@ services:
       ALLOWEDORIGINS__3: https://assistants-dashboard.herfluffness.com
       SESSIONCOOKIE__DOMAIN: .herfluffness.com
       PUBLICBASEURL: https://assistants.herfluffness.com
+      # The servers that may ask whose account an identity is, each by the credential it already
+      # holds for its own /mcp, so no secret exists for this alone. Caddy answers the internal API
+      # 404 from outside.
+      CALLERS__mcp-channel-signalr: ${MCP_SECRET_CHANNEL_SIGNALR}
+      CALLERS__mcp-channel-telegram: ${MCP_SECRET_CHANNEL_TELEGRAM}
+      CALLERS__mcp-channel-voice: ${MCP_SECRET_CHANNEL_VOICE}
+      CALLERS__mcp-sugary: ${MCP_SECRET_SUGARY}
     networks:
       - jackbot
     depends_on:
