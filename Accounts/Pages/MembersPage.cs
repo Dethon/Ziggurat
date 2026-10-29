@@ -1,14 +1,16 @@
 using Accounts.Links;
 using Accounts.Members;
 using Accounts.Sessions;
+using Accounts.Settings;
 using Accounts.Store;
 
 namespace Accounts.Pages;
 
 // The household as its owners manage it: everyone in it with their role, the operator flag and the
 // permission to see every conversation; inviting somebody new; a recovery link for someone who lost
-// every passkey; changing roles; granting and withdrawing the permission. A member is refused it.
-public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore links)
+// every passkey; changing roles; granting and withdrawing the permission; a code that binds a
+// Telegram group to the household. A member is refused it.
+public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore links, AccountsSettings settings)
 {
     public const string Path = "/members";
     public const string Url = AccountsApp.PathBase + Path;
@@ -25,6 +27,7 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
             (string id, HttpContext http, MembersPage page, CancellationToken ct) => page.ChangeRoleAsync(http, id, ct));
         accounts.MapPost(Path + "/{id}/sees-all",
             (string id, HttpContext http, MembersPage page, CancellationToken ct) => page.SeesAllAsync(http, id, ct));
+        accounts.MapPost(Path + "/telegram-group", (HttpContext http, MembersPage page, CancellationToken ct) => page.GroupCodeAsync(http, ct));
     }
 
     private async Task<IResult> ShowAsync(HttpContext http, CancellationToken ct)
@@ -52,7 +55,35 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
         }
 
         var invite = await links.MintInviteAsync(viewer.TenantId, viewer.UserId, displayName, role, ct);
-        return await RenderAsync(http, viewer, Issued($"An invite for {displayName}, as {Name(role)}", invite.Url, invite.ExpiresAt),
+        return await RenderAsync(http, viewer,
+            Issued($"An invite for {displayName}, as {Name(role)}", invite.Url, invite.ExpiresAt, InTelegram(invite.Token)),
+            StatusCodes.Status200OK, ct);
+    }
+
+    // The same invite redeemed in Telegram instead of a browser, for somebody who never uses the web:
+    // its token is the bot's start parameter, and the bot links the Telegram that sends it.
+    private string InTelegram(string token) =>
+        settings.Telegram.DeepLink(token) is { } deepLink
+            ? $"""<p>Or, for someone who only uses Telegram, open it there: <a data-telegram-link href="{deepLink}">{deepLink}</a></p>"""
+            : $"""<p>Or, for someone who only uses Telegram, send the deployment's bot <code data-telegram-start>/start {token}</code> from it.</p>""";
+
+    // Shown once, like an invite: only its hash is kept.
+    private async Task<IResult> GroupCodeAsync(HttpContext http, CancellationToken ct)
+    {
+        var (viewer, refusal) = await guard.CheckAsync(http, Url, ownersOnly: true, ct);
+        if (viewer is null)
+        {
+            return refusal!;
+        }
+
+        var code = await links.MintGroupCodeAsync(viewer.TenantId, viewer.UserId, ct);
+        return await RenderAsync(http, viewer,
+            $"""
+             <section class="notice" aria-label="New group code">
+               <p>Add the bot to the group, then send this there. It works once, until {AccountsPages.Date(code.ExpiresAt)}, and is not shown again.</p>
+               <p><code data-bind-command>/bind {code.Code}</code></p>
+             </section>
+             """,
             StatusCodes.Status200OK, ct);
     }
 
@@ -173,16 +204,23 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
                    <button type="submit">Create invite</button>
                  </form>
                </section>
+
+               <section aria-labelledby="telegram-group">
+                 <h2 id="telegram-group">Telegram groups</h2>
+                 <p>In a group bound to the household, its linked members' messages to the bot are their own turns. The bot answers nobody in a group that is not.</p>
+                 <form method="post" action="{Url}/telegram-group">{form}<button type="submit">Bind a Telegram group</button></form>
+               </section>
              </main>
              """,
             status);
     }
 
-    private static string Issued(string what, Uri url, DateTimeOffset expiresAt) =>
+    private static string Issued(string what, Uri url, DateTimeOffset expiresAt, string? alternative = null) =>
         $"""
          <section class="notice" aria-label="New link">
            <p>{AccountsPages.Encode(what)}, good once until {AccountsPages.Date(expiresAt)}. Send it to them; it is not shown again.</p>
            <p><a data-link href="{url}">{url}</a></p>
+           {alternative}
          </section>
          """;
 
