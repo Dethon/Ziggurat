@@ -1,7 +1,7 @@
 [
   {
     "label": "docker-debug-up",
-    "command": "DC='docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.debug.yml -f DockerCompose/docker-compose.override.ports.yml -f DockerCompose/docker-compose.override.no-dri.yml -p jackbot'; SERVICES='agent webui observability mcp-vault mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-sandbox mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer mcp-timers tse-extractor lemonade qbittorrent jackett redis camoufox homeassistant'; docker volume inspect jackbot_vsdbg > /dev/null 2>&1 || $DC run --rm vsdbg-install && $DC build base-sdk && $DC up -d --build $SERVICES && until docker exec agent ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
+    "command": "REDIS_PASSWORD=${REDIS_PASSWORD:-local-redis-password} DC='docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.debug.yml -f DockerCompose/docker-compose.override.ports.yml -f DockerCompose/docker-compose.override.no-dri.yml -p jackbot'; SERVICES='agent webui observability mcp-vault mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-sandbox mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer mcp-timers tse-extractor lemonade qbittorrent jackett redis camoufox homeassistant'; docker volume inspect jackbot_vsdbg > /dev/null 2>&1 || $DC run --rm vsdbg-install && $DC build base-sdk && $DC up -d --build $SERVICES && until docker exec agent ls /remote_debugger/vsdbg > /dev/null 2>&1; do sleep 1; done",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
@@ -9,7 +9,7 @@
   },
   {
     "label": "local-deps",
-    "command": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot up -d --build qbittorrent jackett redis camoufox homeassistant",
+    "command": "REDIS_PASSWORD=${REDIS_PASSWORD:-local-redis-password} docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot up -d --build qbittorrent jackett redis camoufox homeassistant",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
@@ -17,7 +17,7 @@
   },
   {
     "label": "build-all-local",
-    "command": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot up -d --build qbittorrent jackett redis camoufox homeassistant && dotnet build Ziggurat.sln -c Debug",
+    "command": "REDIS_PASSWORD=${REDIS_PASSWORD:-local-redis-password} docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot up -d --build qbittorrent jackett redis camoufox homeassistant && dotnet build Ziggurat.sln -c Debug",
     "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
