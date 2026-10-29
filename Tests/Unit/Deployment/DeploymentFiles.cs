@@ -175,7 +175,23 @@ public sealed record ComposeService(
 // to, and its whole body, so a check can ask what else stands in front of the upstream.
 public sealed record CaddyRoute(string? Matcher, string? Upstream, string Body);
 
-public sealed record CaddyHost(string Name, IReadOnlyList<CaddyRoute> Routes, string Body);
+// A host's session check: where forward_auth asks, the path it asks on, and the headers of the
+// answer it copies onto the request the host then proxies. Only the block form can copy headers.
+public sealed record CaddyForwardAuth(string Upstream, string? Uri, IReadOnlyList<string> CopiedHeaders)
+{
+    public static CaddyForwardAuth Of(string header, string body)
+    {
+        var settings = body.Split('\n')
+            .Select(l => l.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .ToList();
+        return new CaddyForwardAuth(
+            header["forward_auth".Length..].Trim(),
+            settings.FirstOrDefault(s => s is ["uri", _])?[1],
+            [.. settings.Where(s => s.FirstOrDefault() == "copy_headers").SelectMany(s => s.Skip(1))]);
+    }
+}
+
+public sealed record CaddyHost(string Name, IReadOnlyList<CaddyRoute> Routes, string Body, CaddyForwardAuth? ForwardAuth);
 
 public sealed record CaddyConfig(IReadOnlyList<CaddyHost> Hosts)
 {
@@ -190,12 +206,20 @@ public sealed record CaddyConfig(IReadOnlyList<CaddyHost> Hosts)
             .Where(l => !l.TrimStart().StartsWith('#'))
             .ToList();
         return new CaddyConfig([.. Blocks(lines, 0, lines.Count)
-            .Select(b => new CaddyHost(
-                b.Header,
-                [.. Blocks(lines, b.Start + 1, b.End)
-                    .Where(r => r.Header.StartsWith("handle", StringComparison.Ordinal))
-                    .Select(r => RouteOf(r.Header, Text(lines, r.Start + 1, r.End)))],
-                Text(lines, b.Start + 1, b.End)))]);
+            .Select(b =>
+            {
+                var children = Blocks(lines, b.Start + 1, b.End).ToList();
+                return new CaddyHost(
+                    b.Header,
+                    [.. children
+                        .Where(r => r.Header.StartsWith("handle", StringComparison.Ordinal))
+                        .Select(r => RouteOf(r.Header, Text(lines, r.Start + 1, r.End)))],
+                    Text(lines, b.Start + 1, b.End),
+                    children
+                        .Where(r => r.Header.StartsWith("forward_auth ", StringComparison.Ordinal))
+                        .Select(r => CaddyForwardAuth.Of(r.Header, Text(lines, r.Start + 1, r.End)))
+                        .SingleOrDefault());
+            })]);
     }
 
     private static CaddyRoute RouteOf(string header, string body)
