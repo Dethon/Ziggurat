@@ -964,6 +964,7 @@ services:
       ALLOWEDORIGINS__0: https://assistants.herfluffness.com
       ALLOWEDORIGINS__1: https://sexy.herfluffness.com
       ALLOWEDORIGINS__2: https://sugary.herfluffness.com
+      ALLOWEDORIGINS__3: https://assistants-dashboard.herfluffness.com
       SESSIONCOOKIE__DOMAIN: .herfluffness.com
       PUBLICBASEURL: https://assistants.herfluffness.com
     networks:

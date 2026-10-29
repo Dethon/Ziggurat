@@ -201,6 +201,22 @@ public class DeploymentConformanceTests
         host.Routes.ShouldContain(r => r.Matcher == "/accounts/*" && r.Upstream == "accounts:8080");
     }
 
+    // Memory text and usage per person are the operator's alone: every request to the dashboard is
+    // checked for the operator's session first, and the identity the check answers is what the
+    // dashboard is handed.
+    [Fact]
+    public void TheDashboard_AdmitsOnlyTheOperatorsSession()
+    {
+        var host = DeploymentFiles.Caddyfile().Host("assistants-dashboard.herfluffness.com");
+
+        host.ForwardAuth.ShouldNotBeNull();
+        host.ForwardAuth.Upstream.ShouldBe("accounts:8080");
+        host.ForwardAuth.Uri.ShouldBe("/accounts/verify?role=operator");
+        host.ForwardAuth.CopiedHeaders.ShouldBe(["X-Ziggurat-User", "X-Ziggurat-Tenant", "X-Ziggurat-Roles"]);
+        host.Routes.ShouldNotBeEmpty();
+        host.Routes.ShouldAllBe(r => r.Upstream == "observability:8080");
+    }
+
     [Fact]
     public void TheAccountsService_KeepsItsStoreInAVolumeOfItsOwnThatItsUserOwns()
     {

@@ -48,6 +48,16 @@ assistants-dashboard.herfluffness.com {
         dns cloudflare {env.CF_API_TOKEN}
     }
 
+    # Memory text and usage per person are the operator's: every request is checked for the
+    # operator's session first. A member is refused, a signed-out page is sent to sign-in on the main
+    # host and back. copy_headers deletes each named header from the request before setting it from
+    # the check's answer, so a client cannot supply its own; a site-level request_header strip would
+    # run after forward_auth in Caddy's directive order and blank the identity it copied.
+    forward_auth accounts:8080 {
+        uri /accounts/verify?role=operator
+        copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+    }
+
     handle {
         reverse_proxy observability:8080
     }

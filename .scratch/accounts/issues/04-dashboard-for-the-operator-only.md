@@ -4,8 +4,8 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A signed-in member is refused the dashboard; the operator reaches it
-- [ ] A signed-out request is sent to sign-in
-- [ ] The conformance check asserts the dashboard host goes through the session check
+- [x] A signed-in member is refused the dashboard; the operator reaches it (`SessionCheckTests.ARoleTheSessionLacks_IsForbidden`)
+- [x] A signed-out request is sent to sign-in (`SessionCheckTests.NoSession_SendsAPageRequestToSignInAndBack`; the dashboard origin is allowed as a return)
+- [x] The conformance check asserts the dashboard host goes through the session check
