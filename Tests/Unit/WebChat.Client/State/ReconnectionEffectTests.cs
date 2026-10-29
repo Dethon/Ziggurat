@@ -56,6 +56,10 @@ public sealed class ReconnectionEffectTests : IDisposable
             _logger);
     }
 
+    // What session recovery says once it has registered the user on the connection that came back.
+    private void ReRegistered() =>
+        _dispatcher.Dispatch(new ConnectionRegistered(_connectionStore.State.Epoch));
+
     // The catch-up task is abandoned by construction, so a fault inside it — a server that
     // drops the topics call mid-recovery — must at least be logged rather than vanishing.
     [Fact]
@@ -71,9 +75,38 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
+        ReRegistered();
 
         var entry = await _logger.WaitForEntryAsync();
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("catch-up failed");
+    }
+
+    // The connection that came back is a new one to the hub, which refuses every call until the
+    // user is registered on it again: catch-up waits for that, not for the connection alone.
+    [Fact]
+    public async Task WhenConnectionReconnected_CatchesUpOnlyOnceTheUserIsRegisteredAgain()
+    {
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _mockTopicService
+            .Setup(s => s.GetTopicPageAsync("agent-1", "default", null))
+            .ReturnsAsync(HubResult<TopicPage>.Answered(new TopicPage(
+                [new TopicMetadata("topic-1", 1, 1, "agent-1", "Topic 1", DateTimeOffset.UtcNow, null)], null)));
+
+        CreateEffect();
+
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await Task.Delay(50);
+        _mockTopicService.Verify(
+            s => s.GetTopicPageAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>()),
+            Times.Never);
+
+        _dispatcher.Dispatch(new ConnectionRegistered(_connectionStore.State.Epoch));
+
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
     }
 
     [Fact]
@@ -92,6 +125,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
+        ReRegistered();
 
         await Task.Delay(50); // Allow async handler to complete
 
@@ -126,6 +160,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
+        ReRegistered();
 
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 2);
 
@@ -156,6 +191,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
+        ReRegistered();
 
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
         _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-a");
@@ -180,6 +216,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
+        ReRegistered();
 
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
         _topicsStore.State.Topics.Single().TopicId.ShouldBe("topic-s");
@@ -215,6 +252,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
+        ReRegistered();
 
         await TestChat.Eventually(() => _mockSessionService.Invocations.Any(
             i => i.Method.Name == nameof(IChatSessionService.StartSessionAsync)));
@@ -251,6 +289,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
+        ReRegistered();
 
         await TestChat.Eventually(() => _messagesStore.State.MessagesByTopic.ContainsKey("topic-1"));
 
@@ -292,6 +331,7 @@ public sealed class ReconnectionEffectTests : IDisposable
 
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionConnected());
+        ReRegistered();
         await Task.Delay(50);
 
         // Status churn that leaves the epoch where it is must not reload a second time.
@@ -314,6 +354,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         // After dispose, reconnection should not trigger callbacks
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
+        ReRegistered();
 
         await Task.Delay(50); // Give time for any (incorrectly) triggered callbacks
 
@@ -349,6 +390,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
+        ReRegistered();
 
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 2);
 
