@@ -154,7 +154,7 @@ public sealed class AccountPage(
         }
 
         var note = $"<p>It works once, until {AccountsPages.Date(code.ExpiresAt)}.</p>";
-        if (settings.Telegram.BotUsername.Length == 0)
+        if (settings.Telegram.DeepLink(code.Code) is not { } deepLink)
         {
             return $"""
                     <p class="notice">Send the deployment's bot <code>/start</code> followed by this code: <code data-telegram-code>{code.Code}</code></p>
@@ -162,7 +162,6 @@ public sealed class AccountPage(
                     """;
         }
 
-        var deepLink = $"https://t.me/{Uri.EscapeDataString(settings.Telegram.BotUsername.TrimStart('@'))}?start={code.Code}";
         return $"""
                 <p class="notice">On the phone with your Telegram, open <a data-telegram-link href="{deepLink}">{deepLink}</a> and press Start.</p>
                 {note}

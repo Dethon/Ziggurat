@@ -10,6 +10,7 @@ namespace Accounts.Store;
 public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : DbContext(options)
 {
     private const int IdLength = 64;
+    private const int ChannelLength = 32;
 
     // A credential id is at most 1023 bytes, which is 1364 characters of base64url.
     private const int CredentialIdLength = 1400;
@@ -19,6 +20,8 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
     public DbSet<Credential> Credentials => Set<Credential>();
     public DbSet<Link> Links => Set<Link>();
     public DbSet<Session> Sessions => Set<Session>();
+    public DbSet<LinkedIdentity> LinkedIdentities => Set<LinkedIdentity>();
+    public DbSet<BoundChat> BoundChats => Set<BoundChat>();
 
     // An instant is kept as UTC, because not every provider has an offset type and SQLite cannot
     // order or compare the text of one.
@@ -70,6 +73,27 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
         session.Property(s => s.Device).HasMaxLength(500);
         session.HasOne<User>().WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Restrict);
         session.HasOne<Credential>().WithMany().HasForeignKey(s => s.CredentialId).OnDelete(DeleteBehavior.Restrict);
+
+        var identity = modelBuilder.Entity<LinkedIdentity>();
+        identity.Property(i => i.Id).HasMaxLength(IdLength);
+        identity.Property(i => i.TenantId).HasMaxLength(IdLength);
+        identity.Property(i => i.UserId).HasMaxLength(IdLength);
+        identity.Property(i => i.Channel).HasMaxLength(ChannelLength);
+        identity.Property(i => i.Identity).HasMaxLength(IdLength);
+        // An identity is one person's, and a person has at most one on each channel: the indexes are
+        // what holds two redemptions racing on one Telegram id to one winner.
+        identity.HasIndex(i => new { i.Channel, i.Identity }).IsUnique();
+        identity.HasIndex(i => new { i.UserId, i.Channel }).IsUnique();
+        identity.HasOne<User>().WithMany().HasForeignKey(i => i.UserId).OnDelete(DeleteBehavior.Restrict);
+
+        var chat = modelBuilder.Entity<BoundChat>();
+        chat.Property(c => c.Id).HasMaxLength(IdLength);
+        chat.Property(c => c.TenantId).HasMaxLength(IdLength);
+        chat.Property(c => c.Channel).HasMaxLength(ChannelLength);
+        chat.Property(c => c.ChatId).HasMaxLength(IdLength);
+        chat.Property(c => c.BoundBy).HasMaxLength(IdLength);
+        chat.HasIndex(c => new { c.Channel, c.ChatId }).IsUnique();
+        chat.HasOne<Tenant>().WithMany().HasForeignKey(c => c.TenantId).OnDelete(DeleteBehavior.Restrict);
     }
 
     private sealed class UtcConverter() : ValueConverter<DateTimeOffset, DateTime>(

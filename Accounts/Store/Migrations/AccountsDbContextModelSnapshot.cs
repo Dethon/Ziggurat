@@ -17,6 +17,38 @@ namespace Accounts.Store.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
+            modelBuilder.Entity("Accounts.Store.BoundChat", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64);
+
+                    b.Property<string>("BoundBy")
+                        .HasMaxLength(64);
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(32);
+
+                    b.Property<string>("ChatId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<DateTime>("CreatedAt");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("Channel", "ChatId")
+                        .IsUnique();
+
+                    b.ToTable("BoundChats");
+                });
+
             modelBuilder.Entity("Accounts.Store.Credential", b =>
                 {
                     b.Property<string>("Id")
@@ -100,6 +132,40 @@ namespace Accounts.Store.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("Links");
+                });
+
+            modelBuilder.Entity("Accounts.Store.LinkedIdentity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64);
+
+                    b.Property<string>("Channel")
+                        .IsRequired()
+                        .HasMaxLength(32);
+
+                    b.Property<DateTime>("CreatedAt");
+
+                    b.Property<string>("Identity")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Channel", "Identity")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "Channel")
+                        .IsUnique();
+
+                    b.ToTable("LinkedIdentities");
                 });
 
             modelBuilder.Entity("Accounts.Store.Session", b =>
@@ -194,6 +260,15 @@ namespace Accounts.Store.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("Accounts.Store.BoundChat", b =>
+                {
+                    b.HasOne("Accounts.Store.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Accounts.Store.Credential", b =>
                 {
                     b.HasOne("Accounts.Store.User", null)
@@ -215,6 +290,15 @@ namespace Accounts.Store.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("Accounts.Store.LinkedIdentity", b =>
+                {
+                    b.HasOne("Accounts.Store.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Accounts.Store.Session", b =>
