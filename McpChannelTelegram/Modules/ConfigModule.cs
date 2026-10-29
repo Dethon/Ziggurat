@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Transcription;
 using Infrastructure.Metrics;
 using Mcp.Hosting;
@@ -26,6 +27,11 @@ public static class ConfigModule
             .AddSingleton<MessageAccumulator>()
             .AddSingleton<ApprovalCallbackRouter>()
             .AddSingleton(TimeProvider.System)
+            // Who a sender is, asked of the accounts service with this server's own credential.
+            .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
+            .AddSingleton(settings.LinkCache)
+            .AddSingleton<TelegramAccess>()
+            .AddSingleton<TelegramGate>()
             // The catalogue exists so the attachment capability resolution has something to ask.
             // Nothing else on this channel consumes it.
             .AddSingleton<MutableAgentCatalog>()

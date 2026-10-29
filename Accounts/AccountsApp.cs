@@ -59,6 +59,7 @@ public static class AccountsApp
             .AddAccountsStore(settings)
             .AddSingleton<SessionStore>()
             .AddSingleton<LinkStore>()
+            .AddSingleton<TelegramLinks>()
             .AddSingleton<PasskeyStore>()
             .AddSingleton<MemberStore>()
             .AddSingleton<PersonStore>();
@@ -72,7 +73,7 @@ public static class AccountsApp
         AccountPage.Map(accounts);
         MembersPage.Map(accounts);
         PasskeyEndpoints.Map(accounts);
-        IdentityResolution.Map(accounts);
+        InternalApi.Map(accounts);
         return app;
     }
 }

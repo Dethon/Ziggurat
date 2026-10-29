@@ -63,7 +63,13 @@ public record SessionCookieSettings
 
 public record TelegramSettings
 {
-    // The deployment's bot, without the @: the account page's link code is shown as the bot's
-    // t.me deep link. Empty shows the bare code, for a deployment with no bot named yet.
+    // The deployment's bot, without the @: the account page's link code and an invite are shown as
+    // the bot's t.me deep link. Empty shows the bare code, for a deployment with no bot named yet.
     public string BotUsername { get; init; } = "";
+
+    // What opening the bot with a start parameter looks like, or none when no bot is named.
+    public string? DeepLink(string startParameter) =>
+        BotUsername.Length == 0
+            ? null
+            : $"https://t.me/{Uri.EscapeDataString(BotUsername.TrimStart('@'))}?start={startParameter}";
 }

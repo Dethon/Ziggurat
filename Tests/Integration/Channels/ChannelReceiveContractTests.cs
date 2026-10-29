@@ -147,7 +147,7 @@ public class ChannelReceiveContractTests
         var app = await StartChannelServerAsync(
             port,
             services => services.ConfigureChannel(
-                new TelegramSettings.ChannelSettings { Bots = [], AllowedUserIds = [], Mcp = McpTestSecret.Gate }));
+                new TelegramSettings.ChannelSettings { Bots = [], Mcp = McpTestSecret.Gate }));
         await using var connection = new McpChannelConnection("telegram", mcpSecret: McpTestSecret.Value);
         try
         {

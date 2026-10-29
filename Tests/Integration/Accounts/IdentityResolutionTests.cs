@@ -53,8 +53,7 @@ public class IdentityResolutionTests
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
-    // No Telegram id is linked to anyone yet, so every one is nobody's; the shape is the one a
-    // linked id will be answered on.
+    // A Telegram id nobody redeemed a code from is nobody's (TelegramLinkingTests links one).
     [Theory]
     [InlineData("signalr", "0123456789abcdef0123456789abcdef")]
     [InlineData("voice", "0123456789abcdef0123456789abcdef")]

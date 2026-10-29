@@ -6,8 +6,9 @@ namespace Accounts.Links;
 
 public sealed record MintedLink(string UserId, string TenantId, string DisplayName, Uri Url, DateTimeOffset ExpiresAt);
 
-// A link an owner minted on the members page, shown to them once: only its hash is kept.
-public sealed record IssuedLink(Uri Url, DateTimeOffset ExpiresAt);
+// A link an owner minted on the members page, shown to them once: only its hash is kept. The token is
+// also what an invite's Telegram deep link carries as the bot's start parameter.
+public sealed record IssuedLink(string Token, Uri Url, DateTimeOffset ExpiresAt);
 
 public sealed record TelegramCode(string Code, DateTimeOffset ExpiresAt);
 
@@ -75,7 +76,7 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
         var (token, link) = await AddAsync(db, LinkKind.Invite, tenantId, userId: null, displayName, role, createdBy, ct);
-        return new IssuedLink(UrlOf(token), link.ExpiresAt);
+        return new IssuedLink(token, UrlOf(token), link.ExpiresAt);
     }
 
     // The code itself, which is the bot's start parameter: 43 base64url characters, inside the 64 of
@@ -84,6 +85,14 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
         var (token, link) = await AddAsync(db, LinkKind.TelegramLink, tenantId, userId, null, null, userId, ct);
+        return new TelegramCode(token, link.ExpiresAt);
+    }
+
+    // An owner's code that binds a Telegram group to their household, sent to the bot in that group.
+    public async Task<TelegramCode> MintGroupCodeAsync(string tenantId, string createdBy, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var (token, link) = await AddAsync(db, LinkKind.TelegramGroup, tenantId, null, null, null, createdBy, ct);
         return new TelegramCode(token, link.ExpiresAt);
     }
 
