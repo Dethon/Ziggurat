@@ -41,6 +41,6 @@ public class AsMeGate(IdentityMap identities, ILoginSites logins)
             $"'{person}' has no login on {site} here, so it cannot be browsed as them.",
             context.OriginKind is null
                 ? "Call web_login with this url so they log in themselves, give them its link, and stop."
-                : $"Say in your report that they need to log in to {site}, which starts when they ask you directly.");
+                : $"Stop here and look for it no other way: nothing without their login can show it. End the turn with a report that they need to log in to {site}, which starts when they ask you directly.");
     }
 }

@@ -73,14 +73,14 @@ public static class WebBrowsingSkill
         a search result included, is browsed without it. Act on an `asMe` page's refs as on any
         other — every web_action still names its ref.
 
-        **A login page means hand off.** When an `asMe` browse is refused because they have no
-        login on the site, or an `asMe` page asks them to sign in, never type into it or ask for
-        their password: call web_login with its url, give them the link (on voice it is already in
+        **A login page means hand off.** When `asMe` is refused for want of a login, or its page
+        asks them to sign in, never type into it or ask for their password: call web_login with its url, give them the link (on voice it is already in
         their WebChat — say so), and stop. You are woken here when they
         press Done; carry on with `asMe` without asking them anything.
 
-        **Nobody to hand it to.** On a turn a schedule or a watch started, web_login refuses: report
-        that they need to log in to the site again by asking you directly. A worker has no
+        **Nobody to hand it to.** On a schedule's or a watch's turn, web_login refuses, and so does
+        `asMe` on a site with no login: stop, look no other way, and report that they must log in
+        by asking you directly. A worker has no
         web_login: it reports the login page in its answer, and the parent hands it off.
 
         **Multi-page navigation.** Click links/buttons normally. Going back is web_action's back
