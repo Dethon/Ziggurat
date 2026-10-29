@@ -61,14 +61,16 @@ public static class HandoffEndpoints
             return Results.NoContent();
         });
 
+        // One entry per login, by the site it was handed off for, with every domain it covers.
         app.MapGet("/browse/logins/sites", async (HttpContext http, LoginsPages pages, PersonLogins logins) =>
             pages.PersonOf(http.Request.Cookies[LoginsCookie]) is { } person
-                ? Results.Json((await logins.SitesAsync(person)).Select(site => new
+                ? Results.Json((await logins.LoginsAsync(person)).Select(login => new
                 {
-                    site = site.Domain,
-                    remembered = site.Remembered,
-                    handedOffAt = site.HandedOffAt,
-                    lastUsedAt = site.LastUsedAt
+                    site = login.Site,
+                    remembered = login.Remembered,
+                    handedOffAt = login.HandedOffAt,
+                    lastUsedAt = login.LastUsedAt,
+                    domains = login.Domains
                 }))
                 : Results.Unauthorized());
 
@@ -80,12 +82,12 @@ public static class HandoffEndpoints
             }
 
             using var body = await JsonDocument.ParseAsync(http.Request.Body);
-            if (!body.RootElement.TryGetProperty("site", out var site) || site.GetString() is not { Length: > 0 } domain)
+            if (!body.RootElement.TryGetProperty("site", out var site) || site.GetString() is not { Length: > 0 } login)
             {
                 return Results.BadRequest();
             }
 
-            return await logins.ForgetAsync(person, domain)
+            return await logins.ForgetAsync(person, login)
                 ? Results.NoContent()
                 : Results.Conflict();
         });

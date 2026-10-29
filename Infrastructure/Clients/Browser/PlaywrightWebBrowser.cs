@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.Judgments;
@@ -1102,6 +1103,58 @@ public class PlaywrightWebBrowser(
             // The context died with its connection; nothing it held is left to save.
             return null;
         }
+    }
+
+    // The cookie list alone, written in the storage state's own cookie shape so that one filter
+    // and one restore serve both exports.
+    public async Task<string?> ExportCookiesAsync(string person, CancellationToken ct = default)
+    {
+        Task<IBrowserContext>? made;
+        lock (_contexts)
+        {
+            made = _personContexts.GetValueOrDefault(person);
+        }
+
+        if (made is not { IsCompletedSuccessfully: true })
+        {
+            return null;
+        }
+
+        try
+        {
+            var cookies = await made.Result.CookiesAsync();
+            return new JsonObject
+            {
+                ["cookies"] = new JsonArray([.. cookies.Select(StoredCookie)]),
+                ["origins"] = new JsonArray()
+            }.ToJsonString();
+        }
+        catch (PlaywrightException)
+        {
+            // The context died with its connection; nothing it held is left to save.
+            return null;
+        }
+    }
+
+    private static JsonNode StoredCookie(BrowserContextCookiesResult cookie)
+    {
+        var stored = new JsonObject
+        {
+            ["name"] = cookie.Name,
+            ["value"] = cookie.Value,
+            ["domain"] = cookie.Domain,
+            ["path"] = cookie.Path,
+            ["expires"] = cookie.Expires,
+            ["httpOnly"] = cookie.HttpOnly,
+            ["secure"] = cookie.Secure,
+            ["sameSite"] = cookie.SameSite.ToString()
+        };
+        if (cookie.PartitionKey is { } partitionKey)
+        {
+            stored["partitionKey"] = partitionKey;
+        }
+
+        return stored;
     }
 
     public async Task ReplaceStateAsync(string person, string storageState, CancellationToken ct = default)

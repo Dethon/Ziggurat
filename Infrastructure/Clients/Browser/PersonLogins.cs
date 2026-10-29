@@ -1,15 +1,16 @@
 using System.Collections.Concurrent;
-using Domain.Contracts;
 using Domain.Tools.Web;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Clients.Browser;
 
-// What each person is logged into and what of it outlives a restart. A handoff's sites become
-// remembered or live-only when its Done says which; the person's context is saved then, and again
-// shortly after it is used, so a cookie a site rotates is in the next restore. Every save leaves
-// the person's live-only sites out, which is what keeps an unticked login off the disk. There is
+// What each person is logged into and what of it outlives a restart. A login is to the site a
+// handoff was opened at, and covers every domain the handoff touched; Done says whether it is
+// remembered or lives only until the browser restarts. A save is an allowlist — it writes only the
+// cookies and storage of domains a remembered login covers — so whatever nobody chose to remember
+// stays off the disk whichever host set it. The person's context is saved when a login is kept,
+// and again shortly after it is used, so a cookie a site rotates is in the next restore. There is
 // no expiry of our own: a remembered login lasts until it is forgotten or the site ends it.
 public sealed class PersonLogins : IDisposable
 {
@@ -33,65 +34,134 @@ public sealed class PersonLogins : IDisposable
         _contexts.ContextsClosed += OnContextsClosed;
     }
 
-    // One person's in-memory half: the sites that live only until the browser restarts, the
+    // One person's in-memory half: the logins that live only until the browser restarts, the
     // remembered sites used since the last save, the handoffs open now, and the save on its way.
+    // Both dictionaries are keyed by site.
     private sealed class Person
     {
         public SemaphoreSlim Gate { get; } = new(1, 1);
-        public Dictionary<string, LiveOnlySite> LiveOnly { get; } = [];
+        public Dictionary<string, SiteLogin> LiveOnly { get; } = [];
         public Dictionary<string, DateTimeOffset> Used { get; } = [];
-        public int OpenHandoffs { get; set; }
+        public HashSet<HandoffLease> Open { get; } = [];
         public ITimer? PendingSave { get; set; }
     }
 
-    private sealed record LiveOnlySite(DateTimeOffset HandedOffAt, DateTimeOffset? LastUsedAt);
-
-    public sealed record LoginSite(string Domain, bool Remembered, DateTimeOffset HandedOffAt, DateTimeOffset? LastUsedAt);
+    public sealed record LoginListing(
+        string Site, bool Remembered, IReadOnlyList<string> Domains, DateTimeOffset HandedOffAt,
+        DateTimeOffset? LastUsedAt);
 
     public bool CanRemember => _store.CanWrite;
 
-    // While a handoff is open the person's context holds a login half made; nothing is saved
-    // until Done says whether to keep it.
-    public void BeginHandoff(string person)
+    // Taken before the handoff's tab opens: the login page's own requests must not arm a save of a
+    // login nobody has finished. The cookies the person holds now are what the handoff's end is
+    // compared with; a person with no context yet will have one restored from their record, so
+    // the record's cookies stand in — otherwise every restored cookie would read as the handoff's.
+    public async Task<HandoffLease> BeginHandoffAsync(string person, string site, CancellationToken ct = default)
     {
+        var before = await _contexts.ExportCookiesAsync(person, ct)
+                     ?? (await _store.LoadAsync(person, ct))?.StorageState;
+        var lease = new HandoffLease(this, person, SiteOf(site), CookieIdentity.In(before));
         var entry = For(person);
         lock (entry)
         {
-            entry.OpenHandoffs++;
+            entry.Open.Add(lease);
         }
+
+        return lease;
     }
 
-    // A handoff nobody finished — out of time, or its tab lost: whatever it set in the person's
-    // context stays there only until the browser restarts. Its sites are live-only unless the
-    // person already remembered them, so no later save carries a half-made login.
-    public async Task AbandonHandoffAsync(
-        string person, IReadOnlyCollection<string> visitedHosts, CancellationToken ct = default)
+    // Done ticked: the site's login is remembered, its domains merged with any it had, and a
+    // live-only login of it is gone. Unticked: a remembered login of the site is scrubbed from the
+    // record and the login lives only until the browser restarts. No other login is touched — a
+    // provider this login shares with a remembered one stays remembered through that one.
+    internal async Task CompleteAsync(
+        HandoffLease lease, IReadOnlyCollection<string> visitedHosts, bool remember, CancellationToken ct)
     {
-        var entry = For(person);
-        EndHandoff(entry);
-        if (visitedHosts.Count == 0)
+        var entry = Release(lease);
+        var domains = await DomainsOfAsync(lease, visitedHosts, ct);
+        var now = _time.GetUtcNow();
+        var site = lease.Site;
+
+        await SaveAsync(lease.Person, entry, remembered =>
+        {
+            if (remember && CanRemember)
+            {
+                SiteLogin? wasLiveOnly;
+                lock (entry)
+                {
+                    entry.LiveOnly.Remove(site, out wasLiveOnly);
+                }
+
+                remembered[site] = Login(site, now, domains, remembered.GetValueOrDefault(site)?.Domains,
+                    wasLiveOnly?.Domains);
+                return;
+            }
+
+            remembered.Remove(site, out var scrubbed);
+            lock (entry)
+            {
+                entry.LiveOnly[site] = Login(site, now, domains, scrubbed?.Domains,
+                    entry.LiveOnly.GetValueOrDefault(site)?.Domains);
+            }
+        }, ct);
+    }
+
+    // A handoff nobody finished: whatever it set stays in the person's context only until the
+    // browser restarts. Its login is live-only unless the site is already remembered, so no save
+    // carries a half-made login; one that touched nothing — its tab never opened — is no login.
+    internal async Task AbandonAsync(HandoffLease lease, IReadOnlyCollection<string> visitedHosts, CancellationToken ct)
+    {
+        var entry = Release(lease);
+        var domains = await DomainsOfAsync(lease, visitedHosts, ct);
+        if (domains.Count == 0)
         {
             return;
         }
 
-        var remembered = (await _store.LoadAsync(person, ct))?.Sites.Select(s => s.Domain).ToHashSet() ?? [];
-        var now = _time.GetUtcNow();
+        var remembered = await _store.LoadAsync(lease.Person, ct);
+        if (remembered?.Logins.Any(login => login.Site == lease.Site) == true)
+        {
+            return;
+        }
+
         lock (entry)
         {
-            foreach (var site in visitedHosts.Select(RegistrableDomain.Of).Where(site => !remembered.Contains(site)))
-            {
-                entry.LiveOnly.TryAdd(site, new LiveOnlySite(now, null));
-            }
+            entry.LiveOnly[lease.Site] = Login(lease.Site, _time.GetUtcNow(), domains,
+                entry.LiveOnly.GetValueOrDefault(lease.Site)?.Domains);
         }
     }
 
-    private static void EndHandoff(Person entry)
+    // First thing on settling, before anything that can throw: the handoff is closed whatever the
+    // rest of the settle does.
+    private Person Release(HandoffLease lease)
     {
+        var entry = For(lease.Person);
         lock (entry)
         {
-            entry.OpenHandoffs = Math.Max(0, entry.OpenHandoffs - 1);
+            entry.Open.Remove(lease);
         }
+
+        return entry;
     }
+
+    // What the handoff touched: the registrable domains of the hosts its main frame went through,
+    // and those of every cookie added or changed while it was open — an iframe's sign-in sets
+    // cookies on hosts the main frame never visits. The site joins them when the login is made.
+    private async Task<IReadOnlyCollection<string>> DomainsOfAsync(
+        HandoffLease lease, IReadOnlyCollection<string> visitedHosts, CancellationToken ct)
+    {
+        var after = CookieIdentity.In(await _contexts.ExportCookiesAsync(lease.Person, ct));
+        return
+        [
+            .. visitedHosts.Select(RegistrableDomain.Of)
+                .Concat(after.Where(cookie => !lease.Before.Contains(cookie)).Select(cookie => RegistrableDomain.Of(cookie.Domain)))
+                .Where(domain => domain.Length > 0)
+                .Distinct()
+        ];
+    }
+
+    private static SiteLogin Login(string site, DateTimeOffset at, params IEnumerable<string>?[] domains) =>
+        new(site, [.. domains.SelectMany(d => d ?? []).Append(site).Distinct().Order(StringComparer.Ordinal)], at, null);
 
     // The browser restarted: every live-only login went with its context.
     private void OnContextsClosed()
@@ -106,101 +176,89 @@ public sealed class PersonLogins : IDisposable
         }
     }
 
-    public async Task CompleteHandoffAsync(
-        string person, IReadOnlyCollection<string> visitedHosts, bool remember, CancellationToken ct = default)
-    {
-        var entry = For(person);
-        var now = _time.GetUtcNow();
-        HashSet<string> sites = [.. visitedHosts.Select(RegistrableDomain.Of)];
-        EndHandoff(entry);
-
-        // Saved ticked or not: an unticked Done scrubs from the record whatever a save made before
-        // it may have caught of the login.
-        await SaveAsync(person, entry, remembered =>
-        {
-            foreach (var site in sites)
-            {
-                if (remember && CanRemember)
-                {
-                    remembered[site] = new RememberedSite(site, now, null);
-                    lock (entry)
-                    {
-                        entry.LiveOnly.Remove(site);
-                    }
-                }
-                else
-                {
-                    remembered.Remove(site);
-                    lock (entry)
-                    {
-                        entry.LiveOnly[site] = new LiveOnlySite(now, null);
-                    }
-                }
-            }
-        }, ct);
-    }
-
     // Everything the person is logged into that the agent can reach: remembered, and live-only
     // until the browser restarts.
-    public async Task<IReadOnlyList<LoginSite>> SitesAsync(string person, CancellationToken ct = default)
+    public async Task<IReadOnlyList<LoginListing>> LoginsAsync(string person, CancellationToken ct = default)
     {
         var entry = For(person);
         var record = await _store.LoadAsync(person, ct);
-        List<LoginSite> sites;
         lock (entry)
         {
-            sites =
+            return
             [
-                .. (record?.Sites ?? []).Where(s => !entry.LiveOnly.ContainsKey(s.Domain))
-                    .Select(s => new LoginSite(s.Domain, true, s.HandedOffAt,
-                        entry.Used.TryGetValue(s.Domain, out var used) ? used : s.LastUsedAt)),
-                .. entry.LiveOnly.Select(l => new LoginSite(l.Key, false, l.Value.HandedOffAt, l.Value.LastUsedAt))
+                .. (record?.Logins ?? []).Where(login => !entry.LiveOnly.ContainsKey(login.Site))
+                    .Select(login => new LoginListing(login.Site, true, login.Domains, login.HandedOffAt,
+                        entry.Used.TryGetValue(login.Site, out var used) ? used : login.LastUsedAt))
+                    .Concat(entry.LiveOnly.Values.Select(login =>
+                        new LoginListing(login.Site, false, login.Domains, login.HandedOffAt, login.LastUsedAt)))
+                    .OrderBy(login => login.Site, StringComparer.Ordinal)
             ];
         }
-
-        return [.. sites.OrderBy(s => s.Domain, StringComparer.Ordinal)];
     }
 
-    // The site's cookies and storage leave the person's live context — rebuilt from its state
-    // without them, which closes the person's tabs — and the saved record, so the person is
-    // logged out of it now and after a restart. Refused while one of their handoffs is open: the
-    // rebuild would close the tab they are typing into.
+    // Whether the person holds a login, remembered or live-only, that covers the site's domain —
+    // the site it was handed off for, or one its handoff went through.
+    public async Task<bool> HasLoginAsync(string person, string site, CancellationToken ct = default)
+    {
+        var domain = SiteOf(site);
+        var entry = For(person);
+        lock (entry)
+        {
+            if (entry.LiveOnly.Values.Any(login => Covers(login, domain)))
+            {
+                return true;
+            }
+        }
+
+        return (await _store.LoadAsync(person, ct))?.Logins.Any(login => Covers(login, domain)) == true;
+    }
+
+    private static bool Covers(SiteLogin login, string domain) => login.Site == domain || login.Domains.Contains(domain);
+
+    // The login leaves, and with it the cookies and storage of every domain no remaining login —
+    // remembered or live-only — still covers: out of the live context, rebuilt without them (which
+    // closes the person's tabs, so it is skipped when nothing is stripped), and out of the record,
+    // so the person is logged out of it now and after a restart. A provider another login signs in
+    // through stays. Refused while one of their handoffs is open: the rebuild would close the tab
+    // they are typing into.
     public async Task<bool> ForgetAsync(string person, string site, CancellationToken ct = default)
     {
         var entry = For(person);
-        var domain = RegistrableDomain.Of(site);
-        lock (entry)
-        {
-            if (entry.OpenHandoffs > 0)
-            {
-                return false;
-            }
-        }
-
+        var target = SiteOf(site);
         await entry.Gate.WaitAsync(ct);
         try
         {
-            var record = await _store.LoadAsync(person, ct);
-            HashSet<string> liveOnly;
+            List<SiteLogin> liveOnly;
+            SiteLogin? liveForgotten;
             lock (entry)
             {
-                entry.LiveOnly.Remove(domain);
-                entry.Used.Remove(domain);
-                liveOnly = [.. entry.LiveOnly.Keys];
+                if (entry.Open.Count > 0)
+                {
+                    return false;
+                }
+
+                entry.LiveOnly.Remove(target, out liveForgotten);
+                entry.Used.Remove(target);
+                liveOnly = [.. entry.LiveOnly.Values];
             }
 
+            var record = await _store.LoadAsync(person, ct);
+            var remembered = (record?.Logins ?? []).Where(login => login.Site != target).ToList();
+            var forgotten = (record?.Logins ?? []).Where(login => login.Site == target)
+                .SelectMany(login => login.Domains).Concat(liveForgotten?.Domains ?? []).Append(target);
+            HashSet<string> stillCovered = [.. remembered.Concat(liveOnly).SelectMany(login => login.Domains)];
+            List<string> strip = [.. forgotten.Distinct().Where(domain => !stillCovered.Contains(domain))];
+
             var live = await _contexts.ExportStateAsync(person, ct);
-            if (live is not null)
+            if (live is not null && strip.Count > 0)
             {
-                await _contexts.ReplaceStateAsync(person, StorageStateFilter.Without(live, [domain]), ct);
+                await _contexts.ReplaceStateAsync(person, StorageStateFilter.Without(live, strip), ct);
             }
 
             var state = live ?? record?.StorageState;
-            if (CanRemember && state is not null)
+            if (CanRemember && record is not null && state is not null)
             {
-                await _store.SaveAsync(person, new PersonState(
-                    StorageStateFilter.Without(state, [.. liveOnly, domain]),
-                    [.. (record?.Sites ?? []).Where(s => s.Domain != domain)]), ct);
+                await _store.SaveAsync(person, new PersonState(Kept(state, remembered), remembered), ct);
             }
 
             return true;
@@ -219,6 +277,8 @@ public sealed class PersonLogins : IDisposable
         }
 
         var entry = For(person);
+        // A login is used when a request goes to its own site. Its other domains — a provider it
+        // signs in through — are shared with other logins and say nothing about this one.
         var site = RegistrableDomain.Of(uri.Host);
         var now = _time.GetUtcNow();
         lock (entry)
@@ -233,7 +293,7 @@ public sealed class PersonLogins : IDisposable
             }
 
             // At most one save on its way: steady traffic must not push it off for ever.
-            if (!CanRemember || entry.OpenHandoffs > 0 || entry.PendingSave is not null)
+            if (!CanRemember || entry.Open.Count > 0 || entry.PendingSave is not null)
             {
                 return;
             }
@@ -248,7 +308,7 @@ public sealed class PersonLogins : IDisposable
         // A handoff opened while this save waited: Done decides what of it to keep.
         lock (entry)
         {
-            if (entry.OpenHandoffs > 0)
+            if (entry.Open.Count > 0)
             {
                 entry.PendingSave?.Dispose();
                 entry.PendingSave = null;
@@ -266,10 +326,11 @@ public sealed class PersonLogins : IDisposable
         }
     }
 
-    // Under the person's gate: the record read, changed, and written back with the context's state
-    // as it is now, live-only sites left out.
+    // Under the person's gate: the record read, its logins changed, and written back with the
+    // context's state as it is now, kept to what the remembered logins cover. A person with no
+    // record and nothing remembered has nothing to write.
     private async Task SaveAsync(
-        string person, Person entry, Action<Dictionary<string, RememberedSite>> change, CancellationToken ct)
+        string person, Person entry, Action<Dictionary<string, SiteLogin>> change, CancellationToken ct)
     {
         await entry.Gate.WaitAsync(ct);
         try
@@ -281,20 +342,18 @@ public sealed class PersonLogins : IDisposable
             }
 
             var record = await _store.LoadAsync(person, ct);
-            var remembered = (record?.Sites ?? []).ToDictionary(s => s.Domain);
+            var remembered = (record?.Logins ?? []).ToDictionary(login => login.Site);
             change(remembered);
-            if (!CanRemember)
+            if (!CanRemember || (record is null && remembered.Count == 0))
             {
                 return;
             }
 
             Dictionary<string, DateTimeOffset> used;
-            HashSet<string> liveOnly;
             lock (entry)
             {
                 used = new Dictionary<string, DateTimeOffset>(entry.Used);
                 entry.Used.Clear();
-                liveOnly = [.. entry.LiveOnly.Keys];
             }
 
             foreach (var (site, at) in used.Where(u => remembered.ContainsKey(u.Key)))
@@ -302,20 +361,27 @@ public sealed class PersonLogins : IDisposable
                 remembered[site] = remembered[site] with { LastUsedAt = at };
             }
 
-            var state = await _contexts.ExportStateAsync(person, ct) ?? record?.StorageState;
-            if (state is null)
-            {
-                return;
-            }
-
-            await _store.SaveAsync(person,
-                new PersonState(StorageStateFilter.Without(state, liveOnly), [.. remembered.Values]), ct);
+            var state = await _contexts.ExportStateAsync(person, ct) ?? record?.StorageState ?? EmptyState;
+            List<SiteLogin> logins = [.. remembered.Values.OrderBy(login => login.Site, StringComparer.Ordinal)];
+            await _store.SaveAsync(person, new PersonState(Kept(state, logins), logins), ct);
         }
         finally
         {
             entry.Gate.Release();
         }
     }
+
+    // Only what a remembered login covers is written. A domain a remembered login shares with a
+    // live-only one — a provider both sign in through — is written, because the remembered login
+    // needs it; the live-only login's own site is not.
+    private static string Kept(string state, IEnumerable<SiteLogin> remembered) =>
+        StorageStateFilter.Only(state, [.. remembered.SelectMany(login => login.Domains).Distinct()]);
+
+    private const string EmptyState = """{"cookies":[],"origins":[]}""";
+
+    // A site as a url or a host: its registrable domain.
+    private static string SiteOf(string site) =>
+        RegistrableDomain.Of(Uri.TryCreate(site, UriKind.Absolute, out var uri) && uri.Host.Length > 0 ? uri.Host : site);
 
     private Person For(string person) => _people.GetOrAdd(person, _ => new Person());
 

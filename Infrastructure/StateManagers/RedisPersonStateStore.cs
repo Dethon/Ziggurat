@@ -15,7 +15,11 @@ public sealed class RedisPersonStateStore(IConnectionMultiplexer redis, byte[]? 
     public const int KeyBytes = 32;
 
     private const string KeyPrefix = "websearch:person:";
-    private const byte Version = 1;
+    // Version 1 held a list of bare remembered domains rather than logins; it was never deployed,
+    // and a record of it is read as nothing remembered rather than as unreadable, so the person
+    // logs in again instead of being refused until somebody deletes the key.
+    private const byte Version = 2;
+    private const byte DomainsVersion = 1;
     private const int NonceBytes = 12;
     private const int TagBytes = 16;
 
@@ -62,6 +66,11 @@ public sealed class RedisPersonStateStore(IConnectionMultiplexer redis, byte[]? 
         }
 
         byte[] blob = stored!;
+        if (blob.Length > 0 && blob[0] == DomainsVersion)
+        {
+            return null;
+        }
+
         if (blob.Length < 1 + NonceBytes + TagBytes || blob[0] != Version)
         {
             throw new PersonStateUnreadableException(person, "the stored record is not one this server wrote");

@@ -72,11 +72,11 @@ public class RememberedLoginsBrowserTests(IsolatedSessionBrowserFixture fixture,
     private static async Task HandOffAsync(Rig rig, string site, string person, string name, bool remember)
     {
         await rig.Browser.RouteOnContextAsync($"{site}/**", ServeAsync, person);
+        await using var lease = await rig.Logins.BeginHandoffAsync(person, $"{site}/login");
         var handoff = await rig.Browser.OpenHandoffAsync(person, $"{site}/login?as={name}");
-        rig.Logins.BeginHandoff(person);
         var hosts = rig.Browser.HandoffVisitedHosts(handoff);
         await rig.Browser.CloseHandoffAsync(handoff);
-        await rig.Logins.CompleteHandoffAsync(person, hosts, remember);
+        await lease.CompleteAsync(hosts, remember);
     }
 
     private RedisPersonStateStore Store(byte[] key) => new(redis.Connection, key);
@@ -207,7 +207,7 @@ public class RememberedLoginsBrowserTests(IsolatedSessionBrowserFixture fixture,
 
             (await WhoAmIAsync(first.Browser, forgotten, person)).ShouldNotContain("session=fran");
             (await WhoAmIAsync(first.Browser, kept, person)).ShouldContain("session=fran");
-            (await first.Logins.SitesAsync(person)).Select(site => site.Domain).ShouldBe([new Uri(kept).Host]);
+            (await first.Logins.LoginsAsync(person)).Select(login => login.Site).ShouldBe([new Uri(kept).Host]);
         }
 
         await using var second = NewBrowser(store);

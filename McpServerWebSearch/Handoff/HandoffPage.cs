@@ -167,8 +167,8 @@ public static class HandoffPage
     public static string Logins(string token, int minutes) => Page("Your logins",
         $$"""
         <main>
-          <h1>Sites the agent can reach as you</h1>
-          <p class="lead">Forget one and the agent is logged out of it, now and after a restart.</p>
+          <h1>Logins the agent can use as you</h1>
+          <p class="lead">Forget one and the agent is logged out of it, now and after a restart. A sign-in service another login still uses stays.</p>
           <div id="sites"><p class="lead">Loading...</p></div>
         </main>
         <script>
@@ -190,8 +190,10 @@ public static class HandoffPage
               const text = document.createElement('div');
               const name = document.createElement('strong'); name.textContent = s.site;
               const meta = document.createElement('div'); meta.className = 'note';
-              meta.textContent = (s.remembered ? 'Remembered' : 'Until the browser restarts') + ' · last used ' + when(s.lastUsedAt);
+              meta.textContent = (s.remembered ? 'Remembered' : 'Until the browser restarts') + ' · logged in ' + when(s.handedOffAt) + ' · last used ' + when(s.lastUsedAt);
               text.append(name, meta);
+              const others = (s.domains || []).filter(d => d !== s.site);
+              if (others.length) { const via = document.createElement('div'); via.className = 'note'; via.textContent = 'Also covers ' + others.join(', '); text.append(via); }
               const forget = document.createElement('button'); forget.type = 'button'; forget.textContent = 'Forget';
               forget.addEventListener('click', async () => {
                 forget.disabled = true;
