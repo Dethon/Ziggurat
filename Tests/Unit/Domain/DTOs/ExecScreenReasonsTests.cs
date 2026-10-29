@@ -13,6 +13,7 @@ public class ExecScreenReasonsTests
     [InlineData(ExecScreenCodes.SendsOut, "It would send data to a remote server.")]
     [InlineData(ExecScreenCodes.RunsDownloaded, "It would download a program and run it.")]
     [InlineData(ExecScreenCodes.Unjudged, "It runs on your computer and couldn't be checked first.")]
+    [InlineData(ExecScreenCodes.AsPerson, "It would browse this site logged in as you.")]
     public void EachCode_SaysItsReason(string code, string line)
     {
         ExecScreenReasons.English([code]).ShouldBe(line);

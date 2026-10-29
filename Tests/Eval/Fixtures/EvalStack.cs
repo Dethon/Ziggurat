@@ -366,10 +366,13 @@ public sealed class EvalStack : IAsyncDisposable
             // The run's user is a person of this deployment, so a turn can browse as them and
             // hand them a login; the link's address is a placeholder nothing opens. No state key:
             // nothing is remembered between runs. The handoff's links live on the run's Redis.
+            // The deployment's verified channels: a scenario that browses as the person asks from
+            // Telegram, as a person would have to.
             RedisConnectionString = redisConnectionString,
             Identity = new IdentityConfiguration
             {
-                People = [new PersonIdentity { Name = "fran", Telegram = EvalRun.UserId, WebChat = EvalRun.UserId }]
+                People = [new PersonIdentity { Name = "fran", Telegram = EvalRun.UserId, WebChat = EvalRun.UserId }],
+                VerifiedChannels = [IdentityMap.TelegramChannelId, IdentityMap.VoiceChannelId]
             },
             Handoff = new HandoffConfiguration { PublicBaseUrl = EvalWeb.HandoffBase }
         });

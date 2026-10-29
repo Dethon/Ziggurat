@@ -52,7 +52,9 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         {
             RedisConnectionString = redis.ConnectionString,
             Handoff = s.Handoff with { PublicBaseUrl = PublicBase },
-            Logins = s.Logins with { StateKey = StateKey }
+            Logins = s.Logins with { StateKey = StateKey },
+            // WebChat verified, so the voice logins below reach the delivery they are about.
+            Identity = s.Identity with { VerifiedChannels = WebChatVerified }
         });
 
     private static readonly string StateKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
@@ -478,6 +480,33 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         envelope["message"]!.GetValue<string>().ShouldContain("WebChat");
         _browser.OpenedTabs.ShouldBeEmpty();
         (await DrainAsync()).ShouldBeEmpty();
+    }
+
+    // Until WebChat verifies who is speaking, anybody picking the person's name there could claim
+    // a link put in "their" WebChat conversation, so a voice login is refused before anything opens.
+    [Fact]
+    public async Task AVoiceLogin_WhileWebChatIsUnverified_IsRefusedNamingTelegram_AndOpensNothing()
+    {
+        var browser = new FakeHandoffBrowser();
+        await using var server = await StartAsync(
+            configure: services =>
+            {
+                services.RemoveAll<IHandoffBrowser>();
+                services.AddSingleton<IHandoffBrowser>(browser);
+            },
+            settings: s => s with
+            {
+                RedisConnectionString = redis.ConnectionString,
+                Handoff = s.Handoff with { PublicBaseUrl = PublicBase }
+            });
+
+        var envelope = Envelope(await server.CallAsync("web_login", Login(),
+            Context("fran", conversationId: "voice-9", channelId: "voice", address: "kitchen-01")));
+
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
+        envelope["message"]!.GetValue<string>().ShouldContain("WebChat does not verify");
+        envelope["hint"]!.GetValue<string>().ShouldContain("Telegram");
+        browser.OpenedTabs.ShouldBeEmpty();
     }
 
     // The answer comes back on the satellite the request came from: the wake keeps the voice

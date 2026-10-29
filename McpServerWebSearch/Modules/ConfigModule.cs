@@ -35,7 +35,7 @@ public static class ConfigModule
                     _ => RedisConnection.ConnectResiliently(settings.RedisConnectionString))
                 .AddMetricsPublishing("mcp-websearch")
                 .AddTypeSafeJudge(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey))
-                .AddSingleton(new IdentityMap(settings.Identity.People))
+                .AddSingleton(new IdentityMap(settings.Identity.People, settings.Identity.VerifiedChannels))
                 .AddSingleton(settings.Handoff)
                 .AddSingleton(TimeProvider.System)
                 .AddSingleton<OneTimeLinks>()

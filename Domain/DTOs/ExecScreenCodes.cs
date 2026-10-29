@@ -18,4 +18,9 @@ public static class ExecScreenCodes
 
     // Nobody could say: the judge was late, down, unconfigured, or the turn was the local box's.
     public const string Unjudged = "unjudged";
+
+    // Not the exec screen's: a call that browses a site logged in as the person (asMe), asked the
+    // first time a conversation does so on that site. It rides the same field so every channel
+    // says why in the words it already has for these.
+    public const string AsPerson = "as_person";
 }

@@ -35,9 +35,46 @@ public class McpWebBrowseAsMeTests
         await using var server = await StartAsync();
 
         await server.CallAsync("web_browse", Browse(asMe: true), Context("fran_tg"));
-        await server.CallAsync("web_browse", Browse(asMe: true), Context("Fran", channelId: "signalr"));
+        await server.CallAsync("web_browse", Browse(asMe: true), Context("fran", channelId: "voice"));
 
         server.Browser.Browses.Select(b => b.Person).ShouldBe(["fran", "fran"]);
+    }
+
+    // WebChat's user is whatever its page's picker sent, so its turns are nobody until it is
+    // verified — even naming a real person's WebChat name.
+    [Fact]
+    public async Task AsMeFromWebChat_WhileUnverified_IsRefused_AndNothingIsBrowsed()
+    {
+        await using var server = await StartAsync();
+
+        var result = await server.CallAsync("web_browse", Browse(asMe: true), Context("Fran", channelId: "signalr"));
+
+        Envelope(result)["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
+        server.Browser.Browses.ShouldBeEmpty();
+    }
+
+    // An id is matched only on the channel that issued it: fran's WebChat name sent from Telegram
+    // is a Telegram username nobody holds.
+    [Fact]
+    public async Task AnotherChannelsIdOfAPerson_IsNotThem()
+    {
+        await using var server = await StartAsync();
+
+        var result = await server.CallAsync("web_browse", Browse(asMe: true), Context("Fran", channelId: "telegram"));
+
+        Envelope(result)["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
+        server.Browser.Browses.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AsMeFromWebChat_OnceVerified_BrowsesAsTheNamedPerson()
+    {
+        await using var server = await StartAsync(
+            settings: s => s with { Identity = s.Identity with { VerifiedChannels = WebChatVerified } });
+
+        await server.CallAsync("web_browse", Browse(asMe: true), Context("Fran", channelId: "signalr"));
+
+        server.Browser.Browses.ShouldHaveSingleItem().Person.ShouldBe("fran");
     }
 
     [Fact]
