@@ -281,9 +281,9 @@ internal sealed class WebChatStack
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-vault")
             .WithEnvironment("VAULTPATH", "/vault")
-            // The deployment secret every server's /mcp asks for and the agent presents, one
-            // value on both ends exactly as compose wires it.
-            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
+            // The credential this server's /mcp asks for and the agent presents to it alone,
+            // exactly as compose wires it.
+            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-vault"))
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
             .Build();
@@ -297,7 +297,7 @@ internal sealed class WebChatStack
             .WithNetworkAliases("mcp-sugary")
             .WithTmpfsMount("/data")
             .WithEnvironment("TZ", "Europe/Madrid")
-            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
+            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-sugary"))
             .WithEnvironment("SUGARYAPP__ACCESSCODE", SugaryAccessCode)
             .WithEnvironment("TURNTIMEOUTSECONDS", ((int)SugaryTurnTimeout.TotalSeconds).ToString())
             .WithPortBinding(8080, true)
@@ -323,7 +323,7 @@ internal sealed class WebChatStack
             .WithNetworkAliases("mcp-channel-signalr")
             .WithPortBinding(8080, true)
             .WithEnvironment("REDISCONNECTIONSTRING", "redis:6379")
-            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
+            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-channel-signalr"))
             // Dictation reaches whisper through the shared transcription client, so pointing its
             // base URL at the test's own listener is the whole of the substitution.
             .WithExtraHost("host.docker.internal", "host-gateway")
@@ -409,7 +409,10 @@ internal sealed class WebChatStack
             .WithNetworkAliases("agent")
             .WithCommand("--chat", "Web", "--reasoning")
             .WithResourceMapping(e2EAppSettings, "/app/appsettings.json")
-            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.Value)
+            // Each server its own credential, as compose wires it: the agent holds them by host.
+            .WithEnvironment("MCP__SECRETS__mcp-vault", McpTestSecret.For("mcp-vault"))
+            .WithEnvironment("MCP__SECRETS__mcp-sugary", McpTestSecret.For("mcp-sugary"))
+            .WithEnvironment("MCP__SECRETS__mcp-channel-signalr", McpTestSecret.For("mcp-channel-signalr"))
             // Wait until Kestrel + hosted services (ChatMonitoring) are running. The agent
             // container has no published host port, so an HTTP probe isn't possible; the
             // log line is the cheapest reliable signal.

@@ -55,7 +55,7 @@ public sealed class AgentSpecProjectionTests
     private static AgentSpec AgentSpec() => AgentSpecProjection.ForAgent(
         _agentDefinition, new AgentKey("conv-1", "jack"), "fran", _openRouter,
         _patchable, lemonadeHostAddress: null,
-        mcpSecret: McpSecret, new DeploymentEndpoints(_agentDefinition.McpServerEndpoints), logger: null);
+        _credentials, new DeploymentEndpoints(_agentDefinition.McpServerEndpoints), logger: null);
 
     // What the parent above resolves to, handed down the way the factory hands it: off the
     // parent's own spec, so a worker can never be spawned on a model its parent is not running.
@@ -63,11 +63,19 @@ public sealed class AgentSpecProjectionTests
         new("conv-1", "fran", ["allow-*"], usesOutposts, AgentSpec().Model, AgentSpec().ProviderRouting);
 
     private static AgentSpec SubAgentSpec() => AgentSpecProjection.ForSubAgent(
-        _subAgentDefinition, Spawn(), _openRouter, _patchable, lemonadeHostAddress: null, McpSecret, null);
+        _subAgentDefinition, Spawn(), _openRouter, _patchable, lemonadeHostAddress: null, _credentials, null);
 
     private static readonly FixedPatchableModelSource _patchable = new(["model-a", "model-b"]);
 
-    private const string McpSecret = "deployment-secret";
+    private const string McpSecret = "tools-secret";
+
+    // A credential per server, keyed by host: "tools" is the one server both definitions dial.
+    private static readonly McpCredentials _credentials = new(new Dictionary<string, string>
+    {
+        ["tools"] = McpSecret,
+        ["mcp-vault"] = "vault-secret",
+        ["mcp-sandbox"] = "sandbox-secret"
+    });
 
     // One row per field the two paths resolve, so a new difference is a new row rather than a
     // new test. A row whose two expectations are equal is a difference this change removed on
@@ -141,8 +149,30 @@ public sealed class AgentSpecProjectionTests
         AgentSpecProjection.ForSubAgent(
                 _subAgentDefinition with { UsesOutposts = ownDefinition },
                 Spawn(usesOutposts: parent), _openRouter, _patchable, lemonadeHostAddress: null,
-                McpSecret, null)
+                _credentials, null)
             .UsesOutposts.ShouldBe(expected);
+    }
+
+    // One credential no longer opens every server: each endpoint presents its own host's, so a
+    // leak from one container opens that container alone.
+    [Fact]
+    public void EachConfiguredEndpoint_PresentsItsOwnHostsCredential()
+    {
+        string[] endpoints = ["http://mcp-vault:8080/mcp", "http://mcp-sandbox:8080/mcp"];
+
+        Project(_agentDefinition with { McpServerEndpoints = endpoints }).McpServerEndpoints.ShouldBe(
+        [
+            McpServerEndpoint.Configured("http://mcp-vault:8080/mcp", "vault-secret"),
+            McpServerEndpoint.Configured("http://mcp-sandbox:8080/mcp", "sandbox-secret")
+        ]);
+        AgentSpecProjection.ForSubAgent(
+                _subAgentDefinition with { McpServerEndpoints = endpoints }, Spawn(), _openRouter, _patchable,
+                lemonadeHostAddress: null, _credentials, null)
+            .McpServerEndpoints.ShouldBe(
+            [
+                McpServerEndpoint.Configured("http://mcp-vault:8080/mcp", "vault-secret"),
+                McpServerEndpoint.Configured("http://mcp-sandbox:8080/mcp", "sandbox-secret")
+            ]);
     }
 
     // An agent that calls nothing is dialled for its servers' prompts alone; one that also enabled a
@@ -172,7 +202,7 @@ public sealed class AgentSpecProjectionTests
 
     private static AgentSpec Project(AgentDefinition definition) => AgentSpecProjection.ForAgent(
         definition, new AgentKey("conv-1", "jack"), "fran", _openRouter, _patchable, lemonadeHostAddress: null,
-        McpSecret, new DeploymentEndpoints(definition.McpServerEndpoints), logger: null);
+        _credentials, new DeploymentEndpoints(definition.McpServerEndpoints), logger: null);
 
     // The session id is what OpenRouter sticks a prompt cache to, so two spawns of the same
     // subagent definition must not land on one.

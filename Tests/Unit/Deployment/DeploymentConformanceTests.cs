@@ -146,6 +146,52 @@ public class DeploymentConformanceTests
     }
 
     [Fact]
+    public void EveryMcpServer_IsFedACredentialOfItsOwn()
+    {
+        var credentials = DeploymentFiles.Compose().Services.Values
+            .Where(s => s.Environment.ContainsKey("MCP__SHAREDSECRET"))
+            .Select(s => (s.Name, Variable: s.Environment["MCP__SHAREDSECRET"]))
+            .ToList();
+
+        credentials.Count.ShouldBeGreaterThan(10);
+        credentials.GroupBy(c => c.Variable)
+            .Where(g => g.Count() > 1)
+            .Select(g => $"{g.Key}: {string.Join(", ", g.Select(c => c.Name))}")
+            .ShouldBeEmpty("holding one server's credential must open no other");
+    }
+
+    [Fact]
+    public void TheSandbox_HoldsNoCredentialButItsOwn()
+    {
+        var compose = DeploymentFiles.Compose();
+        var own = compose.Service("mcp-sandbox").Environment["MCP__SHAREDSECRET"];
+        var others = compose.Services.Values
+            .Where(s => s.Name != "mcp-sandbox" && s.Environment.ContainsKey("MCP__SHAREDSECRET"))
+            .Select(s => s.Environment["MCP__SHAREDSECRET"])
+            .ToHashSet();
+
+        compose.Service("mcp-sandbox").Environment.Values.ShouldNotContain(v => others.Contains(v));
+        own.ShouldNotBeNullOrEmpty();
+    }
+
+    // The agent presents each server the credential the server reads, so the two must name the
+    // same variable — and every server the shipped agent dials must have one.
+    [Fact]
+    public void TheAgent_HoldsEachDialledServersOwnCredential()
+    {
+        var compose = DeploymentFiles.Compose();
+        var agent = compose.Service("agent").Environment;
+
+        var mismatched = ShippedAgentSettings.DialledHosts()
+            .Where(host => !agent.TryGetValue($"MCP__SECRETS__{host}", out var presented)
+                           || !compose.Services.TryGetValue(host, out var server)
+                           || server.Environment.GetValueOrDefault("MCP__SHAREDSECRET") != presented)
+            .ToList();
+
+        mismatched.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void TheDebugOverride_PublishesOnLoopbackOnly()
     {
         var ports = DeploymentFiles.Compose("docker-compose.override.ports.yml").Services.Values

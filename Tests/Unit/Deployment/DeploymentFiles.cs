@@ -36,6 +36,39 @@ public static class DeploymentFiles
         CaddyConfig.Parse(File.ReadAllText(Path.Combine(Directory, "caddy", "Caddyfile")));
 }
 
+// The servers the shipped agent dials: its agents', its workers' and its channels' endpoints.
+public static class ShippedAgentSettings
+{
+    public static IReadOnlyList<string> DialledHosts()
+    {
+        var path = Path.Combine(TestHelpers.FindSolutionRoot(), "Agent", "appsettings.json");
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path),
+            new System.Text.Json.JsonDocumentOptions
+            {
+                CommentHandling = System.Text.Json.JsonCommentHandling.Skip, AllowTrailingCommas = true
+            });
+        var root = document.RootElement;
+
+        IEnumerable<string> Endpoints(string section, string property) =>
+            root.TryGetProperty(section, out var list)
+                ? list.EnumerateArray().SelectMany(item => item.TryGetProperty(property, out var value)
+                    ? value.ValueKind == System.Text.Json.JsonValueKind.Array
+                        ? value.EnumerateArray().Select(v => v.GetString()!)
+                        : [value.GetString()!]
+                    : [])
+                : [];
+
+        return
+        [
+            .. Endpoints("agents", "mcpServerEndpoints")
+                .Concat(Endpoints("subAgents", "mcpServerEndpoints"))
+                .Concat(Endpoints("channelEndpoints", "endpoint"))
+                .Select(address => new Uri(address).Host)
+                .Distinct()
+        ];
+    }
+}
+
 public sealed record ComposeFile(IReadOnlyDictionary<string, ComposeService> Services)
 {
     public ComposeService Service(string name) =>

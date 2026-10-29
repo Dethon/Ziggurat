@@ -228,7 +228,7 @@ services:
       QBITTORRENT__PASSWORD: ${QBITTORRENT__PASSWORD}
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_LIBRARY}
     networks:
       - jackbot
     depends_on:
@@ -257,7 +257,7 @@ services:
     restart: unless-stopped
     environment:
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_VAULT}
     networks:
       - jackbot
     depends_on:
@@ -314,7 +314,7 @@ services:
     # inspect.
     environment:
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_SANDBOX}
       HOME: /home/sandbox_user
       PATH: /home/sandbox_user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       PUID: ${PUID:-1654}
@@ -369,7 +369,7 @@ services:
       CAPSOLVER__APIKEY: ${CAPSOLVER__APIKEY}
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_WEBSEARCH}
       # Seals each person's remembered logins in Redis (base64 of 32 random bytes; empty is
       # remembering off). Changing it makes every saved login refuse until it is put back.
       LOGINS__STATEKEY: ${LOGINS__STATEKEY}
@@ -413,7 +413,7 @@ services:
       IDEALISTA__APIKEY: ${IDEALISTA__APIKEY}
       IDEALISTA__SECRET: ${IDEALISTA__SECRET}
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_IDEALISTA}
     networks:
       - jackbot
     depends_on:
@@ -443,7 +443,7 @@ services:
       MUSICASSISTANT__TOKEN: ${MUSICASSISTANT__TOKEN}
       Announce__Token: ${Announce__Token}
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_HOMEASSISTANT}
     networks:
       - jackbot
     depends_on:
@@ -474,7 +474,7 @@ services:
       WEBPUSH__PRIVATEKEY: ${WEBPUSH__PRIVATEKEY}
       <<: [ *timezone, *cors-origins ]
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_SIGNALR}
       Dictation__Transcription__Model: *stt-model
     networks:
       - jackbot
@@ -503,7 +503,7 @@ services:
       BOTS__1__BOTTOKEN: ${BOTS__1__BOTTOKEN}
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_TELEGRAM}
       Dictation__Transcription__Model: *stt-model
     networks:
       - jackbot
@@ -528,7 +528,7 @@ services:
       # The secrets this service reads, by name: it is never handed the whole .env.
       SERVICEBUSCONNECTIONSTRING: ${SERVICEBUSCONNECTIONSTRING}
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_SERVICEBUS}
     networks:
       - jackbot
     depends_on:
@@ -548,7 +548,7 @@ services:
     environment:
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_SCHEDULING}
     networks:
       - jackbot
     depends_on:
@@ -572,7 +572,7 @@ services:
     restart: unless-stopped
     environment:
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_PRINTER}
     networks:
       - jackbot
     depends_on:
@@ -594,7 +594,7 @@ services:
       # The secrets this service reads, by name: it is never handed the whole .env.
       Announce__Token: ${Announce__Token}
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_TIMERS}
     networks:
       - jackbot
     depends_on:
@@ -654,7 +654,7 @@ services:
       # Also the zone the tables' times are written in (HomeZone empty): the same anchor the Home
       # Assistant container runs on, so a meal lines up with the glucose history /ha serves.
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_SUGARY}
       # Her app is served on this port too (every route but /mcp), and through Caddy over HTTPS,
       # which installing it and live scanning need. This deployment is reached only through the VPN,
       # so the app's own access code is switched off; set it back to true (and SUGARYAPP__ACCESSCODE
@@ -693,7 +693,7 @@ services:
       Announce__Token: ${Announce__Token}
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_VOICE}
       Announce__Escalation__WebhookUrl: ""
       Stt__OpenAi__Model: *stt-model
       Tse__Mode: "${Tse__Mode:-Off}"
@@ -833,7 +833,22 @@ services:
       OUTPOSTS__SHAREDSECRET: ${OUTPOSTS__SHAREDSECRET}
       <<: [ *timezone, *cors-origins ]
       REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      # Each server's credential by the host the agent dials, the same variable the server
+      # reads as its own MCP__SHAREDSECRET.
+      MCP__SECRETS__mcp-library: ${MCP_SECRET_LIBRARY}
+      MCP__SECRETS__mcp-vault: ${MCP_SECRET_VAULT}
+      MCP__SECRETS__mcp-sandbox: ${MCP_SECRET_SANDBOX}
+      MCP__SECRETS__mcp-websearch: ${MCP_SECRET_WEBSEARCH}
+      MCP__SECRETS__mcp-idealista: ${MCP_SECRET_IDEALISTA}
+      MCP__SECRETS__mcp-homeassistant: ${MCP_SECRET_HOMEASSISTANT}
+      MCP__SECRETS__mcp-channel-signalr: ${MCP_SECRET_CHANNEL_SIGNALR}
+      MCP__SECRETS__mcp-channel-telegram: ${MCP_SECRET_CHANNEL_TELEGRAM}
+      MCP__SECRETS__mcp-channel-servicebus: ${MCP_SECRET_CHANNEL_SERVICEBUS}
+      MCP__SECRETS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
+      MCP__SECRETS__mcp-printer: ${MCP_SECRET_PRINTER}
+      MCP__SECRETS__mcp-timers: ${MCP_SECRET_TIMERS}
+      MCP__SECRETS__mcp-sugary: ${MCP_SECRET_SUGARY}
+      MCP__SECRETS__mcp-channel-voice: ${MCP_SECRET_CHANNEL_VOICE}
       AGENTAPI__SHAREDSECRET: ${AGENTAPI__SHAREDSECRET}
     networks:
       - jackbot

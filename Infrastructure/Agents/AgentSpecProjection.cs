@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Prompts;
+using Domain.Security;
 using Domain.Tools.FileSystem;
 using Domain.Tools.Web;
 using Microsoft.Extensions.Logging;
@@ -20,7 +21,7 @@ internal static class AgentSpecProjection
         OpenRouterConfig openRouterConfig,
         IPatchableModelSource patchableModels,
         string? lemonadeHostAddress,
-        string? mcpSecret,
+        McpCredentials credentials,
         DeploymentEndpoints deployment,
         ILogger? logger) => new()
         {
@@ -41,15 +42,14 @@ internal static class AgentSpecProjection
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, definition.Id, logger),
             // Every endpoint a definition names is dialled as configured, but only the ones the
-            // deployment's own settings name present the deployment secret every deployment
-            // server's /mcp asks for. A built-in agent's all do; a registered agent's are whatever
-            // the registration said, and the secret must not follow it to an address of its
-            // choosing. Dynamic endpoints — live outposts — are merged in downstream, where the
+            // deployment's own settings name present a deployment credential, each its own host's.
+            // A built-in agent's all do; a registered agent's are whatever the registration said,
+            // and no credential may follow it to an address of its choosing. Dynamic endpoints — live outposts — are merged in downstream, where the
             // registry of them is reachable, each with its own secret.
             McpServerEndpoints =
             [
                 .. definition.McpServerEndpoints.Select(address =>
-                    McpServerEndpoint.Configured(address, deployment.Names(address) ? mcpSecret : null))
+                    McpServerEndpoint.Configured(address, deployment.Names(address) ? credentials.For(address) : null))
             ],
             UsesOutposts = definition.UsesOutposts,
             EnabledFeatures = definition.EnabledFeatures,
@@ -70,7 +70,7 @@ internal static class AgentSpecProjection
         OpenRouterConfig openRouterConfig,
         IPatchableModelSource patchableModels,
         string? lemonadeHostAddress,
-        string? mcpSecret,
+        McpCredentials credentials,
         ILogger? logger)
     {
         var identity = $"subagent-{definition.Id}";
@@ -105,7 +105,7 @@ internal static class AgentSpecProjection
             // A worker's definition is the deployment's own — nothing registers one — so every
             // endpoint it names is a deployment server.
             McpServerEndpoints =
-                [.. definition.McpServerEndpoints.Select(address => McpServerEndpoint.Configured(address, mcpSecret))],
+                [.. definition.McpServerEndpoints.Select(address => McpServerEndpoint.Configured(address, credentials.For(address)))],
             // Two yeses, and neither alone is enough. The parent's is the ceiling — a subagent
             // acts on its behalf and cannot reach a machine it could not — and the definition's
             // is what keeps a narrow worker off the machines: the list of subagents is shared by

@@ -34,9 +34,10 @@ The base compose maps `/dev/dri` into `plex`/`mcp-sandbox`/`lemonade` for GPU ac
 
 Services read secrets from .NET User Secrets mounted at `/home/app/.microsoft/usersecrets`; the OS override files map the host-side path. A crash with `Value cannot be an empty string. (Parameter 'connectionString')` means they aren't mounted — check you're using the right override.
 
-Two secrets live in `DockerCompose/.env` and must be set (any non-empty value) before the stack is useful:
+These secrets live in `DockerCompose/.env` and must be set (any non-empty value) before the stack is useful:
 
-- `MCP__SHAREDSECRET` — every MCP server's `/mcp` (channel servers included) refuses a call without it, and the agent presents it on every configured endpoint and channel connection. One value reaches both ends. Unset, the agent's session builds and channel connections fail with 401 — by design, not a startup bug. Anything you point at a server's `/mcp` by hand (an MCP inspector, a script) sends `Authorization: Bearer <value>`.
+- `MCP_SECRET_<SERVER>` (one per MCP server, channel servers included) — each server's `/mcp` refuses a call without its own, which it reads as `MCP__SHAREDSECRET`; the agent holds them all as `MCP__SECRETS__<host>` and refuses to start without one for a server it dials. Anything you point at a server's `/mcp` by hand (an MCP inspector, a script) sends `Authorization: Bearer <that server's value>`.
+- `REDIS_PASSWORD` — compose refuses to start the stack without it.
 - `AGENTAPI__SHAREDSECRET` — `/api/agents` (custom-agent registration, routed by Caddy) refuses every verb without `Authorization: Bearer <value>`.
 
 ## Accessing the WebChat & Dashboard
