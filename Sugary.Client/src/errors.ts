@@ -5,7 +5,7 @@ import type { StringKey, Translate } from "./i18n";
 // English, or not at all, so none of its sentences is shown: every failure is said here, in her
 // language. The one exception is a label the model could not read, whose reason the model wrote
 // in her language.
-export type Asking = "estimate" | "label" | "product" | "save" | "deleteFood" | "load" | "signIn";
+export type Asking = "estimate" | "label" | "product" | "save" | "deleteFood" | "load";
 
 const SAID: Record<Asking, Partial<Record<number, StringKey>>> = {
   // 400: a photo or clip refused (type, size, length, unreadable); 500: clips cannot be read here.
@@ -16,7 +16,6 @@ const SAID: Record<Asking, Partial<Record<number, StringKey>>> = {
   // 409: a food a recipe still uses, deleted from a pantry that had not heard of the recipe.
   deleteFood: { 409: "foodInRecipe" },
   load: {},
-  signIn: { 401: "wrongCode" },
 };
 
 export function errorMessage(error: unknown, t: Translate, asking: Asking = "load"): string {

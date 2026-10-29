@@ -33,8 +33,6 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 USER $APP_UID
-# TLS ends at the reverse proxy; trusting its X-Forwarded-Proto is what marks the app's cookie Secure.
-ENV ASPNETCORE_FORWARDEDHEADERS_ENABLED=true
 COPY --from=publish /app/publish .
 COPY --from=web /src/McpServerSugary/wwwroot ./wwwroot
 ENTRYPOINT ["dotnet", "McpServerSugary.dll"]

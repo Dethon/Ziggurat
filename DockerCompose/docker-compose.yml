@@ -608,9 +608,10 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-sugary
-    # Her phone reaches the app through Caddy at sugary.herfluffness.com, and nothing else reaches
-    # it: the sign-in limit counts by X-Forwarded-For, which a caller past the proxy could set to
-    # anything. Local runs publish it on loopback through docker-compose.override.ports.yml.
+    # A person's phone reaches the app through Caddy at sugary.herfluffness.com, and nothing else
+    # reaches it: the app believes the person the proxy's session check names in the X-Ziggurat-*
+    # headers, which a caller past the proxy could set to anybody. Local runs publish it on loopback
+    # through docker-compose.override.ports.yml.
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSugary/Dockerfile
@@ -633,13 +634,10 @@ services:
       # Also the zone the tables' times are written in (HomeZone empty): the same anchor the Home
       # Assistant container runs on, so a meal lines up with the glucose history /ha serves.
       <<: *timezone
+      # The app is served on this port too (every route but /mcp), through Caddy over HTTPS, which
+      # installing it and live scanning need, and behind the proxy's session check: it has no sign-in
+      # of its own. /mcp keeps this server's own credential.
       MCP__SHAREDSECRET: ${MCP_SECRET_SUGARY}
-      # Her app is served on this port too (every route but /mcp), and through Caddy over HTTPS,
-      # which installing it and live scanning need. This deployment is reached only through the VPN,
-      # so the app's own access code is switched off; set it back to true (and SUGARYAPP__ACCESSCODE
-      # in .env) for a deployment the open network can reach. /mcp keeps the deployment secret.
-      SUGARYAPP__REQUIREACCESSCODE: "false"
-      SUGARYAPP__ACCESSCODE: ${SUGARYAPP__ACCESSCODE}
     networks:
       - jackbot
     depends_on:
