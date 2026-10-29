@@ -476,7 +476,7 @@ public class ChatMonitorConversationGroupTests
 
         public Task EnrichAsync(
             Microsoft.Extensions.AI.ChatMessage message,
-            string userId,
+            Account? account,
             string? conversationId,
             string? agentId,
             Microsoft.Agents.AI.AgentSession thread,

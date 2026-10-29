@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Domain.Memory;
 using Infrastructure.Agents.ChatClients;
@@ -63,7 +64,7 @@ public class MemoryRecallHookIntegrationTests(MemorySearchFixture redisFixture)
         var session = new Mock<AgentSession>().Object;
         session.StateBag.SetValue(RedisChatMessageStore.StateKey, "test-state-key");
 
-        await hook.EnrichAsync(message, userId, "conv_1", null, session, CancellationToken.None);
+        await hook.EnrichAsync(message, new Account("home", userId), "conv_1", null, session, CancellationToken.None);
 
         var context = message.GetMemoryContext();
         context.ShouldNotBeNull();
@@ -86,7 +87,7 @@ public class MemoryRecallHookIntegrationTests(MemorySearchFixture redisFixture)
 
         var message = new ChatMessage(ChatRole.User, "¿Qué lenguaje debería usar?");
         await CreateHook(store, embeddingService.Object, queue)
-            .EnrichAsync(message, userId, "conv_1", null, CreateSession(), CancellationToken.None);
+            .EnrichAsync(message, new Account("home", userId), "conv_1", null, CreateSession(), CancellationToken.None);
 
         embeddingService.Verify(
             e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
@@ -113,7 +114,7 @@ public class MemoryRecallHookIntegrationTests(MemorySearchFixture redisFixture)
         var userId = $"user_{Guid.NewGuid():N}";
         var hook = CreateHook(store, embeddingService.Object, new MemoryExtractionQueue());
 
-        await hook.EnrichAsync(new ChatMessage(ChatRole.User, "primera"), userId, "c", null,
+        await hook.EnrichAsync(new ChatMessage(ChatRole.User, "primera"), new Account("home", userId), "c", null,
             CreateSession(), CancellationToken.None);
         embeddingService.Verify(
             e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -132,7 +133,7 @@ public class MemoryRecallHookIntegrationTests(MemorySearchFixture redisFixture)
             LastAccessedAt = DateTimeOffset.UtcNow
         });
 
-        await hook.EnrichAsync(new ChatMessage(ChatRole.User, "segunda"), userId, "c", null,
+        await hook.EnrichAsync(new ChatMessage(ChatRole.User, "segunda"), new Account("home", userId), "c", null,
             CreateSession(), CancellationToken.None);
         embeddingService.Verify(
             e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);

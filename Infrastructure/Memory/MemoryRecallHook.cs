@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
@@ -51,7 +52,7 @@ public class MemoryRecallHook(
 
     public async Task EnrichAsync(
         ChatMessage message,
-        string userId,
+        Account? account,
         string? conversationId,
         string? agentId,
         AgentSession thread,
@@ -62,14 +63,33 @@ public class MemoryRecallHook(
             return;
         }
 
-        // The second reason nothing is written to memory, stated beside the first. A person picks
-        // a model on their own box so that what they type stays there, and extraction sends
-        // exactly their own words to a hosted model — so a turn addressed to the box is not
-        // extracted from. It reads what the turn *asked for*, because that is all there is here:
-        // this runs before the agent, so no host has been chosen yet, and the gate therefore
-        // fails closed. Recall below is deliberately not skipped with it: the box may read what
-        // the agent already knew, and the boundary is one-way on purpose.
+        // Memory belongs to a person, and a turn acting for no account is nobody's: the voice guest
+        // a visitor or the television speaks as, or a channel that has not moved onto accounts yet.
+        // It reads nothing and writes nothing, and there is no name to fall back to — the sender a
+        // channel reports is a label, which another person can share.
+        if (account is null)
+        {
+            return;
+        }
+
+        var userId = account.UserId;
+
+        // The two reasons a turn reads memory and writes none, stated together. A person picks a
+        // model on their own box so that what they type stays there, and extraction sends exactly
+        // their own words to a hosted model — so a turn addressed to the box is not extracted from.
+        // It reads what the turn *asked for*, because that is all there is here: this runs before
+        // the agent, so no host has been chosen yet, and the gate therefore fails closed. Recall
+        // below is deliberately not skipped with it: the box may read what the agent already knew,
+        // and the boundary is one-way on purpose.
         var isLemonadeTurn = LemonadeModelId.IsLemonade(message.GetConfigPatch()?.Model);
+
+        // A turn nobody sent — a schedule's or a watch's fire, a login wake — acts for the person
+        // whose own turn set it going, so it reads their memory; but its words are a prompt they
+        // left for later or a server's notice, never something they just said. Before accounts a
+        // fire was only ever extracted into its server's own bucket ("scheduler", "watch"), never a
+        // person's, and keying by account must not widen that. Read off the context the
+        // conversation group stamps on the turn before it asks for recall.
+        var isFire = message.GetConversationContext()?.OriginKind is not null;
 
         try
         {
@@ -134,7 +154,7 @@ public class MemoryRecallHook(
                 }
             });
 
-            if (!isLemonadeTurn)
+            if (!isLemonadeTurn && !isFire)
             {
                 await extractionQueue.EnqueueAsync(
                     new MemoryExtractionRequest(userId, stateKey, anchor, conversationId, agentId)

@@ -548,9 +548,13 @@ internal sealed class ConversationGroup(
         {
             // The delivery identity again, not the message's own: recall stamps durable
             // provenance on any memory extracted from this turn, so the source it names
-            // has to be a conversation that can still be opened.
+            // has to be a conversation that can still be opened. Whose memory it is comes from the
+            // account the turn acts for, never from its sender, which is only the name a channel
+            // shows: one person reaches one memory from every channel, and a turn with no account
+            // reaches none.
             await memoryRecallHook.EnrichAsync(
-                userMessage, message.Sender, state.DeliveryKey.ConversationId, message.AgentId, state.Thread, _turnCt);
+                userMessage, message.Principal?.Account, state.DeliveryKey.ConversationId, message.AgentId,
+                state.Thread, _turnCt);
         }
 
         return userMessage;
