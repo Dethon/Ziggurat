@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] An allowlisted id is admitted; a non-listed id whose username or first name matches an old entry is refused
-- [ ] Another person's tap leaves the approval pending and is told it isn't theirs; the asker's tap resolves it
-- [ ] A fire's approval is answered by an allowlisted tap
-- [ ] Approval callback data carries 32 hex characters and stays within Telegram's limit
-- [ ] The startup log lists the admitted ids, and the Telegram rules and placeholders name the numeric allowlist
+- [x] An allowlisted id is admitted; a non-listed id whose username or first name matches an old entry is refused
+- [x] Another person's tap leaves the approval pending and is told it isn't theirs; the asker's tap resolves it
+- [x] A fire's approval is answered by an allowlisted tap
+- [x] Approval callback data carries 32 hex characters and stays within Telegram's limit
+- [x] The startup log lists the admitted ids, and the Telegram rules and placeholders name the numeric allowlist

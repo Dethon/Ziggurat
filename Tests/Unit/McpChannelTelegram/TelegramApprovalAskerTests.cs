@@ -1,0 +1,111 @@
+using Domain.DTOs;
+using Domain.DTOs.Channel;
+using McpChannelTelegram.McpTools;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using Shouldly;
+using Telegram.Bot.Requests;
+using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
+
+namespace Tests.Unit.McpChannelTelegram;
+
+// An approval raised inside a person's turn belongs to that person. The bot admits their message,
+// the agent asks for approval within the turn it started, and only their tap counts — anyone else
+// in the chat sees the keyboard and is told it isn't theirs.
+public class TelegramApprovalAskerTests : IDisposable
+{
+    private static readonly IReadOnlyList<ToolApprovalRequest> ARequest =
+        [new ToolApprovalRequest(null, "tool", new Dictionary<string, object?>())];
+
+    private readonly TelegramPollingHarness _harness = new();
+    private readonly IServiceProvider _services;
+
+    public TelegramApprovalAskerTests()
+    {
+        _services = new ServiceCollection()
+            .AddSingleton(_harness.BotRegistry)
+            .AddSingleton(_harness.CallbackRouter)
+            .AddSingleton(_harness.Settings)
+            .BuildServiceProvider();
+    }
+
+    [Fact]
+    public async Task AnotherPersonsTap_LeavesTheApprovalPending_AndTheAskersTapResolvesIt()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage(
+                "/delete it", username: "alice", userId: TelegramPollingHarness.AliceId)
+        });
+        await _harness.RunAsync();
+
+        var approval = RequestApprovalTool.RunAsync(
+            "100:100", ApprovalMode.Request, ARequest, PersonsTurn("alice"), _services);
+
+        await TapAsync(TelegramPollingHarness.BobId, "tool_approve");
+        await Task.Delay(100);
+        approval.IsCompleted.ShouldBeFalse();
+        _harness.BotClient.Verify(b => b.SendRequest(
+            It.Is<AnswerCallbackQueryRequest>(r => r.Text == "This approval isn't yours"),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        await TapAsync(TelegramPollingHarness.AliceId, "tool_approve");
+        (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("approved");
+    }
+
+    // A listed person with no username is the turn's sender by their id, and their tap still counts.
+    [Fact]
+    public async Task APersonWithNoUsername_AnswersTheirOwnApproval()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage(
+                "/delete it", username: null, userId: TelegramPollingHarness.BobId)
+        });
+        await _harness.RunAsync();
+
+        var sender = (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Sender;
+        sender.ShouldBe($"{TelegramPollingHarness.BobId}");
+
+        var approval = RequestApprovalTool.RunAsync(
+            "100:100", ApprovalMode.Request, ARequest, PersonsTurn(sender), _services);
+        await TapAsync(TelegramPollingHarness.BobId, "tool_reject");
+
+        (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("denied");
+    }
+
+    // The context the agent stamps on a person's own message: no origin kind, and the sender the
+    // bot emitted as the user id.
+    private static ConversationContext PersonsTurn(string sender) =>
+        new(TelegramPollingHarness.AgentId, "100:100", sender, new ReplyTarget("telegram", "100:100"));
+
+    private async Task TapAsync(long fromUserId, string button)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        InlineKeyboardMarkup? keyboard = null;
+        while (keyboard is null && DateTime.UtcNow < deadline)
+        {
+            keyboard = _harness.Sent.Select(r => r.ReplyMarkup).OfType<InlineKeyboardMarkup>().LastOrDefault();
+            if (keyboard is null)
+            {
+                await Task.Delay(10);
+            }
+        }
+
+        var data = keyboard.ShouldNotBeNull().InlineKeyboard.First()
+            .Single(b => b.CallbackData!.StartsWith(button + ":", StringComparison.Ordinal)).CallbackData;
+        await _harness.CallbackRouter.HandleCallbackQueryAsync(_harness.BotClient.Object, new CallbackQuery
+        {
+            Id = "cb-1",
+            Data = data,
+            From = new User { Id = fromUserId, IsBot = false, FirstName = "Someone" }
+        }, CancellationToken.None);
+    }
+
+    public void Dispose() => _harness.Dispose();
+}

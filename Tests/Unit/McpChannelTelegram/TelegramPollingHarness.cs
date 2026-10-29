@@ -29,8 +29,19 @@ internal sealed class TelegramPollingHarness : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentQueue<SendMessageRequest> _sent = new();
 
-    public TelegramPollingHarness(params string[] allowedUsernames)
+    // Alice is Telegram user 1 and Bob user 2 unless a test lists others.
+    public const long AliceId = 1;
+    public const long BobId = 2;
+
+    public TelegramPollingHarness(params long[] allowedUserIds)
     {
+        Settings = new ChannelSettings
+        {
+            Bots = [new AgentBotConfig { AgentId = AgentId, BotToken = "unused" }],
+            AllowedUserIds = allowedUserIds.Length > 0 ? allowedUserIds : [AliceId, BobId],
+            Dictation = Dictation
+        };
+
         Inbox = new ChannelInbox(Time);
         Emitter = new ChannelNotificationEmitter(Inbox, DeliveryPolicy.BufferAlways, SubscriberId);
         BotRegistry = new BotRegistry(new Dictionary<string, ITelegramBotClient>
@@ -40,12 +51,7 @@ internal sealed class TelegramPollingHarness : IDisposable
 
         Service = new TelegramBotService(
             BotRegistry,
-            new ChannelSettings
-            {
-                Bots = [new AgentBotConfig { AgentId = AgentId, BotToken = "unused" }],
-                AllowedUsernames = allowedUsernames.Length > 0 ? allowedUsernames : ["alice", "bob"],
-                Dictation = Dictation
-            },
+            Settings,
             Emitter,
             CallbackRouter,
             Catalog,
@@ -69,6 +75,7 @@ internal sealed class TelegramPollingHarness : IDisposable
     public FakeTranscriber Transcriber { get; } = new();
     public RecordingMetricsPublisher Metrics { get; } = new();
     public DictationSettings Dictation { get; } = new();
+    public ChannelSettings Settings { get; }
     public FakeTimeProvider Time { get; } = new();
     public ApprovalCallbackRouter CallbackRouter { get; } = new();
     public MutableAgentCatalog Catalog { get; } = new();
@@ -148,14 +155,15 @@ internal sealed class TelegramPollingHarness : IDisposable
         _cts.Dispose();
     }
 
-    public static Message TextMessage(string text, long chatId = 100, string username = "alice") => new()
-    {
-        Id = 10,
-        Date = DateTime.UtcNow,
-        Text = text,
-        Chat = new Chat { Id = chatId, Type = ChatType.Private },
-        From = new User { Id = 1, IsBot = false, FirstName = username, Username = username }
-    };
+    public static Message TextMessage(
+        string text, long chatId = 100, string? username = "alice", long userId = AliceId) => new()
+        {
+            Id = 10,
+            Date = DateTime.UtcNow,
+            Text = text,
+            Chat = new Chat { Id = chatId, Type = ChatType.Private },
+            From = new User { Id = userId, IsBot = false, FirstName = username ?? "Someone", Username = username }
+        };
 
     public static Message MediaMessage(
         int messageId = 10,
@@ -171,7 +179,7 @@ internal sealed class TelegramPollingHarness : IDisposable
             MessageThreadId = threadId,
             MediaGroupId = mediaGroupId,
             Chat = new Chat { Id = chatId, Type = ChatType.Private },
-            From = new User { Id = 1, IsBot = false, FirstName = username, Username = username }
+            From = new User { Id = AliceId, IsBot = false, FirstName = username, Username = username }
         };
 
     public static PhotoSize[] Photo(string fileId = "photo-1", long? sizeBytes = 2048) =>
