@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 
 namespace Domain.Security;
 
@@ -17,6 +18,15 @@ public sealed record ForwardedAccount(string UserId, string TenantId, IReadOnlyL
     public const string RolesHeader = "X-Ziggurat-Roles";
 
     public static IReadOnlyList<string> Headers { get; } = [UserHeader, TenantHeader, RolesHeader];
+
+    // The role the check names beside the household role for whoever an owner granted every topic
+    // in the household. Read once per connection, so a grant or a withdrawal reaches an open chat
+    // client when it next connects.
+    public const string SeesAllRole = "sees-all";
+
+    public bool SeesAll => Roles.Contains(SeesAllRole);
+
+    public TopicViewer Viewer => new(UserId, TenantId, SeesAll);
 
     // A turn this person sent on a channel behind the proxy: the account the check named, and the
     // account's id as the channel's own name for them, since such a channel knows them by nothing else.

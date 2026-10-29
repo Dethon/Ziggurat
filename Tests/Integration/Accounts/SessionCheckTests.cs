@@ -1,4 +1,5 @@
 using System.Net;
+using Accounts.Members;
 using Accounts.Sessions;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -36,6 +37,21 @@ public class SessionCheckTests
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         response.Headers.GetValues("X-Ziggurat-User").ShouldBe([laura]);
         response.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["member"]);
+    }
+
+    // "Sees all conversations" is named beside the role, so the chat hub learns it from the headers
+    // it already reads and never asks the service again.
+    [Fact]
+    public async Task ASessionOfSomeoneWhoSeesAllConversations_NamesItBesideTheirRole()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var laura = await server.SeedMemberAsync("Laura");
+        await server.Service<MemberStore>().SetSeesAllConversationsAsync(fran.TenantId, laura, true, CancellationToken.None);
+
+        var response = await server.VerifyAsync(await server.MintSessionAsync(laura));
+
+        response.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["member,sees-all"]);
     }
 
     // A bookmark on any of the deployment's hosts still works: sign-in is on the main host, and it

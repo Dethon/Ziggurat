@@ -27,6 +27,7 @@ public class ApprovalServiceTests : IDisposable
         _sut = new ApprovalService(
             _streamService,
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             _hubSender.Object,
             new Mock<ILogger<ApprovalService>>().Object);
     }

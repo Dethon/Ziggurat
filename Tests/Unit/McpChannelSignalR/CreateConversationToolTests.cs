@@ -30,6 +30,7 @@ public class CreateConversationToolTests
             .AddSingleton(_sessionService)
             .AddSingleton(_streamService)
             .AddSingleton(_hubSender.Object)
+            .AddSingleton(_topics.Store)
             .AddSingleton<IConversationFactory>(new ConversationFactory(_topics.Store, TimeProvider.System))
             .BuildServiceProvider();
     }

@@ -646,6 +646,7 @@ public sealed class McpChannelConnection(
         string? initialPrompt,
         string? address,
         string? existingConversationId,
+        Principal? principal,
         CancellationToken ct)
     {
         var client = _client;
@@ -670,7 +671,10 @@ public sealed class McpChannelConnection(
                     ["sender"] = sender,
                     ["initialPrompt"] = initialPrompt,
                     ["address"] = address,
-                    ["existingConversationId"] = existingConversationId
+                    ["existingConversationId"] = existingConversationId,
+                    ["principal"] = principal is null
+                        ? null
+                        : JsonSerializer.SerializeToElement(principal, ChannelProtocol.SerializerOptions)
                 },
                 cancellationToken: ct);
 

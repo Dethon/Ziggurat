@@ -29,11 +29,11 @@ public sealed class NullThreadStateStore : IThreadStateStore
     public Task MarkTopicReadAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
 
     public Task<TopicPage> GetTopicPageAsync(
-        string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false)
+        string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false)
         => Task.FromResult(new TopicPage([], null));
 
     public Task<TopicPage> SearchTopicsAsync(
-        string agentId, string spaceSlug, string query, string? cursor, int pageSize)
+        string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize)
         => Task.FromResult(new TopicPage([], null));
 
     public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)

@@ -29,6 +29,7 @@ public class AgentInitiatedStreamingFlowTests
             .AddSingleton(streamService)
             .AddSingleton<IStreamService>(streamService)
             .AddSingleton(hubSender.Object)
+            .AddSingleton(new Mock<IThreadStateStore>().Object)
             .BuildServiceProvider();
         sessionService.StartSession("topic-1", "jack", 7, 42, "default", "Downloads");
 
