@@ -47,6 +47,7 @@ public static class ConfigModule
                     sp.GetRequiredService<IPersonStateStore>(),
                     sp.GetRequiredService<TimeProvider>(),
                     TimeSpan.FromSeconds(settings.Logins.SaveDebounceSeconds),
+                    settings.Logins.MaxRecordBytes,
                     sp.GetRequiredService<ILogger<PersonLogins>>()))
                 .AddSingleton<LoginHandoffs>()
                 .AddSingleton<ILoginHandoffs>(sp => sp.GetRequiredService<LoginHandoffs>())

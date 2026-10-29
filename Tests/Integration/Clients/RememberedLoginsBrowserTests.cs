@@ -54,7 +54,7 @@ public class RememberedLoginsBrowserTests(IsolatedSessionBrowserFixture fixture,
     {
         var browser = new PlaywrightWebBrowser(wsEndpoint: fixture.WsEndpoint, personStates: store);
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        return new Rig(browser, new PersonLogins(browser, store, time, _debounce, NullLogger<PersonLogins>.Instance), time);
+        return new Rig(browser, new PersonLogins(browser, store, time, _debounce, 8 * 1024 * 1024, NullLogger<PersonLogins>.Instance), time);
     }
 
     private static async Task<string> WhoAmIAsync(PlaywrightWebBrowser browser, string site, string person)

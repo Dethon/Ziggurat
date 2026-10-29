@@ -25,7 +25,10 @@ public class PersonLoginsTests(RedisFixture redis) : IClassFixture<RedisFixture>
 
     private RedisPersonStateStore Store => _store ??= new RedisPersonStateStore(redis.Connection, RandomNumberGenerator.GetBytes(32));
 
-    private PersonLogins Logins => _logins ??= new PersonLogins(_contexts, Store, _time, _debounce, NullLogger<PersonLogins>.Instance);
+    private long _maxRecordBytes = 8 * 1024 * 1024;
+
+    private PersonLogins Logins => _logins ??=
+        new PersonLogins(_contexts, Store, _time, _debounce, _maxRecordBytes, NullLogger<PersonLogins>.Instance);
 
     public void Dispose() => _logins?.Dispose();
 
@@ -133,14 +136,18 @@ public class PersonLoginsTests(RedisFixture redis) : IClassFixture<RedisFixture>
     {
         await HandOffAsync("https://bank.test/login", ["bank.test"], remember: true,
             () => _contexts.SetCookie("sid", ".bank.test", "bank-session"));
-        await HandOffAsync("https://shop.test/login", ["shop.test"], remember: true,
-            () => _contexts.SetCookie("sid", ".shop.test", "shop-session"));
+        await HandOffAsync("https://shop.test/login", ["shop.test"], remember: true, () =>
+        {
+            _contexts.SetCookie("sid", ".shop.test", "shop-session");
+            _contexts.SetOrigin("https://shop.test", "shop-storage");
+        });
 
         await HandOffAsync("https://shop.test/login", ["shop.test"], remember: false);
 
         var record = await RecordAsync();
         record.Logins.Select(l => l.Site).ShouldBe(["bank.test"]);
         CookieValues(record.StorageState).ShouldBe(["bank-session"]);
+        record.StorageState.ShouldNotContain("shop-storage");
         (await Logins.LoginsAsync(_person)).Select(l => (l.Site, l.Remembered))
             .ShouldBe([("bank.test", true), ("shop.test", false)]);
     }
@@ -328,5 +335,50 @@ public class PersonLoginsTests(RedisFixture redis) : IClassFixture<RedisFixture>
 
         await Eventually.Settle();
         CookieValues((await RecordAsync()).StorageState).ShouldBe(["shop-session"]);
+    }
+
+    // The save after use exists so rotated cookies survive a restart: it exports cookies alone,
+    // and the origins the last kept login exported stand.
+    [Fact]
+    public async Task TheSaveAfterUse_WritesCookiesOnly_AndKeepsTheStoredOrigins()
+    {
+        await HandOffAsync("https://shop.test/login", ["shop.test"], remember: true, () =>
+        {
+            _contexts.SetCookie("sid", ".shop.test", "shop-session");
+            _contexts.SetOrigin("https://shop.test", "stored-at-done");
+        });
+        var fullExports = _contexts.FullExports;
+        _contexts.SetCookie("sid", ".shop.test", "rotated-session");
+        _contexts.SetOrigin("https://shop.test", "changed-since");
+
+        _contexts.RaiseActivity(_person, "https://shop.test/orders");
+        _time.Advance(_debounce);
+
+        await Eventually.Until(async () => CookieValues((await RecordAsync()).StorageState).Contains("rotated-session"),
+            "the rotated cookie to be saved");
+        var record = await RecordAsync();
+        record.StorageState.ShouldContain("stored-at-done");
+        record.StorageState.ShouldNotContain("changed-since");
+        _contexts.FullExports.ShouldBe(fullExports);
+    }
+
+    // A mail client's IndexedDB runs to tens of megabytes: over the cap it goes first, and the
+    // session itself is saved regardless.
+    [Fact]
+    public async Task ARecordOverTheCap_DropsIndexedDbFirst_AndStillSavesTheCookies()
+    {
+        _maxRecordBytes = 4_000;
+
+        await HandOffAsync("https://mail.test/login", ["mail.test"], remember: true, () =>
+        {
+            _contexts.SetCookie("sid", ".mail.test", "mail-session");
+            _contexts.SetOrigin("https://mail.test", "prefs-kept", indexedDbBytes: 10_000);
+        });
+
+        var state = JsonNode.Parse((await RecordAsync()).StorageState)!;
+        CookieValues(state.ToJsonString()).ShouldBe(["mail-session"]);
+        var origin = state["origins"]!.AsArray().ShouldHaveSingleItem()!;
+        origin["indexedDB"].ShouldBeNull();
+        origin.ToJsonString().ShouldContain("prefs-kept");
     }
 }
