@@ -135,6 +135,53 @@ public class IdentityMapTests
         _map.Resolve(null).ShouldBeOfType<PersonResolution.Refused>();
     }
 
+    // A fire's userId is whatever its schedule's JSON said and its origin is where it delivers, so
+    // neither says who set it going: a fire is somebody only through the principal stamped from
+    // the turn that wrote it.
+    [Fact]
+    public void AFire_WithNoStampedPrincipal_IsNobody()
+    {
+        var fire = From("FranTG") with { OriginKind = MessageOriginKind.Schedule };
+
+        _map.Resolve(fire).ShouldBeOfType<PersonResolution.Refused>()
+            .Error["message"]!.GetValue<string>().ShouldContain("nobody vouched");
+    }
+
+    [Fact]
+    public void AFire_StampedFromAPersonsOwnVerifiedTurn_ResolvesToThem()
+    {
+        var fire = From("someone-the-json-named", "signalr") with
+        {
+            OriginKind = MessageOriginKind.Schedule,
+            Principal = new Principal(IdentityMap.TelegramChannelId, "FranTG")
+        };
+
+        _map.Resolve(fire).ShouldBeOfType<PersonResolution.Found>().Person.ShouldBe("fran");
+    }
+
+    [Fact]
+    public void AFire_StampedFromAnUnverifiedChannel_IsRefused()
+    {
+        var fire = From("Fran", "telegram") with
+        {
+            OriginKind = MessageOriginKind.Schedule,
+            Principal = new Principal(IdentityMap.WebChatChannelId, "Fran")
+        };
+
+        _map.Resolve(fire).ShouldBeOfType<PersonResolution.Refused>()
+            .Error["message"]!.GetValue<string>().ShouldContain("verify who is speaking");
+    }
+
+    // A person's own turn is vouched for by the channel it arrived on; a stamped principal, where
+    // there is one, is what the server reads.
+    [Fact]
+    public void AnOwnTurn_WithAStampedPrincipal_ResolvesByThePrincipal()
+    {
+        var turn = From("ignored", "telegram") with { Principal = new Principal("telegram", "ana_t") };
+
+        _map.Resolve(turn).ShouldBeOfType<PersonResolution.Found>().Person.ShouldBe("ana");
+    }
+
     [Fact]
     public void APersonsWebChatName_IsFoundByTheirName()
     {

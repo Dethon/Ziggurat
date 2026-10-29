@@ -10,6 +10,10 @@ namespace Domain.DTOs.Channel;
 // OriginKind is what raised the turn when nobody sent it — a schedule, a watch, a login wake — and
 // null for a person's own message, so a server can refuse what only a person present may start (a
 // login handoff). Optional, so a sender from before it reads as a person's turn.
+//
+// Principal is who the turn acts for, as the channel that vouched for them. UserId alone cannot
+// say that on a fire: a schedule's userId is whatever its JSON said and its origin is where it
+// delivers, so a server that acts as a person reads the principal and nothing else.
 [PublicAPI]
 public record ConversationContext(
     string AgentId,
@@ -17,7 +21,8 @@ public record ConversationContext(
     string UserId,
     ReplyTarget Origin,
     string? ConfigPatchModel = null,
-    MessageOriginKind? OriginKind = null)
+    MessageOriginKind? OriginKind = null,
+    Principal? Principal = null)
 {
     // Where the approval client puts the conversation a call serves on that call's own arguments,
     // beside ToolPermission's: a tool acting outside the turn reads who it acts for from there.
