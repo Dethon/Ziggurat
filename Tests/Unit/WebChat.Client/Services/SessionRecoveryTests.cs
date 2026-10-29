@@ -2,6 +2,7 @@ using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Services;
 using WebChat.Client.State;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.UserIdentity;
 
@@ -11,6 +12,7 @@ public sealed class SessionRecoveryTests : IDisposable
 {
     private readonly CallRecorder _calls = new();
     private readonly Dispatcher _dispatcher = new();
+    private readonly ConnectionStore _connectionStore;
     private readonly SpaceStore _spaceStore;
     private readonly UserIdentityStore _userIdentityStore;
     private readonly FakeChatSessionService _sessionService;
@@ -20,13 +22,15 @@ public sealed class SessionRecoveryTests : IDisposable
 
     public SessionRecoveryTests()
     {
+        _connectionStore = new ConnectionStore(_dispatcher);
         _spaceStore = new SpaceStore(_dispatcher);
         _userIdentityStore = new UserIdentityStore(_dispatcher);
         _sessionService = new FakeChatSessionService(_calls);
         _topicService = new FakeTopicService(_calls);
 
         _recovery = new SessionRecovery(
-            _sessionService, _topicService, _pushService, _userIdentityStore, _spaceStore);
+            _sessionService, _topicService, _pushService, _userIdentityStore, _spaceStore,
+            _connectionStore, _dispatcher);
     }
 
     [Fact]
@@ -63,6 +67,37 @@ public sealed class SessionRecoveryTests : IDisposable
         _pushService.ResubscribeCalls.ShouldBe(1);
     }
 
+    // Catching up on the reconnect asks the hub for topics and history, which it refuses until
+    // the user is back; recovery is what knows when that is, so it says so.
+    [Fact]
+    public async Task RecoverAsync_SaysTheConnectionIsRegisteredOnceTheHubHasTheUserBack()
+    {
+        var registered = new List<int>();
+        using var subscription = _connectionStore.RegisteredAgain.Subscribe(registered.Add);
+        _dispatcher.Dispatch(new SelectUser("user-1"));
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await _recovery.RecoverAsync();
+
+        registered.ShouldBe([2]);
+    }
+
+    [Fact]
+    public async Task RecoverAsync_ARegistrationThatCouldNotBeMade_SaysNothingIsRegistered()
+    {
+        var registered = new List<int>();
+        using var subscription = _connectionStore.RegisteredAgain.Subscribe(registered.Add);
+        _dispatcher.Dispatch(new SelectUser("user-1"));
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _sessionService.NotLive = true;
+
+        await _recovery.RecoverAsync();
+
+        registered.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task RecoverAsync_DoesNotForceRefreshThePushChannel()
     {
@@ -95,6 +130,7 @@ public sealed class SessionRecoveryTests : IDisposable
 
     public void Dispose()
     {
+        _connectionStore.Dispose();
         _spaceStore.Dispose();
         _userIdentityStore.Dispose();
     }
