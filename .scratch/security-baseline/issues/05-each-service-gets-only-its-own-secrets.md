@@ -4,9 +4,9 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The conformance check fails on any service taking the whole secrets file, and on the OpenRouter key, the Home Assistant token, the logins key or a Telegram token reaching a service that doesn't read it
-- [ ] Every placeholder is used by at least one service, and none has a value
-- [ ] Each override mounts only its project's user secrets, asserted by the check
-- [ ] The stack comes up and the chat client answers a turn (manual check, noted in the ticket)
+- [x] The conformance check fails on any service taking the whole secrets file, and on the OpenRouter key, the Home Assistant token, the logins key or a Telegram token reaching a service that doesn't read it
+- [x] Every placeholder is used by at least one service, and none has a value
+- [x] Each override mounts only its project's user secrets, asserted by the check
+- [x] The stack comes up and the chat client answers a turn (manual check, noted in the ticket)
