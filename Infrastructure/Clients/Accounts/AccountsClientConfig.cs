@@ -17,7 +17,8 @@ public record AccountsClientConfig
 public static class AccountsClientRegistration
 {
     // The credential is the server's own, the one its /mcp asks for: the accounts service lists
-    // each caller by the credential it already holds, so no secret exists for this alone.
+    // each caller by the credential it already holds, so no secret exists for this alone. One client
+    // answers both contracts; only the Telegram bot asks the second.
     public static IServiceCollection AddAccountResolver(
         this IServiceCollection services, AccountsClientConfig config, string credential)
     {
@@ -26,7 +27,10 @@ public static class AccountsClientRegistration
             http.BaseAddress = new Uri(config.BaseUrl.TrimEnd('/') + "/");
             http.Timeout = config.RequestTimeout;
         });
-        return services.AddSingleton<IAccountResolver>(sp => new AccountsResolverClient(
-            sp.GetRequiredService<IHttpClientFactory>().CreateClient(AccountsResolverClient.ClientName), credential));
+        return services
+            .AddSingleton(sp => new AccountsResolverClient(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(AccountsResolverClient.ClientName), credential))
+            .AddSingleton<IAccountResolver>(sp => sp.GetRequiredService<AccountsResolverClient>())
+            .AddSingleton<ITelegramAccounts>(sp => sp.GetRequiredService<AccountsResolverClient>());
     }
 }
