@@ -58,6 +58,39 @@ public class McpChannelConnectionTests
         }
     }
 
+    // A chat-client turn names the person's account beside the channel's own user id, and the
+    // account is what everything keyed by a person reads once it moves over, so it must survive the
+    // hop as the channel spelled it.
+    [Fact]
+    public async Task HandleNotification_CarriesThePrincipalsAccount()
+    {
+        var sut = new McpChannelConnection("signalr");
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            conversationId = "7:42",
+            content = "hello",
+            sender = "Fran",
+            principal = new
+            {
+                channelId = "signalr",
+                userId = "0123456789abcdef0123456789abcdef",
+                account = new { tenantId = "fedcba9876543210fedcba9876543210", userId = "0123456789abcdef0123456789abcdef" }
+            }
+        });
+
+        sut.HandleChannelMessageNotification(payload);
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in sut.Messages.WithCancellation(cts.Token))
+        {
+            msg.Principal.ShouldBe(new Principal(
+                "signalr",
+                "0123456789abcdef0123456789abcdef",
+                new Account("fedcba9876543210fedcba9876543210", "0123456789abcdef0123456789abcdef")));
+            break;
+        }
+    }
+
     [Fact]
     public async Task HandleCancelNotification_WritesSyntheticCancelMessage()
     {
