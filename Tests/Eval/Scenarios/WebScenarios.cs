@@ -618,8 +618,9 @@ public static class WebScenarios
 
     // The person's own orders, on a site nobody in an eval is logged in to. The page has to be
     // browsed as them — anonymously it would be the same wall, and the browse would prove nothing
-    // about whose account was asked for — and the wall it lands on is handed off: the link the
-    // tool answers goes in the reply and the turn stops there, with nothing typed into the form.
+    // about whose account was asked for — and the server refuses it for want of a login, which is
+    // handed off: the link the tool answers goes in the reply and the turn stops there, with
+    // nothing typed into the form.
     public static Scenario TheOrdersBehindALogin => new()
     {
         Name = "a person's account is browsed as them, and its login is handed off",

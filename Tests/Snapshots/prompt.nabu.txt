@@ -19,7 +19,7 @@
   language                 Language              122 / 300    The reply language, stated absolutely, against a request that is otherwise all English.
   obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
   sandbox                  Skill                 123 / 130    body 1291 / 1350, served by mcp-sandbox
-  web-browsing             Skill                 121 / 130    body 1922 / 1950, served by mcp-websearch
+  web-browsing             Skill                 121 / 130    body 1938 / 1950, served by mcp-websearch
   home-watches             Skill                 104 / 120    body 1671 / 2200, served by mcp-homeassistant
   home-assistant           Skill                 150 / 150    body 3588 / 3600, served by mcp-homeassistant
   scheduling               Skill                 107 / 130    body 1121 / 1300, served by mcp-scheduling
