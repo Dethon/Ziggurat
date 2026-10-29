@@ -12,6 +12,11 @@ public record ChannelMessageNotification
     // The person an unprompted fire is on behalf of, when its author named one: a schedule's or a
     // watch's `userId`. Null for a message a person sent themselves — the sender is that person.
     public string? UserId { get; init; }
+    // Who the turn acts for, as the channel that vouched for them (Principal): stamped by a server
+    // that fires on somebody's behalf from the turn that set it going, never from what the model
+    // wrote. Null on a person's own message, whose channel is the voucher, and on a fire nobody's
+    // own turn stands behind.
+    public Principal? Principal { get; init; }
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     // Optional originating room for room-aware prompts. Part of the shared channel protocol but

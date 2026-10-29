@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs.Channel;
 using Infrastructure.Clients.Channels;
 using Shouldly;
 
@@ -29,6 +30,30 @@ public class McpChannelConnectionTests
             msg.Sender.ShouldBe("user@test");
             msg.ChannelId.ShouldBe("ch-1");
             msg.AgentId.ShouldBe("agent-7");
+            break;
+        }
+    }
+
+    // A fire's stamped principal crosses the wire with it: it is the only evidence of who set the
+    // fire going, and a message that dropped it would run as nobody.
+    [Fact]
+    public async Task HandleNotification_CarriesTheStampedPrincipal()
+    {
+        var sut = new McpChannelConnection("scheduling");
+        var payload = JsonSerializer.SerializeToElement(new
+        {
+            conversationId = "sched-1",
+            content = "check my orders",
+            sender = "scheduler",
+            principal = new { channelId = "telegram", userId = "FranTG" }
+        });
+
+        sut.HandleChannelMessageNotification(payload);
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in sut.Messages.WithCancellation(cts.Token))
+        {
+            msg.Principal.ShouldBe(new Principal("telegram", "FranTG"));
             break;
         }
     }
