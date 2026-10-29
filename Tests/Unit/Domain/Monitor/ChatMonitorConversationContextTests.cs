@@ -107,6 +107,41 @@ public class ChatMonitorConversationContextTests
         context.UserId.ShouldBe("test");
     }
 
+    // A person's own message is vouched for by the channel it arrived on, whatever reply target the
+    // turn resolves to.
+    [Fact]
+    public void BuildConversationContext_APersonsOwnMessage_IsVouchedForByTheChannelItArrivedOn()
+    {
+        var channel = new FakeChannelConnection { ChannelId = "signalr" };
+        var message = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "c-1", channelId: "telegram", agentId: "jonas") with
+        { Sender = "FranTG", UserId = null };
+
+        var context = DeliveryTargetResolver.BuildConversationContext(message, [new DeliveryTarget(channel, "w-1")]);
+
+        context.Principal.ShouldBe(new Principal("telegram", "FranTG"));
+    }
+
+    // A fire's principal is the one its server stamped from the turn that set it going; its
+    // userId and its delivery channel are no evidence of who that was.
+    [Fact]
+    public void BuildConversationContext_AFire_CarriesOnlyTheStampedPrincipal()
+    {
+        var stamped = MonitorTestMocks.CreateChannelMessage(
+            conversationId: "fire-1", channelId: "scheduling", agentId: "jonas") with
+        {
+            Sender = "scheduler",
+            UserId = "fran",
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, "s-1"),
+            Principal = new Principal("telegram", "FranTG")
+        };
+        var unstamped = stamped with { Principal = null };
+
+        DeliveryTargetResolver.BuildConversationContext(stamped, []).Principal
+            .ShouldBe(new Principal("telegram", "FranTG"));
+        DeliveryTargetResolver.BuildConversationContext(unstamped, []).Principal.ShouldBeNull();
+    }
+
     // A server answering one of the turn's calls can tell a fire from a person: the handoff tool
     // refuses to mint a login link on a turn nobody is present for.
     [Theory]

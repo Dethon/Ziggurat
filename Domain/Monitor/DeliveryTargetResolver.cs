@@ -189,6 +189,11 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
             ? (targets[0].Channel.ChannelId, targets[0].ConversationId)
             : (message.ChannelId, message.ConversationId);
         var address = channelId == message.ChannelId ? message.SatelliteId : null;
+        // A person's own message is vouched for by the channel it arrived on, whichever target the
+        // turn resolves to; a fire carries only what its server stamped.
+        static Principal? PrincipalOf(ChannelMessage m) =>
+            m.Principal ?? (m.Origin is null ? new Principal(m.ChannelId, m.Sender) : null);
+
         // An unprompted fire runs on behalf of the person its author named — a schedule's or a
         // watch's `userId` — not as the sender label its server stamps on it ("scheduler",
         // "watch"); a message a person sent themselves names nobody, and the sender is that person.
@@ -198,6 +203,7 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
             message.UserId ?? message.Sender,
             new ReplyTarget(channelId, conversationId, address),
             message.ConfigPatch?.Model,
-            message.Origin?.Kind);
+            message.Origin?.Kind,
+            PrincipalOf(message));
     }
 }
