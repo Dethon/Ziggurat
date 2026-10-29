@@ -268,6 +268,9 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         wake.Origin!.Kind.ShouldBe(MessageOriginKind.Login);
         wake.Content.ShouldContain("shop.test");
         wake.Content.ShouldContain("logged in");
+        // The wake is a turn nobody sent, so the asking turn's principal is what lets it carry on
+        // as the person: without it every asMe after Done would resolve to nobody.
+        wake.Principal.ShouldBe(new Principal("telegram", "fran_tg"));
     }
 
     [Fact]
