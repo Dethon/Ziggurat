@@ -384,6 +384,11 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await page.GotoAsync(link);
         await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Create a passkey" }).ClickAsync();
         await page.WaitForURLAsync(fixture.DefaultSpaceUrl);
+
+        // The front page installs the app's service worker, which answers navigations from its
+        // cache: it is what an installed app is, and it must still let sign-in through.
+        await page.WaitForFunctionAsync(
+            "() => !!navigator.serviceWorker.controller", null, new PageWaitForFunctionOptions { Timeout = 60_000 });
         await page.Context.ClearCookiesAsync();
 
         await page.GotoAsync(fixture.WebChatUrl);
