@@ -1,12 +1,12 @@
-# 06: The principal carries the account; the identity map retires
+# 06: The principal carries the account (expand)
 
-**What to build:** An internal accounts API resolves a channel identity (Telegram numeric id, voice profile, forwarded WebChat user) to tenant and user ids, called with each channel server's own credential. `Principal` becomes `(TenantId, UserId, ChannelId)`, set by the channel on the notification; `Sender` stays a display name. `IdentityMap`, `Identity:People`, `Identity:VerifiedChannels` and `IDENTITY__PEOPLE__*` go. `AsMeGate`, the login handoff and the logins page read the principal's user id; voice login works again via WebChat. Rules (`web-browsing.md`, `channels.md`) follow. Spec: `../spec.md` ("Principal").
+**What to build:** A chat-client turn reaches the agent as the person's account. The accounts service resolves a channel identity to tenant and user ids through an internal API called with each channel server's own credential; the principal gains the tenant and user ids beside today's form; the chat client stamps its turns with the account. Channels not yet moved keep working through the identity map. First step of expand, migrate, contract. Spec: `../spec.md` ("Channels and the principal").
 
-**Blocked by:** 01, 03
+**Blocked by:** 03
 
 **Status:** ready-for-agent
 
-- [ ] A WebChat turn and a Telegram turn of the same person carry the same user id (channel tests)
-- [ ] `asMe` reaches the person's logins from either channel and refuses a principal with no user
-- [ ] A voice handoff link is delivered to the person's WebChat
-- [ ] Nothing references the identity map or its configuration
+- [ ] The resolution API answers a linked identity with its tenant and user and refuses a caller without a channel credential
+- [ ] A chat-client turn's notification carries the account's tenant and user ids
+- [ ] A Telegram or voice turn still reaches the agent as before
+- [ ] A schedule written on a chat-client turn records the account in its creator
