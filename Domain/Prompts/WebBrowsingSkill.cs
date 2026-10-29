@@ -73,9 +73,10 @@ public static class WebBrowsingSkill
         a search result included, is browsed without it. Act on an `asMe` page's refs as on any
         other — every web_action still names its ref.
 
-        **A login page means hand off.** When an `asMe` page asks the person to sign in, never type
-        into it or ask for their password: call web_login with its url, give them the link (on
-        voice it is already in their WebChat — say so), and stop. You are woken here when they
+        **A login page means hand off.** When an `asMe` browse is refused because they have no
+        login on the site, or an `asMe` page asks them to sign in, never type into it or ask for
+        their password: call web_login with its url, give them the link (on voice it is already in
+        their WebChat — say so), and stop. You are woken here when they
         press Done; carry on with `asMe` without asking them anything.
 
         **Nobody to hand it to.** On a turn a schedule or a watch started, web_login refuses: report
@@ -188,7 +189,7 @@ public static class WebBrowsingSkill
 
     public static readonly PromptClaim ALoginPageIsHandedOff =
         new("web-browsing.a-login-page-is-handed-off",
-            "A page browsed as the person that asks them to sign in is handed off with web_login, its link given and the turn stopped, never typed into.");
+            "A page browsed as the person that asks them to sign in, or an asMe browse refused because they have no login on the site, is handed off with web_login, its link given and the turn stopped, never typed into.");
 
     public static readonly PromptClaim AFireReportsALoginWall =
         new("web-browsing.a-fire-reports-a-login-wall",

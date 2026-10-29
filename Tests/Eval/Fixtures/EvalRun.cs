@@ -135,13 +135,15 @@ public static class EvalRun
         // Set on the message the recall hook would have set it on, so the block reaches the model
         // through the decoration that renders it in production rather than through a second path.
         message.SetMemoryContext(memories);
+        // A fire carries the principal its server stamped from the turn that wrote it; an eval's
+        // fire stands in for one the person wrote from the channel it delivers to. A person's own
+        // turn carries none, as in the deployment, and is vouched for by its channel.
+        var channel = EvalAttachments.Channel(scenario.Turn);
         message.SetConversationContext(new ConversationContext(
             scenario.AgentId, conversationId, UserId,
-            new ReplyTarget(
-                EvalAttachments.Channel(scenario.Turn),
-                conversationId,
-                scenario.Turn.SatelliteId),
-            OriginKind: scenario.Turn.Origin));
+            new ReplyTarget(channel, conversationId, scenario.Turn.SatelliteId),
+            OriginKind: scenario.Turn.Origin,
+            Principal: scenario.Turn.Origin is null ? null : new Principal(channel, UserId)));
 
         return message;
     }
