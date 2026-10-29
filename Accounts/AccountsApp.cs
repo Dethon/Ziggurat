@@ -1,3 +1,4 @@
+using Accounts.Internal;
 using Accounts.Links;
 using Accounts.Members;
 using Accounts.Pages;
@@ -71,6 +72,7 @@ public static class AccountsApp
         AccountPage.Map(accounts);
         MembersPage.Map(accounts);
         PasskeyEndpoints.Map(accounts);
+        IdentityResolution.Map(accounts);
         return app;
     }
 }
