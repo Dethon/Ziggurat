@@ -126,8 +126,9 @@ Real users, with the tenant already in the model (only the home tenant exists ye
 
 ## Open, to grill per phase
 
-- **Baseline:** which LAN ports have real consumers (speech typist, outposts, satellites, HA);
-  whether the dashboard and Sugary go dark until Accounts lands or keep today's access on the branch.
+- **Baseline:** settled; spec and tickets at `.scratch/security-baseline/`. LAN tools bind to a
+  named interface, debug ports move to a loopback override, prod Redis is read over `ssh -L`,
+  outposts register through Caddy, and the sandbox keeps a credential that opens only itself.
 - **Accounts:** session lifetime and device list; who sees the dashboard; whose Sugary the current
   log becomes; enrollment and recovery flows; the operator's own sign-in when the identity service
   is down; whether members without a web device exist (Telegram or voice only) and how they are
