@@ -129,11 +129,12 @@ Real users, with the tenant already in the model (only the home tenant exists ye
 - **Baseline:** settled; spec and tickets at `.scratch/security-baseline/`. LAN tools bind to a
   named interface, debug ports move to a loopback override, prod Redis is read over `ssh -L`,
   outposts register through Caddy, and the sandbox keeps a credential that opens only itself.
-- **Accounts:** session lifetime and device list; who sees the dashboard; whose Sugary the current
-  log becomes; enrollment and recovery flows; the operator's own sign-in when the identity service
-  is down; whether members without a web device exist (Telegram or voice only) and how they are
-  invited and linked; what "conversations private, spaces shared" means inside a space (shared
-  topics, private topics, or a choice per topic).
+- **Accounts:** settled; spec and 14 tickets at `.scratch/accounts/`. The identity service is the
+  `accounts` container on SQLite + EF (kept provider-neutral). Invites redeem by passkey or
+  Telegram. Topics are private, shared per topic, and an owner-granted permission sees all,
+  Telegram and voice review copies included. Sessions last until revoked, approvals belong to the
+  asker on any of their channels, Sugary logs are per person with a shared pantry, and the
+  ServiceBus channel is removed.
 - **Service identity:** token format and lifetime; how a worker's or a fire's token is minted; the
   public `/browse/*` routes on a listener of their own; the signing key the eval stack and the
   test harnesses (`WebIdentityServerHarness`) need.
