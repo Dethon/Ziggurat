@@ -4,8 +4,8 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A custom agent registered through the API belongs to the person in the verified headers; a user parameter is ignored
-- [ ] A person sees and uses only their own custom agents
-- [ ] The conformance check asserts SexyTime's host goes through the session check
+- [x] A custom agent registered through the API belongs to the person in the verified headers; a user parameter is ignored
+- [x] A person sees and uses only their own custom agents
+- [x] The conformance check asserts SexyTime's host goes through the session check

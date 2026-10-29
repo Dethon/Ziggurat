@@ -3,6 +3,7 @@ paths:
   - "Accounts/**"
   - "Tests/Integration/Accounts/**"
   - "Tests/Integration/Fixtures/AccountsServer.cs"
+  - "Agent/App/AgentApi.cs"
 ---
 
 # The accounts service
@@ -42,6 +43,12 @@ The cookie is `ziggurat_session`: HttpOnly, Secure (always, since localhost coun
 ## The session check
 
 `GET /accounts/verify`, for `forward_auth`. A valid session answers 200 with `X-Ziggurat-User`, `X-Ziggurat-Tenant` and `X-Ziggurat-Roles` (`owner`|`member`, plus `operator`), **always all three**. `?role=<role>` answers a valid session lacking it 403 rather than sending a signed-in person to sign in again. With no session, a **page** — `X-Forwarded-Method` GET, an `X-Forwarded-Uri` whose first segment is not `api` or `hubs`, and an `Accept` naming `text/html` — gets a 302 to `{PublicBaseUrl}/accounts/sign-in?returnUrl=<the original, absolute>`; anything else gets 401, so an app's script can tell a signed-out call from content. The redirect and the return are absolute because the protected page may be on another of the deployment's hosts than the one sign-in is served on; `ReturnUrls.Resolve` follows a return only onto `AllowedOrigins`, else the front page.
+
+## SexyTime and the agent registration API
+
+SexyTime (the `sexytime` upstream, not in this repo) is behind the same check: `sexy.*`'s catch-all carries the same `forward_auth` as the main host's chat client, and `sexy.*` routes `/accounts/*` too, unchecked, so a page there reads `/accounts/me` same-origin. The session cookie is on the parent domain and `https://sexy.…` is one of `AllowedOrigins`, so a signed-out page there goes to sign-in on the main host and comes back.
+
+`/api/agents*` is **not** behind the check, on either host: its caller is SexyTime's server, which holds the agent API's secret (`AGENTAPI__SHAREDSECRET`). The API takes the person from `X-Ziggurat-User` (exactly one value, else 400) and never reads a `userId` parameter; a custom agent is listed, used and deleted only under the id it was registered with. Because the proxy does not check this route, nothing strips an `X-Ziggurat-User` a client wrote — `copy_headers` only overwrites where `forward_auth` runs. The header is therefore trusted **only together with the secret**: its one holder is SexyTime's server, which copies the header off the signed-in request the check handed it. Handing the secret to anything that relays a client's headers unchecked would let that client name anyone. Custom agents stay in memory; making them durable is the Tenants phase.
 
 ## Who is signed in
 
