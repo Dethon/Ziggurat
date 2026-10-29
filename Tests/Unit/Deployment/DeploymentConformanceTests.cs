@@ -191,6 +191,54 @@ public class DeploymentConformanceTests
         mismatched.ShouldBeEmpty();
     }
 
+    // Sign-in, enrollment and the session check live under /accounts on the main host; Caddy's
+    // handle passes the path as it is, which is the path the service maps its routes under.
+    [Fact]
+    public void TheAccountsPages_ReachTheAccountsServiceOnTheMainHost()
+    {
+        var host = DeploymentFiles.Caddyfile().Host(MainHost);
+
+        host.Routes.ShouldContain(r => r.Matcher == "/accounts/*" && r.Upstream == "accounts:8080");
+    }
+
+    [Fact]
+    public void TheAccountsService_KeepsItsStoreInAVolumeOfItsOwnThatItsUserOwns()
+    {
+        var compose = DeploymentFiles.Compose();
+        var accounts = compose.Service("accounts");
+
+        accounts.Volumes.ShouldBe(["./volumes/accounts:/data"]);
+        accounts.User.ShouldBe("${PUID:-1654}:${PGID:-1654}");
+        compose.Services.Values.Where(s => s.Name != "accounts" && s.Name != "accounts-volume")
+            .ShouldNotContain(s => s.Volumes.Any(v => v.StartsWith("./volumes/accounts:", StringComparison.Ordinal)));
+        // Docker creates a missing bind-mount folder as root, so the one-shot step hands it to the
+        // service's user before the service starts.
+        var volume = compose.Service("accounts-volume");
+        volume.Volumes.ShouldBe(["./volumes/accounts:/data"]);
+        accounts.DependsOn.ShouldContain("accounts-volume");
+    }
+
+    // A passkey is bound to the relying party, the cookie to its domain and a sign-in's return to the
+    // allowed origins, so the three must describe the hosts the proxy actually serves.
+    [Fact]
+    public void TheAccountsService_IsToldTheDeploymentsOwnHosts()
+    {
+        var caddy = DeploymentFiles.Caddyfile();
+        var environment = DeploymentFiles.Compose().Service("accounts").Environment;
+        var relyingParty = environment["WEBAUTHN__RELYINGPARTYID"];
+        var origins = environment.Where(e => e.Key.StartsWith("ALLOWEDORIGINS__", StringComparison.Ordinal))
+            .Select(e => new Uri(e.Value))
+            .ToList();
+        var publicBase = new Uri(environment["PUBLICBASEURL"]);
+
+        origins.ShouldNotBeEmpty();
+        origins.ShouldAllBe(o => o.Scheme == "https" && caddy.Hosts.Any(h => h.Name == o.Host));
+        origins.ShouldAllBe(o => o.Host.EndsWith("." + relyingParty, StringComparison.Ordinal));
+        environment["SESSIONCOOKIE__DOMAIN"].ShouldBe("." + relyingParty);
+        publicBase.Host.ShouldBe(MainHost);
+        origins.ShouldContain(o => o.Host == publicBase.Host, "sign-in is served there, so its passkey ceremonies run there");
+    }
+
     [Fact]
     public void TheDebugOverride_PublishesOnLoopbackOnly()
     {

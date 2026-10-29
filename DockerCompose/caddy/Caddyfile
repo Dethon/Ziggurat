@@ -32,6 +32,12 @@ assistants.herfluffness.com {
         reverse_proxy mcp-websearch:8080
     }
 
+    # The accounts service's own pages (sign-in, a link's enrollment) and the session check, all
+    # under /accounts, which handle passes on as it is. The pages are never behind the check.
+    handle /accounts/* {
+        reverse_proxy accounts:8080
+    }
+
     handle {
         reverse_proxy webui:8080
     }

@@ -57,6 +57,7 @@
     <ProjectReference Include="..\McpServerSugary\McpServerSugary.csproj" />
     <ProjectReference Include="..\Observability\Observability.csproj" />
     <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
+    <ProjectReference Include="..\Accounts\Accounts.csproj" />
   </ItemGroup>
 
   <ItemGroup>
