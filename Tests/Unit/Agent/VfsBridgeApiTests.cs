@@ -14,6 +14,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Tests.E2E.Fixtures;
+using Tests.Unit.Deployment;
 using Tests.Unit.Domain.Tools.FileSystem.Bridge;
 
 namespace Tests.Unit.Agent;
@@ -180,15 +181,14 @@ public class VfsBridgeApiTests
     [Fact]
     public void ThePublicProxy_DoesNotRouteTheBridge()
     {
-        var caddyfile = File.ReadAllText(Path.Combine(TestHelpers.FindSolutionRoot(), "DockerCompose", "caddy", "Caddyfile"));
-
-        var agentRoutes = Regex.Matches(caddyfile, @"handle\s+(?<matcher>\S+)\s*\{\s*reverse_proxy\s+agent:")
-            .Select(m => m.Groups["matcher"].Value)
+        var agentRoutes = DeploymentFiles.Caddyfile().Hosts
+            .SelectMany(h => h.Routes)
+            .Where(r => r.Upstream?.StartsWith("agent:", StringComparison.Ordinal) == true)
             .ToList();
 
         agentRoutes.ShouldNotBeEmpty("the proxy routes the registration API to the agent, so this proves something");
-        agentRoutes.ShouldAllBe(matcher => !VfsBridgeApi.Route.StartsWith(matcher.TrimEnd('*'), StringComparison.Ordinal));
-        Regex.IsMatch(caddyfile, @"handle\s*\{\s*reverse_proxy\s+agent:").ShouldBeFalse("a catch-all to the agent would route it");
+        agentRoutes.ShouldAllBe(r => r.Matcher != null, "a catch-all to the agent would route it");
+        agentRoutes.ShouldAllBe(r => !VfsBridgeApi.Route.StartsWith(r.Matcher!.TrimEnd('*'), StringComparison.Ordinal));
     }
 
     // Two numbers on this side are only right while they stand in order with one kept elsewhere,

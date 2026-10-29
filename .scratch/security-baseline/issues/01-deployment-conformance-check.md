@@ -4,8 +4,8 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The bridge assertion runs on the shared reader and still passes
-- [ ] The reader exposes, per service, its published ports, its environment, its volumes and whether it takes the whole secrets file, and, per proxy host, its routes
-- [ ] The reader is exercised by a test against the real deployment files, not a copy
+- [x] The bridge assertion runs on the shared reader and still passes
+- [x] The reader exposes, per service, its published ports, its environment, its volumes and whether it takes the whole secrets file, and, per proxy host, its routes
+- [x] The reader is exercised by a test against the real deployment files, not a copy
