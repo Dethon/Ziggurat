@@ -158,7 +158,9 @@ mean nothing.
 
 ### Hub registration and approval ids
 
-- Every hub method except registration refuses a connection that hasn't registered.
+- Every hub method except registration and the ping a reconnecting client probes with refuses a
+  connection that hasn't registered. The chat client makes no other call until the hub has
+  answered its registration, on start and after every reconnect.
 - Approval ids are a full 128-bit GUID on SignalR and Telegram. Telegram's callback data still fits
   its 64-byte limit with the prefix.
 
@@ -171,7 +173,9 @@ mean nothing.
   Accounts moves them to user ids.
 - The bot records the numeric id of the person whose message started each turn. An approval tap
   counts only from that id, and anyone else is told the approval isn't theirs.
-- An approval raised by a fire is answered by any allowlisted person in the chat.
+- An approval raised in a turn that names a Telegram person — a login wake continuing their turn
+  included — is theirs alone. One raised by a fire that names nobody is answered by any
+  allowlisted person in the chat.
 
 ### No working defaults
 
@@ -244,8 +248,9 @@ Four seams, one of them new.
 - This is phase 1 of the multi-tenant plan (`.scratch/multi-tenant/plan.md`). It branches from
   `web-identity` and merges back into it; master gets every phase together.
 - Deploying needs the operator to:
-  - add the LAN bind address, the Redis password, every per-server MCP credential and the allowed
-    origins to prod's secrets file;
+  - add the LAN bind address, the Redis password and every per-server MCP credential to prod's
+    secrets file (the allowed origins are the deployment's own hostnames, written in the compose
+    file beside the Caddyfile's);
   - set the announce token on both the voice hub and Home Assistant's REST command;
   - re-point each outpost's hub address at the proxy;
   - read Redis through an SSH tunnel to the prod host from then on.
