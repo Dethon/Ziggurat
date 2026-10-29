@@ -69,3 +69,14 @@ pages each carried their own copy of the same glyph pair before it existed, whic
 seven decisions that happened to agree. A header writes
 `<SortArrow Column="Time" SortColumn="@_sortColumn" Ascending="@_sortAsc" />` and no page defines a
 `SortIndicator` of its own.
+
+## The service worker answers only the app's own pages
+
+WebChat's published service worker answers a navigation with the cached `index.html`, which is what
+lets an installed app open offline. Some pages on the same host are not the app's — sign-in and a
+link's enrollment (`/accounts/*`, the accounts service) and a login handoff and the logins page
+(`/browse/*`) — and the proxy routes them past it. `otherServicesPages` in
+`service-worker.published.js` lists them so their navigations reach the network; a page added under
+another service needs its path there, or an installed app hands the person the chat instead. The
+signed-out E2E (`ASignedOutBrowser_SignsInAndComesBackAsThemselves`) waits for the worker to control
+the page before signing out, which is the case that loops without it.
