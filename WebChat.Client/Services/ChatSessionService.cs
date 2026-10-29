@@ -23,9 +23,6 @@ public sealed class ChatSessionService(IChatLiveConnection liveConnection) : ICh
         return result;
     }
 
-    public Task<HubResult<Nothing>> RegisterUserAsync(string userId) =>
-        liveConnection.InvokeAsync("RegisterUser", userId);
-
     public void ClearSession()
     {
         CurrentTopic = null;

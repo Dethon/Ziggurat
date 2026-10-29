@@ -29,9 +29,7 @@ public sealed class ReconnectionEffect : IDisposable
         _topicService = topicService;
         _logger = logger;
 
-        // Keyed on registration, not on the connection: every call below is refused until the
-        // user is registered on the connection that came back.
-        _subscription = connectionStore.RegisteredAgain.Subscribe(
+        _subscription = connectionStore.BecameLiveAgain.Subscribe(
             _ => HandleReconnectedAsync(topicsStore, spaceStore, sessionService, streamResumeService)
                 .LogFaults(logger, "became live again"));
     }

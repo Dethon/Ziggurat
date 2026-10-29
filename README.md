@@ -437,33 +437,13 @@ Features:
 - **Real-time streaming** - Messages stream as they're generated with automatic reconnection
 - **Topic management** - Organize conversations into topics with server-side persistence
 - **Multi-agent selection** - Switch between available agents from the UI
-- **User identity selection** - Switch between configured user identities with persistent avatars
+- **Signed in** - Each person signs in once with a passkey; their name and avatar come from their account
 - **Stream resumption** - Reconnects automatically and resumes from where you left off
 - **Push notifications** - Browser push notifications when responses complete (VAPID-based)
 
-#### User Identity Configuration
+#### Signing in
 
-WebChat supports multiple user identities configured via `WebChat/appsettings.json` or environment variables:
-
-**appsettings.json:**
-```json
-{
-  "Users": [
-    { "Id": "Alice", "AvatarUrl": "avatars/alice.png" },
-    { "Id": "Bob", "AvatarUrl": "avatars/bob.png" }
-  ]
-}
-```
-
-**Environment variables (Docker Compose):**
-```env
-USERS__0__ID=Alice
-USERS__0__AVATARURL=avatars/alice.png
-USERS__1__ID=Bob
-USERS__1__AVATARURL=avatars/bob.png
-```
-
-Place avatar images in `WebChat.Client/wwwroot/avatars/`. Selected identity persists in browser local storage.
+WebChat has no user list of its own. Caddy asks the accounts service's session check before the chat client, its hub and its upload and dictation endpoints, so a signed-out browser goes to sign in with a passkey and comes back; the hub takes the person from the headers the check answers, and the client takes their name and avatar from `GET /accounts/me`. People are added with the accounts service's commands (see `.claude/skills/launch-stack/SKILL.md`).
 
 ### Observability Dashboard
 

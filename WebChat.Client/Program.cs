@@ -35,6 +35,7 @@ builder.Services.AddScoped<IDictationBridge, JsDictationBridge>();
 builder.Services.AddScoped<ApprovalResponder>();
 
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
+builder.Services.AddScoped<IAccountService, AccountService>();
 
 builder.Services.AddWebChatStores();
 builder.Services.AddWebChatEffects();

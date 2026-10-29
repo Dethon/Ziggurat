@@ -6,7 +6,7 @@ public sealed class FakeNavigationManager : NavigationManager
 {
     private readonly List<string> _navigatedTo = [];
 
-    public FakeNavigationManager() => Initialize("http://localhost/", "http://localhost/");
+    public FakeNavigationManager(string uri = "http://localhost/") => Initialize("http://localhost/", uri);
 
     public IReadOnlyList<string> NavigatedTo => _navigatedTo;
 

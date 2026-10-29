@@ -50,7 +50,7 @@ The dashboard (an installable PWA) is at `https://assistants.herfluffness.com/da
 
 ## Accounts and signing in
 
-`accounts` owns households, people, passkeys and sessions; Caddy routes `/accounts/*` on the main host to it (sign-in, a link's enrollment page, and the `/accounts/verify` session check). On a fresh store nobody can sign in until the operator mints their own link: `docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"` prints a one-time link (a week long) that enrolls a passkey; run it again after losing every passkey. `mint-link --user <id>` is a recovery link for anyone, and `mint-session --user <id>` prints a session cookie's value (`ziggurat_session`) for a test stack. A host run of the project (`Local: Accounts`, `http://localhost:5004`) uses `localhost` as the passkeys' relying party and a host-only cookie.
+`accounts` owns households, people, passkeys and sessions; Caddy routes `/accounts/*` on the main host to it (sign-in, a link's enrollment page, and the `/accounts/verify` session check). On a fresh store nobody can sign in until the operator mints their own link: `docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"` prints a one-time link (a week long) that enrolls a passkey; run it again after losing every passkey. `mint-link --user <id>` is a recovery link for anyone, `create-user --name <display name> [--role owner|member]` adds a person to the household (then give them a `mint-link --user`), and `mint-session --user <id>` prints a session cookie's value (`ziggurat_session`) for a test stack. A host run of the project (`Local: Accounts`, `http://localhost:5004`) uses `localhost` as the passkeys' relying party and a host-only cookie. The chat client and its hub are behind the session check, so they are reached through Caddy signed in; a host run of WebUI and the SignalR channel with no proxy in front has no session check to forward the person, and the hub refuses every connection.
 
 ## The Sugary app
 
@@ -58,4 +58,4 @@ The dashboard (an installable PWA) is at `https://assistants.herfluffness.com/da
 
 ## Debugging with Playwright
 
-Use `ignoreHTTPSErrors: true` for the browser context locally (the certificate is valid for `assistants.herfluffness.com`, not `localhost`). You must select a user identity from the avatar picker in the header before sending messages, or sends are silently rejected with a toast error.
+Use `ignoreHTTPSErrors: true` for the browser context locally (the certificate is valid for `assistants.herfluffness.com`, not `localhost`). Every WebChat route is behind the session check, so a fresh browser lands on `/accounts/sign-in`. To drive it without a passkey ceremony, seed a person and a session (`docker exec accounts dotnet Accounts.dll create-user --name <n>`, then `mint-session --user <id>`) and add the printed value as the `ziggurat_session` cookie for the host you browse before opening the page.

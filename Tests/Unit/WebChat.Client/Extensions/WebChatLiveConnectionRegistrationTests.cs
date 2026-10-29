@@ -72,6 +72,7 @@ public sealed class WebChatLiveConnectionRegistrationTests
         services.AddScoped<NavigationManager>(_ => new FakeNavigationManager());
         services.AddScoped(_ => new Mock<IJSRuntime>().Object);
         services.AddScoped<ILocalStorageService>(_ => new FakeLocalStorageService());
+        services.AddScoped<IAccountService, AccountService>();
 
         services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
         services.AddScoped<ConnectionEventDispatcher>();
