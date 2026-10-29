@@ -20,13 +20,13 @@ public class TelegramBotServiceTests : IDisposable
 
         await _harness.RunAsync();
 
-        _harness.Sent.ShouldHaveSingleItem().Text.ShouldBe("You are not authorized to use this bot.");
+        _harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("ask an owner of the household for an invite");
     }
 
     // A username is its owner's to change and Telegram's to reassign, so a name that matches is no
-    // longer anybody: only the listed number is.
+    // longer anybody: only the linked number is.
     [Fact]
-    public async Task ExecuteAsync_UnlistedIdUnderAListedUsername_SendsRejection()
+    public async Task ExecuteAsync_UnlinkedIdUnderALinkedUsername_SendsRejection()
     {
         using var harness = new TelegramPollingHarness(TelegramPollingHarness.AliceId);
         await harness.ReceiveAsync();
@@ -38,12 +38,12 @@ public class TelegramBotServiceTests : IDisposable
 
         await harness.RunAsync();
 
-        harness.Sent.ShouldHaveSingleItem().Text.ShouldBe("You are not authorized to use this bot.");
+        harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("ask an owner of the household for an invite");
         (await harness.ReceiveAsync()).ShouldBeEmpty();
     }
 
     [Fact]
-    public async Task ExecuteAsync_ListedId_EmitsTheirUsernameAsSender()
+    public async Task ExecuteAsync_LinkedId_EmitsTheirUsernameAsSender()
     {
         await _harness.ReceiveAsync();
         _harness.Enqueue(new Update

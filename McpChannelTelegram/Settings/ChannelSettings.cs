@@ -1,4 +1,5 @@
 using Domain.Security;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Transcription;
 using Mcp.Hosting;
 
@@ -10,14 +11,26 @@ public record ChannelSettings : IMcpHostSettings
     public McpGateSettings Mcp { get; init; } = new();
 
     public required AgentBotConfig[] Bots { get; init; }
-    // Telegram's numeric user ids, the only part of a sender its owner cannot change and Telegram
-    // never reassigns. A message is admitted only when its sender's id is listed.
-    public required long[] AllowedUserIds { get; init; }
+
+    // The accounts service, asked with this server's own credential (Mcp:SharedSecret) whose account
+    // each sender's numeric Telegram id is linked to, and the ways in the bot redeems.
+    public AccountsClientConfig Accounts { get; init; } = new();
+
+    public LinkCacheSettings LinkCache { get; init; } = new();
 
     // Metrics only: this channel keeps no state of its own (a Telegram file id is the store), so
     // Redis is here for the same reason the voice hub has it — the metric sink.
     public string RedisConnectionString { get; init; } = "redis:6379";
     public DictationSettings Dictation { get; init; } = new();
+}
+
+// How long the bot believes what the accounts service said about a sender or a group. A link rarely
+// changes, so an answer naming somebody is kept for minutes; a refusal only for seconds, so somebody
+// linked a moment ago is let in at once while a stranger's every message still costs no request.
+public record LinkCacheSettings
+{
+    public TimeSpan Linked { get; init; } = TimeSpan.FromMinutes(5);
+    public TimeSpan Unlinked { get; init; } = TimeSpan.FromSeconds(5);
 }
 
 public record AgentBotConfig

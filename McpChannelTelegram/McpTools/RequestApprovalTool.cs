@@ -62,7 +62,7 @@ public sealed class RequestApprovalTool
             return "notified";
         }
 
-        var answerers = AnswerersOf(turn, router, services.GetRequiredService<ChannelSettings>());
+        var answerers = await AnswerersOfAsync(turn, chatId, router, services.GetRequiredService<TelegramAccess>());
         var (approvalId, resultTask) = router.RegisterApproval(_approvalTimeout, answerers, CancellationToken.None);
         var keyboard = ApprovalCallbackRouter.CreateApprovalKeyboard(approvalId);
 
@@ -83,25 +83,26 @@ public sealed class RequestApprovalTool
     // — their own message, or a wake or fire stamped with them, like a login wake continuing their
     // turn — is theirs: the bot recorded their numeric id against the sender it emitted when it
     // admitted their message, so only that id. A fire that names nobody here was started by nobody's
-    // message, so anyone on the allowlist. A turn with no context, or a person this process never
-    // admitted (it restarted mid-turn), names nobody: every tap is refused and the approval times out
-    // as denied.
-    private static IReadOnlySet<long> AnswerersOf(
-        ConversationContext? turn, ApprovalCallbackRouter router, ChannelSettings settings)
+    // message, so any linked member of the household whose chat it is: the person's own, for a
+    // private chat, or the one the group is bound to. A turn with no context, a person this process
+    // never admitted (it restarted mid-turn), or a chat no household holds names nobody: every tap
+    // is refused and the approval times out as denied.
+    private static async Task<Func<long, CancellationToken, Task<bool>>> AnswerersOfAsync(
+        ConversationContext? turn, long chatId, ApprovalCallbackRouter router, TelegramAccess access)
     {
-        if (Principal.Of(turn) is { ChannelId: TelegramChannelId } asker)
+        if (Principal.Of(turn) is { ChannelId: TelegramAccess.Channel } asker)
         {
-            return router.SenderId(asker.UserId) is { } askerId
-                ? new HashSet<long> { askerId }
-                : new HashSet<long>();
+            var askerId = router.SenderId(asker.UserId);
+            return (tapper, _) => Task.FromResult(tapper == askerId);
         }
 
-        return turn?.OriginKind is not null
-            ? settings.AllowedUserIds.ToHashSet()
-            : new HashSet<long>();
-    }
+        if (turn?.OriginKind is null || await access.ChatTenantAsync(chatId, CancellationToken.None) is not { } household)
+        {
+            return (_, _) => Task.FromResult(false);
+        }
 
-    private const string TelegramChannelId = "telegram";
+        return async (tapper, ct) => (await access.PersonAsync(tapper, ct))?.Account.TenantId == household;
+    }
 
     internal static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
     {
