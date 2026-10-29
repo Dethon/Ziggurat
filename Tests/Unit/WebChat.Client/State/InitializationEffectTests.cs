@@ -119,7 +119,8 @@ public sealed class InitializationEffectTests : IDisposable
 
         var initializing = _effect.HandleInitializeAsync();
 
-        await Task.Delay(50);
+        await Eventually.Until(() => _calls.Calls.Contains("connect"), "startup to connect");
+        await Eventually.Settle();
         _calls.Calls.ShouldBe(["connect"]);
 
         _dispatcher.Dispatch(new SelectUser("user-1"));
@@ -145,7 +146,8 @@ public sealed class InitializationEffectTests : IDisposable
 
         var initializing = _effect.HandleInitializeAsync();
 
-        await Task.Delay(50);
+        await Eventually.Until(() => _calls.Calls.Contains("register-user"), "startup to register the user");
+        await Eventually.Settle();
         _calls.Calls.ShouldBe(["connect", "register-user"]);
 
         _sessionService.RegistrationAnswer.SetResult();
@@ -289,7 +291,7 @@ public sealed class InitializationEffectTests : IDisposable
         _calls.Reset();
         _dispatcher.Dispatch(new ConnectionConnected());
 
-        await Task.Delay(50);
+        await Eventually.Settle();
         _calls.Calls.ShouldNotContain("agents");
 
         ReRegistered();
