@@ -256,7 +256,7 @@ public class ChatMonitorSkillPreloadTests
     private sealed class ReleasingRecallHook(TaskCompletionSource release) : IMemoryRecallHook
     {
         public Task EnrichAsync(
-            ChatMessage message, string userId, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
+            ChatMessage message, Account? account, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
         {
             release.TrySetResult();
             return Task.CompletedTask;
@@ -266,7 +266,7 @@ public class ChatMonitorSkillPreloadTests
     private sealed class DelayingRecallHook(TimeProvider clock, TimeSpan delay) : IMemoryRecallHook
     {
         public async Task EnrichAsync(
-            ChatMessage message, string userId, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
+            ChatMessage message, Account? account, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
         {
             if (delay > TimeSpan.Zero)
             {

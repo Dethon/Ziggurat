@@ -269,7 +269,7 @@ public class ChatMonitorDeliveryIdentityTests
 
         public Task EnrichAsync(
             ChatMessage message,
-            string userId,
+            Account? account,
             string? conversationId,
             string? agentId,
             AgentSession thread,

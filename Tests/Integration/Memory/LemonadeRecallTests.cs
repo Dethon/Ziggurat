@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Domain.Memory;
@@ -36,7 +37,7 @@ public class LemonadeRecallTests(LemonadeMemorySearchFixture redisFixture, Lemon
 
         var message = new ChatMessage(ChatRole.User, "¿Qué lenguaje debería usar?");
         await CreateHook(store, embeddingService)
-            .EnrichAsync(message, userId, "conv_1", null, CreateSession(), CancellationToken.None);
+            .EnrichAsync(message, new Account("home", userId), "conv_1", null, CreateSession(), CancellationToken.None);
 
         var context = message.GetMemoryContext();
         context.ShouldNotBeNull();
@@ -74,7 +75,7 @@ public class LemonadeRecallTests(LemonadeMemorySearchFixture redisFixture, Lemon
 
         var message = new ChatMessage(ChatRole.User, "¿Qué lenguaje debería usar?");
         await CreateHook(store, unreachable, metricsPublisher.Object)
-            .EnrichAsync(message, userId, "conv_1", null, CreateSession(), CancellationToken.None);
+            .EnrichAsync(message, new Account("home", userId), "conv_1", null, CreateSession(), CancellationToken.None);
 
         message.GetMemoryContext().ShouldBeNull();
         errors.ShouldContain(e => e.Service == MemoryRecallHook.EmbeddingErrorService);
