@@ -458,6 +458,48 @@ public class MemoryDreamingServiceTests
         dreamingEvent.ProfileRegenerated.ShouldBeFalse();
     }
 
+    // Memory is keyed by account, and one person's memories from every channel sit under one id:
+    // a run dreams for each account the store names, each over its own memories.
+    [Fact]
+    public async Task ExecuteAsync_EveryAccountTheStoreNames_IsDreamedForOverItsOwnMemories()
+    {
+        var cron = new Mock<ICronValidator>();
+        cron.SetupSequence(c => c.GetNextOccurrence(It.IsAny<string>(), It.IsAny<DateTimeOffset>(), It.IsAny<TimeZoneInfo>()))
+            .Returns(DateTime.UtcNow.AddMilliseconds(-1))
+            .Returns((DateTime?)null);
+
+        var fran = Guid.NewGuid().ToString("N");
+        var ana = Guid.NewGuid().ToString("N");
+        var franMemory = MakeMemory("mem_fran", fran, MemoryCategory.Preference, 0.8, _now, _now);
+        var anaMemory = MakeMemory("mem_ana", ana, MemoryCategory.Fact, 0.9, _now, _now);
+        _store
+            .Setup(s => s.GetAllUserIdsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<string> { fran, ana });
+        _store
+            .Setup(s => s.GetByUserIdAsync(fran, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { franMemory });
+        _store
+            .Setup(s => s.GetByUserIdAsync(ana, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<MemoryEntry> { anaMemory });
+
+        var service = new MemoryDreamingService(
+            _store.Object,
+            _consolidator.Object,
+            _embeddingService.Object,
+            _metricsPublisher.Object,
+            cron.Object,
+            NullLogger<MemoryDreamingService>.Instance,
+            _options);
+
+        await service.StartAsync(CancellationToken.None);
+        await service.ExecuteTask!;
+
+        _consolidator.Verify(c => c.SynthesizeProfileAsync(
+            fran, It.Is<IReadOnlyList<MemoryEntry>>(m => m.Single().Id == "mem_fran"), It.IsAny<CancellationToken>()), Times.Once);
+        _consolidator.Verify(c => c.SynthesizeProfileAsync(
+            ana, It.Is<IReadOnlyList<MemoryEntry>>(m => m.Single().Id == "mem_ana"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task ExecuteAsync_UserHoldingOnlyAProfile_IsVisitedByTheRunAndCleared()
     {
