@@ -16,6 +16,7 @@ public sealed class TelegramAccess(
 
     private readonly ConcurrentDictionary<long, Answer<ResolvedAccount>> _people = new();
     private readonly ConcurrentDictionary<long, Answer<string>> _groups = new();
+    private long _version;
 
     public Task<ResolvedAccount?> PersonAsync(long telegramId, CancellationToken ct) =>
         CachedAsync(_people, telegramId,
@@ -34,11 +35,13 @@ public sealed class TelegramAccess(
     // What a redemption or a bind just made true, so the person or the group is let in on their very
     // next message, whatever refusal was remembered a moment before.
     public void Linked(long telegramId, ResolvedAccount person) =>
-        _people[telegramId] = new Answer<ResolvedAccount>(person, time.GetUtcNow() + cache.Linked);
+        _people[telegramId] = new Answer<ResolvedAccount>(person, time.GetUtcNow() + cache.Linked, NextVersion());
 
     public void Bound(long chatId, string tenantId) =>
-        _groups[chatId] = new Answer<string>(tenantId, time.GetUtcNow() + cache.Linked);
+        _groups[chatId] = new Answer<string>(tenantId, time.GetUtcNow() + cache.Linked, NextVersion());
 
+    // Each bot polls on its own, so one may seed an answer while another's question about the same id
+    // is in flight; the answer asked for first must not then overwrite the newer one.
     private async Task<T?> CachedAsync<T>(ConcurrentDictionary<long, Answer<T>> answers, long key, Func<Task<T?>> ask)
         where T : class
     {
@@ -47,10 +50,13 @@ public sealed class TelegramAccess(
             return kept.Value;
         }
 
+        var version = NextVersion();
         var value = await ask();
-        answers[key] = new Answer<T>(value, time.GetUtcNow() + (value is null ? cache.Unlinked : cache.Linked));
-        return value;
+        var fresh = new Answer<T>(value, time.GetUtcNow() + (value is null ? cache.Unlinked : cache.Linked), version);
+        return answers.AddOrUpdate(key, fresh, (_, existing) => existing.Version > version ? existing : fresh).Value;
     }
 
-    private sealed record Answer<T>(T? Value, DateTimeOffset Until) where T : class;
+    private long NextVersion() => Interlocked.Increment(ref _version);
+
+    private sealed record Answer<T>(T? Value, DateTimeOffset Until, long Version) where T : class;
 }
