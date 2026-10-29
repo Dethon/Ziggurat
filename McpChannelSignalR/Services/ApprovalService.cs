@@ -33,7 +33,7 @@ public sealed class ApprovalService(
         }
 
         var requests = p.Requests;
-        var approvalId = Guid.NewGuid().ToString("N")[..8];
+        var approvalId = Guid.NewGuid().ToString("N");
 
         var context = new ApprovalContext
         {

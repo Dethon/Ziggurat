@@ -33,7 +33,19 @@ public sealed class ChatHub(
     // than claiming it was thrown away.
     private const string NotLiveError = "No agent is connected right now, so this message has not been answered.";
 
+    private const string NotRegisteredError = "User not registered. Call RegisterUser first.";
+
     private bool IsRegistered => Context.Items.ContainsKey("UserId");
+
+    // Reaching the hub is not being somebody: every call but registration (and the liveness probe,
+    // which reads nothing) is refused until the connection has said who it is.
+    private void RequireRegistered()
+    {
+        if (!IsRegistered)
+        {
+            throw new HubException(NotRegisteredError);
+        }
+    }
 
     private string? CurrentSpaceSlug =>
         Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
@@ -58,26 +70,36 @@ public sealed class ChatHub(
 
     public IReadOnlyList<AgentCatalogEntry> GetAgents()
     {
+        RequireRegistered();
+
         return catalog.GetAll();
     }
 
     public bool ValidateAgent(string agentId)
     {
+        RequireRegistered();
+
         return catalog.Exists(agentId);
     }
 
     // Liveness probe. Clients invoke this on foreground to confirm the transport is actually
     // alive (a backgrounded mobile connection can report Connected while the socket is dead).
-    // A returned value means a real round-trip completed; no registration required.
+    // A returned value means a real round-trip completed. The one call besides RegisterUser that
+    // an unregistered connection may make: it reads nothing, and a client probes a connection it
+    // has come back to before it has registered on it again.
     public bool Ping() => true;
 
     public bool StartSession(string agentId, string topicId, long chatId, long threadId, string? topicName = null)
     {
+        RequireRegistered();
+
         return sessionService.StartSession(topicId, agentId, chatId, threadId, CurrentSpaceSlug, topicName);
     }
 
     public async Task JoinSpace(string spaceSlug)
     {
+        RequireRegistered();
+
         if (!SpaceConfig.IsValidSlug(spaceSlug))
         {
             throw new HubException("Invalid space slug");
@@ -104,20 +126,22 @@ public sealed class ChatHub(
 
     // One call, because the composer asks one question: what am I allowed to send. The recording
     // cap and the mis-tap floor ride along so changing either needs no client deploy.
-    public AttachmentLimits GetAttachmentLimits() => attachmentService.Limits with
+    public AttachmentLimits GetAttachmentLimits()
     {
-        MaxDictationMs = (int)dictationSettings.MaxLength.TotalMilliseconds,
-        MinDictationMs = (int)dictationSettings.MinLength.TotalMilliseconds
-    };
+        RequireRegistered();
+
+        return attachmentService.Limits with
+        {
+            MaxDictationMs = (int)dictationSettings.MaxLength.TotalMilliseconds,
+            MinDictationMs = (int)dictationSettings.MinLength.TotalMilliseconds
+        };
+    }
 
     // No topic and no session: a dictation lands in the composer, so it must be possible on a
     // screen where no conversation has been started yet.
     public DictationTicket CreateDictationTicket()
     {
-        if (!IsRegistered)
-        {
-            throw new HubException("User not registered. Call RegisterUser first.");
-        }
+        RequireRegistered();
 
         return attachmentService.MintDictation(CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
     }
@@ -126,10 +150,7 @@ public sealed class ChatHub(
     // a conversation the connection already has a session for.
     public UploadTicket CreateUploadTicket(string topicId)
     {
-        if (!IsRegistered)
-        {
-            throw new HubException("User not registered. Call RegisterUser first.");
-        }
+        RequireRegistered();
 
         if (!sessionService.TryGetSession(topicId, out var session) || session is null)
         {
@@ -144,21 +165,22 @@ public sealed class ChatHub(
     // every space, so a long-lived URL would be readable by anyone holding it.
     public AttachmentDownload? CreateAttachmentDownload(string attachmentId)
     {
-        if (!IsRegistered)
-        {
-            throw new HubException("User not registered. Call RegisterUser first.");
-        }
+        RequireRegistered();
 
         return attachmentService.MintDownload(attachmentId, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
     }
 
     public bool IsProcessing(string topicId)
     {
+        RequireRegistered();
+
         return streamService.IsStreaming(topicId);
     }
 
     public StreamState? GetStreamState(string topicId)
     {
+        RequireRegistered();
+
         return streamService.GetStreamState(topicId);
     }
 
@@ -166,6 +188,12 @@ public sealed class ChatHub(
         string topicId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        if (!IsRegistered)
+        {
+            yield return new ChatStreamMessage { Error = NotRegisteredError, IsComplete = true };
+            yield break;
+        }
+
         var state = streamService.GetStreamState(topicId);
         if (state is null || !state.IsProcessing)
         {
@@ -401,6 +429,8 @@ public sealed class ChatHub(
 
     public async Task CancelTopic(string topicId)
     {
+        RequireRegistered();
+
         if (sessionService.TryGetSession(topicId, out var session) && session is not null)
         {
             await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
@@ -428,6 +458,8 @@ public sealed class ChatHub(
         int? pageSize = null,
         bool archived = false)
     {
+        RequireRegistered();
+
         return WithLiveStreams(await threadStore.GetTopicPageAsync(
             agentId, spaceSlug, cursor, pageSize ?? retention.PageSize, archived));
     }
@@ -446,6 +478,8 @@ public sealed class ChatHub(
     // keeps the TTL where it was — only the conversation's own writes extend its life.
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
     {
+        RequireRegistered();
+
         var stored = await threadStore.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId);
         await threadStore.SaveTopicAsync(
             stored is null ? topic : stored with { Name = topic.Name },
@@ -461,6 +495,8 @@ public sealed class ChatHub(
         string? cursor = null,
         int? pageSize = null)
     {
+        RequireRegistered();
+
         return WithLiveStreams(await threadStore.SearchTopicsAsync(
             agentId, spaceSlug, query, cursor, pageSize ?? retention.PageSize));
     }
@@ -469,16 +505,22 @@ public sealed class ChatHub(
     // trip newer than anything the browser holds.
     public async Task MarkTopicRead(string agentId, long chatId, string topicId)
     {
+        RequireRegistered();
+
         await threadStore.MarkTopicReadAsync(agentId, chatId, topicId);
     }
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistory(string agentId, long chatId, long threadId)
     {
+        RequireRegistered();
+
         return await threadStore.GetHistoryAsync(agentId, chatId, threadId);
     }
 
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
+        RequireRegistered();
+
         var identity = new ConversationIdentity(chatId, threadId);
         await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
         {
@@ -511,7 +553,7 @@ public sealed class ChatHub(
     public async Task SubscribePush(PushSubscriptionDto subscription)
     {
         var userId = GetRegisteredUserId()
-            ?? throw new HubException("User not registered. Call RegisterUser first.");
+            ?? throw new HubException(NotRegisteredError);
 
         ValidateSubscription(subscription);
 
@@ -521,7 +563,7 @@ public sealed class ChatHub(
     public async Task ReplacePushSubscription(PushSubscriptionDto subscription, string oldEndpoint)
     {
         var userId = GetRegisteredUserId()
-            ?? throw new HubException("User not registered. Call RegisterUser first.");
+            ?? throw new HubException(NotRegisteredError);
 
         ValidateSubscription(subscription);
 
@@ -537,7 +579,7 @@ public sealed class ChatHub(
     public async Task UnsubscribePush(string endpoint)
     {
         var userId = GetRegisteredUserId()
-            ?? throw new HubException("User not registered. Call RegisterUser first.");
+            ?? throw new HubException(NotRegisteredError);
         await pushSubscriptionStore.RemoveAsync(userId, endpoint);
     }
 
@@ -558,6 +600,8 @@ public sealed class ChatHub(
 
     public Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {
+        RequireRegistered();
+
         return Task.FromResult(RespondToApproval(approvalId, result));
     }
 
@@ -570,11 +614,15 @@ public sealed class ChatHub(
 
     public bool IsApprovalPending(string approvalId)
     {
+        RequireRegistered();
+
         return approvalService.IsApprovalPending(approvalId);
     }
 
     public ToolApprovalRequestMessage? GetPendingApprovalForTopic(string topicId)
     {
+        RequireRegistered();
+
         return approvalService.GetPendingApprovalForTopic(topicId);
     }
 }
