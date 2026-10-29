@@ -172,13 +172,39 @@ public sealed record ComposeService(
 }
 
 // A handle block of one proxied host: its path matcher (null for the catch-all), where it proxies
-// to, and its whole body, so a check can ask what else stands in front of the upstream.
-public sealed record CaddyRoute(string? Matcher, string? Upstream, string Body);
+// to, the session check it asks first if any, and its whole body, so a check can ask what else
+// stands in front of the upstream.
+public sealed record CaddyRoute(string? Matcher, string? Upstream, string Body)
+{
+    public CaddyForwardAuth? ForwardAuth { get; } = CaddyForwardAuth.In(Body);
+}
 
-// A host's session check: where forward_auth asks, the path it asks on, and the headers of the
-// answer it copies onto the request the host then proxies. Only the block form can copy headers.
+// A forward_auth block: whom it asks, at which path, and the headers of the answer it copies onto
+// the request it passes on.
 public sealed record CaddyForwardAuth(string Upstream, string? Uri, IReadOnlyList<string> CopiedHeaders)
 {
+    private const string Directive = "forward_auth ";
+
+    public static CaddyForwardAuth? In(string body)
+    {
+        var lines = body.Split('\n').Select(l => l.Trim()).ToList();
+        var start = lines.FindIndex(l => l.StartsWith(Directive, StringComparison.Ordinal));
+        if (start < 0)
+        {
+            return null;
+        }
+
+        var block = lines.Skip(start + 1).TakeWhile(l => l != "}").ToList();
+        string? Setting(string name) => block
+            .FirstOrDefault(l => l.StartsWith(name + " ", StringComparison.Ordinal))?[(name.Length + 1)..].Trim();
+
+        return new CaddyForwardAuth(
+            lines[start][Directive.Length..].TrimEnd('{').Trim(),
+            Setting("uri"),
+            Setting("copy_headers")?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? []);
+    }
+
+    // A host-level forward_auth block, standing in front of every route of the host.
     public static CaddyForwardAuth Of(string header, string body)
     {
         var settings = body.Split('\n')

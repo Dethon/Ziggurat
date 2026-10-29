@@ -179,9 +179,9 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
     // WebChat's store in the background, so it is waited for rather than expected at once.
     private async Task TheReviewTopicShowsTheEstimateAsync(string tag)
     {
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.DefaultSpaceUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         await WebChatE2ETests.ClickThroughApprovalsAsync(
             page, page.Locator(".agent-seg", new PageLocatorOptions { HasText = "Sugary" }));

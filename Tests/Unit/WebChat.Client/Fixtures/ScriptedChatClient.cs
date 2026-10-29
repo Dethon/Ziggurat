@@ -80,6 +80,8 @@ public sealed class ScriptedChatClient : IAsyncDisposable
 
     public FakeLocalStorageService LocalStorage { get; } = new();
 
+    public FakeAccountService Accounts { get; } = new();
+
     public IChatLiveConnection LiveConnection => Services.GetRequiredService<IChatLiveConnection>();
 
     public IDispatcher Dispatcher => Services.GetRequiredService<IDispatcher>();
@@ -160,6 +162,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         services.AddScoped<IHubConnectionFactory>(_ => Factory);
         services.AddScoped<IConfigService>(_ => ConfigService);
         services.AddScoped<ILocalStorageService>(_ => LocalStorage);
+        services.AddScoped<IAccountService>(_ => Accounts);
         services.AddScoped<IPushSubscriptionService>(_ => new FakePushSubscriptionService());
         services.AddScoped<IAttachmentUploader>(_ => Uploader);
         services.AddScoped<IDictationBridge>(_ => Dictation);

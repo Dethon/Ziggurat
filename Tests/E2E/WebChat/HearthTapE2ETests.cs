@@ -23,9 +23,9 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync(isMobile: true);
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), isMobile: true);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // Conversations outlive the run that made them and the user index restarts every run, so
         // an untagged name matches an earlier run's row as well as this one's — which makes the row
@@ -110,10 +110,10 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync(hasTouch: true);
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), hasTouch: true);
         await page.SetViewportSizeAsync(390, 844);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         var tag = Guid.NewGuid().ToString("N")[..4];
         await CreateTopicAsync(page, $"{tag} target drag tap");
@@ -171,9 +171,9 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync(isMobile: true);
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), isMobile: true);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         var tag = Guid.NewGuid().ToString("N")[..4];
         await CreateTopicAsync(page, $"{tag} alpha settle tap");

@@ -70,6 +70,56 @@ public class AccountsCommandTests
         output.ShouldContain("Laura");
     }
 
+    // The operator's way to add someone before the members page exists, and the test stack's way
+    // to seed people it then signs in without a ceremony.
+    [Fact]
+    public async Task CreateUser_AddsAMemberOfTheHomeHouseholdAndPrintsWhoTheyAre()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+
+        var (exit, output) = await server.RunAsync("create-user", "--name", "Laura");
+
+        exit.ShouldBe(0, output);
+        output.ShouldContain("Laura");
+        var laura = AccountsServer.ParseWho(output);
+        laura.TenantId.ShouldBe(fran.TenantId);
+        laura.UserId.ShouldNotBe(fran.UserId);
+        var check = await server.VerifyAsync(await server.MintSessionAsync(laura.UserId));
+        check.Headers.GetValues("X-Ziggurat-User").ShouldBe([laura.UserId]);
+        check.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["member"]);
+    }
+
+    [Theory]
+    [InlineData("member", "member")]
+    [InlineData("owner", "owner")]
+    public async Task CreateUser_WithARole_GivesThemThatRole(string role, string roles)
+    {
+        await using var server = await AccountsServer.StartAsync();
+
+        var (exit, output) = await server.RunAsync("create-user", "--name", "Laura", "--role", role);
+
+        exit.ShouldBe(0, output);
+        var laura = AccountsServer.ParseWho(output);
+        var check = await server.VerifyAsync(await server.MintSessionAsync(laura.UserId));
+        check.Headers.GetValues("X-Ziggurat-Roles").ShouldBe([roles]);
+    }
+
+    [Theory]
+    [InlineData("create-user")]
+    [InlineData("create-user", "--name")]
+    [InlineData("create-user", "--name", " ")]
+    [InlineData("create-user", "--name", "Laura", "--role", "operator")]
+    public async Task CreateUser_UnreadableArguments_CreatesNobody(params string[] args)
+    {
+        await using var server = await AccountsServer.StartAsync();
+
+        var (exit, output) = await server.RunAsync(args);
+
+        exit.ShouldBe(2);
+        output.ShouldContain("usage:");
+    }
+
     [Theory]
     [InlineData("mint-link")]
     [InlineData("mint-session")]

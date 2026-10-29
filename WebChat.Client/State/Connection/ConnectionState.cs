@@ -20,9 +20,5 @@ public sealed record ConnectionState
     // status in between, and a catch-up decision made on the status alone loses that race.
     public int Epoch { get; init; }
 
-    // The epoch the user was last registered on. Equal to Epoch only while the hub knows who
-    // this connection is.
-    public int RegisteredEpoch { get; init; }
-
     public static ConnectionState Initial => new();
 }

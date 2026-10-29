@@ -3,18 +3,35 @@ assistants.herfluffness.com {
         dns cloudflare {env.CF_API_TOKEN}
     }
 
+    # The chat client, its hub and the hub's upload and dictation endpoints ask the accounts service's
+    # session check first. A signed-in request goes on carrying the person in three headers, which
+    # copy_headers sets over any the client sent; a signed-out page is sent to sign-in and back, and
+    # anything else is answered 401.
     handle /hubs/* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/attachments* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/dictation* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
+    # SexyTime's server calls this with a secret of its own.
     handle /api/agents* {
         reverse_proxy agent:8080
     }
@@ -39,6 +56,10 @@ assistants.herfluffness.com {
     }
 
     handle {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy webui:8080
     }
 }
@@ -68,15 +89,28 @@ sexy.herfluffness.com {
         dns cloudflare {env.CF_API_TOKEN}
     }
 
+    # The chat hub and its endpoints, checked as on the main host.
     handle /hubs/* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/attachments* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/dictation* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 

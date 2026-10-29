@@ -8,7 +8,7 @@ public sealed class FakeConfigService(CallRecorder? recorder = null) : IConfigSe
 {
     private readonly Dictionary<string, SpaceConfig> _spaces = new();
 
-    public AppConfig Config { get; set; } = new(null, []);
+    public AppConfig Config { get; set; } = new(null);
 
     public int ConfigCalls { get; private set; }
 

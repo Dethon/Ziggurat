@@ -1,3 +1,4 @@
+using Domain.Security;
 using Shouldly;
 
 namespace Tests.Unit.Deployment;
@@ -8,6 +9,7 @@ namespace Tests.Unit.Deployment;
 public class DeploymentConformanceTests
 {
     private const string MainHost = "assistants.herfluffness.com";
+    private const string SexyHost = "sexy.herfluffness.com";
 
     [Fact]
     public void OutpostRegistration_ReachesTheAgentThroughTheProxy()
@@ -215,6 +217,42 @@ public class DeploymentConformanceTests
         host.ForwardAuth.CopiedHeaders.ShouldBe(["X-Ziggurat-User", "X-Ziggurat-Tenant", "X-Ziggurat-Roles"]);
         host.Routes.ShouldNotBeEmpty();
         host.Routes.ShouldAllBe(r => r.Upstream == "observability:8080");
+    }
+
+    // The chat client, its hub and the hub's upload and dictation endpoints believe the person the
+    // proxy hands them, so each asks the session check first and is given every header it answers.
+    [Theory]
+    [InlineData(MainHost, null)]
+    [InlineData(MainHost, "/hubs/*")]
+    [InlineData(MainHost, "/api/attachments*")]
+    [InlineData(MainHost, "/api/dictation*")]
+    [InlineData(SexyHost, "/hubs/*")]
+    [InlineData(SexyHost, "/api/attachments*")]
+    [InlineData(SexyHost, "/api/dictation*")]
+    public void TheChatClientsRoutes_GoThroughTheSessionCheckAndCopyItsHeaders(string hostName, string? matcher)
+    {
+        var route = DeploymentFiles.Caddyfile().Host(hostName).Routes.Single(r => r.Matcher == matcher);
+
+        var check = route.ForwardAuth.ShouldNotBeNull($"{hostName} {matcher ?? "(catch-all)"} is not checked");
+        check.Upstream.ShouldBe("accounts:8080");
+        check.Uri.ShouldBe("/accounts/verify");
+        check.CopiedHeaders.ShouldBe(ForwardedAccount.Headers, ignoreOrder: true);
+    }
+
+    // Sign-in and enrollment are how a signed-out person gets a session at all; a login handoff's
+    // live view and the logins page keep their own link-claimed cookies so a Telegram or voice
+    // person can open them; an outpost and SexyTime's server present secrets of their own.
+    [Theory]
+    [InlineData(MainHost, "/accounts/*")]
+    [InlineData(MainHost, "/browse/*")]
+    [InlineData(MainHost, "/api/outposts*")]
+    [InlineData(MainHost, "/api/agents*")]
+    [InlineData(SexyHost, "/api/agents*")]
+    public void TheRoutesThatCarryTheirOwnCredential_DoNotAskTheSessionCheck(string hostName, string matcher)
+    {
+        var route = DeploymentFiles.Caddyfile().Host(hostName).Routes.Single(r => r.Matcher == matcher);
+
+        route.ForwardAuth.ShouldBeNull();
     }
 
     [Fact]

@@ -52,15 +52,10 @@ app.MapGet("/icon.svg", (string? color) =>
 
 app.UseStaticFiles();
 
-app.MapGet("/api/config", (IConfiguration config) =>
-{
-    var users = config.GetSection("Users").Get<UserConfig[]>() ?? [];
-    var vapidPublicKey = config["WebPush:PublicKey"];
-    return new AppConfig(
-        config["AgentUrl"] ?? throw new InvalidOperationException("AgentUrl is not configured"),
-        users,
-        vapidPublicKey);
-});
+// Who is signed in is the accounts service's to say, never this configuration's.
+app.MapGet("/api/config", (IConfiguration config) => new AppConfig(
+    config["AgentUrl"] ?? throw new InvalidOperationException("AgentUrl is not configured"),
+    config["WebPush:PublicKey"]));
 
 app.MapGet("/api/spaces/{slug}", (string slug, IConfiguration config) =>
 {
@@ -81,8 +76,5 @@ await app.RunAsync();
 namespace WebChat
 {
     [UsedImplicitly]
-    internal record UserConfig(string Id, string AvatarUrl);
-
-    [UsedImplicitly]
-    internal record AppConfig(string AgentUrl, UserConfig[] Users, string? VapidPublicKey);
+    internal record AppConfig(string AgentUrl, string? VapidPublicKey);
 }

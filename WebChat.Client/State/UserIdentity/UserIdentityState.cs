@@ -4,9 +4,8 @@ namespace WebChat.Client.State.UserIdentity;
 
 public sealed record UserIdentityState
 {
-    public string? SelectedUserId { get; init; }
-    public IReadOnlyList<UserConfig> AvailableUsers { get; init; } = [];
-    public bool IsLoading { get; init; }
+    // Null until the accounts service has answered, and for good on a page it could not reach.
+    public SignedInPerson? SignedIn { get; init; }
 
     public static UserIdentityState Initial => new();
 }

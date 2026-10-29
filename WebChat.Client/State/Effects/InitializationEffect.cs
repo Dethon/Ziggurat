@@ -1,5 +1,3 @@
-using System.Reactive.Linq;
-using System.Reactive.Threading.Tasks;
 using Domain.DTOs.Channel;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
@@ -7,7 +5,6 @@ using WebChat.Client.Models;
 using WebChat.Client.State.Connection;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Topics;
-using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.State.Effects;
 
@@ -16,65 +13,54 @@ public sealed class InitializationEffect : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly ConnectionStore _connectionStore;
     private readonly IChatLiveConnection _liveConnection;
-    private readonly IChatSessionService _sessionService;
     private readonly IAgentService _agentService;
     private readonly ITopicService _topicService;
     private readonly IConfigService _configService;
     private readonly ILocalStorageService _localStorage;
     private readonly IStreamResumeService _streamResumeService;
     private readonly IPushSubscriptionService _pushNotificationService;
-    private readonly UserIdentityStore _userIdentityStore;
     private readonly SpaceStore _spaceStore;
     private readonly ILogger<InitializationEffect> _logger;
     private readonly IDisposable _initializeRegistration;
-    private readonly IDisposable _selectUserRegistration;
     private readonly IDisposable _setAgentsRegistration;
-    private readonly IDisposable _registeredAgainSubscription;
+    private readonly IDisposable _becameLiveAgainSubscription;
     private int _awaitingAgentCatalog;
 
     public InitializationEffect(
         Dispatcher dispatcher,
         ConnectionStore connectionStore,
         IChatLiveConnection liveConnection,
-        IChatSessionService sessionService,
         IAgentService agentService,
         ITopicService topicService,
         IConfigService configService,
         ILocalStorageService localStorage,
         IStreamResumeService streamResumeService,
         IPushSubscriptionService pushNotificationService,
-        UserIdentityStore userIdentityStore,
         SpaceStore spaceStore,
         ILogger<InitializationEffect> logger)
     {
         _dispatcher = dispatcher;
         _connectionStore = connectionStore;
         _liveConnection = liveConnection;
-        _sessionService = sessionService;
         _agentService = agentService;
         _topicService = topicService;
         _configService = configService;
         _localStorage = localStorage;
         _streamResumeService = streamResumeService;
         _pushNotificationService = pushNotificationService;
-        _userIdentityStore = userIdentityStore;
         _spaceStore = spaceStore;
         _logger = logger;
 
         _initializeRegistration = dispatcher.RegisterHandler<Initialize>(
             _ => HandleInitializeAsync().LogFaults(_logger, nameof(Initialize)));
-        _selectUserRegistration = dispatcher.RegisterHandler<SelectUser>(
-            action => RegisterUserAsync(action.UserId).LogFaults(_logger, nameof(SelectUser)));
         _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(
             action => HandleAgentCatalogArrivedAsync(action.Agents).LogFaults(_logger, nameof(SetAgents)));
 
         // Nothing else retries a not-live catalog fetch on its own: a SetAgents broadcast (the
         // agent re-registering) is one way it completes, and the next connection epoch is the
         // other — the client's own retry, not dependent on the agent process doing anything.
-        // Keyed on the user being registered on that epoch, not on the connection alone: the hub
-        // refuses the catalog to a connection that has not registered.
-        _registeredAgainSubscription = connectionStore.RegisteredAgain.Subscribe(
-            _ => RetryAgentCatalogIfAwaitingAsync().LogFaults(_logger, nameof(ConnectionStore.RegisteredAgain)));
+        _becameLiveAgainSubscription = connectionStore.BecameLiveAgain.Subscribe(
+            _ => RetryAgentCatalogIfAwaitingAsync().LogFaults(_logger, nameof(ConnectionStore.BecameLiveAgain)));
     }
 
     public async Task HandleInitializeAsync()
@@ -94,11 +80,8 @@ public sealed class InitializationEffect : IDisposable
             throw;
         }
 
-        // The hub refuses every call from a connection that has not registered, so nothing past
-        // the connect is asked until somebody is picked — a saved identity arriving from storage,
-        // or the person choosing one — and the registration has been answered.
-        var userId = await WaitForSelectedUserAsync();
-        await _sessionService.RegisterUserAsync(userId);
+        // Nothing to say about who this is: the hub took the person from the proxy's headers as
+        // the connection arrived, so everything below may be asked at once.
 
         // Validate and join space (must happen before push subscribe so space context is set)
         var spaceSlug = _spaceStore.State.CurrentSlug;
@@ -126,7 +109,7 @@ public sealed class InitializationEffect : IDisposable
         if (!catalog.IsLive)
         {
             // Nothing else retries this fetch on its own: a SetAgents broadcast (the agent
-            // re-registering) or the next connection epoch (RegisteredAgain, below) completes
+            // re-registering) or the next connection epoch (BecameLiveAgain, below) completes
             // the initialization this load could not.
             Volatile.Write(ref _awaitingAgentCatalog, 1);
             return;
@@ -210,19 +193,6 @@ public sealed class InitializationEffect : IDisposable
         TopicPageStreams.ResumeReported(topics, firstPage.Value.LiveTopicIds, _streamResumeService, _logger);
     }
 
-    private Task<string> WaitForSelectedUserAsync() => _userIdentityStore.StateObservable
-        .Select(state => state.SelectedUserId)
-        .Where(id => !string.IsNullOrEmpty(id))
-        .Select(id => id!)
-        .FirstAsync()
-        .ToTask();
-
-    public Task RegisterUserAsync(string? userId = null)
-    {
-        userId ??= _userIdentityStore.State.SelectedUserId;
-        return string.IsNullOrEmpty(userId) ? Task.CompletedTask : _sessionService.RegisterUserAsync(userId);
-    }
-
     private async Task SubscribePushAsync()
     {
         try
@@ -243,8 +213,7 @@ public sealed class InitializationEffect : IDisposable
     public void Dispose()
     {
         _initializeRegistration.Dispose();
-        _selectUserRegistration.Dispose();
         _setAgentsRegistration.Dispose();
-        _registeredAgainSubscription.Dispose();
+        _becameLiveAgainSubscription.Dispose();
     }
 }

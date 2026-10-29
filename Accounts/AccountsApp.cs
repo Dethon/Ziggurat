@@ -2,6 +2,7 @@ using Accounts.Links;
 using Accounts.Members;
 using Accounts.Pages;
 using Accounts.Passkeys;
+using Accounts.People;
 using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
@@ -58,12 +59,14 @@ public static class AccountsApp
             .AddSingleton<SessionStore>()
             .AddSingleton<LinkStore>()
             .AddSingleton<PasskeyStore>()
-            .AddSingleton<MemberStore>();
+            .AddSingleton<MemberStore>()
+            .AddSingleton<PersonStore>();
 
     public static WebApplication MapAccounts(this WebApplication app)
     {
         var accounts = app.MapGroup(PathBase);
         SessionCheck.Map(accounts);
+        SignedInPerson.Map(accounts);
         AccountsPages.Map(accounts);
         AccountPage.Map(accounts);
         MembersPage.Map(accounts);

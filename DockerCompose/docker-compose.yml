@@ -872,10 +872,6 @@ services:
       dockerfile: WebChat/Dockerfile
     environment:
       # The secrets this service reads, by name: it is never handed the whole .env.
-      USERS__0__ID: ${USERS__0__ID}
-      USERS__0__AVATARURL: ${USERS__0__AVATARURL}
-      USERS__1__ID: ${USERS__1__ID}
-      USERS__1__AVATARURL: ${USERS__1__AVATARURL}
       WEBPUSH__PUBLICKEY: ${WEBPUSH__PUBLICKEY}
       <<: *timezone
     restart: unless-stopped
