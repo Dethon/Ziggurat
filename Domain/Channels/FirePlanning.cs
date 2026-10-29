@@ -5,7 +5,8 @@ namespace Domain.Channels;
 // One unprompted fire, before it is a notification: what raised it, who runs it, what it says, and
 // where the answer goes. Both the scheduler and the Home Assistant server's watch callback compose
 // their fires through this, so how a `deliverTo` list becomes reply targets cannot drift between
-// them.
+// them. Principal is whose own turn set the fire going, as its channel vouched for them; a fire
+// whose author recorded none runs as nobody in particular.
 public sealed record Fire(
     string ConversationId,
     string Sender,
@@ -14,7 +15,8 @@ public sealed record Fire(
     IReadOnlyList<string>? DeliverTo,
     string? UserId,
     MessageOrigin Origin,
-    DateTimeOffset At);
+    DateTimeOffset At,
+    Principal? Principal = null);
 
 public static class FirePlanning
 {
@@ -38,6 +40,7 @@ public static class FirePlanning
             Content = fire.Content,
             AgentId = fire.AgentId,
             UserId = fire.UserId,
+            Principal = fire.Principal,
             ReplyTo = ReplyTargets(fire.DeliverTo, defaultDeliverTo),
             Origin = fire.Origin,
             Timestamp = fire.At

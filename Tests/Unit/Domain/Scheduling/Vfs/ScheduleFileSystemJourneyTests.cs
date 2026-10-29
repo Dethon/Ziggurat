@@ -1,5 +1,6 @@
 using System.Globalization;
 using Domain.Agents;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
@@ -48,6 +49,66 @@ public class ScheduleFileSystemJourneyTests
             LastRunAt = lastRunAt,
             CreatedAt = DateTime.UtcNow
         };
+
+    private static FileSystemCaller Caller(string channelId, string userId) =>
+        new(new ConversationContext("jonas", "conv-1", userId, new ReplyTarget(channelId, "conv-1")), null);
+
+    // A schedule runs as whoever's own turn wrote it, recorded from that turn's context: the
+    // `userId` in its JSON is the model's to write, and a fire that trusted it would let any turn
+    // schedule a task as anyone.
+    [Fact]
+    public async Task Create_RecordsTheWritersPrincipal_NotTheUserIdItsJsonNames()
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store).For(Caller("telegram", "FranTG"));
+
+        await fs.CreateAsync("/jonas/orders/schedule.json",
+            """{"prompt":"check my orders","cron":"0 8 * * *","userId":"ana"}""", false, true, CancellationToken.None);
+
+        var schedule = (await store.GetAsync("orders", CancellationToken.None)).ShouldNotBeNull();
+        schedule.CreatedBy.ShouldBe(new Principal("telegram", "FranTG"));
+        schedule.UserId.ShouldBe("ana");
+    }
+
+    // Whoever last wrote the schedule is who it runs as: an edit or a move by another turn would
+    // otherwise put new words in a task that still runs as the person who first wrote it.
+    [Fact]
+    public async Task Edit_RecordsTheEditorsPrincipal()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule() with { CreatedBy = new Principal("telegram", "FranTG") }, CancellationToken.None);
+        var fs = Build(store).For(Caller("signalr", "Ana"));
+
+        await fs.EditAsync("/jonas/morning-news/schedule.json",
+            [new TextEdit("summarize news", "summarize sport")], CancellationToken.None);
+
+        (await store.GetAsync("morning-news", CancellationToken.None))!.CreatedBy
+            .ShouldBe(new Principal("signalr", "Ana"));
+    }
+
+    [Fact]
+    public async Task Move_RecordsTheMoversPrincipal()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule() with { CreatedBy = new Principal("telegram", "FranTG") }, CancellationToken.None);
+        var fs = Build(store).For(Caller("signalr", "Ana"));
+
+        await fs.MoveAsync("/jonas/morning-news", "/jonas/evening-news", CancellationToken.None);
+
+        (await store.GetAsync("evening-news", CancellationToken.None))!.CreatedBy
+            .ShouldBe(new Principal("signalr", "Ana"));
+    }
+
+    // A write with no turn behind it vouches for nobody.
+    [Fact]
+    public async Task Create_WithNoCaller_RecordsNobody()
+    {
+        var store = new FakeScheduleStore();
+
+        await Build(store).CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+
+        (await store.GetAsync("morning-news", CancellationToken.None))!.CreatedBy.ShouldBeNull();
+    }
 
     // The mount says the file is `/<agentId>/<id>/schedule.json`, and a model writes the body to
     // `/<agentId>/<id>` anyway: there is exactly one file a schedule directory can hold, so the

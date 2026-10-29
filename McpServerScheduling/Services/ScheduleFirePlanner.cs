@@ -24,7 +24,8 @@ public static class ScheduleFirePlanner
             schedule.DeliverTo,
             schedule.UserId,
             new MessageOrigin(MessageOriginKind.Schedule, schedule.Id),
-            now), defaultDeliverTo);
+            now,
+            schedule.CreatedBy), defaultDeliverTo);
 
         return new FirePlan(payload, nextRun, DeleteAfterFire: schedule.CronExpression is null);
     }

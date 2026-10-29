@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
@@ -15,6 +16,20 @@ public sealed class ScheduleFileSystem(
     TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
     public const string Name = "schedules";
+
+    // Who is writing: a schedule runs as the turn that last wrote it, so every write records that
+    // turn's principal. The server's one instance has no caller, and the registrar asks for a view
+    // per call.
+    private ConversationContext? _caller;
+
+    // A shallow copy with the caller swapped, as HaFileSystem does: the copy carries every
+    // dependency this mount was built with, and the store is shared by reference.
+    public override FileSystemBackendBase For(FileSystemCaller caller)
+    {
+        var view = (ScheduleFileSystem)MemberwiseClone();
+        view._caller = caller.Conversation;
+        return view;
+    }
 
     public override string FilesystemName => Name;
 
@@ -287,6 +302,7 @@ public sealed class ScheduleFileSystem(
             CronExpression = spec.Cron,
             RunAt = spec.RunAt,
             UserId = spec.UserId,
+            CreatedBy = Principal.Of(_caller),
             DeliverTo = spec.DeliverTo,
             CreatedAt = timeProvider.GetUtcNow().UtcDateTime,
             NextRunAt = ComputeNextRunAt(spec)
@@ -340,6 +356,7 @@ public sealed class ScheduleFileSystem(
             CronExpression = spec.Cron,
             RunAt = spec.RunAt,
             UserId = spec.UserId,
+            CreatedBy = Principal.Of(_caller),
             DeliverTo = spec.DeliverTo,
             NextRunAt = timingChanged ? ComputeNextRunAt(spec) : existing.NextRunAt
         };
@@ -383,7 +400,8 @@ public sealed class ScheduleFileSystem(
             await store.DeleteAsync(src.ScheduleId!, ct);
         }
 
-        await store.CreateAsync(existing with { Id = dst.ScheduleId!, AgentId = dst.AgentId! }, ct);
+        await store.CreateAsync(
+            existing with { Id = dst.ScheduleId!, AgentId = dst.AgentId!, CreatedBy = Principal.Of(_caller) }, ct);
         return new FsResult<FsMoveResult>.Ok(new FsMoveResult
         {
             Status = "moved", Message = "reassigned", Source = sourcePath, Destination = destinationPath

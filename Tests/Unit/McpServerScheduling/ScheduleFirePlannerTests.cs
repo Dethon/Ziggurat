@@ -22,6 +22,21 @@ public class ScheduleFirePlannerTests
         plan.Payload.Origin!.ScheduleId.ShouldBe("n");
     }
 
+    // The fire runs as whoever wrote the schedule, as their turn's channel vouched for them.
+    [Fact]
+    public void Plan_CarriesTheWritersPrincipal()
+    {
+        var s = new Schedule
+        {
+            Id = "n", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow,
+            UserId = "ana", CreatedBy = new Principal("telegram", "FranTG")
+        };
+
+        var plan = ScheduleFirePlanner.Plan(s, defaultDeliverTo: ["signalr"], nextRun: null, now: DateTimeOffset.UtcNow);
+
+        plan.Payload.Principal.ShouldBe(new Principal("telegram", "FranTG"));
+    }
+
     [Fact]
     public void Plan_OneShotSchedule_DeletesAndUsesScheduleDeliverTo()
     {
