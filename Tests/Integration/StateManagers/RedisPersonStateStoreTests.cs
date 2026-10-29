@@ -10,7 +10,7 @@ public class RedisPersonStateStoreTests(RedisFixture redis) : IClassFixture<Redi
 {
     private static readonly PersonState _state = new(
         """{"cookies":[{"name":"sid","value":"s3cr3t-session","domain":".bank.example"}],"origins":[]}""",
-        [new RememberedSite("bank.example", DateTimeOffset.UnixEpoch, null)]);
+        [new SiteLogin("bank.example", ["bank.example", "login.example"], DateTimeOffset.UnixEpoch, null)]);
 
     private static byte[] NewKey() => RandomNumberGenerator.GetBytes(RedisPersonStateStore.KeyBytes);
 
@@ -26,7 +26,32 @@ public class RedisPersonStateStoreTests(RedisFixture redis) : IClassFixture<Redi
         var loaded = (await new RedisPersonStateStore(redis.Connection, key).LoadAsync(person)).ShouldNotBeNull();
 
         loaded.StorageState.ShouldBe(_state.StorageState);
-        loaded.Sites.ShouldBe(_state.Sites);
+        var login = loaded.Logins.ShouldHaveSingleItem();
+        login.Site.ShouldBe("bank.example");
+        login.Domains.ShouldBe(["bank.example", "login.example"]);
+        login.HandedOffAt.ShouldBe(DateTimeOffset.UnixEpoch);
+        login.LastUsedAt.ShouldBeNull();
+    }
+
+    // The first format listed bare domains rather than logins and was never deployed: such a
+    // record is nothing remembered, so the person logs in again rather than being refused.
+    [Fact]
+    public async Task ARecordOfTheFirstFormat_IsNothingRemembered()
+    {
+        var person = Person();
+        await redis.Connection.GetDatabase().StringSetAsync($"websearch:person:{person}", new byte[] { 1, 0, 0, 0 });
+
+        (await new RedisPersonStateStore(redis.Connection, NewKey()).LoadAsync(person)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task ARecordOfAnUnknownFormat_RefusesToLoad()
+    {
+        var person = Person();
+        await redis.Connection.GetDatabase().StringSetAsync($"websearch:person:{person}", new byte[40]);
+
+        await Should.ThrowAsync<PersonStateUnreadableException>(() =>
+            new RedisPersonStateStore(redis.Connection, NewKey()).LoadAsync(person));
     }
 
     // At rest the record says nothing of what it holds.

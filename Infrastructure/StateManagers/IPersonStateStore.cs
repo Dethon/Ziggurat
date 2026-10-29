@@ -1,7 +1,7 @@
 namespace Infrastructure.StateManagers;
 
 // Where a person's remembered logins rest between restarts: their browser context's storage state
-// and the sites they handed off, encrypted at rest. No model tool reads or writes it.
+// and the logins they handed off, encrypted at rest. No model tool reads or writes it.
 public interface IPersonStateStore
 {
     // Whether a key is configured, so a record can be written. Without one remembering is off,
@@ -16,9 +16,13 @@ public interface IPersonStateStore
     Task SaveAsync(string person, PersonState state, CancellationToken ct = default);
 }
 
-// StorageState is Playwright's own JSON, cookies, localStorage and IndexedDB, already without the
-// person's live-only sites. Sites are the remembered ones only: a live-only login dies with the
-// browser, so it is listed in memory beside the context that holds it and never written here.
-public record PersonState(string StorageState, IReadOnlyList<RememberedSite> Sites);
+// StorageState is Playwright's own JSON — cookies, localStorage and IndexedDB — holding only what
+// the remembered logins' domains own. Logins are the remembered ones only: a live-only login dies
+// with the browser, so it is listed in memory beside the context that holds it and never written.
+public record PersonState(string StorageState, IReadOnlyList<SiteLogin> Logins);
 
-public record RememberedSite(string Domain, DateTimeOffset HandedOffAt, DateTimeOffset? LastUsedAt);
+// A login is to the site handed to web_login (its registrable domain), and covers every domain its
+// handoff touched — the pages it went through and the cookies it set, a single sign-on's provider
+// included — so a save knows what to keep and a Forget what to take. Domains are sorted, the site
+// among them.
+public record SiteLogin(string Site, IReadOnlyList<string> Domains, DateTimeOffset HandedOffAt, DateTimeOffset? LastUsedAt);

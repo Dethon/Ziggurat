@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Infrastructure.Clients.Browser;
 
@@ -23,6 +24,15 @@ internal sealed class FakeHandoffBrowser : IHandoffBrowser, IPersonContexts
     public void RaiseActivity(string person, string url) => PersonActivity?.Invoke(person, url);
 
     public Task<string?> ExportStateAsync(string person, CancellationToken ct = default) => Task.FromResult(State);
+
+    public Task<string?> ExportCookiesAsync(string person, CancellationToken ct = default) =>
+        Task.FromResult(State is null
+            ? null
+            : new JsonObject
+            {
+                ["cookies"] = JsonNode.Parse(State)!["cookies"]?.DeepClone() ?? new JsonArray(),
+                ["origins"] = new JsonArray()
+            }.ToJsonString());
 
     public Task ReplaceStateAsync(string person, string storageState, CancellationToken ct = default)
     {

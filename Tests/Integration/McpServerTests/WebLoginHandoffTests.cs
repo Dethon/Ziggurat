@@ -30,7 +30,15 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     private readonly FakeTimeProvider _time = new(DateTimeOffset.UtcNow);
     private WebIdentityServerHarness _server = null!;
 
-    public async Task InitializeAsync() => _server = await StartAsync(
+    // The class shares one database and the people are fixed names, so each test starts with
+    // nobody's logins remembered.
+    public async Task InitializeAsync()
+    {
+        await redis.Connection.GetDatabase().KeyDeleteAsync(["websearch:person:fran", "websearch:person:ana"]);
+        _server = await StartServerAsync();
+    }
+
+    private Task<WebIdentityServerHarness> StartServerAsync() => StartAsync(
         configure: services =>
         {
             services.RemoveAll<IHandoffBrowser>();
@@ -51,6 +59,9 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
     private const string ShopState =
         """{"cookies":[{"name":"sid","value":"shop-session","domain":".shop.test","path":"/"}],"origins":[]}""";
+
+    private const string BankState =
+        """{"cookies":[{"name":"sid","value":"bank-session","domain":".bank.test","path":"/"}],"origins":[]}""";
 
     private IPersonStateStore Store => _server.Services.GetRequiredService<IPersonStateStore>();
 
@@ -274,7 +285,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     }
 
     [Fact]
-    public async Task ATickedDone_RemembersTheSitesTheHandoffVisited_WithTheContextsState()
+    public async Task ATickedDone_RemembersTheLoginOfTheSiteHandedOff_WithTheContextsState()
     {
         _browser.State = ShopState;
         _browser.Hosts = ["accounts.shop.test", "shop.test"];
@@ -282,7 +293,9 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         await FinishHandoffAsync("""{"remember":true}""");
 
         var record = (await Store.LoadAsync("fran")).ShouldNotBeNull();
-        record.Sites.Select(site => site.Domain).ShouldBe(["shop.test"]);
+        var login = record.Logins.ShouldHaveSingleItem();
+        login.Site.ShouldBe("shop.test");
+        login.Domains.ShouldBe(["shop.test"]);
         record.StorageState.ShouldContain("shop-session");
     }
 
@@ -295,7 +308,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         await FinishHandoffAsync("""{"remember":false}""");
 
         var record = await Store.LoadAsync("fran");
-        (record?.Sites ?? []).ShouldBeEmpty();
+        (record?.Logins ?? []).ShouldBeEmpty();
         (record?.StorageState ?? "").ShouldNotContain("shop-session");
     }
 
@@ -312,7 +325,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         await Eventually.Until(() => Store.LoadAsync("fran").GetAwaiter().GetResult()!.StorageState.Contains("rotated-session"),
             "the rotated cookie to be saved");
-        (await Store.LoadAsync("fran"))!.Sites.Single().LastUsedAt.ShouldNotBeNull();
+        (await Store.LoadAsync("fran"))!.Logins.Single().LastUsedAt.ShouldNotBeNull();
     }
 
     [Fact]
@@ -375,7 +388,10 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _browser.Hosts = ["bank.test"];
         await FinishHandoffAsync("""{"remember":false}""", userId: "ana_tg", url: "https://bank.test/login");
 
-        (await SitesAsync(await OpenLoginsPageAsync("fran_tg"))).ShouldBe(["shop.test"]);
+        var fran = await OpenLoginsPageAsync("fran_tg");
+        (await SitesAsync(fran)).ShouldBe(["shop.test"]);
+        JsonNode.Parse(await fran.GetStringAsync("/browse/logins/sites"))![0]!["domains"]!.AsArray()
+            .Select(domain => domain!.GetValue<string>()).ShouldBe(["shop.test"]);
         (await SitesAsync(await OpenLoginsPageAsync("ana_tg"))).ShouldBe(["bank.test"]);
     }
 
@@ -391,7 +407,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         _browser.State.ShouldNotBeNull().ShouldNotContain("shop-session");
         var record = (await Store.LoadAsync("fran")).ShouldNotBeNull();
-        record.Sites.ShouldBeEmpty();
+        record.Logins.ShouldBeEmpty();
         record.StorageState.ShouldNotContain("shop-session");
         (await SitesAsync(page)).ShouldBeEmpty();
     }
@@ -499,11 +515,15 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     }
 
     // A login nobody finished stays in the context only until the browser restarts: the save the
-    // next use triggers leaves its cookies out.
+    // next use of a remembered one triggers leaves its cookies out.
     [Fact]
     public async Task AnAbandonedHandoffsSite_IsLeftOutOfTheNextSave()
     {
-        _browser.State = ShopState;
+        _browser.State = BankState;
+        _browser.Hosts = ["bank.test"];
+        await FinishHandoffAsync("""{"remember":true}""", url: "https://bank.test/login");
+        _browser.State =
+            """{"cookies":[{"name":"sid","value":"bank-rotated","domain":".bank.test","path":"/"},{"name":"sid","value":"shop-session","domain":".shop.test","path":"/"}],"origins":[]}""";
         _browser.Hosts = ["shop.test"];
         await StartHandoffAsync();
         _time.Advance(TimeSpan.FromMinutes(10));
@@ -511,9 +531,9 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         await Eventually.Until(() =>
         {
-            _browser.RaiseActivity("fran", "https://elsewhere.test/");
+            _browser.RaiseActivity("fran", "https://bank.test/");
             _time.Advance(TimeSpan.FromSeconds(5));
-            return Store.LoadAsync("fran").GetAwaiter().GetResult() is not null;
+            return Store.LoadAsync("fran").GetAwaiter().GetResult()!.StorageState.Contains("bank-rotated");
         }, "a save to run");
 
         (await Store.LoadAsync("fran"))!.StorageState.ShouldNotContain("shop-session");
@@ -530,7 +550,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         (await page.PostAsync("/browse/logins/forget", Json("""{"site":"shop.test"}"""))).StatusCode
             .ShouldBe(HttpStatusCode.Conflict);
-        (await Store.LoadAsync("fran"))!.Sites.Select(site => site.Domain).ShouldBe(["shop.test"]);
+        (await Store.LoadAsync("fran"))!.Logins.Select(login => login.Site).ShouldBe(["shop.test"]);
     }
 
     [Theory]

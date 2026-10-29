@@ -28,7 +28,8 @@ public sealed class LoginHandoffs(
 
     private readonly ConcurrentDictionary<string, LiveHandoff> _live = new();
 
-    public sealed class LiveHandoff(string id, string person, ConversationContext context, string url, string token)
+    public sealed class LiveHandoff(
+        string id, string person, ConversationContext context, string url, string token, HandoffLease lease)
     {
         public string Id { get; } = id;
         public string Person { get; } = person;
@@ -38,6 +39,10 @@ public sealed class LoginHandoffs(
         public ConversationContext Context { get; } = context;
         public string Url { get; } = url;
         public string Token { get; } = token;
+
+        // The handoff's hold on the person's logins; every way out of the handoff settles it, and
+        // only the first settle counts.
+        internal HandoffLease Lease { get; } = lease;
         internal string? ViewKey { get; set; }
         internal ITimer? Expiry { get; set; }
     }
@@ -51,9 +56,9 @@ public sealed class LoginHandoffs(
     public async Task<string> BeginAsync(
         string person, ConversationContext context, string url, string? inWebChatOf, CancellationToken ct)
     {
-        // Counted before the tab opens: the login page's own requests must not arm a save of a
+        // Taken before the tab opens: the login page's own requests must not arm a save of a
         // login nobody has finished.
-        logins.BeginHandoff(person);
+        var lease = await logins.BeginHandoffAsync(person, url, ct);
         string id;
         string token;
         try
@@ -62,7 +67,7 @@ public sealed class LoginHandoffs(
         }
         catch
         {
-            await logins.AbandonHandoffAsync(person, [], CancellationToken.None);
+            await lease.AbandonAsync([], CancellationToken.None);
             throw;
         }
 
@@ -73,12 +78,12 @@ public sealed class LoginHandoffs(
         catch
         {
             // No link, no handoff: the tab nobody can reach goes with it.
-            await logins.AbandonHandoffAsync(person, browser.HandoffVisitedHosts(id), CancellationToken.None);
+            await lease.AbandonAsync(browser.HandoffVisitedHosts(id), CancellationToken.None);
             await browser.CloseHandoffAsync(id);
             throw;
         }
 
-        var handoff = new LiveHandoff(id, person, context, url, token);
+        var handoff = new LiveHandoff(id, person, context, url, token, lease);
         _live[id] = handoff;
         handoff.Expiry = time.CreateTimer(_ => _ = ExpireAsync(id), null, TicketLifetime, Timeout.InfiniteTimeSpan);
 
@@ -132,7 +137,7 @@ public sealed class LoginHandoffs(
         // nothing to wake the agent about.
         if (!browser.IsHandoffOpen(handoff.Id))
         {
-            await logins.AbandonHandoffAsync(handoff.Person, []);
+            await handoff.Lease.AbandonAsync([]);
             return false;
         }
 
@@ -141,7 +146,7 @@ public sealed class LoginHandoffs(
         await browser.CloseHandoffAsync(handoff.Id);
         try
         {
-            await logins.CompleteHandoffAsync(handoff.Person, hosts, remember);
+            await handoff.Lease.CompleteAsync(hosts, remember);
         }
         catch (Exception ex)
         {
@@ -166,7 +171,7 @@ public sealed class LoginHandoffs(
         handoff.Expiry?.Dispose();
         try
         {
-            await logins.AbandonHandoffAsync(handoff.Person, browser.HandoffVisitedHosts(id));
+            await handoff.Lease.AbandonAsync(browser.HandoffVisitedHosts(id));
             await links.RevokeAsync(handoff.Token);
             await browser.CloseHandoffAsync(id);
         }

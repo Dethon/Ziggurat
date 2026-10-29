@@ -11,10 +11,16 @@ public interface IPersonContexts
     event Action? ContextsClosed;
 
     // The context's storage state — cookies, localStorage, IndexedDB — as Playwright writes it, or
-    // null when the person has no context on the current connection.
+    // null when the person has no context on the current connection. IndexedDB can run to tens of
+    // megabytes, so this is asked only when a login is kept or forgotten.
     Task<string?> ExportStateAsync(string person, CancellationToken ct = default);
 
+    // The context's cookies alone, in the storage state's shape with no origins, or null with no
+    // context: what a save after use and a handoff's before-and-after compare need, at the cost of
+    // a cookie list.
+    Task<string?> ExportCookiesAsync(string person, CancellationToken ct = default);
+
     // Replaces the person's context with one built from the given state, closing the old one and
-    // every tab in it: how a forgotten site's cookies and storage leave a live context.
+    // every tab in it: how a forgotten login's cookies and storage leave a live context.
     Task ReplaceStateAsync(string person, string storageState, CancellationToken ct = default);
 }
