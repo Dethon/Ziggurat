@@ -12,6 +12,11 @@ public record ConnectionReconnected : IAction;
 
 public record ConnectionClosed(string? Error) : IAction;
 
+// The user was registered again on the connection that became live at this epoch. The hub refuses
+// every call from a connection that has not registered, and a connection that comes back is a new
+// one to it, so catching up waits for this rather than for the connection alone.
+public record ConnectionRegistered(int Epoch) : IAction;
+
 public sealed class ConnectionStore : IDisposable
 {
     private readonly Store<ConnectionState> _store;
@@ -60,10 +65,21 @@ public sealed class ConnectionStore : IDisposable
     }
 
     // Every epoch after the one accounted for above — that is, each interruption a subscriber
-    // still has to catch up on. Both catch-up and session recovery are keyed on this, so the
-    // rule lives here once instead of in each of them.
+    // still has to catch up on. Session recovery is keyed on this, so the rule lives here once
+    // instead of in each subscriber.
     public IObservable<int> BecameLiveAgain => _store.StateObservable
         .Where(state => state.Status == ConnectionStatus.Connected)
+        .Select(state => state.Epoch)
+        .DistinctUntilChanged()
+        .Where(epoch => epoch != _suppressedEpoch);
+
+    // The same epochs, each once session recovery has registered the user on it. Anything that
+    // asks the hub for something on becoming live again is keyed on this rather than on
+    // BecameLiveAgain: the hub refuses a connection that has not registered, and recovery runs
+    // beside every other subscriber rather than ahead of them. A registration answered for an
+    // epoch the connection has already moved past counts for nothing.
+    public IObservable<int> RegisteredAgain => _store.StateObservable
+        .Where(state => state.Status == ConnectionStatus.Connected && state.RegisteredEpoch == state.Epoch)
         .Select(state => state.Epoch)
         .DistinctUntilChanged()
         .Where(epoch => epoch != _suppressedEpoch);
@@ -103,6 +119,11 @@ public sealed class ConnectionStore : IDisposable
             ReconnectAttempts = 0,
             Error = null,
             Epoch = state.Epoch + 1
+        },
+
+        ConnectionRegistered a => state with
+        {
+            RegisteredEpoch = a.Epoch
         },
 
         ConnectionClosed a => state with

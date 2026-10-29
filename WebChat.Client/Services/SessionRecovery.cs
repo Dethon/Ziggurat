@@ -1,4 +1,6 @@
 using WebChat.Client.Contracts;
+using WebChat.Client.State;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.UserIdentity;
 
@@ -9,14 +11,27 @@ public sealed class SessionRecovery(
     ITopicService topicService,
     IPushSubscriptionService pushSubscriptionService,
     UserIdentityStore userIdentityStore,
-    SpaceStore spaceStore) : ISessionRecovery
+    SpaceStore spaceStore,
+    ConnectionStore connectionStore,
+    Dispatcher dispatcher) : ISessionRecovery
 {
-    public Task RecoverAsync()
+    // A reconnected connection is a new one to the hub, which refuses every call from a connection
+    // that has not registered, so the user is back before anything else is asked of it.
+    //
+    // Catch-up waits on ConnectionRegistered rather than on the connection, so it is said only
+    // for a registration the hub answered, and for the epoch it was asked on: one answered after
+    // the connection moved on says nothing about the connection there is now.
+    public async Task RecoverAsync()
     {
-        var registerTask = RegisterUserAsync();
-        var joinTask = topicService.JoinSpaceAsync(spaceStore.State.CurrentSlug);
+        var epoch = connectionStore.State.Epoch;
+        if (await RegisterUserAsync())
+        {
+            dispatcher.Dispatch(new ConnectionRegistered(epoch));
+        }
 
-        return Task.WhenAll(registerTask, joinTask, ResubscribePushAsync());
+        await Task.WhenAll(
+            topicService.JoinSpaceAsync(spaceStore.State.CurrentSlug),
+            ResubscribePushAsync());
     }
 
     // Re-sends the existing push subscription without force-refreshing the push channel.
@@ -34,9 +49,9 @@ public sealed class SessionRecovery(
         }
     }
 
-    private Task RegisterUserAsync()
+    private async Task<bool> RegisterUserAsync()
     {
         var userId = userIdentityStore.State.SelectedUserId;
-        return string.IsNullOrEmpty(userId) ? Task.CompletedTask : sessionService.RegisterUserAsync(userId);
+        return !string.IsNullOrEmpty(userId) && (await sessionService.RegisterUserAsync(userId)).IsLive;
     }
 }

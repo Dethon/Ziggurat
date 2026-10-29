@@ -53,6 +53,25 @@ public class ApprovalServiceTests : IDisposable
         result.ShouldBe("approved");
     }
 
+    // The id is all a browser sends to answer an approval, so it must not be guessable: a full
+    // 128-bit GUID, not the eight hex characters a caller could walk through.
+    [Fact]
+    public void RequestApprovalAsync_MintsAFullGuidAsTheApprovalId()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200);
+        _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "mcp__server__tool", new Dictionary<string, object?>())];
+
+        _ = _sut.RequestApprovalAsync(
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
+
+        var pending = _sut.GetPendingApprovalForTopic("topic1").ShouldNotBeNull();
+        pending.ApprovalId.Length.ShouldBe(32);
+        Guid.TryParseExact(pending.ApprovalId, "N", out _).ShouldBeTrue();
+    }
+
     [Fact]
     public async Task RequestApprovalAsync_Rejected_ReturnsRejected()
     {
