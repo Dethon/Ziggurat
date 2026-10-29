@@ -78,8 +78,10 @@ public static class InjectorModule
             return services
                 .AddSingleton(settings.AgentDefaults)
                 .AddSingleton(settings.Retention)
-                // Read by the agent factory and applied to every configured endpoint it composes.
-                .AddSingleton(settings.Mcp)
+                // The credentials checked above, and the only ones: the agent factory applies them
+                // to every configured endpoint it composes, and each channel connection presents
+                // its own server's.
+                .AddSingleton(credentials)
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")
                 .AddSingleton<ChatThreadResolver>()
@@ -178,7 +180,7 @@ public static class InjectorModule
                 services = services.AddSingleton<IChannelConnection>(sp =>
                     new McpChannelConnection(
                         channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
-                        mcpSecret: McpCredentials.From(settings.Mcp).For(endpoint.Endpoint))
+                        mcpSecret: sp.GetRequiredService<McpCredentials>().For(endpoint.Endpoint))
                     {
                         HostsReviewCopies = hostsReviewCopies
                     });

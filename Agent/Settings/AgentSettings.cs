@@ -28,8 +28,9 @@ public record AgentSettings
     public OutpostConfiguration Outposts { get; init; } = new();
     public AgentApiConfiguration AgentApi { get; init; } = new();
 
-    // The deployment secret every configured MCP endpoint and channel connection presents, bound
-    // under the same name the servers bind it by (MCP__SHAREDSECRET), so one line reaches both ends.
+    // Each configured MCP server's own credential, keyed by the host the agent dials it at
+    // (MCP__SECRETS__<host>): every configured endpoint and channel connection presents the one for
+    // its host, the same value that server binds as its own (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
 
     // The browser origins the registration API answers with credentials (CORS__ALLOWEDORIGINS__n),
