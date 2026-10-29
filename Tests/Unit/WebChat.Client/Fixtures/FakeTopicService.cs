@@ -187,6 +187,21 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         return Task.FromResult(HubResult<Nothing>.Answered(default));
     }
 
+    private readonly List<(string AgentId, long ChatId, string TopicId, bool Shared)> _sharedChanges = [];
+
+    public IReadOnlyList<(string AgentId, long ChatId, string TopicId, bool Shared)> SharedChanges => _sharedChanges;
+
+    public Task<HubResult<Nothing>> SetTopicSharedAsync(string agentId, long chatId, string topicId, bool shared)
+    {
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<Nothing>.NotLive);
+        }
+
+        _sharedChanges.Add((agentId, chatId, topicId, shared));
+        return Task.FromResult(HubResult<Nothing>.Answered(default));
+    }
+
     public Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false)
     {
         recorder?.Record($"save:{topic.TopicId}");

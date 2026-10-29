@@ -1,7 +1,9 @@
 @inherits StoreSubscriberComponent
 @using Microsoft.JSInterop
+@using WebChat.Client.State.UserIdentity
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
+@inject UserIdentityStore UserIdentityStore
 @inject IDispatcher Dispatcher
 @inject IJSRuntime Js
 
@@ -21,7 +23,25 @@
                   role="button" tabindex="0" title="Rename conversation"
                   @onclick="() => BeginEdit(topic)">@topic.Name</span>
         }
-        <span class="header-conversation-time">@FormatTime(topic.LastWriteAt)</span>
+        <div class="header-conversation-meta">
+            <span class="header-conversation-time">@FormatTime(topic.LastWriteAt)</span>
+            @* The toggle is the owner's alone, as the server holds it to be; on someone else's
+               shared topic the line says whose it is instead. *@
+            @if (IsMine(topic))
+            {
+                <button class="header-conversation-share @(topic.Shared ? "on" : "")"
+                        aria-pressed="@topic.Shared"
+                        title="@(topic.Shared ? "Shared with the household: tap to make it yours alone" : "Yours alone: tap to share it with the household")"
+                        @onclick="() => Dispatcher.Dispatch(new ShareTopic(topic.TopicId, !topic.Shared))">
+                    <Icon Glyph="@(topic.Shared ? Icons.People : Icons.Lock)" Size="12" />
+                    <span>@(topic.Shared ? "Shared" : "Private")</span>
+                </button>
+            }
+            else if (topic.OwnerName is { Length: > 0 } owner)
+            {
+                <span class="header-conversation-owner">Started by @owner</span>
+            }
+        </div>
     </div>
 }
 
@@ -29,6 +49,7 @@
     private IReadOnlyList<StoredTopic> _topics = [];
     private string? _selectedTopicId;
     private IReadOnlySet<string> _streamingTopics = new HashSet<string>();
+    private string? _signedInUserId;
 
     // Holds which conversation is being renamed rather than a bare flag, so switching
     // conversations mid-edit closes the field instead of retitling the new one.
@@ -42,7 +63,10 @@
         Subscribe(TopicsStore.StateObservable, s => s.Topics, t => _topics = t);
         Subscribe(TopicsStore.StateObservable, s => s.SelectedTopicId, id => _selectedTopicId = id);
         Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
+        Subscribe(UserIdentityStore.StateObservable, s => s.SignedIn?.UserId, id => _signedInUserId = id);
     }
+
+    private bool IsMine(StoredTopic topic) => topic.OwnerId is not null && topic.OwnerId == _signedInUserId;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
