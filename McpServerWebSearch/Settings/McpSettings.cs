@@ -74,6 +74,10 @@ public record LoginsConfiguration
     public string StateKey { get; init; } = "";
 
     public int SaveDebounceSeconds { get; init; } = 5;
+
+    // The most a person's storage state may take in their record. Past it every origin's
+    // IndexedDB is left out, then localStorage; the cookies are always saved.
+    public long MaxRecordBytes { get; init; } = 8 * 1024 * 1024;
 }
 
 public record BraveSearchConfiguration

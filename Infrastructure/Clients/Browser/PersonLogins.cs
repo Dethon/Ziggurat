@@ -9,26 +9,29 @@ namespace Infrastructure.Clients.Browser;
 // handoff was opened at, and covers every domain the handoff touched; Done says whether it is
 // remembered or lives only until the browser restarts. A save is an allowlist — it writes only the
 // cookies and storage of domains a remembered login covers — so whatever nobody chose to remember
-// stays off the disk whichever host set it. The person's context is saved when a login is kept,
-// and again shortly after it is used, so a cookie a site rotates is in the next restore. There is
-// no expiry of our own: a remembered login lasts until it is forgotten or the site ends it.
+// stays off the disk whichever host set it. The person's context is saved in full when a login is
+// kept or forgotten, and its cookies alone shortly after it is used, so a cookie a site rotates is
+// in the next restore. There is no expiry of our own: a remembered login lasts until it is
+// forgotten or the site ends it.
 public sealed class PersonLogins : IDisposable
 {
     private readonly IPersonContexts _contexts;
     private readonly IPersonStateStore _store;
     private readonly TimeProvider _time;
     private readonly TimeSpan _debounce;
+    private readonly long _maxRecordBytes;
     private readonly ILogger<PersonLogins> _logger;
     private readonly ConcurrentDictionary<string, Person> _people = new();
 
     public PersonLogins(
         IPersonContexts contexts, IPersonStateStore store, TimeProvider time, TimeSpan debounce,
-        ILogger<PersonLogins> logger)
+        long maxRecordBytes, ILogger<PersonLogins> logger)
     {
         _contexts = contexts;
         _store = store;
         _time = time;
         _debounce = debounce;
+        _maxRecordBytes = maxRecordBytes;
         _logger = logger;
         _contexts.PersonActivity += OnActivity;
         _contexts.ContextsClosed += OnContextsClosed;
@@ -81,10 +84,14 @@ public sealed class PersonLogins : IDisposable
         var domains = await DomainsOfAsync(lease, visitedHosts, ct);
         var now = _time.GetUtcNow();
         var site = lease.Site;
+        var keep = remember && CanRemember;
 
-        await SaveAsync(lease.Person, entry, remembered =>
+        // Only a kept login exports in full: its localStorage and IndexedDB are written now, once.
+        // An unticked Done still writes, cookies alone, so a remembered login of the site that it
+        // scrubs leaves the record — its stored origins with it, by the allowlist.
+        await SaveAsync(lease.Person, entry, full: keep, remembered =>
         {
-            if (remember && CanRemember)
+            if (keep)
             {
                 SiteLogin? wasLiveOnly;
                 lock (entry)
@@ -258,7 +265,7 @@ public sealed class PersonLogins : IDisposable
             var state = live ?? record?.StorageState;
             if (CanRemember && record is not null && state is not null)
             {
-                await _store.SaveAsync(person, new PersonState(Kept(state, remembered), remembered), ct);
+                await WriteAsync(person, state, remembered, ct);
             }
 
             return true;
@@ -318,7 +325,7 @@ public sealed class PersonLogins : IDisposable
 
         try
         {
-            await SaveAsync(person, entry, _ => { }, CancellationToken.None);
+            await SaveAsync(person, entry, full: false, _ => { }, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -327,10 +334,13 @@ public sealed class PersonLogins : IDisposable
     }
 
     // Under the person's gate: the record read, its logins changed, and written back with the
-    // context's state as it is now, kept to what the remembered logins cover. A person with no
-    // record and nothing remembered has nothing to write.
+    // context's state as it is now, kept to what the remembered logins cover. A full save exports
+    // the context's storage too; any other takes its cookies alone over the stored origins — the
+    // save after use exists only so a rotated cookie survives a restart, and exporting a mail
+    // client's IndexedDB on every browse would rewrite megabytes for it. A person with no record
+    // and nothing remembered has nothing to write.
     private async Task SaveAsync(
-        string person, Person entry, Action<Dictionary<string, SiteLogin>> change, CancellationToken ct)
+        string person, Person entry, bool full, Action<Dictionary<string, SiteLogin>> change, CancellationToken ct)
     {
         await entry.Gate.WaitAsync(ct);
         try
@@ -361,14 +371,31 @@ public sealed class PersonLogins : IDisposable
                 remembered[site] = remembered[site] with { LastUsedAt = at };
             }
 
-            var state = await _contexts.ExportStateAsync(person, ct) ?? record?.StorageState ?? EmptyState;
-            List<SiteLogin> logins = [.. remembered.Values.OrderBy(login => login.Site, StringComparer.Ordinal)];
-            await _store.SaveAsync(person, new PersonState(Kept(state, logins), logins), ct);
+            var stored = record?.StorageState ?? EmptyState;
+            var state = (full ? await _contexts.ExportStateAsync(person, ct) : null)
+                        ?? (await _contexts.ExportCookiesAsync(person, ct) is { } cookies
+                            ? StorageStateFilter.WithCookiesOf(stored, cookies)
+                            : stored);
+            await WriteAsync(person, state, [.. remembered.Values.OrderBy(login => login.Site, StringComparer.Ordinal)], ct);
         }
         finally
         {
             entry.Gate.Release();
         }
+    }
+
+    // The record as written: kept to the remembered logins, and under the size a record may take.
+    private async Task WriteAsync(string person, string state, IReadOnlyList<SiteLogin> logins, CancellationToken ct)
+    {
+        var capped = StorageStateFilter.Capped(Kept(state, logins), _maxRecordBytes);
+        if (capped.Dropped != StorageStateFilter.Dropped.Nothing)
+        {
+            _logger.LogWarning(
+                "The remembered logins of {Person} exceed {MaxBytes} bytes; saved without {Dropped}, cookies kept",
+                person, _maxRecordBytes, capped.Dropped);
+        }
+
+        await _store.SaveAsync(person, new PersonState(capped.State, logins), ct);
     }
 
     // Only what a remembered login covers is written. A domain a remembered login shares with a
