@@ -427,6 +427,36 @@ public class RedisMemoryStoreTests(MemorySearchFixture redisFixture) : IClassFix
         userIds.ShouldContain(userId);
     }
 
+    // Memory is keyed by account now, and dreaming visits whoever this names: every account
+    // holding a memory or a profile is one of them, under the opaque id the accounts service gave.
+    [Fact]
+    public async Task GetAllUserIdsAsync_AccountsHoldingMemoriesOrAProfile_AreEachNamed()
+    {
+        // Arrange
+        var store = CreateStore();
+        var fran = Guid.NewGuid().ToString("N");
+        var ana = Guid.NewGuid().ToString("N");
+        var luis = Guid.NewGuid().ToString("N");
+        await store.StoreAsync(CreateMemory(fran, "Le gusta el café solo"));
+        await store.StoreAsync(CreateMemory(fran, "Tiene un gato"));
+        await store.StoreAsync(CreateMemory(ana, "Es alérgica a los cacahuetes"));
+        await store.SaveProfileAsync(new PersonalityProfile
+        {
+            UserId = luis,
+            Summary = "Va al grano",
+            LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        // Act
+        var userIds = await store.GetAllUserIdsAsync();
+
+        // Assert
+        userIds.ShouldContain(fran);
+        userIds.ShouldContain(ana);
+        userIds.ShouldContain(luis);
+        userIds.Count(id => id == fran).ShouldBe(1);
+    }
+
     [Fact]
     public async Task GetAllUserIdsAsync_ProfileKey_IsNeverReadAsAUserNamedProfile()
     {

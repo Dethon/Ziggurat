@@ -95,7 +95,7 @@ public class ChatMonitorAgentRoutingTests
         var recallHook = new Mock<IMemoryRecallHook>();
         recallHook
             .Setup(h => h.EnrichAsync(
-                It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(),
+                It.IsAny<ChatMessage>(), It.IsAny<Account?>(), It.IsAny<string?>(), It.IsAny<string?>(),
                 It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
