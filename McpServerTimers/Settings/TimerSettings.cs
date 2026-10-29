@@ -5,7 +5,7 @@ namespace McpServerTimers.Settings;
 
 public record TimerSettings : IMcpHostSettings
 {
-    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    // This server's own credential, which its /mcp asks for (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
 
     public VoiceHubSettings VoiceHub { get; init; } = new();
