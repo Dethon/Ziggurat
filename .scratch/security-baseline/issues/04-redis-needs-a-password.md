@@ -4,8 +4,8 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The conformance check asserts Redis requires a password and every service depending on Redis is given a connection string
-- [ ] One test stack runs its Redis with a password and its suite passes
-- [ ] A service with a wrong password fails at startup with a message that names Redis authentication
+- [x] The conformance check asserts Redis requires a password and every service depending on Redis is given a connection string
+- [x] One test stack runs its Redis with a password and its suite passes
+- [x] A service with a wrong password fails at startup with a message that names Redis authentication

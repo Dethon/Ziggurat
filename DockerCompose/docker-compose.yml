@@ -24,7 +24,10 @@ services:
       - ./volumes/redis_data:/data
     environment:
       <<: *timezone
-      REDIS_ARGS: "--appendonly yes"
+      REDIS_ARGS: "--appendonly yes --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"
+      # redis-cli reads it, so the health check below authenticates without the password in
+      # its command line.
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -214,6 +217,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
@@ -354,6 +358,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       # Seals each person's remembered logins in Redis (base64 of 32 random bytes; empty is
       # remembering off). Changing it makes every saved login refuse until it is put back.
@@ -453,6 +458,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       Dictation__Transcription__Model: *stt-model
     networks:
@@ -478,6 +484,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       Dictation__Transcription__Model: *stt-model
     networks:
@@ -524,6 +531,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
       - jackbot
@@ -667,6 +675,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       Announce__Escalation__WebhookUrl: ""
       Stt__OpenAi__Model: *stt-model
@@ -803,6 +812,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       AGENTAPI__SHAREDSECRET: ${AGENTAPI__SHAREDSECRET}
     networks:
@@ -879,6 +889,7 @@ services:
       - .env
     environment:
       <<: *timezone
+      REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       # LemonadeChat__ApiUrl arrives through .env, as it does for the agent: the probe row for
       # the Lemonade chat host exists only when that line is set. A literal here would win over
       # .env and keep the probe off.

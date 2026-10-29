@@ -62,6 +62,30 @@ public class DeploymentConformanceTests
     }
 
     [Fact]
+    public void Redis_RequiresThePassword_AndItsHealthCheckAuthenticates()
+    {
+        var redis = DeploymentFiles.Compose().Service("redis");
+
+        redis.Environment["REDIS_ARGS"].ShouldContain("--requirepass ${REDIS_PASSWORD:?");
+        redis.Environment.ShouldContainKey("REDISCLI_AUTH", "redis-cli in the health check reads it");
+        redis.Environment["REDISCLI_AUTH"].ShouldStartWith("${REDIS_PASSWORD");
+    }
+
+    [Fact]
+    public void EveryServiceOnRedis_IsHandedAConnectionStringWithThePassword()
+    {
+        var missing = DeploymentFiles.Compose().Services.Values
+            .Where(s => s.DependsOn.Contains("redis"))
+            .Where(s => !s.Environment.Any(e =>
+                e.Key.Replace("__", "").Equals("REDISCONNECTIONSTRING", StringComparison.OrdinalIgnoreCase)
+                && e.Value.Contains("password=${REDIS_PASSWORD", StringComparison.Ordinal)))
+            .Select(s => s.Name)
+            .ToList();
+
+        missing.ShouldBeEmpty();
+    }
+
+    [Fact]
     public void TheDebugOverride_PublishesOnLoopbackOnly()
     {
         var ports = DeploymentFiles.Compose("docker-compose.override.ports.yml").Services.Values
