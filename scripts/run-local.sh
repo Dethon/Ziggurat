@@ -23,8 +23,9 @@ CONFIG="${CONFIG:-Debug}"
 TFM="${TFM:-net10.0}"
 ENV_FILE="$ROOT/DockerCompose/.env"
 
-# Every MCP server's /mcp asks for the deployment secret and the agent presents it, so every
-# service started here gets the same value — the one in the environment if there is one, else a
+# Every MCP server's /mcp asks for its credential and the agent presents it by host; here every
+# server is localhost, so every service started here gets the same value, as its own and as the
+# agent's credential for localhost — the one in the environment if there is one, else a
 # fixed local one. It is passed after .env is sourced, so an empty placeholder there cannot win.
 MCP_SECRET="${MCP__SHAREDSECRET:-local-mcp-secret}"
 
@@ -42,9 +43,9 @@ SERVICES=(
   "signalr|McpChannelSignalR|6010|yes|no||"
   "telegram|McpChannelTelegram|6011|no|no||"
   "servicebus|McpChannelServiceBus|6012|no|no||"
-  "scheduling|McpServerScheduling|6013|no|no|RedisConnectionString=localhost:6379|"
+  "scheduling|McpServerScheduling|6013|no|no|RedisConnectionString=localhost:6379,password=local-redis-password|"
   "printer|McpServerPrinter|6014|no|no|SPOOLPATH=$ROOT/McpServerPrinter/.spool|"
-  "voice|McpChannelVoice|6015|yes|yes|RedisConnectionString=localhost:6379;Satellites__kitchen-01__Identity=household;Satellites__kitchen-01__Room=Kitchen;Satellites__kitchen-01__WakeWord=hey_jarvis;Satellites__kitchen-01__Address=tcp://127.0.0.1:10800|"
+  "voice|McpChannelVoice|6015|yes|yes|RedisConnectionString=localhost:6379,password=local-redis-password;Satellites__kitchen-01__Identity=household;Satellites__kitchen-01__Room=Kitchen;Satellites__kitchen-01__WakeWord=hey_jarvis;Satellites__kitchen-01__Address=tcp://127.0.0.1:10800|"
   "timers|McpServerTimers|6016|no|yes|VoiceHub__BaseUrl=http://localhost:6015|"
 )
 
@@ -103,6 +104,7 @@ start_service() {
       "DOTNET_ENVIRONMENT=Local"
       "ASPNETCORE_URLS=http://localhost:$port"
       "MCP__SHAREDSECRET=$MCP_SECRET"
+      "MCP__SECRETS__localhost=$MCP_SECRET"
     )
     [[ $aspnet_env == yes ]] && envs+=("ASPNETCORE_ENVIRONMENT=Local")
 

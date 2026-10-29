@@ -79,6 +79,35 @@ public class TelegramApprovalAskerTests : IDisposable
         (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("denied");
     }
 
+    // A login wake continues the turn of the person who handed the login off, and carries them as
+    // its principal: it is theirs to approve, not the whole allowlist's as a schedule's fire is.
+    [Fact]
+    public async Task ALoginWakesApproval_IsTheAskersAlone()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage(
+                "/check my order", username: "alice", userId: TelegramPollingHarness.AliceId)
+        });
+        await _harness.RunAsync();
+
+        var wake = PersonsTurn("alice") with
+        {
+            OriginKind = MessageOriginKind.Login,
+            Principal = new Principal("telegram", "alice")
+        };
+        var approval = RequestApprovalTool.RunAsync("100:100", ApprovalMode.Request, ARequest, wake, _services);
+
+        await TapAsync(TelegramPollingHarness.BobId, "tool_approve");
+        await Task.Delay(100);
+        approval.IsCompleted.ShouldBeFalse();
+
+        await TapAsync(TelegramPollingHarness.AliceId, "tool_approve");
+        (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("approved");
+    }
+
     // The context the agent stamps on a person's own message: no origin kind, and the sender the
     // bot emitted as the user id.
     private static ConversationContext PersonsTurn(string sender) =>

@@ -79,23 +79,29 @@ public sealed class RequestApprovalTool
         return await resultTask;
     }
 
-    // Who may answer, read from the turn's context on this hop. A fire's turn was started by
-    // nobody's message, so anyone on the allowlist. A person's turn names them by the sender the bot
-    // emitted, which the bot recorded against their numeric id when it admitted the message, so
-    // only that id. A turn with no context, or a sender this process never admitted (it restarted
-    // mid-turn), names nobody: every tap is refused and the approval times out as denied.
+    // Who may answer, read from the turn's context on this hop. A turn that names a Telegram person
+    // — their own message, or a wake or fire stamped with them, like a login wake continuing their
+    // turn — is theirs: the bot recorded their numeric id against the sender it emitted when it
+    // admitted their message, so only that id. A fire that names nobody here was started by nobody's
+    // message, so anyone on the allowlist. A turn with no context, or a person this process never
+    // admitted (it restarted mid-turn), names nobody: every tap is refused and the approval times out
+    // as denied.
     private static IReadOnlySet<long> AnswerersOf(
         ConversationContext? turn, ApprovalCallbackRouter router, ChannelSettings settings)
     {
-        if (turn?.OriginKind is not null)
+        if (Principal.Of(turn) is { ChannelId: TelegramChannelId } asker)
         {
-            return settings.AllowedUserIds.ToHashSet();
+            return router.SenderId(asker.UserId) is { } askerId
+                ? new HashSet<long> { askerId }
+                : new HashSet<long>();
         }
 
-        return Principal.Of(turn) is { } asker && router.SenderId(asker.UserId) is { } askerId
-            ? new HashSet<long> { askerId }
+        return turn?.OriginKind is not null
+            ? settings.AllowedUserIds.ToHashSet()
             : new HashSet<long>();
     }
+
+    private const string TelegramChannelId = "telegram";
 
     internal static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
     {
