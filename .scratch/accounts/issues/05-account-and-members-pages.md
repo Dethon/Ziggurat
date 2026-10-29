@@ -1,11 +1,13 @@
 # 05: Account and members pages
 
-**What to build:** On the accounts service: a person's page lists their passkeys and signed-in devices, adds a passkey, revokes either (revoking a passkey ends its sessions), shows the link-Telegram code and the voice enrollment command. An owner's members page invites by single-use link (role and display name, seven days), issues a recovery link, changes roles and grants or withdraws "sees all conversations". Spec: `../spec.md` ("Invites and recovery", "Passkeys").
+**What to build:** A person manages their own passkeys and devices, and an owner manages the household. The account page lists passkeys and signed-in devices, adds a passkey, and revokes either, revoking a passkey ending the sessions it began; it shows the Telegram link code and the voice enrollment command. The members page lets an owner invite by a single-use, week-long link naming role and display name, issue a recovery link, change roles and grant or withdraw "sees all conversations". Spec: `../spec.md` ("Passkeys, sessions, invites and recovery").
 
-**Blocked by:** 01
+**Blocked by:** 02
 
 **Status:** ready-for-agent
 
-- [ ] Revoking a device ends that session; revoking a passkey ends every session it began (test host)
-- [ ] An invite enrolls a member with the named role; a recovery link adds a passkey to an existing member (Playwright)
-- [ ] A member can't reach the members page
+- [ ] Revoking a device ends that session; revoking a passkey ends every session it began
+- [ ] An invite enrolls a person with the named role and display name; a used or expired invite refuses
+- [ ] A recovery link adds a passkey to an existing person
+- [ ] A member is refused the members page
+- [ ] Everyone in the household can see who holds "sees all conversations"
