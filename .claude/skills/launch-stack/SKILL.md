@@ -17,12 +17,14 @@ description: Launch the local jackbot Docker Compose stack and reach its UIs —
 
 ## Launching
 
+Every server needs its own `MCP_SECRET_<SERVER>` and the stack needs `REDIS_PASSWORD` (compose refuses to start without it). For a local stack, export each `MCP_SECRET_*` as `local-mcp-secret`: a project run on the host as the agent dials every server at `localhost` and holds that one value as its `localhost` credential (`.vscode/launch.json`, `.zed/debug.json`, `scripts/run-local.sh`). The Local profiles connect to Redis with `local-redis-password`, which the editor tasks start it with.
+
 To read prod's Redis, tunnel to its loopback port: `ssh -L 6379:127.0.0.1:6379 192.168.5.45`, then connect to `localhost:6379`.
 
 Swap the override for your OS (`linux` on Linux/WSL, `windows` on Windows):
 
 ```bash
-docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot up -d --build \
+REDIS_PASSWORD=local-redis-password docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot up -d --build \
   agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library \
   mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer mcp-timers mcp-sugary \
   lemonade tse-extractor qbittorrent jackett redis caddy camoufox homeassistant music-assistant
@@ -44,11 +46,11 @@ These secrets live in `DockerCompose/.env` and must be set (any non-empty value)
 
 Caddy (port 443, Let's Encrypt TLS) is the entry point: `/hubs/*` → McpChannelSignalR, `/dashboard/*` → Observability, everything else → WebUI. **Connect through Caddy, not directly to webui:5001**, or SignalR won't reach the channel server.
 
-The dashboard (an installable PWA) is at `https://assistants.herfluffness.com/dashboard/` or `http://localhost:5003/dashboard/` direct.
+The dashboard (an installable PWA) is at `https://assistants.herfluffness.com/dashboard/` or, with the ports override, `http://localhost:5003/dashboard/` direct.
 
 ## The Sugary app
 
-`mcp-sugary` serves her carb-counting PWA (`Sugary.Client`, built into the image) on every route but `/mcp`: `http://localhost:6017/`. The compose file switches its access code off (`SUGARYAPP__REQUIREACCESSCODE: "false"`) because the deployment is reached only through the VPN; with it on, it asks for `SUGARYAPP__ACCESSCODE` from `DockerCompose/.env` once per browser and keeps a cookie, and an unset code refuses every sign-in. Caddy fronts it at `https://sugary.herfluffness.com` (the site refuses `/mcp`, allows 230 MiB bodies for a filmed meal, and sets the `X-Forwarded-For` the sign-in limit counts by), which installing it to a phone and live barcode scanning need. Port 6017 is published on loopback only, for local runs and the E2E. For frontend work, `npm run dev` in `Sugary.Client` proxies `/api` to that port; `npm run build` writes into `McpServerSugary/wwwroot`, which `dotnet run` serves when started from the project directory.
+`mcp-sugary` serves her carb-counting PWA (`Sugary.Client`, built into the image) on every route but `/mcp`: `http://localhost:6017/` with the ports override. The compose file switches its access code off (`SUGARYAPP__REQUIREACCESSCODE: "false"`) because the deployment is reached only through the VPN; with it on, it asks for `SUGARYAPP__ACCESSCODE` from `DockerCompose/.env` once per browser and keeps a cookie, and an unset code refuses every sign-in. Caddy fronts it at `https://sugary.herfluffness.com` (the site refuses `/mcp`, allows 230 MiB bodies for a filmed meal, and sets the `X-Forwarded-For` the sign-in limit counts by), which installing it to a phone and live barcode scanning need. Port 6017 is published on loopback only, for local runs and the E2E. For frontend work, `npm run dev` in `Sugary.Client` proxies `/api` to that port; `npm run build` writes into `McpServerSugary/wwwroot`, which `dotnet run` serves when started from the project directory.
 
 ## Debugging with Playwright
 
