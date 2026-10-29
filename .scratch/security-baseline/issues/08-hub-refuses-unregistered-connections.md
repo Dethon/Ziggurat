@@ -4,8 +4,8 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] An unregistered connection is refused on history, topic page, topic search, save, delete, cancel, session start and approval answers
-- [ ] A registered connection keeps working (existing hub and E2E tests)
-- [ ] SignalR approval ids are 32 hex characters
+- [x] An unregistered connection is refused on history, topic page, topic search, save, delete, cancel, session start and approval answers
+- [x] A registered connection keeps working (existing hub and E2E tests)
+- [x] SignalR approval ids are 32 hex characters
