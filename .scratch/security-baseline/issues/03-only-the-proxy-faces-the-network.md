@@ -10,4 +10,4 @@
 - [x] Redis is published on loopback only
 - [x] The LAN services bind to the named address, with a documented placeholder
 - [x] The debug override publishes only on loopback, asserted by the check
-- [x] Running a project on the host against the stack with the override still works (manual check, noted in the ticket)
+- [ ] Running a project on the host against the stack with the override still works (manual check, not yet done: needs a compose up with real secrets)

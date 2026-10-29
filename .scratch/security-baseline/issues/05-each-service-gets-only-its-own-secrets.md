@@ -9,4 +9,4 @@
 - [x] The conformance check fails on any service taking the whole secrets file, and on the OpenRouter key, the Home Assistant token, the logins key or a Telegram token reaching a service that doesn't read it
 - [x] Every placeholder is used by at least one service, and none has a value
 - [x] Each override mounts only its project's user secrets, asserted by the check
-- [x] The stack comes up and the chat client answers a turn (manual check, noted in the ticket)
+- [ ] The stack comes up and the chat client answers a turn (manual check, not yet done: needs a compose up with real secrets; the WebChat E2E stack covers the per-service wiring it starts)
