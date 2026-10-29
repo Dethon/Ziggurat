@@ -11,12 +11,15 @@ public sealed class SessionRecovery(
     UserIdentityStore userIdentityStore,
     SpaceStore spaceStore) : ISessionRecovery
 {
-    public Task RecoverAsync()
+    // A reconnected connection is a new one to the hub, which refuses every call from a connection
+    // that has not registered, so the user is back before anything else is asked of it.
+    public async Task RecoverAsync()
     {
-        var registerTask = RegisterUserAsync();
-        var joinTask = topicService.JoinSpaceAsync(spaceStore.State.CurrentSlug);
+        await RegisterUserAsync();
 
-        return Task.WhenAll(registerTask, joinTask, ResubscribePushAsync());
+        await Task.WhenAll(
+            topicService.JoinSpaceAsync(spaceStore.State.CurrentSlug),
+            ResubscribePushAsync());
     }
 
     // Re-sends the existing push subscription without force-refreshing the push channel.

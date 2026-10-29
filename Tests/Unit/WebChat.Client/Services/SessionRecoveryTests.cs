@@ -43,6 +43,26 @@ public sealed class SessionRecoveryTests : IDisposable
         _pushService.ResubscribeCalls.ShouldBe(1);
     }
 
+    // The hub refuses every call from a connection that has not registered, and a reconnected
+    // connection is a new one: rejoining the space before the hub has the user back is refused.
+    [Fact]
+    public async Task RecoverAsync_RejoinsTheSpaceOnlyOnceTheUserIsRegisteredAgain()
+    {
+        _dispatcher.Dispatch(new SelectUser("user-1"));
+        _sessionService.RegistrationAnswer = new TaskCompletionSource();
+
+        var recovering = _recovery.RecoverAsync();
+
+        _topicService.JoinedSpaces.ShouldBeEmpty();
+        _pushService.ResubscribeCalls.ShouldBe(0);
+
+        _sessionService.RegistrationAnswer.SetResult();
+        await recovering;
+
+        _topicService.JoinedSpaces.ShouldBe(["default"]);
+        _pushService.ResubscribeCalls.ShouldBe(1);
+    }
+
     [Fact]
     public async Task RecoverAsync_DoesNotForceRefreshThePushChannel()
     {
