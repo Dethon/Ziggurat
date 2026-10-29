@@ -114,11 +114,25 @@ sexy.herfluffness.com {
         reverse_proxy mcp-channel-signalr:8080
     }
 
+    # SexyTime's server calls this with the agent API's secret and the X-Ziggurat-User it was handed
+    # by the check below; the agent believes that header only beside the secret.
     handle /api/agents* {
         reverse_proxy agent:8080
     }
 
+    # The accounts service's routes, as on the main host, so a page here asks /accounts/me
+    # same-origin. Never behind the check: sign-in opens signed out.
+    handle /accounts/* {
+        reverse_proxy accounts:8080
+    }
+
+    # SexyTime itself is behind the same sign-in as the chat client: a signed-out page is sent to
+    # sign-in on the main host and back here, a signed-out call to its API is answered 401.
     handle {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy sexytime:8080
     }
 }

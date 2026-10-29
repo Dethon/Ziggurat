@@ -195,10 +195,13 @@ public class DeploymentConformanceTests
 
     // Sign-in, enrollment and the session check live under /accounts on the main host; Caddy's
     // handle passes the path as it is, which is the path the service maps its routes under.
-    [Fact]
-    public void TheAccountsPages_ReachTheAccountsServiceOnTheMainHost()
+    // SexyTime's host routes them too, so the chat client there asks /accounts/me same-origin.
+    [Theory]
+    [InlineData(MainHost)]
+    [InlineData(SexyHost)]
+    public void TheAccountsPages_ReachTheAccountsService(string hostName)
     {
-        var host = DeploymentFiles.Caddyfile().Host(MainHost);
+        var host = DeploymentFiles.Caddyfile().Host(hostName);
 
         host.Routes.ShouldContain(r => r.Matcher == "/accounts/*" && r.Upstream == "accounts:8080");
     }
@@ -221,11 +224,14 @@ public class DeploymentConformanceTests
 
     // The chat client, its hub and the hub's upload and dictation endpoints believe the person the
     // proxy hands them, so each asks the session check first and is given every header it answers.
+    // SexyTime is behind the same sign-in: its server forwards the person it was handed to the
+    // agent registration API, which is how a custom agent comes to be somebody's.
     [Theory]
     [InlineData(MainHost, null)]
     [InlineData(MainHost, "/hubs/*")]
     [InlineData(MainHost, "/api/attachments*")]
     [InlineData(MainHost, "/api/dictation*")]
+    [InlineData(SexyHost, null)]
     [InlineData(SexyHost, "/hubs/*")]
     [InlineData(SexyHost, "/api/attachments*")]
     [InlineData(SexyHost, "/api/dictation*")]
@@ -247,6 +253,7 @@ public class DeploymentConformanceTests
     [InlineData(MainHost, "/browse/*")]
     [InlineData(MainHost, "/api/outposts*")]
     [InlineData(MainHost, "/api/agents*")]
+    [InlineData(SexyHost, "/accounts/*")]
     [InlineData(SexyHost, "/api/agents*")]
     public void TheRoutesThatCarryTheirOwnCredential_DoNotAskTheSessionCheck(string hostName, string matcher)
     {
