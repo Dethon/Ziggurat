@@ -73,8 +73,9 @@ Tenancy-independent hardening.
   reads. `.env` leaves git for an `.env.example`; per-project user-secrets mounts instead of the
   whole directory.
 - CORS: an allowlist of the deployment's own origins.
-- Hub methods refuse an unregistered connection, and act only on topics and approvals of the
-  connection's user. Approval ids get 128 bits.
+- Hub methods refuse an unregistered connection; approval ids get 128 bits. Acting only on the
+  connection's own topics and approvals waits for Accounts, since the user is still client-asserted
+  here.
 - Telegram: numeric ids instead of usernames, and an approval tap is honored only from the user the
   approval was asked of.
 - Per-service MCP credentials replace the one shared secret; the sandbox holds none.
@@ -86,9 +87,12 @@ Real users, with the tenant already in the model (only the home tenant exists ye
 
 - The identity service: tenants, users, roles (operator, owner, member), passkey enrollment from
   invite links, sessions, recovery by a fresh invite from an owner. Caddy `forward_auth` in front of
-  WebChat and its hub, Sugary, the dashboard and the `/browse/*` handoff.
+  WebChat and its hub, Sugary and the dashboard. `/browse/*` and the logins page keep their own
+  link-claimed auth: the link is sent into the chat, and a Telegram-only or voice user opens it with
+  no passkey session. The claim may be bound to the linked user.
 - WebChat drops the user picker and the client-asserted `RegisterUser`; the hub takes its user from
-  the verified session. `signalr` becomes a verified channel, which turns voice login back on.
+  the verified session and acts only on that user's topics and approvals. `signalr` becomes a
+  verified channel, which turns voice login back on.
 - Telegram linking by deep link; voice speakers enrolled to users; unrecognized voice stays a
   household guest with no person's access.
 - `IdentityMap`, `Identity:People` and `Identity:VerifiedChannels` retire into the store: a channel
@@ -126,9 +130,12 @@ Real users, with the tenant already in the model (only the home tenant exists ye
   whether the dashboard and Sugary go dark until Accounts lands or keep today's access on the branch.
 - **Accounts:** session lifetime and device list; who sees the dashboard; whose Sugary the current
   log becomes; enrollment and recovery flows; the operator's own sign-in when the identity service
-  is down.
+  is down; whether members without a web device exist (Telegram or voice only) and how they are
+  invited and linked; what "conversations private, spaces shared" means inside a space (shared
+  topics, private topics, or a choice per topic).
 - **Service identity:** token format and lifetime; how a worker's or a fire's token is minted; the
-  public `/browse/*` routes on a listener of their own.
+  public `/browse/*` routes on a listener of their own; the signing key the eval stack and the
+  test harnesses (`WebIdentityServerHarness`) need.
 - **Tenants:** the config schema and its versioning; the capability catalogue (which servers are
   cloud-safe); the agent editor (prompts and skills in a browser); validating a tenant's keys; the
   storage seam for a future per-tenant blob store; whether a tenant may run the eval on its edits.
