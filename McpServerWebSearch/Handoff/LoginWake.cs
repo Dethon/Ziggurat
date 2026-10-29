@@ -45,6 +45,9 @@ public static class LoginWake
                       + "to confirm.",
             AgentId = handoff.Context.AgentId,
             UserId = handoff.Context.UserId,
+            // The wake is a turn nobody sent: it acts for the person only through the principal
+            // of the turn that asked, which this server kept rather than anything it was told.
+            Principal = Principal.Of(handoff.Context),
             ReplyTo = [handoff.Context.Origin],
             Origin = new MessageOrigin(MessageOriginKind.Login, null, Title: $"Login to {site}"),
             Timestamp = at
