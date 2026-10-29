@@ -60,7 +60,8 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
     public static async Task<WebIdentityServerHarness> StartAsync(
         IReadOnlyList<PersonIdentity>? people = null,
         Action<IServiceCollection>? configure = null,
-        Func<McpSettings, McpSettings>? settings = null)
+        Func<McpSettings, McpSettings>? settings = null,
+        bool loggedIn = true)
     {
         var browser = new RecordingBrowser();
         var port = TestPort.GetAvailable();
@@ -86,6 +87,11 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
         builder.Services.ConfigureMcp(settings?.Invoke(configured) ?? configured);
         builder.Services.RemoveAll<IWebBrowser>();
         builder.Services.AddSingleton<IWebBrowser>(browser);
+        // Whether the person holds a login on whatever site an asMe browse names: the real answer
+        // reads a store this host has no Redis for, and what an asMe browse does with it is the
+        // subject here, not how logins are kept.
+        builder.Services.RemoveAll<ILoginSites>();
+        builder.Services.AddSingleton<ILoginSites>(new AnsweringLoginSites(loggedIn));
         configure?.Invoke(builder.Services);
 
         var app = builder.Build();
@@ -134,6 +140,12 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
+    }
+
+    private sealed class AnsweringLoginSites(bool loggedIn) : ILoginSites
+    {
+        public Task<bool> HasLoginAsync(string person, string site, CancellationToken ct = default) =>
+            Task.FromResult(loggedIn);
     }
 
     internal sealed class RecordingBrowser : IWebBrowser

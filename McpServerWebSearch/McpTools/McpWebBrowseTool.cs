@@ -11,7 +11,7 @@ using ModelContextProtocol.Server;
 namespace McpServerWebSearch.McpTools;
 
 [McpServerToolType]
-public class McpWebBrowseTool(IWebBrowser browser, IdentityMap identities)
+public class McpWebBrowseTool(IWebBrowser browser, AsMeGate asMeGate)
     : WebBrowseTool(browser)
 {
     [McpServerTool(Name = Name)]
@@ -50,7 +50,7 @@ public class McpWebBrowseTool(IWebBrowser browser, IdentityMap identities)
         string? person = null;
         if (asMe)
         {
-            switch (identities.Resolve(conversation))
+            switch (await asMeGate.ResolveAsync(conversation, url, ct))
             {
                 case PersonResolution.Found found:
                     person = found.Person;

@@ -29,6 +29,20 @@ public class McpWebBrowseAsMeTests
         server.Browser.Snapshots.ShouldHaveSingleItem().Person.ShouldBe("fran");
     }
 
+    // A page's text can talk the model into asMe on any site; the person's session reaches only
+    // the sites they handed off, and the refusal points at the handoff instead.
+    [Fact]
+    public async Task AsMeOnASiteThePersonHasNoLoginFor_IsRefused_AndNothingIsBrowsed()
+    {
+        await using var server = await StartAsync(loggedIn: false);
+
+        var result = await server.CallAsync("web_browse", Browse(asMe: true), Context("fran_tg"));
+
+        Envelope(result)["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
+        Envelope(result)["hint"]!.GetValue<string>().ShouldContain("web_login");
+        server.Browser.Browses.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task TwoIdsOfOnePerson_BrowseInOneContext()
     {
