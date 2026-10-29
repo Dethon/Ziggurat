@@ -376,7 +376,9 @@ _Avoid_: anchor index, offset, cursor
 A user with no stored memory entries. They may still have a personality profile, and
 their turns are still considered for extraction, so they can stop being one at any
 turn — except on a turn addressed to the Lemonade chat host, which is never extracted
-from and so can never be the turn that enrols them.
+from and so can never be the turn that enrols them. A user here is an account: a turn
+acting for none, such as the voice guest's, is not an unremembered user but nobody,
+and nothing is recalled for it or extracted from it.
 _Avoid_: user with no memories, new user, memoryless user, "skip recall" user
 
 ## Voice satellite

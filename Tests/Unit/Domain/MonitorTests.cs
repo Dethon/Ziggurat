@@ -747,9 +747,9 @@ public class ChatMonitorTests
         var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
         var recallHook = new Mock<IMemoryRecallHook>();
         recallHook
-            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(),
+            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<Account?>(), It.IsAny<string?>(),
                 It.IsAny<string?>(), It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
-            .Returns(async (ChatMessage _, string _, string? _, string? _, AgentSession _, CancellationToken ct) =>
+            .Returns(async (ChatMessage _, Account? _, string? _, string? _, AgentSession _, CancellationToken ct) =>
             {
                 channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "/cancel"));
                 channel.Complete();
@@ -785,7 +785,7 @@ public class ChatMonitorTests
         var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
         var recallHook = new Mock<IMemoryRecallHook>();
         recallHook
-            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(),
+            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<Account?>(), It.IsAny<string?>(),
                 It.IsAny<string?>(), It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("recall down"));
         var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage());
