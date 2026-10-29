@@ -14,5 +14,6 @@
 Notes for later tickets (`.claude/rules/voice.md` "Who a turn acts for" has the detail):
 
 - A recognised speaker's principal is `Principal("voice", <user id>, Account(tenant, user))` with the display name as `Sender`; the guest's is `Principal("voice", "household")` with no account and the satellite's `Identity` as `Sender`. 09: the identity map's voice entries now only match if they hold the user id; reading `Account.UserId` retires that. 10 turns memory off for the guest by its missing account; 11 gives its review copy a shared topic.
+- A recognised speaker's `Sender` is now the account's display name, not the folder name, and memory still keys by `Sender` until 10: voice memory files under the display name ("Fran", not "fran") meanwhile, the same shift 06 recorded for WebChat, and prod's voice memories under folder names are left behind until 10 and the migration rekey by user id.
 - A profile enrolled under a name before accounts (e.g. `/voices/fran`) is nobody's account and its speaker is the guest (logged): prod's existing folders must be renamed to their person's user id after the migration.
 - An accounts outage costs a turn up to `Accounts:RequestTimeout` (5 s) before the guest fallback; resolution runs beside `create_conversation`, not after it.
