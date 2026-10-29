@@ -10,7 +10,9 @@ public record ChannelSettings : IMcpHostSettings
     public McpGateSettings Mcp { get; init; } = new();
 
     public required AgentBotConfig[] Bots { get; init; }
-    public required string[] AllowedUsernames { get; init; }
+    // Telegram's numeric user ids, the only part of a sender its owner cannot change and Telegram
+    // never reassigns. A message is admitted only when its sender's id is listed.
+    public required long[] AllowedUserIds { get; init; }
 
     // Metrics only: this channel keeps no state of its own (a Telegram file id is the store), so
     // Redis is here for the same reason the voice hub has it — the metric sink.

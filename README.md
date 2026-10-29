@@ -384,7 +384,7 @@ CHANNELENDPOINTS__5__ENDPOINT=http://mcp-library:8080/mcp
 # Telegram channel (one bot per agent)
 BOTS__0__AGENTID=jack
 BOTS__0__BOTTOKEN=your_telegram_bot_token_for_jack
-ALLOWEDUSERNAMES__0=your_telegram_username
+ALLOWEDUSERIDS__0=your_numeric_telegram_user_id
 
 # SignalR channel
 AGENTS__0__ID=jack
@@ -501,7 +501,7 @@ BOTS__0__AGENTID=jack
 BOTS__0__BOTTOKEN=your_jack_bot_token
 BOTS__1__AGENTID=jonas
 BOTS__1__BOTTOKEN=your_jonas_bot_token
-ALLOWEDUSERNAMES__0=your_telegram_username
+ALLOWEDUSERIDS__0=your_numeric_telegram_user_id
 ```
 
 ### Service Bus Interface

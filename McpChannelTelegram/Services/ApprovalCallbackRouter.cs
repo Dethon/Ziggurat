@@ -13,10 +13,22 @@ public sealed class ApprovalCallbackRouter
 
     private readonly ConcurrentDictionary<string, ApprovalWaiter> _pending = new();
 
-    public (string ApprovalId, Task<string> ResultTask) RegisterApproval(TimeSpan timeout, CancellationToken cancellationToken)
+    // The numeric id behind each sender the bot has admitted. A turn names its person by the
+    // sender the bot emitted (the username), and an approval inside that turn is answerable by
+    // that person's id alone, so the bot records the pair as it admits the message.
+    private readonly ConcurrentDictionary<string, long> _senderIds = new(StringComparer.Ordinal);
+
+    public void RecordSender(string sender, long userId) => _senderIds[sender] = userId;
+
+    public long? SenderId(string sender) => _senderIds.TryGetValue(sender, out var id) ? id : null;
+
+    public (string ApprovalId, Task<string> ResultTask) RegisterApproval(
+        TimeSpan timeout, IReadOnlySet<long> answerers, CancellationToken cancellationToken)
     {
-        var approvalId = Guid.NewGuid().ToString("N")[..8];
-        var waiter = new ApprovalWaiter(timeout, cancellationToken);
+        // The whole GUID, not a prefix of it: 32 hex characters behind the longest prefix
+        // ("tool_always:") is 44 bytes, inside the 64 Telegram allows a callback's data.
+        var approvalId = Guid.NewGuid().ToString("N");
+        var waiter = new ApprovalWaiter(timeout, answerers, cancellationToken);
         _pending[approvalId] = waiter;
 
         var resultTask = WaitAndCleanupAsync(approvalId, waiter);
@@ -62,6 +74,17 @@ public sealed class ApprovalCallbackRouter
             await botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
                 "This approval request has expired.",
+                cancellationToken: cancellationToken);
+            return true;
+        }
+
+        // Everyone in a group chat sees the keyboard; only the people the approval was put to may
+        // answer it. Anyone else is told so, and the approval keeps waiting for one of them.
+        if (!waiter.Answerers.Contains(callbackQuery.From.Id))
+        {
+            await botClient.AnswerCallbackQuery(
+                callbackQuery.Id,
+                "This approval isn't yours",
                 cancellationToken: cancellationToken);
             return true;
         }
@@ -130,12 +153,15 @@ public sealed class ApprovalCallbackRouter
         private readonly CancellationTokenSource _linkedCts;
         private readonly CancellationTokenRegistration _registration;
 
-        public ApprovalWaiter(TimeSpan timeout, CancellationToken cancellationToken)
+        public ApprovalWaiter(TimeSpan timeout, IReadOnlySet<long> answerers, CancellationToken cancellationToken)
         {
+            Answerers = answerers;
             _timeoutCts = new CancellationTokenSource(timeout);
             _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _timeoutCts.Token);
             _registration = _linkedCts.Token.Register(() => _tcs.TrySetCanceled(_linkedCts.Token));
         }
+
+        public IReadOnlySet<long> Answerers { get; }
 
         public Task<string> Task => _tcs.Task;
 

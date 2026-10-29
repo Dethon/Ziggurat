@@ -78,7 +78,7 @@ public class MetricsRegistrationContractTests
                 new TelegramSettings.ChannelSettings
                 {
                     Bots = [],
-                    AllowedUsernames = [],
+                    AllowedUserIds = [],
                     RedisConnectionString = UnreachableRedis
                 })
         }
