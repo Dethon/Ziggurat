@@ -1,6 +1,7 @@
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Domain.Security;
 using Mcp.Hosting;
@@ -39,6 +40,8 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
     private readonly Mock<IPushSubscriptionStore> _pushStore = new();
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
     private readonly List<HubConnection> _connections = [];
+    private readonly ChannelInbox _inbox = new(new FakeTimeProvider());
+    private readonly FakeAccountResolver _accounts = new();
     private WebApplication _app = null!;
 
     public ChatHubSignedInTests()
@@ -65,8 +68,8 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
                 _sessionService,
                 new Mock<IHubNotificationSender>().Object,
                 NullLogger<ApprovalService>.Instance))
-            .AddSingleton(new ChannelNotificationEmitter(
-                new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast))
+            .AddSingleton(new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast))
+            .AddSingleton<IAccountResolver>(_accounts)
             .AddSingleton(new Mock<IAgentCatalog>().Object)
             .AddSingleton(_store.Object)
             .AddSingleton(_pushStore.Object)
@@ -151,6 +154,57 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         chunks.ShouldContain(c => c.UserMessage != null && c.UserMessage.SenderId == Fran);
     }
 
+    // The turn is the person's account, named by the proxy's session check: the principal carries
+    // the household and the user it vouched for, and the sender is the name the account goes by.
+    [Fact]
+    public async Task AMessagesTurn_ActsForTheSignedInAccountUnderItsName()
+    {
+        _accounts.Names[Fran] = "Fran";
+        _sessionService.StartSession("topic-1", "jack", 7, 42, null);
+        var connection = await ConnectAsync(SignedIn(), out _);
+        await ReceiveAsync();
+
+        Send(connection, "hello");
+
+        var turn = await SingleTurnAsync();
+        turn.Principal.ShouldBe(new Principal("signalr", Fran, new Account(Home, Fran)));
+        turn.Sender.ShouldBe("Fran");
+    }
+
+    // Asked once, as the connection arrives, rather than on every message.
+    [Fact]
+    public async Task ThePersonsName_IsAskedOncePerConnection()
+    {
+        _accounts.Names[Fran] = "Fran";
+        _sessionService.StartSession("topic-1", "jack", 7, 42, null);
+        var connection = await ConnectAsync(SignedIn(), out _);
+        await ReceiveAsync();
+
+        Send(connection, "one");
+        await SingleTurnAsync();
+        (await connection.InvokeAsync<bool>("EnqueueMessage", "topic-1", "two", null, null, null)).ShouldBeTrue();
+        await SingleTurnAsync();
+
+        _accounts.Asked.ShouldBe([("signalr", Fran)]);
+    }
+
+    // A name the accounts service could not give is no reason to turn a signed-in person away: the
+    // headers already said who they are, so the turn goes out under their id.
+    [Fact]
+    public async Task WhenTheNameCannotBeResolved_TheTurnIsSentUnderTheAccountsId()
+    {
+        _accounts.Fails = true;
+        _sessionService.StartSession("topic-1", "jack", 7, 42, null);
+        var connection = await ConnectAsync(SignedIn(), out _);
+        await ReceiveAsync();
+
+        Send(connection, "hello");
+
+        var turn = await SingleTurnAsync();
+        turn.Sender.ShouldBe(Fran);
+        turn.Principal.ShouldBe(new Principal("signalr", Fran, new Account(Home, Fran)));
+    }
+
     [Fact]
     public async Task APushSubscription_IsKeptUnderTheSignedInPerson()
     {
@@ -162,6 +216,45 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
 
         _pushStore.Verify(s => s.SaveAsync(Fran, subscription, It.IsAny<string>(), null, It.IsAny<CancellationToken>()));
         _pushStore.Verify(s => s.RemoveAsync(Fran, "https://push.example/1", It.IsAny<CancellationToken>()));
+    }
+
+    // Broadcast discards an item with no subscriber registered, so the agent's pump polls once
+    // before anything is emitted for the turn to be there to read.
+    private Task<IReadOnlyList<ChannelInboxItem>> ReceiveAsync() =>
+        _inbox.ReceiveAsync("channel-signalr", TimeSpan.Zero, CancellationToken.None);
+
+    // The reply stream stays open while the agent is listening, and nothing answers here, so the
+    // send is started and left running for the connection's disposal to end.
+    private static void Send(HubConnection connection, string message) =>
+        _ = connection.StreamAsync<ChatStreamMessage>("SendMessage", "topic-1", message, null, null, null)
+            .GetAsyncEnumerator().MoveNextAsync().AsTask();
+
+    private async Task<ChannelMessageNotification> SingleTurnAsync()
+    {
+        List<ChannelMessageNotification> turns = [];
+        await Eventually.Until(async () =>
+        {
+            turns.AddRange((await ReceiveAsync()).Select(i => i.Message).OfType<ChannelMessageNotification>());
+            return turns.Count > 0;
+        }, "the turn to reach the agent");
+        return turns.ShouldHaveSingleItem();
+    }
+
+    private sealed class FakeAccountResolver : IAccountResolver
+    {
+        public Dictionary<string, string> Names { get; } = [];
+        public List<(string Channel, string Identity)> Asked { get; } = [];
+        public bool Fails { get; set; }
+
+        public Task<ResolvedAccount?> ResolveAsync(string channel, string identity, CancellationToken ct)
+        {
+            Asked.Add((channel, identity));
+            return Fails
+                ? Task.FromException<ResolvedAccount?>(new HttpRequestException("accounts unreachable"))
+                : Task.FromResult(Names.TryGetValue(identity, out var name)
+                    ? new ResolvedAccount(new Account(Home, identity), name)
+                    : null);
+        }
     }
 
     private Task<HubConnection> ConnectAsync(IReadOnlyDictionary<string, string> headers, out Task<Exception?> closed)

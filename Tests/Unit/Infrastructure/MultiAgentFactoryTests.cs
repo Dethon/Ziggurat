@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Prompts;
 using Infrastructure.Agents;
 using Microsoft.Extensions.AI;
@@ -124,6 +125,28 @@ public sealed class MultiAgentFactoryTests
             () => _sut.Create(agentKey, userId, agentId, _approvalHandler.Object));
 
         ex.Message.ShouldContain(expectedMessageFragment ?? agentId!);
+    }
+
+    // A person's custom agents are filed under their account, and a chat-client turn's sender is the
+    // name the account goes by: the agent is found by the account the turn acts for, never by the name.
+    [Fact]
+    public void Create_ACustomAgentOfTheTurnsAccount_IsFoundWhateverTheSenderIsCalled()
+    {
+        var agentId = AddCustomAgent("acct-1").Id;
+
+        var agent = _sut.Create(
+            new AgentKey("1:1", agentId), "Fran", agentId, _approvalHandler.Object, new Account("home", "acct-1"));
+
+        agent.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void Create_ACustomAgentOfAnotherAccount_IsNotFound()
+    {
+        var agentId = AddCustomAgent("acct-1").Id;
+
+        Should.Throw<InvalidOperationException>(() => _sut.Create(
+            new AgentKey("1:1", agentId), "acct-1", agentId, _approvalHandler.Object, new Account("home", "acct-2")));
     }
 
     // Routing reads the id, never the position. Reordering the catalogue is a display decision and

@@ -172,6 +172,14 @@ public static class ChatMessageExtensions
             message.AdditionalProperties[ConversationContextKey] = context;
         }
 
+        // Whose message this is, as a client tells its own from others': the account a person's own
+        // turn acted for where its channel knew one, since the sender is only the name the account
+        // goes by; otherwise the sender. A fire's message is nobody's own, whoever it runs as.
+        public string? GetAuthorId() =>
+            message.GetConversationContext() is { OriginKind: null, Principal.Account: { } account }
+                ? account.UserId
+                : message.GetSenderId();
+
         // The model the turn this message started asked for: its own config patch, or — for a
         // worker's request, which carries none — its parent turn's, off the context stamped on it.
         // What every Jev use hands the judge's client, which sends nothing for the local box.

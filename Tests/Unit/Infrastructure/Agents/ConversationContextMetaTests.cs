@@ -60,6 +60,35 @@ public class ConversationContextMetaTests
         context.UserId.ShouldBe("fran");
     }
 
+    // A server reads who the call acts for off this hop, so the account a chat-client turn's
+    // principal names has to arrive with it.
+    [Fact]
+    public void Build_APrincipalsAccount_IsReadBackByTheServer()
+    {
+        var principal = new Principal("signalr", "u-1", new Account("t-1", "u-1"));
+
+        var meta = ConversationContextMeta.Build(_context with { Principal = principal }).ShouldNotBeNull();
+
+        meta[ConversationContextMeta.MetaKey]!["principal"]!["account"]!["tenantId"]!.GetValue<string>().ShouldBe("t-1");
+        ConversationScope.Parse(meta)!.Principal.ShouldBe(principal);
+    }
+
+    // A sender from before the account spells a principal of a channel and a user only, and that
+    // still reads as the principal it always was.
+    [Fact]
+    public void Parse_APrincipalWithoutAnAccount_ReadsAsTheChannelsUser()
+    {
+        var meta = JsonNode.Parse(
+            """
+            { "com.herfluffness/conversationContext": {
+                "agentId": "jack", "conversationId": "conv-9", "userId": "FranTG",
+                "origin": { "channelId": "telegram", "conversationId": "conv-9" },
+                "principal": { "channelId": "telegram", "userId": "FranTG" } } }
+            """)!.AsObject();
+
+        ConversationScope.Parse(meta)!.Principal.ShouldBe(new Principal("telegram", "FranTG"));
+    }
+
     [Fact]
     public void TryBuild_NullOptionsOrMissingKey_ReturnsNull()
     {
