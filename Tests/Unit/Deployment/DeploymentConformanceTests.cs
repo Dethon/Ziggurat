@@ -10,6 +10,7 @@ public class DeploymentConformanceTests
 {
     private const string MainHost = "assistants.herfluffness.com";
     private const string SexyHost = "sexy.herfluffness.com";
+    private const string SugaryHost = "sugary.herfluffness.com";
 
     [Fact]
     public void OutpostRegistration_ReachesTheAgentThroughTheProxy()
@@ -195,10 +196,12 @@ public class DeploymentConformanceTests
 
     // Sign-in, enrollment and the session check live under /accounts on the main host; Caddy's
     // handle passes the path as it is, which is the path the service maps its routes under.
-    // SexyTime's host routes them too, so the chat client there asks /accounts/me same-origin.
+    // SexyTime's and Sugary's hosts route them too, so an app there asks /accounts/me, and sends a
+    // signed-out person to sign in, same-origin.
     [Theory]
     [InlineData(MainHost)]
     [InlineData(SexyHost)]
+    [InlineData(SugaryHost)]
     public void TheAccountsPages_ReachTheAccountsService(string hostName)
     {
         var host = DeploymentFiles.Caddyfile().Host(hostName);
@@ -273,7 +276,8 @@ public class DeploymentConformanceTests
     // The chat client, its hub and the hub's upload and dictation endpoints believe the person the
     // proxy hands them, so each asks the session check first and is given every header it answers.
     // SexyTime is behind the same sign-in: its server forwards the person it was handed to the
-    // agent registration API, which is how a custom agent comes to be somebody's.
+    // agent registration API, which is how a custom agent comes to be somebody's. So is Sugary, the
+    // app and its API alike: each person's log is found by the account the headers name.
     [Theory]
     [InlineData(MainHost, null)]
     [InlineData(MainHost, "/hubs/*")]
@@ -283,6 +287,7 @@ public class DeploymentConformanceTests
     [InlineData(SexyHost, "/hubs/*")]
     [InlineData(SexyHost, "/api/attachments*")]
     [InlineData(SexyHost, "/api/dictation*")]
+    [InlineData(SugaryHost, null)]
     public void TheChatClientsRoutes_GoThroughTheSessionCheckAndCopyItsHeaders(string hostName, string? matcher)
     {
         var route = DeploymentFiles.Caddyfile().Host(hostName).Routes.Single(r => r.Matcher == matcher);
@@ -303,11 +308,36 @@ public class DeploymentConformanceTests
     [InlineData(MainHost, "/api/agents*")]
     [InlineData(SexyHost, "/accounts/*")]
     [InlineData(SexyHost, "/api/agents*")]
+    [InlineData(SugaryHost, "/accounts/*")]
     public void TheRoutesThatCarryTheirOwnCredential_DoNotAskTheSessionCheck(string hostName, string matcher)
     {
         var route = DeploymentFiles.Caddyfile().Host(hostName).Routes.Single(r => r.Matcher == matcher);
 
         route.ForwardAuth.ShouldBeNull();
+    }
+
+    // Sugary's /mcp is the deployment's, gated by the server's own credential, and a person's phone
+    // never needs it: the proxy answers it 404 before the checked catch-all could pass it on.
+    [Fact]
+    public void SugarysMcp_IsNotReachableThroughTheProxy()
+    {
+        var routes = DeploymentFiles.Caddyfile().Host(SugaryHost).Routes.ToList();
+
+        var refusal = routes.FindIndex(r => r.Matcher == "/mcp*");
+        refusal.ShouldBeGreaterThanOrEqualTo(0);
+        routes[refusal].Upstream.ShouldBeNull();
+        routes[refusal].Body.ShouldContain("respond 404");
+        refusal.ShouldBeLessThan(routes.FindIndex(r => r.Matcher is null));
+    }
+
+    // The app has no sign-in of its own any more: nothing configures an access code for it.
+    [Fact]
+    public void Sugary_IsGivenNoAccessCode()
+    {
+        DeploymentFiles.Compose().Service("mcp-sugary").Environment.Keys
+            .ShouldNotContain(key => key.StartsWith("SUGARYAPP__", StringComparison.Ordinal));
+        DeploymentFiles.Placeholders().Keys
+            .ShouldNotContain(key => key.StartsWith("SUGARYAPP__", StringComparison.Ordinal));
     }
 
     [Fact]

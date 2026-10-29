@@ -39,7 +39,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(0, "");
   }
 
-  if (response.status === 401 && !path.startsWith("/session")) {
+  // The proxy answers a call whose session is gone 401, never a redirect, so the page can send the
+  // person to sign in (App).
+  if (response.status === 401) {
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   }
   if (!response.ok) {
@@ -93,8 +95,6 @@ const RECORD_PAGE = 200;
 
 export const api = {
   session: () => request<SessionState>("/session"),
-  signIn: (code: string) => request<void>("/session", json("POST", { code })),
-  signOut: () => request<void>("/session", { method: "DELETE" }),
 
   estimate: (input: EstimateInput, signal?: AbortSignal) =>
     request<MealEstimate>("/estimates", { method: "POST", body: estimateForm(input), signal }),
