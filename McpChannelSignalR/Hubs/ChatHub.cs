@@ -6,6 +6,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
+using Domain.Security;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Services;
@@ -33,25 +34,17 @@ public sealed class ChatHub(
     // than claiming it was thrown away.
     private const string NotLiveError = "No agent is connected right now, so this message has not been answered.";
 
-    // Where RegisterUser keeps who the connection said it is, which is also what says it registered.
-    internal const string UserIdItem = "UserId";
+    // Where the connection keeps the person the proxy's session check named as it arrived, which is
+    // also what says it may call anything (RegisteredConnectionFilter).
+    internal const string AccountItem = "Account";
 
     private string? CurrentSpaceSlug =>
         Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
 
-    // Set by RegisterUser; RegisteredConnectionFilter admits no other call before it.
-    private string RegisteredUserId => (string)Context.Items[UserIdItem]!;
+    // Set as the connection arrives; RegisteredConnectionFilter admits no call on one without it.
+    private ForwardedAccount Account => (ForwardedAccount)Context.Items[AccountItem]!;
 
-    public Task RegisterUser(string userId)
-    {
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            throw new HubException("User ID cannot be empty");
-        }
-
-        Context.Items[UserIdItem] = userId;
-        return Task.CompletedTask;
-    }
+    private string RegisteredUserId => Account.UserId;
 
     public IReadOnlyList<AgentCatalogEntry> GetAgents()
     {
@@ -65,9 +58,7 @@ public sealed class ChatHub(
 
     // Liveness probe. Clients invoke this on foreground to confirm the transport is actually
     // alive (a backgrounded mobile connection can report Connected while the socket is dead).
-    // A returned value means a real round-trip completed. The one call besides RegisterUser that
-    // an unregistered connection may make: it reads nothing, and a client probes a connection it
-    // has come back to before it has registered on it again.
+    // A returned value means a real round-trip completed.
     public bool Ping() => true;
 
     public bool StartSession(string agentId, string topicId, long chatId, long threadId, string? topicName = null)
