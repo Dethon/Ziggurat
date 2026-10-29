@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.E2E.Fixtures;
@@ -14,10 +16,10 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await SelectAgentAsync(page);
 
         var chatInput = page.Locator("textarea.chat-input");
         await chatInput.FillAsync("Hello, this is an E2E test message");
@@ -76,22 +78,24 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     internal static Task GotoWebChatAsync(IPage page, string url) =>
         page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
 
-    internal static async Task SelectUserAndAgentAsync(IPage page, int userIndex = 0)
+    // The page is signed in before it opens (WebChatE2EFixture.CreateSignedInPageAsync), so there is
+    // nobody to pick: what is left is the agent and a fresh topic.
+    internal static async Task SelectAgentAsync(IPage page)
     {
         // Dismiss any approval-modal-overlay left by the StreamResumeService.
         // When a new page connects, the server may push pending approval state from
         // a previous test's session, showing the overlay and blocking all clicks.
         await DismissApprovalOverlayAsync(page);
 
-        // Select a unique user identity per test to avoid server-side state pollution.
-        await OpenUserDropdownAndSelectAsync(page, userIndex);
-
         var chatInput = page.Locator("textarea.chat-input");
 
-        // The chat input becomes enabled once SignalR is connected and an agent is selected.
+        // The chat input becomes enabled once the app has booted, SignalR is connected and an
+        // agent is selected. The boot is in this wait too, which in a full-suite run is the
+        // container serving every other test at the same time, so it is given what the boot and
+        // the connect used to be given apiece.
         try
         {
-            await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 30_000 });
+            await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 });
         }
         catch (TimeoutException)
         {
@@ -109,9 +113,8 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // Start a fresh topic so previous test messages don't pollute context.
         // The approval overlay is pushed by StreamResumeService via a fire-and-forget
         // SignalR chain (InitializationEffect → LoadTopicHistoryAsync → TryResumeStreamAsync),
-        // so it can arrive at any point — including the window between the user-select
-        // retry above and this click. Guard the click with the same dismiss-and-retry
-        // pattern used for the user-dropdown click.
+        // so it can arrive at any point — including the window between the wait above and
+        // this click. Guard the click with a dismiss-and-retry.
         var newTopicBtn = page.Locator(".hearth-new:visible");
         if (await newTopicBtn.IsVisibleAsync())
         {
@@ -279,54 +282,6 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             new LocatorAssertionsToBeHiddenOptions { Timeout = (float)budget.TotalMilliseconds });
     }
 
-    // .approval-modal-overlay (z-index 1000) is pushed by StreamResumeService over SignalR at
-    // any moment and sits above the dropdown items, so the item click is intercepted until it
-    // is dismissed. Each attempt dismisses it, opens the dropdown only when the menu is not
-    // already showing, then clicks the item; on interception it presses outside to get back to
-    // a known-closed state so the next attempt re-opens cleanly.
-    private static async Task OpenUserDropdownAndSelectAsync(IPage page, int userIndex)
-    {
-        var avatarButton = page.Locator(".avatar-button");
-        var menu = page.Locator(".user-dropdown-menu");
-        var dropdownItem = page.Locator(".user-dropdown-item").Nth(userIndex);
-
-        // The picker is Blazor-rendered after the app boots, and every WebChat and Dashboard test
-        // comes through here. Five seconds was a bet on how fast that boot is: in a full-suite run
-        // the container is serving every other test at the same time, and the wait expired before
-        // the button existed -- surfacing as "waiting for Locator(.avatar-button)" inside whichever
-        // unrelated test happened to be running. The interception retry below is for the approval
-        // overlay stealing a click, which is a different problem and is why three short attempts
-        // never helped: all three raced the same boot.
-        await avatarButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-
-        for (var attempt = 0; attempt < 3; attempt++)
-        {
-            try
-            {
-                await DismissApprovalOverlayAsync(page);
-
-                if (!await menu.IsVisibleAsync())
-                {
-                    await avatarButton.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
-                }
-
-                await dropdownItem.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
-                await dropdownItem.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
-                return;
-            }
-            catch (TimeoutException) when (attempt < 2)
-            {
-                await DismissApprovalOverlayAsync(page);
-                if (await menu.IsVisibleAsync())
-                {
-                    // A press anywhere outside the menu closes it, and nothing swallows that
-                    // press any more, so aim somewhere harmless.
-                    await page.Mouse.ClickAsync(5, 400);
-                }
-            }
-        }
-    }
-
     // Drives the conversation to a fully quiesced state before the test exits.
     //
     // Pending approvals live in ApprovalService._pendingApprovals — an in-memory,
@@ -386,22 +341,79 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     }
 
 
+    // Nobody is picked any more: a signed-in page is its account, named in the header from the
+    // accounts service, and the configuration the page reads lists nobody.
     [SkippableFact]
-    public async Task LoadPage_ShowsAvatarPickerAndInput()
+    public async Task ASignedInPage_IsItsAccountWithNoUserToPick()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
+        var user = fixture.NextUserIndex();
+        var page = await fixture.CreateSignedInPageAsync(user);
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await SelectAgentAsync(page);
+
+        await Assertions.Expect(page.Locator(".signed-in-person"))
+            .ToHaveAttributeAsync("title", WebChatE2EFixture.NameOf(user));
+        (await page.Locator(".user-dropdown-menu, .avatar-button").CountAsync()).ShouldBe(0);
+
+        var config = await page.APIRequest.GetAsync(new Uri(new Uri(fixture.WebChatUrl), "/api/config").ToString());
+        config.Status.ShouldBe(200);
+        var configured = JsonNode.Parse(await config.TextAsync())!.AsObject();
+        configured.Select(p => p.Key).ShouldNotContain(key => key.Equals("users", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // The proxy sends a page with no session to sign in, and sign-in brings it back to where it was
+    // going, as the account whose passkey answered. A real ceremony, against Chromium's virtual
+    // authenticator, through the stack's own Caddy and accounts service.
+    [SkippableFact]
+    public async Task ASignedOutBrowser_SignsInAndComesBackAsThemselves()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var name = $"Passkey-{Guid.NewGuid().ToString("N")[..4]}";
+        var (_, created) = await fixture.AccountsAsync("create-user", "--name", name);
+        var userId = Regex.Match(created, "user (?<id>[0-9a-f]+),").Groups["id"].Value;
+        var (_, minted) = await fixture.AccountsAsync("mint-link", "--user", userId);
+        var link = minted.Split('\n').Select(l => l.Trim()).Single(l => l.StartsWith("http", StringComparison.Ordinal));
+
         var page = await fixture.CreatePageAsync();
-        // NetworkIdle, unlike everywhere else here: this case reads visibility off the document
-        // with nothing to wait on, so the load has to be the thing that settled it.
-        await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await AddVirtualAuthenticatorAsync(page);
 
-        var avatarPlaceholder = page.Locator(".avatar-placeholder");
-        (await avatarPlaceholder.IsVisibleAsync()).ShouldBeTrue();
+        // Enrolling lands the browser on the deployment's front page, signed in.
+        await page.GotoAsync(link);
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Create a passkey" }).ClickAsync();
+        await page.WaitForURLAsync(fixture.DefaultSpaceUrl);
+        await page.Context.ClearCookiesAsync();
 
-        // Chat input should be visible (it may be enabled if the agent auto-selected)
-        var chatInput = page.Locator("textarea.chat-input");
-        (await chatInput.IsVisibleAsync()).ShouldBeTrue();
+        await page.GotoAsync(fixture.WebChatUrl);
+        await page.WaitForURLAsync(url => url.Contains("/accounts/sign-in", StringComparison.Ordinal));
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Sign in with a passkey" }).ClickAsync();
+        await page.WaitForURLAsync(fixture.WebChatUrl);
+
+        await Assertions.Expect(page.Locator(".signed-in-person"))
+            .ToHaveAttributeAsync("title", name, new LocatorAssertionsToHaveAttributeOptions { Timeout = 60_000 });
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 });
+    }
+
+    // A platform authenticator that keeps discoverable credentials and verifies its user, standing
+    // in for the phone's; it belongs to the page, so enrolling and signing in share one.
+    private static async Task AddVirtualAuthenticatorAsync(IPage page)
+    {
+        var cdp = await page.Context.NewCDPSessionAsync(page);
+        await cdp.SendAsync("WebAuthn.enable");
+        await cdp.SendAsync("WebAuthn.addVirtualAuthenticator", new Dictionary<string, object>
+        {
+            ["options"] = new
+            {
+                protocol = "ctap2",
+                transport = "internal",
+                hasResidentKey = true,
+                hasUserVerification = true,
+                isUserVerified = true
+            }
+        });
     }
 
     // Attach, send and cancel are drawn for the same reason the microphone is: a text label beside
@@ -412,10 +424,10 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await SelectAgentAsync(page);
 
         var attach = page.Locator("label.attach-button");
         await Assertions.Expect(attach.Locator("svg")).ToBeVisibleAsync();
@@ -442,10 +454,10 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await SelectAgentAsync(page);
 
         var field = page.Locator("textarea.chat-input");
         var attach = page.Locator("label.attach-button");
@@ -487,7 +499,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await GotoWebChatAsync(page, fixture.WebChatUrl);
 
         // The welcome/empty-state screen is the idle foreground state (no conversation selected).
@@ -541,32 +553,11 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     }
 
     [SkippableFact]
-    public async Task SelectUser_AvatarUpdates()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await fixture.CreatePageAsync();
-        await GotoWebChatAsync(page, fixture.WebChatUrl);
-
-        // The guarded helper, not a bare click: the approval overlay can be replayed onto this
-        // page at any moment by StreamResumeService and would intercept the item click for as
-        // long as it sits there.
-        await OpenUserDropdownAndSelectAsync(page, fixture.NextUserIndex());
-
-        var avatarImage = page.Locator("img.avatar-image");
-        await avatarImage.WaitForAsync(new LocatorWaitForOptions { Timeout = 5_000 });
-        (await avatarImage.IsVisibleAsync()).ShouldBeTrue();
-
-        var avatarPlaceholder = page.Locator(".avatar-placeholder");
-        (await avatarPlaceholder.IsVisibleAsync()).ShouldBeFalse();
-    }
-
-    [SkippableFact]
     public async Task ConnectionStatus_ShowsConnected()
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await GotoWebChatAsync(page, fixture.WebChatUrl);
 
         // Allow up to 30 seconds for the hub to become reachable and the Blazor
@@ -581,10 +572,10 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await SelectAgentAsync(page);
 
         try
         {
@@ -647,10 +638,10 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await SelectAgentAsync(page);
 
         try
         {
@@ -683,10 +674,10 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await SelectAgentAsync(page);
 
         try
         {

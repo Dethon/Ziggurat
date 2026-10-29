@@ -20,10 +20,10 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // The stack's default agent runs a text-only model, and the composer refuses to send an
         // image to a model that cannot read one — this test runs on the vision agent.
@@ -92,11 +92,11 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await page.SetViewportSizeAsync(390, 844);
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         var attach = page.Locator("label.attach-button");
         var micBox = await page.Locator("[data-testid=dictation-mic]").BoundingBoxAsync();
