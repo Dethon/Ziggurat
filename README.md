@@ -378,7 +378,6 @@ CHANNELENDPOINTS__4__ENDPOINT=http://mcp-library:8080/mcp
 # Telegram channel (one bot per agent)
 BOTS__0__AGENTID=jack
 BOTS__0__BOTTOKEN=your_telegram_bot_token_for_jack
-ALLOWEDUSERIDS__0=your_numeric_telegram_user_id
 
 # SignalR channel
 AGENTS__0__ID=jack
@@ -471,8 +470,9 @@ BOTS__0__AGENTID=jack
 BOTS__0__BOTTOKEN=your_jack_bot_token
 BOTS__1__AGENTID=jonas
 BOTS__1__BOTTOKEN=your_jonas_bot_token
-ALLOWEDUSERIDS__0=your_numeric_telegram_user_id
 ```
+
+The bots answer only people whose numeric Telegram id is linked to an account. An owner's invite opened in Telegram (`t.me/<bot>?start=<invite>`) creates the account and links it; somebody who already has one links it with the code on their account page. In a private chat, `/web` answers a linked person a one-time link that adds a passkey. A group is answered only once an owner binds it with `/bind <code>`, the code from the members page. Set the accounts service's `TELEGRAM__BOTUSERNAME` to show codes as the bot's deep link.
 
 ### Tool Approval
 

@@ -65,7 +65,44 @@ public enum LinkKind
 
     // Links a person's Telegram to their account: the code from their account page, redeemed as the
     // bot's start parameter. It never opens the enrollment page.
-    TelegramLink
+    TelegramLink,
+
+    // Binds a Telegram group to the household: an owner's code from the members page, sent to the bot
+    // in the group as /bind. It never opens the enrollment page either.
+    TelegramGroup
+}
+
+// A person's identity on a channel that is not a passkey: the numeric Telegram id the bot saw when
+// they redeemed a code. A row of its own pointing at the person, so Users never grows a column per
+// channel. A person holds at most one per channel, and an identity is one person's.
+public sealed class LinkedIdentity
+{
+    public required string Id { get; init; }
+    public required string TenantId { get; init; }
+    public required string UserId { get; init; }
+    public required string Channel { get; init; }
+
+    // As the channel spells it: a Telegram id is its decimal digits.
+    public required string Identity { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
+}
+
+// A group chat an owner's code bound to the household: its linked members' messages there are their
+// own turns, and nobody's are in a group that is bound to no household.
+public sealed class BoundChat
+{
+    public required string Id { get; init; }
+    public required string TenantId { get; init; }
+    public required string Channel { get; init; }
+
+    // As the channel spells it: a Telegram group's id is its (negative) decimal digits.
+    public required string ChatId { get; init; }
+
+    // The owner whose code bound it.
+    public string? BoundBy { get; init; }
+
+    public DateTimeOffset CreatedAt { get; init; }
 }
 
 // An invite, recovery or Telegram link. Only a hash of its token is kept, so the store alone opens nothing.

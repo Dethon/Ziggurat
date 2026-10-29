@@ -23,7 +23,7 @@ public class RequestApprovalToolTests : IDisposable
         _services = new ServiceCollection()
             .AddSingleton(_harness.BotRegistry)
             .AddSingleton(_harness.CallbackRouter)
-            .AddSingleton(_harness.Settings)
+            .AddSingleton(_harness.Access)
             .BuildServiceProvider();
     }
 
@@ -60,26 +60,61 @@ public class RequestApprovalToolTests : IDisposable
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    // A fire's turn was started by nobody's message, so whoever is on the allowlist may answer it.
+    // A fire's turn was started by nobody's message, so any linked member of the household whose
+    // chat it is may answer it. Chat 100 is Carol's private chat: a private chat's id is its person's.
     [Fact]
-    public async Task McpRun_RequestModeForAFire_AnyAllowlistedTapAnswers()
+    public async Task McpRun_RequestModeForAFire_AnyLinkedMemberOfTheChatsHouseholdAnswers()
     {
+        _harness.Accounts.Link(100, "carol");
         var turn = Turn("alice", MessageOriginKind.Schedule);
 
         var approval = RequestApprovalTool.RunAsync("100:100", ApprovalMode.Request, ARequest, turn, _services);
-        await _harness.TapAsync(fromUserId: 2, "tool_approve");
+        await _harness.TapAsync(fromUserId: TelegramPollingHarness.BobId, "tool_approve");
 
         (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("approved");
     }
 
-    // Nobody outside the allowlist answers a fire's approval either.
+    // Nobody unlinked answers a fire's approval, nor anybody of another household.
+    [Theory]
+    [InlineData(99)]
+    [InlineData(7)]
+    public async Task McpRun_RequestModeForAFire_ATapFromOutsideTheHouseholdLeavesItPending(long tapper)
+    {
+        _harness.Accounts.Link(100, "carol");
+        _harness.Accounts.Link(7, "marta", household: "household-elsewhere");
+        var turn = Turn("alice", MessageOriginKind.Schedule);
+
+        var approval = RequestApprovalTool.RunAsync("100:100", ApprovalMode.Request, ARequest, turn, _services);
+        await _harness.TapAsync(tapper, "tool_approve");
+
+        await Eventually.Settle();
+        approval.IsCompleted.ShouldBeFalse();
+    }
+
+    // A group's fire is the household's the group is bound to.
     [Fact]
-    public async Task McpRun_RequestModeForAFire_ATapOffTheAllowlistLeavesItPending()
+    public async Task McpRun_RequestModeForAFireInABoundGroup_AnyLinkedMemberAnswers()
+    {
+        _harness.BotRegistry.RegisterChatAgent(TelegramPollingHarness.FamilyGroup, TelegramPollingHarness.AgentId);
+        _harness.Accounts.Bind(TelegramPollingHarness.FamilyGroup);
+        var conversation = $"{TelegramPollingHarness.FamilyGroup}:{TelegramPollingHarness.FamilyGroup}";
+        var turn = new ConversationContext(TelegramPollingHarness.AgentId, conversation, "alice",
+            new ReplyTarget("telegram", conversation), OriginKind: MessageOriginKind.Schedule);
+
+        var approval = RequestApprovalTool.RunAsync(conversation, ApprovalMode.Request, ARequest, turn, _services);
+        await _harness.TapAsync(fromUserId: TelegramPollingHarness.BobId, "tool_reject");
+
+        (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("denied");
+    }
+
+    // A chat no household holds — an unbound group, a stranger's private chat — has nobody to ask.
+    [Fact]
+    public async Task McpRun_RequestModeForAFireInAChatNoHouseholdHolds_NobodyAnswers()
     {
         var turn = Turn("alice", MessageOriginKind.Schedule);
 
         var approval = RequestApprovalTool.RunAsync("100:100", ApprovalMode.Request, ARequest, turn, _services);
-        await _harness.TapAsync(fromUserId: 99, "tool_approve");
+        await _harness.TapAsync(fromUserId: TelegramPollingHarness.BobId, "tool_approve");
 
         await Eventually.Settle();
         approval.IsCompleted.ShouldBeFalse();

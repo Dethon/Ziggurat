@@ -23,12 +23,18 @@ public sealed class ApprovalCallbackRouter
     public long? SenderId(string sender) => _senderIds.TryGetValue(sender, out var id) ? id : null;
 
     public (string ApprovalId, Task<string> ResultTask) RegisterApproval(
-        TimeSpan timeout, IReadOnlySet<long> answerers, CancellationToken cancellationToken)
+        TimeSpan timeout, IReadOnlySet<long> answerers, CancellationToken cancellationToken) =>
+        RegisterApproval(timeout, (tapper, _) => Task.FromResult(answerers.Contains(tapper)), cancellationToken);
+
+    // Who may answer, asked of each tap's numeric Telegram id when it comes: a fire's approval is any
+    // linked member's of the chat's household, which only the accounts service can say.
+    public (string ApprovalId, Task<string> ResultTask) RegisterApproval(
+        TimeSpan timeout, Func<long, CancellationToken, Task<bool>> mayAnswer, CancellationToken cancellationToken)
     {
         // The whole GUID, not a prefix of it: 32 hex characters behind the longest prefix
         // ("tool_always:") is 44 bytes, inside the 64 Telegram allows a callback's data.
         var approvalId = Guid.NewGuid().ToString("N");
-        var waiter = new ApprovalWaiter(timeout, answerers, cancellationToken);
+        var waiter = new ApprovalWaiter(timeout, mayAnswer, cancellationToken);
         _pending[approvalId] = waiter;
 
         var resultTask = WaitAndCleanupAsync(approvalId, waiter);
@@ -79,8 +85,23 @@ public sealed class ApprovalCallbackRouter
         }
 
         // Everyone in a group chat sees the keyboard; only the people the approval was put to may
-        // answer it. Anyone else is told so, and the approval keeps waiting for one of them.
-        if (!waiter.Answerers.Contains(callbackQuery.From.Id))
+        // answer it. Anyone else is told so, and the approval keeps waiting for one of them. A tap
+        // the accounts service could not be asked about is neither, and is asked to come again.
+        bool mayAnswer;
+        try
+        {
+            mayAnswer = await waiter.MayAnswer(callbackQuery.From.Id, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            await botClient.AnswerCallbackQuery(
+                callbackQuery.Id,
+                "I can't check who you are right now. Try again in a moment.",
+                cancellationToken: cancellationToken);
+            return true;
+        }
+
+        if (!mayAnswer)
         {
             await botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
@@ -153,15 +174,16 @@ public sealed class ApprovalCallbackRouter
         private readonly CancellationTokenSource _linkedCts;
         private readonly CancellationTokenRegistration _registration;
 
-        public ApprovalWaiter(TimeSpan timeout, IReadOnlySet<long> answerers, CancellationToken cancellationToken)
+        public ApprovalWaiter(
+            TimeSpan timeout, Func<long, CancellationToken, Task<bool>> mayAnswer, CancellationToken cancellationToken)
         {
-            Answerers = answerers;
+            MayAnswer = mayAnswer;
             _timeoutCts = new CancellationTokenSource(timeout);
             _linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _timeoutCts.Token);
             _registration = _linkedCts.Token.Register(() => _tcs.TrySetCanceled(_linkedCts.Token));
         }
 
-        public IReadOnlySet<long> Answerers { get; }
+        public Func<long, CancellationToken, Task<bool>> MayAnswer { get; }
 
         public Task<string> Task => _tcs.Task;
 
