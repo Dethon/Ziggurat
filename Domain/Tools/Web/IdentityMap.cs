@@ -88,7 +88,15 @@ public class IdentityMap(IReadOnlyList<PersonIdentity> people, IReadOnlyCollecti
                 $"Tell the person their voice was not recognised; they can ask again, or ask {WhereToAsk()}."));
         }
 
-        var channelId = context.Origin.ChannelId;
+        if (PrincipalOf(context) is not { } principal)
+        {
+            return new PersonResolution.Refused(ToolError.Create(
+                ToolError.Codes.PermissionDenied,
+                "Nobody sent this turn and nobody vouched for whom it runs as, so there is no person to browse as.",
+                "Browse without asMe, and say in your report that this needs the person to ask you directly."));
+        }
+
+        var channelId = principal.ChannelId;
         if (!IsVerified(channelId))
         {
             return new PersonResolution.Refused(ToolError.Create(
@@ -98,14 +106,21 @@ public class IdentityMap(IReadOnlyList<PersonIdentity> people, IReadOnlyCollecti
         }
 
         return _people.FirstOrDefault(p =>
-                string.Equals(p.IdOn(channelId), context.UserId, StringComparison.OrdinalIgnoreCase))
+                string.Equals(p.IdOn(channelId), principal.UserId, StringComparison.OrdinalIgnoreCase))
             is { } person
             ? new PersonResolution.Found(person.Name)
             : new PersonResolution.Refused(ToolError.Create(
                 ToolError.Codes.PermissionDenied,
-                $"'{context.UserId}' is not a person in this deployment's identity map on '{channelId}', so there is no session to browse as.",
+                $"'{principal.UserId}' is not a person in this deployment's identity map on '{channelId}', so there is no session to browse as.",
                 "Browse without asMe, and tell the person their accounts cannot be reached until the operator adds them."));
     }
+
+    // The stamped principal where there is one. A person's own turn without one is vouched for by
+    // the channel it arrived on; a turn nobody sent has none to fall back to, because its userId is
+    // what a schedule's JSON said and its origin is where it delivers.
+    private static Principal? PrincipalOf(ConversationContext context) =>
+        context.Principal
+        ?? (context.OriginKind is null ? new Principal(context.Origin.ChannelId, context.UserId) : null);
 
     public string? WebChatNameOf(string person) =>
         _people.FirstOrDefault(p => p.Name == person)?.IdOn(WebChatChannelId);
