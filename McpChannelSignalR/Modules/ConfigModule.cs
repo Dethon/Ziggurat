@@ -7,9 +7,11 @@ using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
+using McpChannelSignalR.Hubs;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
+using Microsoft.AspNetCore.SignalR;
 using StackExchange.Redis;
 
 namespace McpChannelSignalR.Modules;
@@ -95,6 +97,10 @@ public static class ConfigModule
     // and costs nothing to hold — this hub keeps no per-connection state to release.
     private static readonly TimeSpan _frozenPageTolerance = TimeSpan.FromMinutes(2);
 
+    // The registration guard rides with the hub's own options, so wherever the hub is served it is
+    // served behind it.
     internal static IServiceCollection AddChatSignalR(this IServiceCollection services) =>
-        services.AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance).Services;
+        services.AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance)
+            .AddHubOptions<ChatHub>(options => options.AddFilter(new RegisteredConnectionFilter()))
+            .Services;
 }
