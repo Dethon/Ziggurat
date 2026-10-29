@@ -62,6 +62,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerOutpost", "McpServ
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpServerSugary", "McpServerSugary\McpServerSugary.csproj", "{C6932078-1995-44A9-8CCE-2E3F716876EE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Accounts", "Accounts\Accounts.csproj", "{76F8F09C-6AED-460F-82BE-2F805A039717}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -360,6 +362,18 @@ Global
 		{C6932078-1995-44A9-8CCE-2E3F716876EE}.Release|x64.Build.0 = Release|Any CPU
 		{C6932078-1995-44A9-8CCE-2E3F716876EE}.Release|x86.ActiveCfg = Release|Any CPU
 		{C6932078-1995-44A9-8CCE-2E3F716876EE}.Release|x86.Build.0 = Release|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Debug|x64.Build.0 = Debug|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Debug|x86.Build.0 = Debug|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Release|Any CPU.Build.0 = Release|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Release|x64.ActiveCfg = Release|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Release|x64.Build.0 = Release|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Release|x86.ActiveCfg = Release|Any CPU
+		{76F8F09C-6AED-460F-82BE-2F805A039717}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
