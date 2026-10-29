@@ -10,4 +10,4 @@
 - [x] A real server refuses another server's credential
 - [x] The agent refuses to start when a configured host has no credential
 - [x] The conformance check asserts no two servers share a credential variable and the sandbox names only its own
-- [x] The chat-client E2E stack, the jonas integration fixture and the eval's stack wire per-server credentials and their suites pass
+- [x] The chat-client E2E stack wires one credential per server; the jonas integration fixture and the eval's stack run their servers on loopback, where the agent's credentials are keyed by host, so they share one value. All their suites pass
