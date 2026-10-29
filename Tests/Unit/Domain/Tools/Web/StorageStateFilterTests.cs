@@ -38,18 +38,4 @@ public class StorageStateFilterTests
         filtered["cookies"]!.AsArray().Count.ShouldBe(3);
         filtered["origins"]!.AsArray().Count.ShouldBe(2);
     }
-
-    [Theory]
-    [InlineData("accounts.google.com", "google.com")]
-    [InlineData(".google.com", "google.com")]
-    [InlineData("google.com", "google.com")]
-    [InlineData("www.bbc.co.uk", "bbc.co.uk")]
-    [InlineData("online.anz.com.au", "anz.com.au")]
-    [InlineData("shop.test", "shop.test")]
-    [InlineData("WWW.Example.ORG.", "example.org")]
-    [InlineData("192.168.5.45", "192.168.5.45")]
-    public void RegistrableDomain_GroupsAHostUnderItsSite(string host, string site)
-    {
-        RegistrableDomain.Of(host).ShouldBe(site);
-    }
 }

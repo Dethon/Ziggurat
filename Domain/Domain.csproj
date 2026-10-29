@@ -20,6 +20,13 @@
     </ItemGroup>
 
     <ItemGroup>
+      <!-- publicsuffix.org's list, ICANN and private sections, read by RegistrableDomain. Embedded
+           rather than shipped beside the binaries: it is data the code cannot run without, not a
+           policy a host may override. -->
+      <EmbeddedResource Include="Tools/Web/public_suffix_list.dat" LogicalName="Domain.Tools.Web.public_suffix_list.dat" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="FluentResults" Version="4.0.0" />
       <PackageReference Include="JetBrains.Annotations" Version="2026.2.0" />
       <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.25.0" />
