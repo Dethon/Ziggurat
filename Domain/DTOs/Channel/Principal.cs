@@ -29,3 +29,7 @@ public record Principal(string ChannelId, string UserId, Account? Account = null
 // ids the accounts service issued. Never a name, so it can key what belongs to the person.
 [PublicAPI]
 public record Account(string TenantId, string UserId);
+// An account as a channel server learns it from the accounts service: the account, and the name the
+// person goes by, which is what a turn's sender shows and never what anything is keyed by.
+[PublicAPI]
+public record ResolvedAccount(Account Account, string DisplayName);
