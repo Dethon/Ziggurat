@@ -61,10 +61,14 @@ public enum LinkKind
 
     // Adds a passkey to a person who already exists: a member who lost every device, and the
     // operator's own first enrollment, which is a recovery of an account with no passkey yet.
-    Recovery
+    Recovery,
+
+    // Links a person's Telegram to their account: the code from their account page, redeemed as the
+    // bot's start parameter. It never opens the enrollment page.
+    TelegramLink
 }
 
-// An invite or recovery link. Only a hash of its token is kept, so the store alone opens nothing.
+// An invite, recovery or Telegram link. Only a hash of its token is kept, so the store alone opens nothing.
 public sealed class Link
 {
     public required string Id { get; init; }

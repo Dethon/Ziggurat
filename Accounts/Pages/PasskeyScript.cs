@@ -20,9 +20,11 @@ public static class PasskeyScript
           };
           const encode = buffer => btoa(String.fromCharCode(...new Uint8Array(buffer)))
             .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+          const headers = { 'Content-Type': 'application/json' };
+          if (root.dataset.antiforgery) headers.RequestVerificationToken = root.dataset.antiforgery;
           const post = (path, body) => fetch('/accounts/api/' + path, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify(body),
             credentials: 'same-origin'
           });
@@ -35,13 +37,15 @@ public static class PasskeyScript
             constructor(response) { super('refused'); this.response = response; }
           }
 
-          const enroll = async () => {
-            const { ceremony, options } = await begin('enroll/options', { token: root.dataset.token });
+          // Enrolling through a link and adding a passkey while signed in are the same ceremony,
+          // begun and finished at different calls.
+          const create = async (beginPath, beginBody, finishPath) => {
+            const { ceremony, options } = await begin(beginPath, beginBody);
             options.challenge = decode(options.challenge);
             options.user.id = decode(options.user.id);
             options.excludeCredentials = (options.excludeCredentials || []).map(c => ({ ...c, id: decode(c.id) }));
             const credential = await navigator.credentials.create({ publicKey: options });
-            return post('enroll', {
+            return post(finishPath, {
               ceremony,
               credential: {
                 id: credential.id,
@@ -56,6 +60,8 @@ public static class PasskeyScript
               }
             });
           };
+          const enroll = () => create('enroll/options', { token: root.dataset.token }, 'enroll');
+          const add = () => create('passkeys/options', {}, 'passkeys');
 
           const signIn = async () => {
             const { ceremony, options } = await begin('sign-in/options', {});
@@ -89,7 +95,8 @@ public static class PasskeyScript
             button.disabled = true;
             status.textContent = 'Waiting for your passkey…';
             try {
-              const done = root.dataset.passkey === 'enroll' ? await enroll() : await signIn();
+              const ceremonies = { enroll, add, 'sign-in': signIn };
+              const done = await ceremonies[root.dataset.passkey]();
               if (!done.ok) {
                 status.textContent = await errorOf(done);
                 button.disabled = false;
