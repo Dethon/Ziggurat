@@ -41,6 +41,9 @@ public record UpdateTopic(StoredTopic Topic) : IAction;
 // for the same reason a deleted row stays until the delete was made.
 public record RenameTopic(string TopicId, string Name) : IAction;
 
+// The command: share a topic with the household, or stop. The row says so once the server took it.
+public record ShareTopic(string TopicId, bool Shared) : IAction;
+
 // The command: ask for a delete. The row itself only leaves on TopicRemoved, once the
 // server confirmed — so a delete that could not be made never touches the sidebar.
 public record RemoveTopic(string TopicId, string? AgentId = null, long? ChatId = null, long? ThreadId = null) : IAction;

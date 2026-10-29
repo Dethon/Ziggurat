@@ -68,5 +68,6 @@ _ = app.Services.GetRequiredService<StreamResumeEffect>();
 _ = app.Services.GetRequiredService<AttachmentEffect>();
 _ = app.Services.GetRequiredService<DictationEffect>();
 _ = app.Services.GetRequiredService<TopicRenameEffect>();
+_ = app.Services.GetRequiredService<TopicShareEffect>();
 
 await app.RunAsync();

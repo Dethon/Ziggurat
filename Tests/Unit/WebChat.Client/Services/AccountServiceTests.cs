@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using Domain.DTOs.WebChat;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
@@ -22,9 +23,27 @@ public sealed class AccountServiceTests
               "avatarUrl": "https://example/laura.png", "roles": ["member"] }
             """);
 
-        var person = await service.GetSignedInAsync();
+        var person = (await service.GetSignedInAsync()).ShouldNotBeNull();
 
-        person.ShouldBe(new SignedInPerson("0123abcd", "Laura", "https://example/laura.png"));
+        (person.UserId, person.DisplayName, person.AvatarUrl, person.TenantId)
+            .ShouldBe(("0123abcd", "Laura", "https://example/laura.png", "home"));
+        person.Viewer.ShouldBe(new TopicViewer("0123abcd", "home"));
+    }
+
+    // Who sees every topic of the household is a role the session carries, so the client keeps a
+    // row the same rule keeps on the server.
+    [Fact]
+    public async Task GetSignedInAsync_SomeoneWhoSeesAll_IsAViewerOfEveryTopic()
+    {
+        var service = Service(HttpStatusCode.OK,
+            """
+            { "userId": "0123abcd", "tenantId": "home", "displayName": "Olga",
+              "avatarUrl": null, "roles": ["member", "sees-all"] }
+            """);
+
+        var person = (await service.GetSignedInAsync()).ShouldNotBeNull();
+
+        person.Viewer.ShouldBe(new TopicViewer("0123abcd", "home", SeesAll: true));
     }
 
     [Fact]
