@@ -627,7 +627,9 @@ public static class WebScenarios
         Turn = new EvalTurn
         {
             Text = $"Mira en {EvalWeb.ShopName} si ya han enviado mi pedido.",
-            Sender = "fran"
+            Sender = "fran",
+            // WebChat does not verify who is speaking, so the person asks from Telegram.
+            Channel = "telegram"
         },
         Instant = EvalInstant.Evening,
         Required =
@@ -685,7 +687,10 @@ public static class WebScenarios
         {
             Text = $"Comprueba en {EvalWeb.ShopName} si ya han enviado el pedido de Fran y díselo.",
             Sender = "scheduler",
-            Origin = MessageOriginKind.Schedule
+            Origin = MessageOriginKind.Schedule,
+            // A fire's channel is the one it delivers to; a schedule delivering to WebChat would
+            // be refused as nobody, so this one reports on Telegram.
+            Channel = "telegram"
         },
         Instant = EvalInstant.Evening,
         Required =

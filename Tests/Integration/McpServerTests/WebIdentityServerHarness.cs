@@ -32,6 +32,14 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
     // Enrolled on voice and nowhere else: there is no WebChat to put a voice handoff's link in.
     public static readonly PersonIdentity Mo = new() { Name = "mo", Voice = "mo" };
 
+    public static readonly IReadOnlyList<string> ShippedVerifiedChannels =
+        [IdentityMap.TelegramChannelId, IdentityMap.VoiceChannelId];
+
+    // Once a real login stands behind WebChat, it joins the list — and a voice login's link can go
+    // there.
+    public static readonly IReadOnlyList<string> WebChatVerified =
+        [.. ShippedVerifiedChannels, IdentityMap.WebChatChannelId];
+
     private readonly WebApplication _app;
     private readonly string _endpoint;
 
@@ -67,7 +75,13 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
             CapSolver = null,
             RedisConnectionString = McpServerRegistrations.UnreachableRedis,
             Mcp = McpTestSecret.Gate,
-            Identity = new IdentityConfiguration { People = people ?? [Fran, Ana, Mo] }
+            // The shipped list: WebChat is not verified, so a test about a WebChat turn or a voice
+            // login's WebChat delivery says so in its own settings.
+            Identity = new IdentityConfiguration
+            {
+                People = people ?? [Fran, Ana, Mo],
+                VerifiedChannels = ShippedVerifiedChannels
+            }
         };
         builder.Services.ConfigureMcp(settings?.Invoke(configured) ?? configured);
         builder.Services.RemoveAll<IWebBrowser>();

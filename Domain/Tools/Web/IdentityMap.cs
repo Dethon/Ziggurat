@@ -13,8 +13,19 @@ public record PersonIdentity
     public string? WebChat { get; init; }
     public string? Voice { get; init; }
 
-    internal IEnumerable<string> UserIds =>
-        new[] { Telegram, WebChat, Voice }.Where(id => !string.IsNullOrWhiteSpace(id))!;
+    // The id this person has on one channel, by the agent's channel endpoint id. An id means
+    // something only on the channel that issued it, so it is never looked for anywhere else.
+    internal string? IdOn(string channelId)
+    {
+        var id = channelId switch
+        {
+            IdentityMap.TelegramChannelId => Telegram,
+            IdentityMap.WebChatChannelId => WebChat,
+            IdentityMap.VoiceChannelId => Voice,
+            _ => null
+        };
+        return string.IsNullOrWhiteSpace(id) ? null : id;
+    }
 }
 
 public abstract record PersonResolution
@@ -27,15 +38,30 @@ public abstract record PersonResolution
 // Who a turn is, for browsing as a person: the call's user id resolved through the map, or a
 // refusal that names why there is nobody. Nothing falls back — to the anonymous context or to
 // another person — because a guess here is one person acting as another.
-public class IdentityMap(IReadOnlyList<PersonIdentity> people)
+//
+// A user id is only as true as the channel that sent it, so a turn resolves against its own
+// channel's ids, and only on a channel listed as verifying who is speaking
+// (Identity:VerifiedChannels). Telegram's sender is Telegram's to vouch for and voice's is an
+// enrolled speaker; WebChat's is whatever its page's picker sent, so it stays off the list until a
+// real login stands behind it.
+public class IdentityMap(IReadOnlyList<PersonIdentity> people, IReadOnlyCollection<string> verifiedChannels)
 {
+    // The agent's channel endpoint ids, as a turn's origin names them.
+    public const string TelegramChannelId = "telegram";
+    public const string WebChatChannelId = "signalr";
+    public const string VoiceChannelId = "voice";
+
     // The voice channel's sender when no enrolled speaker matched: somebody in the house.
     public const string HouseholdFallback = "household";
 
     private readonly IReadOnlyList<PersonIdentity> _people =
         people.Where(p => !string.IsNullOrWhiteSpace(p.Name)).ToList();
 
+    private readonly HashSet<string> _verified = new(verifiedChannels, StringComparer.OrdinalIgnoreCase);
+
     public bool IsEnabled => _people.Count > 0;
+
+    public bool IsVerified(string channelId) => _verified.Contains(channelId);
 
     public PersonResolution Resolve(ConversationContext? context)
     {
@@ -59,18 +85,47 @@ public class IdentityMap(IReadOnlyList<PersonIdentity> people)
             return new PersonResolution.Refused(ToolError.Create(
                 ToolError.Codes.PermissionDenied,
                 "The speaker's voice was not recognised, so there is no person to browse as.",
-                "Tell the person their voice was not recognised; they can ask again, or ask from Telegram or WebChat."));
+                $"Tell the person their voice was not recognised; they can ask again, or ask {WhereToAsk()}."));
         }
 
-        return _people.FirstOrDefault(p => p.UserIds.Contains(context.UserId, StringComparer.OrdinalIgnoreCase))
+        var channelId = context.Origin.ChannelId;
+        if (!IsVerified(channelId))
+        {
+            return new PersonResolution.Refused(ToolError.Create(
+                ToolError.Codes.PermissionDenied,
+                $"The '{channelId}' channel does not verify who is speaking yet, so nobody can be browsed as from here.",
+                $"Browse without asMe, and tell the person to ask {WhereToAsk()} to reach their own accounts."));
+        }
+
+        return _people.FirstOrDefault(p =>
+                string.Equals(p.IdOn(channelId), context.UserId, StringComparison.OrdinalIgnoreCase))
             is { } person
             ? new PersonResolution.Found(person.Name)
             : new PersonResolution.Refused(ToolError.Create(
                 ToolError.Codes.PermissionDenied,
-                $"'{context.UserId}' is not a person in this deployment's identity map, so there is no session to browse as.",
+                $"'{context.UserId}' is not a person in this deployment's identity map on '{channelId}', so there is no session to browse as.",
                 "Browse without asMe, and tell the person their accounts cannot be reached until the operator adds them."));
     }
 
     public string? WebChatNameOf(string person) =>
-        _people.FirstOrDefault(p => p.Name == person)?.WebChat is { Length: > 0 } name ? name : null;
+        _people.FirstOrDefault(p => p.Name == person)?.IdOn(WebChatChannelId);
+
+    // The verified channels as a person would name them, for a refusal's hint: "from Telegram or
+    // by voice".
+    public string WhereToAsk()
+    {
+        var places = _verified.Order(StringComparer.Ordinal).Select(channel => channel switch
+        {
+            TelegramChannelId => "from Telegram",
+            WebChatChannelId => "from WebChat",
+            VoiceChannelId => "by voice",
+            _ => $"from {channel}"
+        }).ToList();
+        return places.Count switch
+        {
+            0 => "the operator to verify a channel",
+            1 => places[0],
+            _ => $"{string.Join(", ", places[..^1])} or {places[^1]}"
+        };
+    }
 }
