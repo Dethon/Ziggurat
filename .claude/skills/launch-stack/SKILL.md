@@ -12,9 +12,12 @@ description: Launch the local jackbot Docker Compose stack and reach its UIs —
 | `DockerCompose/docker-compose.yml`                  | Main service definitions |
 | `DockerCompose/docker-compose.override.windows.yml` | Windows user secrets mount (`%APPDATA%/Microsoft/UserSecrets`) |
 | `DockerCompose/docker-compose.override.linux.yml`   | Linux user secrets mount (`$HOME/.microsoft/usersecrets`) |
+| `DockerCompose/docker-compose.override.ports.yml`   | Publishes the MCP servers, channel servers, agent, webui, observability, Camoufox and tse-extractor on `127.0.0.1` at their usual ports, for a project run on the host against the stack (`appsettings.Local.json`). The base file publishes only Caddy's 443, Redis on loopback and the operator's LAN tools on `${LAN_BIND_ADDRESS}` (loopback when unset) |
 | `DockerCompose/docker-compose.override.no-dri.yml`  | Strips `/dev/dri` from `plex`/`mcp-sandbox`/`lemonade` (and forces `lemonade` STT to CPU) on hosts without a DRI render node |
 
 ## Launching
+
+To read prod's Redis, tunnel to its loopback port: `ssh -L 6379:127.0.0.1:6379 192.168.5.45`, then connect to `localhost:6379`.
 
 Swap the override for your OS (`linux` on Linux/WSL, `windows` on Windows):
 
