@@ -156,6 +156,119 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         (await server.Service<PasskeyStore>().ListAsync(fran.UserId, CancellationToken.None)).Count.ShouldBe(2);
     }
 
+    [Fact]
+    public async Task RevokingAPasskeyOnTheAccountPage_EndsEverySessionItBegan()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        var enrolled = await SessionOfAsync(context);
+        await context.ClearCookiesAsync();
+        await SignInAsync(server, page);
+        var signedIn = await SessionOfAsync(context);
+        var minted = await server.MintSessionAsync(fran.UserId);
+
+        await page.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Revoke passkey" }).ClickAsync();
+        await page.WaitForURLAsync(url => url.Contains("/accounts/sign-in", StringComparison.Ordinal));
+
+        (await server.VerifyAsync(enrolled, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await server.VerifyAsync(signedIn, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await server.VerifyAsync(minted)).StatusCode.ShouldBe(HttpStatusCode.OK, "a session the passkey did not begin");
+    }
+
+    // A second device signed in already adds its own passkey from the account page, and then signs
+    // in with it as the same person.
+    [Fact]
+    public async Task AddingAPasskeyFromTheAccountPage_SignsInAsTheSamePerson()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (_, phone) = await DeviceAsync();
+        await EnrollAsync(server, phone, fran);
+        var (laptopContext, laptop) = await DeviceAsync();
+        await SignInWithoutPasskeyAsync(server, laptopContext, await server.MintSessionAsync(fran.UserId));
+
+        await laptop.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+        await laptop.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Add a passkey" }).ClickAsync();
+        await Assertions.Expect(laptop.Locator("[data-passkey-id]")).ToHaveCountAsync(2);
+
+        await laptopContext.ClearCookiesAsync();
+        await SignInAsync(server, laptop);
+        (await server.VerifyAsync(await SessionOfAsync(laptopContext))).Headers.GetValues("X-Ziggurat-User")
+            .ShouldBe([fran.UserId]);
+    }
+
+    [Fact]
+    public async Task AnInvite_EnrollsAPersonWithTheNamedRoleAndDisplayName()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (ownerContext, owner) = await DeviceAsync();
+        await SignInWithoutPasskeyAsync(server, ownerContext, await server.MintSessionAsync(fran.UserId));
+        await owner.GotoAsync(new Uri(server.Address, "/accounts/members").ToString());
+        await owner.GetByLabel("Display name").FillAsync("Laura");
+        await owner.GetByLabel("Role", new PageGetByLabelOptions { Exact = true }).SelectOptionAsync("member");
+        await owner.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Create invite" }).ClickAsync();
+        var invite = await owner.Locator("[data-link]").GetAttributeAsync("href");
+        var (lauraContext, laura) = await DeviceAsync();
+
+        await laura.GotoAsync(invite!);
+        await laura.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = CreateButton }).ClickAsync();
+        await laura.WaitForURLAsync(server.Address.ToString());
+
+        var check = await server.VerifyAsync(await SessionOfAsync(lauraContext));
+        check.StatusCode.ShouldBe(HttpStatusCode.OK);
+        check.Headers.GetValues("X-Ziggurat-User").Single().ShouldNotBe(fran.UserId);
+        check.Headers.GetValues("X-Ziggurat-Tenant").ShouldBe([fran.TenantId]);
+        check.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["member"]);
+        await laura.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+        await Assertions.Expect(laura.GetByRole(AriaRole.Heading, new PageGetByRoleOptions { Level = 1 })).ToContainTextAsync("Laura");
+
+        await lauraContext.ClearCookiesAsync();
+        var again = await laura.GotoAsync(invite!);
+        again!.Status.ShouldBe((int)HttpStatusCode.Gone);
+    }
+
+    // A member who lost every device gets a link from an owner, and it is the same person again.
+    [Fact]
+    public async Task AMembersRecoveryLink_AddsAPasskeyToThatPerson()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var lauraId = await server.SeedMemberAsync("Laura");
+        var (ownerContext, owner) = await DeviceAsync();
+        await SignInWithoutPasskeyAsync(server, ownerContext, await server.MintSessionAsync(fran.UserId));
+        await owner.GotoAsync(new Uri(server.Address, "/accounts/members").ToString());
+        await owner.Locator("tr", new PageLocatorOptions { HasText = "Laura" })
+            .GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Recovery link" }).ClickAsync();
+        var recovery = await owner.Locator("[data-link]").GetAttributeAsync("href");
+        var (lauraContext, laura) = await DeviceAsync();
+
+        await laura.GotoAsync(recovery!);
+        await laura.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = CreateButton }).ClickAsync();
+        await laura.WaitForURLAsync(server.Address.ToString());
+
+        (await server.VerifyAsync(await SessionOfAsync(lauraContext))).Headers.GetValues("X-Ziggurat-User")
+            .ShouldBe([lauraId]);
+        (await server.Service<PasskeyStore>().ListAsync(lauraId, CancellationToken.None)).ShouldHaveSingleItem();
+    }
+
+    // A browser signed in with a session the operator's command minted, as the E2E stack signs in.
+    private static Task SignInWithoutPasskeyAsync(AccountsServer server, IBrowserContext context, string session) =>
+        context.AddCookiesAsync([
+            new Microsoft.Playwright.Cookie
+            {
+                Name = SessionCookie.Name,
+                Value = session,
+                Url = server.Address.ToString(),
+                Secure = true,
+                HttpOnly = true,
+                SameSite = SameSiteAttribute.Lax
+            }
+        ]);
+
     // A browser with a platform authenticator that keeps discoverable credentials and verifies its
     // user, as a phone's does. The authenticator belongs to the page, so a ceremony after another
     // runs on the same page.

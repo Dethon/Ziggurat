@@ -90,7 +90,7 @@ public class SessionCheckTests
         var phone = (await sessions.IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
         var laptop = (await sessions.IssueAsync(fran.UserId, null, "laptop", CancellationToken.None))!;
 
-        (await sessions.RevokeAsync(phone.Id, CancellationToken.None)).ShouldBeTrue();
+        (await sessions.RevokeAsync(fran.UserId, phone.Id, CancellationToken.None)).ShouldBeTrue();
 
         (await server.VerifyAsync(phone.Token, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await server.VerifyAsync(laptop.Token)).StatusCode.ShouldBe(HttpStatusCode.OK);
