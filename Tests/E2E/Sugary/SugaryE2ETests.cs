@@ -167,7 +167,7 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
 
     private async Task<JsonArray> QueryMountAsync(string sql)
     {
-        await using var mcp = await McpClient.CreateAsync(McpTestSecret.Transport(fixture.SugaryMcpEndpoint));
+        await using var mcp = await McpClient.CreateAsync(McpTestSecret.Transport(fixture.SugaryMcpEndpoint, McpTestSecret.For("mcp-sugary")));
         var result = await mcp.CallToolAsync("fs_query", new Dictionary<string, object?> { ["path"] = "/", ["sql"] = sql });
         var answer = JsonNode.Parse(string.Join("", result.Content.OfType<TextContentBlock>().Select(c => c.Text)))!;
         return answer["rows"]?.AsArray()

@@ -37,14 +37,11 @@ public sealed class MultiAgentFactory(
     private readonly LemonadeChatHostOptions? _lemonadeHost =
         serviceProvider?.GetService<LemonadeChatHostOptions>();
 
-    // The secret every configured endpoint presents, read once for every agent and worker this
-    // factory builds. Absent in a host that registered none, and empty in a deployment that never
-    // set it; both present nothing and a gated server refuses, so the gate rather than this decides
-    // what an unset secret means.
-    private readonly string? _mcpSecret =
-        serviceProvider?.GetService<McpGateSettings>() is { SharedSecret.Length: > 0 } gate
-            ? gate.SharedSecret
-            : null;
+    // The credential each configured endpoint presents, by its host, read once for every agent and
+    // worker this factory builds. A host with none presents nothing and its gate refuses, so the
+    // gate rather than this decides what an unset credential means.
+    private readonly McpCredentials _credentials =
+        McpCredentials.From(serviceProvider?.GetService<McpGateSettings>());
 
     // One source for every agent this factory builds, read on each turn that carries a patch.
     private readonly IPatchableModelSource _patchableModels = new PatchableModelWhitelist(
@@ -81,7 +78,7 @@ public sealed class MultiAgentFactory(
         SpawnContext spawn)
     {
         var spec = AgentSpecProjection.ForSubAgent(
-            definition, spawn, openRouterConfig, _patchableModels, LemonadeHostAddress, _mcpSecret, _logger);
+            definition, spawn, openRouterConfig, _patchableModels, LemonadeHostAddress, _credentials, _logger);
 
         return Build(spec, approvalHandler);
     }
@@ -93,7 +90,7 @@ public sealed class MultiAgentFactory(
         var deployment = new DeploymentEndpoints(definitionProvider.GetAll().SelectMany(a => a.McpServerEndpoints));
         var spec = AgentSpecProjection.ForAgent(
             definition, agentKey, userId, openRouterConfig, _patchableModels,
-            LemonadeHostAddress, _mcpSecret, deployment, _logger);
+            LemonadeHostAddress, _credentials, deployment, _logger);
 
         return Build(spec, approvalHandler);
     }

@@ -4,10 +4,10 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The agent spec projection hands each endpoint its own host's credential, and channel connections likewise
-- [ ] A real server refuses another server's credential
-- [ ] The agent refuses to start when a configured host has no credential
-- [ ] The conformance check asserts no two servers share a credential variable and the sandbox names only its own
-- [ ] The chat-client E2E stack, the jonas integration fixture and the eval's stack wire per-server credentials and their suites pass
+- [x] The agent spec projection hands each endpoint its own host's credential, and channel connections likewise
+- [x] A real server refuses another server's credential
+- [x] The agent refuses to start when a configured host has no credential
+- [x] The conformance check asserts no two servers share a credential variable and the sandbox names only its own
+- [x] The chat-client E2E stack, the jonas integration fixture and the eval's stack wire per-server credentials and their suites pass
