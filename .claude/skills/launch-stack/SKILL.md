@@ -40,7 +40,7 @@ These secrets live in `DockerCompose/.env` and must be set (any non-empty value)
 
 - `MCP_SECRET_<SERVER>` (one per MCP server, channel servers included) — each server's `/mcp` refuses a call without its own, which it reads as `MCP__SHAREDSECRET`; the agent holds them all as `MCP__SECRETS__<host>` and refuses to start without one for a server it dials. Anything you point at a server's `/mcp` by hand (an MCP inspector, a script) sends `Authorization: Bearer <that server's value>`.
 - `REDIS_PASSWORD` — compose refuses to start the stack without it.
-- `AGENTAPI__SHAREDSECRET` — `/api/agents` (custom-agent registration, routed by Caddy) refuses every verb without `Authorization: Bearer <value>`.
+- `AGENTAPI__SHAREDSECRET` — `/api/agents` (custom-agent registration, routed by Caddy) refuses every verb without `Authorization: Bearer <value>`, and answers 400 without `X-Ziggurat-User: <user id>` (whose catalogue it is; a `userId` parameter is ignored).
 
 ## Accessing the WebChat & Dashboard
 
