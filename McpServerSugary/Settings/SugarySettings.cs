@@ -18,10 +18,6 @@ public record SugarySettings : IMcpHostSettings
     // it. An id the container does not know fails startup rather than writing times on a wrong clock.
     public string HomeZone { get; init; } = "";
 
-    // The app's own gate, apart from /mcp's: the browser routes are called by her phone, which never
-    // holds the deployment secret.
-    public SugaryAppSettings SugaryApp { get; init; } = new();
-
     // Where a barcode none of her saved foods carries is looked up.
     public string OpenFoodFactsUrl { get; init; } = "https://world.openfoodfacts.org/";
 
@@ -111,15 +107,4 @@ public record ClipSettings
     // How many clips are read at once. Each run of ffmpeg takes a core for seconds, so a few meals
     // filmed together wait their turn rather than all running at the same time.
     public int MaxConcurrent { get; init; } = 2;
-}
-
-public record SugaryAppSettings
-{
-    // The code typed once per phone to get in (SUGARYAPP__ACCESSCODE, a deployment secret). Unset
-    // refuses every sign-in, as an unset shared secret refuses every call.
-    public string AccessCode { get; init; } = "";
-
-    // False only where the deployment itself keeps strangers out (a VPN): every app route opens with
-    // no sign-in and the session tells the app not to ask. /mcp keeps the deployment secret either way.
-    public bool RequireAccessCode { get; init; } = true;
 }

@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Sugary;
 using Domain.DTOs.Tables;
@@ -17,9 +18,27 @@ namespace Domain.Tools.Sugary.Vfs;
 // sandbox; the text read serves the README alone and refuses a table with what works instead.
 // Nothing that writes is overridden, so no writing tool exists on this mount and a write routed here
 // is refused with what it can do.
+//
+// Each person keeps a log of their own, so the mount answers for the person whose turn a call
+// serves and nobody else: the account on the principal the call's `_meta` carries. The server's one
+// instance has no caller; the registrar asks for a view per call (For). A call that names no account
+// — a voice guest's turn, a fire with no person behind it, a call with no context — is refused, never
+// shown an empty log, since "she logged nothing" would be a false fact about a health record.
 public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITableEngine engine) : FileSystemBackendBase
 {
     public const string Name = "sugary";
+
+    // Whose log this view reads; null on the server's own instance and for a call that names nobody.
+    private Account? _reader;
+
+    // A shallow copy with the reader swapped, as HaFileSystem does: the copy carries every dependency
+    // this mount was built with, and the log is shared by reference.
+    public override FileSystemBackendBase For(FileSystemCaller caller)
+    {
+        var view = (SugaryFileSystem)MemberwiseClone();
+        view._reader = Principal.Of(caller.Conversation)?.Account;
+        return view;
+    }
 
     public override string FilesystemName => Name;
 
@@ -58,9 +77,22 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
 
     private static readonly UTF8Encoding _utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
+    // What a call that names nobody is answered, whatever it asked: the log is a person's, and this
+    // call is for none.
+    private const string ForNobody =
+        "This turn acts for nobody signed in, so it can read nobody's Sugary log: /sugary answers only "
+        + "for the person whose turn it is, and a guest or a turn with no person behind it has none.";
+
+    private static FsResult<T> Nobody<T>() where T : class => Fail<T>(ToolError.Codes.PermissionDenied, ForNobody);
+
     public override async Task<FsResult<FsReadResult>> ReadAsync(
         string path, int? offset, int? limit, CancellationToken ct)
     {
+        if (_reader is not { } reader)
+        {
+            return Nobody<FsReadResult>();
+        }
+
         var node = SugaryPath.Parse(path);
         if (node.IsDirectory)
         {
@@ -72,7 +104,7 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
             return new FsResult<FsReadResult>.Ok(Window(path, SugaryReadme.For(homeZone), offset, limit));
         }
 
-        return await TableAsync(node, ct) is null
+        return await TableAsync(reader, node, ct) is null
             ? NotFound<FsReadResult>(path)
             : FsError.QueryOnly<FsReadResult>(FileSystemResolution.ToVirtualPath(MountPoint, path), MountPoint);
     }
@@ -81,7 +113,16 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
     public override async IAsyncEnumerable<ReadOnlyMemory<byte>> ReadChunksAsync(
         string path, [EnumeratorCancellation] CancellationToken ct)
     {
-        var bytes = await BytesAsync(SugaryPath.Parse(path), ct);
+        if (_reader is not { } reader)
+        {
+            throw new FileSystemOperationException(new ToolErrorResult
+            {
+                ErrorCode = ToolError.Codes.PermissionDenied,
+                Message = ForNobody
+            });
+        }
+
+        var bytes = await BytesAsync(reader, SugaryPath.Parse(path), ct);
         if (bytes is null)
         {
             throw new FileSystemOperationException(new ToolErrorResult
@@ -94,12 +135,25 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
         yield return bytes;
     }
 
+    // The byte read as the wire asks it. A refusal thrown from the stream above would reach the wire
+    // as a failure to retry, so a call that names nobody is answered with the refusal itself here.
+    public override Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
+        string path, long offset, int length, CancellationToken ct) =>
+        _reader is null
+            ? Task.FromResult(Nobody<FsBlobReadResult>())
+            : base.ReadBlobAsync(path, offset, length, ct);
+
     // A table's size is its Parquet's, rendered to be measured: a reader of Parquet seeks to the end
     // of the file for its footer, so an unknown size would read as a broken file.
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
+        if (_reader is not { } reader)
+        {
+            return Nobody<FsInfoResult>();
+        }
+
         var node = SugaryPath.Parse(path);
-        var bytes = node.IsDirectory ? null : await BytesAsync(node, ct);
+        var bytes = node.IsDirectory ? null : await BytesAsync(reader, node, ct);
         var exists = node.IsDirectory || bytes is not null;
         return new FsResult<FsInfoResult>.Ok(new FsInfoResult
         {
@@ -112,13 +166,18 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
 
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
+        if (_reader is not { } reader)
+        {
+            return Nobody<FsGlobResult>();
+        }
+
         if (!GlobPrologue(basePath, pattern).TryGetValue(out var scope, out var invalidPattern))
         {
             return new FsResult<FsGlobResult>.Err(invalidPattern);
         }
 
         var (dirsOnly, matches) = scope;
-        var nodes = await NodesAsync(ct);
+        var nodes = await NodesAsync(reader, ct);
         return Glob(pattern, () => nodes
             .Where(node => node.Kind != SugaryNodeKind.Root && (!dirsOnly || node.IsDirectory))
             .Where(node => matches(node.Path.TrimStart('/')))
@@ -132,7 +191,12 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
     public override async Task<FsResult<FsQueryResult>> QueryAsync(
         string path, string sql, int maxRows, CancellationToken ct)
     {
-        var result = await engine.QueryAsync(await TablesAsync(ct), homeZone, sql, maxRows, ct);
+        if (_reader is not { } reader)
+        {
+            return Nobody<FsQueryResult>();
+        }
+
+        var result = await engine.QueryAsync(await TablesAsync(reader, ct), homeZone, sql, maxRows, ct);
         return result.TryGetValue(out var answer, out var error)
             ? new FsResult<FsQueryResult>.Ok(answer with { Path = path })
             : new FsResult<FsQueryResult>.Err(error.ErrorCode == ToolError.Codes.InvalidArgument
@@ -140,10 +204,10 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
                 : error);
     }
 
-    private async Task<IReadOnlyList<Table>> TablesAsync(CancellationToken ct)
+    private async Task<IReadOnlyList<Table>> TablesAsync(Account reader, CancellationToken ct)
     {
-        var meals = await log.MealsAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
-        var doses = await log.DosesAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
+        var meals = await log.MealsAsync(reader, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
+        var doses = await log.DosesAsync(reader, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
         return
         [
             SugaryTables.Meals(meals, homeZone),
@@ -151,21 +215,21 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
             SugaryTables.Doses(doses, homeZone),
             SugaryTables.DoseMeals(doses),
             SugaryTables.Exercise(
-                await log.ExerciseAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), homeZone),
-            SugaryTables.Foods(await log.FoodsAsync(ct)),
-            SugaryTables.Periods(await log.PeriodsAsync(ct)),
-            SugaryTables.DayNotes(await log.DayNotesAsync(ct))
+                await log.ExerciseAsync(reader, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), homeZone),
+            SugaryTables.Foods(await log.FoodsAsync(reader, ct)),
+            SugaryTables.Periods(await log.PeriodsAsync(reader, ct)),
+            SugaryTables.DayNotes(await log.DayNotesAsync(reader, ct))
         ];
     }
 
     // Every node that exists right now: the fixed ones, a pair of files for each month she ate in and
     // a doses file for each month she took a dose in and an exercise file for each month she started
     // a session in — the sets of months independent, so a month of basal alone still has its file.
-    private async Task<IReadOnlyList<SugaryNode>> NodesAsync(CancellationToken ct)
+    private async Task<IReadOnlyList<SugaryNode>> NodesAsync(Account reader, CancellationToken ct)
     {
-        var mealMonths = Months(await log.MealTimesAsync(ct));
-        var doseMonths = Months(await log.DoseTimesAsync(ct));
-        var exerciseMonths = Months(await log.ExerciseTimesAsync(ct));
+        var mealMonths = Months(await log.MealTimesAsync(reader, ct));
+        var doseMonths = Months(await log.DoseTimesAsync(reader, ct));
+        var exerciseMonths = Months(await log.ExerciseTimesAsync(reader, ct));
         SugaryNode[] fixedNodes =
         [
             new(SugaryNodeKind.Root), new(SugaryNodeKind.Readme), new(SugaryNodeKind.Foods),
@@ -191,32 +255,33 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
             .ToList();
 
     // The file's bytes, or null where there is no such file.
-    private async Task<byte[]?> BytesAsync(SugaryNode node, CancellationToken ct) =>
+    private async Task<byte[]?> BytesAsync(Account reader, SugaryNode node, CancellationToken ct) =>
         node.Kind == SugaryNodeKind.Readme
             ? _utf8.GetBytes(SugaryReadme.For(homeZone))
-            : await TableAsync(node, ct) is { } table ? await engine.ParquetAsync(table, ct) : null;
+            : await TableAsync(reader, node, ct) is { } table ? await engine.ParquetAsync(table, ct) : null;
 
     // The table a file holds, or null where there is no such file: a month with nothing logged in it
     // has none.
-    private async Task<Table?> TableAsync(SugaryNode node, CancellationToken ct) => node.Kind switch
+    private async Task<Table?> TableAsync(Account reader, SugaryNode node, CancellationToken ct) => node.Kind switch
     {
-        SugaryNodeKind.Foods => SugaryTables.Foods(await log.FoodsAsync(ct)),
-        SugaryNodeKind.Periods => SugaryTables.Periods(await log.PeriodsAsync(ct)),
-        SugaryNodeKind.DayNotes => SugaryTables.DayNotes(await log.DayNotesAsync(ct)),
+        SugaryNodeKind.Foods => SugaryTables.Foods(await log.FoodsAsync(reader, ct)),
+        SugaryNodeKind.Periods => SugaryTables.Periods(await log.PeriodsAsync(reader, ct)),
+        SugaryNodeKind.DayNotes => SugaryTables.DayNotes(await log.DayNotesAsync(reader, ct)),
         SugaryNodeKind.DoseMeals => SugaryTables.DoseMeals(
-            await log.DosesAsync(DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct)),
-        SugaryNodeKind.MealsMonth => await MealsInAsync(node.Month!, ct) is { Count: > 0 } meals
+            await log.DosesAsync(reader, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct)),
+        SugaryNodeKind.MealsMonth => await MealsInAsync(reader, node.Month!, ct) is { Count: > 0 } meals
             ? SugaryTables.Meals(meals, homeZone)
             : null,
-        SugaryNodeKind.ItemsMonth => await MealsInAsync(node.Month!, ct) is { Count: > 0 } meals
+        SugaryNodeKind.ItemsMonth => await MealsInAsync(reader, node.Month!, ct) is { Count: > 0 } meals
             ? SugaryTables.Items(meals, homeZone)
             : null,
-        SugaryNodeKind.DosesMonth => await InMonthAsync(node.Month!, log.DosesAsync, dose => dose.TakenAt, ct)
+        SugaryNodeKind.DosesMonth => await InMonthAsync(
+                node.Month!, (from, to, c) => log.DosesAsync(reader, from, to, c), dose => dose.TakenAt, ct)
             is { Count: > 0 } doses
             ? SugaryTables.Doses(doses, homeZone)
             : null,
         SugaryNodeKind.ExerciseMonth => await InMonthAsync(
-                node.Month!, log.ExerciseAsync, session => session.StartedAt, ct)
+                node.Month!, (from, to, c) => log.ExerciseAsync(reader, from, to, c), session => session.StartedAt, ct)
             is { Count: > 0 } sessions
             ? SugaryTables.Exercise(sessions, homeZone)
             : null,
@@ -227,8 +292,8 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo homeZone, ITab
     // to a day either way, so the store is asked for a day more each side and the home's calendar
     // decides which meals are in. The calendar's first and last months have no day beyond them to
     // ask for, and no meal in them, so they are simply empty.
-    private Task<IReadOnlyList<LoggedMeal>> MealsInAsync(string month, CancellationToken ct) =>
-        InMonthAsync(month, log.MealsAsync, meal => meal.EatenAt, ct);
+    private Task<IReadOnlyList<LoggedMeal>> MealsInAsync(Account reader, string month, CancellationToken ct) =>
+        InMonthAsync(month, (from, to, c) => log.MealsAsync(reader, from, to, c), meal => meal.EatenAt, ct);
 
     private async Task<IReadOnlyList<T>> InMonthAsync<T>(
         string month,

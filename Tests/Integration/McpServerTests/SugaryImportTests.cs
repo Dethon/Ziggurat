@@ -44,11 +44,37 @@ public class SugaryImportTests : IDisposable
 
     public void Dispose() => Directory.Delete(_exports, recursive: true);
 
+    // The import, then what the migration into the home household does with what it brought: gives
+    // it to her, so the suite reads it back as hers.
     private async Task<(int Exit, string Output)> ImportAsync(SugaryServer server)
+    {
+        var imported = await ImportOnlyAsync(server);
+        await server.GiveUnassignedRowsToAsync(SugaryServer.Her);
+        return imported;
+    }
+
+    private async Task<(int Exit, string Output)> ImportOnlyAsync(SugaryServer server)
     {
         await using var output = new StringWriter();
         var exit = await SugaryCommand.RunAsync(["import", _exports], server.Settings, output, CancellationToken.None);
         return (exit, output.ToString());
+    }
+
+    // The downloads name no person, so what they bring is nobody's until it is given to someone:
+    // not her log yet, and not anyone else's either.
+    [Fact]
+    public async Task AnImportedLog_IsNobodysUntilItIsGiven()
+    {
+        await using var server = await SugaryServer.StartAsync("Europe/Madrid");
+
+        var (exit, _) = await ImportOnlyAsync(server);
+
+        exit.ShouldBe(0);
+        Body(await server.ExportAsync("meals")).ShouldBeEmpty();
+        Body(await server.ExportAsync("foods")).ShouldBeEmpty();
+        (await server.QueryAsync("select count(*) from meals")).Single()![0]!.GetValue<int>().ShouldBe(0);
+        await server.GiveUnassignedRowsToAsync(SugaryServer.Her);
+        (await server.ExportAsync("meals")).ShouldBe(_meals);
     }
 
     // Identifiers, times, numbers, sources and the defused text all come back exactly as she

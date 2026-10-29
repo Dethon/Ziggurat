@@ -30,8 +30,11 @@ public record MealItem(
 
 public record Interval(double Low, double Best, double High);
 
-public class Meal
+public class Meal : IPersonal
 {
+    public string UserId { get; set; } = "";
+    public string TenantId { get; set; } = "";
+
     public Guid Id { get; set; }
     public DateTimeOffset EatenAt { get; set; }
     public string? Notes { get; set; }
@@ -49,10 +52,13 @@ public class Meal
     public double CarbsHigh { get; set; }
 }
 
-// Something she eats often enough to keep: a product from her kitchen with its label's density
-// and the amount she usually has, or a fixed serving she knows the carbs of.
-public class Food
+// Something the household eats often enough to keep, shared by everyone in it: a product from its
+// kitchen with its label's density and the amount usually had, or a fixed serving whose carbs are
+// known.
+public class Food : IHousehold
 {
+    public string TenantId { get; set; } = "";
+
     public Guid Id { get; set; }
     public string Name { get; set; } = "";
 
@@ -70,12 +76,14 @@ public class Food
     public ItemSource Source { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
-// Something she cooks from foods she keeps: each ingredient a food of hers and how much of it, and
-// what the pot makes, as its cooked weight or its servings — one of the two. The ingredients point at
-// the foods themselves, so a recipe always counts with her current numbers; its carbs are worked out
-// by the app, which already has them.
-public class Recipe
+// Something the household cooks from the foods it keeps, shared like them: each ingredient one of
+// those foods and how much of it, and what the pot makes, as its cooked weight or its servings — one
+// of the two. The ingredients point at the foods themselves, so a recipe always counts with their
+// current numbers; its carbs are worked out by the app, which already has them.
+public class Recipe : IHousehold
 {
+    public string TenantId { get; set; } = "";
+
     public Guid Id { get; set; }
     public string Name { get; set; } = "";
     public double? CookedGrams { get; set; }
@@ -95,8 +103,11 @@ public record RecipeIngredient(Guid FoodId, double Amount)
 // relationship: a dose is a fact of what she injected, so it outlives a meal deleted from the log,
 // which only takes that meal off the list. One bolus can cover several meals, a meal and the
 // dessert logged after it.
-public class Dose
+public class Dose : IPersonal
 {
+    public string UserId { get; set; } = "";
+    public string TenantId { get; set; } = "";
+
     public Guid Id { get; set; }
     public DateTimeOffset TakenAt { get; set; }
     public double Units { get; set; }
@@ -107,8 +118,11 @@ public class Dose
 // A session of exercise: a walk, the gym or another kind she named, from when she started it to
 // when she stopped it, with no end while it is running. Instants, as a meal's and a dose's are, so
 // it lines up with her glucose by the hour.
-public class ExerciseSession
+public class ExerciseSession : IPersonal
 {
+    public string UserId { get; set; } = "";
+    public string TenantId { get; set; } = "";
+
     public Guid Id { get; set; }
     public ExerciseKind Kind { get; set; }
     public string? Name { get; set; }
@@ -119,16 +133,22 @@ public class ExerciseSession
 // A period, as the days she recorded it on: the day it started and the day it ended, with no end
 // while it is still going. Days on her calendar, not instants, so a reader in any zone sees the
 // same days she lived.
-public class Period
+public class Period : IPersonal
 {
+    public string UserId { get; set; } = "";
+    public string TenantId { get; set; } = "";
+
     public Guid Id { get; set; }
     public DateOnly Start { get; set; }
     public DateOnly? End { get; set; }
 }
-// What she wrote about a day of her calendar, period or not: how she felt, what she craved. One
-// per day, keyed by it.
-public class DayNote
+// What she wrote about a day of her calendar, period or not: how she felt, what she craved. One per
+// day of each person's log, keyed by both.
+public class DayNote : IPersonal
 {
+    public string UserId { get; set; } = "";
+    public string TenantId { get; set; } = "";
+
     public DateOnly Day { get; set; }
     public string Text { get; set; } = "";
 }
