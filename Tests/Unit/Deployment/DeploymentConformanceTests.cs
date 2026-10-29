@@ -86,6 +86,66 @@ public class DeploymentConformanceTests
     }
 
     [Fact]
+    public void NoService_TakesTheWholeSecretsFile()
+    {
+        DeploymentFiles.Compose().Services.Values
+            .Where(s => s.TakesWholeSecretsFile)
+            .Select(s => s.Name)
+            .ShouldBeEmpty("each service names the variables it reads");
+    }
+
+    [Theory]
+    [InlineData("OPENROUTER__APIKEY", new[] { "agent", "mcp-websearch", "mcp-channel-voice" })]
+    [InlineData("HOMEASSISTANT__TOKEN", new[] { "mcp-homeassistant" })]
+    [InlineData("LOGINS__STATEKEY", new[] { "mcp-websearch" })]
+    [InlineData("BOTS__0__BOTTOKEN", new[] { "mcp-channel-telegram" })]
+    [InlineData("BOTS__1__BOTTOKEN", new[] { "mcp-channel-telegram" })]
+    [InlineData("WEBPUSH__PRIVATEKEY", new[] { "mcp-channel-signalr", "mcp-sugary" })]
+    [InlineData("AGENTAPI__SHAREDSECRET", new[] { "agent" })]
+    [InlineData("OUTPOSTS__SHAREDSECRET", new[] { "agent" })]
+    public void ASecret_ReachesOnlyTheServicesThatReadIt(string variable, string[] readers)
+    {
+        DeploymentFiles.Compose().Services.Values
+            .Where(s => s.TakesWholeSecretsFile
+                        || s.Environment.Values.Any(v => v.Contains($"${{{variable}}}", StringComparison.Ordinal)))
+            .Select(s => s.Name)
+            .ShouldBe(readers, ignoreOrder: true);
+    }
+
+    [Fact]
+    public void EveryPlaceholder_IsUsedByTheDeployment()
+    {
+        var compose = File.ReadAllText(Path.Combine(DeploymentFiles.Directory, "docker-compose.yml"));
+
+        DeploymentFiles.Placeholders().Keys
+            .Where(key => !compose.Contains($"${{{key}", StringComparison.Ordinal))
+            .ShouldBeEmpty("a placeholder nothing reads is a secret nobody needs");
+    }
+
+    [Fact]
+    public void NoSecretPlaceholder_ShipsAValue()
+    {
+        DeploymentFiles.Placeholders()
+            .Where(p => !p.Key.EndsWith("_PATH", StringComparison.Ordinal) && p.Value.Length > 0)
+            .Select(p => p.Key)
+            .ShouldBeEmpty("a value in git is a value everyone can read");
+    }
+
+    [Theory]
+    [InlineData("docker-compose.override.linux.yml")]
+    [InlineData("docker-compose.override.windows.yml")]
+    public void TheOsOverrides_MountEachProjectsOwnUserSecrets(string overrideFile)
+    {
+        var mounts = DeploymentFiles.Compose(overrideFile).Services.Values
+            .SelectMany(s => s.Volumes.Where(v => v.Contains("usersecrets", StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        mounts.ShouldNotBeEmpty();
+        mounts.ShouldAllBe(v => System.Text.RegularExpressions.Regex.IsMatch(
+            v, @"[Uu]ser[Ss]ecrets/[0-9a-f-]{36}:/home/app/\.microsoft/usersecrets/[0-9a-f-]{36}:ro$"));
+    }
+
+    [Fact]
     public void TheDebugOverride_PublishesOnLoopbackOnly()
     {
         var ports = DeploymentFiles.Compose("docker-compose.override.ports.yml").Services.Values

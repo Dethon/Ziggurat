@@ -24,6 +24,14 @@ public static class DeploymentFiles
         return new ComposeFile(services);
     }
 
+    // The tracked secrets file: every placeholder the deployment reads, with whatever value ships.
+    public static IReadOnlyDictionary<string, string> Placeholders() =>
+        File.ReadAllLines(Path.Combine(Directory, ".env"))
+            .Select(l => l.Trim())
+            .Where(l => l.Length > 0 && !l.StartsWith('#') && l.Contains('='))
+            .Select(l => l.Split('=', 2))
+            .ToDictionary(p => p[0], p => p[1]);
+
     public static CaddyConfig Caddyfile() =>
         CaddyConfig.Parse(File.ReadAllText(Path.Combine(Directory, "caddy", "Caddyfile")));
 }

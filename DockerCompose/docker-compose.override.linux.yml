@@ -1,56 +1,47 @@
+# Linux user secrets ($HOME/.microsoft/usersecrets), one project's directory per service: a container reads its own project's
+# secrets and no other's. The id is the project's UserSecretsId; the agent and the dashboard
+# share one. A project with no UserSecretsId reads none and mounts nothing.
 services:
   mcp-library:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
-
-  mcp-vault:
-    volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/75983515-6b41-4913-a021-553345dc21ba:/home/app/.microsoft/usersecrets/75983515-6b41-4913-a021-553345dc21ba:ro
 
   mcp-websearch:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/d8f3e2a1-5b7c-4d9e-8f1a-2c3b4d5e6f7a:/home/app/.microsoft/usersecrets/d8f3e2a1-5b7c-4d9e-8f1a-2c3b4d5e6f7a:ro
 
   mcp-idealista:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/e9f4a3b2-6c8d-4e5f-9a2b-3c4d5e6f7a8b:/home/app/.microsoft/usersecrets/e9f4a3b2-6c8d-4e5f-9a2b-3c4d5e6f7a8b:ro
 
   mcp-homeassistant:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/1ad2c5b9-7e4f-4a3b-9c8d-2f1e6a4b8c30:/home/app/.microsoft/usersecrets/1ad2c5b9-7e4f-4a3b-9c8d-2f1e6a4b8c30:ro
 
   mcp-channel-signalr:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/815bef94-3e37-472c-b151-24e5bc9821fd:/home/app/.microsoft/usersecrets/815bef94-3e37-472c-b151-24e5bc9821fd:ro
 
   mcp-channel-telegram:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/ead7bc91-e201-4c21-be64-d50ecc783ad6:/home/app/.microsoft/usersecrets/ead7bc91-e201-4c21-be64-d50ecc783ad6:ro
 
   mcp-channel-servicebus:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/b2d039c8-952d-4510-9186-29fdc236fec9:/home/app/.microsoft/usersecrets/b2d039c8-952d-4510-9186-29fdc236fec9:ro
 
   mcp-channel-voice:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
-
-  mcp-scheduling:
-    volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
-
-  mcp-printer:
-    volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/b2c5d8e1-9f44-4a72-9eaf-2c8f3d6b1a07:/home/app/.microsoft/usersecrets/b2c5d8e1-9f44-4a72-9eaf-2c8f3d6b1a07:ro
 
   agent:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/bae64127-c00e-4499-8325-0fb6b452133c:/home/app/.microsoft/usersecrets/bae64127-c00e-4499-8325-0fb6b452133c:ro
 
   webui:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/181c7c5e-6dfb-42bf-81c0-09d329b9a840:/home/app/.microsoft/usersecrets/181c7c5e-6dfb-42bf-81c0-09d329b9a840:ro
 
   observability:
     volumes:
-      - ${HOME}/.microsoft/usersecrets:/home/app/.microsoft/usersecrets:ro
+      - ${HOME}/.microsoft/usersecrets/bae64127-c00e-4499-8325-0fb6b452133c:/home/app/.microsoft/usersecrets/bae64127-c00e-4499-8325-0fb6b452133c:ro

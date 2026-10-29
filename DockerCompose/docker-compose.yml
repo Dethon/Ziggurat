@@ -221,9 +221,11 @@ services:
     volumes:
       - ${DATA_PATH:-./volumes/data}:/media
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      JACKETT__APIKEY: ${JACKETT__APIKEY}
+      QBITTORRENT__USERNAME: ${QBITTORRENT__USERNAME}
+      QBITTORRENT__PASSWORD: ${QBITTORRENT__PASSWORD}
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
@@ -253,8 +255,6 @@ services:
     volumes:
       - ${VAULT_PATH:-./volumes/vault}:/vault
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
@@ -362,9 +362,11 @@ services:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerWebSearch/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      OPENROUTER__APIKEY: ${OPENROUTER__APIKEY}
+      BRAVESEARCH__APIKEY: ${BRAVESEARCH__APIKEY}
+      CAPSOLVER__APIKEY: ${CAPSOLVER__APIKEY}
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
@@ -406,9 +408,10 @@ services:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerIdealista/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      IDEALISTA__APIKEY: ${IDEALISTA__APIKEY}
+      IDEALISTA__SECRET: ${IDEALISTA__SECRET}
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
@@ -434,9 +437,11 @@ services:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerHomeAssistant/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      HOMEASSISTANT__TOKEN: ${HOMEASSISTANT__TOKEN}
+      MUSICASSISTANT__TOKEN: ${MUSICASSISTANT__TOKEN}
+      Announce__Token: ${Announce__Token}
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
@@ -462,9 +467,11 @@ services:
     volumes:
       - chat-uploads:/data/uploads
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      WEBPUSH__SUBJECT: ${WEBPUSH__SUBJECT}
+      WEBPUSH__PUBLICKEY: ${WEBPUSH__PUBLICKEY}
+      WEBPUSH__PRIVATEKEY: ${WEBPUSH__PRIVATEKEY}
       <<: [ *timezone, *cors-origins ]
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
@@ -488,9 +495,12 @@ services:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelTelegram/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      ALLOWEDUSERIDS__0: ${ALLOWEDUSERIDS__0}
+      ALLOWEDUSERIDS__1: ${ALLOWEDUSERIDS__1}
+      BOTS__0__BOTTOKEN: ${BOTS__0__BOTTOKEN}
+      BOTS__1__BOTTOKEN: ${BOTS__1__BOTTOKEN}
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
@@ -514,9 +524,9 @@ services:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelServiceBus/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      SERVICEBUSCONNECTIONSTRING: ${SERVICEBUSCONNECTIONSTRING}
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
@@ -535,8 +545,6 @@ services:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerScheduling/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
@@ -562,8 +570,6 @@ services:
     volumes:
       - printer-spool:/spool
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
@@ -584,9 +590,9 @@ services:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerTimers/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      Announce__Token: ${Announce__Token}
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
     networks:
@@ -640,9 +646,11 @@ services:
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ./volumes/sugary:/data
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      WEBPUSH__SUBJECT: ${WEBPUSH__SUBJECT}
+      WEBPUSH__PUBLICKEY: ${WEBPUSH__PUBLICKEY}
+      WEBPUSH__PRIVATEKEY: ${WEBPUSH__PRIVATEKEY}
       # Also the zone the tables' times are written in (HomeZone empty): the same anchor the Home
       # Assistant container runs on, so a meal lines up with the glucose history /ha serves.
       <<: *timezone
@@ -679,9 +687,10 @@ services:
     volumes:
       - ./volumes/voices:/voices
       - ./volumes/tse-audit:/tse-audit
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      OPENROUTER__APIKEY: ${OPENROUTER__APIKEY}
+      Announce__Token: ${Announce__Token}
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
@@ -816,9 +825,12 @@ services:
       dockerfile: Agent/Dockerfile
     command: [ "--chat", "Web", "--reasoning" ]
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      OPENROUTER__APIKEY: ${OPENROUTER__APIKEY}
+      LemonadeChat__ApiUrl: ${LemonadeChat__ApiUrl}
+      LemonadeChat__ApiKey: ${LemonadeChat__ApiKey}
+      OUTPOSTS__SHAREDSECRET: ${OUTPOSTS__SHAREDSECRET}
       <<: [ *timezone, *cors-origins ]
       REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
@@ -867,9 +879,13 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: WebChat/Dockerfile
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      USERS__0__ID: ${USERS__0__ID}
+      USERS__0__AVATARURL: ${USERS__0__AVATARURL}
+      USERS__1__ID: ${USERS__1__ID}
+      USERS__1__AVATARURL: ${USERS__1__AVATARURL}
+      WEBPUSH__PUBLICKEY: ${WEBPUSH__PUBLICKEY}
       <<: *timezone
     restart: unless-stopped
     networks:
@@ -893,9 +909,10 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Observability/Dockerfile
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      LemonadeChat__ApiUrl: ${LemonadeChat__ApiUrl}
+      LemonadeChat__ApiKey: ${LemonadeChat__ApiKey}
       <<: *timezone
       REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       # LemonadeChat__ApiUrl arrives through .env, as it does for the agent: the probe row for
