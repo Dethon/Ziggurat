@@ -49,6 +49,8 @@ public static class ConfigModule
                     TimeSpan.FromSeconds(settings.Logins.SaveDebounceSeconds),
                     settings.Logins.MaxRecordBytes,
                     sp.GetRequiredService<ILogger<PersonLogins>>()))
+                .AddSingleton<ILoginSites>(sp => sp.GetRequiredService<PersonLogins>())
+                .AddSingleton<AsMeGate>()
                 .AddSingleton<LoginHandoffs>()
                 .AddSingleton<ILoginHandoffs>(sp => sp.GetRequiredService<LoginHandoffs>())
                 .AddSingleton<LoginsPages>()

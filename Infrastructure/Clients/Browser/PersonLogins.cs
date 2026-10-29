@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.Contracts;
 using Domain.Tools.Web;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Logging;
@@ -13,7 +14,7 @@ namespace Infrastructure.Clients.Browser;
 // kept or forgotten, and its cookies alone shortly after it is used, so a cookie a site rotates is
 // in the next restore. There is no expiry of our own: a remembered login lasts until it is
 // forgotten or the site ends it.
-public sealed class PersonLogins : IDisposable
+public sealed class PersonLogins : ILoginSites, IDisposable
 {
     private readonly IPersonContexts _contexts;
     private readonly IPersonStateStore _store;
