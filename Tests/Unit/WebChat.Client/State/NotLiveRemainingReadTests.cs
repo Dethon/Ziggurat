@@ -10,7 +10,6 @@ using WebChat.Client.State.Approval;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Topics;
-using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client.State;
 
@@ -26,7 +25,6 @@ public sealed class NotLiveRemainingReadTests
         await using var client = new ScriptedChatClient();
         await client.ConnectAsync();
         client.Dispatcher.Dispatch(new SetAgents([_agentOne]));
-        client.Dispatcher.Dispatch(new SelectUser("user-1"));
 
         client.GoNotLive();
         await client.Service<InitializationEffect>().HandleInitializeAsync();
@@ -41,7 +39,6 @@ public sealed class NotLiveRemainingReadTests
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
         client.Dispatcher.Dispatch(new SetAgents([_agentOne]));
-        client.Dispatcher.Dispatch(new SelectUser("user-1"));
         transport.Answer("GetAgents", (IReadOnlyList<AgentCatalogEntry>)
             [new AgentCatalogEntry("agent-2", "Agent Two", null)]);
 

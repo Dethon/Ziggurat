@@ -34,13 +34,13 @@ public abstract class DictationE2EBase
 
     protected async Task<IPage> OpenAsync(int? width = null, int? height = null)
     {
-        var page = await Fixture.CreatePageAsync(hasTouch: true);
+        var page = await Fixture.CreateSignedInPageAsync(Fixture.NextUserIndex(), hasTouch: true);
         if (width is not null && height is not null)
         {
             await page.SetViewportSizeAsync(width.Value, height.Value);
         }
         await WebChatE2ETests.GotoWebChatAsync(page, Fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, Fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // SLOW_MIC_MS=2500 makes every case here open the microphone as slowly as a loaded machine
         // does, which is the one condition this suite goes flaky under: a case that waits out a

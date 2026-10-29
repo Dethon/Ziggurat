@@ -1,9 +1,11 @@
+using Domain.Security;
+using McpChannelSignalR.Hubs;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Tests.Unit.McpChannelSignalR.Fixtures;
 
-// A hub caller that already registered a user, which is what most hub methods check before doing
+// A hub caller the proxy named as it arrived, which is what every hub method needs before doing
 // anything. Shared because every hub test needs one and they all need the same one.
 public sealed class RegisteredCaller : HubCallerContext
 {
@@ -11,7 +13,10 @@ public sealed class RegisteredCaller : HubCallerContext
     public override string? UserIdentifier => "fran";
     public override System.Security.Claims.ClaimsPrincipal? User => null;
     public override IDictionary<object, object?> Items { get; } =
-        new Dictionary<object, object?> { ["UserId"] = "fran" };
+        new Dictionary<object, object?>
+        {
+            [ChatHub.AccountItem] = new ForwardedAccount("fran", "home", ["owner"])
+        };
     public override IFeatureCollection Features { get; } = new FeatureCollection();
     public override CancellationToken ConnectionAborted => CancellationToken.None;
 

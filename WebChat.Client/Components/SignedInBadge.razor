@@ -1,0 +1,22 @@
+@inherits StoreSubscriberComponent
+@inject UserIdentityStore Store
+
+@* Who this page is signed in as, drawn from the account. Nothing to pick: the proxy let the page
+   through as this person, and the hub took them from the same check. *@
+<div class="signed-in-person" role="img" title="@_person?.DisplayName" aria-label="@Label">
+    @if (_person is not null)
+    {
+        <AvatarImage UserId="@_person.DisplayName" AvatarUrl="@_person.AvatarUrl" Size="32" />
+    }
+</div>
+
+@code {
+    private SignedInPerson? _person;
+
+    private string Label => _person is null ? "Signing in" : $"Signed in as {_person.DisplayName}";
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state.SignedIn, person => _person = person);
+    }
+}

@@ -1,9 +1,7 @@
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Contracts;
-using WebChat.Client.State.Effects;
 using WebChat.Client.State.Topics;
-using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client.State;
 
@@ -12,36 +10,10 @@ namespace Tests.Unit.WebChat.Client.State;
 public sealed class NotLiveRecoveryTests
 {
     [Fact]
-    public async Task AUserRegistration_ThatCouldNotBeMade_SaysNothing()
-    {
-        await using var client = new ScriptedChatClient();
-        await client.ConnectAsync();
-        client.Dispatcher.Dispatch(new SelectUser("user-1"));
-
-        client.GoNotLive();
-        await client.Service<InitializationEffect>().RegisterUserAsync("user-1");
-
-        client.Toasts.State.Toasts.ShouldBeEmpty();
-    }
-
-    [Fact]
-    public async Task AUserRegistration_WhileLive_StillReachesTheServer()
-    {
-        await using var client = new ScriptedChatClient();
-        var transport = await client.ConnectAsync();
-
-        await client.Service<IChatSessionService>().RegisterUserAsync("user-1");
-
-        var call = transport.Calls.Single(c => c.MethodName == "RegisterUser");
-        call.Arguments.ShouldBe(["user-1"]);
-    }
-
-    [Fact]
     public async Task SessionRecovery_WhileNotLive_RaisesNoToastAndDisturbsNoStore()
     {
         await using var client = new ScriptedChatClient();
         await client.ConnectAsync();
-        client.Dispatcher.Dispatch(new SelectUser("user-1"));
         client.Dispatcher.Dispatch(new TopicsLoaded([]));
 
         client.GoNotLive();
@@ -49,19 +21,19 @@ public sealed class NotLiveRecoveryTests
 
         client.Toasts.State.Toasts.ShouldBeEmpty();
         client.Topics.State.Topics.ShouldBeEmpty();
-        client.UserIdentity.State.SelectedUserId.ShouldBe("user-1");
     }
 
+    // The connection is its person from the proxy's headers, so there is nobody to name again:
+    // recovery asks for the space and nothing about who this is.
     [Fact]
-    public async Task SessionRecovery_WhileLive_ReIdentifiesTheUserAndRejoinsTheSpace()
+    public async Task SessionRecovery_WhileLive_RejoinsTheSpaceAndNamesNobody()
     {
         await using var client = new ScriptedChatClient();
         var transport = await client.ConnectAsync();
-        client.Dispatcher.Dispatch(new SelectUser("user-1"));
 
         await client.Service<ISessionRecovery>().RecoverAsync();
 
-        transport.Calls.ShouldContain(call => call.MethodName == "RegisterUser");
         transport.Calls.ShouldContain(call => call.MethodName == "JoinSpace");
+        transport.Calls.ShouldNotContain(call => call.MethodName == "RegisterUser");
     }
 }

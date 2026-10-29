@@ -201,20 +201,27 @@ public sealed partial class AccountsServer : IAsyncDisposable
         private static partial Regex AntiforgeryField();
     }
 
+    // Who a command says it made or minted for, in the words `mint-link` and `create-user` both use.
+    public static (string UserId, string TenantId) ParseWho(string output)
+    {
+        var who = Who().Match(output);
+        who.Success.ShouldBeTrue(output);
+        return (who.Groups["user"].Value, who.Groups["tenant"].Value);
+    }
+
+    [GeneratedRegex(@"user (?<user>[0-9a-f]+), household (?<tenant>[0-9a-f]+)")]
+    private static partial Regex Who();
+
     // What `mint-link` prints: who the link is for, and the link.
-    public sealed partial record MintedLink(string UserId, string TenantId, Uri Url)
+    public sealed record MintedLink(string UserId, string TenantId, Uri Url)
     {
         public string Token => Url.Segments[^1];
 
         public static MintedLink Parse(string output)
         {
-            var who = Who().Match(output);
-            who.Success.ShouldBeTrue(output);
+            var (userId, tenantId) = ParseWho(output);
             var url = output.Split('\n').Select(l => l.Trim()).Single(l => l.StartsWith("http", StringComparison.Ordinal));
-            return new MintedLink(who.Groups["user"].Value, who.Groups["tenant"].Value, new Uri(url));
+            return new MintedLink(userId, tenantId, new Uri(url));
         }
-
-        [GeneratedRegex(@"user (?<user>[0-9a-f]+), household (?<tenant>[0-9a-f]+)")]
-        private static partial Regex Who();
     }
 }

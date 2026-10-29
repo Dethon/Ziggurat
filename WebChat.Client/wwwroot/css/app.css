@@ -2354,31 +2354,20 @@ select:focus:not(:focus-visible) {
 }
 
 /* ===================================
-   User Identity Picker
+   Signed-in Person
    =================================== */
 
-.user-identity-picker {
-    position: relative;
-}
-
-.avatar-button {
+.signed-in-person {
     width: 36px;
     height: 36px;
     border-radius: 50%;
     overflow: hidden;
     border: 2px solid var(--border-color);
     background: var(--bg-tertiary);
-    cursor: pointer;
-    padding: 0;
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.avatar-button:hover {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-light);
+    flex-shrink: 0;
 }
 
 .avatar-image {
@@ -2386,59 +2375,6 @@ select:focus:not(:focus-visible) {
     height: 100%;
     object-fit: cover;
     object-position: center;
-}
-
-.avatar-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-tertiary);
-    color: var(--text-muted);
-    font-size: 18px;
-    font-weight: 600;
-}
-
-.user-dropdown-menu {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    min-width: 180px;
-    background-color: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: var(--shadow-lg);
-    z-index: 100;
-    overflow: hidden;
-    animation: dropdownSlide 0.15s ease-out;
-}
-
-.user-dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    cursor: pointer;
-    transition: background-color var(--transition-fast);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-}
-
-.user-dropdown-item:hover {
-    background-color: var(--bg-tertiary);
-}
-
-.user-dropdown-item.selected {
-    background-color: var(--accent-subtle);
-    color: var(--accent);
-}
-
-.user-avatar-small {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    object-fit: cover;
 }
 
 /* ===================================

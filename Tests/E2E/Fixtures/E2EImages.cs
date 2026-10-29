@@ -45,6 +45,10 @@ internal static class E2EImages
         "McpServerSugary/Dockerfile", "mcp-sugary:latest",
         ["Domain", "Infrastructure", "Mcp.Hosting", "McpServerSugary", "Sugary.Client"]);
 
+    // Built FROM base-sdk for the SDK band alone: it compiles none of base-sdk's projects.
+    internal static E2EImageSpec Accounts { get; } = new(
+        "Accounts/Dockerfile", "accounts:latest", ["Accounts"]);
+
     internal static IReadOnlyList<E2EImageSpec> All { get; } =
-        [BaseSdk, McpVault, McpSandbox, ChannelSignalR, Agent, WebUi, Observability, McpSugary];
+        [BaseSdk, McpVault, McpSandbox, ChannelSignalR, Agent, WebUi, Observability, McpSugary, Accounts];
 }
