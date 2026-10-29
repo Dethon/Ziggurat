@@ -375,6 +375,9 @@ internal sealed partial class WebChatStack
             .WithEnvironment("WEBAUTHN__RELYINGPARTYID", "localhost")
             .WithEnvironment("ALLOWEDORIGINS__0", baseUrl)
             .WithEnvironment("PUBLICBASEURL", baseUrl)
+            // The hub asks the name of each connection's account with its own MCP credential, as
+            // compose wires it.
+            .WithEnvironment("CALLERS__mcp-channel-signalr", McpTestSecret.For("mcp-channel-signalr"))
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/accounts/sign-in")))
@@ -548,6 +551,9 @@ internal sealed partial class WebChatStack
             Checked("/api/dictation* ", "mcp-channel-signalr:8080") +
             "    handle /api/agents* {\n" +
             "        reverse_proxy agent:8080\n" +
+            "    }\n" +
+            "    handle /accounts/internal/* {\n" +
+            "        respond 404\n" +
             "    }\n" +
             "    handle /accounts/* {\n" +
             "        reverse_proxy accounts:8080\n" +
