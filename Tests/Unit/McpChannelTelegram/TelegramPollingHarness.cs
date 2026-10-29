@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using Domain.Agents;
 using Domain.Channels;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Infrastructure.Clients.Accounts;
 using Mcp.Hosting;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
@@ -30,19 +32,45 @@ internal sealed class TelegramPollingHarness : IDisposable
     private readonly CancellationTokenSource _cts = new();
     private readonly ConcurrentQueue<SendMessageRequest> _sent = new();
 
-    // Alice is Telegram user 1 and Bob user 2 unless a test lists others.
+    private readonly ConcurrentDictionary<int, Action> _beforeBatch = new();
+
+    // Alice is Telegram user 1 and Bob user 2, both linked to accounts in the household, unless a
+    // test links others.
     public const long AliceId = 1;
     public const long BobId = 2;
 
-    public TelegramPollingHarness(params long[] allowedUserIds)
+    // A group chat's id is negative; a supergroup's starts -100.
+    public const long FamilyGroup = -100_200;
+
+    public TelegramPollingHarness(params long[] linkedUserIds) : this(null, linkedUserIds)
+    {
+    }
+
+    // Against a real accounts service, through the client the deployment uses, instead of the fake:
+    // nobody is linked until a test links them there.
+    public TelegramPollingHarness(AccountsResolverClient accountsService) : this(accountsService, [])
+    {
+    }
+
+    private TelegramPollingHarness(AccountsResolverClient? accountsService, long[] linkedUserIds)
     {
         Settings = new ChannelSettings
         {
             Bots = [new AgentBotConfig { AgentId = AgentId, BotToken = "unused" }],
-            AllowedUserIds = allowedUserIds.Length > 0 ? allowedUserIds : [AliceId, BobId],
             Dictation = Dictation
         };
 
+        var linked = linkedUserIds.Length > 0
+            ? linkedUserIds.Select(id => (Id: id, Name: $"person-{id}"))
+            : [(AliceId, "alice"), (BobId, "bob")];
+        foreach (var (id, name) in linked)
+        {
+            Accounts.Link(id, name);
+        }
+
+        IAccountResolver resolver = accountsService is null ? Accounts : accountsService;
+        ITelegramAccounts telegramAccounts = accountsService is null ? Accounts : accountsService;
+        Access = new TelegramAccess(resolver, telegramAccounts, Settings.LinkCache, Time);
         Inbox = new ChannelInbox(Time);
         Emitter = new ChannelNotificationEmitter(Inbox, DeliveryPolicy.BufferAlways, SubscriberId);
         BotRegistry = new BotRegistry(new Dictionary<string, ITelegramBotClient>
@@ -52,12 +80,12 @@ internal sealed class TelegramPollingHarness : IDisposable
 
         Service = new TelegramBotService(
             BotRegistry,
-            Settings,
             Emitter,
             CallbackRouter,
             Catalog,
             new VoiceNoteDictation(
                 Transcriber, Dictation, Metrics, new Mock<ILogger<VoiceNoteDictation>>().Object),
+            new TelegramGate(Access, telegramAccounts, new Mock<ILogger<TelegramGate>>().Object),
             Time,
             new Mock<ILogger<TelegramBotService>>().Object);
 
@@ -73,6 +101,8 @@ internal sealed class TelegramPollingHarness : IDisposable
     }
 
     public Mock<ITelegramBotClient> BotClient { get; } = new();
+    public FakeTelegramAccounts Accounts { get; } = new();
+    public TelegramAccess Access { get; }
     public FakeTranscriber Transcriber { get; } = new();
     public RecordingMetricsPublisher Metrics { get; } = new();
     public DictationSettings Dictation { get; } = new();
@@ -102,6 +132,11 @@ internal sealed class TelegramPollingHarness : IDisposable
                 var index = Interlocked.Increment(ref callCount) - 1;
                 if (index < batches.Length)
                 {
+                    if (_beforeBatch.TryGetValue(index, out var before))
+                    {
+                        before();
+                    }
+
                     Time.Advance(batches[index].Elapsed);
                     return Task.FromResult(batches[index].Updates);
                 }
@@ -110,6 +145,10 @@ internal sealed class TelegramPollingHarness : IDisposable
                 return Task.FromException<Update[]>(new OperationCanceledException(ct));
             });
     }
+
+    // Something that happens elsewhere between two polls — the accounts service coming back, a
+    // person linked on another bot — before the batch at that index is answered.
+    public void OnBatch(int index, Action before) => _beforeBatch[index] = before;
 
     public async Task RunAsync()
     {
@@ -182,6 +221,16 @@ internal sealed class TelegramPollingHarness : IDisposable
             Date = DateTime.UtcNow,
             Text = text,
             Chat = new Chat { Id = chatId, Type = ChatType.Private },
+            From = new User { Id = userId, IsBot = false, FirstName = username ?? "Someone", Username = username }
+        };
+
+    public static Message GroupMessage(
+        string text, long chatId = FamilyGroup, string? username = "alice", long userId = AliceId) => new()
+        {
+            Id = 10,
+            Date = DateTime.UtcNow,
+            Text = text,
+            Chat = new Chat { Id = chatId, Type = ChatType.Supergroup, Title = "Family" },
             From = new User { Id = userId, IsBot = false, FirstName = username ?? "Someone", Username = username }
         };
 

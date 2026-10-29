@@ -496,9 +496,9 @@ services:
       dockerfile: McpChannelTelegram/Dockerfile
     restart: unless-stopped
     environment:
-      # The secrets this service reads, by name: it is never handed the whole .env.
-      ALLOWEDUSERIDS__0: ${ALLOWEDUSERIDS__0}
-      ALLOWEDUSERIDS__1: ${ALLOWEDUSERIDS__1}
+      # The secrets this service reads, by name: it is never handed the whole .env. Who may use the
+      # bots is nobody's list here: a sender is admitted by the account the accounts service has
+      # their numeric Telegram id linked to, asked with this server's own MCP credential.
       BOTS__0__BOTTOKEN: ${BOTS__0__BOTTOKEN}
       BOTS__1__BOTTOKEN: ${BOTS__1__BOTTOKEN}
       <<: *timezone
@@ -963,6 +963,10 @@ services:
       ALLOWEDORIGINS__3: https://assistants-dashboard.herfluffness.com
       SESSIONCOOKIE__DOMAIN: .herfluffness.com
       PUBLICBASEURL: https://assistants.herfluffness.com
+      # The bot people link their Telegram through, without the @: the account page's link code
+      # and an invite are shown as its t.me deep link. Left empty they are shown as a bare code to
+      # send the bot as /start <code>, which is safe; a wrong name would send codes to a stranger's bot.
+      TELEGRAM__BOTUSERNAME: ""
       # The servers that may ask whose account an identity is, each by the credential it already
       # holds for its own /mcp, so no secret exists for this alone. Caddy answers the internal API
       # 404 from outside.

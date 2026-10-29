@@ -2,7 +2,6 @@ using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
 using Mcp.Hosting;
-using McpChannelTelegram.Settings;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 
@@ -15,38 +14,37 @@ public sealed class TelegramBotService : BackgroundService
     private const int PollTimeoutSeconds = 30;
 
     private readonly BotRegistry _botRegistry;
-    private readonly ChannelSettings _settings;
     private readonly ChannelNotificationEmitter _notificationEmitter;
     private readonly ApprovalCallbackRouter _approvalCallbackRouter;
     private readonly IAgentCatalog _agentCatalog;
     private readonly VoiceNoteDictation _dictation;
+    private readonly TelegramGate _gate;
     private readonly ILogger<TelegramBotService> _logger;
     private readonly AlbumBuffer _albums;
 
     public TelegramBotService(
         BotRegistry botRegistry,
-        ChannelSettings settings,
         ChannelNotificationEmitter notificationEmitter,
         ApprovalCallbackRouter approvalCallbackRouter,
         IAgentCatalog agentCatalog,
         VoiceNoteDictation dictation,
+        TelegramGate gate,
         TimeProvider timeProvider,
         ILogger<TelegramBotService> logger)
     {
         _botRegistry = botRegistry;
-        _settings = settings;
         _notificationEmitter = notificationEmitter;
         _approvalCallbackRouter = approvalCallbackRouter;
         _agentCatalog = agentCatalog;
         _dictation = dictation;
+        _gate = gate;
         _logger = logger;
         _albums = new AlbumBuffer(timeProvider, ReleaseAlbumAsync);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Telegram bot polling started. Allowed user ids: {UserIds}",
-            string.Join(", ", _settings.AllowedUserIds));
+        _logger.LogInformation("Telegram bot polling started");
 
         var pollers = _botRegistry.GetAllBots()
             .Select(b => PollBotAsync(b.AgentId, b.Client, stoppingToken))
@@ -165,20 +163,17 @@ public sealed class TelegramBotService : BackgroundService
             return;
         }
 
-        // Admitted by the sender's numeric id alone: a username is its owner's to change and
-        // Telegram's to reassign, and a chat's name or a first name is anybody's to pick.
-        if (first.From is not { } from || !_settings.AllowedUserIds.Contains(from.Id))
+        // Admitted by the account the sender's numeric id is linked to, never by a username, which
+        // is its owner's to change and Telegram's to reassign, or a chat's name or a first name,
+        // which are anybody's to pick. Anything else the gate has answered already.
+        if (await _gate.AdmitAsync(botClient, first, content, cancellationToken) is not { } person)
         {
-            await botClient.SendMessage(
-                first.Chat.Id,
-                "You are not authorized to use this bot.",
-                replyParameters: first.MessageId,
-                cancellationToken: cancellationToken);
             return;
         }
 
         // The turn's sender stays the username, which memory and the identity map are keyed by.
-        // A listed person with no username has nothing else stable to go by, so their id stands in.
+        // A person with no username has nothing else stable to go by, so their id stands in.
+        var from = first.From!;
         var sender = from.Username ?? $"{from.Id}";
         _approvalCallbackRouter.RecordSender(sender, from.Id);
 
@@ -232,6 +227,9 @@ public sealed class TelegramBotService : BackgroundService
                 Sender = sender,
                 Content = content,
                 AgentId = agentId,
+                // The turn acts for the account; its user id stays the sender, the name the approval
+                // router and the identity map still know the person by.
+                Principal = new Principal(TelegramAccess.Channel, sender, person.Account),
                 Attachments = intake.Attachments.Count > 0 ? intake.Attachments : null,
                 Timestamp = DateTimeOffset.UtcNow
             },
@@ -248,7 +246,7 @@ public sealed class TelegramBotService : BackgroundService
     }
 
     // Every refusal for one message in a single reply quoting the item that failed and naming its
-    // file, the way the unauthorised-user reply already works. Answers whether the turn stops:
+    // file, the way the gate answers a stranger. Answers whether the turn stops:
     // the two grounds the intake found are properties of one file and drop only that file, while a
     // model that cannot read what was attached would answer as though nothing had been sent, and
     // an answer that silently ignores the question is worse than no answer.
