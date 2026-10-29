@@ -147,7 +147,7 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
         });
 
         var services = new ServiceCollection()
-            .AddSingleton(McpTestSecret.Gate)
+            .AddSingleton(McpTestSecret.Credentials)
             .AddSingleton(new Mock<IThreadStateStore>().Object)
             .BuildServiceProvider();
 
