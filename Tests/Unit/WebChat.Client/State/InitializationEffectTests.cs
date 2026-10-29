@@ -72,6 +72,10 @@ public sealed class InitializationEffectTests : IDisposable
             _userIdentityStore,
             _spaceStore,
             _logger);
+
+        // Startup waits for somebody to be picked; every test but the one about that wait picks
+        // them up front, the way a saved identity arrives.
+        _dispatcher.Dispatch(new SelectUser("user-1"));
     }
 
     [Fact]
@@ -100,6 +104,56 @@ public sealed class InitializationEffectTests : IDisposable
             // No history: opening the client costs one page of rows and nothing per
             // conversation. A transcript is fetched when its conversation is opened.
         ]);
+    }
+
+    // The hub refuses every call from a connection that has not registered, so a first visit with
+    // nobody picked asks it nothing past the connect, and picking somebody is what starts the rest.
+    [Fact]
+    public async Task HandleInitializeAsync_NoUserYet_CallsNothingUntilOneIsSelected()
+    {
+        _configService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _dispatcher.Dispatch(new ClearUser());
+        _calls.Reset();
+
+        var initializing = _effect.HandleInitializeAsync();
+
+        await Eventually.Until(() => _calls.Calls.Contains("connect"), "startup to connect");
+        await Eventually.Settle();
+        _calls.Calls.ShouldBe(["connect"]);
+
+        _dispatcher.Dispatch(new SelectUser("user-1"));
+
+        await initializing.WaitAsync(TimeSpan.FromSeconds(5));
+        var calls = _calls.Calls.ToList();
+        calls.IndexOf("register-user").ShouldBe(1);
+        calls.ShouldContain("join:default");
+        calls.ShouldContain("agents");
+        calls.ShouldContain("topics:agent-1");
+    }
+
+    // Registering is a round trip, and the hub answers calls in the order they arrive: startup
+    // waits for the answer rather than counting on the order.
+    [Fact]
+    public async Task HandleInitializeAsync_WaitsForTheRegistrationToBeAnsweredBeforeAskingAnythingElse()
+    {
+        _configService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        _dispatcher.Dispatch(new SelectUser("user-1"));
+        _sessionService.RegistrationAnswer = new TaskCompletionSource();
+        _calls.Reset();
+
+        var initializing = _effect.HandleInitializeAsync();
+
+        await Eventually.Until(() => _calls.Calls.Contains("register-user"), "startup to register the user");
+        await Eventually.Settle();
+        _calls.Calls.ShouldBe(["connect", "register-user"]);
+
+        _sessionService.RegistrationAnswer.SetResult();
+
+        await initializing.WaitAsync(TimeSpan.FromSeconds(5));
+        _calls.Calls.ShouldContain("agents");
     }
 
     [Fact]
@@ -160,7 +214,7 @@ public sealed class InitializationEffectTests : IDisposable
 
         await _effect.HandleInitializeAsync();
 
-        _calls.Calls.ShouldBe(["connect", "space:ghost", "space:default", "join:default", "agents"]);
+        _calls.Calls.ShouldBe(["connect", "register-user", "space:ghost", "space:default", "join:default", "agents"]);
         _spaceStore.State.CurrentSlug.ShouldBe("default");
         _spaceStore.State.SpaceName.ShouldBe("Main");
     }
@@ -214,10 +268,35 @@ public sealed class InitializationEffectTests : IDisposable
         _agentService.Agents = [_agentOne];
         _dispatcher.Dispatch(new ConnectionClosed(null));
         _dispatcher.Dispatch(new ConnectionConnected());
+        ReRegistered();
 
         await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
         _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
+    }
+
+    // The retry asks the hub for the catalog, which it refuses until the user is registered on
+    // the connection that came back, so it waits for that rather than for the connection.
+    [Fact]
+    public async Task HandleInitializeAsync_TheCatalogWasNotLive_TheRetryWaitsForTheUserToBeRegisteredAgain()
+    {
+        _configService.WithSpace("default");
+        _agentService.NotLive = true;
+        await _effect.HandleInitializeAsync();
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        _agentService.NotLive = false;
+        _agentService.Agents = [_agentOne];
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        _calls.Reset();
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await Eventually.Settle();
+        _calls.Calls.ShouldNotContain("agents");
+
+        ReRegistered();
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
     }
 
     // A retry that also comes up not live must not clear the awaiting flag — the epoch after
@@ -231,12 +310,14 @@ public sealed class InitializationEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionConnected());
         _dispatcher.Dispatch(new ConnectionClosed(null));
         _dispatcher.Dispatch(new ConnectionConnected());
+        ReRegistered();
         _topicsStore.State.SelectedAgentId.ShouldBeNull();
 
         _agentService.NotLive = false;
         _agentService.Agents = [_agentOne];
         _dispatcher.Dispatch(new ConnectionClosed(null));
         _dispatcher.Dispatch(new ConnectionConnected());
+        ReRegistered();
 
         await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
     }
@@ -259,6 +340,7 @@ public sealed class InitializationEffectTests : IDisposable
         _agentService.Gate = new TaskCompletionSource();
         _dispatcher.Dispatch(new ConnectionClosed(null));
         _dispatcher.Dispatch(new ConnectionConnected());
+        ReRegistered();
 
         _dispatcher.Dispatch(new SetAgents([_agentOne]));
         await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
@@ -388,6 +470,10 @@ public sealed class InitializationEffectTests : IDisposable
 
         await TestChat.Eventually(() => recovery.RecoverCalls == 1);
     }
+
+    // What session recovery says once it has registered the user on the connection that came back.
+    private void ReRegistered() =>
+        _dispatcher.Dispatch(new ConnectionRegistered(_connectionStore.State.Epoch));
 
     public void Dispose()
     {

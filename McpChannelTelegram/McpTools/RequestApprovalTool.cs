@@ -1,8 +1,11 @@
 using System.ComponentModel;
 using System.Text;
+using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
+using McpChannelTelegram.Settings;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Telegram.Bot;
 using Telegram.Bot.Types.Enums;
@@ -16,10 +19,20 @@ public sealed class RequestApprovalTool
 
     [McpServerTool(Name = ChannelProtocol.RequestApprovalTool)]
     [Description("Request tool approval from user or notify about auto-approved tools")]
-    public static async Task<string> McpRun(
+    public static Task<string> McpRun(
         [Description("Conversation ID in format chatId:threadId")] string conversationId,
         [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
         [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests,
+        RequestContext<CallToolRequestParams> context,
+        IServiceProvider services) =>
+        // The asking turn, from the context the agent stamps on this hop.
+        RunAsync(conversationId, mode, requests, ConversationScope.Parse(context.Params?.Meta), services);
+
+    public static async Task<string> RunAsync(
+        string conversationId,
+        ApprovalMode mode,
+        IReadOnlyList<ToolApprovalRequest> requests,
+        ConversationContext? turn,
         IServiceProvider services)
     {
         var p = new RequestApprovalParams
@@ -49,7 +62,8 @@ public sealed class RequestApprovalTool
             return "notified";
         }
 
-        var (approvalId, resultTask) = router.RegisterApproval(_approvalTimeout, CancellationToken.None);
+        var answerers = AnswerersOf(turn, router, services.GetRequiredService<ChannelSettings>());
+        var (approvalId, resultTask) = router.RegisterApproval(_approvalTimeout, answerers, CancellationToken.None);
         var keyboard = ApprovalCallbackRouter.CreateApprovalKeyboard(approvalId);
 
         var approvalMessage = FormatApprovalMessage(p.Requests);
@@ -64,6 +78,30 @@ public sealed class RequestApprovalTool
 
         return await resultTask;
     }
+
+    // Who may answer, read from the turn's context on this hop. A turn that names a Telegram person
+    // — their own message, or a wake or fire stamped with them, like a login wake continuing their
+    // turn — is theirs: the bot recorded their numeric id against the sender it emitted when it
+    // admitted their message, so only that id. A fire that names nobody here was started by nobody's
+    // message, so anyone on the allowlist. A turn with no context, or a person this process never
+    // admitted (it restarted mid-turn), names nobody: every tap is refused and the approval times out
+    // as denied.
+    private static IReadOnlySet<long> AnswerersOf(
+        ConversationContext? turn, ApprovalCallbackRouter router, ChannelSettings settings)
+    {
+        if (Principal.Of(turn) is { ChannelId: TelegramChannelId } asker)
+        {
+            return router.SenderId(asker.UserId) is { } askerId
+                ? new HashSet<long> { askerId }
+                : new HashSet<long>();
+        }
+
+        return turn?.OriginKind is not null
+            ? settings.AllowedUserIds.ToHashSet()
+            : new HashSet<long>();
+    }
+
+    private const string TelegramChannelId = "telegram";
 
     internal static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
     {

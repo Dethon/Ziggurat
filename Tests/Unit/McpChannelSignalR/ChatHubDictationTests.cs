@@ -6,7 +6,6 @@ using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
@@ -75,14 +74,6 @@ public sealed class ChatHubDictationTests : IDisposable
         ticket.ExpiresAt.ShouldBe(_time.GetUtcNow().AddSeconds(_attachmentSettings.TicketTtlSeconds));
         _tickets.ResolvesDictation(ticket.Token, "default").ShouldBeTrue();
         _tickets.ResolvesDictation(ticket.Token, "private").ShouldBeFalse();
-    }
-
-    [Fact]
-    public void CreateDictationTicket_BeforeRegistering_IsRefused()
-    {
-        _hub.Context.Items.Remove("UserId");
-
-        Should.Throw<HubException>(() => _hub.CreateDictationTicket());
     }
 
     // Changing the cap or the floor must not need new JavaScript shipped, so the browser learns

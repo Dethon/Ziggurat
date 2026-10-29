@@ -219,7 +219,7 @@ public class OutpostMountingTests(OutpostMachinesFixture machines, McpVaultServe
             new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
             FixedPatchableModelSource.None,
             lemonadeHostAddress: null,
-            mcpSecret: McpTestSecret.Value,
+            McpTestSecret.Credentials,
             logger: null);
 
     private Task<ComposedEndpoints> ComposeAsync(

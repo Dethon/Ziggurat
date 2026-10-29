@@ -224,6 +224,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:5000"
       }
@@ -261,6 +262,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6001"
       }
     },
@@ -273,6 +275,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6002"
       }
     },
@@ -285,6 +288,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6003"
       }
     },
@@ -297,6 +301,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6005"
       }
     },
@@ -309,6 +314,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6006"
       }
     },
@@ -321,6 +327,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6004"
       }
     },
@@ -333,6 +340,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:6010"
       }
@@ -346,6 +354,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6011"
       }
     },
@@ -358,6 +367,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6012"
       }
     },
@@ -371,9 +381,10 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:6015",
-        "RedisConnectionString": "localhost:6379",
+        "RedisConnectionString": "localhost:6379,password=local-redis-password",
         "Satellites__kitchen-01__Identity": "household",
         "Satellites__kitchen-01__Room": "Kitchen",
         "Satellites__kitchen-01__WakeWord": "hey_jarvis",
@@ -389,8 +400,9 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6013",
-        "RedisConnectionString": "localhost:6379"
+        "RedisConnectionString": "localhost:6379,password=local-redis-password"
       }
     },
     {
@@ -402,6 +414,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6014",
         "SPOOLPATH": "${workspaceFolder}/McpServerPrinter/.spool"
       }
@@ -416,6 +429,7 @@
       "env": {
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
+        "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6016",
         "VoiceHub__BaseUrl": "http://localhost:6015"
       }

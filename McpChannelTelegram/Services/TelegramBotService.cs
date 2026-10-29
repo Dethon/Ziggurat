@@ -45,8 +45,8 @@ public sealed class TelegramBotService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Telegram bot polling started. Allowed usernames: {Usernames}",
-            string.Join(", ", _settings.AllowedUsernames));
+        _logger.LogInformation("Telegram bot polling started. Allowed user ids: {UserIds}",
+            string.Join(", ", _settings.AllowedUserIds));
 
         var pollers = _botRegistry.GetAllBots()
             .Select(b => PollBotAsync(b.AgentId, b.Client, stoppingToken))
@@ -165,12 +165,9 @@ public sealed class TelegramBotService : BackgroundService
             return;
         }
 
-        var sender = first.From?.Username
-                     ?? first.Chat.Username
-                     ?? first.Chat.FirstName
-                     ?? $"{first.Chat.Id}";
-
-        if (!_settings.AllowedUsernames.Contains(sender))
+        // Admitted by the sender's numeric id alone: a username is its owner's to change and
+        // Telegram's to reassign, and a chat's name or a first name is anybody's to pick.
+        if (first.From is not { } from || !_settings.AllowedUserIds.Contains(from.Id))
         {
             await botClient.SendMessage(
                 first.Chat.Id,
@@ -179,6 +176,11 @@ public sealed class TelegramBotService : BackgroundService
                 cancellationToken: cancellationToken);
             return;
         }
+
+        // The turn's sender stays the username, which memory and the identity map are keyed by.
+        // A listed person with no username has nothing else stable to go by, so their id stands in.
+        var sender = from.Username ?? $"{from.Id}";
+        _approvalCallbackRouter.RecordSender(sender, from.Id);
 
         var chatId = first.Chat.Id;
         var conversationId = ConversationIdentity.ForChat(chatId, first.MessageThreadId).ConversationId;

@@ -3,7 +3,10 @@ using Agent.Modules;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Judgments;
+using Domain.Security;
+using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -46,6 +49,40 @@ public class InjectorModuleTests
 
         (await judge.JudgeAsync(ALocalTurn(), CancellationToken.None))
             .ShouldBeOfType<JudgmentOutcome.Absent>().Reason.ShouldBe(AbsenceReason.Unconfigured);
+    }
+
+    // A server the deployment configured but gave no credential would be dialled bare and refused
+    // on every call; the agent says so once, at startup, naming it.
+    [Fact]
+    public void AddAgent_WhenAConfiguredServerHasNoCredential_Refuses()
+    {
+        var settings = Settings(openRouterKey: "key") with
+        {
+            Agents = [new AgentDefinition
+            {
+                Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["http://mcp-vault:8080/mcp"]
+            }],
+            ChannelEndpoints = [new ChannelEndpoint { ChannelId = "signalr", Endpoint = "http://mcp-channel-signalr:8080/mcp" }],
+            Mcp = new McpGateSettings { Secrets = new() { ["mcp-vault"] = "vault-secret" } }
+        };
+
+        Should.Throw<InvalidOperationException>(() => new ServiceCollection().AddLogging().AddAgent(settings))
+            .Message.ShouldContain("mcp-channel-signalr");
+    }
+
+    // One set of credentials for the host: the one startup checked is the one every agent, worker
+    // and channel connection is built with.
+    [Fact]
+    public void AddAgent_RegistersTheCredentialsItChecked()
+    {
+        var settings = Settings(openRouterKey: "key") with
+        {
+            Mcp = new McpGateSettings { Secrets = new() { ["mcp-vault"] = "vault-secret" } }
+        };
+
+        using var provider = new ServiceCollection().AddLogging().AddAgent(settings).BuildServiceProvider();
+
+        provider.GetRequiredService<McpCredentials>().For("http://mcp-vault:8080/mcp").ShouldBe("vault-secret");
     }
 
     private static JudgmentRequest ALocalTurn() =>
