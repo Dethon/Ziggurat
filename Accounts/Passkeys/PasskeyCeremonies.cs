@@ -13,8 +13,9 @@ namespace Accounts.Passkeys;
 // authenticator, as the JSON WebAuthn's own encoding gives them.
 public sealed record BegunCeremony(string Id, string OptionsJson);
 
-// The two WebAuthn ceremonies. Each begins with options held server-side and finishes by checking
-// the authenticator's answer against them, and a finished one is a session.
+// The WebAuthn ceremonies: enrolling through a link, adding a passkey while signed in, and signing
+// in. Each begins with options held server-side and finishes by checking the authenticator's answer
+// against them; a finished enrollment or sign-in is a session.
 public sealed class PasskeyCeremonies(
     IFido2 fido2,
     IDbContextFactory<AccountsDbContext> contexts,
@@ -23,13 +24,16 @@ public sealed class PasskeyCeremonies(
     CeremonyStore ceremonies,
     AccountsClock clock)
 {
-    private sealed record Enrollment(string LinkId, string UserId, CredentialCreateOptions Options);
+    // A link's enrollment. An invite's person does not exist until the ceremony finishes, but the
+    // authenticator stores their id as the passkey's user handle at its start, so the id is chosen
+    // then and the person is created with it.
+    private sealed record Enrollment(string LinkId, LinkKind Kind, string UserId, CredentialCreateOptions Options);
+
+    // A signed-in person adding another passkey from their account page.
+    private sealed record Addition(string UserId, CredentialCreateOptions Options);
 
     private sealed record SignIn(AssertionOptions Options);
 
-    // A discoverable credential, so that signing in asks for no username: the authenticator keeps
-    // the account and offers it. User verification is preferred rather than required, so a key with
-    // no PIN still works.
     public async Task<BegunCeremony?> BeginEnrollmentAsync(string token, CancellationToken ct)
     {
         if (await links.FindOpenAsync(token, ct) is not { } link)
@@ -37,19 +41,85 @@ public sealed class PasskeyCeremonies(
             return null;
         }
 
+        var userId = link.UserId ?? Tokens.NewId();
+        var options = await NewCredentialOptionsAsync(userId, link.DisplayName, ct);
+        return new BegunCeremony(ceremonies.Hold(new Enrollment(link.LinkId, link.Kind, userId, options)), options.ToJson());
+    }
+
+    public async Task<IssuedSession?> FinishEnrollmentAsync(
+        string ceremonyId, AuthenticatorAttestationRawResponse answer, string? device, CancellationToken ct)
+    {
+        if (ceremonies.Take<Enrollment>(ceremonyId) is not { } enrollment
+            || await RegisterAsync(enrollment.Options, answer, ct) is not { } registered)
+        {
+            return null;
+        }
+
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var user = enrollment.Kind == LinkKind.Invite
+            ? await links.RedeemInviteAsync(db, enrollment.LinkId, enrollment.UserId, ct)
+            : await links.SpendAsync(db, enrollment.LinkId, ct)
+                ? await db.Users.SingleAsync(u => u.Id == enrollment.UserId, ct)
+                : null;
+        if (user is null)
+        {
+            return null;
+        }
+
+        var credential = await AddCredentialAsync(db, user, registered, ct);
+        await transaction.CommitAsync(ct);
+        return await sessions.IssueAsync(user.Id, credential.Id, device, ct);
+    }
+
+    public async Task<BegunCeremony?> BeginAdditionAsync(string userId, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        if (await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct) is not { } user)
+        {
+            return null;
+        }
+
+        var options = await NewCredentialOptionsAsync(user.Id, user.DisplayName, ct);
+        return new BegunCeremony(ceremonies.Hold(new Addition(user.Id, options)), options.ToJson());
+    }
+
+    // No new session: the browser adding the passkey is signed in already, with the one it has.
+    public async Task<bool> FinishAdditionAsync(
+        string userId, string ceremonyId, AuthenticatorAttestationRawResponse answer, CancellationToken ct)
+    {
+        if (ceremonies.Take<Addition>(ceremonyId) is not { } addition
+            || addition.UserId != userId
+            || await RegisterAsync(addition.Options, answer, ct) is not { } registered)
+        {
+            return false;
+        }
+
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        if (await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct) is not { } user)
+        {
+            return false;
+        }
+
+        await AddCredentialAsync(db, user, registered, ct);
+        return true;
+    }
+
+    // A discoverable credential, so that signing in asks for no username: the authenticator keeps
+    // the account and offers it. User verification is preferred rather than required, so a key with
+    // no PIN still works.
+    private async Task<CredentialCreateOptions> NewCredentialOptionsAsync(string userId, string displayName, CancellationToken ct)
+    {
         await using var db = await contexts.CreateDbContextAsync(ct);
         var held = await db.Credentials
-            .Where(c => c.UserId == link.UserId && c.RevokedAt == null)
+            .Where(c => c.UserId == userId && c.RevokedAt == null)
             .Select(c => c.CredentialId)
             .ToListAsync(ct);
-        var options = fido2.RequestNewCredential(new RequestNewCredentialParams
+        return fido2.RequestNewCredential(new RequestNewCredentialParams
         {
             // The handle the authenticator stores and hands back at sign-in. The user id is opaque
             // already, so it carries nothing a person would not want an authenticator to keep.
-            User = new Fido2User
-            {
-                Id = Encoding.UTF8.GetBytes(link.UserId), Name = link.DisplayName, DisplayName = link.DisplayName
-            },
+            User = new Fido2User { Id = Encoding.UTF8.GetBytes(userId), Name = displayName, DisplayName = displayName },
             // A second passkey on the same authenticator would only replace the first.
             ExcludeCredentials = [.. held.Select(id => new PublicKeyCredentialDescriptor(WebEncoders.Base64UrlDecode(id)))],
             AuthenticatorSelection = new AuthenticatorSelection
@@ -59,24 +129,17 @@ public sealed class PasskeyCeremonies(
             },
             AttestationPreference = AttestationConveyancePreference.None
         });
-        return new BegunCeremony(ceremonies.Hold(new Enrollment(link.LinkId, link.UserId, options)), options.ToJson());
     }
 
-    public async Task<IssuedSession?> FinishEnrollmentAsync(
-        string ceremonyId, AuthenticatorAttestationRawResponse answer, string? device, CancellationToken ct)
+    private async Task<RegisteredPublicKeyCredential?> RegisterAsync(
+        CredentialCreateOptions options, AuthenticatorAttestationRawResponse answer, CancellationToken ct)
     {
-        if (ceremonies.Take<Enrollment>(ceremonyId) is not { } enrollment)
-        {
-            return null;
-        }
-
-        RegisteredPublicKeyCredential registered;
         try
         {
-            registered = await fido2.MakeNewCredentialAsync(new MakeNewCredentialParams
+            return await fido2.MakeNewCredentialAsync(new MakeNewCredentialParams
             {
                 AttestationResponse = answer,
-                OriginalOptions = enrollment.Options,
+                OriginalOptions = options,
                 IsCredentialIdUniqueToUserCallback = async (args, token) =>
                 {
                     var id = WebEncoders.Base64UrlEncode(args.CredentialId);
@@ -89,15 +152,11 @@ public sealed class PasskeyCeremonies(
         {
             return null;
         }
+    }
 
-        await using var db = await contexts.CreateDbContextAsync(ct);
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        if (!await links.SpendAsync(db, enrollment.LinkId, ct))
-        {
-            return null;
-        }
-
-        var user = await db.Users.SingleAsync(u => u.Id == enrollment.UserId, ct);
+    private async Task<Credential> AddCredentialAsync(
+        AccountsDbContext db, User user, RegisteredPublicKeyCredential registered, CancellationToken ct)
+    {
         var credential = new Credential
         {
             Id = Tokens.NewId(),
@@ -110,8 +169,7 @@ public sealed class PasskeyCeremonies(
         };
         db.Credentials.Add(credential);
         await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return await sessions.IssueAsync(user.Id, credential.Id, device, ct);
+        return credential;
     }
 
     // No allowed credentials: the authenticator offers whichever of its discoverable ones belong to

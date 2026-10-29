@@ -6,8 +6,9 @@ using Fido2NetLib;
 
 namespace Accounts.Passkeys;
 
-// The calls the enrollment and sign-in pages' script makes: each ceremony's options, then the
-// authenticator's answer. A finished ceremony sets the session cookie and says where to go next.
+// The calls the enrollment, sign-in and account pages' script makes: each ceremony's options, then
+// the authenticator's answer. A finished enrollment or sign-in sets the session cookie, and each
+// says where to go next.
 public static class PasskeyEndpoints
 {
     public const string RefusedLink = "This link can no longer be used.";
@@ -16,6 +17,8 @@ public static class PasskeyEndpoints
     public sealed record EnrollmentOptionsRequest(string Token);
 
     public sealed record EnrollmentRequest(string Ceremony, AuthenticatorAttestationRawResponse Credential);
+
+    public sealed record AdditionRequest(string Ceremony, AuthenticatorAttestationRawResponse Credential);
 
     public sealed record SignInRequest(string Ceremony, AuthenticatorAssertionRawResponse Credential, string? ReturnUrl);
 
@@ -41,6 +44,32 @@ public static class PasskeyEndpoints
 
             SessionCookie.Write(http.Response, settings, session.Token);
             return Results.Json(new { redirect = ReturnUrls.Resolve(settings, null) });
+        });
+
+        // Adding a passkey from the account page: the signed-in person's, never one the request names.
+        api.MapPost("/passkeys/options", async (HttpContext http, PageGuard guard, PasskeyCeremonies ceremonies, CancellationToken ct) =>
+        {
+            var (viewer, refusal) = await guard.CheckAsync(http, AccountPage.Url, ownersOnly: false, ct);
+            if (viewer is null)
+            {
+                return refusal!;
+            }
+
+            return await ceremonies.BeginAdditionAsync(viewer.UserId, ct) is { } begun ? Begun(begun) : Results.Unauthorized();
+        });
+
+        api.MapPost("/passkeys", async (
+            AdditionRequest request, HttpContext http, PageGuard guard, PasskeyCeremonies ceremonies, CancellationToken ct) =>
+        {
+            var (viewer, refusal) = await guard.CheckAsync(http, AccountPage.Url, ownersOnly: false, ct);
+            if (viewer is null)
+            {
+                return refusal!;
+            }
+
+            return await ceremonies.FinishAdditionAsync(viewer.UserId, request.Ceremony, request.Credential, ct)
+                ? Results.Json(new { redirect = AccountPage.Url })
+                : Refused(StatusCodes.Status400BadRequest, "The passkey was not added. Try again.");
         });
 
         api.MapPost("/sign-in/options", (PasskeyCeremonies ceremonies) => Begun(ceremonies.BeginSignIn()));
