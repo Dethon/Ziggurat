@@ -19,11 +19,6 @@ public class WebLoginTool(IdentityMap identities, ILoginHandoffs handoffs)
         live view of it, where the person logs in themselves.
         """;
 
-    // The agent's channel endpoint ids for the satellites and for WebChat: a voice turn cannot
-    // show a link, so its handoff is put in a WebChat conversation of the person's instead.
-    public const string VoiceChannelId = "voice";
-    public const string WebChatChannelId = "signalr";
-
     protected async Task<JsonObject> RunAsync(ConversationContext? context, string url, CancellationToken ct)
     {
         if (LoginLinks.Refuse(identities, context, handoffs.IsConfigured) is { } refused)
@@ -31,15 +26,26 @@ public class WebLoginTool(IdentityMap identities, ILoginHandoffs handoffs)
             return refused;
         }
 
+        // A voice turn cannot show a link, so its handoff is put in a WebChat conversation of the
+        // person's instead — named by their WebChat name, which anybody who picks that name in
+        // WebChat would see. So it goes there only once WebChat verifies who is speaking.
         var person = ((PersonResolution.Found)identities.Resolve(context)).Person;
-        var voice = context!.Origin.ChannelId == VoiceChannelId;
+        var voice = context!.Origin.ChannelId == IdentityMap.VoiceChannelId;
+        if (voice && !identities.IsVerified(IdentityMap.WebChatChannelId))
+        {
+            return ToolError.Create(
+                ToolError.Codes.UnsupportedOperation,
+                "A login from voice would be sent to the person's WebChat, and WebChat does not verify who is speaking yet, so the link cannot be put there.",
+                "Tell them to ask from Telegram, where the link can be given to them directly.");
+        }
+
         var webChatName = identities.WebChatNameOf(person);
         if (voice && webChatName is null)
         {
             return ToolError.Create(
                 ToolError.Codes.UnsupportedOperation,
                 $"A login from voice is sent to the person's WebChat, and '{person}' has no WebChat name in this deployment's identity map.",
-                "Tell them to ask from Telegram or WebChat instead, where the link can be given to them directly.");
+                "Tell them to ask from Telegram instead, where the link can be given to them directly.");
         }
 
         if (!LoginLinks.IsWebUrl(url, out var uri))
@@ -114,12 +120,12 @@ public class WebLoginsTool(IdentityMap identities, ILoginsPages pages, ILoginHan
             return refused;
         }
 
-        if (context!.Origin.ChannelId == WebLoginTool.VoiceChannelId)
+        if (context!.Origin.ChannelId == IdentityMap.VoiceChannelId)
         {
             return ToolError.Create(
                 ToolError.Codes.UnsupportedOperation,
                 "The logins page is a link, and a voice reply cannot show one.",
-                "Tell them to ask for it from Telegram or WebChat.");
+                "Tell them to ask for it from Telegram.");
         }
 
         var person = ((PersonResolution.Found)identities.Resolve(context)).Person;

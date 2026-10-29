@@ -788,6 +788,7 @@ public class RequestApprovalToolTests : IDisposable
     [InlineData(ExecScreenCodes.SendsOut, "Enviaría datos a un servidor.")]
     [InlineData(ExecScreenCodes.RunsDownloaded, "Descargaría un programa y lo ejecutaría.")]
     [InlineData(ExecScreenCodes.Unjudged, "Se ejecuta en tu ordenador y no he podido comprobarlo.")]
+    [InlineData(ExecScreenCodes.AsPerson, "Entraría en esa web con tu cuenta.")]
     public async Task RequestMode_EachScreenCode_IsSpokenInSpanish(string code, string sentence)
     {
         _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))

@@ -27,7 +27,7 @@ public static class LoginWake
                       + "comes back on the satellite.",
             AgentId = handoff.Context.AgentId,
             UserId = webChatName,
-            ReplyTo = [new ReplyTarget(Domain.Tools.Web.WebLoginTool.WebChatChannelId, null)],
+            ReplyTo = [new ReplyTarget(Domain.Tools.Web.IdentityMap.WebChatChannelId, null)],
             Origin = new MessageOrigin(MessageOriginKind.Login, null, Title: $"Log in to {site}"),
             Timestamp = at
         };
