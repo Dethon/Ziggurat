@@ -81,5 +81,9 @@ public sealed class AttachmentService(
 
     public void DeleteConversation(string conversationId) => store.DeleteConversation(conversationId);
 
+    // The conversation a kept file belongs to, so a download is minted only for someone who may see
+    // that conversation's topic.
+    public string? ConversationOf(string attachmentId) => store.Find(attachmentId)?.ConversationId;
+
     public const string SpaceDefault = "default";
 }

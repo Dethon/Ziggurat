@@ -209,28 +209,59 @@ public sealed class RedisThreadStateStore(
         messages.Select(m => (RedisValue)JsonSerializer.Serialize(m)).ToArray();
 
     public async Task<TopicPage> GetTopicPageAsync(
-        string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false)
+        string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false)
     {
         await TrimPurgedAsync(agentId, spaceSlug);
 
-        var members = await ReadIndexRangeAsync(agentId, spaceSlug, cursor, pageSize, archived);
-        var topics = await ResolveAsync(agentId, members);
-
-        // Decided on what the index held, not on what resolved: a member whose record is gone is
-        // one fewer row, not the end of the range, and counting rows would stop the list short of
-        // everything below it. The cursor is the last member's score and name for the same reason.
-        return new TopicPage(
-            topics,
-            members.Count < pageSize ? null : Cursor(members[^1]));
+        return await FillPageAsync(
+            viewer, cursor, pageSize,
+            from => ReadIndexRangeAsync(agentId, spaceSlug, from, pageSize, archived),
+            member => ReadIndexedTopicAsync(agentId, member.Element.ToString()),
+            Cursor);
     }
 
-    private async Task<IReadOnlyList<TopicMetadata>> ResolveAsync(
-        string agentId, IReadOnlyList<SortedSetEntry> members)
+    // One page of what the viewer may see, read a run of the ordering at a time until the page is
+    // full or the ordering runs out. The end is decided on what the run held, not on what resolved
+    // or what the viewer was shown: a member whose record is gone, or a topic the viewer may not
+    // know exists, is one fewer row and not the end of the range, and counting rows would stop the
+    // list short of everything below it. The cursor is the entry the page filled on, so the next
+    // page starts right below the last row shown and passes over nothing twice.
+    private static async Task<TopicPage> FillPageAsync<TEntry>(
+        TopicViewer viewer,
+        string? cursor,
+        int pageSize,
+        Func<string?, Task<IReadOnlyList<TEntry>>> readRun,
+        Func<TEntry, Task<TopicMetadata?>> resolve,
+        Func<TEntry, string> cursorOf)
     {
-        var topics = await Task.WhenAll(
-            members.Select(m => ReadIndexedTopicAsync(agentId, m.Element.ToString())));
+        List<TopicMetadata> shown = [];
+        var from = cursor;
+        while (pageSize > 0)
+        {
+            var run = await readRun(from);
+            var resolved = await Task.WhenAll(run.Select(resolve));
+            foreach (var (entry, topic) in run.Zip(resolved))
+            {
+                if (topic is not null && viewer.Sees(topic))
+                {
+                    shown.Add(topic);
+                }
 
-        return topics.OfType<TopicMetadata>().ToList();
+                if (shown.Count == pageSize)
+                {
+                    return new TopicPage(shown, cursorOf(entry));
+                }
+            }
+
+            if (run.Count < pageSize)
+            {
+                break;
+            }
+
+            from = cursorOf(run[^1]);
+        }
+
+        return new TopicPage(shown, null);
     }
 
     // Score plus member, because the score alone cannot say where inside a run of tied scores a
@@ -354,19 +385,13 @@ public sealed class RedisThreadStateStore(
 
     // Both ranges at once, deliberately: search is the way into the archive, so a cutoff has no
     // business in it.
-    public async Task<TopicPage> SearchTopicsAsync(
-        string agentId, string spaceSlug, string query, string? cursor, int pageSize)
-    {
-        var hits = await _searchDocuments.SearchAsync(agentId, spaceSlug, query, cursor, pageSize);
-
-        var topics = await Task.WhenAll(
-            hits.Select(hit => ReadTopicAsync(TopicKey(agentId, hit.ChatId, hit.TopicId))));
-
-        var found = topics.OfType<TopicMetadata>().ToList();
-        return new TopicPage(
-            found,
-            hits.Count < pageSize ? null : TopicSearchDocuments.CursorFor(hits[^1]));
-    }
+    public Task<TopicPage> SearchTopicsAsync(
+        string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize) =>
+        FillPageAsync(
+            viewer, cursor, pageSize,
+            from => _searchDocuments.SearchAsync(agentId, spaceSlug, query, from, pageSize),
+            hit => ReadTopicAsync(TopicKey(agentId, hit.ChatId, hit.TopicId)),
+            TopicSearchDocuments.CursorFor);
 
     private async Task<TopicMetadata?> ReadTopicAsync(string topicKey)
     {

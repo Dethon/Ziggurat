@@ -38,6 +38,8 @@ public interface IChannelConnection : IToolApprovalHandler
     Task<bool> StoreAttachmentAsync(
         string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct);
 
+    // The principal is the turn's, so a channel that keeps topics can say whose a minted one is —
+    // the review host decides that from the turn, never the channel that asked (ADR 0046).
     Task<string?> CreateConversationAsync(
         string agentId,
         string topicName,
@@ -45,5 +47,6 @@ public interface IChannelConnection : IToolApprovalHandler
         string? initialPrompt,
         string? address,
         string? existingConversationId,
+        Principal? principal,
         CancellationToken ct);
 }

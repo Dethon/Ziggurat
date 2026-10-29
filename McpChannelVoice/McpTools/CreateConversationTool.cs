@@ -20,7 +20,8 @@ public sealed class CreateConversationTool
         IServiceProvider services,
         [Description("Text of the originating prompt")] string? initialPrompt = null,
         [Description("Satellite selector: a satellite id, or 'all'/empty for every satellite")] string? address = null,
-        [Description("Existing conversation id to attach this voice delivery to, if the primary channel already minted one")] string? existingConversationId = null)
+        [Description("Existing conversation id to attach this voice delivery to, if the primary channel already minted one")] string? existingConversationId = null,
+        [Description("Who the turn acts for: a topic minted for it is that account's, or the household's when it acts for none")] Principal? principal = null)
     {
         var registry = services.GetRequiredService<SatelliteRegistry>();
         var delivery = services.GetRequiredService<VoiceDeliveryRegistry>();
@@ -64,7 +65,8 @@ public sealed class CreateConversationTool
                 AgentId = agentId,
                 TopicName = topicName,
                 Sender = sender,
-                InitialPrompt = initialPrompt
+                InitialPrompt = initialPrompt,
+                Principal = principal
             });
             conversationId = creation.Identity.ConversationId;
         }

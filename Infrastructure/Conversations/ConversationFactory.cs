@@ -25,6 +25,7 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
     private async Task<ConversationCreation> SaveAsync(
         string topicId, ConversationIdentity identity, CreateConversationParams p)
     {
+        var owner = p.Principal?.Account;
         var topic = new TopicMetadata(
             topicId,
             identity.ChatId,
@@ -33,7 +34,11 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
             p.TopicName,
             time.GetUtcNow(),
             LastMessageAt: null,
-            SpaceSlug: "default");
+            SpaceSlug: "default",
+            OwnerId: owner?.UserId,
+            TenantId: owner?.TenantId,
+            Shared: owner is null,
+            OwnerName: owner is null ? null : p.Sender);
 
         await store.SaveTopicAsync(topic);
         return new ConversationCreation(identity, topic);

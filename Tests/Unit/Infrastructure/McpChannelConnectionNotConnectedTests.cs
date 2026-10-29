@@ -66,7 +66,7 @@ public class McpChannelConnectionNotConnectedTests
         // which is also what an attach-only channel and a channel with no create_conversation tool
         // return. An exception would make the resolver catch in order to keep trying targets.
         var result = await NeverConnected().CreateConversationAsync(
-            "agent-1", "topic", "sender", null, null, null, CancellationToken.None);
+            "agent-1", "topic", "sender", null, null, null, null, CancellationToken.None);
 
         result.ShouldBeNull();
     }
