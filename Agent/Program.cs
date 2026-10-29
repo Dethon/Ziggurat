@@ -1,21 +1,13 @@
 using Agent.App;
 using Agent.Modules;
+using Infrastructure.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 var cmdParams = ConfigModule.GetCommandLineParams(args);
 var settings = builder.Configuration.GetSettings();
 
 builder.Services.ConfigureAgents(settings, cmdParams, builder.Configuration);
-builder.Services.AddCors(options =>
-{
-    options.AddDefaultPolicy(policy =>
-    {
-        policy.SetIsOriginAllowed(_ => true)
-            .AllowAnyMethod()
-            .AllowAnyHeader()
-            .AllowCredentials();
-    });
-});
+builder.Services.AddDeploymentCors(settings.Cors);
 
 var app = builder.Build();
 app.UseCors();

@@ -3,9 +3,13 @@ using System.Net.Http.Json;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using global::Agent.App;
+using global::Agent.Settings;
+using Infrastructure.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Shouldly;
@@ -112,16 +116,51 @@ public class AgentApiTests
         provider.Verify(p => p.UnregisterCustomAgent("alice", "custom-1"), Times.Once);
     }
 
-    private static async Task<WebApplication> StartAsync(IAgentDefinitionProvider provider, string secret)
+    // A page reaches the API with a visitor's credentials, so only an origin the agent's own
+    // settings list may read the answer — under the section the compose file sets.
+    [Theory]
+    [InlineData("https://assistants.example.com", true)]
+    [InlineData("https://evil.example.com", false)]
+    public async Task APreflight_IsAdmittedOnlyFromAnOriginTheSettingsList(string origin, bool admitted)
+    {
+        var settings = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Cors:AllowedOrigins:0"] = "https://assistants.example.com"
+            })
+            .Build()
+            .Get<AgentSettings>()!;
+        await using var app = await StartAsync(new Mock<IAgentDefinitionProvider>().Object, Secret, settings.Cors);
+        using var client = app.GetTestClient();
+
+        using var response = await client.SendAsync(Preflight(origin));
+
+        response.Headers.Contains("Access-Control-Allow-Origin").ShouldBe(admitted);
+        response.Headers.Contains("Access-Control-Allow-Credentials").ShouldBe(admitted);
+    }
+
+    private static async Task<WebApplication> StartAsync(
+        IAgentDefinitionProvider provider, string secret, CorsSettings? cors = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton(provider);
+        builder.Services.AddDeploymentCors(cors ?? new CorsSettings());
 
         var app = builder.Build();
+        app.UseCors();
         app.MapAgents(secret);
         await app.StartAsync();
         return app;
+    }
+
+    private static HttpRequestMessage Preflight(string origin)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Options, "/api/agents?userId=alice");
+        request.Headers.Add("Origin", origin);
+        request.Headers.Add("Access-Control-Request-Method", "POST");
+        request.Headers.Add("Access-Control-Request-Headers", "authorization");
+        return request;
     }
 
     private static HttpRequestMessage Request(string verb, string? authorization)

@@ -19,7 +19,8 @@ public class DeploymentFilesTests
         sandbox.Environment.ShouldContainKey("TZ", "a merged anchor is part of the environment");
         sandbox.Volumes.ShouldContain(v => v.EndsWith(":/home/sandbox_user", StringComparison.Ordinal));
 
-        compose.Services.Keys.ShouldContain("agent");
+        compose.Service("agent").Environment.ShouldContainKey("CORS__ALLOWEDORIGINS__0", "a list of merged anchors is read too");
+        compose.Service("agent").Environment.ShouldContainKey("TZ");
     }
 
     [Fact]

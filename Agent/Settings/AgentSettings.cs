@@ -31,6 +31,10 @@ public record AgentSettings
     // The deployment secret every configured MCP endpoint and channel connection presents, bound
     // under the same name the servers bind it by (MCP__SHAREDSECRET), so one line reaches both ends.
     public McpGateSettings Mcp { get; init; } = new();
+
+    // The browser origins the registration API answers with credentials (CORS__ALLOWEDORIGINS__n),
+    // the same section the hub binds.
+    public CorsSettings Cors { get; init; } = new();
     public LemonadeChatConfiguration LemonadeChat { get; init; } = new();
     public TypeSafeOptions TypeSafe { get; init; } = new();
     public SkillPreloadSettings SkillPreload { get; init; } = new();
