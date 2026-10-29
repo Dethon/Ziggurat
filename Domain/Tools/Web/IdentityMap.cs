@@ -88,7 +88,7 @@ public class IdentityMap(IReadOnlyList<PersonIdentity> people, IReadOnlyCollecti
                 $"Tell the person their voice was not recognised; they can ask again, or ask {WhereToAsk()}."));
         }
 
-        if (PrincipalOf(context) is not { } principal)
+        if (Principal.Of(context) is not { } principal)
         {
             return new PersonResolution.Refused(ToolError.Create(
                 ToolError.Codes.PermissionDenied,
@@ -114,13 +114,6 @@ public class IdentityMap(IReadOnlyList<PersonIdentity> people, IReadOnlyCollecti
                 $"'{principal.UserId}' is not a person in this deployment's identity map on '{channelId}', so there is no session to browse as.",
                 "Browse without asMe, and tell the person their accounts cannot be reached until the operator adds them."));
     }
-
-    // The stamped principal where there is one. A person's own turn without one is vouched for by
-    // the channel it arrived on; a turn nobody sent has none to fall back to, because its userId is
-    // what a schedule's JSON said and its origin is where it delivers.
-    private static Principal? PrincipalOf(ConversationContext context) =>
-        context.Principal
-        ?? (context.OriginKind is null ? new Principal(context.Origin.ChannelId, context.UserId) : null);
 
     public string? WebChatNameOf(string person) =>
         _people.FirstOrDefault(p => p.Name == person)?.IdOn(WebChatChannelId);
