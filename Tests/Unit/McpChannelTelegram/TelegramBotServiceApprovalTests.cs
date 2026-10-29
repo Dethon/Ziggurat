@@ -6,14 +6,13 @@ using Moq;
 using Shouldly;
 using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
-using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Tests.Unit.McpChannelTelegram;
 
 // An approval raised inside a person's turn belongs to that person. The bot admits their message,
 // the agent asks for approval within the turn it started, and only their tap counts — anyone else
 // in the chat sees the keyboard and is told it isn't theirs.
-public class TelegramApprovalAskerTests : IDisposable
+public class TelegramBotServiceApprovalTests : IDisposable
 {
     private static readonly IReadOnlyList<ToolApprovalRequest> ARequest =
         [new ToolApprovalRequest(null, "tool", new Dictionary<string, object?>())];
@@ -21,7 +20,7 @@ public class TelegramApprovalAskerTests : IDisposable
     private readonly TelegramPollingHarness _harness = new();
     private readonly IServiceProvider _services;
 
-    public TelegramApprovalAskerTests()
+    public TelegramBotServiceApprovalTests()
     {
         _services = new ServiceCollection()
             .AddSingleton(_harness.BotRegistry)
@@ -45,14 +44,14 @@ public class TelegramApprovalAskerTests : IDisposable
         var approval = RequestApprovalTool.RunAsync(
             "100:100", ApprovalMode.Request, ARequest, PersonsTurn("alice"), _services);
 
-        await TapAsync(TelegramPollingHarness.BobId, "tool_approve");
-        await Task.Delay(100);
+        await _harness.TapAsync(TelegramPollingHarness.BobId, "tool_approve");
+        await Eventually.Settle();
         approval.IsCompleted.ShouldBeFalse();
         _harness.BotClient.Verify(b => b.SendRequest(
             It.Is<AnswerCallbackQueryRequest>(r => r.Text == "This approval isn't yours"),
             It.IsAny<CancellationToken>()), Times.Once);
 
-        await TapAsync(TelegramPollingHarness.AliceId, "tool_approve");
+        await _harness.TapAsync(TelegramPollingHarness.AliceId, "tool_approve");
         (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("approved");
     }
 
@@ -74,7 +73,7 @@ public class TelegramApprovalAskerTests : IDisposable
 
         var approval = RequestApprovalTool.RunAsync(
             "100:100", ApprovalMode.Request, ARequest, PersonsTurn(sender), _services);
-        await TapAsync(TelegramPollingHarness.BobId, "tool_reject");
+        await _harness.TapAsync(TelegramPollingHarness.BobId, "tool_reject");
 
         (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("denied");
     }
@@ -100,11 +99,11 @@ public class TelegramApprovalAskerTests : IDisposable
         };
         var approval = RequestApprovalTool.RunAsync("100:100", ApprovalMode.Request, ARequest, wake, _services);
 
-        await TapAsync(TelegramPollingHarness.BobId, "tool_approve");
-        await Task.Delay(100);
+        await _harness.TapAsync(TelegramPollingHarness.BobId, "tool_approve");
+        await Eventually.Settle();
         approval.IsCompleted.ShouldBeFalse();
 
-        await TapAsync(TelegramPollingHarness.AliceId, "tool_approve");
+        await _harness.TapAsync(TelegramPollingHarness.AliceId, "tool_approve");
         (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("approved");
     }
 
@@ -112,29 +111,6 @@ public class TelegramApprovalAskerTests : IDisposable
     // bot emitted as the user id.
     private static ConversationContext PersonsTurn(string sender) =>
         new(TelegramPollingHarness.AgentId, "100:100", sender, new ReplyTarget("telegram", "100:100"));
-
-    private async Task TapAsync(long fromUserId, string button)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        InlineKeyboardMarkup? keyboard = null;
-        while (keyboard is null && DateTime.UtcNow < deadline)
-        {
-            keyboard = _harness.Sent.Select(r => r.ReplyMarkup).OfType<InlineKeyboardMarkup>().LastOrDefault();
-            if (keyboard is null)
-            {
-                await Task.Delay(10);
-            }
-        }
-
-        var data = keyboard.ShouldNotBeNull().InlineKeyboard.First()
-            .Single(b => b.CallbackData!.StartsWith(button + ":", StringComparison.Ordinal)).CallbackData;
-        await _harness.CallbackRouter.HandleCallbackQueryAsync(_harness.BotClient.Object, new CallbackQuery
-        {
-            Id = "cb-1",
-            Data = data,
-            From = new User { Id = fromUserId, IsBot = false, FirstName = "Someone" }
-        }, CancellationToken.None);
-    }
 
     public void Dispose() => _harness.Dispose();
 }

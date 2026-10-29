@@ -13,6 +13,7 @@ using Telegram.Bot.Requests;
 using Telegram.Bot.Requests.Abstractions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Tests.Unit.McpChannelTelegram;
 
@@ -141,6 +142,25 @@ internal sealed class TelegramPollingHarness : IDisposable
     // updates arrive so the emit reports live.
     public Task<IReadOnlyList<ChannelInboxItem>> ReceiveAsync() =>
         Inbox.ReceiveAsync(SubscriberId, TimeSpan.Zero, CancellationToken.None);
+
+    // Taps a button on the last keyboard the bot sent, once it has sent one: an approval's keyboard
+    // goes out on a call the test started but cannot await, since that call waits for the tap.
+    public async Task TapAsync(long fromUserId, string button)
+    {
+        await Eventually.Until(() => LastKeyboard is not null, "the approval keyboard to be sent");
+
+        var data = LastKeyboard!.InlineKeyboard.First()
+            .Single(b => b.CallbackData!.StartsWith(button + ":", StringComparison.Ordinal)).CallbackData;
+        await CallbackRouter.HandleCallbackQueryAsync(BotClient.Object, new CallbackQuery
+        {
+            Id = "cb-1",
+            Data = data,
+            From = new User { Id = fromUserId, IsBot = false, FirstName = "Someone" }
+        }, CancellationToken.None);
+    }
+
+    private InlineKeyboardMarkup? LastKeyboard =>
+        Sent.Select(r => r.ReplyMarkup).OfType<InlineKeyboardMarkup>().LastOrDefault();
 
     // Releases whatever the album buffer is holding, then lets the release settle.
     public async Task QuietForAsync(TimeSpan span)

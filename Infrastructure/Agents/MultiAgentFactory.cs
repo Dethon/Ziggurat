@@ -2,7 +2,6 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
-using Domain.Security;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
@@ -38,10 +37,10 @@ public sealed class MultiAgentFactory(
         serviceProvider?.GetService<LemonadeChatHostOptions>();
 
     // The credential each configured endpoint presents, by its host, read once for every agent and
-    // worker this factory builds. A host with none presents nothing and its gate refuses, so the
-    // gate rather than this decides what an unset credential means.
+    // worker this factory builds. Absent in a host that registered none, which presents nothing and
+    // whose gates refuse, so the gate rather than this decides what an unset credential means.
     private readonly McpCredentials _credentials =
-        McpCredentials.From(serviceProvider?.GetService<McpGateSettings>());
+        serviceProvider?.GetService<McpCredentials>() ?? McpCredentials.From(null);
 
     // One source for every agent this factory builds, read on each turn that carries a patch.
     private readonly IPatchableModelSource _patchableModels = new PatchableModelWhitelist(

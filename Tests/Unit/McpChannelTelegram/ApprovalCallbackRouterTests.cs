@@ -114,7 +114,7 @@ public class ApprovalCallbackRouterTests
     // An approval id is a whole GUID, so one cannot be guessed, and every button still fits the
     // 64 bytes Telegram allows a callback's data.
     [Fact]
-    public void EveryButton_CarriesAFullGuid_WithinTelegramsCallbackLimit()
+    public void CreateApprovalKeyboard_EveryButton_CarriesAFullGuidWithinTheCallbackLimit()
     {
         var (approvalId, _) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), Asker, CancellationToken.None);
 
@@ -125,7 +125,7 @@ public class ApprovalCallbackRouterTests
     }
 
     [Fact]
-    public async Task SomebodyElsesTap_IsToldItIsNotTheirs_AndTheApprovalStaysPending()
+    public async Task HandleCallbackQueryAsync_SomebodyElsesTap_AnswersNotYoursAndStaysPending()
     {
         var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(10), Asker, CancellationToken.None);
 
