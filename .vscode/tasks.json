@@ -2,9 +2,9 @@
     "version": "2.0.0",
     "options": {
         "env": {
-            "DC": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.debug.yml -f DockerCompose/docker-compose.override.no-dri.yml -p jackbot",
+            "DC": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.debug.yml -f DockerCompose/docker-compose.override.ports.yml -f DockerCompose/docker-compose.override.no-dri.yml -p jackbot",
             "SERVICES": "agent webui observability mcp-vault mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-sandbox mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer mcp-timers tse-extractor lemonade qbittorrent jackett redis camoufox homeassistant",
-            "DC_LOCAL": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -p jackbot",
+            "DC_LOCAL": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot",
             "LOCAL_DEPS": "qbittorrent jackett redis camoufox homeassistant"
         }
     },

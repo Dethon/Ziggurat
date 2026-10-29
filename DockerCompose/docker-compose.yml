@@ -19,7 +19,7 @@ services:
         max-file: "3"
     container_name: redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - ./volumes/redis_data:/data
     environment:
@@ -43,9 +43,9 @@ services:
         max-file: "3"
     container_name: qbittorrent
     ports:
-      - "8001:8001"
-      - "6881:6881/tcp"
-      - "6881:6881/udp"
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:8001:8001"
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:6881:6881/tcp"
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:6881:6881/udp"
     volumes:
       - ./volumes/qbittorrent_config:/config
       - ${DATA_PATH:-./volumes/data}/downloads:/downloads
@@ -71,7 +71,7 @@ services:
         max-file: "3"
     container_name: homeassistant
     ports:
-      - "8123:8123"
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:8123:8123"
     volumes:
       - ./volumes/homeassistant_config:/config
     environment:
@@ -106,7 +106,7 @@ services:
     container_name: filebrowser
     user: ${PUID:-1654}:${PGID:-1654}
     ports:
-      - "8002:80"
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:8002:80"
     volumes:
       - ${DATA_PATH:-./volumes/data}:/srv
       - ./volumes/filebrowser_database:/database
@@ -130,7 +130,7 @@ services:
         max-file: "3"
     container_name: jackett
     ports:
-      - "8003:9117"
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:8003:9117"
     volumes:
       - ./volumes/jackett_config:/config
       - ./volumes/jackett_data/downloads:/downloads
@@ -203,8 +203,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-library
-    ports:
-      - "6001:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerLibrary/Dockerfile
@@ -236,8 +234,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-vault
-    ports:
-      - "6002:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerVault/Dockerfile
@@ -262,8 +258,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-sandbox
-    ports:
-      - "6004:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSandbox/Dockerfile
@@ -330,8 +324,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: camoufox
-    ports:
-      - "9377:9377"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9377/json"]
       interval: 10s
@@ -354,8 +346,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-websearch
-    ports:
-      - "6003:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerWebSearch/Dockerfile
@@ -399,8 +389,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-idealista
-    ports:
-      - "6005:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerIdealista/Dockerfile
@@ -422,8 +410,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-homeassistant
-    ports:
-      - "6006:8080"
     # The watch callback (/api/homeassistant/watch-fired) is guarded by the voice hub's announce
     # secret, Announce__Token, which reaches this container through .env like the timers server's.
     # The hub itself is asked to resolve a watch's announcement target when the watch is written.
@@ -457,8 +443,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-channel-signalr
-    ports:
-      - "6010:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelSignalR/Dockerfile
@@ -486,8 +470,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-channel-telegram
-    ports:
-      - "6011:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelTelegram/Dockerfile
@@ -513,8 +495,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-channel-servicebus
-    ports:
-      - "6012:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelServiceBus/Dockerfile
@@ -536,8 +516,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-scheduling
-    ports:
-      - "6013:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerScheduling/Dockerfile
@@ -562,8 +540,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-printer
-    ports:
-      - "6014:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerPrinter/Dockerfile
@@ -588,8 +564,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-timers
-    ports:
-      - "6016:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerTimers/Dockerfile
@@ -633,11 +607,9 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-sugary
-    # Her phone reaches the app through Caddy at sugary.herfluffness.com. The port is published on
-    # loopback only, for local runs and the E2E: the sign-in limit counts by X-Forwarded-For, which a
-    # caller on the LAN could otherwise set to anything.
-    ports:
-      - "127.0.0.1:6017:8080"
+    # Her phone reaches the app through Caddy at sugary.herfluffness.com, and nothing else reaches
+    # it: the sign-in limit counts by X-Forwarded-For, which a caller past the proxy could set to
+    # anything. Local runs publish it on loopback through docker-compose.override.ports.yml.
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSugary/Dockerfile
@@ -680,8 +652,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-channel-voice
-    ports:
-      - "6015:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelVoice/Dockerfile
@@ -724,7 +694,7 @@ services:
     container_name: lemonade
     build: ./lemonade
     ports:
-      - "13305:13305"
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:13305:13305"
     environment:
       <<: *timezone
       STT_BACKEND: ${STT_BACKEND:-gpu}
@@ -811,8 +781,6 @@ services:
       # Persist the concat-enrollment + speaker-embedding cache in the models volume so
       # a container recreate doesn't recompute the embedding inside the first live turn.
       ENROLL_CACHE: /models/enroll-cache
-    ports:
-      - "9098:9098"
     volumes:
       - ./volumes/tse-models:/models
       - ./volumes/voices:/voices:ro
@@ -826,8 +794,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: agent
-    ports:
-      - "5000:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Agent/Dockerfile
@@ -880,8 +846,6 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: webui
-    ports:
-      - "5001:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: WebChat/Dockerfile
@@ -911,8 +875,6 @@ services:
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Observability/Dockerfile
-    ports:
-      - "5003:8080"
     env_file:
       - .env
     environment:

@@ -4,10 +4,10 @@
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The conformance check fails while any base-file port other than 443 lacks a bind address, and passes after
-- [ ] Redis is published on loopback only
-- [ ] The LAN services bind to the named address, with a documented placeholder
-- [ ] The debug override publishes only on loopback, asserted by the check
-- [ ] Running a project on the host against the stack with the override still works (manual check, noted in the ticket)
+- [x] The conformance check fails while any base-file port other than 443 lacks a bind address, and passes after
+- [x] Redis is published on loopback only
+- [x] The LAN services bind to the named address, with a documented placeholder
+- [x] The debug override publishes only on loopback, asserted by the check
+- [x] Running a project on the host against the stack with the override still works (manual check, noted in the ticket)

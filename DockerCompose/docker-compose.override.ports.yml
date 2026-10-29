@@ -1,0 +1,80 @@
+# Publishes the ports a project run on the host for debugging dials (appsettings.Local.json,
+# .vscode/launch.json, .zed/debug.json), on loopback and at the numbers they always had. The base
+# file publishes only the proxy and the operator's LAN tools, so without this override nothing else
+# is reachable from outside the compose network. Opt in by adding it to the compose command.
+services:
+  mcp-library:
+    ports:
+      - "127.0.0.1:6001:8080"
+
+  mcp-vault:
+    ports:
+      - "127.0.0.1:6002:8080"
+
+  mcp-sandbox:
+    ports:
+      - "127.0.0.1:6004:8080"
+
+  camoufox:
+    ports:
+      - "127.0.0.1:9377:9377"
+
+  mcp-websearch:
+    ports:
+      - "127.0.0.1:6003:8080"
+
+  mcp-idealista:
+    ports:
+      - "127.0.0.1:6005:8080"
+
+  mcp-homeassistant:
+    ports:
+      - "127.0.0.1:6006:8080"
+
+  mcp-channel-signalr:
+    ports:
+      - "127.0.0.1:6010:8080"
+
+  mcp-channel-telegram:
+    ports:
+      - "127.0.0.1:6011:8080"
+
+  mcp-channel-servicebus:
+    ports:
+      - "127.0.0.1:6012:8080"
+
+  mcp-scheduling:
+    ports:
+      - "127.0.0.1:6013:8080"
+
+  mcp-printer:
+    ports:
+      - "127.0.0.1:6014:8080"
+
+  mcp-timers:
+    ports:
+      - "127.0.0.1:6016:8080"
+
+  mcp-sugary:
+    ports:
+      - "127.0.0.1:6017:8080"
+
+  mcp-channel-voice:
+    ports:
+      - "127.0.0.1:6015:8080"
+
+  tse-extractor:
+    ports:
+      - "127.0.0.1:9098:9098"
+
+  agent:
+    ports:
+      - "127.0.0.1:5000:8080"
+
+  webui:
+    ports:
+      - "127.0.0.1:5001:8080"
+
+  observability:
+    ports:
+      - "127.0.0.1:5003:8080"
