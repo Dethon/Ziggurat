@@ -126,6 +126,11 @@ sexy.herfluffness.com {
         reverse_proxy agent:8080
     }
 
+    # As on the main host: who holds which identity is asked on the compose network, never here.
+    handle /accounts/internal/* {
+        respond 404
+    }
+
     # The accounts service's routes, as on the main host, so a page here asks /accounts/me
     # same-origin. Never behind the check: sign-in opens signed out.
     handle /accounts/* {
