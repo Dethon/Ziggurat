@@ -20,6 +20,11 @@ public record AccountsSettings
 
     public TelegramSettings Telegram { get; init; } = new();
 
+    // The servers that may ask whose account an identity is (CALLERS__<host>), each by the
+    // credential it already holds for its own /mcp, so no secret exists for this alone. An entry left
+    // empty admits nobody.
+    public Dictionary<string, string> Callers { get; init; } = [];
+
     // How long an invite or recovery link stays redeemable.
     public int LinkLifetimeDays { get; init; } = 7;
 
