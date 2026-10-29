@@ -144,13 +144,9 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         var page = await OpenAsync();
 
         // The stack's cap is two minutes, which is the number every other case here needs to be
-        // out of its way. This case is the cap, so it shortens it for its own page — and pins it,
-        // because the limits response lands whenever the connection produces it and would
-        // otherwise put the stack's number back over the top of this one.
-        await page.EvaluateAsync(
-            "() => { const d = window.dictation;"
-            + " d.configure({ maxMs: " + CapMs + ", minMs: d._limits.minMs });"
-            + " d.configure = () => {}; }");
+        // out of its way. The limits response lands whenever the connection produces it, so the
+        // configuration is pinned first: nothing may put the stack's number back over this case's.
+        await page.EvaluateAsync("() => { window.dictation.configure = () => {}; }");
 
         var cdp = await page.Context.NewCDPSessionAsync(page);
         var mic = await PressableMicAsync(page);
@@ -158,6 +154,16 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+
+        // The cap counts from the press, and the microphone takes as long as the machine takes to
+        // open — five seconds under Chromium's fake device here. A cap shortened before the press
+        // went off before there was anything to record, and the case reported "the microphone had
+        // not finished opening" on every run. So it is shortened only now, to this many seconds
+        // past wherever the clock has got to, and re-armed as the ticket would re-arm it.
+        await page.EvaluateAsync(
+            "() => { const d = window.dictation; const run = d._run;"
+            + " d._limits = { maxMs: performance.now() - run.startedAt + " + CapMs + ", minMs: d._limits.minMs };"
+            + " d._armCap(run); }");
 
         // Never released: the words arrive because the recording ended itself.
         await Assertions.Expect(page.Locator("textarea.chat-input"))
