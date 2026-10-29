@@ -337,8 +337,8 @@ public sealed class PersonLogins : IDisposable
     // context's state as it is now, kept to what the remembered logins cover. A full save exports
     // the context's storage too; any other takes its cookies alone over the stored origins — the
     // save after use exists only so a rotated cookie survives a restart, and exporting a mail
-    // client's IndexedDB on every browse would rewrite megabytes for it. A person with no record
-    // and nothing remembered has nothing to write.
+    // client's IndexedDB on every browse would rewrite megabytes for it. A person who had nothing
+    // remembered and has nothing remembered now has nothing to write.
     private async Task SaveAsync(
         string person, Person entry, bool full, Action<Dictionary<string, SiteLogin>> change, CancellationToken ct)
     {
@@ -354,7 +354,7 @@ public sealed class PersonLogins : IDisposable
             var record = await _store.LoadAsync(person, ct);
             var remembered = (record?.Logins ?? []).ToDictionary(login => login.Site);
             change(remembered);
-            if (!CanRemember || (record is null && remembered.Count == 0))
+            if (!CanRemember || ((record?.Logins.Count ?? 0) == 0 && remembered.Count == 0))
             {
                 return;
             }
