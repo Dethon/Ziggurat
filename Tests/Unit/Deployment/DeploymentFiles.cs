@@ -118,8 +118,13 @@ public sealed record ComposeService(
         };
 
     private static IEnumerable<KeyValuePair<string, string>> Flatten(YamlMappingNode map) =>
-        map.Children.SelectMany(c => ((YamlScalarNode)c.Key).Value == "<<" && c.Value is YamlMappingNode merged
-            ? Flatten(merged)
+        map.Children.SelectMany(c => ((YamlScalarNode)c.Key).Value == "<<"
+            ? c.Value switch
+            {
+                YamlMappingNode merged => Flatten(merged),
+                YamlSequenceNode many => many.Children.OfType<YamlMappingNode>().SelectMany(Flatten),
+                _ => []
+            }
             : [KeyValuePair.Create(((YamlScalarNode)c.Key).Value!, (c.Value as YamlScalarNode)?.Value ?? "")]);
 }
 

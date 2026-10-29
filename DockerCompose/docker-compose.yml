@@ -10,6 +10,14 @@ x-timezone: &timezone
 # not the model that was warmed, and every transcription pays for a lazy pull of a second one.
 x-stt-model: &stt-model ${STT_MODEL:-Whisper-Large-v3-Turbo}
 
+# The browser origins the agent's registration API and the hub answer with a visitor's
+# credentials: the deployment's own hosts, the ones the Caddyfile serves them on. Per deployment,
+# and one list for both so they cannot disagree; a page on any other origin gets no CORS headers.
+# Add a host as __2, __3 ...; with none at all both are same-origin only.
+x-cors-origins: &cors-origins
+  CORS__ALLOWEDORIGINS__0: https://assistants.herfluffness.com
+  CORS__ALLOWEDORIGINS__1: https://sexy.herfluffness.com
+
 services:
   redis:
     image: redis/redis-stack-server:latest
@@ -457,7 +465,7 @@ services:
     env_file:
       - .env
     environment:
-      <<: *timezone
+      <<: [ *timezone, *cors-origins ]
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       Dictation__Transcription__Model: *stt-model
@@ -811,7 +819,7 @@ services:
     env_file:
       - .env
     environment:
-      <<: *timezone
+      <<: [ *timezone, *cors-origins ]
       REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
       AGENTAPI__SHAREDSECRET: ${AGENTAPI__SHAREDSECRET}
