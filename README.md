@@ -128,7 +128,7 @@ Every mount above is a container in the compose stack, configured into an agent 
 It is a self-contained single-file `linux-x64` binary. Copy it onto a machine and run it:
 
 ```bash
-SHAREDSECRET=... ./McpServerOutpost --name laptop --dir ~/project --jailed --hub http://agent-host:5000
+SHAREDSECRET=... ./McpServerOutpost --name laptop --dir ~/project --jailed --hub https://assistants.example.com
 ```
 
 `--name` is the machine the agent addresses (`outpost:laptop/...`) — a separate machine, not a branch of the tree its other mounts share. `--dir` is where files land and commands run, and is the mount's declared workspace. `--jailed` confines every operation to it — the mount root is still the machine's root, so a path keeps the same name either way and asking for something outside comes back as a refusal rather than an empty result. `--exec` allows commands and is off unless asked for. `--advertise` overrides the address worked out from the route toward the hub, `--port` the documented default of 8099, and `--ext` the shared list of extensions that count as text.

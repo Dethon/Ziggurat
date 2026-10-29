@@ -19,6 +19,13 @@ assistants.herfluffness.com {
         reverse_proxy agent:8080
     }
 
+    # An outpost registers and keeps alive here, over TLS, so its secret never crosses the LAN in
+    # the clear and the agent's own port stays unpublished. The agent's dial-back to the machine
+    # is direct. The exec bridge beside it is never routed.
+    handle /api/outposts* {
+        reverse_proxy agent:8080
+    }
+
     # A login handoff's live view and a person's logins page (the browse server). Before the
     # WebChat catch-all; reverse_proxy carries the live view's WebSocket upgrade as it is.
     handle /browse/* {

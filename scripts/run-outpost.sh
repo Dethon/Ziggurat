@@ -13,7 +13,7 @@
 #   scripts/run-outpost.sh                                  this machine, this directory
 #   scripts/run-outpost.sh --jailed                          confined to it
 #   scripts/run-outpost.sh --name laptop --dir ~/project --jailed --exec
-#   scripts/run-outpost.sh --hub http://192.168.5.43:5000 --port 8100
+#   scripts/run-outpost.sh --hub https://assistants.example.com --port 8100
 #   scripts/run-outpost.sh --jailed --install-service        the same, at every boot
 #   scripts/run-outpost.sh --uninstall-service               take it back off
 #
@@ -81,7 +81,7 @@ OUT="$PROJECT/bin/outpost"
 BIN="$OUT/McpServerOutpost"
 ENV_FILE="$ROOT/DockerCompose/.env"
 CONFIG="${CONFIG:-Release}"
-DEFAULT_HUB="${DEFAULT_HUB:-http://192.168.5.45:5000}"
+DEFAULT_HUB="${DEFAULT_HUB:-https://assistants.herfluffness.com}"
 
 # Where the service's own copy of the binary and its secret live. Under the user's home, because
 # the unit is the user's.
