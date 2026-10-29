@@ -4,6 +4,7 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -40,7 +41,8 @@ public sealed class FakeAgentFactory : IAgentFactory
         _responseQueue.Enqueue(new QueuedResponse { Error = errorMessage });
     }
 
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
+    public DisposableAgent Create(
+        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null)
     {
         var responses = new List<QueuedResponse>();
         while (_responseQueue.TryDequeue(out var response))
