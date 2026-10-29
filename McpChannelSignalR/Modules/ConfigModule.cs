@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Push;
 using Infrastructure.Clients.Transcription;
 using Infrastructure.Conversations;
@@ -47,6 +48,7 @@ public static class ConfigModule
             .AddMetricsPublishing("mcp-channel-signalr")
             .AddSingleton(settings.Dictation)
             .AddLemonadeTranscription(settings.Dictation.Transcription)
+            .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
             .AddSingleton<AttachmentTickets>()
             .AddSingleton<IConversationLiveness, AgentConversationLiveness>()
             .AddSingleton<AttachmentStore>()
@@ -101,6 +103,6 @@ public static class ConfigModule
     // served behind it.
     internal static IServiceCollection AddChatSignalR(this IServiceCollection services) =>
         services.AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance)
-            .AddHubOptions<ChatHub>(options => options.AddFilter(new RegisteredConnectionFilter()))
+            .AddHubOptions<ChatHub>(options => options.AddFilter<RegisteredConnectionFilter>())
             .Services;
 }
