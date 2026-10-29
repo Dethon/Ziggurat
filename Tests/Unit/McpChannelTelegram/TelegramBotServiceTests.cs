@@ -26,7 +26,7 @@ public class TelegramBotServiceTests : IDisposable
     // A username is its owner's to change and Telegram's to reassign, so a name that matches is no
     // longer anybody: only the listed number is.
     [Fact]
-    public async Task ASenderWhoseIdIsNotListed_IsRefused_EvenUnderAListedPersonsNames()
+    public async Task ExecuteAsync_UnlistedIdUnderAListedUsername_SendsRejection()
     {
         using var harness = new TelegramPollingHarness(TelegramPollingHarness.AliceId);
         await harness.ReceiveAsync();
@@ -43,7 +43,7 @@ public class TelegramBotServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AListedId_IsAdmitted_AndTheTurnsSenderIsTheirUsername()
+    public async Task ExecuteAsync_ListedId_EmitsTheirUsernameAsSender()
     {
         await _harness.ReceiveAsync();
         _harness.Enqueue(new Update

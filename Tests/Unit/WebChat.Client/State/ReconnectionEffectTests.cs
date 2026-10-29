@@ -98,7 +98,7 @@ public sealed class ReconnectionEffectTests : IDisposable
         _dispatcher.Dispatch(new ConnectionReconnecting());
         _dispatcher.Dispatch(new ConnectionReconnected());
 
-        await Task.Delay(50);
+        await Eventually.Settle();
         _mockTopicService.Verify(
             s => s.GetTopicPageAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<bool>()),
