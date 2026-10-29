@@ -11,7 +11,8 @@ public static class ExecScreenReasons
         [ExecScreenCodes.Destructive] = "It would delete or change something that's already there.",
         [ExecScreenCodes.SendsOut] = "It would send data to a remote server.",
         [ExecScreenCodes.RunsDownloaded] = "It would download a program and run it.",
-        [ExecScreenCodes.Unjudged] = "It runs on your computer and couldn't be checked first."
+        [ExecScreenCodes.Unjudged] = "It runs on your computer and couldn't be checked first.",
+        [ExecScreenCodes.AsPerson] = "It would browse this site logged in as you."
     };
 
     // Null for a request the screen had no part in, so it renders exactly as before. A code this
