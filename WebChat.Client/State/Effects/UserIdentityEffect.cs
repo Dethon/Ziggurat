@@ -1,65 +1,48 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
-using WebChat.Client.Models;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.State.Effects;
 
+// The client's person is whoever the accounts service says is signed in. Nothing is picked and
+// nothing is kept in the browser: the proxy already let this page through as somebody, and the hub
+// already knows who, so this is only the name and the face to draw.
 public sealed class UserIdentityEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
-    private readonly IConfigService _configService;
-    private readonly ILocalStorageService _localStorage;
-    private readonly ILogger<UserIdentityEffect> _logger;
+    private readonly IAccountService _accounts;
     private readonly IDisposable _initializeRegistration;
-    private readonly IDisposable _selectUserRegistration;
-    private const string StorageKey = "selectedUserId";
 
-    public UserIdentityEffect(
-        Dispatcher dispatcher,
-        IConfigService configService,
-        ILocalStorageService localStorage,
-        ILogger<UserIdentityEffect> logger)
+    public UserIdentityEffect(Dispatcher dispatcher, IAccountService accounts, ILogger<UserIdentityEffect> logger)
     {
         _dispatcher = dispatcher;
-        _configService = configService;
-        _localStorage = localStorage;
-        _logger = logger;
+        _accounts = accounts;
 
         _initializeRegistration = dispatcher.RegisterHandler<Initialize>(
-            _ => LoadUsersAsync().LogFaults(_logger, nameof(Initialize)));
-        _selectUserRegistration = dispatcher.RegisterHandler<SelectUser>(
-            action => PersistSelectedUserAsync(action.UserId).LogFaults(_logger, nameof(SelectUser)));
+            _ => LoadSignedInAsync().LogFaults(logger, nameof(Initialize)));
     }
 
-    public async Task LoadUsersAsync()
+    public async Task LoadSignedInAsync()
     {
-        _dispatcher.Dispatch(new LoadUsers());
-
         try
         {
-            var config = await _configService.GetConfigAsync();
-            var users = config.Users?.Select(u => new UserConfig(u.Id, u.AvatarUrl)).ToList() ?? [];
-            _dispatcher.Dispatch(new UsersLoaded(users));
-
-            var savedUserId = await _localStorage.GetAsync(StorageKey);
-            if (!string.IsNullOrEmpty(savedUserId) && users.Any(u => u.Id == savedUserId))
+            if (await _accounts.GetSignedInAsync() is { } person)
             {
-                _dispatcher.Dispatch(new SelectUser(savedUserId));
+                _dispatcher.Dispatch(new SignedIn(person));
+                return;
             }
         }
         catch (HttpRequestException)
         {
-            _dispatcher.Dispatch(new UsersLoaded([]));
+            // Unreachable says nothing about the session, and a sign-in page would not load either.
+            return;
         }
+
+        // A page that loaded with no session behind it — kept by the service worker, or signed out
+        // since — has nobody to be: sign in and come back to it.
+        _accounts.SendToSignIn();
     }
 
-    public Task PersistSelectedUserAsync(string userId) => _localStorage.SetAsync(StorageKey, userId).AsTask();
-
-    public void Dispose()
-    {
-        _initializeRegistration.Dispose();
-        _selectUserRegistration.Dispose();
-    }
+    public void Dispose() => _initializeRegistration.Dispose();
 }

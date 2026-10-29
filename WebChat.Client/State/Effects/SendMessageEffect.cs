@@ -181,12 +181,9 @@ public sealed class SendMessageEffect : IDisposable
         _topicStreams.FinalizeCurrent(topic.TopicId);
 
         // Submit user message through pipeline (handles correlation tracking and AddMessage dispatch)
-        var identityState = _userIdentityStore.State;
-        var currentUser = identityState.AvailableUsers
-            .FirstOrDefault(u => u.Id == identityState.SelectedUserId);
-
         var correlationId = _pipeline.SubmitUserMessage(
-            topic.TopicId, action.Message, currentUser?.Id, attached.Count == 0 ? null : attached);
+            topic.TopicId, action.Message, _userIdentityStore.State.SignedIn?.UserId,
+            attached.Count == 0 ? null : attached);
 
         // Delegate to streaming service (handles stream reuse internally). Awaited so a fault
         // opening the send lands in the catch above; the call returns once the stream is open,
