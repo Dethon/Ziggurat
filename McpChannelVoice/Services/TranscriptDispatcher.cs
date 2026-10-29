@@ -11,6 +11,7 @@ namespace McpChannelVoice.Services;
 
 public sealed class TranscriptDispatcher(
     ChannelNotificationEmitter emitter,
+    IAccountResolver accounts,
     IMetricsPublisher publisher,
     VoiceConversationManager manager,
     LocalCommandDispatcher localCommands,
@@ -22,6 +23,13 @@ public sealed class TranscriptDispatcher(
     TimeProvider timeProvider,
     ILogger<TranscriptDispatcher> logger)
 {
+    private const string ChannelId = "voice";
+
+    // The guest's user id is fixed rather than the satellite's configured identity: an operator may
+    // name a satellite after a person, and the identity map refuses exactly this id, so a guest can
+    // never be matched to anybody's logins.
+    private static readonly Principal Guest = new(ChannelId, "household");
+
     public async Task<bool> DispatchAsync(
         SatelliteSession session,
         TranscriptionResult transcript,
@@ -82,16 +90,16 @@ public sealed class TranscriptDispatcher(
             return false;
         }
 
+        // Asked beside the conversation's creation rather than after it: both are round trips on the
+        // way to the agent, and neither needs the other's answer.
+        var speaker = SpeakerOfAsync(session, identifiedSpeaker, ct);
+
         // AgentId is required by CreateConversationParams; the dispatch path always supplies one in
         // production, so the null-coalesce is only a defensive fallback (not expected at runtime).
         var conversationId = await manager.GetOrCreateAsync(session, agentId ?? string.Empty, transcript.Text, ct);
+        var (principal, sender) = await speaker;
 
         var dismissedAlert = session.TryConsumeDismissedAlert(timeProvider.GetUtcNow());
-
-        // A conclusive speaker match routes the enrolled person's identity into the Sender (so
-        // ChatMonitor keys memory/personalization per person); a doubtful/absent match falls back to
-        // the satellite's default identity. Telemetry below keeps Identity = the satellite identity.
-        var sender = identifiedSpeaker ?? session.Config.Identity;
 
         // Voice mints the key rather than letting the agent's conversation group do it, because
         // voice is the side that has to know the value in advance: the answer comes back here and
@@ -113,6 +121,7 @@ public sealed class TranscriptDispatcher(
             {
                 ConversationId = conversationId,
                 Sender = sender,
+                Principal = principal,
                 Content = transcript.Text,
                 AgentId = agentId,
                 Location = session.Config.DisplayLocation,
@@ -125,6 +134,42 @@ public sealed class TranscriptDispatcher(
 
         PublishUtteranceEvent(session, transcript, similarity, stats, "dispatched", conversationId);
         return true;
+    }
+
+    // A conclusive match names a profile, and a profile is named after the user id of the person it
+    // enrolled, so the accounts service says whose account it is and the turn acts for them under
+    // the name they go by. Anything less is the guest — somebody in the house, acting as no person —
+    // under the satellite's name: a doubtful match, a profile no account holds, and an accounts
+    // service that could not answer, since an outage must never become an identity. Telemetry keeps
+    // the satellite's identity whoever spoke.
+    private async Task<(Principal Principal, string Sender)> SpeakerOfAsync(
+        SatelliteSession session, string? identifiedSpeaker, CancellationToken ct)
+    {
+        var guest = (Guest, session.Config.Identity);
+        if (identifiedSpeaker is null)
+        {
+            return guest;
+        }
+
+        try
+        {
+            if (await accounts.ResolveAsync(ChannelId, identifiedSpeaker, ct) is { } resolved)
+            {
+                return (new Principal(ChannelId, resolved.Account.UserId, resolved.Account), resolved.DisplayName);
+            }
+
+            logger.LogWarning(
+                "Speaker profile {Profile} on {Satellite} is no account's; the turn goes out as the guest",
+                identifiedSpeaker, session.SatelliteId);
+            return guest;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex,
+                "Could not resolve speaker profile {Profile} on {Satellite}; the turn goes out as the guest",
+                identifiedSpeaker, session.SatelliteId);
+            return guest;
+        }
     }
 
     // Every UtteranceTranscribed publish shares this shape; only the outcome label and the

@@ -339,8 +339,8 @@ public sealed class WyomingSatelliteHost(
                     return false;
                 }
                 similarity = verification.Value.Similarity;
-                // A conclusive match names the speaker (routed into the Sender for per-person memory);
-                // the doubtful band leaves this null so the dispatcher keeps the satellite identity.
+                // A conclusive match names the speaker's profile, which the dispatcher resolves to
+                // their account; the doubtful band leaves this null, and the turn is the guest's.
                 identifiedSpeaker = verification.Value.IdentifiedSpeaker;
                 if (similarity is not null)
                 {
