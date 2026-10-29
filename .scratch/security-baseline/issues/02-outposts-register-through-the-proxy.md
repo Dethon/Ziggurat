@@ -4,8 +4,8 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The conformance check asserts outpost registration reaches the agent and the bridge still doesn't
-- [ ] An outpost registering through the route is accepted with its secret and refused without
-- [ ] The outpost rules and README give the proxy's HTTPS address as the hub
+- [x] The conformance check asserts outpost registration reaches the agent and the bridge still doesn't
+- [x] An outpost registering through the route is accepted with its secret and refused without
+- [x] The outpost rules and README give the proxy's HTTPS address as the hub
