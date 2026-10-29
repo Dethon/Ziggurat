@@ -15,12 +15,47 @@ public class TelegramBotServiceTests : IDisposable
         _harness.Enqueue(new Update
         {
             Id = 1,
-            Message = TelegramPollingHarness.TextMessage("/hello", username: "eve")
+            Message = TelegramPollingHarness.TextMessage("/hello", username: "eve", userId: 3)
         });
 
         await _harness.RunAsync();
 
         _harness.Sent.ShouldHaveSingleItem().Text.ShouldBe("You are not authorized to use this bot.");
+    }
+
+    // A username is its owner's to change and Telegram's to reassign, so a name that matches is no
+    // longer anybody: only the listed number is.
+    [Fact]
+    public async Task ASenderWhoseIdIsNotListed_IsRefused_EvenUnderAListedPersonsNames()
+    {
+        using var harness = new TelegramPollingHarness(TelegramPollingHarness.AliceId);
+        await harness.ReceiveAsync();
+        harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("/hello", username: "alice", userId: 99)
+        });
+
+        await harness.RunAsync();
+
+        harness.Sent.ShouldHaveSingleItem().Text.ShouldBe("You are not authorized to use this bot.");
+        (await harness.ReceiveAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task AListedId_IsAdmitted_AndTheTurnsSenderIsTheirUsername()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("/hello", username: "bob", userId: TelegramPollingHarness.BobId)
+        });
+
+        await _harness.RunAsync();
+
+        _harness.Sent.ShouldBeEmpty();
+        (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Sender.ShouldBe("bob");
     }
 
     [Fact]
@@ -43,7 +78,8 @@ public class TelegramBotServiceTests : IDisposable
     public async Task ExecuteAsync_CallbackQuery_RoutesToApprovalRouter()
     {
         var (approvalId, resultTask) =
-            _harness.CallbackRouter.RegisterApproval(TimeSpan.FromSeconds(10), CancellationToken.None);
+            _harness.CallbackRouter.RegisterApproval(
+                TimeSpan.FromSeconds(10), new HashSet<long> { 1 }, CancellationToken.None);
 
         _harness.Enqueue(new Update
         {
