@@ -301,6 +301,8 @@ public class SugaryExerciseApiTests
             {
                 DatabasePath = path
             });
+            // Kept through every migration, and nobody's until given to the person whose log it was.
+            await server.GiveUnassignedRowsToAsync(SugaryServer.Her);
             var client = await server.SignedInAsync();
 
             (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray().Count.ShouldBe(1);

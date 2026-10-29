@@ -1,7 +1,10 @@
+using System.Net.Http.Json;
 using System.Text;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Sugary;
 using Domain.Prompts;
+using Domain.Tools;
 using Domain.Tools.Sugary.Vfs;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
@@ -268,8 +271,8 @@ public class McpSugaryServerTests
         answer["truncated"]!.GetValue<bool>().ShouldBeFalse();
     }
 
-    // The agent's own proxy for a remote mount, asking the real server: what Jonas's query tool
-    // reaches when it asks /sugary.
+    // The agent's own proxy for a remote mount, asking the real server on her turn: what Jonas's
+    // query tool reaches when it asks /sugary.
     [Fact]
     public async Task AQuery_ReachesTheServerThroughTheAgentsProxy()
     {
@@ -277,7 +280,8 @@ public class McpSugaryServerTests
         var paella = Meal("2026-08-09T12:30:00Z", null, Item("paella", 70));
         await server.SaveAsync(paella, Meal("2026-07-12T12:30:00Z", null, Item("paella", 80)));
         await server.SaveAsync(Dose("2026-08-09T12:25:00Z", 7, DoseKind.Rapid, paella.Id));
-        var backend = new McpFileSystemBackend(server.Client, SugaryFileSystem.Name, advertisedOperations: null);
+        var backend = new McpFileSystemBackend(server.Client, SugaryFileSystem.Name, advertisedOperations: null)
+            .As(SugaryServer.TurnOf(SugaryServer.Her));
 
         var answer = (await backend.QueryAsync("", """
             select m.eaten_at, d.units from meals m join dose_meals using (meal_id) join doses d using (dose_id)
@@ -675,4 +679,72 @@ public class McpSugaryServerTests
             info["isDirectory"]!.GetValue<bool>().ShouldBeTrue(path);
         }
     }
+
+    // Asking Jonas about one's carbs can't reveal anyone else's: the mount answers for the person
+    // whose turn the call serves, as the principal on its `_meta` names them, and the household's
+    // foods are everyone's in it.
+    [Fact]
+    public async Task TheMount_AnswersForTheTurnsPersonOnly()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.As(SugaryServer.Her).PostAsJsonAsync("/api/meals", AppMeal("2026-10-11T13:30:00+02:00", "her paella"));
+        await server.As(SugaryServer.Him).PostAsJsonAsync("/api/meals", AppMeal("2026-09-02T21:00:00+02:00", "his pizza"));
+        await server.As(SugaryServer.Him).PostAsJsonAsync("/api/foods", new
+        {
+            name = "Lentejas",
+            carbsPer100g = 48,
+            unit = "g",
+            source = "manual"
+        });
+
+        var hers = await server.QueryAsync("select notes from meals", SugaryServer.TurnOf(SugaryServer.Her));
+        var his = await server.QueryAsync("select notes from meals", SugaryServer.TurnOf(SugaryServer.Him));
+        var herFoods = await server.QueryAsync("select name from foods", SugaryServer.TurnOf(SugaryServer.Her));
+        var herMonths = await server.GlobAsync("meals/*");
+
+        hers.Select(row => row![0]!.GetValue<string>()).ShouldBe(["her paella"]);
+        his.Select(row => row![0]!.GetValue<string>()).ShouldBe(["his pizza"]);
+        herFoods.Select(row => row![0]!.GetValue<string>()).ShouldBe(["Lentejas"]);
+        herMonths.ShouldBe(["/meals/2026-10.parquet"]);
+    }
+
+    // A turn that acts for nobody — a voice guest, a fire with no person behind it, a call with no
+    // context — is told so rather than shown an empty log: "she logged nothing" would be a false
+    // fact about somebody's health record.
+    [Theory]
+    [InlineData("a guest's turn")]
+    [InlineData("no turn at all")]
+    public async Task ACallForNobody_IsRefused_RatherThanShownAnEmptyLog(string caller)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        await server.SaveAsync(Meal("2026-10-11T19:00:00Z", null, Item("pizza", 90)));
+        ConversationContext? turn = caller == "no turn at all"
+            ? null
+            : new ConversationContext("nabu", "voice-1", "household", new ReplyTarget("voice", "voice-1"),
+                Principal: new Principal("voice", "household"));
+
+        var query = await server.CallAsync(
+            "fs_query", new Dictionary<string, object?> { ["path"] = "/", ["sql"] = "select * from meals" }, turn);
+        var glob = await server.CallAsync(
+            "fs_glob", new Dictionary<string, object?> { ["pattern"] = "**", ["basePath"] = "" }, turn);
+        var blob = await server.CallAsync(
+            "fs_blob_read", new Dictionary<string, object?> { ["path"] = "/foods.parquet" }, turn);
+
+        foreach (var refused in new[] { query, glob, blob })
+        {
+            refused["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied, refused.ToJsonString());
+            refused["message"]!.GetValue<string>().ShouldContain("nobody");
+        }
+    }
+
+    private static object AppMeal(string eatenAt, string notes) => new
+    {
+        eatenAt,
+        notes,
+        outcome = "unknown",
+        items = new[]
+        {
+            new { name = "rice", grams = 150, carbsPer100g = 28, carbsLow = 32, carbs = 42, carbsHigh = 52, source = "estimate" }
+        }
+    };
 }

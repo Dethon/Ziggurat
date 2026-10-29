@@ -5,19 +5,26 @@ using Microsoft.Extensions.Logging;
 
 namespace McpServerSugary.Channel;
 
-// The app's side of a turn: send her words to the agent as a channel message, and wait for the
-// whole reply to the turn it opened. Which agent answers is left to the deployment's routing
+// The app's side of a turn: send the person's words to the agent as a channel message, and wait for
+// the whole reply to the turn it opened. Which agent answers is left to the deployment's routing
 // (agentDefaults), so the message names none; a patch may still move that one turn to another of the
 // agent's models, as a label's does.
+//
+// A turn acts for the person signed in on the phone that asked: its principal is their account, the
+// account's id standing as the channel's own name for them, since the proxy's headers say nothing
+// more; and it goes by that id too, the only name the server has for them.
 public sealed class SugaryChannel(
     ChannelNotificationEmitter emitter, AgentTurns turns, TimeProvider clock, SugarySettings settings,
     ILogger<SugaryChannel> logger)
 {
-    // Who a turn from the app is from, on the dashboard's token totals and in the conversation.
+    public const string ChannelId = "sugary";
+
+    // Who a turn from the app is from where no person is behind it: the eval's and the benchmark's
+    // turns, which stand in for the app.
     public const string Sender = "sugary-app";
 
     public async Task<TurnReply> AskAsync(
-        string conversationId, string content, ResponseFormat format,
+        Account person, string conversationId, string content, ResponseFormat format,
         IReadOnlyList<AttachmentReference> attachments, AgentConfigPatch? patch, ReviewCopy? review,
         CancellationToken ct)
     {
@@ -25,7 +32,8 @@ public sealed class SugaryChannel(
         var delivered = await emitter.EmitAsync(new ChannelMessageNotification
         {
             ConversationId = conversationId,
-            Sender = Sender,
+            Sender = person.UserId,
+            Principal = new Principal(ChannelId, person.UserId, person),
             Content = content,
             ResponseFormat = format,
             ConfigPatch = patch,

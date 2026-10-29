@@ -247,6 +247,8 @@ public class SugaryDoseApiTests
             {
                 DatabasePath = path
             });
+            // Kept through every migration, and nobody's until given to the person whose log it was.
+            await server.GiveUnassignedRowsToAsync(SugaryServer.Her);
             var client = await server.SignedInAsync();
 
             var doses = await ListAsync(client);
@@ -289,6 +291,8 @@ public class SugaryDoseApiTests
             {
                 DatabasePath = path
             });
+            // Kept through every migration, and nobody's until given to the person whose log it was.
+            await server.GiveUnassignedRowsToAsync(SugaryServer.Her);
             var client = await server.SignedInAsync();
 
             var meals = (await client.GetFromJsonAsync<JsonNode>("/api/meals"))!.AsArray();

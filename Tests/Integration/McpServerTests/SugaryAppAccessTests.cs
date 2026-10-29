@@ -1,17 +1,21 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using Domain.Security;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.McpServerTests;
 
-// The app's routes carry their own gate: the access code the standalone app asks for, typed once
-// per phone and kept as a cookie. /mcp keeps the deployment secret and is not opened by the cookie.
+// The app's API believes the person the proxy's session check named, in the three headers the proxy
+// copies onto every request, and nothing else: there is no code to type and no cookie of its own. A
+// request without them did not come through the check and is answered 401, which is what sends the
+// app to sign in. /mcp keeps the deployment secret, and the headers do not open it.
 public class SugaryAppAccessTests
 {
     public static TheoryData<string, string> ApiRoutes => new()
     {
+        { "GET", "/api/session" },
         { "GET", "/api/meals" },
         { "POST", "/api/meals" },
         { "PUT", $"/api/meals/{Guid.NewGuid()}" },
@@ -21,6 +25,11 @@ public class SugaryAppAccessTests
         { "POST", "/api/doses" },
         { "PUT", $"/api/doses/{Guid.NewGuid()}" },
         { "DELETE", $"/api/doses/{Guid.NewGuid()}" },
+        { "GET", "/api/pens" },
+        { "POST", "/api/pens" },
+        { "GET", "/api/push" },
+        { "PUT", "/api/push/subscription" },
+        { "DELETE", "/api/push/subscription?endpoint=https%3A%2F%2Fpush.example%2Fx" },
         { "GET", "/api/exercise" },
         { "POST", "/api/exercise" },
         { "GET", "/api/exercise/names" },
@@ -37,6 +46,8 @@ public class SugaryAppAccessTests
         { "POST", "/api/foods" },
         { "PUT", $"/api/foods/{Guid.NewGuid()}" },
         { "DELETE", $"/api/foods/{Guid.NewGuid()}" },
+        { "GET", "/api/recipes" },
+        { "POST", "/api/recipes" },
         { "GET", "/api/products/8410188012092" },
         { "GET", "/api/export/meals.csv" },
         { "GET", "/api/export/items.csv" },
@@ -47,12 +58,13 @@ public class SugaryAppAccessTests
         { "GET", "/api/export/periods.csv" },
         { "GET", "/api/export/day-notes.csv" },
         { "POST", "/api/estimates" },
-        { "POST", "/api/labels" }
+        { "POST", "/api/labels" },
+        { "GET", "/api/nope" }
     };
 
     [Theory]
     [MemberData(nameof(ApiRoutes))]
-    public async Task APhoneThatHasNotSignedIn_IsRefusedByEveryApiRoute(string method, string path)
+    public async Task ARequestWithoutTheProxysHeaders_IsRefusedByEveryApiRoute(string method, string path)
     {
         await using var server = await SugaryServer.StartAsync();
 
@@ -64,108 +76,56 @@ public class SugaryAppAccessTests
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
-    [Fact]
-    public async Task TheApi_IsClosedUntilTheCodeIsTyped()
-    {
-        await using var server = await SugaryServer.StartAsync();
-        var browser = server.Browser();
-
-        (await browser.GetAsync("/api/meals")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
-        (await browser.PostAsJsonAsync("/api/session", new { code = "wrong" })).StatusCode
-            .ShouldBe(HttpStatusCode.Unauthorized);
-        (await browser.GetFromJsonAsync<JsonNode>("/api/session"))!["authenticated"]!.GetValue<bool>().ShouldBeFalse();
-
-        (await browser.PostAsJsonAsync("/api/session", new { code = $" {SugaryServer.AccessCode} " })).StatusCode
-            .ShouldBe(HttpStatusCode.NoContent);
-
-        (await browser.GetAsync("/api/meals")).StatusCode.ShouldBe(HttpStatusCode.OK);
-        var session = (await browser.GetFromJsonAsync<JsonNode>("/api/session"))!;
-        session["authenticated"]!.GetValue<bool>().ShouldBeTrue();
-        session["required"]!.GetValue<bool>().ShouldBeTrue();
-    }
-
-    [Fact]
-    public async Task SigningOut_ClosesTheApiAgain()
-    {
-        await using var server = await SugaryServer.StartAsync();
-        var browser = await server.SignedInAsync();
-
-        (await browser.DeleteAsync("/api/session")).StatusCode.ShouldBe(HttpStatusCode.NoContent);
-
-        (await browser.GetAsync("/api/meals")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
-    }
-
-    // As with every shared secret here, a code nobody set opens nothing: a forgotten line in .env
-    // must not leave her health log readable by anyone on the network.
-    [Fact]
-    public async Task WithNoCodeSet_EverySignInIsRefused()
-    {
-        await using var server = await SugaryServer.StartAsync(accessCode: "");
-        var browser = server.Browser();
-
-        (await browser.GetFromJsonAsync<JsonNode>("/api/session"))!["required"]!.GetValue<bool>().ShouldBeTrue();
-        (await browser.PostAsJsonAsync("/api/session", new { code = "" })).StatusCode
-            .ShouldBe(HttpStatusCode.Unauthorized);
-        (await browser.GetAsync("/api/meals")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
-    }
-
-    // A deployment reached only through its VPN can switch the code off. Every route then opens with
-    // no cookie, and the session tells the app not to ask, so she never sees the sign-in screen.
+    // The check always answers all three, so a request carrying fewer did not come through it.
     [Theory]
-    [MemberData(nameof(ApiRoutes))]
-    public async Task WithTheCodeSwitchedOff_EveryApiRouteOpensWithoutSigningIn(string method, string path)
+    [InlineData(ForwardedAccount.UserHeader)]
+    [InlineData(ForwardedAccount.TenantHeader)]
+    [InlineData(ForwardedAccount.RolesHeader)]
+    public async Task ARequestMissingOneOfTheHeaders_IsRefused(string missing)
     {
-        await using var server = await SugaryServer.StartAsync(
-            configure: settings => settings with { SugaryApp = new() { RequireAccessCode = false } });
+        await using var server = await SugaryServer.StartAsync();
+        var browser = server.As(SugaryServer.Her);
+        browser.DefaultRequestHeaders.Remove(missing);
 
-        var response = await server.Browser().SendAsync(new HttpRequestMessage(new HttpMethod(method), path)
+        (await browser.GetAsync("/api/meals")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ASignedInRequest_ReachesTheApi()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var her = server.As(SugaryServer.Her);
+
+        (await her.GetAsync("/api/meals")).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var session = (await her.GetFromJsonAsync<JsonNode>("/api/session"))!;
+        session["estimates"]!.GetValue<bool>().ShouldBeTrue();
+        session["labels"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    // Signing in and out is the accounts service's, for every app at once; the app has neither.
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("DELETE")]
+    public async Task TheAppsOwnSignInAndSignOut_AreGone(string method)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var her = server.As(SugaryServer.Her);
+
+        var response = await her.SendAsync(new HttpRequestMessage(new HttpMethod(method), "/api/session")
         {
-            Content = method is "POST" or "PUT" ? JsonContent.Create(new { }) : null
+            Content = method == "POST" ? JsonContent.Create(new { code = "tortilla" }) : null
         });
 
-        response.StatusCode.ShouldNotBe(HttpStatusCode.Unauthorized);
+        response.StatusCode.ShouldBeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
     }
 
     [Fact]
-    public async Task WithTheCodeSwitchedOff_TheSessionSaysNoneIsNeeded()
-    {
-        await using var server = await SugaryServer.StartAsync(
-            configure: settings => settings with { SugaryApp = new() { RequireAccessCode = false } });
-
-        var session = (await server.Browser().GetFromJsonAsync<JsonNode>("/api/session"))!;
-
-        session["required"]!.GetValue<bool>().ShouldBeFalse();
-        session["authenticated"]!.GetValue<bool>().ShouldBeTrue();
-    }
-
-    // Guessing the code is slowed per address: ten tries a minute, and then that address waits.
-    // Anyone else reaching the port is no reason for her phone to be locked out with it.
-    [Fact]
-    public async Task GuessingTheCode_IsSlowedForTheGuesser_AndNotForHer()
+    public async Task TheHeaders_DoNotOpenMcp()
     {
         await using var server = await SugaryServer.StartAsync();
-        var guesser = server.Browser(IPAddress.Parse("127.0.0.2"));
-        var her = server.Browser(IPAddress.Loopback);
+        var her = server.As(SugaryServer.Her);
 
-        for (var guess = 0; guess < 10; guess++)
-        {
-            (await guesser.PostAsJsonAsync("/api/session", new { code = $"guess-{guess}" })).StatusCode
-                .ShouldBe(HttpStatusCode.Unauthorized);
-        }
-
-        (await guesser.PostAsJsonAsync("/api/session", new { code = SugaryServer.AccessCode })).StatusCode
-            .ShouldBe(HttpStatusCode.TooManyRequests);
-        (await her.PostAsJsonAsync("/api/session", new { code = SugaryServer.AccessCode })).StatusCode
-            .ShouldBe(HttpStatusCode.NoContent);
-    }
-
-    [Fact]
-    public async Task TheCookie_DoesNotOpenMcp()
-    {
-        await using var server = await SugaryServer.StartAsync();
-        var browser = await server.SignedInAsync();
-
-        var response = await browser.PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
+        var response = await her.PostAsJsonAsync("/mcp", new { jsonrpc = "2.0", id = 1, method = "tools/list" });
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
@@ -174,8 +134,8 @@ public class SugaryAppAccessTests
     public async Task AnUnknownApiRoute_IsNotAnsweredWithTheApp()
     {
         await using var server = await SugaryServer.StartAsync();
-        var browser = await server.SignedInAsync();
+        var her = server.As(SugaryServer.Her);
 
-        (await browser.GetAsync("/api/nope")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await her.GetAsync("/api/nope")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 }

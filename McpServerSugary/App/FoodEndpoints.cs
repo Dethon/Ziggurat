@@ -28,7 +28,7 @@ public record SaveFoodRequest(
     string? Barcode,
     ItemSource Source);
 
-// Her own foods, ported from the standalone app as they were.
+// The household's foods, ported from the standalone app as they were and shared by everyone in it.
 public static class FoodEndpoints
 {
     private const double MaxAmount = 5000;
@@ -43,8 +43,8 @@ public static class FoodEndpoints
         foods.MapDelete("/{id:guid}", DeleteAsync);
     }
 
-    // The whole list, most recently eaten first: it is one person's kitchen, and the picker
-    // filters it as she types.
+    // The whole kitchen, most recently eaten first by the person asking (their own meals are the
+    // ones counted), and the picker filters it as they type.
     private static async Task<IReadOnlyList<FoodDto>> ListAsync(SugaryDbContext db, CancellationToken ct)
     {
         var foods = await db.Foods.AsNoTracking().ToListAsync(ct);

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json.Nodes;
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Sugary;
@@ -22,7 +23,7 @@ public class SugaryParquetFilesTests
     private static readonly Guid _paella = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
     private readonly InMemorySugaryLog _log = new();
-    private readonly SugaryFileSystem _mount;
+    private readonly FileSystemBackendBase _mount;
     private readonly VirtualFileSystemRegistry _registry = new();
 
     public SugaryParquetFilesTests()
@@ -38,7 +39,7 @@ public class SugaryParquetFilesTests
         ]);
         _log.Doses.Add(new LoggedDose(Guid.NewGuid(), DateTimeOffset.Parse("2026-08-09T12:25:00Z"), 7, DoseKind.Rapid,
             [_paella], null));
-        _mount = new SugaryFileSystem(_log, _madrid, new DuckDbTableEngine());
+        _mount = new SugaryFileSystem(_log, _madrid, new DuckDbTableEngine()).For(InMemorySugaryLog.Her);
         _registry.Mount(new FileSystemMount(SugaryFileSystem.Name, "/sugary", "her log"), _mount);
     }
 
