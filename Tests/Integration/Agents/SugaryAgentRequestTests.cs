@@ -75,7 +75,7 @@ public sealed class SugaryAgentRequestTests
         var spec = AgentSpecProjection.ForAgent(
             definition, new AgentKey($"conv-{Guid.NewGuid():N}", id), "fran",
             new OpenRouterConfig { ApiUrl = "http://localhost/api/v1", ApiKey = "test-key" },
-            FixedPatchableModelSource.None, lemonadeHostAddress: null, McpTestSecret.Value,
+            FixedPatchableModelSource.None, lemonadeHostAddress: null, McpTestSecret.Credentials,
             new DeploymentEndpoints(definition.McpServerEndpoints), logger: null);
         var client = new OpenRouterChatClient(
             "http://localhost/api/v1", "test-key", spec.Model, transportHandler: wire);

@@ -46,6 +46,19 @@ public static class InjectorModule
             // rather than discover it one message at a time.
             settings.AgentDefaults.Validate(settings.Agents.Select(a => a.Id));
 
+            // And for a server the deployment configured without its credential: dialled bare, its
+            // gate would refuse every call, and the session that needed it would fail far from here.
+            var credentials = McpCredentials.From(settings.Mcp);
+            var uncredentialed = credentials.MissingFor(settings.Agents.SelectMany(a => a.McpServerEndpoints)
+                .Concat(settings.SubAgents.SelectMany(a => a.McpServerEndpoints))
+                .Concat(settings.ChannelEndpoints.Select(c => c.Endpoint)));
+            if (uncredentialed.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"No MCP credential for {string.Join(", ", uncredentialed)}: set MCP__SECRETS__<host> for each " +
+                    "configured server, the same value the server reads as MCP__SHAREDSECRET.");
+            }
+
             // The same rule for the other thing an agent names rather than carries: a section id
             // nothing declares is a behaviour somebody meant to give an agent and it would
             // otherwise go missing in silence. The projection refuses it too, per agent built;
@@ -65,8 +78,10 @@ public static class InjectorModule
             return services
                 .AddSingleton(settings.AgentDefaults)
                 .AddSingleton(settings.Retention)
-                // Read by the agent factory and applied to every configured endpoint it composes.
-                .AddSingleton(settings.Mcp)
+                // The credentials checked above, and the only ones: the agent factory applies them
+                // to every configured endpoint it composes, and each channel connection presents
+                // its own server's.
+                .AddSingleton(credentials)
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")
                 .AddSingleton<ChatThreadResolver>()
@@ -161,11 +176,11 @@ public static class InjectorModule
                 var attachOnly = endpoint.AttachOnly;
                 var hostsReviewCopies = endpoint.HostsReviewCopies;
                 // A channel server's /mcp is gated like every other deployment server's, so each
-                // connection — and every reconnect it makes — presents the deployment secret.
+                // connection — and every reconnect it makes — presents that server's credential.
                 services = services.AddSingleton<IChannelConnection>(sp =>
                     new McpChannelConnection(
                         channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
-                        mcpSecret: settings.Mcp.SharedSecret)
+                        mcpSecret: sp.GetRequiredService<McpCredentials>().For(endpoint.Endpoint))
                     {
                         HostsReviewCopies = hostsReviewCopies
                     });

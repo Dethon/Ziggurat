@@ -11,6 +11,8 @@ public class DashboardE2EFixture : E2EFixtureBase
     private IContainer? _observability;
 
     public string DashboardUrl { get; private set; } = "";
+    private const string RedisPassword = "e2e-dashboard";
+
     public string RedisConnectionString { get; private set; } = "";
 
     protected override async Task BuildImagesAsync(CancellationToken ct)
@@ -29,10 +31,13 @@ public class DashboardE2EFixture : E2EFixtureBase
             .Build();
         await _network.CreateAsync(ct);
 
+        // Behind a password, as the deployment's Redis is: this is the one stack that exercises the
+        // connection string carrying it, so a service that dropped it would fail here.
         _redis = TestContainers.Container("redis/redis-stack-server:latest")
             .WithName($"redis-{Guid.NewGuid():N}")
             .WithNetwork(_network)
             .WithNetworkAliases("redis")
+            .WithEnvironment("REDIS_ARGS", $"--requirepass {RedisPassword}")
             .WithPortBinding(6379, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(6379))
             .Build();
@@ -44,7 +49,7 @@ public class DashboardE2EFixture : E2EFixtureBase
             .WithNetwork(_network)
             .WithNetworkAliases("observability")
             .WithPortBinding(8080, true)
-            .WithEnvironment("REDIS__CONNECTIONSTRING", "redis:6379")
+            .WithEnvironment("REDIS__CONNECTIONSTRING", $"redis:6379,password={RedisPassword}")
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/api/metrics/health")))
             .Build();
@@ -55,7 +60,7 @@ public class DashboardE2EFixture : E2EFixtureBase
         DashboardUrl = $"http://{host}:{port}/";
 
         var redisPort = _redis.GetMappedPublicPort(6379);
-        RedisConnectionString = $"{_redis.Hostname}:{redisPort}";
+        RedisConnectionString = $"{_redis.Hostname}:{redisPort},password={RedisPassword}";
     }
 
     protected override async Task StopContainersAsync()

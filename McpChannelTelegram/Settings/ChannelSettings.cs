@@ -6,11 +6,13 @@ namespace McpChannelTelegram.Settings;
 
 public record ChannelSettings : IMcpHostSettings
 {
-    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    // This server's own credential, which its /mcp asks for (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
 
     public required AgentBotConfig[] Bots { get; init; }
-    public required string[] AllowedUsernames { get; init; }
+    // Telegram's numeric user ids, the only part of a sender its owner cannot change and Telegram
+    // never reassigns. A message is admitted only when its sender's id is listed.
+    public required long[] AllowedUserIds { get; init; }
 
     // Metrics only: this channel keeps no state of its own (a Telegram file id is the store), so
     // Redis is here for the same reason the voice hub has it — the metric sink.

@@ -37,17 +37,26 @@ public sealed class FakeChatSessionService(CallRecorder? recorder = null) : ICha
         return Task.FromResult(HubResult<bool>.Answered(true));
     }
 
-    public Task<HubResult<Nothing>> RegisterUserAsync(string userId)
+    // When set, registration is answered only once the test completes it: the window in which a
+    // call made after registering is still waiting on the server.
+    public TaskCompletionSource? RegistrationAnswer { get; set; }
+
+    public async Task<HubResult<Nothing>> RegisterUserAsync(string userId)
     {
         recorder?.Record("register-user");
 
+        if (RegistrationAnswer is { } answer)
+        {
+            await answer.Task;
+        }
+
         if (NotLive)
         {
-            return Task.FromResult(HubResult<Nothing>.NotLive);
+            return HubResult<Nothing>.NotLive;
         }
 
         _registeredUserIds.Add(userId);
-        return Task.FromResult(HubResult<Nothing>.Answered(default));
+        return HubResult<Nothing>.Answered(default);
     }
 
     public void ClearSession()
