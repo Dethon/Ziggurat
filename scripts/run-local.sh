@@ -34,6 +34,7 @@ SERVICES=(
   "agent|Agent|5000|yes|no||--chat Web --reasoning"
   "webui|WebChat|5001|yes|no||"
   "observability|Observability|5003|yes|no||"
+  "accounts|Accounts|5004|yes|no||"
   "library|McpServerLibrary|6001|no|no||"
   "vault|McpServerVault|6002|no|no||"
   "websearch|McpServerWebSearch|6003|no|no||"

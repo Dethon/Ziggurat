@@ -12,7 +12,7 @@ description: Launch the local jackbot Docker Compose stack and reach its UIs —
 | `DockerCompose/docker-compose.yml`                  | Main service definitions |
 | `DockerCompose/docker-compose.override.windows.yml` | Windows user secrets mount (`%APPDATA%/Microsoft/UserSecrets`) |
 | `DockerCompose/docker-compose.override.linux.yml`   | Linux user secrets mount (`$HOME/.microsoft/usersecrets`) |
-| `DockerCompose/docker-compose.override.ports.yml`   | Publishes the MCP servers, channel servers, agent, webui, observability, Camoufox and tse-extractor on `127.0.0.1` at their usual ports, for a project run on the host against the stack (`appsettings.Local.json`). The base file publishes only Caddy's 443, Redis on loopback and the operator's LAN tools on `${LAN_BIND_ADDRESS}` (loopback when unset) |
+| `DockerCompose/docker-compose.override.ports.yml`   | Publishes the MCP servers, channel servers, agent, webui, observability, accounts, Camoufox and tse-extractor on `127.0.0.1` at their usual ports, for a project run on the host against the stack (`appsettings.Local.json`). The base file publishes only Caddy's 443, Redis on loopback and the operator's LAN tools on `${LAN_BIND_ADDRESS}` (loopback when unset) |
 | `DockerCompose/docker-compose.override.no-dri.yml`  | Strips `/dev/dri` from `plex`/`mcp-sandbox`/`lemonade` (and forces `lemonade` STT to CPU) on hosts without a DRI render node |
 
 ## Launching
@@ -25,7 +25,7 @@ Swap the override for your OS (`linux` on Linux/WSL, `windows` on Windows):
 
 ```bash
 REDIS_PASSWORD=local-redis-password docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot up -d --build \
-  agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library \
+  agent webui observability accounts mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library \
   mcp-channel-signalr mcp-channel-telegram mcp-channel-voice mcp-scheduling mcp-printer mcp-timers mcp-sugary \
   lemonade tse-extractor qbittorrent jackett redis caddy camoufox homeassistant music-assistant
 ```
@@ -47,6 +47,10 @@ These secrets live in `DockerCompose/.env` and must be set (any non-empty value)
 Caddy (port 443, Let's Encrypt TLS) is the entry point: `/hubs/*` → McpChannelSignalR, `/dashboard/*` → Observability, everything else → WebUI. **Connect through Caddy, not directly to webui:5001**, or SignalR won't reach the channel server.
 
 The dashboard (an installable PWA) is at `https://assistants.herfluffness.com/dashboard/` or, with the ports override, `http://localhost:5003/dashboard/` direct.
+
+## Accounts and signing in
+
+`accounts` owns households, people, passkeys and sessions; Caddy routes `/accounts/*` on the main host to it (sign-in, a link's enrollment page, and the `/accounts/verify` session check). On a fresh store nobody can sign in until the operator mints their own link: `docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"` prints a one-time link (a week long) that enrolls a passkey; run it again after losing every passkey. `mint-link --user <id>` is a recovery link for anyone, and `mint-session --user <id>` prints a session cookie's value (`ziggurat_session`) for a test stack. A host run of the project (`Local: Accounts`, `http://localhost:5004`) uses `localhost` as the passkeys' relying party and a host-only cookie.
 
 ## The Sugary app
 

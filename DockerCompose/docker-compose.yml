@@ -916,6 +916,64 @@ services:
     networks:
       - jackbot
 
+  # Docker creates a missing bind-mount folder as root, and accounts runs as PUID, so on a fresh host
+  # it could not create its store. This one-shot step, from the same image, hands ./volumes/accounts
+  # to PUID:PGID and exits before the service starts; it is a no-op on every later start.
+  accounts-volume:
+    image: accounts:latest
+    container_name: accounts-volume
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: Accounts/Dockerfile
+    user: "0:0"
+    entrypoint: ["chown", "${PUID:-1654}:${PGID:-1654}", "/data"]
+    volumes:
+      - ./volumes/accounts:/data
+    restart: "no"
+    depends_on:
+      base-sdk:
+        condition: service_started
+
+  # Households, people, passkeys, invites and sessions. Caddy routes /accounts/* on the main host
+  # here (sign-in, enrollment) and asks /accounts/verify about every protected request; nothing
+  # else reaches it. Its store is a SQLite file in this volume, backed up with the volume. The
+  # operator's way in, before anyone can sign in and after losing every passkey:
+  #   docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"
+  # and a recovery link for anyone: docker exec accounts dotnet Accounts.dll mint-link --user <id>
+  accounts:
+    image: accounts:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: accounts
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: Accounts/Dockerfile
+    restart: unless-stopped
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/accounts:/data
+    environment:
+      <<: *timezone
+      # Per deployment, not secrets. A passkey belongs to the parent domain, so one signs in on every
+      # host under it; the session cookie is set there for the same reason. The origins are the
+      # hosts the Caddyfile serves people on: a ceremony's page must be on one, and sign-in returns
+      # only to one. Links the operator's command prints start with the public base.
+      WEBAUTHN__RELYINGPARTYID: herfluffness.com
+      ALLOWEDORIGINS__0: https://assistants.herfluffness.com
+      ALLOWEDORIGINS__1: https://sexy.herfluffness.com
+      ALLOWEDORIGINS__2: https://sugary.herfluffness.com
+      SESSIONCOOKIE__DOMAIN: .herfluffness.com
+      PUBLICBASEURL: https://assistants.herfluffness.com
+    networks:
+      - jackbot
+    depends_on:
+      accounts-volume:
+        condition: service_completed_successfully
+      base-sdk:
+        condition: service_started
+
   caddy:
     build:
       context: ./caddy
@@ -940,6 +998,7 @@ services:
       - webui
       - agent
       - mcp-sugary
+      - accounts
 
 networks:
   jackbot:

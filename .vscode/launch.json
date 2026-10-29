@@ -29,6 +29,7 @@
         "Local: Agent",
         "Local: WebUI",
         "Local: Observability",
+        "Local: Accounts",
         "Local: MCP Library",
         "Local: MCP Vault",
         "Local: MCP WebSearch",
@@ -249,6 +250,18 @@
         "DOTNET_ENVIRONMENT": "Local",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:5003"
+      }
+    },
+    {
+      "name": "Local: Accounts",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/Accounts/bin/Debug/net10.0/Accounts.dll",
+      "cwd": "${workspaceFolder}/Accounts",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "ASPNETCORE_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:5004"
       }
     },
     {
