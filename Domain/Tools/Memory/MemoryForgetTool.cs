@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 
 namespace Domain.Tools.Memory;
 
@@ -66,13 +67,18 @@ public class MemoryForgetTool(
         string? reason = null,
         CancellationToken ct = default)
     {
-        var userId = featureConfig.UserId;
+        // Whose memory this call reaches is the account the turn in flight acts for — read per call,
+        // because this tool set was built by the conversation's first turn and a later one may be
+        // somebody else's: a second person at the satellite, a shared topic. FeatureConfig.UserId is
+        // that first turn's sender, a name rather than a person, and is never the key.
+        var userId = Principal.Of(featureConfig.ConversationContextProvider?.Invoke())?.Account?.UserId;
         if (string.IsNullOrWhiteSpace(userId))
         {
-            // Memory is scoped per user, so a run carrying no identity has nothing to scope to.
-            // That is a missing credential rather than a passing outage: waiting changes nothing.
+            // Memory is a person's, and a turn acting for no account — the voice guest, a channel
+            // not yet on accounts — has nobody's to reach. That is a missing credential rather than
+            // a passing outage: waiting changes nothing.
             return ToolError.Authentication(
-                "Memory is scoped to a user and this run carries no user identity",
+                "Memory belongs to a person's account and this turn acts for none",
                 "Nothing here can supply it; tell the user their memories cannot be reached in this "
                 + "conversation.").ToNode();
         }
