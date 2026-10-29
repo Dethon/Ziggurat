@@ -145,6 +145,7 @@ public sealed class RequestApprovalTool
                 ExecScreenCodes.SendsOut => "Enviaría datos a un servidor.",
                 ExecScreenCodes.RunsDownloaded => "Descargaría un programa y lo ejecutaría.",
                 ExecScreenCodes.Unjudged => "Se ejecuta en tu ordenador y no he podido comprobarlo.",
+                ExecScreenCodes.AsPerson => "Entraría en esa web con tu cuenta.",
                 _ => null
             })
             .FirstOrDefault(sentence => sentence is not null);
