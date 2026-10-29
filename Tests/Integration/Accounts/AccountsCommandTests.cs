@@ -133,6 +133,7 @@ public class AccountsCommandTests
     {
         var directory = Path.Combine(Path.GetTempPath(), "accounts-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
+        var port = TestPort.GetAvailable();
         var start = new ProcessStartInfo("dotnet")
         {
             ArgumentList = { Path.Combine(AppContext.BaseDirectory, "Accounts.dll"), "mint-link", "--operator", "--name", "Fran" },
@@ -145,7 +146,7 @@ public class AccountsCommandTests
                 ["PUBLICBASEURL"] = "https://assistants.example",
                 ["ALLOWEDORIGINS__0"] = "https://assistants.example",
                 ["WEBAUTHN__RELYINGPARTYID"] = "example",
-                ["ASPNETCORE_URLS"] = $"http://127.0.0.1:{TestPort.GetAvailable()}"
+                ["ASPNETCORE_URLS"] = $"http://127.0.0.1:{port}"
             }
         };
         try
@@ -169,6 +170,7 @@ public class AccountsCommandTests
         }
         finally
         {
+            TestPort.Release(port);
             Directory.Delete(directory, recursive: true);
         }
     }
