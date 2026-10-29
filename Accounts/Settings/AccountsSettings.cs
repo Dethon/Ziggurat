@@ -18,6 +18,8 @@ public record AccountsSettings
 
     public SessionCookieSettings SessionCookie { get; init; } = new();
 
+    public TelegramSettings Telegram { get; init; } = new();
+
     // How long an invite or recovery link stays redeemable.
     public int LinkLifetimeDays { get; init; } = 7;
 
@@ -52,4 +54,11 @@ public record SessionCookieSettings
     // host-only cookie, which is what a localhost run needs: a browser refuses a parent domain the
     // page is not under.
     public string Domain { get; init; } = "";
+}
+
+public record TelegramSettings
+{
+    // The deployment's bot, without the @: the account page's link code is shown as the bot's
+    // t.me deep link. Empty shows the bare code, for a deployment with no bot named yet.
+    public string BotUsername { get; init; } = "";
 }

@@ -40,7 +40,7 @@ public sealed partial class AccountsServer : IAsyncDisposable
 
     public Uri Address => new($"http://localhost:{_port}/");
 
-    public static async Task<AccountsServer> StartAsync()
+    public static async Task<AccountsServer> StartAsync(Func<AccountsSettings, AccountsSettings>? configure = null)
     {
         var port = TestPort.GetAvailable();
         var directory = Path.Combine(Path.GetTempPath(), "accounts-tests", Guid.NewGuid().ToString("N"));
@@ -52,6 +52,7 @@ public sealed partial class AccountsServer : IAsyncDisposable
             AllowedOrigins = [$"http://localhost:{port}"],
             WebAuthn = new WebAuthnSettings { RelyingPartyId = "localhost" }
         };
+        settings = configure?.Invoke(settings) ?? settings;
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 29, 9, 0, 0, TimeSpan.Zero));
 
         var builder = WebApplication.CreateBuilder();
@@ -68,6 +69,10 @@ public sealed partial class AccountsServer : IAsyncDisposable
     // A client that follows nothing and keeps no cookies, so each request says exactly what it carries.
     public HttpClient Client() =>
         new(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { BaseAddress = Address };
+
+    // A signed-in browser's requests without the browser: the session cookie, and the antiforgery
+    // cookie and token the service's pages hand out, carried as a browser would carry them.
+    public PageClient SignedIn(string session) => new(Client(), session);
 
     // The container's command, run as `docker exec accounts dotnet Accounts.dll <args>` runs it.
     public async Task<(int Exit, string Output)> RunAsync(params string[] args)
@@ -133,6 +138,67 @@ public sealed partial class AccountsServer : IAsyncDisposable
         TestPort.Release(_port);
         SqliteConnection.ClearAllPools();
         Directory.Delete(_directory, recursive: true);
+    }
+
+    public sealed partial class PageClient(HttpClient client, string session)
+    {
+        private readonly Dictionary<string, string> _cookies = new() { [SessionCookie.Name] = session };
+
+        public async Task<HttpResponseMessage> GetAsync(string path)
+        {
+            var response = await client.SendAsync(Request(HttpMethod.Get, path));
+            Keep(response);
+            return response;
+        }
+
+        public async Task<string> PageAsync(string path)
+        {
+            var response = await GetAsync(path);
+            response.StatusCode.ShouldBe(HttpStatusCode.OK);
+            return await response.Content.ReadAsStringAsync();
+        }
+
+        // Posts a form the way the page at `from` would: with the antiforgery token it rendered.
+        public async Task<HttpResponseMessage> PostAsync(string from, string action, params (string Name, string Value)[] fields)
+        {
+            var page = await PageAsync(from);
+            var token = AntiforgeryField().Match(page);
+            token.Success.ShouldBeTrue("the page renders no antiforgery token");
+            return await PostWithoutPageAsync(action, [(token.Groups["name"].Value, token.Groups["value"].Value), .. fields]);
+        }
+
+        public async Task<HttpResponseMessage> PostWithoutPageAsync(string action, params (string Name, string Value)[] fields)
+        {
+            var request = Request(HttpMethod.Post, action);
+            request.Content = new FormUrlEncodedContent(fields.Select(f => KeyValuePair.Create(f.Name, f.Value)));
+            var response = await client.SendAsync(request);
+            Keep(response);
+            return response;
+        }
+
+        private HttpRequestMessage Request(HttpMethod method, string path)
+        {
+            var request = new HttpRequestMessage(method, path);
+            request.Headers.Add("Cookie", string.Join("; ", _cookies.Select(c => $"{c.Key}={c.Value}")));
+            request.Headers.TryAddWithoutValidation("Accept", "text/html");
+            return request;
+        }
+
+        private void Keep(HttpResponseMessage response)
+        {
+            if (!response.Headers.TryGetValues("Set-Cookie", out var cookies))
+            {
+                return;
+            }
+
+            foreach (var pair in cookies.Select(c => c.Split(';')[0].Split('=', 2)).Where(p => p.Length == 2))
+            {
+                _cookies[pair[0]] = pair[1];
+            }
+        }
+
+        [GeneratedRegex("""<input type="hidden" name="(?<name>[^"]+)" value="(?<value>[^"]+)">""")]
+        private static partial Regex AntiforgeryField();
     }
 
     // What `mint-link` prints: who the link is for, and the link.
