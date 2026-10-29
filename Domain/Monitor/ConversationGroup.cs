@@ -408,7 +408,7 @@ internal sealed class ConversationGroup(
             ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, x.Message.AgentId))
             : (x.Channel, agentKey);
         var agent = _agent = agentFactory.Create(
-            deliveryKey, x.Message.Sender, x.Message.AgentId, approvalChannel);
+            deliveryKey, x.Message.Sender, x.Message.AgentId, approvalChannel, x.Message.Principal?.Account);
         var thread = await GetOrRestoreThread(agent, deliveryKey);
 
         // Start session warmup (MCP connections + tool discovery) without awaiting it yet, so

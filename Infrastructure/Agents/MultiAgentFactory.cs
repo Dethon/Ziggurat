@@ -51,9 +51,12 @@ public sealed class MultiAgentFactory(
     private static ILemonadeModelSource LemonadeModelsOf(IServiceProvider? serviceProvider) =>
         serviceProvider?.GetService<ILemonadeModelSource>() ?? FixedLemonadeModelSource.None;
 
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
+    public DisposableAgent Create(
+        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null)
     {
-        var agents = definitionProvider.GetAll(userId);
+        // A person's custom agents are registered under their account's id, so a turn that names
+        // the account finds them by it and not by its sender, which may be the account's display name.
+        var agents = definitionProvider.GetAll(account?.UserId ?? userId);
 
         // By id or not at all. Falling back to the first configured agent read routing off the
         // order of a display catalogue, so a request that named nobody was answered by whichever
