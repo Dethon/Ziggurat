@@ -22,8 +22,9 @@ public sealed class McpChannelConnection(
     // How often the run below asks whether the link is still there. The supervision cadence belongs
     // to the thing being supervised, which is why it moved here with the run.
     TimeSpan? healthCheckInterval = null,
-    // The deployment secret a channel server's /mcp asks for, presented on the first dial and on
-    // every reconnect, since both go through ConnectAsync. Null presents nothing, which a gated
+    // The channel server's own credential, which its /mcp asks for, found by the host its endpoint
+    // is dialled at. Presented on the first dial and on every reconnect, since both go through
+    // ConnectAsync. Null presents nothing, which a gated
     // server refuses — the dial then fails and is retried like any other.
     string? mcpSecret = null)
     : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
