@@ -4,8 +4,8 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A preflight from a listed origin is answered with CORS headers, and from a foreign origin without, on both hosts
-- [ ] An empty setting answers no cross-origin preflight
-- [ ] The chat client still connects to the hub through the proxy (E2E suite passes)
+- [x] A preflight from a listed origin is answered with CORS headers, and from a foreign origin without, on both hosts
+- [x] An empty setting answers no cross-origin preflight
+- [x] The chat client still connects to the hub through the proxy (E2E suite passes)
