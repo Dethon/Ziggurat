@@ -13,9 +13,9 @@
   </ItemGroup>
 
   <!-- Domain, the MCP server package and the configuration binder, and nothing else. Infrastructure is deliberately absent:
-       McpChannelTelegram and McpChannelServiceBus reference Domain alone, and a reference here
-       would hand them Playwright, Redis, a printing library, Terminal.Gui and the agent stack as
-       transitive dependencies. Domain cannot host this code either — it references no DI or MCP
+       a server takes it only when it needs one of its adapters, and a reference here would make
+       that choice for every server, handing each Playwright, Redis, a printing library,
+       Terminal.Gui and the agent stack as transitive dependencies. Domain cannot host this code either — it references no DI or MCP
        package on purpose. -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.13" />

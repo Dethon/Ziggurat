@@ -26,7 +26,7 @@ Swap the override for your OS (`linux` on Linux/WSL, `windows` on Windows):
 ```bash
 REDIS_PASSWORD=local-redis-password docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot up -d --build \
   agent webui observability mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library \
-  mcp-channel-signalr mcp-channel-telegram mcp-channel-servicebus mcp-channel-voice mcp-scheduling mcp-printer mcp-timers mcp-sugary \
+  mcp-channel-signalr mcp-channel-telegram mcp-channel-voice mcp-scheduling mcp-printer mcp-timers mcp-sugary \
   lemonade tse-extractor qbittorrent jackett redis caddy camoufox homeassistant music-assistant
 ```
 

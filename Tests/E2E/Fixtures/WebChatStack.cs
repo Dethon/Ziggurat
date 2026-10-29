@@ -353,7 +353,7 @@ internal sealed class WebChatStack
         var agentLogLevel = Environment.GetEnvironmentVariable("E2E_AGENT_LOG_LEVEL") ?? "Information";
         var sugaryAgent = ShippedAgent("sugary");
         // Without this, the default appsettings.json baked into the image also registers
-        // channels for telegram/servicebus and extra MCP endpoints that don't exist here.
+        // channels for telegram and extra MCP endpoints that don't exist here.
         var e2EAppSettings = Encoding.UTF8.GetBytes($$"""
             {
               "openRouter": { "apiUrl": "https://openrouter.ai/api/v1/", "apiKey": "{{apiKey}}" },

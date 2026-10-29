@@ -1,6 +1,5 @@
 using Domain.Security;
 using Mcp.Hosting;
-using McpChannelServiceBus.Modules;
 using McpChannelSignalR.Modules;
 using McpChannelTelegram.Modules;
 using McpChannelVoice.Modules;
@@ -23,7 +22,6 @@ using OutpostSettings = McpServerOutpost.Settings;
 using PrinterSettings = McpServerPrinter.Settings;
 using SandboxSettings = McpServerSandbox.Settings;
 using SchedulingSettings = McpServerScheduling.Settings;
-using ServiceBusSettings = McpChannelServiceBus.Settings;
 // Aliased because Tests.Integration has sibling namespaces named after the server projects, which
 // shadow the project namespaces from inside Tests.
 using SignalRSettings = McpChannelSignalR.Settings;
@@ -77,12 +75,6 @@ public static class McpServerRegistrations
     public const string UnreachableRedis =
         "127.0.0.1:1,abortConnect=false,connectTimeout=100,connectRetry=1";
 
-    // ConfigureChannel eagerly constructs a ServiceBusClient from this, which parses the
-    // connection string without ever dialing out. Well-formed but unreachable — SharedAccessKey
-    // just needs to be valid base64.
-    public const string FakeServiceBusConnectionString =
-        "Endpoint=sb://fake.servicebus.windows.net/;SharedAccessKeyName=x;SharedAccessKey=Zm9vYmFyMTIzNDU2Nzg5MA==";
-
     // The declared delivery policy is part of the row, so this table is the single place where
     // "this is a channel server, and this is the policy it chose" is verified against the real
     // registration. That is the check that would have caught all three rounds of the
@@ -90,8 +82,8 @@ public static class McpServerRegistrations
     // caller assumed, and none of them was visible anywhere but inside the emitter.
     //
     // Broadcast for the two chat-shaped transports whose callers cannot retry; gate-on-live for
-    // the three whose callers settle a durable record on a confirmed delivery — a schedule, a
-    // routing entry, a broker message — and would otherwise keep the record *and* leave a buffered
+    // the two whose callers settle a durable record on a confirmed delivery — a schedule, a
+    // routing entry — and would otherwise keep the record *and* leave a buffered
     // duplicate behind, and for Sugary, whose app waits on its own request; buffer-always for the one transport with no way to tell a sender to try
     // again later.
     //
@@ -115,17 +107,6 @@ public static class McpServerRegistrations
             new TelegramSettings.ChannelSettings { Bots = [], AllowedUserIds = [], Mcp = DeploymentGate },
             (services, settings) => services.ConfigureChannel(settings),
             DeliveryPolicy.BufferAlways),
-
-        Row("servicebus", "McpChannelServiceBus", McpServerRole.Channel,
-            new ServiceBusSettings.ChannelSettings
-            {
-                ServiceBusConnectionString = FakeServiceBusConnectionString,
-                PromptQueueName = "prompts",
-                ResponseQueueName = "responses",
-                Mcp = DeploymentGate
-            },
-            (services, settings) => services.ConfigureChannel(settings),
-            DeliveryPolicy.GateOnLive),
 
         // ConfigureVoiceChannel's IConnectionMultiplexer registration is a lazy factory (unlike
         // SignalR's eager Connect), and nothing in this registration-only test resolves it, so no

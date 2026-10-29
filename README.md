@@ -10,10 +10,9 @@ library, the smart home, schedules, timers, and the printer.
 ## Features
 
 - **Multi-Agent Support** - Run multiple agents from a single container, each with unique configurations
-- **Channel Architecture** - Transports (WebChat, Telegram, ServiceBus, Voice, Scheduling) run as independent MCP channel servers; agents publish a single-source catalog to each channel via `register_agents`
+- **Channel Architecture** - Transports (WebChat, Telegram, Voice, Scheduling) run as independent MCP channel servers; agents publish a single-source catalog to each channel via `register_agents`
 - **WebChat** - Browser-based chat with real-time streaming, topic management, and multi-agent selection
 - **Telegram Multi-Bot** - Each agent gets its own Telegram bot with inline keyboard tool approvals
-- **Azure Service Bus** - Queue-based integration for external systems
 - **Voice Satellites** - Hands-free voice assistant on real hardware: `nabu-satellite` is a single static Rust binary for Raspberry Pi with on-device "ok nabu" wake-word detection (openWakeWord via tract, no Python), zero-lag pre-roll, audio cues, button support, and a status LED ring (reSpeaker XVF3800) showing distinct listening/thinking/speaking phases; the voice channel dials each satellite over the Wyoming protocol, transcribes with Whisper, runs the agent, and streams Kokoro TTS back (via Lemonade). A speaker-verification gate drops non-enrolled voices (TV, guests) before STT and routes recognized speakers' identities into the message, and noisy captures can be cleaned by a target-speech-extraction sidecar before transcription
 - **Conversation Persistence** - Redis-backed chat history survives application restarts
 - **Tool Approval System** - Approve, reject, or auto-approve AI tool calls with whitelist patterns
@@ -37,21 +36,21 @@ library, the smart home, schedules, timers, and the printer.
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│    WebChat      │     │    Telegram     │     │  Azure Service  │     │ Schedule timer  │     │ Voice satellite │
-│ (Blazor WASM)   │     │    (Bots)       │     │       Bus       │     │   (internal)    │     │ (nabu, Rust/Pi) │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │                       │                       │                       │                       │ Wyoming/TCP
-         ▼                       ▼                       ▼                       ▼                       ▼
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│ McpChannel      │     │ McpChannel      │     │ McpChannel      │     │ MCP Scheduling  │     │ McpChannel      │
-│ SignalR         │     │ Telegram        │     │ ServiceBus      │     │ (channel role — │     │ Voice (Wyoming  │
-│ (MCP Server)    │     │ (MCP Server)    │     │ (MCP Server)    │     │  also in below) │     │ hub + STT/TTS)  │
-└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
-         │    channel/message    │                       │                       │                       │
-         │    send_reply         │                       │                       │                       │
-         │    request_approval   │                       │                       │                       │
-         └────────────┬──────────┘───────────────────────┘───────────────────────┘───────────────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    WebChat      │     │    Telegram     │     │ Schedule timer  │     │ Voice satellite │
+│ (Blazor WASM)   │     │    (Bots)       │     │   (internal)    │     │ (nabu, Rust/Pi) │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │                       │ Wyoming/TCP
+         ▼                       ▼                       ▼                       ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ McpChannel      │     │ McpChannel      │     │ MCP Scheduling  │     │ McpChannel      │
+│ SignalR         │     │ Telegram        │     │ (channel role — │     │ Voice (Wyoming  │
+│ (MCP Server)    │     │ (MCP Server)    │     │  also in below) │     │ hub + STT/TTS)  │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │    channel/message    │                       │                       │
+         │    send_reply         │                       │                       │
+         │    request_approval   │                       │                       │
+         └────────────┬──────────┘───────────────────────┘───────────────────────┘
                       │
                       ▼
               ┌───────────────┐
@@ -243,7 +242,6 @@ See `satellite/README.md` for build prerequisites, CLI flags, and dev-test comma
 |---------------------------|--------------------------------------------------------------------------------------------|
 | **mcp-channel-signalr**   | WebChat transport — hosts SignalR hub, manages streams/sessions/approvals, push notifications |
 | **mcp-channel-telegram**  | Telegram transport — multi-bot polling (one per agent), inline keyboard approvals            |
-| **mcp-channel-servicebus**| Azure Service Bus transport — queue processor, auto-approval, response sender                |
 | **mcp-channel-voice**     | Voice transport — Wyoming hub that dials hardware satellites, segments utterances, gates speakers (verification + optional TSE cleanup), Lemonade STT/TTS (OpenAI-compatible, `lemonade`), manages follow-up windows and announcements (see [Voice Satellites](#voice-satellites)) |
 | **mcp-scheduling**        | Scheduling transport — fires due cron/one-shot schedules as channel messages; also exposes `filesystem://schedules` for managing them |
 
@@ -271,7 +269,6 @@ Agents with the `subagents` feature enabled can delegate work to ephemeral subag
 Agent routing:
 - **Telegram**: Each bot token maps to one agent (configured per channel)
 - **WebChat**: User selects agent from available list in the UI
-- **Service Bus**: Agent specified in message `agentId` field (falls back to default)
 
 ## Projects
 
@@ -293,7 +290,6 @@ Agent routing:
 | `McpServerOutpost`       | MCP server for a real machine's own filesystem — self-contained single-file `linux-x64` binary, self-registering, the one server with no Dockerfile and no compose service |
 | `McpChannelSignalR`      | MCP channel server for WebChat (SignalR hub, streaming, push)   |
 | `McpChannelTelegram`     | MCP channel server for Telegram (multi-bot, approvals)          |
-| `McpChannelServiceBus`   | MCP channel server for Azure Service Bus (queues)               |
 | `McpChannelVoice`        | MCP channel server for voice satellites (Wyoming hub, Lemonade STT/TTS) |
 | `satellite`              | `nabu-satellite` — standalone Rust crate: static Wyoming satellite binary for Raspberry Pi (wake word, audio I/O, button, LED) |
 | `WebChat`                | Blazor WebAssembly host server for browser-based chat           |
@@ -371,15 +367,13 @@ CHANNELENDPOINTS__0__CHANNELID=signalr
 CHANNELENDPOINTS__0__ENDPOINT=http://mcp-channel-signalr:8080/mcp
 CHANNELENDPOINTS__1__CHANNELID=telegram
 CHANNELENDPOINTS__1__ENDPOINT=http://mcp-channel-telegram:8080/mcp
-CHANNELENDPOINTS__2__CHANNELID=servicebus
-CHANNELENDPOINTS__2__ENDPOINT=http://mcp-channel-servicebus:8080/mcp
-CHANNELENDPOINTS__3__CHANNELID=scheduling
-CHANNELENDPOINTS__3__ENDPOINT=http://mcp-scheduling:8080/mcp
-CHANNELENDPOINTS__4__CHANNELID=voice
-CHANNELENDPOINTS__4__ENDPOINT=http://mcp-channel-voice:8080/mcp
-CHANNELENDPOINTS__4__ATTACHONLY=true
-CHANNELENDPOINTS__5__CHANNELID=library
-CHANNELENDPOINTS__5__ENDPOINT=http://mcp-library:8080/mcp
+CHANNELENDPOINTS__2__CHANNELID=scheduling
+CHANNELENDPOINTS__2__ENDPOINT=http://mcp-scheduling:8080/mcp
+CHANNELENDPOINTS__3__CHANNELID=voice
+CHANNELENDPOINTS__3__ENDPOINT=http://mcp-channel-voice:8080/mcp
+CHANNELENDPOINTS__3__ATTACHONLY=true
+CHANNELENDPOINTS__4__CHANNELID=library
+CHANNELENDPOINTS__4__ENDPOINT=http://mcp-library:8080/mcp
 
 # Telegram channel (one bot per agent)
 BOTS__0__AGENTID=jack
@@ -390,9 +384,6 @@ ALLOWEDUSERIDS__0=your_numeric_telegram_user_id
 AGENTS__0__ID=jack
 AGENTS__0__NAME=Jack
 AGENTS__0__DESCRIPTION=General assistant
-
-# Service Bus channel (optional)
-SERVICEBUSCONNECTIONSTRING=Endpoint=sb://yournamespace.servicebus.windows.net/;SharedAccessKeyName=...
 ```
 
 ### 3. Run with Docker Compose
@@ -426,7 +417,6 @@ docker compose -f docker-compose.yml -f docker-compose.override.windows.yml -p j
 | Home Assistant           | 8123 | Home Assistant web UI/API      |
 | MCP Channel SignalR      | 6010 | WebChat channel server         |
 | MCP Channel Telegram     | 6011 | Telegram channel server        |
-| MCP Channel ServiceBus   | 6012 | ServiceBus channel server      |
 | MCP Scheduling           | 6013 | Scheduling channel + filesystem server |
 | MCP Printer              | 6014 | Print queue MCP server         |
 | MCP Channel Voice        | 6015 | Voice channel server (Wyoming satellite hub) |
@@ -502,28 +492,6 @@ BOTS__0__BOTTOKEN=your_jack_bot_token
 BOTS__1__AGENTID=jonas
 BOTS__1__BOTTOKEN=your_jonas_bot_token
 ALLOWEDUSERIDS__0=your_numeric_telegram_user_id
-```
-
-### Service Bus Interface
-
-Azure Service Bus integration for external system connectivity. The channel listens for prompts on a queue and writes responses to another queue.
-
-**Prompt Message Format** (sent to prompt queue):
-```json
-{
-  "correlationId": "unique-request-id",
-  "agentId": "jack",
-  "prompt": "Your question or command here",
-  "sender": "external-system-id"
-}
-```
-
-**Response Message Format** (written to response queue):
-```json
-{
-  "correlationId": "unique-request-id",
-  "content": "Agent's response text"
-}
 ```
 
 ### Tool Approval

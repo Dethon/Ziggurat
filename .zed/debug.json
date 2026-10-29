@@ -188,23 +188,6 @@
     }
   },
   {
-    "label": "Local: MCP Channel ServiceBus",
-    "adapter": "netcoredbg",
-    "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpChannelServiceBus/bin/Debug/net10.0/McpChannelServiceBus.dll",
-    "cwd": "$ZED_WORKTREE_ROOT/McpChannelServiceBus",
-    "env": {
-      "DOTNET_ENVIRONMENT": "Local",
-      "MCP__SHAREDSECRET": "local-mcp-secret",
-      "MCP__SECRETS__localhost": "local-mcp-secret",
-      "ASPNETCORE_URLS": "http://localhost:6012"
-    },
-    "build": {
-      "command": "dotnet",
-      "args": ["build", "$ZED_WORKTREE_ROOT/McpChannelServiceBus/McpChannelServiceBus.csproj", "-c", "Debug"]
-    }
-  },
-  {
     "label": "Local: MCP Channel Voice",
     "adapter": "netcoredbg",
     "request": "launch",

@@ -513,27 +513,6 @@ services:
       redis:
         condition: service_healthy
 
-  mcp-channel-servicebus:
-    image: mcp-channel-servicebus:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-channel-servicebus
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpChannelServiceBus/Dockerfile
-    restart: unless-stopped
-    environment:
-      # The secrets this service reads, by name: it is never handed the whole .env.
-      SERVICEBUSCONNECTIONSTRING: ${SERVICEBUSCONNECTIONSTRING}
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_SERVICEBUS}
-    networks:
-      - jackbot
-    depends_on:
-      - base-sdk
-
   mcp-scheduling:
     image: mcp-scheduling:latest
     logging:
@@ -843,7 +822,6 @@ services:
       MCP__SECRETS__mcp-homeassistant: ${MCP_SECRET_HOMEASSISTANT}
       MCP__SECRETS__mcp-channel-signalr: ${MCP_SECRET_CHANNEL_SIGNALR}
       MCP__SECRETS__mcp-channel-telegram: ${MCP_SECRET_CHANNEL_TELEGRAM}
-      MCP__SECRETS__mcp-channel-servicebus: ${MCP_SECRET_CHANNEL_SERVICEBUS}
       MCP__SECRETS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
       MCP__SECRETS__mcp-printer: ${MCP_SECRET_PRINTER}
       MCP__SECRETS__mcp-timers: ${MCP_SECRET_TIMERS}
@@ -868,8 +846,6 @@ services:
       mcp-channel-signalr:
         condition: service_started
       mcp-channel-telegram:
-        condition: service_started
-      mcp-channel-servicebus:
         condition: service_started
       mcp-scheduling:
         condition: service_started

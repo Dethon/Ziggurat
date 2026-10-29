@@ -567,7 +567,7 @@ public class ChannelReceiveContractTests
         var hostServices = builder.Services.Count;
         configureChannel(builder.Services);
 
-        // Only the workers the module itself added: a Telegram poller, a Service Bus processor, a
+        // Only the workers the module itself added: a Telegram poller, a
         // Wyoming dialer — all reaching for infrastructure that is not here. The web host's own
         // hosted service was registered before this point and must survive, or Kestrel never
         // listens.

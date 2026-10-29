@@ -384,7 +384,7 @@ internal sealed class ConversationGroup(
     // for chat history it is worse than a label: WebChat reads history keyed on the
     // minted id and would see an empty conversation.
     //
-    // The approval channel follows the same anchor, not the origin. Schedule/ServiceBus
+    // The approval channel follows the same anchor, not the origin. Schedule
     // channels auto-approve silently, so binding approvals to the origin would hide tool
     // calls from the user in WebChat.
     //
