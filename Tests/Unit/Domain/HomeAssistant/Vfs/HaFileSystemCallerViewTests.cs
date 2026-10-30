@@ -12,7 +12,8 @@ namespace Tests.Unit.Domain.HomeAssistant.Vfs;
 // the instance that answers — so whatever the server built the mount with, the view must have
 // too. The failure this pins is silent: a dependency the view lost leaves the server's one
 // instance working and the one that answers calls not, with nothing at compile time to say so.
-// Asked of every instance field, so a dependency added tomorrow is covered without naming it.
+// Asked of every instance field, so a dependency added tomorrow is covered without naming it. The
+// caller is two fields: the conversation it serves and the delegation its write carried.
 public class HaFileSystemCallerViewTests
 {
     private static readonly ConversationContext _jonas =
@@ -38,17 +39,15 @@ public class HaFileSystemCallerViewTests
     {
         var mount = MountWithEveryDependency();
 
-        var view = mount.For(new FileSystemCaller(_jonas, null)).ShouldBeOfType<HaFileSystem>();
+        var view = mount.For(new FileSystemCaller(_jonas, null, "a-delegation")).ShouldBeOfType<HaFileSystem>();
 
         var fields = typeof(HaFileSystem).GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
         var differing = fields.Where(f => !Equals(f.GetValue(mount), f.GetValue(view))).ToList();
 
-        var callerField = differing.ShouldHaveSingleItem();
-        callerField.FieldType.ShouldBe(typeof(ConversationContext));
-        callerField.GetValue(view).ShouldBe(_jonas);
+        differing.Select(f => f.GetValue(view)).ShouldBe([_jonas, "a-delegation"], ignoreOrder: true);
         // A lost dependency would compare null to null and pass, so the mount above has to set every
         // one. The setup index is the exception: a cache built on first read, not a dependency.
-        fields.Where(f => f != callerField && f.GetValue(mount) is null).Select(f => f.Name)
+        fields.Where(f => !differing.Contains(f) && f.GetValue(mount) is null).Select(f => f.Name)
             .ShouldBe(["_setupIndex"]);
     }
 

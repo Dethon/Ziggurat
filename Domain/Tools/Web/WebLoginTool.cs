@@ -19,7 +19,7 @@ public class WebLoginTool(ILoginHandoffs handoffs)
         live view of it, where the person logs in themselves.
         """;
 
-    protected async Task<JsonObject> RunAsync(ConversationContext? context, string url, CancellationToken ct)
+    protected async Task<JsonObject> RunAsync(ConversationContext? context, string url, string? delegation, CancellationToken ct)
     {
         var resolution = LoginLinks.Resolve(context, handoffs.IsConfigured);
         if (resolution is PersonResolution.Refused refused)
@@ -40,7 +40,7 @@ public class WebLoginTool(ILoginHandoffs handoffs)
         try
         {
             link = await handoffs.BeginAsync(
-                ((PersonResolution.Found)resolution).Person, context, uri.ToString(), inChatClient: voice, ct);
+                ((PersonResolution.Found)resolution).Person, context, uri.ToString(), inChatClient: voice, delegation, ct);
         }
         catch (PersonStateUnreadableException ex)
         {

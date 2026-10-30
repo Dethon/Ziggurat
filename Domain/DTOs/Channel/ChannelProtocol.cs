@@ -68,6 +68,17 @@ public static class ChannelProtocol
     // token names and for nobody the conversation context above merely claims.
     public const string CallTokenMetaKey = "com.herfluffness/callToken";
 
+    // _meta key under which a call that creates or rewrites something a later turn will act on — a
+    // schedule, a watch, a login handoff — carries the agent's delegation for it, minted for that
+    // call as the person the call acts for. The server stores it with the object and hands it back
+    // with the fire; a write that carries none leaves the object nobody's.
+    public const string DelegationMetaKey = "com.herfluffness/delegation";
+
+    // The agent's own: where the code that makes a write says what it delegates (kind, id, digest),
+    // for the signing transport to sign as whoever the call acts for. Never leaves the agent — the
+    // transport removes it from every call it sends.
+    public const string DelegateMetaKey = "com.herfluffness/delegate";
+
     // Sender attributed to channel/message notifications the system originates on a user's
     // behalf rather than the user themselves — e.g. the /cancel command and download-completion
     // alerts. Keeps these off the initiating user's identity (memory scoping, attribution).

@@ -40,12 +40,20 @@ public record AgentSettings
     // its host, the same value that server binds as its own (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
 
-    // The key the agent signs its call tokens with (and, later, the delegations deferred turns act
-    // on). A deployment names a directory in the agent's own volume (SIGNING__KEYDIRECTORY), where the
+    // The key the agent signs its call tokens with, and the delegations deferred turns act on. A deployment names a directory in the agent's own volume (SIGNING__KEYDIRECTORY), where the
     // key is generated on first start; a test stack hands it a fixed one (SIGNING__PRIVATEKEY).
     public SigningKeySettings Signing { get; init; } = new();
 
     public CallTokenSettings CallTokens { get; init; } = new();
+
+    // How long a login handoff's delegation lives; a schedule's or a watch's lives as long as the
+    // object it names.
+    public DelegationSettings Delegations { get; init; } = new();
+
+    // Where a fire whose author named no channel is delivered (Domain/delivery.json), which the agent
+    // reads too: a fire acting for somebody must deliver where that default says, not wherever the
+    // server that raised it chose.
+    public DeliverySettings Delivery { get; init; } = new();
 
     // The browser origins the registration API answers with credentials (CORS__ALLOWEDORIGINS__n),
     // the same section the hub binds.

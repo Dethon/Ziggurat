@@ -2,6 +2,7 @@ using System.CommandLine;
 using Agent.Settings;
 using Domain.Security.Signing;
 using Infrastructure.Clients.Accounts;
+using DeliverySettings = Domain.DTOs.DeliverySettings;
 using RetentionSettings = Domain.DTOs.RetentionSettings;
 
 namespace Agent.Modules;
@@ -12,6 +13,7 @@ public static class ConfigModule
     {
         var config = configBuilder
             .AddJsonFile(RetentionSettings.FileName, optional: true)
+            .AddJsonFile(DeliverySettings.FileName, optional: true)
             .AddJsonFile(TokenVerificationSettings.FileName, optional: true)
             .AddEnvironmentVariables()
             .AddUserSecrets<Program>()

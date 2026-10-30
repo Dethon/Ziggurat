@@ -17,7 +17,11 @@ public sealed record HaWatchMetadata(
     // The on/off the agent last wrote, kept apart from the entity's own: a spent one-shot is off
     // by its own hand, a paused one by the agent's, and the entity state cannot tell the two apart
     // once a refused fire has stamped `last_triggered` on a watch that stayed armed.
-    bool Enabled = true)
+    bool Enabled = true,
+    // The agent's delegation for the write that last set the watch, which its prompt fires carry
+    // back: the person they act for. Null for a watch nobody's turn delegated, and for every watch
+    // written before delegations, whose fires acted for nobody then too.
+    string? Delegation = null)
 {
     private const string Key = "watch";
 
@@ -31,7 +35,8 @@ public sealed record HaWatchMetadata(
             ["deliverTo"] = DeliverTo is null ? null : new JsonArray([.. DeliverTo.Select(d => (JsonNode)d)]),
             ["userId"] = UserId,
             ["createdAt"] = CreatedAt.ToString("o"),
-            ["enabled"] = Enabled
+            ["enabled"] = Enabled,
+            ["delegation"] = Delegation
         }
     }.ToJsonString();
 
@@ -68,7 +73,8 @@ public sealed record HaWatchMetadata(
                     System.Globalization.DateTimeStyles.RoundtripKind, out var at)
                     ? at
                     : DateTimeOffset.MinValue,
-                watch["enabled"]?.GetValue<bool>() ?? true);
+                watch["enabled"]?.GetValue<bool>() ?? true,
+                watch["delegation"]?.GetValue<string>());
         }
         catch (Exception ex) when (ex is JsonException or HaWatchSpecException or InvalidOperationException or FormatException)
         {

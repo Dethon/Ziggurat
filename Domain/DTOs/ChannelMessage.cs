@@ -18,6 +18,10 @@ public record ChannelMessage
     // it as the message arrives and nothing else reads it (ChannelMessageNotification.Assertion).
     public string? Assertion { get; init; }
 
+    // A fire's delegation as its server carried it, unverified: the conversation group checks it as
+    // the fire arrives and nothing else reads it (ChannelMessageNotification.Delegation).
+    public FireDelegation? Delegation { get; init; }
+
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     public string? Location { get; init; }

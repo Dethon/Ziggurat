@@ -43,7 +43,8 @@ public static class WatchFire
     // One notification through the shared fire planning, so a watch's fire and a schedule's cannot
     // drift in how deliverTo becomes reply targets. The first line says what fired, so "look into
     // it" is enough of a prompt; the rendered prompt follows.
-    public static ChannelMessageNotification Compose(WatchFiredRequest request, IReadOnlyList<string> defaultDeliverTo, DateTimeOffset now)
+    public static ChannelMessageNotification Compose(
+        WatchFiredRequest request, IReadOnlyList<string> defaultDeliverTo, DateTimeOffset now, FireDelegation? delegation = null)
     {
         var name = request.Name ?? request.WatchId!;
         return FirePlanning.Compose(new Fire(
@@ -54,7 +55,8 @@ public static class WatchFire
             request.DeliverTo,
             request.UserId,
             new MessageOrigin(MessageOriginKind.Watch, null, WatchId: request.WatchId, Title: name),
-            now), defaultDeliverTo);
+            now,
+            Delegation: delegation), defaultDeliverTo);
     }
 
     private static string FirstLine(WatchFiredRequest request, string name)

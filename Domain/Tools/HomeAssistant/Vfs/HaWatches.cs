@@ -68,8 +68,10 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
 
     // Create or replace, under the same id, so a change never leaves a second watch. The creator
     // and the creation instant survive a replacement: the agent that created a watch is the one
-    // that runs its prompts, whoever edits it later.
-    public async Task<HaWatch> WriteAsync(string watchId, HaWatchSpec spec, string agentId, HaWatch? existing, CancellationToken ct)
+    // that runs its prompts, whoever edits it later. The delegation does not: it is the write's,
+    // and a write that carried none leaves the watch acting for nobody.
+    public async Task<HaWatch> WriteAsync(
+        string watchId, HaWatchSpec spec, string agentId, HaWatch? existing, string? delegation, CancellationToken ct)
     {
         var client = clientFactory();
         var meta = new HaWatchMetadata(
@@ -79,7 +81,8 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
             spec.DeliverTo,
             spec.UserId,
             existing?.Meta.CreatedAt ?? _time.GetUtcNow(),
-            spec.Enabled);
+            spec.Enabled,
+            delegation);
         var id = HaWatchAutomation.AutomationId(watchId);
 
         await client.UpsertAutomationConfigAsync(id, HaWatchAutomation.Render(watchId, spec, meta), ct);

@@ -207,7 +207,7 @@ public sealed partial class HaFileSystem
         HaWatch written;
         try
         {
-            written = await _watches.WriteAsync(watchId, spec, agentId, existing, ct);
+            written = await _watches.WriteAsync(watchId, spec, agentId, existing, _delegation, ct);
         }
         catch (HomeAssistantConfigRejectedException ex)
         {
