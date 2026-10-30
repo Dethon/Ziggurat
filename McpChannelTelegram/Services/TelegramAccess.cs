@@ -32,6 +32,11 @@ public sealed class TelegramAccess(
             ? (await PersonAsync(chatId, ct))?.Account.TenantId
             : await GroupTenantAsync(chatId, ct);
 
+    // A person's private chat with the bot, whose id is their own Telegram id: where a question their
+    // turn asked is offered. Not kept, since it is asked once per question and never for a stranger.
+    public Task<long?> PrivateChatOfAsync(Account account, CancellationToken ct) =>
+        accounts.TelegramIdOfAsync(account, ct);
+
     // What a redemption or a bind just made true, so the person or the group is let in on their very
     // next message, whatever refusal was remembered a moment before.
     public void Linked(long telegramId, ResolvedAccount person) =>

@@ -8,7 +8,9 @@ using McpChannelTelegram.Settings;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace McpChannelTelegram.McpTools;
 
@@ -24,22 +26,28 @@ public sealed class RequestApprovalTool
         [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
         [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests,
         RequestContext<CallToolRequestParams> context,
-        IServiceProvider services) =>
+        IServiceProvider services,
+        [Description("The question's own id, by which it is settled")] string? approvalId = null,
+        CancellationToken cancellationToken = default) =>
         // The asking turn, from the context the agent stamps on this hop.
-        RunAsync(conversationId, mode, requests, ConversationScope.Parse(context.Params?.Meta), services);
+        RunAsync(conversationId, mode, requests, ConversationScope.Parse(context.Params?.Meta), services,
+            approvalId, cancellationToken);
 
     public static async Task<string> RunAsync(
         string conversationId,
         ApprovalMode mode,
         IReadOnlyList<ToolApprovalRequest> requests,
         ConversationContext? turn,
-        IServiceProvider services)
+        IServiceProvider services,
+        string? approvalId = null,
+        CancellationToken cancellationToken = default)
     {
         var p = new RequestApprovalParams
         {
             ConversationId = conversationId,
             Mode = mode,
-            Requests = requests
+            Requests = requests,
+            ApprovalId = approvalId
         };
 
         var registry = services.GetRequiredService<BotRegistry>();
@@ -62,34 +70,72 @@ public sealed class RequestApprovalTool
             return "notified";
         }
 
-        var answerers = await AnswerersOfAsync(turn, chatId, router, services.GetRequiredService<TelegramAccess>());
-        var (approvalId, resultTask) = router.RegisterApproval(_approvalTimeout, answerers, CancellationToken.None);
-        var keyboard = ApprovalCallbackRouter.CreateApprovalKeyboard(approvalId);
+        var access = services.GetRequiredService<TelegramAccess>();
+        var answerers = await AnswerersOfAsync(turn, chatId, router, access);
+        var (id, resultTask) = router.RegisterApproval(_approvalTimeout, answerers, cancellationToken, p.ApprovalId);
+        var keyboard = ApprovalCallbackRouter.CreateApprovalKeyboard(id);
 
         var approvalMessage = FormatApprovalMessage(p.Requests);
 
-        await botClient.SendMessage(
+        var sent = await botClient.SendMessage(
             chatId,
             approvalMessage,
             ParseMode.Html,
             replyMarkup: keyboard,
             messageThreadId: threadId,
             cancellationToken: CancellationToken.None);
+        router.Shown(id, botClient, chatId, sent.MessageId);
+
+        // Asked in a group, the question is also put in its asker's private chat with the bot, where
+        // a phone shows it to them alone; the same keyboard answers it from either.
+        if (chatId < 0 && Principal.Of(turn)?.Account is { } asker)
+        {
+            await ShowInPrivateChatAsync(id, asker, approvalMessage, keyboard, botClient, router, access);
+        }
 
         return await resultTask;
     }
 
-    // Who may answer, read from the turn's context on this hop. A turn that names a Telegram person
-    // — their own message, or a wake or fire stamped with them, like a login wake continuing their
-    // turn — is theirs: the bot recorded their numeric id against the sender it emitted when it
-    // admitted their message, so only that id. A fire that names nobody here was started by nobody's
-    // message, so any linked member of the household whose chat it is: the person's own, for a
-    // private chat, or the one the group is bound to. A turn with no context, a person this process
-    // never admitted (it restarted mid-turn), or a chat no household holds names nobody: every tap
-    // is refused and the approval times out as denied.
+    private static async Task ShowInPrivateChatAsync(
+        string approvalId, Account asker, string approvalMessage, InlineKeyboardMarkup keyboard,
+        ITelegramBotClient botClient, ApprovalCallbackRouter router, TelegramAccess access)
+    {
+        try
+        {
+            if (await access.PrivateChatOfAsync(asker, CancellationToken.None) is not { } privateChat)
+            {
+                return;
+            }
+
+            var sent = await botClient.SendMessage(
+                privateChat, approvalMessage, ParseMode.Html, replyMarkup: keyboard,
+                cancellationToken: CancellationToken.None);
+            router.Shown(approvalId, botClient, privateChat, sent.MessageId);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or ApiRequestException)
+        {
+            // The group already shows it; a private chat the person never opened with this bot, or
+            // an accounts service that could not say which it is, costs only the second copy.
+        }
+    }
+
+    // Who may answer, read from the turn's context on this hop. A turn acting for an account — a
+    // person's own message on any channel, or a fire stamped with whoever wrote the schedule — is
+    // that account's alone: a tap counts when the Telegram it came from is linked to it. A Telegram
+    // person's turn from before accounts is theirs by the numeric id the bot recorded against the
+    // sender it emitted when it admitted their message. A fire that names nobody was started by
+    // nobody's message, so any linked member of the household whose chat it is: the person's own,
+    // for a private chat, or the one the group is bound to. A turn with no context, a person this
+    // process never admitted (it restarted mid-turn), or a chat no household holds names nobody:
+    // every tap is refused and the approval times out as denied.
     private static async Task<Func<long, CancellationToken, Task<bool>>> AnswerersOfAsync(
         ConversationContext? turn, long chatId, ApprovalCallbackRouter router, TelegramAccess access)
     {
+        if (Principal.Of(turn)?.Account is { } account)
+        {
+            return AccountAnswers(account, access);
+        }
+
         if (Principal.Of(turn) is { ChannelId: TelegramAccess.Channel } asker)
         {
             var askerId = router.SenderId(asker.UserId);
@@ -103,6 +149,9 @@ public sealed class RequestApprovalTool
 
         return async (tapper, ct) => (await access.PersonAsync(tapper, ct))?.Account.TenantId == household;
     }
+
+    internal static Func<long, CancellationToken, Task<bool>> AccountAnswers(Account asker, TelegramAccess access) =>
+        async (tapper, ct) => (await access.PersonAsync(tapper, ct))?.Account == asker;
 
     internal static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
     {
