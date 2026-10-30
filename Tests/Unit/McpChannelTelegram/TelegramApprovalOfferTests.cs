@@ -137,7 +137,7 @@ public class TelegramApprovalOfferTests : IDisposable
 
         (await offered.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe(ChannelProtocol.NoAnswer);
         _harness.BotClient.Verify(b => b.SendRequest(
-            It.Is<EditMessageTextRequest>(r => r.Text.Contains("Answered elsewhere")
+            It.Is<EditMessageTextRequest>(r => (r.Text ?? "").Contains("Answered elsewhere")
                                                && r.ChatId.Identifier == TelegramPollingHarness.AliceId),
             It.IsAny<CancellationToken>()), Times.Once);
     }

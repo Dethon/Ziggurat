@@ -35,8 +35,8 @@ internal sealed class RegisteredConnectionFilter(
         // space it is in, and with none held goes to their devices instead.
         await context.Hub.Groups.AddToGroupAsync(
             context.Context.ConnectionId, TopicAudience.Account(account.UserId), context.Context.ConnectionAborted);
-        connections.Opened(account.UserId);
         await next(context);
+        connections.Opened(account.UserId);
     }
 
     public Task OnDisconnectedAsync(
