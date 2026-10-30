@@ -608,9 +608,10 @@ services:
         max-file: "3"
     container_name: mcp-sugary
     # A person's phone reaches the app through Caddy at sugary.herfluffness.com, and nothing else
-    # reaches it: the app believes the person the proxy's session check names in the X-Ziggurat-*
-    # headers, which a caller past the proxy could set to anybody. Local runs publish it on loopback
-    # through docker-compose.override.ports.yml.
+    # reaches it: the app believes the person the proxy's session check signs in X-Ziggurat-Assertion,
+    # verified against the accounts service's keys, never the plain X-Ziggurat-* headers a caller past
+    # the proxy could set to anybody. Local runs publish it on loopback through
+    # docker-compose.override.ports.yml.
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSugary/Dockerfile
