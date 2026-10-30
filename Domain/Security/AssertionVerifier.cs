@@ -54,4 +54,41 @@ public sealed class AssertionVerifier(
 
         return new ForwardedAccount(account.UserId, account.TenantId, claims.Roles);
     }
+
+    // The agent's check on a person's turn as it arrives, over the same keys: the accounts service
+    // signed it, for TokenAudiences.Assertion, in date, for the very channel the turn came on — and
+    // for a person or the household's guest, both somebody the house works for. Never nobody: the
+    // service signs no such assertion, so one that says it vouches for nothing. What it answers is the
+    // identity alone, out of its envelope: the turn acts for it however long it runs, so the
+    // assertion's ten minutes are spent once it has been checked.
+    public async Task<TurnAdmission> VerifyTurnAsync(string? assertion, string channel, CancellationToken ct)
+    {
+        var verification = await _verifier.VerifyAsync(assertion, TokenAudiences.Assertion, ct);
+        if (!verification.IsVerified)
+        {
+            return new TurnAdmission.Refused(verification.Refusal.Value.ToString());
+        }
+
+        var claims = verification.Claims;
+        return claims switch
+        {
+            { IsNobody: true } => new TurnAdmission.Refused(TurnAdmission.NamesNobody),
+            _ when claims.ChannelId != channel => new TurnAdmission.Refused(TurnAdmission.WrongChannel),
+            { IsGuest: true } => new TurnAdmission.Admitted(IdentityClaims.Guest(claims.TenantId, claims.ChannelId)),
+            _ => new TurnAdmission.Admitted(
+                IdentityClaims.Person(claims.Subject, claims.TenantId, claims.ChannelId, claims.Roles))
+        };
+    }
+}
+
+// Who a person's turn acts for, as its assertion verified, or why the turn is not believed: a token
+// refusal's name (TokenRefusal), or one of the two the turn adds.
+public abstract record TurnAdmission
+{
+    public const string WrongChannel = "WrongChannel";
+    public const string NamesNobody = "NamesNobody";
+
+    public sealed record Admitted(IdentityClaims Identity) : TurnAdmission;
+
+    public sealed record Refused(string Reason) : TurnAdmission;
 }

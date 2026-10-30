@@ -107,6 +107,22 @@ public class CallTokenGateTests : IAsyncLifetime
         asNobody["browsesAs"].ShouldBeNull();
     }
 
+    // The agent writes who the turn verified as into the context it sends, for its own signing; a
+    // server reads the token's in its place, so a context claiming somebody names nobody it was not
+    // signed for.
+    [Fact]
+    public async Task AnIdentityWrittenIntoTheMeta_IsTheTokensOnTheServer()
+    {
+        await using var client = await McpClient.CreateAsync(McpTestSecret.UnsignedTransport(_server.Endpoint));
+        var forged = Turn() with { Identity = IdentityClaims.Person(Bob, "home", ChannelIds.SignalR, []) };
+
+        var asAlice = await CallAsync(client, Sign(IdentityClaims.Person(Alice, "home", ChannelIds.SignalR, [])), forged);
+        var asNobody = await CallAsync(client, Sign(IdentityClaims.Nobody(ChannelIds.SignalR)), forged);
+
+        asAlice["identity"]!.GetValue<string>().ShouldBe(Alice);
+        asNobody["identity"]!.GetValue<string>().ShouldBe(IdentityClaims.NobodySubject);
+    }
+
     // Only a tool call can act for anybody, so only a tool call is asked for a token: the handshake
     // and the tool list are what the agent asks while it builds a session, for nobody.
     [Fact]
@@ -190,7 +206,8 @@ public class CallTokenGateTests : IAsyncLifetime
                 ["account"] = principal?.Account is { } account
                     ? new JsonObject { ["tenantId"] = account.TenantId, ["userId"] = account.UserId }
                     : null,
-                ["browsesAs"] = PersonResolution.Of(turn) is PersonResolution.Found found ? found.Person : null
+                ["browsesAs"] = PersonResolution.Of(turn) is PersonResolution.Found found ? found.Person : null,
+                ["identity"] = turn?.Identity?.Subject
             }.ToJsonString();
         }
     }

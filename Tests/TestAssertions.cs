@@ -24,6 +24,14 @@ internal static class TestAssertions
         new TokenSigner(_accounts).Sign(IdentityClaims.Guest(tenantId, channel)
             .Stamped(TokenIssuers.Accounts, TokenAudiences.Assertion, DateTimeOffset.UtcNow, _lifetime));
 
+    // What the accounts service never signs: an assertion naming nobody, which vouches for nothing.
+    public static string OfNobody(string channel) =>
+        new TokenSigner(_accounts).Sign(IdentityClaims.Nobody(channel)
+            .Stamped(TokenIssuers.Accounts, TokenAudiences.Assertion, DateTimeOffset.UtcNow, _lifetime));
+
+    // The accounts test key's published half, for a test that watches the verifier ask for it.
+    public static IVerificationKeys Keys => _accounts;
+
     // The same claims signed by a key the accounts service does not publish.
     public static string Forged(Account person, string channel) =>
         new TokenSigner(TestSigningKeys.Store(TestSigningKeys.Agent)).Sign(

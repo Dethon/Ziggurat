@@ -19,6 +19,12 @@ public record ChannelMessageNotification
     // message from a channel that knows no account yet, whose channel and sender are the voucher, and
     // on a fire nobody's own turn stands behind.
     public Principal? Principal { get; init; }
+    // The accounts service's signed word for who a person's own message is from, as the channel got
+    // it when it learned the person — the session check's header, the resolution API's answer, the
+    // household guest's — and carried here untouched. The agent believes this and not the principal:
+    // it verifies it as the turn arrives and refuses a person's turn without one. A fire nobody sent
+    // carries none (its delegation is ticket 07's).
+    public string? Assertion { get; init; }
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     // Optional originating room for room-aware prompts. Part of the shared channel protocol but

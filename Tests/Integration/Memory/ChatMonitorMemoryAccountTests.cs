@@ -161,7 +161,8 @@ public class ChatMonitorMemoryAccountTests(MemorySearchFixture redisFixture)
                 _store, Embedding, Mock.Of<IThreadStateStore>(), _queue, Mock.Of<IMetricsPublisher>(),
                 Mock.Of<IAgentDefinitionProvider>(), NullLogger<MemoryRecallHook>.Instance,
                 new MemoryRecallOptions()),
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
