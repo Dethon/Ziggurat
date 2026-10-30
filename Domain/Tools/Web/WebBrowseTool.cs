@@ -21,7 +21,7 @@ public class WebBrowseTool(IWebBrowser browser)
         """;
 
     // caller is the turn behind the call, from its `_meta` (BrowseRequest); person is whose own
-    // context the tab opens in, already resolved through the identity map, or null for anonymous.
+    // context the tab opens in, already resolved to their account's user id, or null for anonymous.
     protected async Task<WebBrowseToolResult> RunAsync(
         string sessionId,
         JudgmentCaller caller,

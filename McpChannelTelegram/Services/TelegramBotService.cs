@@ -171,7 +171,7 @@ public sealed class TelegramBotService : BackgroundService
             return;
         }
 
-        // The turn's sender stays the username, which memory and the identity map are keyed by.
+        // The turn's sender stays the username, which the approval router is keyed by.
         // A person with no username has nothing else stable to go by, so their id stands in.
         var from = first.From!;
         var sender = from.Username ?? $"{from.Id}";
@@ -228,7 +228,7 @@ public sealed class TelegramBotService : BackgroundService
                 Content = content,
                 AgentId = agentId,
                 // The turn acts for the account; its user id stays the sender, the name the approval
-                // router and the identity map still know the person by.
+                // router still knows the person by.
                 Principal = new Principal(TelegramAccess.Channel, sender, person.Account),
                 Attachments = intake.Attachments.Count > 0 ? intake.Attachments : null,
                 Timestamp = DateTimeOffset.UtcNow

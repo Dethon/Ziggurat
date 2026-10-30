@@ -26,8 +26,8 @@ public sealed class TranscriptDispatcher(
     private const string ChannelId = "voice";
 
     // The guest's user id is fixed rather than the satellite's configured identity: an operator may
-    // name a satellite after a person, and the identity map refuses exactly this id, so a guest can
-    // never be matched to anybody's logins.
+    // name a satellite after a person, and a guest's turn must never read as theirs. What keeps the
+    // guest from anybody's memory and logins is the principal carrying no account.
     private static readonly Principal Guest = new(ChannelId, "household");
 
     public async Task<bool> DispatchAsync(

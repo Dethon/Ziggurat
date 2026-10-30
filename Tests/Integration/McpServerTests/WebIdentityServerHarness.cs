@@ -5,7 +5,6 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
-using Domain.Tools.Web;
 using McpServerWebSearch.Handoff;
 using McpServerWebSearch.Modules;
 using McpServerWebSearch.Settings;
@@ -20,25 +19,17 @@ using Tests.Integration.McpServers;
 
 namespace Tests.Integration.McpServerTests;
 
-// The browse server as the agent sees it, with a browser that only records: a real host, a real
-// MCP client sending the conversation context in `_meta`, and the identity map the test names.
+// The browse server as the agent sees it, with a browser that only records: a real host, and a real
+// MCP client sending the conversation context in `_meta`, whose principal says whose account a turn
+// acts for.
 internal sealed class WebIdentityServerHarness : IAsyncDisposable
 {
-    public static readonly PersonIdentity Fran =
-        new() { Name = "fran", Telegram = "fran_tg", WebChat = "Fran", Voice = "fran" };
+    private const string Household = "4f1c9a7e2b6d4e0a9c3b8d5e7f1a2c4b";
 
-    public static readonly PersonIdentity Ana = new() { Name = "ana", Telegram = "ana_tg", WebChat = "Ana" };
+    // People of one household, as the accounts service names them: opaque ids, never names.
+    public static readonly Account Fran = new(Household, "a3f09c1d7e2b4c6a8d5e0f1b2c3d4e5f");
 
-    // Enrolled on voice and nowhere else: there is no WebChat to put a voice handoff's link in.
-    public static readonly PersonIdentity Mo = new() { Name = "mo", Voice = "mo" };
-
-    public static readonly IReadOnlyList<string> ShippedVerifiedChannels =
-        [IdentityMap.TelegramChannelId, IdentityMap.VoiceChannelId];
-
-    // Once a real login stands behind WebChat, it joins the list — and a voice login's link can go
-    // there.
-    public static readonly IReadOnlyList<string> WebChatVerified =
-        [.. ShippedVerifiedChannels, IdentityMap.WebChatChannelId];
+    public static readonly Account Ana = new(Household, "b7e1d2c3a4f5061728394a5b6c7d8e9f");
 
     private readonly WebApplication _app;
     private readonly string _endpoint;
@@ -58,7 +49,6 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
     public IServiceProvider Services => _app.Services;
 
     public static async Task<WebIdentityServerHarness> StartAsync(
-        IReadOnlyList<PersonIdentity>? people = null,
         Action<IServiceCollection>? configure = null,
         Func<McpSettings, McpSettings>? settings = null,
         bool loggedIn = true)
@@ -75,14 +65,7 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
             Camoufox = null,
             CapSolver = null,
             RedisConnectionString = McpServerRegistrations.UnreachableRedis,
-            Mcp = McpTestSecret.Gate,
-            // The shipped list: WebChat is not verified, so a test about a WebChat turn or a voice
-            // login's WebChat delivery says so in its own settings.
-            Identity = new IdentityConfiguration
-            {
-                People = people ?? [Fran, Ana, Mo],
-                VerifiedChannels = ShippedVerifiedChannels
-            }
+            Mcp = McpTestSecret.Gate
         };
         builder.Services.ConfigureMcp(settings?.Invoke(configured) ?? configured);
         builder.Services.RemoveAll<IWebBrowser>();
@@ -118,11 +101,28 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
         return (await client.ListToolsAsync()).Select(t => t.Name).ToList();
     }
 
+    // A turn as its channel stamps it: the channel's own name for the person, and the account the
+    // channel resolved them to — none for the voice guest or a principal from before accounts.
     public static ConversationContext Context(
-        string userId, string conversationId = "conv-1", string channelId = "telegram",
+        string userId, Account? account, string conversationId = "conv-1", string channelId = "telegram",
         MessageOriginKind? originKind = null, string? address = null) =>
         new("jonas", conversationId, userId, new ReplyTarget(channelId, conversationId, address),
-            OriginKind: originKind);
+            OriginKind: originKind, Principal: new Principal(channelId, userId, account));
+
+    // Each channel's own name for a person: Telegram's is the username, the chat client's and a
+    // recognised voice speaker's are the account's id.
+    public static ConversationContext FromTelegram(Account account, string username = "fran_tg", string conversationId = "conv-1") =>
+        Context(username, account, conversationId);
+
+    public static ConversationContext FromChatClient(Account account, string conversationId = "conv-1") =>
+        Context(account.UserId, account, conversationId, channelId: "signalr");
+
+    public static ConversationContext FromVoice(Account account, string conversationId = "voice-9", string address = "kitchen-01") =>
+        Context(account.UserId, account, conversationId, channelId: "voice", address: address);
+
+    // The satellite heard nobody it knows: the voice channel's guest, with no account.
+    public static ConversationContext FromVoiceGuest(string conversationId = "voice-9") =>
+        Context("household", null, conversationId, channelId: "voice", address: "kitchen-01");
 
     public static JsonObject MetaFor(ConversationContext context) => new()
     {

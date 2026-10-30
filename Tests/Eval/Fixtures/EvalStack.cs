@@ -12,7 +12,6 @@ using Domain.DTOs.Voice;
 using Domain.Tools.FileSystem.Bridge;
 using Domain.Tools.Memory;
 using Domain.Tools.Timers.Vfs;
-using Domain.Tools.Web;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Clients.Browser;
@@ -363,17 +362,11 @@ public sealed class EvalStack : IAsyncDisposable
                 ApiUrl = EvalWeb.SearchApiUrl
             },
             Mcp = McpTestSecret.Gate,
-            // The run's user is a person of this deployment, so a turn can browse as them and
-            // hand them a login; the link's address is a placeholder nothing opens. No state key:
-            // nothing is remembered between runs. The handoff's links live on the run's Redis.
-            // The deployment's verified channels: a scenario that browses as the person asks from
-            // Telegram, as a person would have to.
+            // Every turn acts for the run's account (EvalRun), so a turn can browse as its person
+            // and hand them a login from any channel; the link's address is a placeholder nothing
+            // opens. No state key: nothing is remembered between runs. The handoff's links live on
+            // the run's Redis.
             RedisConnectionString = redisConnectionString,
-            Identity = new IdentityConfiguration
-            {
-                People = [new PersonIdentity { Name = "fran", Telegram = EvalRun.UserId, WebChat = EvalRun.UserId }],
-                VerifiedChannels = [IdentityMap.TelegramChannelId, IdentityMap.VoiceChannelId]
-            },
             Handoff = new HandoffConfiguration { PublicBaseUrl = EvalWeb.HandoffBase }
         });
 

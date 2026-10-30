@@ -188,8 +188,8 @@ public class TranscriptDispatcherTests
         accounts.Asked.ShouldBeEmpty();
     }
 
-    // The guest's user id is the fixed one the identity map refuses, never the satellite's
-    // configured name, which an operator could set to somebody's.
+    // The guest's user id is the fixed `household`, never the satellite's configured name, which an
+    // operator could set to somebody's.
     [Fact]
     public async Task DispatchAsync_NoMatchedSpeakerOnASatelliteNamedAfterSomebody_IsStillTheGuest()
     {

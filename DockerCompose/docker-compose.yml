@@ -373,17 +373,6 @@ services:
       # Seals each person's remembered logins in Redis (base64 of 32 random bytes; empty is
       # remembering off). Changing it makes every saved login refuse until it is put back.
       LOGINS__STATEKEY: ${LOGINS__STATEKEY}
-      # The identity map: who each of the household's people is on every channel, so a browse
-      # made as one of them opens in their own browser context. Per deployment; a slot whose
-      # NAME is empty is no person, and no person at all is the feature off. Copy the block per
-      # person (__1__, __2__ ...). TELEGRAM is the Telegram username, WEBCHAT the WebChat name,
-      # VOICE the enrolled speaker's identity. Each id is matched only on its own channel, and only
-      # on the channels appsettings.json's Identity:VerifiedChannels lists (Telegram and voice);
-      # WEBCHAT is used today only to name where a voice login's link would go.
-      IDENTITY__PEOPLE__0__NAME: ""
-      IDENTITY__PEOPLE__0__TELEGRAM: ""
-      IDENTITY__PEOPLE__0__WEBCHAT: ""
-      IDENTITY__PEOPLE__0__VOICE: ""
       # Where people open a login handoff's link: the assistants host Caddy routes /browse/ to this
       # server on (e.g. https://assistants.example.com). Per deployment; empty is the handoff off.
       HANDOFF__PUBLICBASEURL: ""

@@ -629,7 +629,7 @@ public static class WebScenarios
         {
             Text = $"Mira en {EvalWeb.ShopName} si ya han enviado mi pedido.",
             Sender = "fran",
-            // WebChat does not verify who is speaking, so the person asks from Telegram.
+            // Asked where a reply can carry the link itself; the account is the same on any channel.
             Channel = "telegram"
         },
         Instant = EvalInstant.Evening,
@@ -689,8 +689,8 @@ public static class WebScenarios
             Text = $"Comprueba en {EvalWeb.ShopName} si ya han enviado el pedido de Fran y díselo.",
             Sender = "scheduler",
             Origin = MessageOriginKind.Schedule,
-            // A fire's channel is the one it delivers to; a schedule delivering to WebChat would
-            // be refused as nobody, so this one reports on Telegram.
+            // A fire's channel is the one it delivers to; it acts for the account that wrote it,
+            // whichever channel that was.
             Channel = "telegram"
         },
         Instant = EvalInstant.Evening,
