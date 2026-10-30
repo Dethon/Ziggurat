@@ -178,6 +178,40 @@ public class DeploymentConformanceTests
         own.ShouldNotBeNullOrEmpty();
     }
 
+    // The sandbox runs whatever the model writes. The servers behind the proxy believe the identity
+    // headers it copies on because only the proxy reaches them, so the sandbox must not reach them
+    // either: it shares a network with the agent alone, which dials its /mcp and whose exec bridge
+    // it calls back.
+    [Fact]
+    public void TheSandbox_SharesANetworkWithTheAgentAlone()
+    {
+        var compose = DeploymentFiles.Compose();
+        var sandbox = compose.Service("mcp-sandbox").Networks;
+
+        sandbox.ShouldNotBeEmpty();
+        compose.Services.Values
+            .Where(s => s.Name is not ("mcp-sandbox" or "agent") && s.Networks.Intersect(sandbox).Any())
+            .Select(s => s.Name)
+            .ShouldBeEmpty();
+        compose.Service("agent").Networks.Intersect(sandbox).ShouldNotBeEmpty("the agent and the sandbox call each other");
+        compose.Service("agent").Networks.Except(sandbox).ShouldNotBeEmpty("the agent still dials every other server");
+    }
+
+    [Theory]
+    [InlineData("mcp-sugary")]
+    [InlineData("mcp-channel-signalr")]
+    [InlineData("observability")]
+    [InlineData("webui")]
+    [InlineData("accounts")]
+    public void NoServiceThatBelievesTheForwardedHeaders_SharesANetworkWithTheSandbox(string service)
+    {
+        var compose = DeploymentFiles.Compose();
+        var networks = compose.Service(service).Networks;
+
+        networks.ShouldNotBeEmpty();
+        networks.Intersect(compose.Service("mcp-sandbox").Networks).ShouldBeEmpty();
+    }
+
     // The agent presents each server the credential the server reads, so the two must name the
     // same variable — and every server the shipped agent dials must have one.
     [Fact]
@@ -238,7 +272,6 @@ public class DeploymentConformanceTests
     [InlineData("mcp-channel-signalr")]
     [InlineData("mcp-channel-telegram")]
     [InlineData("mcp-channel-voice")]
-    [InlineData("mcp-sugary")]
     public void TheAccountsServicesCallers_PresentTheirOwnMcpCredential(string caller)
     {
         var compose = DeploymentFiles.Compose();
