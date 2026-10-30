@@ -3,6 +3,15 @@ paths:
   - "Domain/Security/Signing/**"
   - "Tests/Unit/Domain/Security/Signing/**"
   - "Tests/TestSigningKeys.cs"
+  - "Tests/TestAssertions.cs"
+  - "Domain/Security/AssertionVerifier.cs"
+  - "Domain/Security/AppChannels.cs"
+  - "Domain/Security/ForwardedAccount.cs"
+  - "Infrastructure/Clients/Accounts/AssertionVerifierRegistration.cs"
+  - "Observability/OperatorGate.cs"
+  - "McpServerSugary/App/Person.cs"
+  - "McpChannelSignalR/Hubs/SignedInConnectionFilter.cs"
+  - "Agent/App/AgentApi.cs"
 ---
 
 # Service identity: signing and verifying
@@ -76,8 +85,40 @@ over the same directory); the running issuer notices the file change on its next
 only after the old key's last token and every verifier's copy have run out: the longest token
 lifetime plus `KeysLifetime`. Retire unpublishes every key but the current one.
 
+## Apps behind the proxy
+
+The chat hub, Sugary's API, the dashboard and the agent registration API believe the person
+`X-Ziggurat-Assertion` names and **never** the plain `X-Ziggurat-User`/`-Tenant`/`-Roles` beside it,
+which anything on the compose network could write. `AssertionVerifier` (`Domain/Security`) is the
+one check: `TokenVerifier` for `TokenIssuers.Accounts` and `TokenAudiences.Assertion`, then the
+assertion must name the app's channel and a person — a guest assertion is nobody to an app. It
+answers a `ForwardedAccount` built from the signed claims, or null, logging a refusal other than
+`Missing` at warning (`KeysUnavailable` there means the accounts service is unreachable and every
+signed-in person is being turned away). `ForwardedAccount.From`, which read the plain three, is gone.
+
+| App | Channel it holds the assertion to | Signed out | Else |
+|---|---|---|---|
+| Chat hub (`SignedInConnectionFilter`) | `ChannelIds.SignalR` | connection closed "not signed in" | verified once per connection, never re-asked as it ages |
+| Sugary `/api` (`Person.SignedInAsync`, in `SugaryApp`'s gate) | `SugaryChannel.ChannelId` | 401 | verified once per request, the `Person` kept in `HttpContext.Items` for the routes' binders |
+| Dashboard, everything served (`OperatorGate`) | `AppChannels.Dashboard` | 401 | 403 without the `operator` role |
+| `/api/agents*` (`AgentApi`, after the secret) | `AppChannels.SexyTime` | 401 | the secret alone opens nothing |
+
+The channel is what keeps an assertion signed for one route from opening another: each Caddy
+`forward_auth` names its block's (`?channel=`), the session check signs it, the app checks it.
+
+Each host binds `Accounts:JwksUrl` (`ACCOUNTS__JWKSURL` in compose for `mcp-channel-signalr`,
+`mcp-sugary`, `observability`, `agent`, conformance-checked; `AssertionVerifier.DefaultJwksUrl` is
+the same address, so a test stack wires nothing) and registers one verifier over a `JwksCache`:
+`AddAssertionVerifier(url)` (`Infrastructure/Clients/Accounts`) for the three that reference
+Infrastructure, `AddOperatorGate(url)` for Observability, which references Domain alone. A host run
+reads the accounts service on `http://localhost:5004` (`appsettings.Local.json`).
+
 ## Tests
 
-`Tests/TestSigningKeys.cs` holds one fixed key per issuer for every test and eval stack. They are
+`Tests/TestSigningKeys.cs` holds one fixed key per issuer for every test and eval stack.
+`Tests/TestAssertions.cs` signs assertions with the accounts one (`Of`, `OfGuest`, `Forged` — the
+agent's key, so a foreign one) and hands an in-process app `Verifier()` over that key's store, no
+accounts service needed; a container stack whose accounts service runs with
+`SIGNING__PRIVATEKEY` = the test key verifies the same assertions through its real JWKS. They are
 private keys in git; `DeploymentConformanceTests.TheTestSigningKeys_AreNeverShipped` holds every
 shipped file (`DeploymentFiles.Shipped()`) to containing neither key nor its id.

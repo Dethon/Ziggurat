@@ -1,3 +1,4 @@
+using Domain.Security;
 using Observability;
 using Observability.Hubs;
 using Observability.Services;
@@ -19,6 +20,10 @@ builder.Services.AddSingleton<MetricsQueryService>();
 builder.Services.AddHostedService<MetricsCollectorService>();
 builder.Services.AddHttpClient();
 builder.Services.AddHostedService<HttpHealthProbeService>();
+// Where the accounts service publishes the keys its assertions verify with (ACCOUNTS__JWKSURL).
+builder.Services.AddOperatorGate(builder.Configuration["Accounts:JwksUrl"] is { Length: > 0 } jwksUrl
+    ? jwksUrl
+    : AssertionVerifier.DefaultJwksUrl);
 
 if (!builder.Environment.IsProduction())
 {
@@ -27,6 +32,7 @@ if (!builder.Environment.IsProduction())
 
 var app = builder.Build();
 
+app.UseOperatorGate();
 app.UseRouting();
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();

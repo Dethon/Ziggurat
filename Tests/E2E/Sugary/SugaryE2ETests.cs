@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
 using Domain.Security;
+using McpServerSugary.Channel;
 using Microsoft.Playwright;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -93,8 +94,9 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         await TheReviewTopicShowsTheEstimateAsync(person, tag);
     }
 
-    // The person's phone as the Sugary site's proxy hands its requests on: the session check's three
-    // headers for their account on every request.
+    // The person's phone as the Sugary site's proxy hands its requests on: the session check's four
+    // headers for their account on every request, the assertion signed with the accounts test key the
+    // stack's accounts service publishes, for Sugary's channel.
     private HttpClient SignedIn(Account account)
     {
         // Past the server's own cap on the turn, so it is the server's 504 that says the wait ran out.
@@ -106,6 +108,8 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         app.DefaultRequestHeaders.Add(ForwardedAccount.UserHeader, account.UserId);
         app.DefaultRequestHeaders.Add(ForwardedAccount.TenantHeader, account.TenantId);
         app.DefaultRequestHeaders.Add(ForwardedAccount.RolesHeader, "member");
+        app.DefaultRequestHeaders.Add(
+            ForwardedAccount.AssertionHeader, TestAssertions.Of(account, SugaryChannel.ChannelId));
         return app;
     }
 
