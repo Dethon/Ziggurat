@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Reflection;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
+using Mcp.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -99,12 +99,12 @@ public static class FileSystemServerTools
                 ToolResponse.Create(await As(b, call).MoveOutCheckAsync(path, ct)))
     };
 
-    // The backend as the call's caller sees it, from the `_meta` the agent stamps on every hop.
-    // Parsed inside the handler, so a context that does not parse is the caller's error result
+    // The backend as the call's caller sees it: the turn through the one accessor every server
+    // reads it by, and the exec bridge's grant off the `_meta` the agent stamps on every hop.
+    // Read inside the handler, so a context that does not parse is the caller's error result
     // like any other failure rather than something the envelope never sees.
     private static FileSystemBackendBase As(FileSystemBackendBase backend, RequestContext<CallToolRequestParams> call) =>
-        backend.For(new FileSystemCaller(
-            ConversationScope.Parse(call.Params?.Meta), VfsBridgeGrant.Parse(call.Params?.Meta)));
+        backend.For(new FileSystemCaller(call.Turn, VfsBridgeGrant.Parse(call.Params?.Meta)));
 
     public static IMcpServerBuilder AddFileSystemTools<TBackend>(this IMcpServerBuilder builder)
         where TBackend : FileSystemBackendBase

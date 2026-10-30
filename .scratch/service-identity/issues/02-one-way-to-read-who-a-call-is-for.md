@@ -4,8 +4,8 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Every server-side read of the turn goes through the accessor, and a check fails if a tool parses the raw `_meta` itself
-- [ ] The servers' existing tests pass unchanged
-- [ ] The accessor answers nothing for a call with no turn, as the parse did
+- [x] Every server-side read of the turn goes through the accessor, and a check fails if a tool parses the raw `_meta` itself
+- [x] The servers' existing tests pass unchanged
+- [x] The accessor answers nothing for a call with no turn, as the parse did
