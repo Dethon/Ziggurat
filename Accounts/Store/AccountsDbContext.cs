@@ -1,3 +1,4 @@
+using Accounts.People;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -37,8 +38,8 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
         var user = modelBuilder.Entity<User>();
         user.Property(u => u.Id).HasMaxLength(IdLength);
         user.Property(u => u.TenantId).HasMaxLength(IdLength);
-        user.Property(u => u.DisplayName).HasMaxLength(200);
-        user.Property(u => u.AvatarUrl).HasMaxLength(2000);
+        user.Property(u => u.DisplayName).HasMaxLength(Profile.DisplayNameLength);
+        user.Property(u => u.AvatarUrl).HasMaxLength(Profile.AvatarUrlLength);
         user.Property(u => u.Role).HasConversion<string>().HasMaxLength(16);
         user.HasOne<Tenant>().WithMany().HasForeignKey(u => u.TenantId).OnDelete(DeleteBehavior.Restrict);
 
@@ -57,7 +58,7 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
         link.Property(l => l.Kind).HasConversion<string>().HasMaxLength(16);
         link.Property(l => l.TenantId).HasMaxLength(IdLength);
         link.Property(l => l.UserId).HasMaxLength(IdLength);
-        link.Property(l => l.DisplayName).HasMaxLength(200);
+        link.Property(l => l.DisplayName).HasMaxLength(Profile.DisplayNameLength);
         link.Property(l => l.Role).HasConversion<string>().HasMaxLength(16);
         link.Property(l => l.CreatedBy).HasMaxLength(IdLength);
         link.HasOne<Tenant>().WithMany().HasForeignKey(l => l.TenantId).OnDelete(DeleteBehavior.Restrict);

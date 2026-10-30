@@ -43,6 +43,27 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
             .ShouldBe(2, output);
     }
 
+    // The chat client's retired list held each person's picture, which the file carries over.
+    [Fact]
+    public async Task APersonsAvatarInTheFile_IsTheirAccountsPicture()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await rig.RunAsync(
+            new[]
+            {
+                new { name = fran.Name, telegramId = fran.TelegramId, avatarUrl = (string?)"/avatars/kakera.png" },
+                new { name = ana.Name, telegramId = ana.TelegramId, avatarUrl = (string?)null }
+            },
+            ["--operator", fran.Name, "--owner", fran.Name, "--sugary", ana.Name]);
+
+        exit.ShouldBe(0, output);
+        (await rig.MeAsync(await rig.AccountOfAsync(fran.TelegramId)))["avatarUrl"]!.GetValue<string>()
+            .ShouldBe("/avatars/kakera.png");
+        (await rig.MeAsync(await rig.AccountOfAsync(ana.TelegramId)))["avatarUrl"].ShouldBeNull();
+    }
+
     [Fact]
     public async Task EachPersonsMemoriesFromEveryName_AreOneMemoryUnderTheirAccount_AndTheHouseholdsAreTheOwners()
     {

@@ -6,8 +6,10 @@ namespace Accounts.People;
 
 // One person of the retired identity map, as the household migration hands them over: the name the
 // map knew them by (the key a second run finds them again by), the name they will go by, the numeric
-// Telegram id the operator looked up for them, and what they are in the household.
-public sealed record ImportingPerson(string Key, string DisplayName, long? TelegramId, Role Role, bool Operator);
+// Telegram id the operator looked up for them, what they are in the household, and the picture the
+// retired chat client's list showed beside them.
+public sealed record ImportingPerson(
+    string Key, string DisplayName, long? TelegramId, Role Role, bool Operator, string? AvatarUrl = null);
 
 // What became of them. A person this run created gets a passkey link, minted once the import is
 // committed; anybody else already has a way in, or is told the command that mints one. Changes say
@@ -76,6 +78,8 @@ public sealed class HouseholdImporter(IDbContextFactory<AccountsDbContext> conte
                 return refused;
             }
 
+            GiveAvatar(found);
+
             placed.Add(found);
         }
 
@@ -106,10 +110,15 @@ public sealed class HouseholdImporter(IDbContextFactory<AccountsDbContext> conte
         return new HouseholdImport.Imported(home.Id, result);
     }
 
+    // A name and a picture are held to the account page's own rule (Profile): every app draws them the
+    // same way, whoever set them.
     private static string? Invalid(IReadOnlyList<ImportingPerson> people) =>
         people.FirstOrDefault(p => string.IsNullOrWhiteSpace(p.Key) || string.IsNullOrWhiteSpace(p.DisplayName))
             is not null
             ? "every person needs the name the identity map knew them by and a display name"
+            : people.Select(p => (p.Key, Profile.Read(p.DisplayName, p.AvatarUrl).Problem))
+                .FirstOrDefault(p => p.Problem is not null) is { Problem: { } problem } unfit
+                ? $"{unfit.Key}: {problem}"
             : people.GroupBy(p => p.Key, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1) is { } twice
                 ? $"{twice.Key} is listed twice"
                 : people.Where(p => p.TelegramId is not null).GroupBy(p => p.TelegramId).FirstOrDefault(g => g.Count() > 1)
@@ -228,6 +237,27 @@ public sealed class HouseholdImporter(IDbContextFactory<AccountsDbContext> conte
         AddIdentity(db, user, TelegramLinks.Channel, identity);
         placed.Changes.Add($"linked to Telegram {identity}");
         return null;
+    }
+
+    // The picture the retired chat client showed, for an account that shows none yet; one its person
+    // chose on the account page since is theirs and is kept, as an adopted account keeps its name.
+    private static void GiveAvatar(Placed placed)
+    {
+        var (person, user) = (placed.Asked, placed.User);
+        if (Profile.Read(person.DisplayName, person.AvatarUrl).Profile?.AvatarUrl is not { } avatar
+            || avatar == user.AvatarUrl)
+        {
+            return;
+        }
+
+        if (user.AvatarUrl is not null)
+        {
+            placed.Notes.Add($"keeps the picture {user.AvatarUrl} rather than {avatar}");
+            return;
+        }
+
+        user.AvatarUrl = avatar;
+        placed.Changes.Add($"given the picture {avatar}");
     }
 
     private static Task<User?> HolderAsync(AccountsDbContext db, string channel, string identity, CancellationToken ct) =>

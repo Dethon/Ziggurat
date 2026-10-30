@@ -153,4 +153,82 @@ public class AccountPageTests
         holders.ShouldNotContain("Fran");
         holders.ShouldNotContain("Pablo");
     }
+
+    // A person's name and picture are their own to set, and every app asking who is signed in shows
+    // what they set.
+    [Fact]
+    public async Task APersonsOwnNameAndAvatar_AreWhatTheAppsShow()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var laura = await server.SeedMemberAsync("Laura");
+        var browser = server.SignedIn(await server.MintSessionAsync(laura));
+
+        var response = await browser.PostAsync(Account, $"{Account}/profile",
+            ("displayName", "  Laura G.  "), ("avatarUrl", "/avatars/kakera.png"));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+        var me = await MeAsync(browser);
+        (me["displayName"]!.GetValue<string>(), me["avatarUrl"]!.GetValue<string>()).ShouldBe(("Laura G.", "/avatars/kakera.png"));
+        var page = await browser.PageAsync(Account);
+        page.ShouldContain("value=\"Laura G.\"");
+        page.ShouldContain("value=\"/avatars/kakera.png\"");
+    }
+
+    [Fact]
+    public async Task AnEmptyAvatar_TakesThePictureAway()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var laura = await server.SeedMemberAsync("Laura");
+        var browser = server.SignedIn(await server.MintSessionAsync(laura));
+        (await browser.PostAsync(Account, $"{Account}/profile", ("displayName", "Laura"), ("avatarUrl", "https://example.com/l.png")))
+            .StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+
+        (await browser.PostAsync(Account, $"{Account}/profile", ("displayName", "Laura"), ("avatarUrl", " ")))
+            .StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+
+        (await MeAsync(browser))["avatarUrl"].ShouldBeNull();
+    }
+
+    // An avatar is drawn as an image on every app's page, so it is a web address or a path on the
+    // deployment's own hosts; anything else — a script, another scheme, a host-relative "//" that a
+    // browser reads as somebody else's host — is refused and nothing changes.
+    [Theory]
+    [InlineData("Laura", "javascript:alert(1)")]
+    [InlineData("Laura", "//evil.example/l.png")]
+    [InlineData("Laura", "data:image/png;base64,AAAA")]
+    [InlineData("Laura", "ftp://example.com/l.png")]
+    [InlineData("Laura", "avatars/l.png")]
+    [InlineData("   ", "")]
+    public async Task ANameOrAvatarThatIsNotOne_IsRefused(string displayName, string avatarUrl)
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var laura = await server.SeedMemberAsync("Laura");
+        var browser = server.SignedIn(await server.MintSessionAsync(laura));
+
+        var response = await browser.PostAsync(Account, $"{Account}/profile", ("displayName", displayName), ("avatarUrl", avatarUrl));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        var me = await MeAsync(browser);
+        (me["displayName"]!.GetValue<string>(), me["avatarUrl"]).ShouldBe(("Laura", null));
+    }
+
+    [Fact]
+    public async Task AProfilePostWithoutTheFormsToken_IsRefused()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var laura = await server.SeedMemberAsync("Laura");
+        var browser = server.SignedIn(await server.MintSessionAsync(laura));
+
+        var response = await browser.PostWithoutPageAsync($"{Account}/profile", ("displayName", "Mallory"), ("avatarUrl", ""));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await MeAsync(browser))["displayName"]!.GetValue<string>().ShouldBe("Laura");
+    }
+
+    private static async Task<System.Text.Json.Nodes.JsonObject> MeAsync(AccountsServer.PageClient browser)
+    {
+        var response = await browser.GetAsync("/accounts/me");
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        return System.Text.Json.Nodes.JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+    }
 }

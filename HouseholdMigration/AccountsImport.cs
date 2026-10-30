@@ -8,7 +8,8 @@ namespace HouseholdMigration;
 // because that service references no project and nothing references it.
 internal sealed record ImportRequest(IReadOnlyList<ImportPerson> People, bool DryRun);
 
-internal sealed record ImportPerson(string Key, string DisplayName, long? TelegramId, string Role, bool Operator);
+internal sealed record ImportPerson(
+    string Key, string DisplayName, long? TelegramId, string Role, bool Operator, string? AvatarUrl);
 
 internal sealed record Imported(string TenantId, IReadOnlyList<ImportedPerson> People);
 
@@ -45,7 +46,8 @@ public sealed class AccountsImport(HttpClient http, string credential)
                     .. file.People.Select(p => new ImportPerson(
                         p.Name, p.ShownAs, p.TelegramId,
                         p.Name == operatorName || p.Name == ownerName ? "owner" : p.Role ?? "member",
-                        p.Name == operatorName))
+                        p.Name == operatorName,
+                        p.AvatarUrl))
                 ],
                 dryRun), options: _json)
         };
