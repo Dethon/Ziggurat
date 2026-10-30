@@ -100,7 +100,8 @@ public static class InjectorModule
                 // on the wall clock it was signed on, and against the delivery default the servers
                 // that raise fires resolve a deliverTo with (Domain/delivery.json).
                 .AddSingleton(sp => new DelegationVerifier(
-                    sp.GetRequiredService<SigningKeyStore>(), TimeProvider.System, settings.Delivery))
+                    sp.GetRequiredService<SigningKeyStore>(), TimeProvider.System, settings.Delivery,
+                    settings.Mcp.TokenVerification))
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")
                 .AddSingleton<ChatThreadResolver>()

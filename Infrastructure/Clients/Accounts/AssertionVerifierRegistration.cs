@@ -1,4 +1,5 @@
 using Domain.Security;
+using Domain.Security.Signing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -12,7 +13,10 @@ public static class AssertionVerifierRegistration
 {
     public const string ClientName = "accounts-jwks";
 
-    public static IServiceCollection AddAssertionVerifier(this IServiceCollection services, string jwksUrl)
+    // The verifier's timing is the host's own binding of the shared policy file
+    // (Domain/token-verification.json, its Mcp.TokenVerification), so every host agrees about time.
+    public static IServiceCollection AddAssertionVerifier(
+        this IServiceCollection services, string jwksUrl, TokenVerificationSettings verification)
     {
         services.AddHttpClient(ClientName, http => http.Timeout = TimeSpan.FromSeconds(5));
         services.TryAddSingleton(TimeProvider.System);
@@ -24,6 +28,7 @@ public static class AssertionVerifierRegistration
             return AssertionVerifier.OverJwks(
                 ct => clients.CreateClient(ClientName).GetStringAsync(jwksUrl, ct),
                 sp.GetRequiredService<TimeProvider>(),
+                verification,
                 sp.GetService<ILoggerFactory>());
         });
     }

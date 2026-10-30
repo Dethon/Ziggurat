@@ -32,7 +32,7 @@ public static class ConfigModule
             .AddMemory(config)
             .AddChatMonitoring(settings, cmdParams)
             // The registration API's person is the accounts service's assertion SexyTime forwards.
-            .AddAssertionVerifier(settings.Accounts.JwksUrl);
+            .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification);
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)

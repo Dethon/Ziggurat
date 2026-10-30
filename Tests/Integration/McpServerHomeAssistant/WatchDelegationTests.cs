@@ -124,7 +124,8 @@ public class WatchDelegationTests : IAsyncLifetime
         var keys = TestSigningKeys.Store(TestSigningKeys.Agent);
         var output = new StringWriter();
 
-        var exit = await new Redelegation(keys, new CallTokens(keys, TimeProvider.System), new StringReader("y\n"), output)
+        var exit = await new Redelegation(keys, new CallTokens(keys, TimeProvider.System), TimeProvider.System,
+                new TokenVerificationSettings(), new StringReader("y\n"), output)
             .RedelegateAsync(
                 [new Redelegation.Server("homeassistant", ct => McpClient.CreateAsync(McpTestSecret.Transport(Endpoint), cancellationToken: ct))],
                 assumeYes: false, _cts.Token);
