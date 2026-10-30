@@ -54,6 +54,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
 
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 

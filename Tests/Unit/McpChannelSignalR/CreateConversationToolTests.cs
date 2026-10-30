@@ -24,6 +24,7 @@ public class CreateConversationToolTests
     {
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             new Mock<ILogger<StreamService>>().Object);
         _services = new ServiceCollection()
