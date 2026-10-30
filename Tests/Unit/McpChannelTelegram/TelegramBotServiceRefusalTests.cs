@@ -55,7 +55,7 @@ public class TelegramBotServiceRefusalTests : IDisposable
 
         var notification = (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message.ShouldNotBeNull();
         notification.Content.ShouldBe("/ask summarise these");
-        notification.Attachments.ShouldNotBeNull().Select(a => a.Id).ShouldBe(["jack/good-1", "jack/good-2"]);
+        notification.Attachments.ShouldNotBeNull().Select(a => a.Id).ShouldBe(["100-100/jack.good-1", "100-100/jack.good-2"]);
         _harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("huge.pdf");
     }
 

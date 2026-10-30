@@ -23,15 +23,16 @@ internal static class AttachmentIntake
     // running a local bot API server.
     public const long MaxDownloadBytes = 20L * 1024 * 1024;
 
-    public static Intake Read(string agentId, IReadOnlyList<Message> messages)
+    public static Intake Read(string agentId, string conversationId, IReadOnlyList<Message> messages)
     {
-        var results = messages.Select(message => Read(agentId, message)).ToList();
+        var results = messages.Select(message => Read(agentId, conversationId, message)).ToList();
         return new Intake(
             [.. results.Select(result => result.Attachment).OfType<AttachmentReference>()],
             [.. results.Select(result => result.Refusal).OfType<IntakeRefusal>()]);
     }
 
-    private static (AttachmentReference? Attachment, IntakeRefusal? Refusal) Read(string agentId, Message message)
+    private static (AttachmentReference? Attachment, IntakeRefusal? Refusal) Read(
+        string agentId, string conversationId, Message message)
     {
         if (TelegramMedia.Read(message) is not { } media)
         {
@@ -67,9 +68,7 @@ internal static class AttachmentIntake
 
         return (new AttachmentReference
         {
-            // A Telegram file handle is per-bot, so the reference names the agent whose bot can
-            // fetch it. That also scopes it for free: another agent's bot cannot use this handle.
-            Id = $"{agentId}/{media.FileId}",
+            Id = TelegramReference.For(conversationId, agentId, media.FileId),
             FileName = name,
             MediaType = mediaType!,
             SizeBytes = media.SizeBytes ?? 0
