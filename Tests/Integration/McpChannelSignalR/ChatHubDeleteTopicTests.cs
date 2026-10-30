@@ -73,6 +73,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
+            new VouchingAccounts(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller()

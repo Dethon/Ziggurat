@@ -28,12 +28,17 @@ public sealed class ChatHub(
     IHubNotificationSender hubSender,
     RetentionSettings retention,
     DictationSettings dictationSettings,
+    IAccountResolver accounts,
     ILogger<ChatHub> logger) : Hub
 {
     // What the browser is told when the emit reached nobody. The message may still be sitting in a
     // buffer for an agent that comes back, so this says the turn cannot be answered now rather
     // than claiming it was thrown away.
     private const string NotLiveError = "No agent is connected right now, so this message has not been answered.";
+
+    // What the browser is told when the accounts service could not vouch for the person just now, so
+    // no turn could carry its word; nothing was sent, and sending again later may work.
+    private const string UnvouchedError = "Who you are could not be checked right now, so this message has not been answered.";
 
     // Where the connection keeps the person the proxy's session check named as it arrived, which is
     // also what says it may call anything (SignedInConnectionFilter).
@@ -306,6 +311,20 @@ public sealed class ChatHub(
             yield break;
         }
 
+        // Refused the same way, and as early: a turn the accounts service has not vouched for would
+        // only be refused by the agent, after the browser had shown the message as sent.
+        if (await VouchedAsync(cancellationToken) is not { } vouched)
+        {
+            await AnswerUnvouchedAsync(topicId, conversationId);
+            await foreach (var unvouchedChunk in
+                subscription.ReadAllAsync(linkedToken).IgnoreCancellation(cancellationToken))
+            {
+                yield return unvouchedChunk;
+            }
+
+            yield break;
+        }
+
         // Write user message to buffer for other browsers
         var timestamp = DateTimeOffset.UtcNow;
         var userMessage = new ChatStreamMessage
@@ -322,6 +341,7 @@ public sealed class ChatHub(
                 ConversationId = conversationId,
                 Sender = TurnSender,
                 Principal = TurnPrincipal,
+                Assertion = vouched.Assertion,
                 Content = message,
                 AgentId = session.AgentId,
                 ConfigPatch = configPatch,
@@ -373,6 +393,12 @@ public sealed class ChatHub(
             return true;
         }
 
+        if (await VouchedAsync(Context.ConnectionAborted) is not { } vouched)
+        {
+            await AnswerUnvouchedAsync(topicId, conversationId);
+            return true;
+        }
+
         var timestamp = DateTimeOffset.UtcNow;
         var userMessage = new ChatStreamMessage
         {
@@ -387,6 +413,7 @@ public sealed class ChatHub(
             ConversationId = conversationId,
             Sender = TurnSender,
             Principal = TurnPrincipal,
+            Assertion = vouched.Assertion,
             Content = message,
             AgentId = session.AgentId,
             ConfigPatch = configPatch,
@@ -434,6 +461,39 @@ public sealed class ChatHub(
         {
             ConversationId = conversationId,
             Content = refusal,
+            ContentType = ReplyContentType.Error,
+            IsComplete = true
+        });
+    }
+
+    // The accounts service's word for this connection's person, asked afresh for every turn, which
+    // the turn carries to the agent: the connection's own assertion was checked as it arrived and
+    // lives ten minutes, while a chat client stays connected for hours. Null when the service could
+    // not vouch for them now — unreachable, or the account gone — and then no turn leaves.
+    private async Task<ResolvedAccount?> VouchedAsync(CancellationToken ct)
+    {
+        try
+        {
+            return await accounts.ResolveAsync(ChannelIds.SignalR, SignedIn.UserId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "The accounts service could not vouch for account {UserId}; its turn is not sent",
+                SignedIn.UserId);
+            return null;
+        }
+    }
+
+    private async Task AnswerUnvouchedAsync(string topicId, string conversationId)
+    {
+        logger.LogWarning(
+            "No assertion for conversation {ConversationId} (topic {TopicId}); answering instead of sending a turn",
+            conversationId, topicId);
+
+        await streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = conversationId,
+            Content = UnvouchedError,
             ContentType = ReplyContentType.Error,
             IsComplete = true
         });

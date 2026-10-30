@@ -67,6 +67,7 @@ public sealed class ChatHubTopicTests : IDisposable
             _hubSender.Object,
             new RetentionSettings { PageSize = 2 },
             new DictationSettings(),
+            new VouchingAccounts(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller(),

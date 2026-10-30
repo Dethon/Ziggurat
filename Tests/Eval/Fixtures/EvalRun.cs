@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Domain.Security.Signing;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -153,10 +154,22 @@ public static class EvalRun
             scenario.AgentId, conversationId, UserId,
             new ReplyTarget(channel, conversationId, scenario.Turn.SatelliteId),
             OriginKind: scenario.Turn.Origin,
-            Principal: new Principal(channel, UserId, Account)));
+            Principal: new Principal(channel, UserId, Account),
+            Identity: IdentityOf(scenario.Turn, channel)));
 
         return message;
     }
+
+    // An eval drives the agent below the turn-start check — no channel server, no monitor — so it
+    // stamps what that check answers for the eval account's assertion on the turn's channel (signed
+    // with the accounts test key, as a test stack's accounts service signs it; EvalRunTests holds the
+    // two to the same identity). A fire carries none, as in the deployment: it runs as its stamped
+    // principal until ticket 07's delegations.
+    private static IdentityClaims? IdentityOf(EvalTurn turn, string channel) =>
+        turn.Origin is null ? IdentityClaims.Person(UserId, Tenant, channel, Roles) : null;
+
+    // The household role the accounts service names a member with.
+    public static IReadOnlyList<string> Roles { get; } = ["member"];
 
     // The turn's files put in the sandbox as ConversationGroup puts a channel's there: after the
     // session is built, because the mounts only exist then, and recorded on the message rather than

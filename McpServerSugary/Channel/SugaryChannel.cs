@@ -24,7 +24,7 @@ public sealed class SugaryChannel(
     public const string Sender = "sugary-app";
 
     public async Task<TurnReply> AskAsync(
-        Account person, string conversationId, string content, ResponseFormat format,
+        Account person, string assertion, string conversationId, string content, ResponseFormat format,
         IReadOnlyList<AttachmentReference> attachments, AgentConfigPatch? patch, ReviewCopy? review,
         CancellationToken ct)
     {
@@ -34,6 +34,8 @@ public sealed class SugaryChannel(
             ConversationId = conversationId,
             Sender = person.UserId,
             Principal = new Principal(ChannelId, person.UserId, person),
+            // The proxy's assertion of the person, from the request that asked: what the agent believes.
+            Assertion = assertion,
             Content = content,
             ResponseFormat = format,
             ConfigPatch = patch,

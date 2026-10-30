@@ -230,6 +230,9 @@ public sealed class TelegramBotService : BackgroundService
                 // The turn acts for the account; its user id stays the sender, the name the approval
                 // router still knows the person by.
                 Principal = new Principal(ChannelIds.Telegram, sender, person.Account),
+                // What the agent believes about who this is: the accounts service's word from the
+                // answer that admitted the sender (TelegramAccess keeps it no longer than LinkCache).
+                Assertion = person.Assertion,
                 Attachments = intake.Attachments.Count > 0 ? intake.Attachments : null,
                 ReviewCopy = ReviewOf(first.Chat, person),
                 Timestamp = DateTimeOffset.UtcNow
