@@ -51,13 +51,14 @@
     <ProjectReference Include="..\Dashboard.Client\Dashboard.Client.csproj" />
     <ProjectReference Include="..\McpChannelSignalR\McpChannelSignalR.csproj" />
     <ProjectReference Include="..\McpChannelTelegram\McpChannelTelegram.csproj" />
-    <ProjectReference Include="..\McpChannelServiceBus\McpChannelServiceBus.csproj" />
     <ProjectReference Include="..\McpChannelVoice\McpChannelVoice.csproj" />
     <ProjectReference Include="..\McpServerScheduling\McpServerScheduling.csproj" />
     <ProjectReference Include="..\McpServerTimers\McpServerTimers.csproj" />
     <ProjectReference Include="..\McpServerSugary\McpServerSugary.csproj" />
     <ProjectReference Include="..\Observability\Observability.csproj" />
     <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
+    <ProjectReference Include="..\Accounts\Accounts.csproj" />
+    <ProjectReference Include="..\HouseholdMigration\HouseholdMigration.csproj" />
   </ItemGroup>
 
   <ItemGroup>

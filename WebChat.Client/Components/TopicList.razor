@@ -2,11 +2,13 @@
 @implements IDisposable
 @using WebChat.Client.Helpers
 @using WebChat.Client.State.AgentActivity
+@using WebChat.Client.State.UserIdentity
 @using Microsoft.JSInterop
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
 @inject MessagesStore MessagesStore
 @inject AgentActivityStore AgentActivityStore
+@inject UserIdentityStore UserIdentityStore
 @inject IDispatcher Dispatcher
 @inject IJSRuntime Js
 
@@ -87,7 +89,13 @@
                                     <div class="topic-unread-badge">@(unread > 99 ? "99+" : unread)</div>
                                 }
                             </div>
-                            <div class="topic-meta">@FormatTime(topic.LastWriteAt)</div>
+                            <div class="topic-meta">
+                                @FormatTime(topic.LastWriteAt)
+                                @if (StartedBySomeoneElse(topic) is { } owner)
+                                {
+                                    <span class="topic-owner">· @owner</span>
+                                }
+                            </div>
                             <div class="topic-preview">@topic.LastMessageSnippet</div>
                         </div>
                         @if (_deleteConfirmTopicId == topic.TopicId)
@@ -130,6 +138,7 @@
     private IReadOnlySet<string> _streamingTopics = new HashSet<string>();
     private IReadOnlyDictionary<string, int> _unreadCounts = new Dictionary<string, int>();
     private IReadOnlySet<string> _activeAgentIds = new HashSet<string>();
+    private string? _signedInUserId;
 
     private string? _deleteConfirmTopicId;
     private bool _showingArchived;
@@ -154,6 +163,7 @@
         Subscribe(TopicsStore.StateObservable, s => s.SearchQuery, q => _search = q);
         Subscribe(TopicsStore.StateObservable, TopicListSelectors.EmptyLabel, label => _emptyLabel = label);
         Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
+        Subscribe(UserIdentityStore.StateObservable, s => s.SignedIn?.UserId, id => _signedInUserId = id);
         Subscribe(TopicsStore.StateObservable, UnreadSelectors.ComputeUnreadCounts, c => _unreadCounts = c);
         Subscribe(AgentActivityStore.StateObservable,
             s => AgentActivitySelectors.GetAgentsWithActivity(s, StreamingStore.State),
@@ -180,6 +190,11 @@
         }
         catch (JSException) { /* gestures attach later when the JS lands */ }
     }
+
+    // Who began a row someone else owns: a shared topic of theirs, or — for whoever sees every
+    // topic — a private one. A person's own rows and a topic nobody owns say nothing.
+    private string? StartedBySomeoneElse(StoredTopic topic) =>
+        topic.OwnerId is not null && topic.OwnerId != _signedInUserId ? topic.OwnerName : null;
 
     [JSInvokable] public void CommitDetent(string detent)
     {

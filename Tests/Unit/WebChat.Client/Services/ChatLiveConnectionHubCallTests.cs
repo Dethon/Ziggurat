@@ -16,6 +16,7 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client.Services;
 
@@ -44,7 +45,7 @@ public sealed class ChatLiveConnectionHubCallTests : IDisposable
         var pipeline = new MessagePipeline(
             _dispatcher, _messagesStore, topicStreams, NullLogger<MessagePipeline>.Instance);
         var hubEventDispatcher = new HubEventDispatcher(
-            _dispatcher, _topicsStore, topicStreams, pipeline);
+            _dispatcher, _topicsStore, topicStreams, pipeline, new UserIdentityStore(_dispatcher));
 
         _liveConnection = new ChatLiveConnection(
             _factory,

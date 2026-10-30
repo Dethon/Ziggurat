@@ -51,6 +51,22 @@
     }
   },
   {
+    "label": "Local: Accounts",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/Accounts/bin/Debug/net10.0/Accounts.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/Accounts",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:5004"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/Accounts/Accounts.csproj", "-c", "Debug"]
+    }
+  },
+  {
     "label": "Local: MCP Library",
     "adapter": "netcoredbg",
     "request": "launch",
@@ -185,23 +201,6 @@
     "build": {
       "command": "dotnet",
       "args": ["build", "$ZED_WORKTREE_ROOT/McpChannelTelegram/McpChannelTelegram.csproj", "-c", "Debug"]
-    }
-  },
-  {
-    "label": "Local: MCP Channel ServiceBus",
-    "adapter": "netcoredbg",
-    "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpChannelServiceBus/bin/Debug/net10.0/McpChannelServiceBus.dll",
-    "cwd": "$ZED_WORKTREE_ROOT/McpChannelServiceBus",
-    "env": {
-      "DOTNET_ENVIRONMENT": "Local",
-      "MCP__SHAREDSECRET": "local-mcp-secret",
-      "MCP__SECRETS__localhost": "local-mcp-secret",
-      "ASPNETCORE_URLS": "http://localhost:6012"
-    },
-    "build": {
-      "command": "dotnet",
-      "args": ["build", "$ZED_WORKTREE_ROOT/McpChannelServiceBus/McpChannelServiceBus.csproj", "-c", "Debug"]
     }
   },
   {

@@ -10,17 +10,16 @@ internal sealed class TestApprovalHandler(ToolApprovalResult result) : IToolAppr
     public List<IReadOnlyList<ToolApprovalRequest>> RequestedApprovals { get; } = [];
     public List<IReadOnlyList<ToolApprovalRequest>> AutoApprovedNotifications { get; } = [];
     public List<string> ConversationIds { get; } = [];
+    public List<ApprovalAsk> Asks { get; } = [];
 
-    public Task<ToolApprovalResult> RequestApprovalAsync(
-        string conversationId,
-        IReadOnlyList<ToolApprovalRequest> requests,
-        CancellationToken cancellationToken)
+    public Task<ToolApprovalResult> RequestApprovalAsync(ApprovalAsk ask, CancellationToken cancellationToken)
     {
         // Locked: concurrent invocation can ask about two calls of one iteration at once.
         lock (RequestedApprovals)
         {
-            ConversationIds.Add(conversationId);
-            RequestedApprovals.Add(requests);
+            ConversationIds.Add(ask.ConversationId);
+            RequestedApprovals.Add(ask.Requests);
+            Asks.Add(ask);
         }
 
         return Task.FromResult(result);

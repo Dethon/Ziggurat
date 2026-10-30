@@ -320,10 +320,14 @@ services:
       PUID: ${PUID:-1654}
       PGID: ${PGID:-1654}
       # Where a command's file operations on the other mounts are answered: the agent's exec
-      # bridge, on this network only (the proxy never routes it).
+      # bridge, on the sandbox network only (the proxy never routes it).
       VFSBRIDGEURL: http://agent:8080/api/vfs-bridge
+    # A network of its own, shared with the agent alone: the agent dials its /mcp and it calls the
+    # agent's exec bridge back. The servers behind the proxy believe the identity headers it copies
+    # on because only the proxy reaches them, and a command written by the model must not reach them
+    # with headers of its own. Not internal: commands still reach the internet.
     networks:
-      - jackbot
+      - sandbox
     depends_on:
       - base-sdk
 
@@ -373,17 +377,6 @@ services:
       # Seals each person's remembered logins in Redis (base64 of 32 random bytes; empty is
       # remembering off). Changing it makes every saved login refuse until it is put back.
       LOGINS__STATEKEY: ${LOGINS__STATEKEY}
-      # The identity map: who each of the household's people is on every channel, so a browse
-      # made as one of them opens in their own browser context. Per deployment; a slot whose
-      # NAME is empty is no person, and no person at all is the feature off. Copy the block per
-      # person (__1__, __2__ ...). TELEGRAM is the Telegram username, WEBCHAT the WebChat name,
-      # VOICE the enrolled speaker's identity. Each id is matched only on its own channel, and only
-      # on the channels appsettings.json's Identity:VerifiedChannels lists (Telegram and voice);
-      # WEBCHAT is used today only to name where a voice login's link would go.
-      IDENTITY__PEOPLE__0__NAME: ""
-      IDENTITY__PEOPLE__0__TELEGRAM: ""
-      IDENTITY__PEOPLE__0__WEBCHAT: ""
-      IDENTITY__PEOPLE__0__VOICE: ""
       # Where people open a login handoff's link: the assistants host Caddy routes /browse/ to this
       # server on (e.g. https://assistants.example.com). Per deployment; empty is the handoff off.
       HANDOFF__PUBLICBASEURL: ""
@@ -496,9 +489,9 @@ services:
       dockerfile: McpChannelTelegram/Dockerfile
     restart: unless-stopped
     environment:
-      # The secrets this service reads, by name: it is never handed the whole .env.
-      ALLOWEDUSERIDS__0: ${ALLOWEDUSERIDS__0}
-      ALLOWEDUSERIDS__1: ${ALLOWEDUSERIDS__1}
+      # The secrets this service reads, by name: it is never handed the whole .env. Who may use the
+      # bots is nobody's list here: a sender is admitted by the account the accounts service has
+      # their numeric Telegram id linked to, asked with this server's own MCP credential.
       BOTS__0__BOTTOKEN: ${BOTS__0__BOTTOKEN}
       BOTS__1__BOTTOKEN: ${BOTS__1__BOTTOKEN}
       <<: *timezone
@@ -512,27 +505,6 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
-
-  mcp-channel-servicebus:
-    image: mcp-channel-servicebus:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-channel-servicebus
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpChannelServiceBus/Dockerfile
-    restart: unless-stopped
-    environment:
-      # The secrets this service reads, by name: it is never handed the whole .env.
-      SERVICEBUSCONNECTIONSTRING: ${SERVICEBUSCONNECTIONSTRING}
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_SERVICEBUS}
-    networks:
-      - jackbot
-    depends_on:
-      - base-sdk
 
   mcp-scheduling:
     image: mcp-scheduling:latest
@@ -629,9 +601,10 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-sugary
-    # Her phone reaches the app through Caddy at sugary.herfluffness.com, and nothing else reaches
-    # it: the sign-in limit counts by X-Forwarded-For, which a caller past the proxy could set to
-    # anything. Local runs publish it on loopback through docker-compose.override.ports.yml.
+    # A person's phone reaches the app through Caddy at sugary.herfluffness.com, and nothing else
+    # reaches it: the app believes the person the proxy's session check names in the X-Ziggurat-*
+    # headers, which a caller past the proxy could set to anybody. Local runs publish it on loopback
+    # through docker-compose.override.ports.yml.
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSugary/Dockerfile
@@ -654,13 +627,10 @@ services:
       # Also the zone the tables' times are written in (HomeZone empty): the same anchor the Home
       # Assistant container runs on, so a meal lines up with the glucose history /ha serves.
       <<: *timezone
+      # The app is served on this port too (every route but /mcp), through Caddy over HTTPS, which
+      # installing it and live scanning need, and behind the proxy's session check: it has no sign-in
+      # of its own. /mcp keeps this server's own credential.
       MCP__SHAREDSECRET: ${MCP_SECRET_SUGARY}
-      # Her app is served on this port too (every route but /mcp), and through Caddy over HTTPS,
-      # which installing it and live scanning need. This deployment is reached only through the VPN,
-      # so the app's own access code is switched off; set it back to true (and SUGARYAPP__ACCESSCODE
-      # in .env) for a deployment the open network can reach. /mcp keeps the deployment secret.
-      SUGARYAPP__REQUIREACCESSCODE: "false"
-      SUGARYAPP__ACCESSCODE: ${SUGARYAPP__ACCESSCODE}
     networks:
       - jackbot
     depends_on:
@@ -843,15 +813,16 @@ services:
       MCP__SECRETS__mcp-homeassistant: ${MCP_SECRET_HOMEASSISTANT}
       MCP__SECRETS__mcp-channel-signalr: ${MCP_SECRET_CHANNEL_SIGNALR}
       MCP__SECRETS__mcp-channel-telegram: ${MCP_SECRET_CHANNEL_TELEGRAM}
-      MCP__SECRETS__mcp-channel-servicebus: ${MCP_SECRET_CHANNEL_SERVICEBUS}
       MCP__SECRETS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
       MCP__SECRETS__mcp-printer: ${MCP_SECRET_PRINTER}
       MCP__SECRETS__mcp-timers: ${MCP_SECRET_TIMERS}
       MCP__SECRETS__mcp-sugary: ${MCP_SECRET_SUGARY}
       MCP__SECRETS__mcp-channel-voice: ${MCP_SECRET_CHANNEL_VOICE}
       AGENTAPI__SHAREDSECRET: ${AGENTAPI__SHAREDSECRET}
+    # The sandbox's network too, which only the two of them are on.
     networks:
       - jackbot
+      - sandbox
     depends_on:
       mcp-library:
         condition: service_started
@@ -868,8 +839,6 @@ services:
       mcp-channel-signalr:
         condition: service_started
       mcp-channel-telegram:
-        condition: service_started
-      mcp-channel-servicebus:
         condition: service_started
       mcp-scheduling:
         condition: service_started
@@ -896,10 +865,6 @@ services:
       dockerfile: WebChat/Dockerfile
     environment:
       # The secrets this service reads, by name: it is never handed the whole .env.
-      USERS__0__ID: ${USERS__0__ID}
-      USERS__0__AVATARURL: ${USERS__0__AVATARURL}
-      USERS__1__ID: ${USERS__1__ID}
-      USERS__1__AVATARURL: ${USERS__1__AVATARURL}
       WEBPUSH__PUBLICKEY: ${WEBPUSH__PUBLICKEY}
       <<: *timezone
     restart: unless-stopped
@@ -940,6 +905,115 @@ services:
     networks:
       - jackbot
 
+  # Docker creates a missing bind-mount folder as root, and accounts runs as PUID, so on a fresh host
+  # it could not create its store. This one-shot step, from the same image, hands ./volumes/accounts
+  # to PUID:PGID and exits before the service starts; it is a no-op on every later start.
+  accounts-volume:
+    image: accounts:latest
+    container_name: accounts-volume
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: Accounts/Dockerfile
+    user: "0:0"
+    entrypoint: ["chown", "${PUID:-1654}:${PGID:-1654}", "/data"]
+    volumes:
+      - ./volumes/accounts:/data
+    restart: "no"
+    depends_on:
+      base-sdk:
+        condition: service_started
+
+  # Households, people, passkeys, invites and sessions. Caddy routes /accounts/* on the main host
+  # here (sign-in, enrollment) and asks /accounts/verify about every protected request; nothing
+  # else reaches it. Its store is a SQLite file in this volume, backed up with the volume. The
+  # operator's way in, before anyone can sign in and after losing every passkey:
+  #   docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"
+  # and a recovery link for anyone: docker exec accounts dotnet Accounts.dll mint-link --user <id>
+  accounts:
+    image: accounts:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: accounts
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: Accounts/Dockerfile
+    restart: unless-stopped
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/accounts:/data
+    environment:
+      <<: *timezone
+      # Per deployment, not secrets. A passkey belongs to the parent domain, so one signs in on every
+      # host under it; the session cookie is set there for the same reason. The origins are the
+      # hosts the Caddyfile serves people on: a ceremony's page must be on one, and sign-in returns
+      # only to one. Links the operator's command prints start with the public base.
+      WEBAUTHN__RELYINGPARTYID: herfluffness.com
+      ALLOWEDORIGINS__0: https://assistants.herfluffness.com
+      ALLOWEDORIGINS__1: https://sexy.herfluffness.com
+      ALLOWEDORIGINS__2: https://sugary.herfluffness.com
+      ALLOWEDORIGINS__3: https://assistants-dashboard.herfluffness.com
+      SESSIONCOOKIE__DOMAIN: .herfluffness.com
+      PUBLICBASEURL: https://assistants.herfluffness.com
+      # The bot people link their Telegram through, without the @: the account page's link code
+      # and an invite are shown as its t.me deep link. Left empty they are shown as a bare code to
+      # send the bot as /start <code>, which is safe; a wrong name would send codes to a stranger's bot.
+      TELEGRAM__BOTUSERNAME: ""
+      # The servers that may ask whose account an identity is, each by the credential it already
+      # holds for its own /mcp, so no secret exists for this alone. Caddy answers the internal API
+      # 404 from outside.
+      CALLERS__mcp-channel-signalr: ${MCP_SECRET_CHANNEL_SIGNALR}
+      CALLERS__mcp-channel-telegram: ${MCP_SECRET_CHANNEL_TELEGRAM}
+      CALLERS__mcp-channel-voice: ${MCP_SECRET_CHANNEL_VOICE}
+      # The household migration below, and only its household import: it can make the operator and
+      # mint their link, so it is admitted by a secret of its own, left empty — nobody — but for the run.
+      CALLERS__household-migration: ${HOUSEHOLD_MIGRATION_SECRET}
+    networks:
+      - jackbot
+    depends_on:
+      accounts-volume:
+        condition: service_completed_successfully
+      base-sdk:
+        condition: service_started
+
+  # One-shot, by hand, on the deploy that brings accounts: carries the retired identity map's people
+  # into the home household as accounts, and what was filed under their names — memories, remembered
+  # logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids.
+  # Under a profile, so `up` never starts it. Put the people in ./volumes/household-migration/people.json
+  # and HOUSEHOLD_MIGRATION_SECRET in .env (then `docker compose up -d accounts`), and run
+  #   docker compose --profile migrate run --rm household-migration \
+  #     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run]
+  # Running it again changes nothing. The steps are .scratch/accounts/spec.md's Further Notes.
+  household-migration:
+    image: household-migration:latest
+    profiles: ["migrate"]
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: HouseholdMigration/Dockerfile
+    restart: "no"
+    # The owner of the Sugary and voices volumes it writes in, as their services run.
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/household-migration:/input:ro
+      - ./volumes/sugary:/sugary
+      - ./volumes/voices:/voices
+    environment:
+      <<: *timezone
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      ACCOUNTS__CREDENTIAL: ${HOUSEHOLD_MIGRATION_SECRET}
+      # Opens each remembered login sealed under a person's name and seals it again under their user id.
+      LOGINS__STATEKEY: ${LOGINS__STATEKEY}
+    networks:
+      - jackbot
+    depends_on:
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      accounts:
+        condition: service_started
+
   caddy:
     build:
       context: ./caddy
@@ -964,9 +1038,11 @@ services:
       - webui
       - agent
       - mcp-sugary
+      - accounts
 
 networks:
   jackbot:
+  sandbox:
 
 volumes:
   printer-spool:

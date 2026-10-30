@@ -10,7 +10,9 @@
     <base href="/" />
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="apple-touch-icon" href="favicon.svg" />
-    <link rel="manifest" href="manifest.webmanifest" />
+    <!-- A browser fetches a manifest without cookies unless asked, and the proxy refuses the dashboard
+         to any request without the operator's session. -->
+    <link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials" />
     <link href="css/app.css" rel="stylesheet" />
     <link href="Dashboard.Client.styles.css" rel="stylesheet" />
 </head>

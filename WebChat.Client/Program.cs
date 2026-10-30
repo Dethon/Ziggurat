@@ -35,6 +35,7 @@ builder.Services.AddScoped<IDictationBridge, JsDictationBridge>();
 builder.Services.AddScoped<ApprovalResponder>();
 
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
+builder.Services.AddScoped<IAccountService, AccountService>();
 
 builder.Services.AddWebChatStores();
 builder.Services.AddWebChatEffects();
@@ -58,6 +59,7 @@ _ = app.Services.GetRequiredService<TopicSelectionEffect>();
 _ = app.Services.GetRequiredService<TopicDeleteEffect>();
 _ = app.Services.GetRequiredService<TopicPagingEffect>();
 _ = app.Services.GetRequiredService<InitializationEffect>();
+_ = app.Services.GetRequiredService<OfferedApprovalsEffect>();
 _ = app.Services.GetRequiredService<AgentSelectionEffect>();
 _ = app.Services.GetRequiredService<UserIdentityEffect>();
 _ = app.Services.GetRequiredService<SpaceEffect>();
@@ -67,5 +69,6 @@ _ = app.Services.GetRequiredService<StreamResumeEffect>();
 _ = app.Services.GetRequiredService<AttachmentEffect>();
 _ = app.Services.GetRequiredService<DictationEffect>();
 _ = app.Services.GetRequiredService<TopicRenameEffect>();
+_ = app.Services.GetRequiredService<TopicShareEffect>();
 
 await app.RunAsync();

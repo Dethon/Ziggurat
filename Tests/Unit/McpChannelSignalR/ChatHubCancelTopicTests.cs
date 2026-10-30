@@ -31,13 +31,17 @@ public class ChatHubCancelTopicTests : IDisposable
     {
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
         _approvalService = new ApprovalService(
             _streamService,
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IHubNotificationSender>().Object,
+            new Mock<IPushNotificationService>().Object,
+            new AccountConnections(),
             NullLogger<ApprovalService>.Instance);
 
         _hub = new ChatHub(
@@ -46,7 +50,7 @@ public class ChatHubCancelTopicTests : IDisposable
             _approvalService,
             new ChannelNotificationEmitter(new ChannelInbox(new FakeTimeProvider()), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            threadStore: null!,
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new Mock<IHubNotificationSender>().Object,
@@ -54,7 +58,7 @@ public class ChatHubCancelTopicTests : IDisposable
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
 
         _sessionService.StartSession(TopicId, "jack", 7, 42);

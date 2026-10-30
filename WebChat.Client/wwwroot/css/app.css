@@ -345,6 +345,42 @@ h1, h2, h3 {
     color: var(--text-muted);
 }
 
+/* The time, and beside it who sees the conversation: the owner's toggle, or whose it is. */
+.header-conversation-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.header-conversation-share {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 0 0.4rem;
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.header-conversation-share.on {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.header-conversation-owner,
+.topic-owner {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Tapping the title swaps it for this field in place, so the field keeps the title's type
    and box. 1rem because anything smaller makes iOS Safari zoom the page on focus. */
 .header-conversation-edit {
@@ -2310,6 +2346,23 @@ select:focus:not(:focus-visible) {
     box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
 }
 
+.approval-status {
+    margin-right: auto;
+    align-self: center;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.btn-close-approval {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color) !important;
+}
+
+.btn-close-approval:hover {
+    background: var(--bg-tertiary);
+}
+
 .btn-always {
     background: var(--bg-secondary);
     color: var(--accent);
@@ -2354,31 +2407,20 @@ select:focus:not(:focus-visible) {
 }
 
 /* ===================================
-   User Identity Picker
+   Signed-in Person
    =================================== */
 
-.user-identity-picker {
-    position: relative;
-}
-
-.avatar-button {
+.signed-in-person {
     width: 36px;
     height: 36px;
     border-radius: 50%;
     overflow: hidden;
     border: 2px solid var(--border-color);
     background: var(--bg-tertiary);
-    cursor: pointer;
-    padding: 0;
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.avatar-button:hover {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-light);
+    flex-shrink: 0;
 }
 
 .avatar-image {
@@ -2386,59 +2428,6 @@ select:focus:not(:focus-visible) {
     height: 100%;
     object-fit: cover;
     object-position: center;
-}
-
-.avatar-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-tertiary);
-    color: var(--text-muted);
-    font-size: 18px;
-    font-weight: 600;
-}
-
-.user-dropdown-menu {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    min-width: 180px;
-    background-color: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: var(--shadow-lg);
-    z-index: 100;
-    overflow: hidden;
-    animation: dropdownSlide 0.15s ease-out;
-}
-
-.user-dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    cursor: pointer;
-    transition: background-color var(--transition-fast);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-}
-
-.user-dropdown-item:hover {
-    background-color: var(--bg-tertiary);
-}
-
-.user-dropdown-item.selected {
-    background-color: var(--accent-subtle);
-    color: var(--accent);
-}
-
-.user-avatar-small {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    object-fit: cover;
 }
 
 /* ===================================

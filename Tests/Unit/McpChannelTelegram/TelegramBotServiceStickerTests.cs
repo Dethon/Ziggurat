@@ -20,7 +20,7 @@ public class TelegramBotServiceStickerTests : IDisposable
 
         var attachment = (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Attachments
             .ShouldNotBeNull().ShouldHaveSingleItem();
-        attachment.Id.ShouldBe("jack/sticker-1");
+        attachment.Id.ShouldBe("100-42/jack.sticker-1");
         attachment.MediaType.ShouldBe("image/webp");
         attachment.FileName.ShouldBe("attachment-10.webp");
     }

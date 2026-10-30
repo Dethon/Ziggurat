@@ -317,14 +317,14 @@ public sealed class WebChatDictationComposerE2ETests(WebChatE2EFixture fixture) 
                 const ref = window.dictation._ref;
                 window.__mint = ref.invokeMethodAsync.bind(ref);
                 ref.invokeMethodAsync = (name, ...args) => name === 'MintTicketAsync'
-                    ? Promise.reject(new Error('User not registered. Call RegisterUser first.'))
+                    ? Promise.reject(new Error('This connection is not signed in.'))
                     : window.__mint(name, ...args);
             }
             """);
 
         await DictateAsync(cdp, page, HoldMs);
         await Assertions.Expect(refusal)
-            .ToContainTextAsync("User not registered",
+            .ToContainTextAsync("not signed in",
                 new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
 
         // And the transcriber that took the recording and could not answer for it. Whisper's own

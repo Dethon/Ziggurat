@@ -474,9 +474,8 @@ public class ChannelInboxTests
     // A subscriber is stamped when its poll *starts*, so the longest legitimate quiet gap is a
     // fully held poll followed by one worst-case retry backoff (the pump's ceiling after a failed
     // call), plus network and scheduling slop. Freshness must cover that whole gap: a value that
-    // only covers the held poll reads a healthy-but-flaky pump as dead, and ServiceBus punishes
-    // that by abandoning deliveries — ticking the message's delivery count toward the DLQ cap for
-    // an agent that is actually connected.
+    // only covers the held poll reads a healthy-but-flaky pump as dead, and a gate-on-live
+    // server punishes that by refusing deliveries to an agent that is actually connected.
     [Fact]
     public async Task HasLiveSubscriber_AfterAHeldPollAndOneRetryBackoff_IsStillTrue()
     {

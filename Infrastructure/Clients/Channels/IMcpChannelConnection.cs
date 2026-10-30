@@ -10,8 +10,11 @@ namespace Infrastructure.Clients.Channels;
 // behaviour per member, and they differ because their callers differ
 // (docs/adr/0011-not-connected-is-five-behaviours-and-stays-that-way.md):
 //
-// - SendReplyAsync, RequestApprovalAsync and NotifyAutoApprovedAsync throw. They are called by an
+// - SendReplyAsync, AskApprovalAsync and NotifyAutoApprovedAsync throw. They are called by an
 //   agent mid-turn, which has somewhere to report a failure.
+// - OfferApprovalAsync returns null and SettleApprovalAsync returns silently. An offer is the
+//   question put beside the one the turn asked, so a channel that is down has merely not been
+//   answered on; telling a channel it was answered elsewhere runs off the turn and can only log.
 // - CreateConversationAsync returns null. DeliveryTargetResolver reads null as "this channel minted
 //   nothing", which is also what an attach-only channel and a channel with no create_conversation
 //   tool return; its job is to try the next target, and an exception would make it catch in order

@@ -11,6 +11,7 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client.State;
 
@@ -22,6 +23,7 @@ public sealed class HubEventDispatcherTests : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
     private readonly TopicStreams _topicStreams;
+    private readonly UserIdentityStore _identityStore;
     private readonly TaskCompletionSource _running = new();
     private readonly HubEventDispatcher _sut;
 
@@ -36,11 +38,13 @@ public sealed class HubEventDispatcherTests : IDisposable
         // behind; the mock stays on the dispatcher the type under test uses directly.
         _topicStreams = new TopicStreams(_realDispatcher, _messagesStore);
         var mockPipeline = new Mock<IMessagePipeline>();
+        _identityStore = new UserIdentityStore(_realDispatcher);
         _sut = new HubEventDispatcher(
             _mockDispatcher.Object,
             _topicsStore,
             _topicStreams,
-            mockPipeline.Object);
+            mockPipeline.Object,
+            _identityStore);
     }
 
     public void Dispose()
@@ -49,6 +53,7 @@ public sealed class HubEventDispatcherTests : IDisposable
         _topicsStore.Dispose();
         _messagesStore.Dispose();
         _streamingStore.Dispose();
+        _identityStore.Dispose();
     }
 
     private static TopicMetadata CreateTopicMetadata(string topicId = "topic-1") =>
@@ -78,6 +83,43 @@ public sealed class HubEventDispatcherTests : IDisposable
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<UpdateTopic>(a => a.Topic.TopicId == "topic-1")),
             Times.Once);
+    }
+
+    // Unsharing is told to the whole space, so a list that held the topic while it was shared lets
+    // it go: the person may no longer know it exists.
+    [Fact]
+    public void HandleTopicChanged_UpdatedToATopicThisPersonMayNoLongerSee_TakesItsRowAway()
+    {
+        _realDispatcher.Dispatch(new SignedIn(new SignedInPerson("laura", "Laura", null, "home", ["member"])));
+        var unshared = CreateTopicMetadata() with { OwnerId = "fran", TenantId = "home", Shared = false };
+
+        _sut.HandleTopicChanged(new TopicChangedNotification(TopicChangeType.Updated, "topic-1", unshared));
+
+        _mockDispatcher.Verify(d => d.Dispatch(It.Is<RemoveTopic>(a => a.TopicId == "topic-1")), Times.Once);
+        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<UpdateTopic>()), Times.Never);
+    }
+
+    [Fact]
+    public void HandleTopicChanged_UpdatedToAnotherPersonsSharedTopic_KeepsItsRow()
+    {
+        _realDispatcher.Dispatch(new SignedIn(new SignedInPerson("laura", "Laura", null, "home", ["member"])));
+        var shared = CreateTopicMetadata() with { OwnerId = "fran", TenantId = "home", Shared = true };
+
+        _sut.HandleTopicChanged(new TopicChangedNotification(TopicChangeType.Updated, "topic-1", shared));
+
+        _mockDispatcher.Verify(d => d.Dispatch(It.Is<UpdateTopic>(a => a.Topic.Shared)), Times.Once);
+    }
+
+    // Someone who sees every topic keeps a row whoever unshares it.
+    [Fact]
+    public void HandleTopicChanged_UpdatedToAPrivateTopic_KeepsItsRowForSomeoneWhoSeesAll()
+    {
+        _realDispatcher.Dispatch(new SignedIn(new SignedInPerson("olga", "Olga", null, "home", ["member", "sees-all"])));
+        var unshared = CreateTopicMetadata() with { OwnerId = "fran", TenantId = "home", Shared = false };
+
+        _sut.HandleTopicChanged(new TopicChangedNotification(TopicChangeType.Updated, "topic-1", unshared));
+
+        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<UpdateTopic>()), Times.Once);
     }
 
     [Fact]
@@ -126,6 +168,30 @@ public sealed class HubEventDispatcherTests : IDisposable
 
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<ApprovalResolved>(a => a.ApprovalId == "approval-123")),
+            Times.Once);
+    }
+
+    [Fact]
+    public void HandleApprovalResolved_AnsweredElsewhere_SaysSo()
+    {
+        _sut.HandleApprovalResolved(new ApprovalResolvedNotification("", "approval-123", AnsweredElsewhere: true));
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<ApprovalResolved>(a => a.ApprovalId == "approval-123" && a.AnsweredElsewhere)),
+            Times.Once);
+    }
+
+    // A question another channel asked is offered to its asker as itself, apart from any topic's
+    // prompts, so catching up on a topic never takes it away.
+    [Fact]
+    public void HandleApprovalOffered_ShowsTheQuestionApartFromAnyTopic()
+    {
+        var request = new ToolApprovalRequestMessage("offer-1", [], "fran");
+
+        _sut.HandleApprovalOffered(new ApprovalOfferedNotification(request, "topic-1"));
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<ShowApproval>(a => a.TopicId == null && a.Request == request)),
             Times.Once);
     }
 

@@ -39,11 +39,13 @@ public class TranscriptDispatcherTests
     private static (TranscriptDispatcher Sut, VoiceConversationManager Manager, ChannelInboxProbe Emitter) Build(
         CommandSettings? commands = null, IMetricsPublisher? publisher = null,
         double shortSpeechAvgLogProbThreshold = -1.4, int fullThresholdSpeechMs = 2000,
-        ReplyTextAccumulator? accumulator = null)
+        ReplyTextAccumulator? accumulator = null, FakeAccountResolver? accounts = null,
+        List<CreateConversationParams>? opened = null)
     {
         accumulator ??= new ReplyTextAccumulator();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .Callback((CreateConversationParams p, CancellationToken _) => opened?.Add(p))
             .ReturnsAsync(() =>
             {
                 var identity = ConversationIdGenerator.CreateFor("topic-x");
@@ -59,7 +61,7 @@ public class TranscriptDispatcherTests
         var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var sut = new TranscriptDispatcher(
-            emitter.Emitter, publisher ?? Mock.Of<IMetricsPublisher>(), manager,
+            emitter.Emitter, accounts ?? new FakeAccountResolver(), publisher ?? Mock.Of<IMetricsPublisher>(), manager,
             new LocalCommandDispatcher(
                 new VoiceCommandMatcher(commands ?? new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             accumulator,
@@ -154,16 +156,137 @@ public class TranscriptDispatcherTests
         accumulator.Flush(conversationId).ShouldBeEmpty();
     }
 
+    // A profile is named after its user id, so a conclusive match is that account: the turn acts for
+    // the person and goes by the name they go by.
     [Fact]
-    public async Task DispatchAsync_IdentifiedSpeaker_EmitsThatSenderNotConfigIdentity()
+    public async Task DispatchAsync_MatchedSpeaker_CarriesTheirAccountAndDisplayName()
+    {
+        var accounts = new FakeAccountResolver().Holding("u-fran", "t-home", "Fran");
+        var (sut, _, emitter) = Build(accounts: accounts);
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.8, "u-fran", default);
+
+        var message = emitter.Received().ShouldHaveSingleItem();
+        message.Sender.ShouldBe("Fran");
+        message.Principal.ShouldBe(new Principal("voice", "u-fran", new Account("t-home", "u-fran")));
+        accounts.Asked.ShouldBe([("voice", "u-fran")]);
+    }
+
+    // Whose the conversation's topic is comes from who opened it, so the speaker is asked before the
+    // conversation is minted: a recognised speaker's is theirs, private like their other topics.
+    [Fact]
+    public async Task DispatchAsync_MatchedSpeakerOpeningAConversation_MintsItForTheirAccount()
+    {
+        var opened = new List<CreateConversationParams>();
+        var (sut, _, _) = Build(accounts: new FakeAccountResolver().Holding("u-fran", "t-home", "Fran"), opened: opened);
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.8, "u-fran", default);
+
+        var minted = opened.ShouldHaveSingleItem();
+        minted.Principal.ShouldBe(new Principal("voice", "u-fran", new Account("t-home", "u-fran")));
+        minted.Sender.ShouldBe("Fran");
+    }
+
+    // The guest acts for no account, so the conversation it opens is the household's.
+    [Fact]
+    public async Task DispatchAsync_GuestOpeningAConversation_MintsItForNoAccount()
+    {
+        var opened = new List<CreateConversationParams>();
+        var (sut, _, _) = Build(accounts: new FakeAccountResolver(), opened: opened);
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.5, null, default);
+
+        opened.ShouldHaveSingleItem().Principal.ShouldBe(new Principal("voice", "household"));
+    }
+
+    // Nobody matched is the guest: somebody in the house, acting as no person. The satellite's
+    // identity is only the name the turn goes by.
+    [Fact]
+    public async Task DispatchAsync_NoMatchedSpeaker_CarriesTheGuestWithNoAccount()
+    {
+        var accounts = new FakeAccountResolver().Holding("u-fran", "t-home", "Fran");
+        var (sut, _, emitter) = Build(accounts: accounts);
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.5, null, default);
+
+        var message = emitter.Received().ShouldHaveSingleItem();
+        message.Sender.ShouldBe("household");
+        message.Principal.ShouldBe(new Principal("voice", "household"));
+        accounts.Asked.ShouldBeEmpty();
+    }
+
+    // The guest's user id is the fixed `household`, never the satellite's configured name, which an
+    // operator could set to somebody's.
+    [Fact]
+    public async Task DispatchAsync_NoMatchedSpeakerOnASatelliteNamedAfterSomebody_IsStillTheGuest()
     {
         var (sut, _, emitter) = Build();
+        var session = new SatelliteSession("kitchen-01", new SatelliteConfig { Identity = "fran", Room = "Kitchen" });
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, null, null, default);
+
+        var message = emitter.Received().ShouldHaveSingleItem();
+        message.Sender.ShouldBe("fran");
+        message.Principal.ShouldBe(new Principal("voice", "household"));
+    }
+
+    // An outage is not an identity: the speaker goes out as the guest rather than as a name nobody
+    // vouched for.
+    [Fact]
+    public async Task DispatchAsync_MatchedSpeakerWhileAccountsIsDown_GoesOutAsTheGuest()
+    {
+        var (sut, _, emitter) = Build(accounts: new FakeAccountResolver().Down());
+
+        var dispatched = await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.8, "u-fran", default);
+
+        dispatched.ShouldBeTrue();
+        var message = emitter.Received().ShouldHaveSingleItem();
+        message.Sender.ShouldBe("household");
+        message.Principal.ShouldBe(new Principal("voice", "household"));
+    }
+
+    // A profile folder no account holds (one enrolled under a name before accounts) is nobody.
+    [Fact]
+    public async Task DispatchAsync_MatchedSpeakerNoAccountHolds_GoesOutAsTheGuest()
+    {
+        var (sut, _, emitter) = Build(accounts: new FakeAccountResolver());
 
         await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.8, "fran", default);
 
-        emitter.Received().Count.ShouldBe(1);
-        emitter.Received()[0].Sender.ShouldBe("fran"); // conclusive identity drives per-person memory
+        var message = emitter.Received().ShouldHaveSingleItem();
+        message.Sender.ShouldBe("household");
+        message.Principal.ShouldBe(new Principal("voice", "household"));
+    }
+
+    // The guest still controls the house, sets timers and asks questions: its turn reaches the same
+    // agent in the same conversation as anybody's, with only the principal telling it apart.
+    [Fact]
+    public async Task DispatchAsync_GuestTurn_ReachesTheAgentAsAnyOtherTurn()
+    {
+        var accounts = new FakeAccountResolver().Holding("u-fran", "t-home", "Fran");
+        var (sut, manager, emitter) = Build(accounts: accounts);
+        var session = Session();
+
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "enciende la luz", Confidence = 0.9 }, "agent-1", null, 0.8, "u-fran", default);
+        await sut.DispatchAsync(
+            session, new TranscriptionResult { Text = "pon un temporizador", Confidence = 0.9 }, "agent-1", null, null, null, default);
+
+        var received = emitter.Received();
+        received.Count.ShouldBe(2);
+        var (person, guest) = (received[0], received[1]);
+        guest.AgentId.ShouldBe(person.AgentId);
+        guest.ConversationId.ShouldBe(manager.GetActiveConversationId("kitchen-01"));
+        guest.ConversationId.ShouldBe(person.ConversationId);
+        guest.Content.ShouldBe("pon un temporizador");
+        guest.Principal!.Account.ShouldBeNull();
     }
 
     [Fact]
@@ -270,7 +393,7 @@ public class TranscriptDispatcherTests
         publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
             .Callback<MetricEvent>(e => published.Add(e));
         var sut = new TranscriptDispatcher(
-            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+            emitter.Emitter, new FakeAccountResolver(), publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             new ReplyTextAccumulator(),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow), NullLogger<TranscriptDispatcher>.Instance);
 
@@ -324,7 +447,7 @@ public class TranscriptDispatcherTests
         publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
             .Callback<MetricEvent>(e => published.Add(e));
         var sut = new TranscriptDispatcher(
-            new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast).Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+            new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast).Emitter, new FakeAccountResolver(), publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             new ReplyTextAccumulator(),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);
@@ -372,7 +495,7 @@ public class TranscriptDispatcherTests
         publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>()))
             .Callback<MetricEvent>(e => published.Add(e));
         var sut = new TranscriptDispatcher(
-            new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast).Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
+            new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast).Emitter, new FakeAccountResolver(), publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]),
             new ReplyTextAccumulator(),
             avgLogProbThreshold: -1.0, noSpeechProbThreshold: 0.6, shortSpeechAvgLogProbThreshold: -1.4, fullThresholdSpeechMs: 2000, new FakeTimeProvider(DateTimeOffset.UtcNow),
             NullLogger<TranscriptDispatcher>.Instance);

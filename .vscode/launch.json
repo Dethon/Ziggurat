@@ -15,7 +15,6 @@
         "Docker: MCP Sandbox",
         "Docker: MCP Channel SignalR",
         "Docker: MCP Channel Telegram",
-        "Docker: MCP Channel ServiceBus",
         "Docker: MCP Channel Voice",
         "Docker: MCP Scheduling",
         "Docker: MCP Printer",
@@ -30,6 +29,7 @@
         "Local: Agent",
         "Local: WebUI",
         "Local: Observability",
+        "Local: Accounts",
         "Local: MCP Library",
         "Local: MCP Vault",
         "Local: MCP WebSearch",
@@ -38,7 +38,6 @@
         "Local: MCP Sandbox",
         "Local: MCP Channel SignalR",
         "Local: MCP Channel Telegram",
-        "Local: MCP Channel ServiceBus",
         "Local: MCP Channel Voice",
         "Local: MCP Scheduling",
         "Local: MCP Printer",
@@ -254,6 +253,21 @@
       }
     },
     {
+      "name": "Local: Accounts",
+      "type": "coreclr",
+      "request": "launch",
+      "program": "${workspaceFolder}/Accounts/bin/Debug/net10.0/Accounts.dll",
+      "cwd": "${workspaceFolder}/Accounts",
+      "env": {
+        "DOTNET_ENVIRONMENT": "Local",
+        "CALLERS__mcp-channel-signalr": "local-mcp-secret",
+        "CALLERS__mcp-channel-telegram": "local-mcp-secret",
+        "CALLERS__mcp-channel-voice": "local-mcp-secret",
+        "ASPNETCORE_ENVIRONMENT": "Local",
+        "ASPNETCORE_URLS": "http://localhost:5004"
+      }
+    },
+    {
       "name": "Local: MCP Library",
       "type": "coreclr",
       "request": "launch",
@@ -359,19 +373,6 @@
       }
     },
     {
-      "name": "Local: MCP Channel ServiceBus",
-      "type": "coreclr",
-      "request": "launch",
-      "program": "${workspaceFolder}/McpChannelServiceBus/bin/Debug/net10.0/McpChannelServiceBus.dll",
-      "cwd": "${workspaceFolder}/McpChannelServiceBus",
-      "env": {
-        "DOTNET_ENVIRONMENT": "Local",
-        "MCP__SHAREDSECRET": "local-mcp-secret",
-        "MCP__SECRETS__localhost": "local-mcp-secret",
-        "ASPNETCORE_URLS": "http://localhost:6012"
-      }
-    },
-    {
       "name": "Local: MCP Channel Voice",
       "type": "coreclr",
       "request": "launch",
@@ -432,21 +433,6 @@
         "MCP__SECRETS__localhost": "local-mcp-secret",
         "ASPNETCORE_URLS": "http://localhost:6016",
         "VoiceHub__BaseUrl": "http://localhost:6015"
-      }
-    },
-    {
-      "name": "Docker: MCP Channel ServiceBus",
-      "type": "coreclr",
-      "request": "attach",
-      "processId": 1,
-      "pipeTransport": {
-        "pipeProgram": "docker",
-        "pipeArgs": ["exec", "-i", "mcp-channel-servicebus"],
-        "debuggerPath": "/remote_debugger/vsdbg",
-        "quoteArgs": false
-      },
-      "sourceFileMap": {
-        "/src": "${workspaceFolder}"
       }
     },
     {

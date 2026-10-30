@@ -36,11 +36,34 @@ public class TelegramFetchAttachmentToolTests
     [Fact]
     public async Task McpRun_KnownReference_ReturnsTheBytesBase64()
     {
+        GivenTelegramHolds("AgACAgQAAxkBAAIB-_photo", _bytes);
+
+        var result = await FetchAttachmentTool.McpRun(
+            "-100200--100200/jack.AgACAgQAAxkBAAIB-_photo", _services, CancellationToken.None);
+
+        Convert.FromBase64String(result).ShouldBe(_bytes);
+    }
+
+    // A reference minted before references named their conversation is still in somebody's history,
+    // and still hydrates.
+    [Fact]
+    public async Task McpRun_AReferenceThatNamesOnlyTheAgent_StillReturnsTheBytes()
+    {
         GivenTelegramHolds("AgACphoto", _bytes);
 
         var result = await FetchAttachmentTool.McpRun("jack/AgACphoto", _services, CancellationToken.None);
 
         Convert.FromBase64String(result).ShouldBe(_bytes);
+    }
+
+    [Fact]
+    public async Task McpRun_UnknownAgentInAConversationsReference_AnswersEmpty()
+    {
+        GivenTelegramHolds("AgACphoto", _bytes);
+
+        var result = await FetchAttachmentTool.McpRun("100-100/stranger.AgACphoto", _services, CancellationToken.None);
+
+        result.ShouldBeEmpty();
     }
 
     [Fact]

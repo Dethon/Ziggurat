@@ -19,14 +19,25 @@ namespace McpServerSugary.Store.Migrations
 
             modelBuilder.Entity("McpServerSugary.Store.DayNote", b =>
                 {
+                    b.Property<string>("UserId")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateOnly>("Day")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Text")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.HasKey("Day");
+                    b.HasKey("UserId", "Day");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("DayNotes");
                 });
@@ -51,12 +62,24 @@ namespace McpServerSugary.Store.Migrations
                     b.Property<DateTime>("TakenAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<double>("Units")
                         .HasColumnType("REAL");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
                     b.HasIndex("TakenAt");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("Doses");
                 });
@@ -83,9 +106,21 @@ namespace McpServerSugary.Store.Migrations
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("StartedAt");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("ExerciseSessions");
                 });
@@ -119,6 +154,11 @@ namespace McpServerSugary.Store.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Unit")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -126,6 +166,8 @@ namespace McpServerSugary.Store.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("Barcode");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("Foods");
                 });
@@ -158,9 +200,21 @@ namespace McpServerSugary.Store.Migrations
                     b.Property<byte[]>("Photo")
                         .HasColumnType("BLOB");
 
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EatenAt");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("Meals");
                 });
@@ -188,15 +242,27 @@ namespace McpServerSugary.Store.Migrations
                     b.Property<DateOnly?>("ReplacedOn")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateOnly?>("TodaySentFor")
                         .HasColumnType("TEXT");
 
                     b.Property<DateOnly?>("TomorrowSentFor")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Kind");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("Pens");
                 });
@@ -213,9 +279,21 @@ namespace McpServerSugary.Store.Migrations
                     b.Property<DateOnly>("Start")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("Start");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("Periods");
                 });
@@ -237,7 +315,19 @@ namespace McpServerSugary.Store.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Endpoint");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("PushSubscriptions");
                 });
@@ -261,7 +351,14 @@ namespace McpServerSugary.Store.Migrations
                     b.Property<double?>("Servings")
                         .HasColumnType("REAL");
 
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("Recipes");
                 });

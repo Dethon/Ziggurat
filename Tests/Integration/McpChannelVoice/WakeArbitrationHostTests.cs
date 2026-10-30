@@ -17,6 +17,7 @@ using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Unit.Mcp.Hosting;
+using Tests.Unit.McpChannelVoice;
 
 namespace Tests.Integration.McpChannelVoice;
 
@@ -202,7 +203,7 @@ public class WakeArbitrationHostTests
             factory.Object, new ReplyTextAccumulator(), TimeProvider.System,
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter.Emitter, metrics, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), new ReplyTextAccumulator(), -1.0, 0.6, -1.4, 2000, TimeProvider.System,
+            emitter.Emitter, new FakeAccountResolver(), metrics, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), new ReplyTextAccumulator(), -1.0, 0.6, -1.4, 2000, TimeProvider.System,
             NullLogger<TranscriptDispatcher>.Instance);
         var arbiter = new WakeArbiter(
             voiceSettings.Arbitration, manager, metrics, TimeProvider.System,

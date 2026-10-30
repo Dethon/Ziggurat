@@ -38,7 +38,7 @@ public class SugaryFileSystemQueryTests
     {
         var registry = new VirtualFileSystemRegistry();
         registry.Mount(new FileSystemMount(SugaryFileSystem.Name, "/sugary", "her log"),
-            new SugaryFileSystem(_log, _madrid, new DuckDbTableEngine(timeout)));
+            new SugaryFileSystem(_log, _madrid, new DuckDbTableEngine(timeout)).For(InMemorySugaryLog.Her));
         return await new VfsQueryTool(registry).RunAsync(path, sql, maxRows);
     }
 

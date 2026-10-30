@@ -7,7 +7,7 @@ namespace Tests.Integration.McpServers;
 // Two things about the servers that no registration test can reach.
 //
 // The first is whether the table covers them all: every other test here is a theory over the rows,
-// so a fourteenth server with no row is tested by nothing at all and nothing says so.
+// so a fifteenth server with no row is tested by nothing at all and nothing says so.
 //
 // The second is HOW a server reads its configuration. Every slice test in the repo hands a module a
 // settings object built in C#, so a Program.cs that swapped BindSettings<T> for

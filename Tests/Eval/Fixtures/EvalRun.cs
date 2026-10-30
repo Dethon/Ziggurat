@@ -15,9 +15,18 @@ namespace Tests.Eval.Fixtures;
 // pinned clock, and a stack carried over from the previous run has neither.
 public static class EvalRun
 {
-    // The user every scenario runs as. Memory is scoped to it, and the forget tool refuses a run
-    // that carries no identity — so it is one constant rather than a string repeated per fixture.
+    // The account every scenario runs as, by its user id. Memory is keyed by it, and the forget
+    // tool refuses a turn that acts for no account — so it is one constant rather than a string
+    // repeated per fixture.
     public const string UserId = "eval-user";
+
+    // The household that account belongs to: nothing in a run is keyed by it, but an account
+    // always names one.
+    public const string Tenant = "eval-home";
+
+    // The account that user signed in as, which every turn's principal carries as a signed-in
+    // channel stamps it: what follows the person — their memory, their Sugary log — is found by it.
+    public static readonly Account Account = new(Tenant, UserId);
 
     // One run in a slot of its own. The gate is what bounds how many stacks stand at once now
     // that a scenario's runs go out together, and the lease is the database this run is alone on.
@@ -135,15 +144,16 @@ public static class EvalRun
         // Set on the message the recall hook would have set it on, so the block reaches the model
         // through the decoration that renders it in production rather than through a second path.
         message.SetMemoryContext(memories);
-        // A fire carries the principal its server stamped from the turn that wrote it; an eval's
-        // fire stands in for one the person wrote from the channel it delivers to. A person's own
-        // turn carries none, as in the deployment, and is vouched for by its channel.
+        // Every turn acts for the eval's one account, as a channel on accounts stamps a person's turn
+        // and a fire carries the principal of the turn that wrote it — an eval's fire stands in for
+        // one the person wrote from the channel it delivers to. Memory is keyed by the account, so
+        // its user id is the one the remembered facts are filed under.
         var channel = EvalAttachments.Channel(scenario.Turn);
         message.SetConversationContext(new ConversationContext(
             scenario.AgentId, conversationId, UserId,
             new ReplyTarget(channel, conversationId, scenario.Turn.SatelliteId),
             OriginKind: scenario.Turn.Origin,
-            Principal: scenario.Turn.Origin is null ? null : new Principal(channel, UserId)));
+            Principal: new Principal(channel, UserId, Account)));
 
         return message;
     }
@@ -205,8 +215,7 @@ public static class EvalRun
 // that decides whether asking is needed.
 public sealed class AutoApproveHandler : IToolApprovalHandler
 {
-    public Task<ToolApprovalResult> RequestApprovalAsync(
-        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct) =>
+    public Task<ToolApprovalResult> RequestApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
         Task.FromResult(ToolApprovalResult.Approved);
 
     public Task NotifyAutoApprovedAsync(

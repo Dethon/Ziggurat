@@ -19,13 +19,13 @@ public static class LabelEndpoints
 {
     public static void MapLabelEndpoints(this IEndpointRouteBuilder api)
     {
-        // The session cookie is SameSite=Strict, so a cross-site form post never carries it.
+        // The proxy's session cookie is SameSite=Lax, so a cross-site form post never carries it.
         api.MapPost("/labels", ReadLabelAsync).DisableAntiforgery();
     }
 
-    // Read rather than bound, as the estimate's form is, so the cookie gate answers first.
+    // Read rather than bound, as the estimate's form is; a turn of the person the proxy named.
     private static async Task<IResult> ReadLabelAsync(
-        HttpRequest request, SugaryChannel channel, UploadStore uploads, IAgentCatalog catalog,
+        HttpRequest request, Person person, SugaryChannel channel, UploadStore uploads, IAgentCatalog catalog,
         SugarySettings settings, ILoggerFactory loggers, CancellationToken ct)
     {
         if (!request.HasFormContentType)
@@ -59,7 +59,8 @@ public static class LabelEndpoints
         var conversation = ConversationIdGenerator.CreateFor(ConversationIdGenerator.NewTopicId()).ConversationId;
         var attachments = await PhotoUpload.StoreAsync(conversation, photos, uploads, ct);
         var reply = await channel.AskAsync(
-            conversation, LabelTurn.Text(form["language"].ToString()), NutritionLabelSchema.Format, attachments,
+            person.Account, conversation, LabelTurn.Text(form["language"].ToString()), NutritionLabelSchema.Format,
+            attachments,
             new AgentConfigPatch { Model = settings.LabelModel },
             new ReviewCopy { Title = ReviewTitle }, ct);
         return Answer(reply, loggers.CreateLogger("McpServerSugary.App.Labels"));

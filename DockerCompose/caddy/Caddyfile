@@ -3,18 +3,35 @@ assistants.herfluffness.com {
         dns cloudflare {env.CF_API_TOKEN}
     }
 
+    # The chat client, its hub and the hub's upload and dictation endpoints ask the accounts service's
+    # session check first. A signed-in request goes on carrying the person in three headers, which
+    # copy_headers sets over any the client sent; a signed-out page is sent to sign-in and back, and
+    # anything else is answered 401.
     handle /hubs/* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/attachments* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/dictation* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
+    # SexyTime's server calls this with a secret of its own.
     handle /api/agents* {
         reverse_proxy agent:8080
     }
@@ -32,7 +49,23 @@ assistants.herfluffness.com {
         reverse_proxy mcp-websearch:8080
     }
 
+    # Who holds which identity is asked by the deployment's servers on the compose network, never
+    # through here.
+    handle /accounts/internal/* {
+        respond 404
+    }
+
+    # The accounts service's own pages (sign-in, a link's enrollment) and the session check, all
+    # under /accounts, which handle passes on as it is. The pages are never behind the check.
+    handle /accounts/* {
+        reverse_proxy accounts:8080
+    }
+
     handle {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy webui:8080
     }
 }
@@ -40,6 +73,16 @@ assistants.herfluffness.com {
 assistants-dashboard.herfluffness.com {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
+    }
+
+    # Memory text and usage per person are the operator's: every request is checked for the
+    # operator's session first. A member is refused, a signed-out page is sent to sign-in on the main
+    # host and back. copy_headers deletes each named header from the request before setting it from
+    # the check's answer, so a client cannot supply its own; a site-level request_header strip would
+    # run after forward_auth in Caddy's directive order and blank the identity it copied.
+    forward_auth accounts:8080 {
+        uri /accounts/verify?role=operator
+        copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
     }
 
     handle {
@@ -52,23 +95,55 @@ sexy.herfluffness.com {
         dns cloudflare {env.CF_API_TOKEN}
     }
 
+    # The chat hub and its endpoints, checked as on the main host.
     handle /hubs/* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/attachments* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/dictation* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy mcp-channel-signalr:8080
     }
 
+    # SexyTime's server calls this with the agent API's secret and the X-Ziggurat-User it was handed
+    # by the check below; the agent believes that header only beside the secret.
     handle /api/agents* {
         reverse_proxy agent:8080
     }
 
+    # As on the main host: who holds which identity is asked on the compose network, never here.
+    handle /accounts/internal/* {
+        respond 404
+    }
+
+    # The accounts service's routes, as on the main host, so a page here asks /accounts/me
+    # same-origin. Never behind the check: sign-in opens signed out.
+    handle /accounts/* {
+        reverse_proxy accounts:8080
+    }
+
+    # SexyTime itself is behind the same sign-in as the chat client: a signed-out page is sent to
+    # sign-in on the main host and back here, a signed-out call to its API is answered 401.
     handle {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         reverse_proxy sexytime:8080
     }
 }
@@ -78,17 +153,34 @@ sugary.herfluffness.com {
         dns cloudflare {env.CF_API_TOKEN}
     }
 
-    # The agent's /mcp is for the deployment alone; her phone only ever needs the app and its API.
+    # The agent's /mcp is for the deployment alone; a person's phone only ever needs the app and its API.
     handle /mcp* {
         respond 404
     }
 
+    # As on the main host: who holds which identity is asked on the compose network, never here.
+    handle /accounts/internal/* {
+        respond 404
+    }
+
+    # The accounts service's routes, as on the main host, so the app sends a signed-out person to
+    # sign in, and back, same-origin. Never behind the check: sign-in opens signed out.
+    handle /accounts/* {
+        reverse_proxy accounts:8080
+    }
+
+    # Each person's own log, behind the same sign-in as the chat client: the app and its API act
+    # for the person the check names in the headers it copies, over any the client sent. A
+    # signed-out page is sent to sign-in and back here, a signed-out call to the API is answered 401.
     handle {
+        forward_auth accounts:8080 {
+            uri /accounts/verify
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        }
         # A filmed meal is up to 200 MiB plus four photos (McpServerSugary's MaxClipBytes).
         request_body {
             max_size 230MiB
         }
-        # Caddy sets X-Forwarded-For itself, which is the address the sign-in limit counts by.
         reverse_proxy mcp-sugary:8080
     }
 }

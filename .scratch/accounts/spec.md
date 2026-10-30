@@ -338,3 +338,60 @@ claims change in this phase.
     Sugary log it is;
   - send each person their passkey link;
   - set the accounts service's secrets and the proxy's session-check routes.
+- The deploy steps, in order (`.claude/rules/household-migration.md` says what each migration step
+  does; the launch-stack skill has the same commands):
+  1. **Before deploying**, copy prod's identity map out of its compose environment — the
+     `IDENTITY__PEOPLE__<n>__{NAME,TELEGRAM,WEBCHAT,VOICE}` entries of `mcp-websearch`
+     (`docker inspect mcp-websearch`), which the new compose file no longer carries — into
+     `DockerCompose/volumes/household-migration/people.json`:
+     `{ "people": [ { "name", "telegram", "telegramId", "webChat", "voice", "oldNames", "role", "avatarUrl" } ] }`.
+     `telegramId` is each person's numeric Telegram id (the bot now admits people by it alone).
+     `oldNames` lists any other name their memories or schedules were filed under; Redis keys are
+     case-sensitive, so `Fran` and `fran` are two names. `redis-cli --scan --pattern 'memory:*'`
+     shows the buckets, and the dry run below names any nobody is listed with. `avatarUrl` is the
+     picture the old chat client showed, from its `Users` list, as a path on its host
+     (`/avatars/kakera.png`).
+  2. Deploy: `docker compose build base-sdk`, then `up -d --build` the stack. Set the accounts
+     service's per-deployment values (`WEBAUTHN__RELYINGPARTYID`, `ALLOWEDORIGINS__n`,
+     `SESSIONCOOKIE__DOMAIN`, `PUBLICBASEURL`, `TELEGRAM__BOTUSERNAME`) and reload Caddy with the
+     session-check routes. Start `mcp-sugary` once with the new image (it adds the log's owner
+     columns; the migration would too).
+  3. Optionally mint the operator's own link first
+     (`docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"`): the
+     migration adopts that operator for the person named `--operator`. Otherwise it creates them and
+     prints their link.
+  4. Put a random `HOUSEHOLD_MIGRATION_SECRET` in `DockerCompose/.env` (`openssl rand -hex 32`) and
+     `docker compose up -d accounts`, so its `CALLERS__household-migration` admits the run.
+  5. Dry run, read it, fix the file until it lists every bucket and nothing is "left as it was":
+     `docker compose --profile migrate run --rm household-migration --people /input/people.json
+     --operator <name> --owner <name> --sugary <name> --dry-run` — each `<name>` a person's `name`.
+  6. The same without `--dry-run`. Keep the output: each person it created has a passkey link,
+     shown only this once (a lost one is `mint-link --user <id>`). Running it again changes nothing
+     and says so; a run that stopped part way is finished by running it again.
+  7. `docker compose restart mcp-channel-voice tse-extractor`: speaker profiles are read at start,
+     and their folders are now named by user id.
+  8. Send each person their link. Someone who only uses Telegram needs none: the bot already knows
+     their linked id.
+  9. Empty `HOUSEHOLD_MIGRATION_SECRET` and `docker compose up -d accounts` again: while it is set,
+     whoever holds it can make the operator.
+- Where the build deliberately differs from the decisions above:
+  - `/api/agents*` stays outside the session check, behind the agent API's own secret: its caller
+    is SexyTime's server, which holds the secret and forwards the signed-in person as
+    `X-Ziggurat-User`, the one header the API reads.
+  - A fire (a schedule's, a watch's, a login wake) recalls memory as the account that set it going
+    but is never extracted into memory: its words are a prompt left for later or a server's notice,
+    never something the person just said.
+  - The operator gets no recovery link from the members page and no `/web` link from Telegram: an
+    owner or a linked Telegram must not be a way onto the dashboard. The container command
+    (`mint-link --operator`) is the operator's way back.
+  - The migration also gives the owner the memory buckets that were nobody's — `scheduler` and
+    `watch` (fires) and `system` (download alerts) beside `household` — and gives every topic from
+    before an owner (whoever started it, else the household's owner) as well as marking it shared,
+    since only an owner may stop sharing one.
+  - A shared topic is continued, and its reply stopped, by anyone who sees it, but renamed or deleted
+    by its owner alone; a topic nobody owns (a voice guest's, a Telegram group's) by whoever sees it,
+    there being nobody to defer to. A topic nobody owns that records a household is that household's
+    alone.
+  - "Reachable only through the proxy" holds against the sandbox, which runs what the model writes:
+    it is on a compose network shared with the agent alone. Any other compromised container could
+    still send the identity headers itself; that stays the Service identity phase's job.

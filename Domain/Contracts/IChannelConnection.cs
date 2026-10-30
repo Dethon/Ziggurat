@@ -5,7 +5,7 @@ using JetBrains.Annotations;
 namespace Domain.Contracts;
 
 [PublicAPI]
-public interface IChannelConnection : IToolApprovalHandler
+public interface IChannelConnection
 {
     string ChannelId { get; }
 
@@ -26,6 +26,24 @@ public interface IChannelConnection : IToolApprovalHandler
     // position in five argument lists.
     Task SendReplyAsync(SendReplyParams reply, CancellationToken ct);
 
+    // The question put where the turn asked it. Null is "nobody could be asked here" — no live
+    // session to show it in, no satellite to speak it on — which leaves it to wherever else it was
+    // offered; an answer, a refusal or a time-out is this channel's to give and ends the question.
+    Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct);
+
+    // The same question offered to its asker somewhere other than where the turn asked it. Null is
+    // "not offered here, or not answered here" — a channel that cannot reach that person, one that
+    // offers nothing, and not connected alike — and never ends the question.
+    Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct);
+
+    // The question was answered on another channel: whatever is still showing it here says so. A
+    // no-op for a question this channel never showed, for a channel that shows nothing, and when not
+    // connected.
+    Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct);
+
+    Task NotifyAutoApprovedAsync(
+        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct);
+
     // An attachment's bytes, by naming its reference. Where they rest is never mounted, so this is
     // the only way in (ADR 0021). Null is "not connected", and also "the file could not be had":
     // both hydrate to a placeholder naming the file rather than failing the turn.
@@ -38,6 +56,9 @@ public interface IChannelConnection : IToolApprovalHandler
     Task<bool> StoreAttachmentAsync(
         string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct);
 
+    // The principal is the turn's, so a channel that keeps topics can say whose a minted one is —
+    // the review host decides that from the turn, never the channel that asked (ADR 0046). `group`
+    // says the conversation is several people's (ReviewCopy.Group), which the host decides from too.
     Task<string?> CreateConversationAsync(
         string agentId,
         string topicName,
@@ -45,5 +66,7 @@ public interface IChannelConnection : IToolApprovalHandler
         string? initialPrompt,
         string? address,
         string? existingConversationId,
+        Principal? principal,
+        bool group,
         CancellationToken ct);
 }

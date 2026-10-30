@@ -70,6 +70,23 @@ public class ScheduleFileSystemJourneyTests
         schedule.UserId.ShouldBe("ana");
     }
 
+    // A chat-client turn's principal names the person's account, and a schedule it writes runs as
+    // that account: the creator it records is the stamped principal, account and all.
+    [Fact]
+    public async Task Create_OnAChatClientTurn_RecordsTheWritersAccount()
+    {
+        var store = new FakeScheduleStore();
+        var principal = new Principal("signalr", "u-1", new Account("t-1", "u-1"));
+        var caller = new FileSystemCaller(
+            new ConversationContext("jonas", "7:42", "Fran", new ReplyTarget("signalr", "7:42"), Principal: principal),
+            null);
+
+        await Build(store).For(caller).CreateAsync("/jonas/orders/schedule.json",
+            """{"prompt":"check my orders","cron":"0 8 * * *"}""", false, true, CancellationToken.None);
+
+        (await store.GetAsync("orders", CancellationToken.None))!.CreatedBy.ShouldBe(principal);
+    }
+
     // Whoever last wrote the schedule is who it runs as: an edit or a move by another turn would
     // otherwise put new words in a task that still runs as the person who first wrote it.
     [Fact]

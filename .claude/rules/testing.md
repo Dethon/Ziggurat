@@ -78,6 +78,13 @@ for this, and each shape below is one that has already failed here.
   `TestHelpers`/`E2EPhase` directly: the base always launches Chromium, and a browser nothing
   navigates is the cost that capped how far this suite could be split
 - Use `[SkippableFact]` with `Skip.If(...)` to skip when the required stack is unavailable
+- Every chat-client page is behind the stack's session check, so a WebChat test opens its page with
+  `fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), ...)`: the index names an account the
+  stack's accounts service makes on first asking (`create-user`, then `mint-session`, by
+  `docker exec`), and the minted cookie is on the page's context before anything is opened. A page
+  from plain `CreatePageAsync` is signed out and lands on sign-in. The stack is browsed at
+  `localhost` on a port it takes up front, because the passkeys' relying party cannot be an IP and
+  the session cookie is host-only.
 - `fixture.NextUserIndex()` gives a test its own user, which separates it from its siblings in the
   same run and from nothing else: the index restarts every run and conversations outlive the stack.
   Name what this run creates with a per-run tag (`Guid.NewGuid().ToString("N")[..4]`), placed early

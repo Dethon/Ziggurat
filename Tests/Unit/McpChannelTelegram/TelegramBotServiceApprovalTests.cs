@@ -25,7 +25,7 @@ public class TelegramBotServiceApprovalTests : IDisposable
         _services = new ServiceCollection()
             .AddSingleton(_harness.BotRegistry)
             .AddSingleton(_harness.CallbackRouter)
-            .AddSingleton(_harness.Settings)
+            .AddSingleton(_harness.Access)
             .BuildServiceProvider();
     }
 
@@ -55,7 +55,7 @@ public class TelegramBotServiceApprovalTests : IDisposable
         (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("approved");
     }
 
-    // A listed person with no username is the turn's sender by their id, and their tap still counts.
+    // A linked person with no username is the turn's sender by their id, and their tap still counts.
     [Fact]
     public async Task APersonWithNoUsername_AnswersTheirOwnApproval()
     {
@@ -79,7 +79,7 @@ public class TelegramBotServiceApprovalTests : IDisposable
     }
 
     // A login wake continues the turn of the person who handed the login off, and carries them as
-    // its principal: it is theirs to approve, not the whole allowlist's as a schedule's fire is.
+    // its principal: it is theirs to approve, not the whole household's as a schedule's fire is.
     [Fact]
     public async Task ALoginWakesApproval_IsTheAskersAlone()
     {

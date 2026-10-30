@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Domain.Tools.Web;
 
 namespace McpServerWebSearch.Handoff;
 
@@ -10,24 +11,28 @@ public static class LoginWake
 {
     public const string Sender = "login";
 
-    // A voice turn's link, put where the person can tap it: a new WebChat conversation of theirs,
-    // whose end-of-stream Web Push pings them. The turn presents the link and nothing else; the
-    // answer to what they asked comes back on the satellite once they press Done.
-    public static ChannelMessageNotification LinkInWebChat(
-        LoginHandoffs.LiveHandoff handoff, string link, string webChatName, int minutes, DateTimeOffset at)
+    // A voice turn's link, put where the person can tap it: a new conversation of their chat
+    // client, whose end-of-stream Web Push pings them. It acts for the account the voice turn did —
+    // the principal this server kept, as the wake's — which is whose conversation it is; the person
+    // goes by their account's id here because this server learns no display name. The turn presents
+    // the link and nothing else; the answer to what they asked comes back on the satellite once they
+    // press Done.
+    public static ChannelMessageNotification LinkInChatClient(
+        LoginHandoffs.LiveHandoff handoff, string link, int minutes, DateTimeOffset at)
     {
         var site = new Uri(handoff.Url).Host;
         return new ChannelMessageNotification
         {
             ConversationId = $"login-{handoff.Id}-{at.ToUnixTimeMilliseconds()}",
-            Sender = webChatName,
+            Sender = handoff.Person,
             Content = $"[Login link for {site}] The person asked on a voice satellite for something that needs "
                       + $"them logged in to {site}. Give them this link, which opens once and for {minutes} "
                       + $"minutes, and nothing else: {link} — once they log in there and press Done, the answer "
                       + "comes back on the satellite.",
             AgentId = handoff.Context.AgentId,
-            UserId = webChatName,
-            ReplyTo = [new ReplyTarget(Domain.Tools.Web.IdentityMap.WebChatChannelId, null)],
+            UserId = handoff.Person,
+            Principal = Principal.Of(handoff.Context),
+            ReplyTo = [new ReplyTarget(ChannelIds.SignalR, null)],
             Origin = new MessageOrigin(MessageOriginKind.Login, null, Title: $"Log in to {site}"),
             Timestamp = at
         };

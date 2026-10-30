@@ -185,8 +185,11 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         Action? remember = null)
     {
         var toolName = request.ToolName;
+        // The turn rides with the question as a field of it, so whose question it is never depends
+        // on which call happens to be in flight.
         var result = await _approvalHandler.RequestApprovalAsync(
-            _conversationId, [request], cancellationToken);
+            ApprovalAsk.For(_conversationId, [request], ConversationContextMeta.TryRead(context.Options)),
+            cancellationToken);
 
         switch (result)
         {

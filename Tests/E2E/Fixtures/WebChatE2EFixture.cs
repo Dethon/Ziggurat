@@ -1,3 +1,6 @@
+using Domain.DTOs.Channel;
+using Microsoft.Playwright;
+
 namespace Tests.E2E.Fixtures;
 
 // One collection's view of the shared WebChat stack. The containers live in WebChatStack and are
@@ -23,6 +26,10 @@ public class WebChatE2EFixture : E2EFixtureBase
     public string SugaryUrl => _stack?.SugaryUrl ?? "";
 
     public string SugaryMcpEndpoint => _stack?.SugaryMcpEndpoint ?? "";
+
+    // The account a user index signs in as, which a test reaching the Sugary server past the proxy
+    // names in the session check's headers.
+    public Task<Account> AccountForAsync(int userIndex) => Stack.AccountForAsync(userIndex);
 
     // Scoped to this collection's space, so a test says what the transcriber answers without
     // knowing that another collection is dictating beside it.
@@ -51,6 +58,33 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     public int NextUserIndex() =>
         _userBlock + (int)((uint)Interlocked.Increment(ref _userIndex) % WebChatStack.UsersPerCollection);
+
+    // Every page of the chat client is behind the session check, so a test's page carries its
+    // user's session before it opens anything: the account for that index, made on first asking,
+    // signed in by a minted session rather than a passkey ceremony.
+    public async Task<IPage> CreateSignedInPageAsync(int userIndex, bool hasTouch = false, bool isMobile = false)
+    {
+        var page = await CreatePageAsync(hasTouch, isMobile);
+        await page.Context.AddCookiesAsync(
+        [
+            new Cookie
+            {
+                Name = SessionCookieName,
+                Value = await Stack.SessionForAsync(userIndex),
+                Url = Stack.WebChatUrl,
+                HttpOnly = true,
+                SameSite = SameSiteAttribute.Lax
+            }
+        ]);
+        return page;
+    }
+
+    public const string SessionCookieName = "ziggurat_session";
+
+    public static string NameOf(int userIndex) => WebChatStack.NameOf(userIndex);
+
+    // The accounts service's commands, for a test that needs a person of its own or a link.
+    public Task<(int Exit, string Output)> AccountsAsync(params string[] args) => Stack.AccountsAsync(args);
 
     protected override Task BuildImagesAsync(CancellationToken ct) => WebChatStack.EnsureImagesAsync(ct);
 

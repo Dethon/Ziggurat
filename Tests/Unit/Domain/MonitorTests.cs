@@ -188,11 +188,12 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
-    public List<(AgentKey Key, string? AgentId, IToolApprovalHandler ApprovalHandler)> Created { get; } = [];
+    public List<(AgentKey Key, string? AgentId, IToolApprovalHandler ApprovalHandler, string UserId, Account? Account)> Created { get; } = [];
 
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
+    public DisposableAgent Create(
+        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null)
     {
-        Created.Add((agentKey, agentId, approvalHandler));
+        Created.Add((agentKey, agentId, approvalHandler, userId, account));
         return agent;
     }
 
@@ -230,6 +231,10 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public List<(string AgentId, string TopicName, string Sender, string? InitialPrompt, string? ExistingConversationId)> CreatedConversations { get; } = [];
 
+    public List<Principal?> CreatedFor { get; } = [];
+
+    public List<bool> CreatedAsGroup { get; } = [];
+
     public List<(string ConversationId, IReadOnlyList<ToolApprovalRequest> Requests)> NotifyAutoApprovedCalls { get; } = [];
 
     public async Task SendReplyAsync(SendReplyParams reply, CancellationToken ct)
@@ -243,8 +248,19 @@ internal sealed class FakeChannelConnection : IChannelConnection
         OnReply?.Invoke(reply);
     }
 
-    public Task<ToolApprovalResult> RequestApprovalAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
-        => Task.FromResult(new ToolApprovalResult());
+    public List<ApprovalAsk> AskedApprovals { get; } = [];
+
+    public Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct)
+    {
+        AskedApprovals.Add(ask);
+        return Task.FromResult<ToolApprovalResult?>(ToolApprovalResult.Approved);
+    }
+
+    public Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
+        Task.FromResult<ToolApprovalResult?>(null);
+
+    public Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct) =>
+        Task.CompletedTask;
 
     public Dictionary<string, byte[]> Attachments { get; } = [];
 
@@ -302,9 +318,11 @@ internal sealed class FakeChannelConnection : IChannelConnection
         return Task.CompletedTask;
     }
 
-    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, string? address, string? existingConversationId, CancellationToken ct)
+    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, string? address, string? existingConversationId, Principal? principal, bool group, CancellationToken ct)
     {
         CreatedConversations.Add((agentId, topicName, sender, initialPrompt, existingConversationId));
+        CreatedFor.Add(principal);
+        CreatedAsGroup.Add(group);
         return Task.FromResult(ConversationIdToReturn);
     }
 
@@ -746,9 +764,9 @@ public class ChatMonitorTests
         var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
         var recallHook = new Mock<IMemoryRecallHook>();
         recallHook
-            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(),
+            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<Account?>(), It.IsAny<string?>(),
                 It.IsAny<string?>(), It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
-            .Returns(async (ChatMessage _, string _, string? _, string? _, AgentSession _, CancellationToken ct) =>
+            .Returns(async (ChatMessage _, Account? _, string? _, string? _, AgentSession _, CancellationToken ct) =>
             {
                 channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "/cancel"));
                 channel.Complete();
@@ -784,7 +802,7 @@ public class ChatMonitorTests
         var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
         var recallHook = new Mock<IMemoryRecallHook>();
         recallHook
-            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(),
+            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<Account?>(), It.IsAny<string?>(),
                 It.IsAny<string?>(), It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("recall down"));
         var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage());

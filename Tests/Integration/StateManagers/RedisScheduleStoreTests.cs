@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Infrastructure.StateManagers;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -196,6 +197,35 @@ public class RedisScheduleStoreTests(RedisFixture fixture) : IClassFixture<Redis
         var stored = await _store.GetAsync(schedule.Id);
         stored.ShouldNotBeNull();
         stored.RunAt.ShouldBe(runAt);
+    }
+
+    // Who a schedule runs as is read back on every fire, so the account its creator named must
+    // survive the store.
+    [Fact]
+    public async Task CreateAsync_KeepsTheCreatorsAccount()
+    {
+        var creator = new Principal("signalr", "u-1", new Account("t-1", "u-1"));
+        var schedule = CreateTestSchedule() with { CreatedBy = creator };
+        _createdIds.Add(schedule.Id);
+
+        await _store.CreateAsync(schedule);
+
+        (await _store.GetAsync(schedule.Id))!.CreatedBy.ShouldBe(creator);
+    }
+
+    // A schedule written before the principal carried an account is still the channel's user.
+    [Fact]
+    public async Task GetAsync_ACreatorRecordedWithoutAnAccount_ReadsAsTheChannelsUser()
+    {
+        var id = $"test_{Guid.NewGuid():N}";
+        _createdIds.Add(id);
+        await fixture.Connection.GetDatabase().StringSetAsync($"schedule:{id}",
+            $$"""
+            {"Id":"{{id}}","AgentId":"jonas","Prompt":"p","CronExpression":"0 9 * * *",
+             "CreatedBy":{"ChannelId":"telegram","UserId":"FranTG"},"CreatedAt":"2026-10-01T00:00:00Z"}
+            """);
+
+        (await _store.GetAsync(id))!.CreatedBy.ShouldBe(new Principal("telegram", "FranTG"));
     }
 
     private static Schedule CreateTestSchedule()

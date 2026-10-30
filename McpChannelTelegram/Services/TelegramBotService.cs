@@ -2,9 +2,9 @@ using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
 using Mcp.Hosting;
-using McpChannelTelegram.Settings;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace McpChannelTelegram.Services;
 
@@ -15,38 +15,37 @@ public sealed class TelegramBotService : BackgroundService
     private const int PollTimeoutSeconds = 30;
 
     private readonly BotRegistry _botRegistry;
-    private readonly ChannelSettings _settings;
     private readonly ChannelNotificationEmitter _notificationEmitter;
     private readonly ApprovalCallbackRouter _approvalCallbackRouter;
     private readonly IAgentCatalog _agentCatalog;
     private readonly VoiceNoteDictation _dictation;
+    private readonly TelegramGate _gate;
     private readonly ILogger<TelegramBotService> _logger;
     private readonly AlbumBuffer _albums;
 
     public TelegramBotService(
         BotRegistry botRegistry,
-        ChannelSettings settings,
         ChannelNotificationEmitter notificationEmitter,
         ApprovalCallbackRouter approvalCallbackRouter,
         IAgentCatalog agentCatalog,
         VoiceNoteDictation dictation,
+        TelegramGate gate,
         TimeProvider timeProvider,
         ILogger<TelegramBotService> logger)
     {
         _botRegistry = botRegistry;
-        _settings = settings;
         _notificationEmitter = notificationEmitter;
         _approvalCallbackRouter = approvalCallbackRouter;
         _agentCatalog = agentCatalog;
         _dictation = dictation;
+        _gate = gate;
         _logger = logger;
         _albums = new AlbumBuffer(timeProvider, ReleaseAlbumAsync);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Telegram bot polling started. Allowed user ids: {UserIds}",
-            string.Join(", ", _settings.AllowedUserIds));
+        _logger.LogInformation("Telegram bot polling started");
 
         var pollers = _botRegistry.GetAllBots()
             .Select(b => PollBotAsync(b.AgentId, b.Client, stoppingToken))
@@ -152,7 +151,9 @@ public sealed class TelegramBotService : BackgroundService
             return;
         }
 
-        var intake = AttachmentIntake.Read(agentId, messages);
+        var chatId = first.Chat.Id;
+        var conversationId = ConversationIdentity.ForChat(chatId, first.MessageThreadId).ConversationId;
+        var intake = AttachmentIntake.Read(agentId, conversationId, messages);
 
         // A voice note is the one piece of media that becomes words rather than a file, so it is
         // read here and not by the intake, which mints references.
@@ -165,25 +166,19 @@ public sealed class TelegramBotService : BackgroundService
             return;
         }
 
-        // Admitted by the sender's numeric id alone: a username is its owner's to change and
-        // Telegram's to reassign, and a chat's name or a first name is anybody's to pick.
-        if (first.From is not { } from || !_settings.AllowedUserIds.Contains(from.Id))
+        // Admitted by the account the sender's numeric id is linked to, never by a username, which
+        // is its owner's to change and Telegram's to reassign, or a chat's name or a first name,
+        // which are anybody's to pick. Anything else the gate has answered already.
+        if (await _gate.AdmitAsync(botClient, first, content, cancellationToken) is not { } person)
         {
-            await botClient.SendMessage(
-                first.Chat.Id,
-                "You are not authorized to use this bot.",
-                replyParameters: first.MessageId,
-                cancellationToken: cancellationToken);
             return;
         }
 
-        // The turn's sender stays the username, which memory and the identity map are keyed by.
-        // A listed person with no username has nothing else stable to go by, so their id stands in.
+        // The turn's sender stays the username, which the approval router is keyed by.
+        // A person with no username has nothing else stable to go by, so their id stands in.
+        var from = first.From!;
         var sender = from.Username ?? $"{from.Id}";
         _approvalCallbackRouter.RecordSender(sender, from.Id);
-
-        var chatId = first.Chat.Id;
-        var conversationId = ConversationIdentity.ForChat(chatId, first.MessageThreadId).ConversationId;
 
         _botRegistry.RegisterChatAgent(chatId, agentId);
 
@@ -217,7 +212,7 @@ public sealed class TelegramBotService : BackgroundService
             }
         }
 
-        // Unlike ServiceBus (broker-level abandon/redeliver) or Schedule/Library (a durable record
+        // Unlike Schedule/Library (a durable record
         // that simply stays due), Telegram has no channel-level way to signal "try again later" back
         // to the sender — so nothing here gates on liveness. The buffer-always policy targets the
         // well-known "channel-telegram" subscriber id and creates its queue on demand, so buffering
@@ -232,7 +227,11 @@ public sealed class TelegramBotService : BackgroundService
                 Sender = sender,
                 Content = content,
                 AgentId = agentId,
+                // The turn acts for the account; its user id stays the sender, the name the approval
+                // router still knows the person by.
+                Principal = new Principal(ChannelIds.Telegram, sender, person.Account),
                 Attachments = intake.Attachments.Count > 0 ? intake.Attachments : null,
+                ReviewCopy = ReviewOf(first.Chat, person),
                 Timestamp = DateTimeOffset.UtcNow
             },
             cancellationToken);
@@ -247,8 +246,16 @@ public sealed class TelegramBotService : BackgroundService
             conversationId, sender, agentId);
     }
 
+    // Every turn asks, so a person's Telegram conversations sit among their topics in the chat
+    // client. The bot names the chat and says whether it is a group's; whose the copy is, and where
+    // it goes, is the review host's to decide (ADR 0046).
+    private static ReviewCopy ReviewOf(Chat chat, ResolvedAccount person) =>
+        chat.Type == ChatType.Private
+            ? new ReviewCopy { Title = $"Telegram: {person.DisplayName}" }
+            : new ReviewCopy { Title = $"Telegram: {chat.Title ?? "group"}", Group = true };
+
     // Every refusal for one message in a single reply quoting the item that failed and naming its
-    // file, the way the unauthorised-user reply already works. Answers whether the turn stops:
+    // file, the way the gate answers a stranger. Answers whether the turn stops:
     // the two grounds the intake found are properties of one file and drop only that file, while a
     // model that cannot read what was attached would answer as though nothing had been sent, and
     // an answer that silently ignores the question is worse than no answer.

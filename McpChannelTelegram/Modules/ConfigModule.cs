@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Transcription;
 using Infrastructure.Metrics;
 using Mcp.Hosting;
@@ -26,6 +27,11 @@ public static class ConfigModule
             .AddSingleton<MessageAccumulator>()
             .AddSingleton<ApprovalCallbackRouter>()
             .AddSingleton(TimeProvider.System)
+            // Who a sender is, asked of the accounts service with this server's own credential.
+            .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
+            .AddSingleton(settings.LinkCache)
+            .AddSingleton<TelegramAccess>()
+            .AddSingleton<TelegramGate>()
             // The catalogue exists so the attachment capability resolution has something to ask.
             // Nothing else on this channel consumes it.
             .AddSingleton<MutableAgentCatalog>()
@@ -37,6 +43,8 @@ public static class ConfigModule
             .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            .WithTools<OfferApprovalTool>()
+            .WithTools<SettleApprovalTool>()
             // Telegram has no agent picker and no per-message model override, so this catalogue
             // exists for one reason: the attachment capability resolution needs something to ask
             // about the model a turn will run on. It arrives through the registration the agent
@@ -49,7 +57,7 @@ public static class ConfigModule
             // derives for itself; a mismatch would buffer into a queue nobody drains.
             .AddChannelServer(
                 DeliveryPolicy.BufferAlways,
-                ChannelProtocol.ChannelClientNamePrefix + "telegram");
+                ChannelProtocol.ChannelClientNamePrefix + ChannelIds.Telegram);
 
         return services;
     }

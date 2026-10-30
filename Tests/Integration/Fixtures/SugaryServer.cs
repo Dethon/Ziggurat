@@ -1,8 +1,7 @@
-using System.Net;
-using System.Net.Http.Json;
-using System.Net.Sockets;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Infrastructure.Clients.Channels;
 using Mcp.Hosting;
 using McpServerSugary.App;
@@ -16,7 +15,6 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
 using Tests.Integration.McpServers;
-using SugaryAppSettings = McpServerSugary.Settings.SugaryAppSettings;
 using SugarySettings = McpServerSugary.Settings.SugarySettings;
 using UploadSettings = McpServerSugary.Settings.UploadSettings;
 
@@ -27,7 +25,11 @@ namespace Tests.Integration.Fixtures;
 // on every meal in the database, so a sibling's meal would answer for this test's months.
 public sealed class SugaryServer : IAsyncDisposable
 {
-    public const string AccessCode = "tortilla";
+    // The people the proxy's session check names, as opaque as the accounts service's own ids: two
+    // of one household, who share its kitchen and keep their own logs, and one of another.
+    public static readonly Account Her = new("household-home", "user-her");
+    public static readonly Account Him = new("household-home", "user-him");
+    public static readonly Account Neighbour = new("household-next-door", "user-neighbour");
 
     private readonly RunningServer _server;
     private readonly List<HttpClient> _browsers = [];
@@ -61,7 +63,7 @@ public sealed class SugaryServer : IAsyncDisposable
     // inbox decides liveness on the clock it is given, and a fake one advanced past a turn's wait
     // would make an agent polling in real time look gone.
     public static async Task<SugaryServer> StartAsync(
-        string homeZone = "Europe/Madrid", string accessCode = AccessCode, string? openFoodFacts = null,
+        string homeZone = "Europe/Madrid", string? openFoodFacts = null,
         string? webRoot = null, TimeProvider? turnClock = null, TimeProvider? estimateClock = null,
         Func<SugarySettings, SugarySettings>? configure = null, Action<IServiceCollection>? services = null)
     {
@@ -72,7 +74,6 @@ public sealed class SugaryServer : IAsyncDisposable
             DatabasePath = Path.Combine(directory, "sugary.db"),
             HomeZone = homeZone,
             Mcp = McpTestSecret.Gate,
-            SugaryApp = new SugaryAppSettings { AccessCode = accessCode },
             OpenFoodFactsUrl = openFoodFacts ?? "http://127.0.0.1:9/",
             Uploads = new UploadSettings { StoragePath = Path.Combine(directory, "uploads") }
         };
@@ -101,53 +102,27 @@ public sealed class SugaryServer : IAsyncDisposable
         return new SugaryServer(server, settings, directory);
     }
 
-    // A phone that has not signed in: its own cookie jar, nothing in it yet.
+    // A request that did not come through the proxy: it carries nobody's headers.
     public HttpClient Browser()
     {
-        var browser = new HttpClient(new HttpClientHandler { CookieContainer = new CookieContainer() })
-        {
-            BaseAddress = Address
-        };
+        var browser = new HttpClient { BaseAddress = Address };
         _browsers.Add(browser);
         return browser;
     }
 
-    // A phone at another address. Every 127.x address is this machine, so a connection made from
-    // one reaches the server on 127.0.0.1 and the server sees it come from that address.
-    public HttpClient Browser(IPAddress from)
-    {
-        var handler = new SocketsHttpHandler
-        {
-            CookieContainer = new CookieContainer(),
-            ConnectCallback = async (context, ct) =>
-            {
-                var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
-                try
-                {
-                    socket.Bind(new IPEndPoint(from, 0));
-                    await socket.ConnectAsync(IPAddress.Loopback, context.DnsEndPoint.Port, ct);
-                    return new NetworkStream(socket, ownsSocket: true);
-                }
-                catch
-                {
-                    socket.Dispose();
-                    throw;
-                }
-            }
-        };
-        var browser = new HttpClient(handler) { BaseAddress = Address };
-        _browsers.Add(browser);
-        return browser;
-    }
-
-    // A phone she has typed the code into, as the app's sign-in screen does.
-    public async Task<HttpClient> SignedInAsync()
+    // A phone signed in as this person, as the proxy hands its requests on: the session check's
+    // three headers on every request, and nothing else that says who it is.
+    public HttpClient As(Account person, string roles = "member")
     {
         var browser = Browser();
-        var response = await browser.PostAsJsonAsync("/api/session", new { code = AccessCode });
-        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        browser.DefaultRequestHeaders.Add(ForwardedAccount.UserHeader, person.UserId);
+        browser.DefaultRequestHeaders.Add(ForwardedAccount.TenantHeader, person.TenantId);
+        browser.DefaultRequestHeaders.Add(ForwardedAccount.RolesHeader, roles);
         return browser;
     }
+
+    // Her phone, signed in: the person most of the suite's logs belong to.
+    public Task<HttpClient> SignedInAsync() => Task.FromResult(As(Her));
 
     // The agent as the app reaches it: the agent host's own channel connection for `sugary`,
     // dialled at this server, so a test receives each turn and sends each reply chunk exactly as the
@@ -174,51 +149,101 @@ public sealed class SugaryServer : IAsyncDisposable
     // What the app does when she saves: a row in the database, nothing else.
     public async Task SaveAsync(params Meal[] meals)
     {
-        await using var db = await Contexts.CreateDbContextAsync();
+        await using var db = Hers();
         db.Meals.AddRange(meals);
         await db.SaveChangesAsync();
     }
 
     public async Task SaveAsync(params Food[] foods)
     {
-        await using var db = await Contexts.CreateDbContextAsync();
+        await using var db = Hers();
         db.Foods.AddRange(foods);
         await db.SaveChangesAsync();
     }
 
     public async Task SaveAsync(params Dose[] doses)
     {
-        await using var db = await Contexts.CreateDbContextAsync();
+        await using var db = Hers();
         db.Doses.AddRange(doses);
         await db.SaveChangesAsync();
     }
 
     public async Task SaveAsync(params ExerciseSession[] sessions)
     {
-        await using var db = await Contexts.CreateDbContextAsync();
+        await using var db = Hers();
         db.ExerciseSessions.AddRange(sessions);
         await db.SaveChangesAsync();
     }
 
     public async Task SaveAsync(params Period[] periods)
     {
-        await using var db = await Contexts.CreateDbContextAsync();
+        await using var db = Hers();
         db.Periods.AddRange(periods);
         await db.SaveChangesAsync();
     }
 
     public async Task SaveAsync(params DayNote[] notes)
     {
-        await using var db = await Contexts.CreateDbContextAsync();
+        await using var db = Hers();
         db.DayNotes.AddRange(notes);
         await db.SaveChangesAsync();
     }
 
-    public async Task<JsonNode> CallAsync(string tool, Dictionary<string, object?> arguments)
+    // What the migration into the home household does with a log from before it was per person (or
+    // brought in by the import): gives every row nobody owns to the person whose log it is, and the
+    // kitchen to their household. Until then the rows are kept and seen by nobody.
+    public async Task GiveUnassignedRowsToAsync(Account person)
     {
-        var result = await Client.CallToolAsync(tool, arguments);
+        await using var db = await _server.App.Services.GetRequiredService<IDbContextFactory<SugaryDbContext>>()
+            .CreateDbContextAsync();
+        await db.Meals.IgnoreQueryFilters().Where(r => r.UserId == Owners.Unassigned).ExecuteUpdateAsync(set => set
+            .SetProperty(r => r.UserId, person.UserId).SetProperty(r => r.TenantId, person.TenantId));
+        await db.Doses.IgnoreQueryFilters().Where(r => r.UserId == Owners.Unassigned).ExecuteUpdateAsync(set => set
+            .SetProperty(r => r.UserId, person.UserId).SetProperty(r => r.TenantId, person.TenantId));
+        await db.Pens.IgnoreQueryFilters().Where(r => r.UserId == Owners.Unassigned).ExecuteUpdateAsync(set => set
+            .SetProperty(r => r.UserId, person.UserId).SetProperty(r => r.TenantId, person.TenantId));
+        await db.PushSubscriptions.IgnoreQueryFilters().Where(r => r.UserId == Owners.Unassigned).ExecuteUpdateAsync(
+            set => set.SetProperty(r => r.UserId, person.UserId).SetProperty(r => r.TenantId, person.TenantId));
+        await db.ExerciseSessions.IgnoreQueryFilters().Where(r => r.UserId == Owners.Unassigned).ExecuteUpdateAsync(
+            set => set.SetProperty(r => r.UserId, person.UserId).SetProperty(r => r.TenantId, person.TenantId));
+        await db.Periods.IgnoreQueryFilters().Where(r => r.UserId == Owners.Unassigned).ExecuteUpdateAsync(set => set
+            .SetProperty(r => r.UserId, person.UserId).SetProperty(r => r.TenantId, person.TenantId));
+        await db.DayNotes.IgnoreQueryFilters().Where(r => r.UserId == Owners.Unassigned).ExecuteUpdateAsync(set => set
+            .SetProperty(r => r.UserId, person.UserId).SetProperty(r => r.TenantId, person.TenantId));
+        await db.Foods.IgnoreQueryFilters().Where(r => r.TenantId == Owners.Unassigned).ExecuteUpdateAsync(set => set
+            .SetProperty(r => r.TenantId, person.TenantId));
+        await db.Recipes.IgnoreQueryFilters().Where(r => r.TenantId == Owners.Unassigned).ExecuteUpdateAsync(set => set
+            .SetProperty(r => r.TenantId, person.TenantId));
+    }
+
+    // A tool called as the agent calls it on a turn: the turn's conversation context on `_meta`, its
+    // principal carrying the account of the person whose turn it is — hers, unless a test names
+    // another turn, and none at all when a test passes null.
+    public Task<JsonNode> CallAsync(string tool, Dictionary<string, object?> arguments) =>
+        CallAsync(tool, arguments, TurnOf(Her));
+
+    public async Task<JsonNode> CallAsync(
+        string tool, Dictionary<string, object?> arguments, ConversationContext? turn)
+    {
+        var result = await Client.CallToolAsync(new CallToolRequestParams
+        {
+            Name = tool,
+            Arguments = arguments.ToDictionary(a => a.Key, a => JsonSerializer.SerializeToElement(a.Value)),
+            Meta = turn is null
+                ? null
+                : new JsonObject
+                {
+                    [ChannelProtocol.ConversationContextMetaKey] =
+                        JsonSerializer.SerializeToNode(turn, ChannelProtocol.SerializerOptions)
+                }
+        });
         return JsonNode.Parse(string.Join("", result.Content.OfType<TextContentBlock>().Select(c => c.Text)))!;
     }
+
+    // A chat-client turn of this person's, its principal as the hub stamps it.
+    public static ConversationContext TurnOf(Account person) => new(
+        "jonas", "conversation-1", person.UserId, new ReplyTarget("signalr", "conversation-1"),
+        Principal: new Principal("signalr", person.UserId, person));
 
     // The file's text exactly as the mount serves it.
     public async Task<string> ReadAsync(string path)
@@ -237,10 +262,14 @@ public sealed class SugaryServer : IAsyncDisposable
         return await response.Content.ReadAsStringAsync();
     }
 
-    // Her log asked over MCP, as the agent's query tool asks it; the rows, or the call failing loudly.
-    public async Task<JsonArray> QueryAsync(string sql)
+    // Her log asked over MCP, as the agent's query tool asks it on her turn; the rows, or the call
+    // failing loudly.
+    public Task<JsonArray> QueryAsync(string sql) => QueryAsync(sql, TurnOf(Her));
+
+    public async Task<JsonArray> QueryAsync(string sql, ConversationContext? turn)
     {
-        var answer = await CallAsync("fs_query", new Dictionary<string, object?> { ["path"] = "/", ["sql"] = sql });
+        var answer = await CallAsync(
+            "fs_query", new Dictionary<string, object?> { ["path"] = "/", ["sql"] = sql }, turn);
         return answer["rows"]?.AsArray()
                ?? throw new InvalidOperationException($"query failed: {answer.ToJsonString()}");
     }
@@ -298,8 +327,8 @@ public sealed class SugaryServer : IAsyncDisposable
 
     public IServiceProvider Services => _server.App.Services;
 
-    private IDbContextFactory<SugaryDbContext> Contexts =>
-        _server.App.Services.GetRequiredService<IDbContextFactory<SugaryDbContext>>();
+    // Her log as the app would have written it: rows of hers, and foods of her household's.
+    private SugaryDbContext Hers() => _server.App.Services.GetRequiredService<SugaryStore>().For(Her);
 
     public async ValueTask DisposeAsync()
     {

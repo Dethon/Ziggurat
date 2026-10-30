@@ -148,7 +148,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.SaveTopicAsync(new TopicMetadata("t-s2", 301, 0, "agent-slug", "Space2", now, null,
             SpaceSlug: "space-b"));
 
-        var filtered = (await store.GetTopicPageAsync("agent-slug", "space-a", null, 10)).Topics;
+        var filtered = (await store.GetTopicPageAsync("agent-slug", "space-a", Anyone, null, 10)).Topics;
 
         filtered.ShouldContain(t => t.TopicId == "t-s1");
         filtered.ShouldNotContain(t => t.TopicId == "t-s2");
@@ -209,6 +209,38 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         read.Attachments!.Single().MediaType.ShouldBe("application/pdf");
     }
 
+    // A chat-client turn's sender is the name its account goes by, but the client tells its own
+    // messages from others' by the account's id, so a person's own message is read back under the
+    // account it acted for. A fire's message is nobody's own, whoever's account it runs as, and a
+    // message from a channel that knows no account is read back under its sender.
+    [Fact]
+    public async Task GetHistoryAsync_APersonsOwnMessage_IsReadBackUnderTheAccountItActedFor()
+    {
+        var store = NewStore();
+        var account = new Account("t-1", "u-1");
+        var own = Sent("hello", "Fran", new ConversationContext(
+            "jack", "903:0", "Fran", new ReplyTarget("signalr", "903:0"),
+            Principal: new Principal("signalr", "u-1", account)));
+        var fire = Sent("check my orders", "scheduler", new ConversationContext(
+            "jack", "903:0", "fran", new ReplyTarget("signalr", "903:0"),
+            OriginKind: MessageOriginKind.Schedule, Principal: new Principal("signalr", "u-1", account)));
+        var telegram = Sent("hola", "FranTG", new ConversationContext(
+            "jack", "903:0", "FranTG", new ReplyTarget("telegram", "903:0")));
+
+        await store.AppendMessagesAsync(HistoryKey("agent-sender", 903), [own, fire, telegram]);
+
+        (await store.GetHistoryAsync("agent-sender", 903, 0)).Select(h => h.SenderId)
+            .ShouldBe(["u-1", "scheduler", "FranTG"]);
+    }
+
+    private static ChatMessage Sent(string text, string sender, ConversationContext context)
+    {
+        var message = new ChatMessage(ChatRole.User, text);
+        message.SetSenderId(sender);
+        message.SetConversationContext(context);
+        return message;
+    }
+
     // A topic driven by voice or by a schedule has no browser writing its last-message time, so
     // before this it sorted and aged by when it was created however much was said in it.
     [Fact]
@@ -223,7 +255,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.AppendMessagesAsync(
             HistoryKey("agent-stamp", 500, 7), [new ChatMessage(ChatRole.User, "put the kettle on")]);
 
-        var topic = ((await store.GetTopicPageAsync("agent-stamp", "default", null, 10)).Topics).ShouldHaveSingleItem();
+        var topic = ((await store.GetTopicPageAsync("agent-stamp", "default", Anyone, null, 10)).Topics).ShouldHaveSingleItem();
         topic.LastMessageAt.ShouldBe(clock.GetUtcNow());
     }
 
@@ -243,7 +275,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.AppendMessagesAsync(
             HistoryKey("agent-order", 510), [new ChatMessage(ChatRole.User, "still talking")]);
 
-        var topics = (await store.GetTopicPageAsync("agent-order", "default", null, 10)).Topics;
+        var topics = (await store.GetTopicPageAsync("agent-order", "default", Anyone, null, 10)).Topics;
         topics.Select(t => t.TopicId).ShouldBe(["t-old", "t-new"]);
     }
 
@@ -257,7 +289,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await WriteTopicRecordDirectlyAsync(new TopicMetadata(
             "t-unindexed", 520, 0, "agent-unindexed", "Ghost", DateTimeOffset.UtcNow, null));
 
-        ((await store.GetTopicPageAsync("agent-unindexed", "default", null, 10)).Topics).ShouldBeEmpty();
+        ((await store.GetTopicPageAsync("agent-unindexed", "default", Anyone, null, 10)).Topics).ShouldBeEmpty();
     }
 
     [Fact]
@@ -269,7 +301,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         await store.DeleteTopicAsync("agent-delete", 530, "t-gone");
 
-        ((await store.GetTopicPageAsync("agent-delete", "default", null, 10)).Topics).ShouldBeEmpty();
+        ((await store.GetTopicPageAsync("agent-delete", "default", Anyone, null, 10)).Topics).ShouldBeEmpty();
     }
 
     // Written on the same path that stamps the last-write time, so a row can be drawn without
@@ -288,7 +320,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
             new ChatMessage(ChatRole.Assistant, "cold and bright all afternoon")
         ]);
 
-        var topic = (await store.GetTopicPageAsync("agent-snippet", "default", null, 10)).Topics
+        var topic = (await store.GetTopicPageAsync("agent-snippet", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
         topic.LastMessageSnippet.ShouldBe("cold and bri…");
     }
@@ -304,7 +336,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.AppendMessagesAsync(HistoryKey("agent-count", 580),
             [new ChatMessage(ChatRole.User, "one"), new ChatMessage(ChatRole.Assistant, "two")]);
 
-        var topic = (await store.GetTopicPageAsync("agent-count", "default", null, 10)).Topics
+        var topic = (await store.GetTopicPageAsync("agent-count", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
         topic.MessageCount.ShouldBe(2);
         topic.ReadPosition.ShouldBe(0);
@@ -329,7 +361,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
             new ChatMessage(ChatRole.Assistant, "two things")
         ]);
 
-        var topic = (await store.GetTopicPageAsync("agent-tools", "default", null, 10)).Topics
+        var topic = (await store.GetTopicPageAsync("agent-tools", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
         topic.MessageCount.ShouldBe(2);
     }
@@ -347,8 +379,8 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await redisFixture.Connection.GetDatabase()
             .KeyDeleteAsync("topic:agent-dangling:601:t-agent-dangling-1");
 
-        var first = await store.GetTopicPageAsync("agent-dangling", "default", null, 2);
-        var second = await store.GetTopicPageAsync("agent-dangling", "default", first.NextCursor, 2);
+        var first = await store.GetTopicPageAsync("agent-dangling", "default", Anyone, null, 2);
+        var second = await store.GetTopicPageAsync("agent-dangling", "default", Anyone, first.NextCursor, 2);
 
         first.NextCursor.ShouldNotBeNull();
         second.Topics.Select(t => t.Name).ShouldBe(["topic-0"]);
@@ -369,7 +401,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.AppendMessagesAsync(
             HistoryKey("agent-wide", wideChatId), [new ChatMessage(ChatRole.Assistant, "a reply")]);
 
-        var topic = (await store.GetTopicPageAsync("agent-wide", "default", null, 10)).Topics
+        var topic = (await store.GetTopicPageAsync("agent-wide", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
         topic.ChatId.ShouldBe(wideChatId);
         topic.MessageCount.ShouldBe(1);
@@ -388,7 +420,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         await store.MarkTopicReadAsync("agent-wide-read", wideChatId, "t-wide-read");
 
-        var topic = (await store.GetTopicPageAsync("agent-wide-read", "default", null, 10)).Topics
+        var topic = (await store.GetTopicPageAsync("agent-wide-read", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
         topic.ChatId.ShouldBe(wideChatId);
         topic.ReadPosition.ShouldBe(2);
@@ -407,7 +439,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         await store.MarkTopicReadAsync("agent-read", 590, "t-read");
 
-        var topic = (await store.GetTopicPageAsync("agent-read", "default", null, 10)).Topics
+        var topic = (await store.GetTopicPageAsync("agent-read", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
         topic.ReadPosition.ShouldBe(topic.MessageCount);
     }
@@ -440,7 +472,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         await store.MarkTopicReadAsync("agent-race", 650, "t-race");
 
-        var topic = (await store.GetTopicPageAsync("agent-race", "default", null, 10)).Topics
+        var topic = (await store.GetTopicPageAsync("agent-race", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
         topic.MessageCount.ShouldBe(100);
         topic.ReadPosition.ShouldBe(100);
@@ -455,17 +487,69 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var store = NewStore(clock);
         await SeedTopicsAsync(store, clock, "agent-page", count: 5);
 
-        var first = await store.GetTopicPageAsync("agent-page", "default", cursor: null, pageSize: 2);
+        var first = await store.GetTopicPageAsync("agent-page", "default", Anyone, cursor: null, pageSize: 2);
 
         first.Topics.Select(t => t.Name).ShouldBe(["topic-4", "topic-3"]);
         first.NextCursor.ShouldNotBeNull();
 
-        var second = await store.GetTopicPageAsync("agent-page", "default", first.NextCursor, pageSize: 2);
+        var second = await store.GetTopicPageAsync("agent-page", "default", Anyone, first.NextCursor, pageSize: 2);
         second.Topics.Select(t => t.Name).ShouldBe(["topic-2", "topic-1"]);
 
-        var third = await store.GetTopicPageAsync("agent-page", "default", second.NextCursor, pageSize: 2);
+        var third = await store.GetTopicPageAsync("agent-page", "default", Anyone, second.NextCursor, pageSize: 2);
         third.Topics.Select(t => t.Name).ShouldBe(["topic-0"]);
         third.NextCursor.ShouldBeNull();
+    }
+
+    // A page is a page of what the viewer may know exists: another person's private topics are
+    // passed over and the page fills from below them, so a list is never cut short — or ended — by
+    // rows the viewer will never be shown.
+    [Fact]
+    public async Task GetTopicPageAsync_PassesOverAnotherPersonsPrivateTopics_AndStillFillsThePage()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 4, 3, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        TopicMetadata[] oldestFirst =
+        [
+            Owned("t-mine-old", 801, "mine old", Fran),
+            Owned("t-shared", 802, "laura shared", Laura) with { Shared = true },
+            Owned("t-laura-1", 803, "laura private 1", Laura),
+            Topic("t-legacy", 804, "agent-private", clock.GetUtcNow()) with { Name = "nobody's" },
+            Owned("t-laura-2", 805, "laura private 2", Laura),
+            Owned("t-laura-3", 806, "laura private 3", Laura),
+            Owned("t-mine-new", 807, "mine new", Fran)
+        ];
+        foreach (var topic in oldestFirst)
+        {
+            await store.SaveTopicAsync(topic with { CreatedAt = clock.GetUtcNow(), LastMessageAt = null });
+            clock.Advance(TimeSpan.FromMinutes(1));
+        }
+
+        var first = await store.GetTopicPageAsync("agent-private", "default", AsFran, null, 2);
+        var second = await store.GetTopicPageAsync("agent-private", "default", AsFran, first.NextCursor, 2);
+        var third = await store.GetTopicPageAsync("agent-private", "default", AsFran, second.NextCursor, 2);
+
+        first.Topics.Select(t => t.TopicId).ShouldBe(["t-mine-new", "t-legacy"]);
+        second.Topics.Select(t => t.TopicId).ShouldBe(["t-shared", "t-mine-old"]);
+        third.Topics.ShouldBeEmpty();
+        third.NextCursor.ShouldBeNull();
+    }
+
+    // "Sees all conversations" is the household's every topic, and still only the household's.
+    [Fact]
+    public async Task GetTopicPageAsync_SomeoneWhoSeesAll_ListsEveryTopicOfTheirHouseholdAndNoOtherOne()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 4, 4, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        await store.SaveTopicAsync(Owned("t-laura", 811, "laura private", Laura, "agent-sees-all") with { CreatedAt = clock.GetUtcNow() });
+        clock.Advance(TimeSpan.FromMinutes(1));
+        await store.SaveTopicAsync(Owned("t-elsewhere", 812, "another household", new Account("away", "stranger"), "agent-sees-all")
+            with
+        { Shared = true, CreatedAt = clock.GetUtcNow() });
+
+        var page = await store.GetTopicPageAsync(
+            "agent-sees-all", "default", AsFran with { SeesAll = true }, null, 10);
+
+        page.Topics.Select(t => t.TopicId).ShouldBe(["t-laura"]);
     }
 
     // Two conversations written the same millisecond share a score. A cursor of the score alone
@@ -483,8 +567,8 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.SaveTopicAsync(new TopicMetadata(
             "t-top", 702, 0, "agent-tied", "top", clock.GetUtcNow(), clock.GetUtcNow()));
 
-        var first = await store.GetTopicPageAsync("agent-tied", "default", null, 2);
-        var second = await store.GetTopicPageAsync("agent-tied", "default", first.NextCursor, 2);
+        var first = await store.GetTopicPageAsync("agent-tied", "default", Anyone, null, 2);
+        var second = await store.GetTopicPageAsync("agent-tied", "default", Anyone, first.NextCursor, 2);
 
         first.Topics.Select(t => t.TopicId).ShouldBe(["t-top", "t-tied-b"]);
         second.Topics.Select(t => t.TopicId).ShouldBe(["t-tied-a"]);
@@ -501,7 +585,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.AppendMessagesAsync(
             HistoryKey("agent-bump", 600), [new ChatMessage(ChatRole.User, "back again")]);
 
-        var page = await store.GetTopicPageAsync("agent-bump", "default", cursor: null, pageSize: 3);
+        var page = await store.GetTopicPageAsync("agent-bump", "default", Anyone, cursor: null, pageSize: 3);
 
         page.Topics.Select(t => t.Name).ShouldBe(["topic-0", "topic-2", "topic-1"]);
     }
@@ -521,8 +605,8 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.AppendMessagesAsync(
             HistoryKey("agent-archive", 610), [new ChatMessage(ChatRole.User, "still here")]);
 
-        var ordinary = await store.GetTopicPageAsync("agent-archive", "default", null, 10);
-        var archived = await store.GetTopicPageAsync("agent-archive", "default", null, 10, archived: true);
+        var ordinary = await store.GetTopicPageAsync("agent-archive", "default", Anyone, null, 10);
+        var archived = await store.GetTopicPageAsync("agent-archive", "default", Anyone, null, 10, archived: true);
 
         ordinary.Topics.Select(t => t.TopicId).ShouldBe(["t-fresh"]);
         archived.Topics.Select(t => t.TopicId).ShouldBe(["t-stale"]);
@@ -537,14 +621,14 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.SaveTopicAsync(Topic("t-back", 620, "agent-unarchive", clock.GetUtcNow()));
 
         clock.Advance(TimeSpan.FromDays(31));
-        (await store.GetTopicPageAsync("agent-unarchive", "default", null, 10)).Topics.ShouldBeEmpty();
+        (await store.GetTopicPageAsync("agent-unarchive", "default", Anyone, null, 10)).Topics.ShouldBeEmpty();
 
         await store.AppendMessagesAsync(
             HistoryKey("agent-unarchive", 620), [new ChatMessage(ChatRole.User, "back again")]);
 
-        (await store.GetTopicPageAsync("agent-unarchive", "default", null, 10))
+        (await store.GetTopicPageAsync("agent-unarchive", "default", Anyone, null, 10))
             .Topics.Select(t => t.TopicId).ShouldBe(["t-back"]);
-        (await store.GetTopicPageAsync("agent-unarchive", "default", null, 10, archived: true))
+        (await store.GetTopicPageAsync("agent-unarchive", "default", Anyone, null, 10, archived: true))
             .Topics.ShouldBeEmpty();
     }
 
@@ -558,9 +642,9 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         clock.Advance(TimeSpan.FromDays(31));
 
         var first = await store.GetTopicPageAsync(
-            "agent-archive-page", "default", null, 2, archived: true);
+            "agent-archive-page", "default", Anyone, null, 2, archived: true);
         var second = await store.GetTopicPageAsync(
-            "agent-archive-page", "default", first.NextCursor, 2, archived: true);
+            "agent-archive-page", "default", Anyone, first.NextCursor, 2, archived: true);
 
         first.Topics.Select(t => t.Name).ShouldBe(["topic-2", "topic-1"]);
         second.Topics.Select(t => t.Name).ShouldBe(["topic-0"]);
@@ -580,7 +664,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         (await redisFixture.Connection.GetDatabase().SortedSetLengthAsync(indexKey)).ShouldBe(1);
 
         clock.Advance(TimeSpan.FromDays(61));
-        await store.GetTopicPageAsync("agent-purge", "default", null, 10);
+        await store.GetTopicPageAsync("agent-purge", "default", Anyone, null, 10);
 
         (await redisFixture.Connection.GetDatabase().SortedSetLengthAsync(indexKey)).ShouldBe(0);
     }
@@ -646,6 +730,19 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
     private static TopicMetadata Topic(string topicId, long chatId, string agentId, DateTimeOffset at) =>
         new(topicId, chatId, 0, agentId, topicId, at, at);
+
+    private static readonly Account Fran = new("home", "fran");
+    private static readonly Account Laura = new("home", "laura");
+    private static readonly TopicViewer AsFran = new(Fran.UserId, Fran.TenantId);
+
+    // Every topic these tests write is nobody's unless a test owns it, and nobody's is everyone's,
+    // so a viewer who is no one in particular reads them all.
+    private static readonly TopicViewer Anyone = new("anyone", "home");
+
+    private static TopicMetadata Owned(
+        string topicId, long chatId, string name, Account owner, string agentId = "agent-private") =>
+        new(topicId, chatId, 0, agentId, name, DateTimeOffset.UnixEpoch, null,
+            OwnerId: owner.UserId, TenantId: owner.TenantId);
 
     // Chat ids ascend with the index so a bump can be aimed at a known conversation.
     private static async Task SeedTopicsAsync(

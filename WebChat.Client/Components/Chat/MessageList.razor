@@ -54,9 +54,9 @@
                 UpdateStreamingContentSubscription();
             });
 
-        // Subscribe to user identity
+        // Subscribe to the signed-in person, whose messages are drawn as this page's own
         Subscribe(UserIdentityStore.StateObservable,
-            state => state.SelectedUserId,
+            state => state.SignedIn?.UserId,
             userId => _currentUserId = userId);
     }
 
