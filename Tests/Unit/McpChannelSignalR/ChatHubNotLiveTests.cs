@@ -32,6 +32,7 @@ public class ChatHubNotLiveTests
     {
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
@@ -42,7 +43,7 @@ public class ChatHubNotLiveTests
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            threadStore: null!,
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new Mock<IHubNotificationSender>().Object,
@@ -110,7 +111,7 @@ public class ChatHubNotLiveTests
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            threadStore: null!,
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new Mock<IHubNotificationSender>().Object,

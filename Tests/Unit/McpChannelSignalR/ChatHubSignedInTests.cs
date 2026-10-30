@@ -48,6 +48,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
     {
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
     }
@@ -64,8 +65,9 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
             .AddSingleton(_sessionService)
             .AddSingleton(_streamService)
             .AddSingleton(new ApprovalService(
-                _streamService,
-                _sessionService,
+            _streamService,
+            _sessionService,
+            new Mock<IThreadStateStore>().Object,
                 new Mock<IHubNotificationSender>().Object,
                 NullLogger<ApprovalService>.Instance))
             .AddSingleton(new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast))

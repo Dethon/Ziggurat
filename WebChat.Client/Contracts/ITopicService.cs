@@ -13,6 +13,9 @@ public interface ITopicService
         bool archived = false);
     Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false);
 
+    // The owner's alone to ask: the server refuses anyone else, whatever the client shows.
+    Task<HubResult<Nothing>> SetTopicSharedAsync(string agentId, long chatId, string topicId, bool shared);
+
     // Searching is a hub call, so it matches conversations that were never loaded and spans the
     // archive as well as the ordinary list.
     Task<HubResult<TopicPage>> SearchTopicsAsync(

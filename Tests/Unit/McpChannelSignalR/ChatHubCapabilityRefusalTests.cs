@@ -41,6 +41,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
     {
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
@@ -58,7 +59,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             _catalog,
-            threadStore: null!,
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new Mock<IHubNotificationSender>().Object,

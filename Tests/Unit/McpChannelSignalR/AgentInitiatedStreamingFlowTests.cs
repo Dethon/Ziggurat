@@ -21,6 +21,7 @@ public class AgentInitiatedStreamingFlowTests
         var sessionService = new SessionService();
         var streamService = new StreamService(
             sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             new Mock<ILogger<StreamService>>().Object);
         var hubSender = new Mock<IHubNotificationSender>();
@@ -29,6 +30,7 @@ public class AgentInitiatedStreamingFlowTests
             .AddSingleton(streamService)
             .AddSingleton<IStreamService>(streamService)
             .AddSingleton(hubSender.Object)
+            .AddSingleton(new Mock<IThreadStateStore>().Object)
             .BuildServiceProvider();
         sessionService.StartSession("topic-1", "jack", 7, 42, "default", "Downloads");
 

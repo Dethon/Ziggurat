@@ -12,6 +12,7 @@ namespace McpChannelSignalR.Services;
 public sealed class ApprovalService(
     StreamService streamService,
     SessionService sessionService,
+    IThreadStateStore threadStore,
     IHubNotificationSender hubNotificationSender,
     ILogger<ApprovalService> logger) : IApprovalService
 {
@@ -122,8 +123,9 @@ public sealed class ApprovalService(
         context.Dispose();
     }
 
-    // Taking the prompt off every browser showing it is the whole of this push. What an approval
-    // let through is written into the topic's stream, once, by RequestApprovalAsync.
+    // Taking the prompt off every browser showing it is the whole of this push, so it goes to the
+    // browsers that may see the topic and no others. What an approval let through is written into
+    // the topic's stream, once, by RequestApprovalAsync.
     private async Task NotifyResolvedAsync(string topicId, string approvalId)
     {
         sessionService.TryGetSession(topicId, out var session);
@@ -132,13 +134,26 @@ public sealed class ApprovalService(
         {
             var notification = new ApprovalResolvedNotification(
                 topicId, approvalId, SpaceSlug: session?.SpaceSlug);
-            await SendToSpaceOrAllAsync(session?.SpaceSlug, "OnApprovalResolved", notification);
+            if (session?.SpaceSlug is not { } spaceSlug)
+            {
+                await hubNotificationSender.SendAsync("OnApprovalResolved", notification);
+                return;
+            }
+
+            var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(
+                session.AgentId, session.ChatId, session.ThreadId);
+            await hubNotificationSender.SendToTopicAsync(topic, spaceSlug, "OnApprovalResolved", notification);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to notify approval resolved for topic {TopicId}", topicId);
         }
     }
+
+    // Which topic a pending approval was asked in, so whoever answers it can be held to that
+    // topic's owner. Null once it is answered, or when it never was asked.
+    public string? TopicOfApproval(string approvalId) =>
+        _pendingApprovals.TryGetValue(approvalId, out var context) ? context.TopicId : null;
 
     public bool IsApprovalPending(string approvalId)
     {
@@ -176,18 +191,6 @@ public sealed class ApprovalService(
 
             context.TrySetResult(ToolApprovalResult.Rejected);
             context.Dispose();
-        }
-    }
-
-    private async Task SendToSpaceOrAllAsync(string? spaceSlug, string methodName, object notification)
-    {
-        if (spaceSlug is not null)
-        {
-            await hubNotificationSender.SendToGroupAsync($"space:{spaceSlug}", methodName, notification);
-        }
-        else
-        {
-            await hubNotificationSender.SendAsync(methodName, notification);
         }
     }
 

@@ -345,6 +345,42 @@ h1, h2, h3 {
     color: var(--text-muted);
 }
 
+/* The time, and beside it who sees the conversation: the owner's toggle, or whose it is. */
+.header-conversation-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.header-conversation-share {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 0 0.4rem;
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.header-conversation-share.on {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.header-conversation-owner,
+.topic-owner {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Tapping the title swaps it for this field in place, so the field keeps the title's type
    and box. 1rem because anything smaller makes iOS Safari zoom the page on focus. */
 .header-conversation-edit {
