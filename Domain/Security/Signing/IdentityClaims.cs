@@ -56,6 +56,13 @@ public record IdentityClaims
     [JsonPropertyName("jti")]
     public string Id { get; init; } = "";
 
+    // The session a session check's assertion was signed for, which the chat hub refreshes its
+    // connection's person by — while that session lives, and never after it is revoked. Nothing else
+    // carries one: a resolved identity is no session's, and the agent drops it with the envelope.
+    [JsonPropertyName("sid")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SessionId { get; init; }
+
     [JsonIgnore]
     public bool IsGuest => Subject == GuestSubject;
 

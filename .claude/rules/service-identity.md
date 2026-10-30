@@ -80,7 +80,7 @@ is malformed — `none` and HMAC never reach a key.
 `IdentityClaims` is the one claim set: `iss`, `aud` (one string, the one server or app it is for),
 `sub` (the account's user id, or `IdentityClaims.GuestSubject` = `guest` — account ids are lowercase
 hex, so it can never be one), `tid`, `chn` (channel id), `roles`, `iat`, `nbf`, `exp` (whole
-seconds), `jti`. Build one with `IdentityClaims.Person(...)` or `.Guest(...)`, then date it with
+seconds), `jti`, and on the session check's assertion alone `sid`, the session it checked (what the chat hub refreshes its connection's person by; the agent drops it with the envelope). Build one with `IdentityClaims.Person(...)` or `.Guest(...)`, then date it with
 `.Stamped(issuer, audience, now, lifetime)`, which is also how the agent re-signs a verified
 identity per server. An assertion's audience is `TokenAudiences.Assertion`, one for every consumer
 (the agent and the apps); what binds it to one use is its `chn`, which the accounts service takes
@@ -248,7 +248,7 @@ notification's `Principal`.
 
 | Channel | Where its assertion comes from |
 |---|---|
-| Chat hub | a fresh one **per turn** from the resolution API (`signalr`, the connection's account): the connection's own was checked as it arrived and lives ten minutes, the connection hours; one the service cannot give ends the stream with an error and sends nothing |
+| Chat hub | a fresh one **per turn** for the connection's **session** (`/accounts/internal/session`, by the `sid` the session check signed into the connection's assertion; `ISessionAccounts`): the connection's own was checked as it arrived and lives ten minutes, the connection hours. A session revoked since ends the stream "signed out" and sends nothing — the spec's "stops the next one" — and an outage ends it with an error too. No caller can ask for a `signalr` person by account id |
 | Telegram | the resolution's answer that admitted the sender, or a redemption's for somebody just linked, kept by `TelegramAccess` for `LinkCache:Linked` — at most half an assertion's life (conformance-checked) |
 | Voice | the recognised speaker's resolution, else `POST /accounts/internal/guest` (`IAccountResolver.GuestAsync`); an outage leaves none, and the agent refuses and reports the turn |
 | Sugary | the request's own `X-Ziggurat-Assertion` (`Person.Assertion`), the estimate's and each answer's |

@@ -8,21 +8,36 @@ namespace Infrastructure.Clients.Accounts;
 
 // The accounts service's internal API, asked with the caller's own MCP credential: whose an identity
 // is, signed (the assertion a channel carries on the person's turn), the household's guest for a
-// satellite, and for the Telegram bot the ways in it redeems. The service spells its requests and answers
+// satellite, the chat hub's person by the session its connection signed in with, and for the Telegram
+// bot the ways in it redeems. The service spells its requests and answers
 // for itself (it references no project here), so the wire shape is the records below and the
 // camelCase the web defaults give both ends. A refusal the service means is a status this maps to an
 // outcome; any other is a failure, thrown, so a caller never mistakes an outage for a stranger.
-public sealed class AccountsResolverClient(HttpClient http, string credential) : IAccountResolver, ITelegramAccounts
+public sealed class AccountsResolverClient(HttpClient http, string credential)
+    : IAccountResolver, ITelegramAccounts, ISessionAccounts
 {
     public const string ClientName = "accounts";
 
     private const string ResolvePath = "accounts/internal/resolve";
     private const string GuestPath = "accounts/internal/guest";
+    private const string SessionPath = "accounts/internal/session";
     private const string TelegramPath = "accounts/internal/telegram/";
 
     public async Task<ResolvedAccount?> ResolveAsync(string channel, string identity, CancellationToken ct)
     {
         using var response = await PostAsync(ResolvePath, new Query(channel, identity), ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        var answer = await ReadAsync<Answer>(response, ct);
+        return new ResolvedAccount(new Account(answer.TenantId, answer.UserId), answer.DisplayName, answer.Assertion);
+    }
+
+    public async Task<ResolvedAccount?> SessionAsync(string userId, string sessionId, CancellationToken ct)
+    {
+        using var response = await PostAsync(SessionPath, new SessionQuery(userId, sessionId), ct);
         if (response.StatusCode == HttpStatusCode.NotFound)
         {
             return null;
@@ -116,6 +131,8 @@ public sealed class AccountsResolverClient(HttpClient http, string credential) :
     }
 
     private sealed record Query(string Channel, string Identity);
+
+    private sealed record SessionQuery(string UserId, string SessionId);
 
     private sealed record Answer(string TenantId, string UserId, string DisplayName, string Assertion);
 

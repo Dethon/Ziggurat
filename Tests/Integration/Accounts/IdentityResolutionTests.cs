@@ -11,10 +11,12 @@ namespace Tests.Integration.Accounts;
 // A channel server asks the accounts service whose account the identity it saw belongs to, with the
 // credential it already holds, and is answered the household, the person and the name they go by.
 // Nobody else asks: a caller without one of the configured credentials is refused before anything
-// is looked up.
+// is looked up, and one asking about another channel than its own is refused too (InternalCallersTests).
 public class IdentityResolutionTests
 {
     private const string SignalRCredential = "signalr-credential";
+    private const string TelegramCredential = "telegram-credential";
+    private const string VoiceCredential = "voice-credential";
 
     private static Task<AccountsServer> StartAsync() =>
         AccountsServer.StartAsync(s => s with
@@ -22,19 +24,20 @@ public class IdentityResolutionTests
             Callers = new Dictionary<string, string>
             {
                 ["mcp-channel-signalr"] = SignalRCredential,
-                ["mcp-channel-telegram"] = "telegram-credential"
+                ["mcp-channel-telegram"] = TelegramCredential,
+                ["mcp-channel-voice"] = VoiceCredential
             }
         });
 
-    [Theory]
-    [InlineData("signalr")]
-    [InlineData("voice")]
-    public async Task AnAccountsOwnId_IsAnsweredWithItsHouseholdAndName(string channel)
+    // A voice profile is named after the account it belongs to; the chat hub's person is a session's
+    // (SessionRefreshTests), never an id resolved here.
+    [Fact]
+    public async Task AnAccountsOwnId_IsAnsweredWithItsHouseholdAndName()
     {
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
 
-        var response = await ResolveAsync(server, channel, fran.UserId, SignalRCredential);
+        var response = await ResolveAsync(server, "voice", fran.UserId, VoiceCredential);
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var account = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
@@ -45,15 +48,14 @@ public class IdentityResolutionTests
 
     // The answer vouches for itself: a channel server carries the assertion on the turn it starts,
     // and the agent believes the person it names because this service signed it for that channel.
-    [Theory]
-    [InlineData("signalr")]
-    [InlineData("voice")]
-    public async Task AResolvedIdentity_IsAnsweredWithAnAssertionOfItsPersonOnThatChannel(string channel)
+    [Fact]
+    public async Task AResolvedIdentity_IsAnsweredWithAnAssertionOfItsPersonOnThatChannel()
     {
+        const string channel = "voice";
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
 
-        var response = await ResolveAsync(server, channel, fran.UserId, SignalRCredential);
+        var response = await ResolveAsync(server, channel, fran.UserId, VoiceCredential);
 
         var account = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
         var assertion = await server.VerifyAssertionAsync(account["assertion"]!.GetValue<string>());
@@ -72,7 +74,7 @@ public class IdentityResolutionTests
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
 
-        var response = await GuestAsync(server, "voice", SignalRCredential);
+        var response = await GuestAsync(server, "voice", VoiceCredential);
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var guest = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
@@ -95,7 +97,7 @@ public class IdentityResolutionTests
     {
         await using var server = await StartAsync();
 
-        var response = await GuestAsync(server, channel, SignalRCredential);
+        var response = await GuestAsync(server, channel, VoiceCredential);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -125,28 +127,16 @@ public class IdentityResolutionTests
         JsonWebKeySet.Parse(await response.Content.ReadAsStringAsync()).Keys.ShouldNotBeEmpty();
     }
 
-    [Fact]
-    public async Task AnyConfiguredCaller_MayAsk()
-    {
-        await using var server = await StartAsync();
-        var laura = await server.SeedMemberAsync("Laura");
-
-        var response = await ResolveAsync(server, "signalr", laura, "telegram-credential");
-
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-    }
-
     // A Telegram id nobody redeemed a code from is nobody's (TelegramLinkingTests links one).
     [Theory]
-    [InlineData("signalr", "0123456789abcdef0123456789abcdef")]
-    [InlineData("voice", "0123456789abcdef0123456789abcdef")]
-    [InlineData("telegram", "123456789")]
-    public async Task AnIdentityNoAccountHolds_Is404(string channel, string identity)
+    [InlineData("voice", "0123456789abcdef0123456789abcdef", VoiceCredential)]
+    [InlineData("telegram", "123456789", TelegramCredential)]
+    public async Task AnIdentityNoAccountHolds_Is404(string channel, string identity, string credential)
     {
         await using var server = await StartAsync();
         await server.MintOperatorAsync("Fran");
 
-        var response = await ResolveAsync(server, channel, identity, SignalRCredential);
+        var response = await ResolveAsync(server, channel, identity, credential);
 
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
@@ -157,7 +147,7 @@ public class IdentityResolutionTests
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
 
-        var response = await ResolveAsync(server, "servicebus", fran.UserId, SignalRCredential);
+        var response = await ResolveAsync(server, "servicebus", fran.UserId, VoiceCredential);
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
@@ -171,7 +161,7 @@ public class IdentityResolutionTests
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
 
-        var response = await ResolveAsync(server, "signalr", fran.UserId, credential);
+        var response = await ResolveAsync(server, "voice", fran.UserId, credential);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
@@ -183,11 +173,11 @@ public class IdentityResolutionTests
     {
         await using var server = await AccountsServer.StartAsync(s => s with
         {
-            Callers = new Dictionary<string, string> { ["mcp-channel-signalr"] = "" }
+            Callers = new Dictionary<string, string> { ["mcp-channel-voice"] = "" }
         });
         var fran = await server.MintOperatorAsync("Fran");
 
-        var response = await ResolveAsync(server, "signalr", fran.UserId, "");
+        var response = await ResolveAsync(server, "voice", fran.UserId, "");
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }

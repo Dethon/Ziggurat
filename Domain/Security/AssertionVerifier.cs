@@ -69,7 +69,7 @@ public sealed class AssertionVerifier(
             return null;
         }
 
-        return new ForwardedAccount(account.UserId, account.TenantId, claims.Roles);
+        return new ForwardedAccount(account.UserId, account.TenantId, claims.Roles, claims.SessionId);
     }
 
     // The agent's check on a person's turn as it arrives, over the same keys: the accounts service
