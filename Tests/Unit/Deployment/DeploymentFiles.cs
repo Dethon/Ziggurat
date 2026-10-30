@@ -34,6 +34,35 @@ public static class DeploymentFiles
 
     public static CaddyConfig Caddyfile() =>
         CaddyConfig.Parse(File.ReadAllText(Path.Combine(Directory, "caddy", "Caddyfile")));
+
+    // Every file a container is built from or configured by: the compose directory whole, every
+    // Dockerfile, and each project's settings and the policy files beside its project file. What a
+    // test fixture holds must never be in one of them.
+    public static IReadOnlyList<string> Shipped()
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var projects = System.IO.Directory.EnumerateDirectories(root)
+            .Where(d => Path.GetFileName(d) != "Tests" && System.IO.Directory.EnumerateFiles(d, "*.csproj").Any());
+
+        return
+        [
+            .. SourceFilesUnder(Directory),
+            .. System.IO.Directory.EnumerateFiles(root, "Dockerfile*"),
+            .. projects.SelectMany(project => SourceFilesUnder(project).Where(file =>
+            {
+                var name = Path.GetFileName(file);
+                return name.StartsWith("Dockerfile", StringComparison.Ordinal)
+                       || (name.StartsWith("appsettings", StringComparison.Ordinal) && name.EndsWith(".json", StringComparison.Ordinal))
+                       || (Path.GetDirectoryName(file) == project && name.EndsWith(".json", StringComparison.Ordinal));
+            }))
+        ];
+    }
+
+    private static IEnumerable<string> SourceFilesUnder(string directory) =>
+        System.IO.Directory.EnumerateFiles(directory)
+            .Concat(System.IO.Directory.EnumerateDirectories(directory)
+                .Where(d => Path.GetFileName(d) is not ("bin" or "obj" or "node_modules"))
+                .SelectMany(SourceFilesUnder));
 }
 
 // The servers the shipped agent dials: its agents', its workers' and its channels' endpoints.

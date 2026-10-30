@@ -480,4 +480,24 @@ public class DeploymentConformanceTests
         ports.ShouldNotBeEmpty();
         ports.ShouldAllBe(p => p.BindAddress == "127.0.0.1");
     }
+
+    // The fixed keys the test and eval stacks sign with are private keys anyone with the repository
+    // can read, so a deployment handed one would believe tokens anyone could mint. A deployment's
+    // issuers generate their own, in their own volumes. Looked for by the key and by the id it is
+    // published under, through line breaks, so a key pasted as wrapped PEM is found as well.
+    [Fact]
+    public void TheTestSigningKeys_AreNeverShipped()
+    {
+        var needles = TestSigningKeys.All
+            .SelectMany(key => new[] { key, TestSigningKeys.Store(key).CurrentKeyId })
+            .ToList();
+
+        DeploymentFiles.Shipped()
+            .Where(file =>
+            {
+                var text = string.Concat(File.ReadAllText(file).Replace("\\n", "").Where(c => !char.IsWhiteSpace(c)));
+                return needles.Any(needle => text.Contains(needle, StringComparison.Ordinal));
+            })
+            .ShouldBeEmpty("a test signing key in a shipped file is a key every reader of the repository holds");
+    }
 }
