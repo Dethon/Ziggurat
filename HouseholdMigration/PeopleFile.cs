@@ -28,6 +28,10 @@ public sealed record PersonEntry
 
     public IReadOnlyList<string> OldNames { get; init; } = [];
 
+    // The picture the retired chat client showed beside them (its Users list's AvatarUrl, a path such as
+    // /avatars/kakera.png on the chat client's host), which becomes their account's unless it shows one.
+    public string? AvatarUrl { get; init; }
+
     // owner or member; the people named the operator and the owner are owners whatever this says.
     public string? Role { get; init; }
 

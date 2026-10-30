@@ -1,20 +1,23 @@
 using Accounts.Links;
 using Accounts.Members;
 using Accounts.Passkeys;
+using Accounts.People;
 using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
 
 namespace Accounts.Pages;
 
-// A person's own page: the passkeys they hold and the devices they are signed in on, each
-// revocable; adding a passkey; the code that links their Telegram; the command that enrolls their
-// voice; and who in the household sees every conversation, which everyone in it may know.
+// A person's own page: the name and picture they show the household; the passkeys they hold and the
+// devices they are signed in on, each revocable; adding a passkey; the code that links their
+// Telegram; the command that enrolls their voice; and who in the household sees every conversation,
+// which everyone in it may know.
 public sealed class AccountPage(
     PageGuard guard,
     SessionStore sessions,
     PasskeyStore passkeys,
     MemberStore members,
+    PersonStore people,
     LinkStore links,
     AccountsSettings settings)
 {
@@ -29,6 +32,7 @@ public sealed class AccountPage(
         accounts.MapPost(Path + "/passkeys/{id}/revoke",
             (string id, HttpContext http, AccountPage page, CancellationToken ct) => page.RevokePasskeyAsync(http, id, ct));
         accounts.MapPost(Path + "/telegram", (HttpContext http, AccountPage page, CancellationToken ct) => page.TelegramCodeAsync(http, ct));
+        accounts.MapPost(Path + "/profile", (HttpContext http, AccountPage page, CancellationToken ct) => page.SetProfileAsync(http, ct));
     }
 
     private async Task<IResult> ShowAsync(HttpContext http, CancellationToken ct)
@@ -61,6 +65,35 @@ public sealed class AccountPage(
         return await passkeys.RevokeAsync(viewer.UserId, passkeyId, ct)
             ? AccountsPages.SeeOther(http, Url)
             : NotFound(http);
+    }
+
+    // Whoever asks who is signed in (/accounts/me) and the chat hub's next connection read the
+    // account's own row, so what is saved here is what they show.
+    private async Task<IResult> SetProfileAsync(HttpContext http, CancellationToken ct)
+    {
+        var (viewer, refusal) = await guard.CheckAsync(http, Url, ownersOnly: false, ct);
+        if (viewer is null)
+        {
+            return refusal!;
+        }
+
+        var form = await http.Request.ReadFormAsync(ct);
+        var (profile, problem) = Profile.Read(form["displayName"], form["avatarUrl"]);
+        if (profile is null)
+        {
+            return AccountsPages.Page(http, "Not saved",
+                $"""
+                 <main>
+                   <h1>That was not saved.</h1>
+                   <p>{AccountsPages.Encode(problem!)}</p>
+                   <p><a href="{Url}">Back to your account</a></p>
+                 </main>
+                 """,
+                StatusCodes.Status400BadRequest);
+        }
+
+        await people.SetProfileAsync(viewer.UserId, profile, ct);
+        return AccountsPages.SeeOther(http, Url);
     }
 
     // Minted when asked for rather than whenever the page is shown: only its hash is kept, so it
@@ -106,6 +139,17 @@ public sealed class AccountPage(
                {Navigation(me)}
                <h1>{AccountsPages.Encode(me.DisplayName)}</h1>
                <p>{(me.Role == Role.Owner ? Roles.Owner : Roles.Member)} of the household{(me.IsOperator ? ", and its operator" : "")}.</p>
+
+               <section aria-labelledby="profile">
+                 <h2 id="profile">Name and picture</h2>
+                 <form method="post" action="{Url}/profile">{form}
+                   <label for="display-name">Name</label>
+                   <input id="display-name" name="displayName" required maxlength="{Profile.DisplayNameLength}" value="{AccountsPages.Encode(me.DisplayName)}">
+                   <label for="avatar-url">Picture (a web address, or a path on this site)</label>
+                   <input id="avatar-url" name="avatarUrl" maxlength="{Profile.AvatarUrlLength}" value="{AccountsPages.Encode(viewer.AvatarUrl ?? "")}" placeholder="https://… or /avatars/…">
+                   <button type="submit">Save</button>
+                 </form>
+               </section>
 
                <section aria-labelledby="passkeys">
                  <h2 id="passkeys">Passkeys</h2>

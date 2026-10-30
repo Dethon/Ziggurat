@@ -28,4 +28,16 @@ public sealed class PersonStore(IDbContextFactory<AccountsDbContext> contexts, A
         await db.SaveChangesAsync(ct);
         return person;
     }
+
+    // What the session check and every app asking who is signed in read on their next request; a chat
+    // hub connection already open keeps the name it learned as it arrived.
+    public async Task<bool> SetProfileAsync(string userId, Profile profile, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return await db.Users
+            .Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(u => u
+                .SetProperty(x => x.DisplayName, profile.DisplayName)
+                .SetProperty(x => x.AvatarUrl, profile.AvatarUrl), ct) > 0;
+    }
 }

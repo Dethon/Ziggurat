@@ -1,5 +1,6 @@
 using Accounts.Links;
 using Accounts.Members;
+using Accounts.People;
 using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
@@ -14,8 +15,6 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
 {
     public const string Path = "/members";
     public const string Url = AccountsApp.PathBase + Path;
-
-    private const int DisplayNameLength = 200;
 
     public static void Map(IEndpointRouteBuilder accounts)
     {
@@ -47,7 +46,7 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
 
         var form = await http.Request.ReadFormAsync(ct);
         var displayName = form["displayName"].ToString().Trim();
-        if (displayName.Length is 0 or > DisplayNameLength || RoleOf(form["role"]) is not { } role)
+        if (displayName.Length is 0 or > Profile.DisplayNameLength || RoleOf(form["role"]) is not { } role)
         {
             return await RenderAsync(http, viewer,
                 "<p class=\"notice\">An invite needs a display name of up to 200 characters and a role.</p>",
@@ -198,7 +197,7 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
                  <p>The link works once, for a week, and creates them with the name and role you give here.</p>
                  <form class="block" method="post" action="{Url}/invite">{form}
                    <label for="invite-name">Display name</label>
-                   <input id="invite-name" name="displayName" required maxlength="{DisplayNameLength}">
+                   <input id="invite-name" name="displayName" required maxlength="{Profile.DisplayNameLength}">
                    <label for="invite-role">Role</label>
                    <select id="invite-role" name="role">{Options(Role.Member)}</select>
                    <button type="submit">Create invite</button>

@@ -94,6 +94,53 @@ public partial class HouseholdImportTests
         (await ResolveAsync(server, FranTelegram)).ShouldBe(operatorLink.UserId);
     }
 
+    // The chat client's retired list held each person's picture; it becomes their account's, unless
+    // the account already shows one its person chose.
+    [Fact]
+    public async Task ThePeoplesAvatars_BecomeTheirAccounts_ButOneAlreadyChosenIsKept()
+    {
+        await using var server = await StartAsync();
+        var operatorLink = await server.MintOperatorAsync("Francisco");
+        var operatorsBrowser = server.SignedIn(await server.MintSessionAsync(operatorLink.UserId));
+        (await operatorsBrowser.PostAsync("/accounts/account", "/accounts/account/profile",
+                ("displayName", "Francisco"), ("avatarUrl", "https://example.com/mine.png")))
+            .StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+
+        var imported = await ImportAsync(server,
+            new { key = "Fran", displayName = "Fran", role = "owner", @operator = true, avatarUrl = "/avatars/kakera.png" },
+            new { key = "Ana", displayName = "Ana", role = "member", @operator = false, avatarUrl = "/avatars/green.png" });
+
+        (await AvatarOfAsync(server, operatorLink.UserId)).ShouldBe("https://example.com/mine.png");
+        Person(imported, "Fran")["notes"]!.AsArray().Select(n => n!.GetValue<string>())
+            .ShouldContain(n => n.Contains("/avatars/kakera.png"));
+        (await AvatarOfAsync(server, Person(imported, "Ana")["userId"]!.GetValue<string>())).ShouldBe("/avatars/green.png");
+        Person(await ImportAsync(server,
+                new { key = "Ana", displayName = "Ana", role = "member", @operator = false, avatarUrl = "/avatars/green.png" }),
+            "Ana")["changes"]!.AsArray().ShouldBeEmpty();
+    }
+
+    // The file is the operator's, but every app draws an avatar as an image, so it is held to the
+    // account page's rule and a bad one stops the import before anybody is made.
+    [Fact]
+    public async Task AnAvatarThatIsNotAWebAddressOrAPathHere_RefusesTheWholeImport()
+    {
+        await using var server = await StartAsync();
+
+        var response = await PostAsync(server, Import, new
+        {
+            people = new object[]
+            {
+                Ana(), new { key = "Fran", displayName = "Fran", role = "owner", @operator = true, avatarUrl = "javascript:alert(1)" }
+            },
+            dryRun = false
+        });
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).ShouldContain("Fran");
+        await using var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        (await db.Users.CountAsync()).ShouldBe(0);
+    }
+
     [Fact]
     public async Task SomebodyWhoLinkedTheirTelegramFirst_IsTheOneImportedWithThatTelegram()
     {
@@ -174,6 +221,13 @@ public partial class HouseholdImportTests
         var code = TelegramCode().Match(await response.Content.ReadAsStringAsync());
         code.Success.ShouldBeTrue();
         return code.Groups["code"].Value;
+    }
+
+    private static async Task<string?> AvatarOfAsync(AccountsServer server, string userId)
+    {
+        var response = await server.SignedIn(await server.MintSessionAsync(userId)).GetAsync("/accounts/me");
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<JsonObject>())!["avatarUrl"]?.GetValue<string>();
     }
 
     private static JsonObject Person(JsonObject imported, string key) =>

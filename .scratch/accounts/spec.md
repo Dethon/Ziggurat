@@ -344,11 +344,13 @@ claims change in this phase.
      `IDENTITY__PEOPLE__<n>__{NAME,TELEGRAM,WEBCHAT,VOICE}` entries of `mcp-websearch`
      (`docker inspect mcp-websearch`), which the new compose file no longer carries — into
      `DockerCompose/volumes/household-migration/people.json`:
-     `{ "people": [ { "name", "telegram", "telegramId", "webChat", "voice", "oldNames", "role" } ] }`.
+     `{ "people": [ { "name", "telegram", "telegramId", "webChat", "voice", "oldNames", "role", "avatarUrl" } ] }`.
      `telegramId` is each person's numeric Telegram id (the bot now admits people by it alone).
      `oldNames` lists any other name their memories or schedules were filed under; Redis keys are
      case-sensitive, so `Fran` and `fran` are two names. `redis-cli --scan --pattern 'memory:*'`
-     shows the buckets, and the dry run below names any nobody is listed with.
+     shows the buckets, and the dry run below names any nobody is listed with. `avatarUrl` is the
+     picture the old chat client showed, from its `Users` list, as a path on its host
+     (`/avatars/kakera.png`).
   2. Deploy: `docker compose build base-sdk`, then `up -d --build` the stack. Set the accounts
      service's per-deployment values (`WEBAUTHN__RELYINGPARTYID`, `ALLOWEDORIGINS__n`,
      `SESSIONCOOKIE__DOMAIN`, `PUBLICBASEURL`, `TELEGRAM__BOTUSERNAME`) and reload Caddy with the
