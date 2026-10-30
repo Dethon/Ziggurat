@@ -312,7 +312,7 @@ internal class McpFileSystemBackend(
         }
 
         var existing = existingAt is null ? null : await TextAtAsync(existingAt, ct);
-        return DelegatedWrites.Of(filesystemName, path, text, existing, caller?.Origin, _localZone) is { } what
+        return DelegatedWrites.Of(filesystemName, path, text, existing, caller, _localZone) is { } what
             ? new JsonObject
             {
                 [ChannelProtocol.DelegateMetaKey] = JsonSerializer.SerializeToNode(what, ChannelProtocol.SerializerOptions)

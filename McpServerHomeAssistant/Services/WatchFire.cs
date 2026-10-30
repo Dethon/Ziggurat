@@ -14,6 +14,10 @@ public sealed record WatchFiredRequest
     public string? Name { get; init; }
     public string? AgentId { get; init; }
     public string? Prompt { get; init; }
+
+    // Which of the watch's prompts the home rendered into Prompt, a literal in the automation; absent
+    // from an automation written before fires said it.
+    public int? PromptIndex { get; init; }
     public IReadOnlyList<string>? DeliverTo { get; init; }
     public string? UserId { get; init; }
     public string? EntityId { get; init; }
@@ -41,22 +45,31 @@ public static class WatchFire
         : null;
 
     // One notification through the shared fire planning, so a watch's fire and a schedule's cannot
-    // drift in how deliverTo becomes reply targets. The first line says what fired, so "look into
-    // it" is enough of a prompt; the rendered prompt follows.
+    // drift in how deliverTo becomes reply targets. What the fire asks is the watch's own prompt as the
+    // home keeps it (`written`), when the server could read it — the words the delegation covers —
+    // and what the home posted is its report beside it: what fired, so "look into it" is enough of a
+    // prompt, and the prompt as it rendered it. Anything holding the announce token can post, so none
+    // of that is ever what is asked as the person. With no prompt of the watch's own to run — the home
+    // could not be asked, or the post names none — the rendered prompt is asked, with no delegation.
     public static ChannelMessageNotification Compose(
-        WatchFiredRequest request, IReadOnlyList<string> defaultDeliverTo, DateTimeOffset now, FireDelegation? delegation = null)
+        WatchFiredRequest request, IReadOnlyList<string> defaultDeliverTo, DateTimeOffset now,
+        string? written = null, FireDelegation? delegation = null)
     {
         var name = request.Name ?? request.WatchId!;
+        var rendered = written is not null && written != request.Prompt
+            ? $"\nThe prompt as the home rendered it: {request.Prompt}"
+            : "";
         return FirePlanning.Compose(new Fire(
             FirePlanning.ConversationId(ConversationPrefix, request.WatchId!, now),
             Sender,
-            $"{FirstLine(request, name)}\n\n{request.Prompt}",
+            written ?? request.Prompt!,
             request.AgentId!,
             request.DeliverTo,
             request.UserId,
             new MessageOrigin(MessageOriginKind.Watch, null, WatchId: request.WatchId, Title: name),
             now,
-            Delegation: delegation), defaultDeliverTo);
+            Delegation: written is null ? null : delegation,
+            Report: FirstLine(request, name) + rendered), defaultDeliverTo);
     }
 
     private static string FirstLine(WatchFiredRequest request, string name)

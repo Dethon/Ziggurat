@@ -163,6 +163,10 @@ the plain headers alone. The browse server's public handoff pages move to a list
   rewritten by someone else carries the rewriter's delegation; one rewritten by no verified turn has
   none and fires as nobody. A deleted object's delegation is gone with it.
 - A download's fire stays nobody's.
+- A delegation holds against an honest server, and bounds what a fire does, not whether or when it
+  comes: a misbehaving server could replay a delegation it stored for an object since deleted or
+  overwritten, and fire it at any time (nothing in a fire says when it was due), and an edit or a
+  move is signed over the content the server answered the agent's read with just before the write.
 
 ### Apps behind the proxy
 

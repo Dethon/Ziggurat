@@ -50,8 +50,13 @@ public class ScheduleFileSystemJourneyTests
             CreatedAt = DateTime.UtcNow
         };
 
+    // A call as a server reads it: the principal the agent's call token names, the person's account
+    // on the channel their turn came from.
     private static FileSystemCaller Caller(string channelId, string userId) =>
-        new(new ConversationContext("jonas", "conv-1", userId, new ReplyTarget(channelId, "conv-1")), null);
+        new(new ConversationContext("jonas", "conv-1", userId, new ReplyTarget(channelId, "conv-1"),
+            Principal: WriterOn(channelId, userId)), null);
+
+    private static Principal WriterOn(string channelId, string userId) => new(channelId, userId, new Account("home", userId));
 
     // A schedule runs as whoever's own turn wrote it, recorded from that turn's context: the
     // `userId` in its JSON is the model's to write, and a fire that trusted it would let any turn
@@ -66,8 +71,23 @@ public class ScheduleFileSystemJourneyTests
             """{"prompt":"check my orders","cron":"0 8 * * *","userId":"ana"}""", false, true, CancellationToken.None);
 
         var schedule = (await store.GetAsync("orders", CancellationToken.None)).ShouldNotBeNull();
-        schedule.CreatedBy.ShouldBe(new Principal("telegram", "FranTG"));
+        schedule.CreatedBy.ShouldBe(WriterOn("telegram", "FranTG"));
         schedule.UserId.ShouldBe("ana");
+    }
+
+    // The user id a call's context carries is the channel's unsigned word: a call the agent signed
+    // for nobody names no writer, whatever that says.
+    [Fact]
+    public async Task Create_ByACallSignedForNobody_RecordsNobody_WhateverUserIdItsContextCarries()
+    {
+        var store = new FakeScheduleStore();
+        var fs = Build(store).For(new FileSystemCaller(
+            new ConversationContext("jonas", "conv-1", "FranTG", new ReplyTarget("telegram", "conv-1")), null));
+
+        await fs.CreateAsync("/jonas/orders/schedule.json",
+            """{"prompt":"check my orders","cron":"0 8 * * *"}""", false, true, CancellationToken.None);
+
+        (await store.GetAsync("orders", CancellationToken.None)).ShouldNotBeNull().CreatedBy.ShouldBeNull();
     }
 
     // A chat-client turn's principal names the person's account, and a schedule it writes runs as
@@ -100,7 +120,7 @@ public class ScheduleFileSystemJourneyTests
             [new TextEdit("summarize news", "summarize sport")], CancellationToken.None);
 
         (await store.GetAsync("morning-news", CancellationToken.None))!.CreatedBy
-            .ShouldBe(new Principal("signalr", "Ana"));
+            .ShouldBe(WriterOn("signalr", "Ana"));
     }
 
     [Fact]
@@ -113,7 +133,7 @@ public class ScheduleFileSystemJourneyTests
         await fs.MoveAsync("/jonas/morning-news", "/jonas/evening-news", CancellationToken.None);
 
         (await store.GetAsync("evening-news", CancellationToken.None))!.CreatedBy
-            .ShouldBe(new Principal("signalr", "Ana"));
+            .ShouldBe(WriterOn("signalr", "Ana"));
     }
 
     // A write with no turn behind it vouches for nobody.

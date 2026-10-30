@@ -28,8 +28,8 @@ public abstract record PersonResolution
                 "Conversation context is missing from request _meta; cannot tell who is asking."));
         }
 
-        // A turn nobody sent is somebody only through the principal its server stamped, and a
-        // principal stamped before accounts, or by a channel that knew nobody, carries none.
+        // Who the call is for is its principal — on a server, the call token's — and only a
+        // person's carries an account; a context with none names nobody, whatever user id it carries.
         var principal = Principal.Of(context);
         if (principal is { Account: { } account })
         {

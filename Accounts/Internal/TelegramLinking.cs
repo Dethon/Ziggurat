@@ -21,7 +21,7 @@ public sealed record TelegramAccount(string TenantId, string UserId);
 
 public sealed record TelegramOfAccount(long TelegramId);
 
-// What the Telegram bot asks with its own credential (InternalApi). Each answer is a status the bot
+// What the Telegram bot asks with its own credential (InternalApi), and nobody else (InternalCallers). Each answer is a status the bot
 // tells its person apart by: 404 is a code nothing open goes by (or a sender or group nothing links),
 // 409 a Telegram or a group that is somebody else's already, 403 the operator asking for a passkey
 // link their Telegram must not hand out.
@@ -31,7 +31,9 @@ public static class TelegramLinking
 
     public static void Map(IEndpointRouteBuilder routes)
     {
-        var telegram = routes.MapGroup(Path);
+        // The Telegram bot's alone: another caller's credential redeems no code and mints no link.
+        var telegram = routes.MapGroup(Path).AddEndpointFilter(async (context, next) =>
+            InternalCallers.MayAskAbout(context.HttpContext, TelegramLinks.Channel) ? await next(context) : InternalCallers.NotYours);
 
         telegram.MapPost("/start", async (TelegramStart start, TelegramLinks links, Assertions assertions, CancellationToken ct) =>
             await links.RedeemStartAsync(start.TelegramId, start.Code, ct) switch

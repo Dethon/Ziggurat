@@ -42,7 +42,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
     private readonly List<HubConnection> _connections = [];
     private readonly ChannelInbox _inbox = new(new FakeTimeProvider());
-    private readonly FakeAccountResolver _accounts = new();
+    private readonly FakeSessionAccounts _accounts = new();
     private WebApplication _app = null!;
 
     public ChatHubSignedInTests()
@@ -74,7 +74,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
                 new AccountConnections(),
                 NullLogger<ApprovalService>.Instance))
             .AddSingleton(new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast))
-            .AddSingleton<IAccountResolver>(_accounts)
+            .AddSingleton<ISessionAccounts>(_accounts)
             .AddSingleton(new Mock<IAgentCatalog>().Object)
             .AddSingleton(_store.Object)
             .AddSingleton(_pushStore.Object)
@@ -94,11 +94,14 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
     }
 
     private const string Somebody = "91eb477ecd34251c52fd4493523a0334";
+    private const string Phone = "5e55105e55105e55105e55105e55105e";
 
     // The session check's four headers as the proxy copies them: the plain three naming whoever a
-    // test likes, and the assertion, signed with the accounts service's test key, naming the person.
+    // test likes, and the assertion, signed with the accounts service's test key, naming the person
+    // and the session it checked.
     private static Dictionary<string, string> SignedIn(string userId = Fran, string? plainUserId = null) =>
-        Forwarded(plainUserId ?? userId, TestAssertions.Of(new Account(Home, userId), ChannelIds.SignalR, ["owner", "operator"]));
+        Forwarded(plainUserId ?? userId,
+            TestAssertions.Of(new Account(Home, userId), ChannelIds.SignalR, ["owner", "operator"], sessionId: Phone));
 
     private static Dictionary<string, string> Forwarded(string plainUserId, string? assertion)
     {
@@ -222,12 +225,51 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         (await connection.InvokeAsync<bool>("EnqueueMessage", "topic-1", "two", null, null, null)).ShouldBeTrue();
         var second = await SingleTurnAsync();
 
-        _accounts.Asked.Distinct().ShouldBe([("signalr", Fran)]);
+        _accounts.Asked.Distinct().ShouldBe([(Fran, Phone)]);
         first.Assertion.ShouldBe(_accounts.Issued[^2]);
         second.Assertion.ShouldBe(_accounts.Issued[^1]);
         second.Assertion.ShouldNotBe(first.Assertion);
         var verified = await TestAssertions.Verifier().VerifyTurnAsync(second.Assertion, "signalr", CancellationToken.None);
         verified.ShouldBeOfType<TurnAdmission.Admitted>().Identity.Account.ShouldBe(new Account(Home, Fran));
+    }
+
+    // A session revoked on the account page while its chat client stays connected: the connection
+    // was settled as it arrived, but every turn asks for the session again, so the next one is
+    // answered as signed out and the agent is sent nothing.
+    [Fact]
+    public async Task ATurnAfterTheConnectionsSessionWasRevoked_IsAnsweredSignedOut_AndNotSent()
+    {
+        _sessionService.StartSession("topic-1", "jack", 7, 42, null);
+        var connection = await ConnectAsync(SignedIn(), out _);
+        await ReceiveAsync();
+        _accounts.Revoked.Add(Phone);
+
+        var chunks = await ReadAllAsync(connection.StreamAsync<ChatStreamMessage>(
+            "SendMessage", "topic-1", "hello", null, null, null));
+
+        chunks.ShouldContain(c => c.Error != null && c.Error.Contains("signed out") && c.IsComplete);
+        await Eventually.Settle();
+        (await ReceiveAsync()).ShouldBeEmpty();
+    }
+
+    // An assertion that names no session is nobody's session to refresh: an assertion the session
+    // check signed names its session, so one naming none did not come from a sign-in this connection
+    // can keep being vouched for.
+    [Fact]
+    public async Task AConnectionWhoseAssertionNamesNoSession_StartsNoTurn()
+    {
+        _sessionService.StartSession("topic-1", "jack", 7, 42, null);
+        var connection = await ConnectAsync(
+            Forwarded(Fran, TestAssertions.Of(new Account(Home, Fran), ChannelIds.SignalR, ["owner"])), out _);
+        await ReceiveAsync();
+
+        var chunks = await ReadAllAsync(connection.StreamAsync<ChatStreamMessage>(
+            "SendMessage", "topic-1", "hello", null, null, null));
+
+        chunks.ShouldContain(c => c.Error != null && c.Error.Contains("signed out") && c.IsComplete);
+        _accounts.Asked.ShouldBeEmpty();
+        await Eventually.Settle();
+        (await ReceiveAsync()).ShouldBeEmpty();
     }
 
     // A connection whose person the accounts service cannot vouch for right now still opens — a name
@@ -284,19 +326,20 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         return turns.ShouldHaveSingleItem();
     }
 
-    // The accounts service as the hub asks it: every account it is asked about is somebody, under the
-    // name a test gave it or its id, answered with a fresh assertion of them on the channel asked
-    // about — each one kept, so a test can tell which answer a turn carried.
-    private sealed class FakeAccountResolver : IAccountResolver
+    // The accounts service as the hub asks it: every session it is asked about is its person's, under
+    // the name a test gave them or their id, answered with a fresh assertion of them on the chat hub's
+    // channel — each one kept, so a test can tell which answer a turn carried — until a test revokes it.
+    private sealed class FakeSessionAccounts : ISessionAccounts
     {
         private readonly Lock _lock = new();
-        private readonly List<(string Channel, string Identity)> _asked = [];
+        private readonly List<(string UserId, string SessionId)> _asked = [];
         private readonly List<string> _issued = [];
 
         public Dictionary<string, string> Names { get; } = [];
+        public HashSet<string> Revoked { get; } = [];
         public bool Fails { get; set; }
 
-        public IReadOnlyList<(string Channel, string Identity)> Asked
+        public IReadOnlyList<(string UserId, string SessionId)> Asked
         {
             get
             {
@@ -318,26 +361,28 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
             }
         }
 
-        public Task<ResolvedAccount?> ResolveAsync(string channel, string identity, CancellationToken ct)
+        public Task<ResolvedAccount?> SessionAsync(string userId, string sessionId, CancellationToken ct)
         {
             lock (_lock)
             {
-                _asked.Add((channel, identity));
+                _asked.Add((userId, sessionId));
                 if (Fails)
                 {
                     return Task.FromException<ResolvedAccount?>(new HttpRequestException("accounts unreachable"));
                 }
 
-                var account = new Account(Home, identity);
-                var assertion = TestAssertions.Of(account, channel);
+                if (Revoked.Contains(sessionId))
+                {
+                    return Task.FromResult<ResolvedAccount?>(null);
+                }
+
+                var account = new Account(Home, userId);
+                var assertion = TestAssertions.Of(account, ChannelIds.SignalR, sessionId: sessionId);
                 _issued.Add(assertion);
                 return Task.FromResult<ResolvedAccount?>(
-                    new ResolvedAccount(account, Names.GetValueOrDefault(identity, identity), assertion));
+                    new ResolvedAccount(account, Names.GetValueOrDefault(userId, userId), assertion));
             }
         }
-
-        public Task<ResolvedGuest> GuestAsync(string channel, CancellationToken ct) =>
-            throw new InvalidOperationException("the chat hub has no guest");
     }
 
     private Task<HubConnection> ConnectAsync(IReadOnlyDictionary<string, string> headers, out Task<Exception?> closed)
