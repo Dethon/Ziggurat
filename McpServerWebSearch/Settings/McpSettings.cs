@@ -10,6 +10,10 @@ public record McpSettings : IMcpHostSettings
     // This server's own credential, which its /mcp asks for (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
 
+    // /mcp and the pages people open answer on listeners of their own, so no proxy route can
+    // reach the one by naming the other.
+    public ListenerConfiguration Listeners { get; init; } = new();
+
     public required BraveSearchConfiguration BraveSearch { get; init; }
     public CapSolverConfiguration? CapSolver { get; init; }
     public CamoufoxConfiguration? Camoufox { get; init; }
@@ -35,6 +39,15 @@ public record McpSettings : IMcpHostSettings
 
     // The modal judgment's tunables (Domain's ModalJudgmentSettings), beside the judge they tune.
     public ModalJudgmentSettings Judgment { get; init; } = new();
+}
+
+public record ListenerConfiguration
+{
+    // The deployment's own network dials this one: the agent's calls, nothing a browser sends.
+    public int Mcp { get; init; } = 8080;
+
+    // The proxy routes /browse/* here and nowhere else of this server's.
+    public int Pages { get; init; } = 8081;
 }
 
 // Generic tunables of the browse session pool — settings in this server's own appsettings.json,

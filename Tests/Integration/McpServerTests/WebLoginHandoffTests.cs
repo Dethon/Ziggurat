@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Domain.Tools;
 using Infrastructure.Clients.Browser;
 using Infrastructure.StateManagers;
@@ -96,7 +97,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         var cookies = new CookieContainer();
         var client = new HttpClient(new HttpClientHandler { CookieContainer = cookies })
         {
-            BaseAddress = new Uri(_server.BaseAddress)
+            BaseAddress = new Uri(_server.PagesAddress)
         };
         return (client, cookies);
     }
@@ -159,6 +160,64 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         (await second.PostAsync($"{path}/claim", null)).StatusCode.ShouldBe(HttpStatusCode.Gone);
         (await second.GetAsync(path)).StatusCode.ShouldBe(HttpStatusCode.Gone);
+    }
+
+    // The pages a person opens and the agent's /mcp answer on listeners of their own, so a proxy
+    // route naming one can never reach the other.
+    [Fact]
+    public async Task TheHandoffPages_AnswerOnThePagesListenerAlone()
+    {
+        var path = PathOf(await StartHandoffAsync());
+        using var mcpListener = new HttpClient { BaseAddress = new Uri(_server.McpAddress) };
+
+        (await mcpListener.GetAsync(path)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await mcpListener.PostAsync($"{path}/claim", null)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await mcpListener.GetAsync("/browse/logins/sites")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+
+        // Nothing asked on the wrong listener spent the link.
+        var (browser, _) = NewBrowserSession();
+        (await browser.GetAsync(path)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await browser.PostAsync($"{path}/claim", null)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task TheLiveView_IsRefusedOnTheMcpListener()
+    {
+        var path = PathOf(await StartHandoffAsync());
+        var (browser, cookies) = NewBrowserSession();
+        (await browser.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
+
+        using var socket = new ClientWebSocket();
+        socket.Options.Cookies = cookies;
+        await Should.ThrowAsync<WebSocketException>(() => socket.ConnectAsync(
+            new Uri($"{_server.McpAddress.Replace("http", "ws")}/browse/handoff/live"), CancellationToken.None));
+    }
+
+    // Even holding the server's credential: the pages listener has no /mcp to present it to.
+    [Fact]
+    public async Task Mcp_IsNotAnsweredOnThePagesListener_EvenWithTheServersCredential()
+    {
+        using var pages = new HttpClient { BaseAddress = new Uri(_server.PagesAddress) };
+        using var initialize = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        {
+            Content = Json("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1"}}}""")
+        };
+        initialize.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(McpTestSecret.Value));
+        initialize.Headers.Accept.ParseAdd("application/json");
+        initialize.Headers.Accept.ParseAdd("text/event-stream");
+
+        (await pages.SendAsync(initialize)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await _server.ToolNamesAsync()).ShouldContain("web_login");
+    }
+
+    // The pages listener is the proxy's alone, and serves nothing outside the browse path.
+    [Fact]
+    public async Task ThePagesListener_ServesNothingOutsideTheBrowsePath()
+    {
+        using var pages = new HttpClient { BaseAddress = new Uri(_server.PagesAddress) };
+
+        (await pages.GetAsync("/")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await pages.GetAsync("/mcp")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -226,7 +285,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         var path = PathOf(await StartHandoffAsync());
         var (claimer, cookies) = NewBrowserSession();
         (await claimer.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
-        var live = new Uri($"{_server.BaseAddress.Replace("http", "ws")}/browse/handoff/live");
+        var live = new Uri($"{_server.PagesAddress.Replace("http", "ws")}/browse/handoff/live");
 
         using var stranger = new ClientWebSocket();
         await Should.ThrowAsync<WebSocketException>(() => stranger.ConnectAsync(live, CancellationToken.None));
@@ -633,7 +692,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         socket.Options.SetRequestHeader("Origin", "https://evil.example");
 
         await Should.ThrowAsync<WebSocketException>(() => socket.ConnectAsync(
-            new Uri($"{_server.BaseAddress.Replace("http", "ws")}/browse/handoff/live"), CancellationToken.None));
+            new Uri($"{_server.PagesAddress.Replace("http", "ws")}/browse/handoff/live"), CancellationToken.None));
     }
 
     // The login page's own requests must not arm a save that writes the half-made login while the

@@ -109,8 +109,7 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
-      "MCP__SECRETS__localhost": "local-mcp-secret",
-      "ASPNETCORE_URLS": "http://localhost:6003"
+      "MCP__SECRETS__localhost": "local-mcp-secret"
     },
     "build": {
       "command": "dotnet",
