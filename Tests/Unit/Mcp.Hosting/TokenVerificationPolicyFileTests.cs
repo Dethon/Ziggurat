@@ -63,8 +63,9 @@ public class TokenVerificationPolicyFileTests
     [MemberData(nameof(VerifyingHosts))]
     public void EveryVerifyingHost_ReadsTheSharedFileBeforeTheEnvironment(string host)
     {
-        // As a web host hands its configuration over: the environment is already one of its sources.
-        var configBuilder = new ConfigurationBuilder().AddEnvironmentVariables();
+        // As a web host hands its configuration over: a manager, the environment already among its sources.
+        var configBuilder = new ConfigurationManager();
+        configBuilder.AddEnvironmentVariables();
         var skew = Load(host, configBuilder);
         var sources = configBuilder.Sources.ToList();
 
@@ -74,7 +75,7 @@ public class TokenVerificationPolicyFileTests
 
         file.ShouldBeGreaterThanOrEqualTo(0, $"{host} should read {TokenVerificationSettings.FileName}");
         file.ShouldBeLessThan(environment, $"{host} should read the environment after the shared file");
-        configBuilder.Build()["mcp:tokenVerification:clockSkew"].ShouldBe("00:00:30");
+        configBuilder["mcp:tokenVerification:clockSkew"].ShouldBe("00:00:30");
         skew.ShouldBe(TimeSpan.FromSeconds(30));
     }
 
