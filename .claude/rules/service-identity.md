@@ -29,6 +29,21 @@ paths:
   - "McpChannelTelegram/Services/TelegramAccess.cs"
   - "McpChannelVoice/Services/TranscriptDispatcher.cs"
   - "McpServerSugary/Channel/SugaryChannel.cs"
+  - "Domain/Security/DelegationVerifier.cs"
+  - "Domain/Security/DelegatedObject.cs"
+  - "Domain/Security/DelegatedWrites.cs"
+  - "Domain/Contracts/IDelegationStore.cs"
+  - "Domain/DTOs/Channel/FireDelegation.cs"
+  - "Domain/Tools/Scheduling/Vfs/ScheduleDelegation.cs"
+  - "Domain/Tools/HomeAssistant/Vfs/WatchDelegation.cs"
+  - "Domain/Tools/Web/LoginDelegation.cs"
+  - "Mcp.Hosting/DelegationStoreTools.cs"
+  - "Infrastructure/Agents/Mcp/McpFileSystemBackend.cs"
+  - "Infrastructure/Agents/Mcp/Redelegation.cs"
+  - "Agent/Commands/AgentCommand.cs"
+  - "McpServerScheduling/Services/ScheduleDelegationStore.cs"
+  - "McpServerHomeAssistant/Services/WatchDelegationStore.cs"
+  - "Tests/TestDelegations.cs"
 ---
 
 # Service identity: signing and verifying
@@ -177,11 +192,11 @@ port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.
   streamed in hundreds of `send_reply` calls costs one signature. Its clock is the wall clock
   (`TimeProvider.System`), not the agent's registered `TimeProvider`, which an eval pins.
 - **Who it names** is `CallIdentity.Of(turn)` over the context in the same `_meta`: the
-  `ConversationContext.Identity` the agent verified from the turn's assertion as it arrived — the
-  person, or the household's guest *with its household* — for as long as the turn runs. A context
-  with none is a turn no assertion stands behind (a fire, a login wake, a watch) and is read as
-  before off its stamped principal: the account it carries, else nobody. **Ticket 07 replaces that
-  fallback** with the delegation it verifies. A worker carries its parent's context verbatim
+  `ConversationContext.Identity` the agent verified as the turn arrived — from a person's assertion
+  (the person, or the household's guest *with its household*) or from a fire's delegation (the
+  person) — for as long as the turn runs. A context with none is nobody, **whatever principal it
+  carries**: a principal is only what a channel or a server stamped, and nothing but a verified
+  assertion or a verified delegation names a person. A worker carries its parent's context verbatim
   (`SubAgentRunTool`), so it signs for its parent's person with no plumbing of its own.
 - **The server checks in `CallTokenGate`**, which `AddMcpHost` installs after the credential gate: an
   incoming message filter on `tools/call` alone, so the refusal is a JSON-RPC error
@@ -210,7 +225,8 @@ port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.
   (`mcp:tokenVerification`), read by `BindSettings` and the agent's configuration. The agent dials
   its channels only once it is listening (`ChannelConnectionHost` waits for `ApplicationStarted`), or a
   channel server's first fetch of its keys would fail and refuse calls until the refetch interval.
-  There is no rotation command for the agent's key yet.
+  The agent's key is rotated and retired by its own commands (Deferred turns, below), which also
+  sign stored delegations again — a delegation lives as long as its object, not two minutes.
 
 ## Channels and the agent
 
@@ -255,14 +271,115 @@ Nothing is built, minted or recalled for it.
 
 **Not checked**: a chat command (`/clear`, `/cancel`, a channel's cancel) is no turn and acts for
 nobody. A message with `Origin` set — a schedule's fire, a login wake, a watch, a download — carries
-no assertion and is queued as its server stamped it, with no identity, so its calls are signed off
-its stamped principal as before. That is ticket 07's seam: it checks the delegation the agent
-signed for the object right there in `ConversationGroup.AdmitAsync` and puts what verified on the
-turn the same way.
+no assertion and is never refused for lacking one: it acts for whoever its delegation verifies as, or
+nobody (Deferred turns, below).
 
 **Tests and the eval.** `FakeChannelConnection.WriteMessage` sends a person's message as a channel
 server would, with an assertion signed by the accounts test key for its channel (the principal's
 account, or the household guest's); `WriteUnsigned` sends one without. `TestAssertions.Verifier()`
 is the verifier every monitor fixture is built with. The eval drives `McpAgent` below the monitor,
 so `EvalRun.Turn` stamps the identity the check answers for the eval account's assertion on the
-turn's channel (`EvalRunTests` holds the two to the same claims); its fires carry none.
+turn's channel, and on a schedule's, a watch's or a login's fire the one its delegation would verify
+as (the eval account on the fire's channel); a download's fire none (`EvalRunTests` holds each to
+the agent's own checks). A test's MCP client stands in for the agent: `McpTestSecret.Transport`
+signs a context that names a person's account and no identity as that person (`Vouching`, the
+conversation group's part), one that names an identity as it, and one naming neither as nobody.
+
+## Deferred turns: delegations
+
+A schedule's fire, a login wake and a watch's fire act for a person only because that person's turn
+created or last rewrote the object, and only on the agent's own word for it: a **delegation**,
+signed by the agent's key while that turn's call wrote the object. A server stores one and hands it
+back; it cannot make one, move one onto another object, or fire a changed object as its writer.
+
+**The token** is `Delegation` (`Domain/Security/Signing`), an `IdentityClaims` with three claims of
+its own: `knd` (`schedule`, `watch`, `login` — `DelegatedObject`'s constants), `oid` (the schedule's
+id, the watch's id, the asking conversation's id) and `dig`, base64url SHA-256 of the object's
+**description**: canonical JSON of what it does, computed on both ends by one Domain function per
+kind (`ScheduleDelegation`, `WatchDelegation`, `LoginDelegation`):
+
+| Kind | Description (`DelegatedObject.cs`) | What the fire must match |
+|---|---|---|
+| schedule | agent, prompt, cron, runAt (unix seconds, UTC), deliverTo as written | `Origin.ScheduleId` = oid, `AgentId`, `Content` = prompt, `ReplyTo` = the deliverTo resolved against the delivery default |
+| watch | the prompt effects' prompts as written, deliverTo as the write resolved it | `Origin.WatchId` = oid, `ReplyTo` as above; the prompt arrives rendered by the home and is not compared |
+| login | the asking turn's agent, conversation and origin | `AgentId`; then either the asking conversation answering at its origin (Done) or one fresh chat-client conversation (`[signalr, null]`, a voice login's link) |
+
+`iss` the agent, `aud` `TokenAudiences.Delegation`, `sub`/`tid`/`chn`/`roles` the person's (only a
+person is delegated — the guest and nobody delegate nothing), `exp` **iat + 100 years** for a
+schedule or a watch (`Delegation.ObjectLifetime`: as long as the object; its deletion, a rewrite or
+retiring the key ends it) and **iat + `Delegations:HandoffLifetime`** (1 hour; the handoff's tab
+closes within its 10 + 30 minutes) for a login.
+
+**Minted where the write leaves.** `SigningClientTransport` signs one for a call acting for a person,
+under `_meta["com.herfluffness/delegation"]` (`ChannelProtocol.DelegationMetaKey`), beside the call
+token, for exactly what the call writes: a filesystem write states its object under the agent-only
+`ChannelProtocol.DelegateMetaKey` (`McpFileSystemBackend`, through `DelegatedWrites`: a schedules or
+`ha` create from its content, an edit by reading the file first and laying the edits over it as the
+mount does, a schedule move by reading its file under the destination's name, a watch replace by
+reading the watch whose delivery it keeps), and `web_login` is a login handoff by its name,
+described off the call's own context. The transport removes both keys from every call and writes
+the delegation only for a person, so neither a model nor a caller can put one there. An edit or a
+move rests on what the server answered the agent's read with — a lying server gets a delegation for
+its own text with the turn's edit on top — while a create gives it nothing to lie about. A runAt
+with no offset is read in the agent's zone (`TimeZoneInfo.Local`), which compose's shared `TZ` makes
+the scheduling server's; zones that disagree make such a one-shot fire for nobody.
+
+**Stored with the object, replaced by every write.** The server reads it with `call.Delegation`
+(`CallTurn`), never verifying it: `ScheduleFileSystem` keeps it on `Schedule.Delegation` for every
+create, edit and move (a write carrying none clears it), `HaFileSystem` in the automation's metadata
+(`HaWatchMetadata.Delegation`, through `FileSystemCaller.Delegation`), `LoginHandoffs` on the
+`LiveHandoff`. Deleting the object deletes it. `Schedule.CreatedBy` is still recorded — who last
+wrote it, what redelegate offers for a schedule with none — and is never what a fire acts as.
+
+**Fired with what the object does now.** `FireDelegation(Token, Object)` rides
+`ChannelMessageNotification.Delegation`: the scheduler's from the stored schedule
+(`ScheduleFirePlanner`), the watch callback's looked up from the home at fire time
+(`WatchFiredEndpoint`, `HaWatches.GetAsync`; a home it cannot ask fires for nobody), both login
+wakes' from the handoff. A download's carries none.
+
+**Checked as the fire arrives**, in `ConversationGroup.AdmitAsync`, by `DelegationVerifier` (the
+agent's own `SigningKeyStore` — every key it still publishes — on the wall clock, and
+`Domain/delivery.json`, which the agent now reads too): the agent's signature, `aud`, a person, `knd`
+the fire's origin kind, `dig` the presented description's digest, and the fire doing what the
+description says. It answers `FireAdmission.Delegated(identity)` — the message's principal becomes
+`Principal(chn, sub, account)` and the identity rides the turn as an assertion's does — or
+`Undelegated(refusal)`: the principal is dropped and the turn runs as nobody. A refusal (a token that
+does not verify, `NamesNoPerson`, `WrongKind`, `DigestMismatch`, `NotThisFire`, `NotDelegable` for a
+download carrying one) is logged at warning and published as `DelegationRefused`; a fire carrying
+none is ordinary and says nothing. A monitor built with no verifier believes no delegation. Fire
+timing is not checked: nothing in a fire says when it was due, so the digest's timing only catches a
+store edited under a server that still tells the truth about it. `run_now` fires a schedule as its
+delegation says, whoever asked for it.
+
+**The commands** (`Agent/Commands/AgentCommand.cs`, System.CommandLine, detected in `Program` before
+anything builds and run instead of the agent): `rotate-signing-key` (a new key signs from the next
+call on; the agent and every server pick it up by themselves), `redelegate [--yes]` and
+`retire-signing-keys [--force]`. Both of the last dial every `ChannelEndpoint` as the agent does and
+ask the servers that keep delegations through `delegations_list` / `delegations_replace`
+(`DelegationStoreTools`, `AddDelegationStore<T>`, over an `IDelegationStore`: the scheduling and
+Home Assistant servers; behind the call-token gate, signed as nobody, and stripped from every model's
+tool list by `ThreadSession`). `Redelegation` leaves the current key's delegations alone, re-signs
+without asking one an earlier published key signed for the object as it is now, and shows the
+operator — and signs a fresh one over what the object does now only on a yes — one it cannot believe
+(a key lost, an object changed since) and a schedule with none whose recorded writer names an
+account. A replace naming another object is refused by the server. Retirement refuses while a
+stored delegation is still an earlier key's, or a server cannot be asked; the order is rotate, then
+redelegate, then retire (after the call-token lifetime plus skew). A provided key
+(`SIGNING__PRIVATEKEY`) is neither rotated nor retired and every verb exits 1.
+
+**Deploying over existing objects.** Schedules written before this have no delegation and fire for
+nobody until the operator runs `redelegate` once, which offers each as the writer its `CreatedBy`
+names (the household migration stamped an account on every one); a declined or unoffered one stays
+nobody's until a person's turn rewrites it. Watches fired for nobody before this, and still do until
+a person's turn writes them again. A login handoff lives in memory and none survives the restart.
+Losing the agent's key volume is the same story: the agent generates a new key on start, every
+stored delegation stops verifying, and `redelegate` shows each as it claims to be.
+
+**Tests** (seam 5): `ScheduleDelegationTests` (the real scheduling server, written through the
+agent's `McpFileSystemBackend` and signing transport), `WatchDelegationTests` (the real Home
+Assistant server over the eval's fake home, fired through its callback and read off an agent channel
+connection), `WebLoginHandoffTests` (Done and the voice link wake; a forged token and another
+conversation refused), `RedelegationTests` (lost key, no writer, rotation and the retirement guard)
+and `ChatMonitorDelegationTests` (the monitor's admission, a download, the error feed).
+`TestDelegations` signs with the suite's agent key, forges with the accounts one, and checks a fire
+as the conversation group does.
