@@ -29,7 +29,14 @@ public record Principal(string ChannelId, string UserId, Account? Account = null
 // ids the accounts service issued. Never a name, so it can key what belongs to the person.
 [PublicAPI]
 public record Account(string TenantId, string UserId);
-// An account as a channel server learns it from the accounts service: the account, and the name the
-// person goes by, which is what a turn's sender shows and never what anything is keyed by.
+// An account as a channel server learns it from the accounts service: the account, the name the
+// person goes by, which is what a turn's sender shows and never what anything is keyed by, and the
+// service's signed assertion of that person on the channel asked about, which the channel carries on
+// the person's turn untouched (it lives ten minutes, so it is carried, not kept).
 [PublicAPI]
-public record ResolvedAccount(Account Account, string DisplayName);
+public record ResolvedAccount(Account Account, string DisplayName, string Assertion);
+
+// The household's guest as a satellite's channel learns it: whose house it is, and the accounts
+// service's signed assertion of the guest — somebody the house works for, as no person.
+[PublicAPI]
+public record ResolvedGuest(string TenantId, string Assertion);

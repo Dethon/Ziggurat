@@ -8,7 +8,10 @@ namespace McpChannelTelegram.Services;
 
 // Who a Telegram id is and which household a group is bound to, as the accounts service last said,
 // kept for as long as LinkCacheSettings trusts each answer. An outage is never kept: the resolver
-// throws, and nothing is remembered for the id it was asked about.
+// throws, and nothing is remembered for the id it was asked about. A person's answer carries the
+// service's assertion of them, which the bot puts on their turns while it keeps the answer; it lives
+// ten minutes from signing, so the cache keeps an answer for at most half that (conformance-checked)
+// and the agent still believes it on arrival.
 public sealed class TelegramAccess(
     IAccountResolver resolver, ITelegramAccounts accounts, LinkCacheSettings cache, TimeProvider time)
 {

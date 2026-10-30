@@ -14,15 +14,37 @@ public class AccountsResolverClientTests
 {
     private const string Credential = "signalr-credential";
 
+    // The assertion is what the channel carries on the turn and what the agent believes, so it has
+    // to verify against the service's keys and name the person on the channel asked about.
     [Fact]
-    public async Task AnAccountsId_ResolvesToTheAccountAndItsName()
+    public async Task AnAccountsId_ResolvesToTheAccountItsNameAndAnAssertionOfIt()
     {
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
 
         var resolved = await ClientFor(server, Credential).ResolveAsync("signalr", fran.UserId, CancellationToken.None);
 
-        resolved.ShouldBe(new ResolvedAccount(new Account(fran.TenantId, fran.UserId), "Fran"));
+        resolved.ShouldNotBeNull().Account.ShouldBe(new Account(fran.TenantId, fran.UserId));
+        resolved.DisplayName.ShouldBe("Fran");
+        var claims = (await server.VerifyAssertionAsync(resolved.Assertion)).Claims.ShouldNotBeNull();
+        claims.Account.ShouldBe(new Account(fran.TenantId, fran.UserId));
+        claims.ChannelId.ShouldBe("signalr");
+    }
+
+    // A satellite's speaker nobody recognised is still somebody: the household's guest, signed.
+    [Fact]
+    public async Task TheHouseholdsGuest_IsSignedForASatellite()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+
+        var guest = await ClientFor(server, Credential).GuestAsync("voice", CancellationToken.None);
+
+        guest.TenantId.ShouldBe(fran.TenantId);
+        var claims = (await server.VerifyAssertionAsync(guest.Assertion)).Claims.ShouldNotBeNull();
+        claims.IsGuest.ShouldBeTrue();
+        claims.TenantId.ShouldBe(fran.TenantId);
+        claims.ChannelId.ShouldBe("voice");
     }
 
     [Fact]
@@ -60,7 +82,12 @@ public class AccountsResolverClientTests
         redeemed.Outcome.ShouldBe(TelegramStartOutcome.Invited);
         redeemed.Account.ShouldNotBeNull().DisplayName.ShouldBe("Laura");
         redeemed.Account.Account.TenantId.ShouldBe(fran.TenantId);
-        (await client.ResolveAsync("telegram", "5550001", CancellationToken.None)).ShouldBe(redeemed.Account);
+        // The person it made is let straight in, so the answer vouches for them on Telegram too.
+        var claims = (await server.VerifyAssertionAsync(redeemed.Account.Assertion)).Claims.ShouldNotBeNull();
+        claims.Account.ShouldBe(redeemed.Account.Account);
+        claims.ChannelId.ShouldBe("telegram");
+        (await client.ResolveAsync("telegram", "5550001", CancellationToken.None)).ShouldNotBeNull()
+            .Account.ShouldBe(redeemed.Account.Account);
         (await client.RedeemStartAsync(5_550_002, invite.Token, CancellationToken.None))
             .ShouldBe(new TelegramStart(TelegramStartOutcome.CodeRefused));
     }

@@ -11,6 +11,7 @@ using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Monitor;
 using Domain.Prompts;
+using Domain.Security;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -326,7 +327,25 @@ internal sealed class FakeChannelConnection : IChannelConnection
         return Task.FromResult(ConversationIdToReturn);
     }
 
-    public void WriteMessage(ChannelMessage message) => _channel.Writer.TryWrite(message);
+    // As a channel server sends a person's message: with the accounts service's assertion of whoever
+    // it carries — the principal's account, or the household's guest for a message naming none —
+    // signed with the accounts test key for this channel, so the agent's check at the turn's arrival
+    // admits it as it would a real one. A message that already carries one keeps it, and a fire,
+    // which nobody's assertion stands behind, carries none.
+    public void WriteMessage(ChannelMessage message) => _channel.Writer.TryWrite(AsSent(message));
+
+    // A person's message with no assertion at all: what a misbehaving channel server would send.
+    public void WriteUnsigned(ChannelMessage message) => _channel.Writer.TryWrite(message);
+
+    public ChannelMessage AsSent(ChannelMessage message) =>
+        message.Origin is not null || message.Assertion is not null
+            ? message
+            : message with
+            {
+                Assertion = message.Principal?.Account is { } account
+                    ? TestAssertions.Of(account, ChannelId)
+                    : TestAssertions.OfGuest(MonitorTestMocks.GuestHousehold, ChannelId)
+            };
 
     public void Complete() => _channel.Writer.TryComplete();
 
@@ -336,6 +355,12 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
 internal static class MonitorTestMocks
 {
+    // The household a guest's assertion names when a test's message names no account.
+    public const string GuestHousehold = "home";
+
+    // The agent's check on a person's turn, over the accounts test key every fake channel signs with.
+    public static AssertionVerifier Assertions { get; } = TestAssertions.Verifier();
+
     public static ChannelMessage CreateChannelMessage(
         string conversationId = "conv-1",
         string content = "Hello",
@@ -405,7 +430,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -432,7 +458,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -485,7 +512,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = monitor.Monitor(cts.Token);
@@ -532,7 +560,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -560,7 +589,8 @@ public class ChatMonitorTests
             threadResolver,
             metricsPublisher.Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -594,7 +624,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -628,7 +659,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -662,7 +694,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -697,7 +730,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -738,7 +772,8 @@ public class ChatMonitorTests
             new ChatThreadResolver(stateStore.Object),
             new Mock<IMetricsPublisher>().Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -780,7 +815,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             recallHook.Object,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         channel.WriteMessage(MonitorTestMocks.CreateChannelMessage());
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
@@ -814,7 +850,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             recallHook.Object,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -870,7 +907,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -915,7 +953,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -947,7 +986,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             metrics.Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -975,7 +1015,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             metrics.Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -1019,7 +1060,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -1046,7 +1088,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -1081,7 +1124,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 

@@ -760,11 +760,15 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         await stream.ToListAsync(timeout.Token);
     }
 
-    // Each person goes by their id with its first letter raised.
+    // Each person goes by their id with its first letter raised, vouched for as the service would.
     private sealed class NamedAccounts : IAccountResolver
     {
         public Task<ResolvedAccount?> ResolveAsync(string channel, string identity, CancellationToken ct) =>
-            Task.FromResult<ResolvedAccount?>(
-                new ResolvedAccount(new Account(Home, identity), char.ToUpperInvariant(identity[0]) + identity[1..]));
+            Task.FromResult<ResolvedAccount?>(new ResolvedAccount(
+                new Account(Home, identity), char.ToUpperInvariant(identity[0]) + identity[1..],
+                TestAssertions.Of(new Account(Home, identity), channel)));
+
+        public Task<ResolvedGuest> GuestAsync(string channel, CancellationToken ct) =>
+            throw new InvalidOperationException("the chat hub has no guest");
     }
 }

@@ -14,7 +14,8 @@ internal sealed class FakeAccountResolver : IAccountResolver
 
     public FakeAccountResolver Holding(string userId, string tenantId, string displayName)
     {
-        _accounts[userId] = new ResolvedAccount(new Account(tenantId, userId), displayName);
+        var account = new Account(tenantId, userId);
+        _accounts[userId] = new ResolvedAccount(account, displayName, TestAssertions.Of(account, "voice"));
         return this;
     }
 
@@ -31,4 +32,18 @@ internal sealed class FakeAccountResolver : IAccountResolver
             ? Task.FromException<ResolvedAccount?>(_outage)
             : Task.FromResult(channel == "voice" ? _accounts.GetValueOrDefault(identity) : null);
     }
+
+    // The household's guest, signed as the service signs it for a satellite.
+    public Task<ResolvedGuest> GuestAsync(string channel, CancellationToken ct)
+    {
+        Asked.Add((channel, GuestAsked));
+        return _outage is not null
+            ? Task.FromException<ResolvedGuest>(_outage)
+            : Task.FromResult(new ResolvedGuest(Household, TestAssertions.OfGuest(Household, channel)));
+    }
+
+    public const string Household = "home";
+
+    // How a request for the guest shows among the identities asked about.
+    public const string GuestAsked = "(guest)";
 }

@@ -56,6 +56,7 @@ public class ChatHubCancelTopicTests : IDisposable
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
+            new VouchingAccounts(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller()

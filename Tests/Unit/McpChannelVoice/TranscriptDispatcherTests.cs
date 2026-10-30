@@ -5,6 +5,8 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
+using Domain.Security;
+using Domain.Security.Signing;
 using Mcp.Hosting;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.LocalCommands;
@@ -216,8 +218,41 @@ public class TranscriptDispatcherTests
         var message = emitter.Received().ShouldHaveSingleItem();
         message.Sender.ShouldBe("household");
         message.Principal.ShouldBe(new Principal("voice", "household"));
-        accounts.Asked.ShouldBeEmpty();
+        accounts.Asked.ShouldBe([("voice", FakeAccountResolver.GuestAsked)]);
     }
+
+    // The agent believes the accounts service's word, not the satellite's: a recognised speaker's
+    // turn carries the assertion the service answered when it resolved their profile.
+    [Fact]
+    public async Task DispatchAsync_MatchedSpeaker_CarriesTheAccountsServicesAssertionOfThem()
+    {
+        var (sut, _, emitter) = Build(accounts: new FakeAccountResolver().Holding("u-fran", "t-home", "Fran"));
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.8, "u-fran", default);
+
+        var identity = await VerifiedAsync(emitter.Received().ShouldHaveSingleItem().Assertion);
+        identity.Account.ShouldBe(new Account("t-home", "u-fran"));
+    }
+
+    // Somebody nobody recognised is the household's guest, and the guest is a signed claim with its
+    // household, so the house keeps working for them as no person.
+    [Fact]
+    public async Task DispatchAsync_NoMatchedSpeaker_CarriesASignedGuestAssertion()
+    {
+        var (sut, _, emitter) = Build(accounts: new FakeAccountResolver());
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "enciende la luz", Confidence = 0.9 }, "agent-1", null, 0.5, null, default);
+
+        var identity = await VerifiedAsync(emitter.Received().ShouldHaveSingleItem().Assertion);
+        identity.IsGuest.ShouldBeTrue();
+        identity.TenantId.ShouldBe(FakeAccountResolver.Household);
+    }
+
+    private static async Task<IdentityClaims> VerifiedAsync(string? assertion) =>
+        (await TestAssertions.Verifier().VerifyTurnAsync(assertion, "voice", CancellationToken.None))
+        .ShouldBeOfType<TurnAdmission.Admitted>().Identity;
 
     // The guest's user id is the fixed `household`, never the satellite's configured name, which an
     // operator could set to somebody's.
@@ -236,9 +271,10 @@ public class TranscriptDispatcherTests
     }
 
     // An outage is not an identity: the speaker goes out as the guest rather than as a name nobody
-    // vouched for.
+    // vouched for — and with no assertion at all, since the service could not sign even the guest,
+    // so the agent refuses the turn, says so on the errors feed and the satellite hears it fail.
     [Fact]
-    public async Task DispatchAsync_MatchedSpeakerWhileAccountsIsDown_GoesOutAsTheGuest()
+    public async Task DispatchAsync_MatchedSpeakerWhileAccountsIsDown_GoesOutAsTheGuestUnvouched()
     {
         var (sut, _, emitter) = Build(accounts: new FakeAccountResolver().Down());
 
@@ -249,6 +285,7 @@ public class TranscriptDispatcherTests
         var message = emitter.Received().ShouldHaveSingleItem();
         message.Sender.ShouldBe("household");
         message.Principal.ShouldBe(new Principal("voice", "household"));
+        message.Assertion.ShouldBeNull();
     }
 
     // A profile folder no account holds (one enrolled under a name before accounts) is nobody.

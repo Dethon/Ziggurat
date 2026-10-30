@@ -28,8 +28,12 @@ internal sealed class FakeTelegramAccounts : IAccountResolver, ITelegramAccounts
 
     public int WebLinksMinted => _webLinks;
 
-    public static ResolvedAccount AccountOf(string name, string household = Household) =>
-        new(new Account(household, $"user-{name}"), name);
+    // Answered as the service answers it: the account, its name, and an assertion of it on Telegram.
+    public static ResolvedAccount AccountOf(string name, string household = Household)
+    {
+        var account = new Account(household, $"user-{name}");
+        return new ResolvedAccount(account, name, TestAssertions.Of(account, "telegram"));
+    }
 
     public ResolvedAccount Link(long telegramId, string name, string household = Household) =>
         _people[telegramId] = AccountOf(name, household);
@@ -66,6 +70,9 @@ internal sealed class FakeTelegramAccounts : IAccountResolver, ITelegramAccounts
             ? person
             : null);
     }
+
+    public Task<ResolvedGuest> GuestAsync(string channel, CancellationToken ct) =>
+        throw new InvalidOperationException("Telegram knows who sent what it carries; it has no guest");
 
     public Task<TelegramStart> RedeemStartAsync(long telegramId, string code, CancellationToken ct)
     {

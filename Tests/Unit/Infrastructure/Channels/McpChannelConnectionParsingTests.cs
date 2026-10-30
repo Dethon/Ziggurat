@@ -107,6 +107,22 @@ public class McpChannelConnectionParsingTests
     }
 
     [Fact]
+    public async Task HandleChannelMessageNotification_WithAssertion_MapsItOntoChannelMessage()
+    {
+        var conn = new McpChannelConnection("telegram");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"conv-1","sender":"fran","content":"hi","assertion":"header.payload.signature"}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.Assertion.ShouldBe("header.payload.signature");
+            break;
+        }
+    }
+
+    [Fact]
     public async Task HandleChannelMessageNotification_WithConfigPatch_MapsPatchOntoChannelMessage()
     {
         var conn = new McpChannelConnection("signalr");

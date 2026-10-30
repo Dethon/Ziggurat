@@ -32,7 +32,8 @@ public class ChatMonitorConversationGroupTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -64,7 +65,8 @@ public class ChatMonitorConversationGroupTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -102,7 +104,8 @@ public class ChatMonitorConversationGroupTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -132,7 +135,8 @@ public class ChatMonitorConversationGroupTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -160,7 +164,8 @@ public class ChatMonitorConversationGroupTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = monitor.Monitor(cts.Token);
@@ -205,7 +210,8 @@ public class ChatMonitorConversationGroupTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = monitor.Monitor(cts.Token);
@@ -246,6 +252,7 @@ public class ChatMonitorConversationGroupTests
             new Mock<IMetricsPublisher>().Object,
             new FailingRecallHook(2, new HttpRequestException("memory store down")),
             skillPreloader: null,
+            TestAssertions.Verifier(),
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -304,6 +311,7 @@ public class ChatMonitorConversationGroupTests
             new Mock<IMetricsPublisher>().Object,
             null,
             skillPreloader: null,
+            TestAssertions.Verifier(),
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -346,6 +354,7 @@ public class ChatMonitorConversationGroupTests
             new Mock<IMetricsPublisher>().Object,
             null,
             skillPreloader: null,
+            TestAssertions.Verifier(),
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage(content: "/cancel")));
@@ -383,6 +392,7 @@ public class ChatMonitorConversationGroupTests
             new Mock<IMetricsPublisher>().Object,
             null,
             skillPreloader: null,
+            TestAssertions.Verifier(),
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -416,7 +426,8 @@ public class ChatMonitorConversationGroupTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(10));
 
@@ -448,6 +459,7 @@ public class ChatMonitorConversationGroupTests
             new Mock<IMetricsPublisher>().Object,
             null,
             skillPreloader: null,
+            TestAssertions.Verifier(),
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage() with { Content = null! }));
@@ -517,6 +529,7 @@ public class ChatMonitorConversationGroupTests
             new Mock<IMetricsPublisher>().Object,
             null,
             skillPreloader: null,
+            TestAssertions.Verifier(),
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -552,7 +565,11 @@ public class ChatMonitorConversationGroupTests
             }
         }
 
-        public void Write((IChannelConnection Channel, ChannelMessage Message) item) => _channel.Writer.TryWrite(item);
+        // As the channel the item names would have sent it: a person's message with its assertion.
+        public void Write((IChannelConnection Channel, ChannelMessage Message) item) =>
+            _channel.Writer.TryWrite(item.Channel is FakeChannelConnection channel
+                ? item with { Message = channel.AsSent(item.Message) }
+                : item);
 
         public IAsyncEnumerator<(IChannelConnection Channel, ChannelMessage Message)> GetAsyncEnumerator(
             CancellationToken ct = default)

@@ -554,6 +554,29 @@ public class SugaryEstimateApiTests
         }
     }
 
+    // What the agent believes about the turn is the accounts service's word, which the proxy put on
+    // the phone's request: the estimate and each answer carry that very assertion on to the agent.
+    [Fact]
+    public async Task AnEstimateTurn_CarriesTheAssertionTheRequestCameWith()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var assertion = TestAssertions.Of(SugaryServer.Him, "sugary");
+        var app = server.Forwarded(SugaryServer.Him, assertion);
+
+        var first = app.PostAsync("/api/estimates", Form("a bowl of lentils"));
+        var firstTurn = await NextTurnAsync(agent);
+        await ReplyAsync(agent, firstTurn, Estimate);
+        var conversation = (await ReadAsync(await first))["conversationId"]!.GetValue<string>();
+        var second = app.PostAsync("/api/estimates", FollowUp(conversation, Answer));
+        var followUp = await NextTurnAsync(agent);
+        await ReplyAsync(agent, followUp, AnsweredEstimate);
+        await ReadAsync(await second);
+
+        firstTurn.Assertion.ShouldBe(assertion);
+        followUp.Assertion.ShouldBe(assertion);
+    }
+
     // A meal's conversation is its person's: somebody else's answers would continue it as their own
     // turn, on her photos and her words.
     [Fact]

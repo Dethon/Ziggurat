@@ -13,6 +13,11 @@ public record ChannelMessage
     public string? AgentId { get; init; }
     public string? UserId { get; init; }
     public Principal? Principal { get; init; }
+
+    // The accounts service's assertion the channel carried, unverified: the conversation group checks
+    // it as the message arrives and nothing else reads it (ChannelMessageNotification.Assertion).
+    public string? Assertion { get; init; }
+
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     public string? Location { get; init; }

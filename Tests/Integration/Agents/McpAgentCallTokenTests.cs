@@ -1,8 +1,10 @@
 using System.ComponentModel;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Domain.Monitor;
 using Domain.Security;
 using Domain.Security.Signing;
 using Domain.Tools.SubAgents;
@@ -13,12 +15,14 @@ using Infrastructure.Metrics;
 using Mcp.Hosting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Moq;
 using Shouldly;
 using Tests.Integration.McpServers;
+using Tests.Unit.Domain;
 using Tests.Unit.Infrastructure.Helpers;
 
 namespace Tests.Integration.Agents;
@@ -29,6 +33,8 @@ namespace Tests.Integration.Agents;
 public class McpAgentCallTokenTests
 {
     private const string Alice = "a11ce0000000000000000000000000a1";
+    private const string Mallory = "ba11ba11ba11ba11ba11ba11ba11ba11";
+    private const string Home = "home";
 
     private sealed record GatedSettings(McpGateSettings Mcp) : IMcpHostSettings;
 
@@ -91,6 +97,91 @@ public class McpAgentCallTokenTests
         var call = Log(server).Calls.ShouldHaveSingleItem();
         call.Subject.ShouldBe(Alice);
         call.Conversation.ShouldBe("conv-alice");
+    }
+
+    // Who the turn acts for is what the accounts service vouched for as it arrived — however long the
+    // turn then runs: its calls name the person past the assertion's own expiry, because the agent
+    // checked it once, at the start, and signs every call as what it verified.
+    [Fact]
+    public async Task APersonsTurn_ActsForItsVerifiedPersonPastItsAssertionsExpiry()
+    {
+        var start = new DateTimeOffset(2026, 10, 30, 12, 0, 0, TimeSpan.Zero);
+        var clock = new FakeTimeProvider(start);
+        await using var server = await StartAsync(clock);
+        var assertion = TestAssertions.Of(
+            new Account(Home, Alice), ChannelIds.SignalR, now: start, lifetime: TimeSpan.FromMinutes(10));
+        var model = new ScriptedChatClient(
+            Call(RecordTool(server), "1", before: () => clock.Advance(TimeSpan.FromMinutes(15))),
+            Answer("Done"));
+
+        await MonitorAsync(
+            Agent(model, server.Endpoint, new CallTokens(TestSigningKeys.Store(TestSigningKeys.Agent), clock)),
+            TestAssertions.Verifier(clock),
+            new ChannelMessage
+            {
+                ConversationId = "conv-alice",
+                Content = "go",
+                Sender = "Alice",
+                ChannelId = ChannelIds.SignalR,
+                AgentId = "jonas",
+                // The channel names somebody else; the assertion is who the turn is for.
+                Principal = new Principal(ChannelIds.SignalR, Mallory, new Account(Home, Mallory)),
+                Assertion = assertion
+            });
+
+        var call = Log(server).Calls.ShouldHaveSingleItem();
+        call.Subject.ShouldBe(Alice);
+        call.TenantId.ShouldBe(Home);
+        call.At.ShouldBeGreaterThan(start + TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(30),
+            "the call was made after the assertion and its skew ran out");
+    }
+
+    // A satellite's speaker nobody recognised is the household's guest, signed as such with its
+    // household — never nobody, so a server that keeps the house working for the guest can.
+    [Fact]
+    public async Task AGuestsTurn_ActsAsTheHouseholdsGuest()
+    {
+        await using var server = await StartAsync(TimeProvider.System);
+        var model = new ScriptedChatClient(Call(RecordTool(server), "1"), Answer("Hecho"));
+
+        await MonitorAsync(
+            Agent(model, server.Endpoint, McpTestSecret.CallTokens),
+            TestAssertions.Verifier(),
+            new ChannelMessage
+            {
+                ConversationId = "conv-kitchen",
+                Content = "enciende la luz",
+                Sender = "kitchen",
+                ChannelId = ChannelIds.Voice,
+                AgentId = "nabu",
+                Principal = new Principal(ChannelIds.Voice, "household"),
+                Assertion = TestAssertions.OfGuest(Home, ChannelIds.Voice)
+            });
+
+        var call = Log(server).Calls.ShouldHaveSingleItem();
+        call.Subject.ShouldBe(IdentityClaims.GuestSubject);
+        call.TenantId.ShouldBe(Home);
+    }
+
+    // The turn through the monitor the agent host runs, on a channel that carries it as sent.
+    private static async Task MonitorAsync(McpAgent agent, AssertionVerifier assertions, ChannelMessage message)
+    {
+        await using var _ = agent;
+        var channel = new FakeChannelConnection { ChannelId = message.ChannelId };
+        channel.WriteUnsigned(message);
+        channel.Complete();
+        var monitor = new ChatMonitor(
+            [channel],
+            new FakeAgentFactory(agent),
+            new ChatThreadResolver(),
+            NoOpMetricsPublisher.Instance,
+            null,
+            NullLogger<ChatMonitor>.Instance,
+            assertions);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        channel.SentReplies.ShouldNotContain(r => r.ContentType == ReplyContentType.Error);
     }
 
     private static Task<RunningServer> StartAsync(TimeProvider clock) =>
@@ -168,7 +259,8 @@ public class McpAgentCallTokenTests
         public object? GetService(Type serviceType, object? serviceKey = null) => null;
     }
 
-    public sealed record LoggedCall(string Subject, string TokenId, DateTimeOffset ExpiresAt, DateTimeOffset At, string? Conversation);
+    public sealed record LoggedCall(
+        string Subject, string TokenId, DateTimeOffset ExpiresAt, DateTimeOffset At, string? Conversation, string TenantId);
 
     // What the server took each call to be, at the server's own time.
     public sealed class CallLog(TimeProvider clock)
@@ -191,7 +283,8 @@ public class McpAgentCallTokenTests
         {
             lock (_lock)
             {
-                _calls.Add(new LoggedCall(identity.Subject, identity.Id, identity.ExpiresAt, clock.GetUtcNow(), turn?.ConversationId));
+                _calls.Add(new LoggedCall(
+                    identity.Subject, identity.Id, identity.ExpiresAt, clock.GetUtcNow(), turn?.ConversationId, identity.TenantId));
             }
         }
     }
