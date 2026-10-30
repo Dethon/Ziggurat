@@ -1,8 +1,8 @@
-# 08: The smoke tier checks signing end to end
+# 09: The smoke tier checks signing end to end
 
 **What to build:** A key or wiring mistake is caught before a deploy. The smoke tests prove on a real stack that a call to a server with a forged `_meta` principal and no token is refused, and that a signed-in reply, Sugary and the dashboard work with assertions verified. Spec: `../spec.md` (Testing Decisions, seam 6).
 
-**Blocked by:** 04, 05, 06
+**Blocked by:** 05, 06, 07
 
 **Status:** ready-for-agent
 

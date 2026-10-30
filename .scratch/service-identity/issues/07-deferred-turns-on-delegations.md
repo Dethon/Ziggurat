@@ -1,8 +1,8 @@
-# 06: Deferred turns act on agent-signed delegations
+# 07: Deferred turns act on agent-signed delegations
 
 **What to build:** A schedule's fire, a login wake and a watch's fire act for a person only because that person's turn created them. When a turn creates or rewrites a schedule, starts a login handoff or sets a watch, the agent signs a delegation naming the account, tenant, kind, id and a digest of what the object does, and the server stores it; at fire time the agent verifies its own signature, the object and the digest. A command re-delegates stored objects after the agent's key is lost. Spec: `../spec.md` ("Deferred turns").
 
-**Blocked by:** 03, 04
+**Blocked by:** 04, 05
 
 **Status:** ready-for-agent
 
