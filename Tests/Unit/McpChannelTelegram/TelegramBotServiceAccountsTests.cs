@@ -1,4 +1,6 @@
 using Domain.DTOs.Channel;
+using Domain.Security;
+using Domain.Security.Signing;
 using Shouldly;
 using Telegram.Bot.Types;
 
@@ -27,6 +29,40 @@ public class TelegramBotServiceAccountsTests : IDisposable
         turn.Sender.ShouldBe("bob");
         turn.Principal.ShouldBe(new Principal("telegram", "bob", FakeTelegramAccounts.AccountOf("bob").Account));
     }
+
+    // The agent believes the accounts service's word, not the bot's: the turn carries the assertion
+    // the service answered with when it resolved the sender's linked number.
+    [Fact]
+    public async Task ALinkedSendersTurn_CarriesTheAccountsServicesAssertionOfThem()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(Update(TelegramPollingHarness.TextMessage("/hello", username: "bob", userId: TelegramPollingHarness.BobId)));
+
+        await _harness.RunAsync();
+
+        var turn = (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!;
+        (await VerifiedAsync(turn.Assertion)).Account.ShouldBe(FakeTelegramAccounts.AccountOf("bob").Account);
+    }
+
+    // The person an invite made is let in on the very next message, on the redemption's own answer.
+    [Fact]
+    public async Task AnInvitedPersonsFirstTurn_CarriesAnAssertionOfThem()
+    {
+        var invite = _harness.Accounts.Invite("Carol");
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(
+            Update(TelegramPollingHarness.TextMessage($"/start {invite}", username: "carol", userId: Carol)),
+            Update(TelegramPollingHarness.TextMessage("/what time is it", username: "carol", userId: Carol)));
+
+        await _harness.RunAsync();
+
+        var turn = (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!;
+        (await VerifiedAsync(turn.Assertion)).Account.ShouldBe(FakeTelegramAccounts.AccountOf("Carol").Account);
+    }
+
+    private static async Task<IdentityClaims> VerifiedAsync(string? assertion) =>
+        (await TestAssertions.Verifier().VerifyTurnAsync(assertion, "telegram", CancellationToken.None))
+        .ShouldBeOfType<TurnAdmission.Admitted>().Identity;
 
     // A username is its owner's to change and Telegram's to reassign, so only the linked number counts.
     [Fact]

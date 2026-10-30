@@ -22,6 +22,13 @@ paths:
   - "McpServerSugary/App/Person.cs"
   - "McpChannelSignalR/Hubs/SignedInConnectionFilter.cs"
   - "Agent/App/AgentApi.cs"
+  - "Domain/Monitor/ConversationGroup.cs"
+  - "Domain/Monitor/ChatMonitor.cs"
+  - "Infrastructure/Clients/Accounts/AccountsResolverClient.cs"
+  - "McpChannelSignalR/Hubs/ChatHub.cs"
+  - "McpChannelTelegram/Services/TelegramAccess.cs"
+  - "McpChannelVoice/Services/TranscriptDispatcher.cs"
+  - "McpServerSugary/Channel/SugaryChannel.cs"
 ---
 
 # Service identity: signing and verifying
@@ -74,7 +81,7 @@ vouched for, a turn whose channel named no account. Those are signed with `Ident
 `sub` = `IdentityClaims.NobodySubject` = `nobody` (not hex either), the one subject that may leave
 `tid` out — the verifier still refuses an empty subject, and an empty household for anyone else.
 `Account` is null for nobody as for the guest. Only a call token says nobody: the accounts service
-never signs one, and the agent's turn-start check (ticket 05) must refuse an assertion that does.
+never signs one, and the agent's turn-start check refuses an assertion that does (`NamesNobody`).
 
 ## Verifying
 
@@ -169,12 +176,13 @@ port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.
   `CallTokens` keeps one token per identity and server and reuses it until it nears expiry — a reply
   streamed in hundreds of `send_reply` calls costs one signature. Its clock is the wall clock
   (`TimeProvider.System`), not the agent's registered `TimeProvider`, which an eval pins.
-- **Who it names** is `CallIdentity.Of(turn)` over the context in the same `_meta`: today the
-  account on the turn's principal is the person and anything else is nobody — the voice guest
-  included, because nothing in the agent knows a guest's household. **Ticket 05 changes that one
-  method** to answer the identity the agent verified from the turn's assertion, carried on the
-  turn's `ConversationContext`; nothing else in the signing path moves. A worker carries its parent's
-  context verbatim (`SubAgentRunTool`), so it signs for its parent's person with no plumbing of its own.
+- **Who it names** is `CallIdentity.Of(turn)` over the context in the same `_meta`: the
+  `ConversationContext.Identity` the agent verified from the turn's assertion as it arrived — the
+  person, or the household's guest *with its household* — for as long as the turn runs. A context
+  with none is a turn no assertion stands behind (a fire, a login wake, a watch) and is read as
+  before off its stamped principal: the account it carries, else nobody. **Ticket 07 replaces that
+  fallback** with the delegation it verifies. A worker carries its parent's context verbatim
+  (`SubAgentRunTool`), so it signs for its parent's person with no plumbing of its own.
 - **The server checks in `CallTokenGate`**, which `AddMcpHost` installs after the credential gate: an
   incoming message filter on `tools/call` alone, so the refusal is a JSON-RPC error
   (`McpProtocolException`, `InvalidRequest`, "Refused (<TokenRefusal>): …") the call-tool error
@@ -185,7 +193,8 @@ port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.
   metrics. The verified claims go on the message's `Items`, which `CallTurn` reads; checked once on
   arrival, so a long command or a held approval runs to its end. The gate's clock is the wall clock
   unless a test registers one under `CallTokenGate.ClockKey`.
-- **`CallTurn.Turn`** is the `_meta` context with its `Principal` replaced by the token's: a person
+- **`CallTurn.Turn`** is the `_meta` context with its `Principal` and its `Identity` replaced by the
+  token's (the identity the agent wrote there is for its own signing, never a server's belief): a person
   is `Principal(chn, sub, Account(tid, sub))` — the channel's own name for them is not signed, so it
   is not kept — the guest `Principal(chn, "guest")`, nobody none. `call.Identity` is the verified
   claims themselves. `Principal.Of` still falls back to the context's `UserId` for a person's own
@@ -202,3 +211,58 @@ port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.
   its channels only once it is listening (`ChannelConnectionHost` waits for `ApplicationStarted`), or a
   channel server's first fetch of its keys would fail and refuse calls until the refetch interval.
   There is no rotation command for the agent's key yet.
+
+## Channels and the agent
+
+No turn acts for a person the accounts service did not vouch for. A channel carries the service's
+assertion on the turn's notification (`ChannelMessageNotification.Assertion`, mapped onto
+`ChannelMessage.Assertion` by `McpChannelConnection`) and the agent believes that, never the
+notification's `Principal`.
+
+| Channel | Where its assertion comes from |
+|---|---|
+| Chat hub | a fresh one **per turn** from the resolution API (`signalr`, the connection's account): the connection's own was checked as it arrived and lives ten minutes, the connection hours; one the service cannot give ends the stream with an error and sends nothing |
+| Telegram | the resolution's answer that admitted the sender, or a redemption's for somebody just linked, kept by `TelegramAccess` for `LinkCache:Linked` — at most half an assertion's life (conformance-checked) |
+| Voice | the recognised speaker's resolution, else `POST /accounts/internal/guest` (`IAccountResolver.GuestAsync`); an outage leaves none, and the agent refuses and reports the turn |
+| Sugary | the request's own `X-Ziggurat-Assertion` (`Person.Assertion`), the estimate's and each answer's |
+
+**The check** is `AssertionVerifier.VerifyTurnAsync(assertion, channel)` — the agent's
+`AddAssertionVerifier` singleton, so the copy of the accounts service's keys the registration API
+already uses: `TokenIssuers.Accounts`'s signature, `TokenAudiences.Assertion`, in date with 30 s
+of skew, `chn` the id of the connection the message came on (`WrongChannel`), and a person or the
+guest — an assertion naming nobody is refused (`NamesNobody`), though `TokenVerifier` alone would
+pass it. It answers a `TurnAdmission`: `Admitted(identity)` with the claims out of their envelope
+(`IdentityClaims.Person`/`.Guest`, no dates, no id), or `Refused(reason)`, a `TokenRefusal`'s name
+or one of those two.
+
+**Where**: `ConversationGroup`'s message pump, as each message arrives and before it is queued —
+not when its turn comes up, because a turn queued behind a long one (the chat client sends while a
+reply streams) would otherwise be refused for the minutes it waited. Once admitted, the message's
+principal keeps the channel's own `UserId` (the Telegram approval router's key) and takes the
+`Account` from the identity (none for the guest), so the agent factory, memory recall and the review
+copy's owner all read the verified account; the identity rides `Turn` into the turn's
+`ConversationContext.Identity`, which is where `CallIdentity` reads it. No ambient state: a worker
+inherits it by carrying its parent's context. The verifier's clock is the registered
+`TimeProvider` (the wall clock in the agent host), and the check is never repeated, so a turn acts
+for its person after its assertion has run out.
+
+**Refusal**: logged at warning, published as an `ErrorEvent` (`ErrorType`
+`ChatMonitor.AssertionRefusedErrorType` = `AssertionRefused`, `Service` `agent`, the message naming
+the channel, the conversation and the reason), and answered on the channel as a failed turn ends —
+an `Error` reply (`ConversationGroup.RefusedTurnAnswer`) then `StreamComplete`, under the message's
+`TurnKey` or a minted one — so a browser, a satellite or a waiting app request is not left waiting.
+Nothing is built, minted or recalled for it.
+
+**Not checked**: a chat command (`/clear`, `/cancel`, a channel's cancel) is no turn and acts for
+nobody. A message with `Origin` set — a schedule's fire, a login wake, a watch, a download — carries
+no assertion and is queued as its server stamped it, with no identity, so its calls are signed off
+its stamped principal as before. That is ticket 07's seam: it checks the delegation the agent
+signed for the object right there in `ConversationGroup.AdmitAsync` and puts what verified on the
+turn the same way.
+
+**Tests and the eval.** `FakeChannelConnection.WriteMessage` sends a person's message as a channel
+server would, with an assertion signed by the accounts test key for its channel (the principal's
+account, or the household guest's); `WriteUnsigned` sends one without. `TestAssertions.Verifier()`
+is the verifier every monitor fixture is built with. The eval drives `McpAgent` below the monitor,
+so `EvalRun.Turn` stamps the identity the check answers for the eval account's assertion on the
+turn's channel (`EvalRunTests` holds the two to the same claims); its fires carry none.

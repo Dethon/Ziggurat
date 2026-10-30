@@ -105,7 +105,8 @@ public class ChatMonitorScheduleMetricsTests
             threadResolver,
             publisher,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
         await publisher.DisposeAsync();
@@ -170,5 +171,6 @@ public class ChatMonitorScheduleMetricsTests
         MonitorTestMocks.CreateThreadResolver(),
         metricsPublisher.Object,
         null,
-        new Mock<ILogger<ChatMonitor>>().Object);
+        new Mock<ILogger<ChatMonitor>>().Object,
+        TestAssertions.Verifier());
 }

@@ -207,38 +207,46 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         (await SingleTurnAsync()).Principal.ShouldBe(new Principal("signalr", Fran, new Account(Home, Fran)));
     }
 
-    // Asked once, as the connection arrives, rather than on every message.
+    // The connection's own assertion was checked as it arrived and lives ten minutes, while a chat
+    // client stays connected for hours: every turn carries one the accounts service signed for it,
+    // naming the connection's person on the chat hub's channel, which is what the agent believes.
     [Fact]
-    public async Task ThePersonsName_IsAskedOncePerConnection()
+    public async Task EveryTurn_CarriesAFreshAssertionOfTheConnectionsPerson()
     {
-        _accounts.Names[Fran] = "Fran";
         _sessionService.StartSession("topic-1", "jack", 7, 42, null);
         var connection = await ConnectAsync(SignedIn(), out _);
         await ReceiveAsync();
 
         Send(connection, "one");
-        await SingleTurnAsync();
+        var first = await SingleTurnAsync();
         (await connection.InvokeAsync<bool>("EnqueueMessage", "topic-1", "two", null, null, null)).ShouldBeTrue();
-        await SingleTurnAsync();
+        var second = await SingleTurnAsync();
 
-        _accounts.Asked.ShouldBe([("signalr", Fran)]);
+        _accounts.Asked.Distinct().ShouldBe([("signalr", Fran)]);
+        first.Assertion.ShouldBe(_accounts.Issued[^2]);
+        second.Assertion.ShouldBe(_accounts.Issued[^1]);
+        second.Assertion.ShouldNotBe(first.Assertion);
+        var verified = await TestAssertions.Verifier().VerifyTurnAsync(second.Assertion, "signalr", CancellationToken.None);
+        verified.ShouldBeOfType<TurnAdmission.Admitted>().Identity.Account.ShouldBe(new Account(Home, Fran));
     }
 
-    // A name the accounts service could not give is no reason to turn a signed-in person away: the
-    // headers already said who they are, so the turn goes out under their id.
+    // A connection whose person the accounts service cannot vouch for right now still opens — a name
+    // it could not give turns nobody away — but no turn leaves without the service's word: the
+    // stream ends in an error, and the agent is sent nothing it would have to refuse.
     [Fact]
-    public async Task WhenTheNameCannotBeResolved_TheTurnIsSentUnderTheAccountsId()
+    public async Task WhenThePersonCannotBeVouchedFor_TheTurnIsAnsweredWithAnErrorAndNotSent()
     {
         _accounts.Fails = true;
         _sessionService.StartSession("topic-1", "jack", 7, 42, null);
         var connection = await ConnectAsync(SignedIn(), out _);
         await ReceiveAsync();
 
-        Send(connection, "hello");
+        var chunks = await ReadAllAsync(connection.StreamAsync<ChatStreamMessage>(
+            "SendMessage", "topic-1", "hello", null, null, null));
 
-        var turn = await SingleTurnAsync();
-        turn.Sender.ShouldBe(Fran);
-        turn.Principal.ShouldBe(new Principal("signalr", Fran, new Account(Home, Fran)));
+        chunks.ShouldContain(c => !string.IsNullOrEmpty(c.Error) && c.IsComplete);
+        await Eventually.Settle();
+        (await ReceiveAsync()).ShouldBeEmpty();
     }
 
     [Fact]
@@ -276,21 +284,60 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         return turns.ShouldHaveSingleItem();
     }
 
+    // The accounts service as the hub asks it: every account it is asked about is somebody, under the
+    // name a test gave it or its id, answered with a fresh assertion of them on the channel asked
+    // about — each one kept, so a test can tell which answer a turn carried.
     private sealed class FakeAccountResolver : IAccountResolver
     {
+        private readonly Lock _lock = new();
+        private readonly List<(string Channel, string Identity)> _asked = [];
+        private readonly List<string> _issued = [];
+
         public Dictionary<string, string> Names { get; } = [];
-        public List<(string Channel, string Identity)> Asked { get; } = [];
         public bool Fails { get; set; }
+
+        public IReadOnlyList<(string Channel, string Identity)> Asked
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return [.. _asked];
+                }
+            }
+        }
+
+        public IReadOnlyList<string> Issued
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    return [.. _issued];
+                }
+            }
+        }
 
         public Task<ResolvedAccount?> ResolveAsync(string channel, string identity, CancellationToken ct)
         {
-            Asked.Add((channel, identity));
-            return Fails
-                ? Task.FromException<ResolvedAccount?>(new HttpRequestException("accounts unreachable"))
-                : Task.FromResult(Names.TryGetValue(identity, out var name)
-                    ? new ResolvedAccount(new Account(Home, identity), name)
-                    : null);
+            lock (_lock)
+            {
+                _asked.Add((channel, identity));
+                if (Fails)
+                {
+                    return Task.FromException<ResolvedAccount?>(new HttpRequestException("accounts unreachable"));
+                }
+
+                var account = new Account(Home, identity);
+                var assertion = TestAssertions.Of(account, channel);
+                _issued.Add(assertion);
+                return Task.FromResult<ResolvedAccount?>(
+                    new ResolvedAccount(account, Names.GetValueOrDefault(identity, identity), assertion));
+            }
         }
+
+        public Task<ResolvedGuest> GuestAsync(string channel, CancellationToken ct) =>
+            throw new InvalidOperationException("the chat hub has no guest");
     }
 
     private Task<HubConnection> ConnectAsync(IReadOnlyDictionary<string, string> headers, out Task<Exception?> closed)

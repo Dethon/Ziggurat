@@ -25,9 +25,11 @@ public static class CallTurn
         public IdentityClaims? Identity =>
             call.Items.TryGetValue(IdentityKey, out var identity) ? identity as IdentityClaims : null;
 
+        // The identity the agent wrote into the context for its own signing is replaced as the
+        // principal is: what a server sees there is the token's, or nobody's.
         public ConversationContext? Turn =>
             ConversationScope.Parse(call.Params?.Meta) is { } claimed
-                ? claimed with { Principal = PrincipalOf(call.Identity) }
+                ? claimed with { Principal = PrincipalOf(call.Identity), Identity = call.Identity }
                 : null;
 
         // The namespace a stateful tool caches the turn's state under (ConversationScope).

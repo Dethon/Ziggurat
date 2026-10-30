@@ -29,7 +29,8 @@ public class ChatMonitorConfigPatchTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 

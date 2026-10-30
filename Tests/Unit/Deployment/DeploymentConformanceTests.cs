@@ -1,3 +1,4 @@
+using System.Globalization;
 using Accounts.Internal;
 using Agent.App;
 using Domain.DTOs.Channel;
@@ -633,6 +634,31 @@ public class DeploymentConformanceTests
 
         ports.ShouldNotBeEmpty();
         ports.ShouldAllBe(p => p.BindAddress == "127.0.0.1");
+    }
+
+    // The Telegram bot carries the assertion of the answer it admitted a sender on, which it keeps for
+    // LinkCache:Linked. An assertion lives AssertionLifetimeMinutes from when the accounts service
+    // signed it and the agent refuses a turn whose assertion has run out, so a kept answer must leave
+    // its assertion most of its life for the hop to the agent: at most half of it spent in the cache.
+    [Fact]
+    public void TheTelegramBotsKeptAnswer_LeavesItsAssertionHalfItsLifetime()
+    {
+        var linked = TimeSpan.Parse(
+            ShippedSetting("McpChannelTelegram", "LinkCache", "Linked").GetString()!, CultureInfo.InvariantCulture);
+        var lifetime = TimeSpan.FromMinutes(ShippedSetting("Accounts", "AssertionLifetimeMinutes").GetInt32());
+
+        linked.ShouldBeLessThanOrEqualTo(lifetime / 2);
+    }
+
+    private static System.Text.Json.JsonElement ShippedSetting(string project, params string[] path)
+    {
+        var file = Path.Combine(Tests.E2E.Fixtures.TestHelpers.FindSolutionRoot(), project, "appsettings.json");
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(file),
+            new System.Text.Json.JsonDocumentOptions
+            {
+                CommentHandling = System.Text.Json.JsonCommentHandling.Skip, AllowTrailingCommas = true
+            });
+        return path.Aggregate(document.RootElement, (element, name) => element.GetProperty(name)).Clone();
     }
 
     // The fixed keys the test and eval stacks sign with are private keys anyone with the repository

@@ -42,6 +42,7 @@ public class ChatMonitorAgentRoutingTests
             new Mock<IMetricsPublisher>().Object,
             null,
             new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier(),
             _defaults);
 
         await monitor.Monitor(CancellationToken.None);
@@ -74,6 +75,7 @@ public class ChatMonitorAgentRoutingTests
             new Mock<IMetricsPublisher>().Object,
             null,
             new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier(),
             _defaults);
 
         await monitor.Monitor(CancellationToken.None);
@@ -108,6 +110,7 @@ public class ChatMonitorAgentRoutingTests
             .AddSingleton(new Mock<IMetricsPublisher>().Object)
             .AddSingleton(recallHook.Object)
             .AddSingleton(_defaults)
+            .AddSingleton(TestAssertions.Verifier())
             .AddSingleton<ChatMonitor>()
             .BuildServiceProvider();
 

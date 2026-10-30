@@ -57,6 +57,7 @@ public sealed class ChatHubDictationTests : IDisposable
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             _dictation,
+            new VouchingAccounts(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller()

@@ -49,6 +49,7 @@ public class ChatHubNotLiveTests
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
+            new VouchingAccounts(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller()
@@ -117,6 +118,7 @@ public class ChatHubNotLiveTests
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
+            new VouchingAccounts(),
             factory.CreateLogger<ChatHub>())
         {
             Context = new SignedInCaller()
