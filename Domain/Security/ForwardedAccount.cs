@@ -8,9 +8,9 @@ namespace Domain.Security;
 // the client sent. An app believes them because only the proxy reaches it; one that is reached
 // without them knows nobody.
 //
-// Spelled here because every app behind the check reads them and none references the accounts
-// service, which spells them again for itself; the conformance check holds the proxy's copy_headers
-// to this list.
+// Spelled here because every app behind the check reads them, and the accounts service's session
+// check answers them by these names; the conformance check holds the proxy's copy_headers to this
+// list.
 public sealed record ForwardedAccount(string UserId, string TenantId, IReadOnlyList<string> Roles)
 {
     public const string UserHeader = "X-Ziggurat-User";
