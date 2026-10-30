@@ -304,6 +304,24 @@ public class DeploymentConformanceTests
         }
     }
 
+    // Every app behind the session check believes the person the signed assertion names, so each is
+    // told where the accounts service publishes the keys it verifies with — on the compose network,
+    // where the proxy's 404 above does not reach — and the default those apps would otherwise fall
+    // back on is the same address.
+    [Theory]
+    [InlineData("mcp-channel-signalr")]
+    [InlineData("mcp-sugary")]
+    [InlineData("observability")]
+    [InlineData("agent")]
+    public void TheAppsThatBelieveTheAssertion_FetchTheAccountsServicesKeys(string service)
+    {
+        var expected = $"http://accounts:8080{InternalApi.JwksPath}";
+
+        DeploymentFiles.Compose().Service(service).Environment.GetValueOrDefault("ACCOUNTS__JWKSURL")
+            .ShouldBe(expected, service);
+        AssertionVerifier.DefaultJwksUrl.ShouldBe(expected);
+    }
+
     // The handle a request path lands on, as Caddy sorts handle blocks: the most specific path
     // matcher that matches it, else the catch-all.
     private static CaddyRoute? RouteFor(CaddyHost host, string path) =>
@@ -348,7 +366,7 @@ public class DeploymentConformanceTests
 
         host.ForwardAuth.ShouldNotBeNull();
         host.ForwardAuth.Upstream.ShouldBe("accounts:8080");
-        host.ForwardAuth.Uri.ShouldBe("/accounts/verify?role=operator&channel=dashboard");
+        host.ForwardAuth.Uri.ShouldBe($"/accounts/verify?role=operator&channel={AppChannels.Dashboard}");
         host.ForwardAuth.CopiedHeaders.ShouldBe(ForwardedAccount.Headers, ignoreOrder: true);
         host.Routes.ShouldNotBeEmpty();
         host.Routes.ShouldAllBe(r => r.Upstream == "observability:8080");
@@ -366,7 +384,7 @@ public class DeploymentConformanceTests
     [InlineData(MainHost, "/hubs/*", ChannelIds.SignalR)]
     [InlineData(MainHost, "/api/attachments*", ChannelIds.SignalR)]
     [InlineData(MainHost, "/api/dictation*", ChannelIds.SignalR)]
-    [InlineData(SexyHost, null, "sexytime")]
+    [InlineData(SexyHost, null, AppChannels.SexyTime)]
     [InlineData(SexyHost, "/hubs/*", ChannelIds.SignalR)]
     [InlineData(SexyHost, "/api/attachments*", ChannelIds.SignalR)]
     [InlineData(SexyHost, "/api/dictation*", ChannelIds.SignalR)]

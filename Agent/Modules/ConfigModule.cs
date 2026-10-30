@@ -1,6 +1,7 @@
 using System.CommandLine;
 using Agent.Settings;
 using Domain.Security.Signing;
+using Infrastructure.Clients.Accounts;
 using RetentionSettings = Domain.DTOs.RetentionSettings;
 
 namespace Agent.Modules;
@@ -27,7 +28,9 @@ public static class ConfigModule
             .AddAgent(settings)
             .AddSubAgents(settings.SubAgents)
             .AddMemory(config)
-            .AddChatMonitoring(settings, cmdParams);
+            .AddChatMonitoring(settings, cmdParams)
+            // The registration API's person is the accounts service's assertion SexyTime forwards.
+            .AddAssertionVerifier(settings.Accounts.JwksUrl);
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)

@@ -19,6 +19,10 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     private readonly List<IBrowserContext> _mine = [];
 
     protected virtual TimeSpan ContainerStartupTimeout => TimeSpan.FromMinutes(5);
+
+    // Headers every request a page makes carries, as a proxy in front of the app would add them: a
+    // stack with no proxy hands its app what the session check would have.
+    protected virtual IEnumerable<KeyValuePair<string, string>>? PageHeaders => null;
     protected virtual TimeSpan ImageBuildTimeout => TimeSpan.FromMinutes(20);
 
     public async Task InitializeAsync()
@@ -106,7 +110,8 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             HasTouch = hasTouch || isMobile,
             IsMobile = isMobile,
             DeviceScaleFactor = isMobile ? 3 : null,
-            ViewportSize = isMobile ? new ViewportSize { Width = 390, Height = 844 } : null
+            ViewportSize = isMobile ? new ViewportSize { Width = 390, Height = 844 } : null,
+            ExtraHTTPHeaders = PageHeaders
         });
         _mine.Add(context);
         // The fake UI already answers the prompt; granting as well covers the permissions API,

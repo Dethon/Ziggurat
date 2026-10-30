@@ -1,16 +1,18 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
-using Domain.Security;
+using Domain.DTOs.Channel;
+using McpServerSugary.Channel;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.McpServerTests;
 
-// The app's API believes the person the proxy's session check named, in the three headers the proxy
-// copies onto every request, and nothing else: there is no code to type and no cookie of its own. A
-// request without them did not come through the check and is answered 401, which is what sends the
-// app to sign in. /mcp keeps the deployment secret, and the headers do not open it.
+// The app's API believes the person the proxy's session check named in the assertion it signs and
+// the proxy copies onto every request, and nothing else: not the three plain headers beside it, no
+// code to type and no cookie of its own. A request without a believable assertion did not come
+// through the check and is answered 401, which is what sends the app to sign in. /mcp keeps the
+// deployment secret, and the headers do not open it.
 public class SugaryAppAccessTests
 {
     public static TheoryData<string, string> ApiRoutes => new()
@@ -76,18 +78,54 @@ public class SugaryAppAccessTests
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
-    // The check always answers all three, so a request carrying fewer did not come through it.
-    [Theory]
-    [InlineData(ForwardedAccount.UserHeader)]
-    [InlineData(ForwardedAccount.TenantHeader)]
-    [InlineData(ForwardedAccount.RolesHeader)]
-    public async Task ARequestMissingOneOfTheHeaders_IsRefused(string missing)
+    // The three plain headers are what any container on the compose network could write: without
+    // the accounts service's signature over them, a request is nobody.
+    [Fact]
+    public async Task ARequestWithThePlainHeadersButNoAssertion_IsRefused()
     {
         await using var server = await SugaryServer.StartAsync();
-        var browser = server.As(SugaryServer.Her);
-        browser.DefaultRequestHeaders.Remove(missing);
+        var browser = server.Forwarded(SugaryServer.Her, assertion: null);
 
         (await browser.GetAsync("/api/meals")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    // Signed by a key the accounts service does not publish, signed for another app's route, the
+    // household's guest, or out of date: none of them is a person signed in to Sugary.
+    public static TheoryData<string, string> UnbelievedAssertions => new()
+    {
+        { "forged", TestAssertions.Forged(SugaryServer.Her, SugaryChannel.ChannelId) },
+        { "for the chat hub", TestAssertions.Of(SugaryServer.Her, ChannelIds.SignalR) },
+        { "the guest", TestAssertions.OfGuest(SugaryServer.Her.TenantId, SugaryChannel.ChannelId) },
+        {
+            "expired", TestAssertions.Of(SugaryServer.Her, SugaryChannel.ChannelId,
+                now: DateTimeOffset.UtcNow.AddHours(-1), lifetime: TimeSpan.FromMinutes(10))
+        }
+    };
+
+    [Theory]
+    [MemberData(nameof(UnbelievedAssertions))]
+    public async Task ARequestWhoseAssertionIsNotBelieved_IsRefused(string _, string assertion)
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var browser = server.Forwarded(SugaryServer.Her, assertion);
+
+        (await browser.GetAsync("/api/meals")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    // Who the request is from is what was signed; plain headers naming someone else change nothing.
+    [Fact]
+    public async Task AnAssertionNamingHer_UnderHeadersNamingHim_ActsForHer()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var her = server.As(SugaryServer.Her);
+        (await her.PostAsJsonAsync("/api/meals", Meal("her paella"))).StatusCode.ShouldBe(HttpStatusCode.Created);
+
+        var spoofed = server.Forwarded(
+            SugaryServer.Him, TestAssertions.Of(SugaryServer.Her, SugaryChannel.ChannelId));
+
+        (await spoofed.GetFromJsonAsync<JsonArray>("/api/meals"))!.Single()!["notes"]!.GetValue<string>()
+            .ShouldBe("her paella");
+        (await server.As(SugaryServer.Him).GetFromJsonAsync<JsonArray>("/api/meals"))!.ShouldBeEmpty();
     }
 
     [Fact]
@@ -129,6 +167,23 @@ public class SugaryAppAccessTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
+
+    private static JsonObject Meal(string notes) => new()
+    {
+        ["eatenAt"] = "2026-10-11T13:30:00+02:00",
+        ["notes"] = notes,
+        ["outcome"] = "unknown",
+        ["items"] = new JsonArray(new JsonObject
+        {
+            ["name"] = "rice",
+            ["grams"] = 150,
+            ["carbsPer100g"] = 28,
+            ["carbsLow"] = 32,
+            ["carbs"] = 42,
+            ["carbsHigh"] = 52,
+            ["source"] = "estimate"
+        })
+    };
 
     [Fact]
     public async Task AnUnknownApiRoute_IsNotAnsweredWithTheApp()

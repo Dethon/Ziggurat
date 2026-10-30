@@ -89,7 +89,8 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
                 new AttachmentStore(attachmentSettings, new RetentionSettings(), new FakeConversationLiveness(), time, NullLogger<AttachmentStore>.Instance),
                 NullLogger<AttachmentService>.Instance))
             .AddSingleton(new RetentionSettings())
-            .AddSingleton(new DictationSettings());
+            .AddSingleton(new DictationSettings())
+            .AddSingleton(TestAssertions.Verifier());
 
         _app = builder.Build();
         _app.MapHub<ChatHub>("/hubs/chat");
@@ -742,6 +743,8 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
                 options.Headers[ForwardedAccount.UserHeader] = userId;
                 options.Headers[ForwardedAccount.TenantHeader] = Home;
                 options.Headers[ForwardedAccount.RolesHeader] = string.Join(',', ["member", .. roles]);
+                options.Headers[ForwardedAccount.AssertionHeader] =
+                    TestAssertions.Of(new Account(Home, userId), ChannelIds.SignalR, ["member", .. roles]);
             })
             .Build();
         _connections.Add(connection);

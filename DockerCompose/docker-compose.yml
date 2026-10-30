@@ -493,6 +493,9 @@ services:
       MCP__AUDIENCE: mcp-channel-signalr
       MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
       Dictation__Transcription__Model: *stt-model
+      # Where the accounts service publishes the keys its assertions verify with: this app believes
+      # the person X-Ziggurat-Assertion names, never the plain headers beside it.
+      ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -638,9 +641,10 @@ services:
         max-file: "3"
     container_name: mcp-sugary
     # A person's phone reaches the app through Caddy at sugary.herfluffness.com, and nothing else
-    # reaches it: the app believes the person the proxy's session check names in the X-Ziggurat-*
-    # headers, which a caller past the proxy could set to anybody. Local runs publish it on loopback
-    # through docker-compose.override.ports.yml.
+    # reaches it: the app believes the person the proxy's session check signs in X-Ziggurat-Assertion,
+    # verified against the accounts service's keys, never the plain X-Ziggurat-* headers a caller past
+    # the proxy could set to anybody. Local runs publish it on loopback through
+    # docker-compose.override.ports.yml.
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSugary/Dockerfile
@@ -670,6 +674,9 @@ services:
       # A tool call's token: the agent's, for this name, checked against the keys it publishes.
       MCP__AUDIENCE: mcp-sugary
       MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
+      # Where the accounts service publishes the keys its assertions verify with: this app believes
+      # the person X-Ziggurat-Assertion names, never the plain headers beside it.
+      ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -886,6 +893,9 @@ services:
       MCP__SECRETS__mcp-sugary: ${MCP_SECRET_SUGARY}
       MCP__SECRETS__mcp-channel-voice: ${MCP_SECRET_CHANNEL_VOICE}
       AGENTAPI__SHAREDSECRET: ${AGENTAPI__SHAREDSECRET}
+      # Where the accounts service publishes the keys its assertions verify with: the registration
+      # API acts for the person the X-Ziggurat-Assertion SexyTime's server forwards names.
+      ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
     # The sandbox's network too, which only the two of them are on.
     networks:
       - jackbot
@@ -964,6 +974,9 @@ services:
       LemonadeChat__ApiKey: ${LemonadeChat__ApiKey}
       <<: *timezone
       REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      # Where the accounts service publishes the keys its assertions verify with: the dashboard
+      # serves only the operator X-Ziggurat-Assertion names, never the plain headers beside it.
+      ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
       # LemonadeChat__ApiUrl arrives through .env, as it does for the agent: the probe row for
       # the Lemonade chat host exists only when that line is set. A literal here would win over
       # .env and keep the probe off.
