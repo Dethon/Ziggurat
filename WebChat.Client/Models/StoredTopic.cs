@@ -28,6 +28,13 @@ public class StoredTopic
     // client holding that conversation's history.
     public string? LastMessageSnippet { get; set; }
 
+    // Whose the topic is and whether the household sees it, as the server holds them: the share
+    // toggle shows on the owner's own topics, and a shared row of someone else's says who began it.
+    public string? OwnerId { get; set; }
+    public string? TenantId { get; set; }
+    public bool Shared { get; set; }
+    public string? OwnerName { get; set; }
+
     // True while the name is the stand-in a conversation started by a file was given: the file's
     // own name, because at that moment nothing had been typed. The first message with text takes
     // the name over. Not part of the metadata, so it never survives a reload — by then the
@@ -53,7 +60,11 @@ public class StoredTopic
             SpaceSlug = metadata.SpaceSlug,
             LastMessageSnippet = metadata.LastMessageSnippet,
             MessageCount = metadata.MessageCount,
-            ReadPosition = metadata.ReadPosition
+            ReadPosition = metadata.ReadPosition,
+            OwnerId = metadata.OwnerId,
+            TenantId = metadata.TenantId,
+            Shared = metadata.Shared,
+            OwnerName = metadata.OwnerName
         };
     }
 
@@ -70,6 +81,10 @@ public class StoredTopic
             SpaceSlug,
             LastMessageSnippet,
             MessageCount,
-            ReadPosition);
+            ReadPosition,
+            OwnerId,
+            TenantId,
+            Shared,
+            OwnerName);
     }
 }

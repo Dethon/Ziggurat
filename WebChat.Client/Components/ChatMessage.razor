@@ -41,10 +41,11 @@
         if (string.IsNullOrEmpty(Message.SenderId))
             return (null, "Anonymous");
 
-        var user = UserIdentityStore.State.AvailableUsers
-            .FirstOrDefault(u => u.Id == Message.SenderId);
-
-        return (user?.AvatarUrl, Message.SenderId);
+        // The account names and draws its own person; anyone else in a shared topic is the id the
+        // hub stamped until the client can ask the accounts service about them too.
+        return UserIdentityStore.State.SignedIn is { } me && me.UserId == Message.SenderId
+            ? (me.AvatarUrl, me.DisplayName)
+            : (null, Message.SenderId);
     }
 
     private string GetMessageClass()
@@ -86,7 +87,7 @@
 
     private string? GetTooltipText()
     {
-        return Message.Role == "user" ? Message.SenderId : null;
+        return Message.Role == "user" ? GetSenderInfo().DisplayName : null;
     }
 
     private string? GetFormattedTimestamp()

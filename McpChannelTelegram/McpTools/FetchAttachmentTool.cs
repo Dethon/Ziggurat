@@ -7,8 +7,8 @@ using Telegram.Bot;
 namespace McpChannelTelegram.McpTools;
 
 // Telegram is the store, so this is the whole of it: no upload store, no volume, no sweeper and
-// no retention on this channel (ADR 0022). A reference is `<agentId>/<file id>`, and the bytes are
-// asked of Telegram at the moment the agent wants them.
+// no retention on this channel (ADR 0022). A reference names the agent and the file id
+// (TelegramReference), and the bytes are asked of Telegram at the moment the agent wants them.
 //
 // Hidden from the model like every other channel-protocol tool.
 [McpServerToolType]
@@ -23,15 +23,11 @@ public sealed class FetchAttachmentTool
     {
         var logger = services.GetRequiredService<ILogger<FetchAttachmentTool>>();
 
-        var separator = attachmentId.IndexOf('/');
-        if (separator <= 0 || separator == attachmentId.Length - 1)
+        if (TelegramReference.Parse(attachmentId) is not var (agentId, fileId))
         {
             logger.LogWarning("Attachment reference {AttachmentId} does not name an agent and a file", attachmentId);
             return string.Empty;
         }
-
-        var agentId = attachmentId[..separator];
-        var fileId = attachmentId[(separator + 1)..];
 
         var botClient = services.GetRequiredService<BotRegistry>().FindBotForAgent(agentId);
         if (botClient is null)

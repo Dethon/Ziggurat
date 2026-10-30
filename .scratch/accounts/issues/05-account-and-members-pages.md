@@ -4,10 +4,10 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Revoking a device ends that session; revoking a passkey ends every session it began
-- [ ] An invite enrolls a person with the named role and display name; a used or expired invite refuses
-- [ ] A recovery link adds a passkey to an existing person
-- [ ] A member is refused the members page
-- [ ] Everyone in the household can see who holds "sees all conversations"
+- [x] Revoking a device ends that session; revoking a passkey ends every session it began
+- [x] An invite enrolls a person with the named role and display name; a used or expired invite refuses
+- [x] A recovery link adds a passkey to an existing person
+- [x] A member is refused the members page
+- [x] Everyone in the household can see who holds "sees all conversations"

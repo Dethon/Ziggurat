@@ -109,7 +109,10 @@ public sealed record ComposeService(
     IReadOnlyList<string> EnvFiles,
     IReadOnlyList<string> Volumes,
     IReadOnlyList<string> DependsOn,
-    IReadOnlyList<string> Healthcheck)
+    IReadOnlyList<string> Healthcheck,
+    string? User,
+    IReadOnlyList<string> Profiles,
+    IReadOnlyList<string> Networks)
 {
     public bool TakesWholeSecretsFile => EnvFiles.Any(f => Path.GetFileName(f) == ".env");
 
@@ -125,7 +128,22 @@ public sealed record ComposeService(
             YamlSequenceNode seq => [.. seq.Children.Select(c => ((YamlScalarNode)c).Value!)],
             _ => []
         },
-        Child(node, "healthcheck") is YamlMappingNode health ? Sequence(health, "test") : []);
+        Child(node, "healthcheck") is YamlMappingNode health ? Sequence(health, "test") : [],
+        Child(node, "user") is YamlScalarNode user ? user.Value : null,
+        Sequence(node, "profiles"),
+        NetworksOf(node));
+
+    // A list of names or a map of them to their settings; none at all is compose's default network,
+    // and a service on another network mode (the host's) is on no compose network.
+    private static IReadOnlyList<string> NetworksOf(YamlMappingNode node) =>
+        Child(node, "network_mode") is not null
+            ? []
+            : Child(node, "networks") switch
+            {
+                YamlMappingNode map => [.. map.Children.Keys.Select(k => ((YamlScalarNode)k).Value!)],
+                YamlSequenceNode seq => [.. seq.Children.Select(c => ((YamlScalarNode)c).Value!)],
+                _ => ["default"]
+            };
 
     private static YamlNode? Child(YamlMappingNode node, string key) =>
         node.Children.TryGetValue(new YamlScalarNode(key), out var child) ? child : null;
@@ -170,10 +188,52 @@ public sealed record ComposeService(
 }
 
 // A handle block of one proxied host: its path matcher (null for the catch-all), where it proxies
-// to, and its whole body, so a check can ask what else stands in front of the upstream.
-public sealed record CaddyRoute(string? Matcher, string? Upstream, string Body);
+// to, the session check it asks first if any, and its whole body, so a check can ask what else
+// stands in front of the upstream.
+public sealed record CaddyRoute(string? Matcher, string? Upstream, string Body)
+{
+    public CaddyForwardAuth? ForwardAuth { get; } = CaddyForwardAuth.In(Body);
+}
 
-public sealed record CaddyHost(string Name, IReadOnlyList<CaddyRoute> Routes, string Body);
+// A forward_auth block: whom it asks, at which path, and the headers of the answer it copies onto
+// the request it passes on.
+public sealed record CaddyForwardAuth(string Upstream, string? Uri, IReadOnlyList<string> CopiedHeaders)
+{
+    private const string Directive = "forward_auth ";
+
+    public static CaddyForwardAuth? In(string body)
+    {
+        var lines = body.Split('\n').Select(l => l.Trim()).ToList();
+        var start = lines.FindIndex(l => l.StartsWith(Directive, StringComparison.Ordinal));
+        if (start < 0)
+        {
+            return null;
+        }
+
+        var block = lines.Skip(start + 1).TakeWhile(l => l != "}").ToList();
+        string? Setting(string name) => block
+            .FirstOrDefault(l => l.StartsWith(name + " ", StringComparison.Ordinal))?[(name.Length + 1)..].Trim();
+
+        return new CaddyForwardAuth(
+            lines[start][Directive.Length..].TrimEnd('{').Trim(),
+            Setting("uri"),
+            Setting("copy_headers")?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? []);
+    }
+
+    // A host-level forward_auth block, standing in front of every route of the host.
+    public static CaddyForwardAuth Of(string header, string body)
+    {
+        var settings = body.Split('\n')
+            .Select(l => l.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .ToList();
+        return new CaddyForwardAuth(
+            header["forward_auth".Length..].Trim(),
+            settings.FirstOrDefault(s => s is ["uri", _])?[1],
+            [.. settings.Where(s => s.FirstOrDefault() == "copy_headers").SelectMany(s => s.Skip(1))]);
+    }
+}
+
+public sealed record CaddyHost(string Name, IReadOnlyList<CaddyRoute> Routes, string Body, CaddyForwardAuth? ForwardAuth);
 
 public sealed record CaddyConfig(IReadOnlyList<CaddyHost> Hosts)
 {
@@ -188,12 +248,20 @@ public sealed record CaddyConfig(IReadOnlyList<CaddyHost> Hosts)
             .Where(l => !l.TrimStart().StartsWith('#'))
             .ToList();
         return new CaddyConfig([.. Blocks(lines, 0, lines.Count)
-            .Select(b => new CaddyHost(
-                b.Header,
-                [.. Blocks(lines, b.Start + 1, b.End)
-                    .Where(r => r.Header.StartsWith("handle", StringComparison.Ordinal))
-                    .Select(r => RouteOf(r.Header, Text(lines, r.Start + 1, r.End)))],
-                Text(lines, b.Start + 1, b.End)))]);
+            .Select(b =>
+            {
+                var children = Blocks(lines, b.Start + 1, b.End).ToList();
+                return new CaddyHost(
+                    b.Header,
+                    [.. children
+                        .Where(r => r.Header.StartsWith("handle", StringComparison.Ordinal))
+                        .Select(r => RouteOf(r.Header, Text(lines, r.Start + 1, r.End)))],
+                    Text(lines, b.Start + 1, b.End),
+                    children
+                        .Where(r => r.Header.StartsWith("forward_auth ", StringComparison.Ordinal))
+                        .Select(r => CaddyForwardAuth.Of(r.Header, Text(lines, r.Start + 1, r.End)))
+                        .SingleOrDefault());
+            })]);
     }
 
     private static CaddyRoute RouteOf(string header, string body)

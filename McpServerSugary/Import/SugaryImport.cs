@@ -9,9 +9,11 @@ namespace McpServerSugary.Import;
 public sealed record ImportReport(int MealsAdded, int ItemsAdded, int FoodsAdded, int MealsPresent, int FoodsPresent);
 
 // Reads the standalone app's three downloads — meals, items, foods — into this server's database
-// once, keeping every identifier, time and source. A meal or a food whose id is already here is
-// left as it is, items and all, so a second run adds nothing and never overwrites a meal edited
-// since the first.
+// once, keeping every identifier, time and source. A meal or a food whose id is already here, whoever
+// it belongs to, is left as it is, items and all, so a second run adds nothing and never overwrites a
+// meal edited since the first. The downloads name no person, so what they bring is nobody's
+// (Owners.Unassigned) until the migration into the home household gives it to the person whose log
+// it was, as it does every row from before the log was per person.
 public static class SugaryImport
 {
     public const string MealsFile = "sugary-meals.csv";
@@ -37,10 +39,12 @@ public static class SugaryImport
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         var mealIds = parsedMeals.Select(meal => meal.Id).ToList();
-        var presentMeals = (await db.Meals.Where(meal => mealIds.Contains(meal.Id)).Select(meal => meal.Id).ToListAsync(ct))
+        var presentMeals = (await db.Meals.IgnoreQueryFilters()
+                .Where(meal => mealIds.Contains(meal.Id)).Select(meal => meal.Id).ToListAsync(ct))
             .ToHashSet();
         var foodIds = parsedFoods.Select(food => food.Id).ToList();
-        var presentFoods = (await db.Foods.Where(food => foodIds.Contains(food.Id)).Select(food => food.Id).ToListAsync(ct))
+        var presentFoods = (await db.Foods.IgnoreQueryFilters()
+                .Where(food => foodIds.Contains(food.Id)).Select(food => food.Id).ToListAsync(ct))
             .ToHashSet();
 
         var newMeals = parsedMeals.Where(meal => !presentMeals.Contains(meal.Id)).ToList();
@@ -63,6 +67,8 @@ public static class SugaryImport
         var meal = new Meal
         {
             Id = id,
+            UserId = Owners.Unassigned,
+            TenantId = Owners.Unassigned,
             EatenAt = row.Time("eaten_at"),
             FirstEstimate = firstBest is { } best
                 ? new Interval(row.RequiredNumber("first_estimate_low_g"), best, row.RequiredNumber("first_estimate_high_g"))
@@ -104,6 +110,7 @@ public static class SugaryImport
     private static Food ToFood(Row row, DateTimeOffset importedAt) => new()
     {
         Id = row.Guid("food_id"),
+        TenantId = Owners.Unassigned,
         Name = row.Text("name") ?? "",
         CarbsPer100g = row.Number("carbs_per_100"),
         Unit = row.Text("unit") ?? "g",

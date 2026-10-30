@@ -78,7 +78,7 @@ public sealed class ReplySpeaker(
         // Treat the error as terminal reply text: append it so any buffered partial answer and the
         // error are spoken together, in order, by the trailing StreamComplete — not the error first
         // with the leftover partial spoken after it. Mirrors the flush-on-error contract honored by
-        // the Telegram/ServiceBus channels. (ChatMonitor sends Error with isComplete=false then a
+        // the Telegram channel. (ChatMonitor sends Error with isComplete=false then a
         // StreamComplete; the shared isComplete rule covers a transport that completes early —
         // left open, the turn never learns the agent stopped sending and the mic stays shut for
         // the whole ~120 s reply timeout.)

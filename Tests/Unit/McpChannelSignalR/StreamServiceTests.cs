@@ -13,6 +13,7 @@ public class StreamServiceTests : IDisposable
 {
     private readonly SessionService _sessionService = new();
     private readonly Mock<IPushNotificationService> _pushNotification = new();
+    private readonly Mock<IThreadStateStore> _threadStore = new();
     private readonly Mock<ILogger<StreamService>> _logger = new();
     private readonly StreamService _sut;
 
@@ -20,6 +21,7 @@ public class StreamServiceTests : IDisposable
     {
         _sut = new StreamService(
             _sessionService,
+            _threadStore.Object,
             _pushNotification.Object,
             _logger.Object);
     }
@@ -152,6 +154,29 @@ public class StreamServiceTests : IDisposable
             "The agent has finished responding",
             "/myspace",
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A finished reply is news for whoever may see the topic, and its name with it: a private
+    // topic's reaches its owner's devices and nobody else's in the space.
+    [Fact]
+    public async Task WriteReplyAsync_StreamCompleteOnAPrivateTopic_PushesToItsOwnerAlone()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "myspace", topicName: "Apartment search");
+        _threadStore.Setup(s => s.GetTopicByChatIdAndThreadIdAsync("agent1", 100, 200, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TopicMetadata("topic1", 100, 200, "agent1", "Apartment search", DateTimeOffset.UtcNow, null,
+                SpaceSlug: "myspace", OwnerId: "fran", TenantId: "home"));
+        _sut.GetOrCreateStream("topic1", "prompt", "fran", CancellationToken.None);
+
+        await _sut.WriteReplyAsync(new SendReplyParams
+        { ConversationId = "100:200", Content = "", ContentType = ReplyContentType.StreamComplete, IsComplete = true });
+
+        await Eventually.Until(() => _pushNotification.Invocations.Count > 0, "the push to go out");
+        _pushNotification.Verify(p => p.SendToPersonAsync(
+            "fran", "myspace", "Apartment search", "The agent has finished responding", "/myspace",
+            It.IsAny<CancellationToken>()), Times.Once);
+        _pushNotification.Verify(p => p.SendToSpaceAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

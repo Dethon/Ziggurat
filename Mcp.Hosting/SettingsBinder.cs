@@ -67,8 +67,8 @@ public static class SettingsBinder
             .Replace("]", "", StringComparison.Ordinal)
             .Replace(".", "__", StringComparison.Ordinal);
 
-    // Null only, never empty. Six shipped servers carry required members that ship as "" and are
-    // filled from secrets — ServiceBus, Telegram, WebSearch, HomeAssistant, Idealista and Library —
+    // Null only, never empty. Five shipped servers carry required members that ship as "" and are
+    // filled from secrets — Telegram, WebSearch, HomeAssistant, Idealista and Library —
     // and an empty optional key is how a feature is switched off; an empty-is-invalid rule would
     // refuse to start them.
     // A property with no setter is computed rather than configured: nothing binds into it, so

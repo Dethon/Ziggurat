@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Transcription;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
@@ -31,6 +32,7 @@ public static class ConfigModule
             .AddSingleton(new SatelliteRegistry(settings.Satellites))
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection))
             .AddMetricsPublishing("mcp-channel-voice")
+            .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
@@ -49,6 +51,7 @@ public static class ConfigModule
             .AddSingleton<LocalCommandDispatcher>()
             .AddSingleton<TranscriptDispatcher>(sp => new TranscriptDispatcher(
                 sp.GetRequiredService<ChannelNotificationEmitter>(),
+                sp.GetRequiredService<IAccountResolver>(),
                 sp.GetRequiredService<IMetricsPublisher>(),
                 sp.GetRequiredService<VoiceConversationManager>(),
                 sp.GetRequiredService<LocalCommandDispatcher>(),

@@ -1,7 +1,11 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
@@ -11,6 +15,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Tests.Integration.Fixtures;
 
 namespace Tests.E2E.Fixtures;
 
@@ -23,9 +28,9 @@ namespace Tests.E2E.Fixtures;
 // ever cost in waiting. So the two expensive phases are memoized (one build, one start, whoever
 // asks first) and the containers are refcounted, torn down when the last collection lets go.
 //
-// Concurrency across collections is safe because a test's server-side state is scoped to the user
-// it picks, and each collection reserves its own block of user identities from this stack.
-internal sealed class WebChatStack
+// Concurrency across collections is safe because a test's server-side state is scoped to the account
+// it signs in as, and each collection reserves its own block of user identities from this stack.
+internal sealed partial class WebChatStack
 {
     private static readonly Lock _gate = new();
     private static Task? _images;
@@ -40,7 +45,9 @@ internal sealed class WebChatStack
     private IContainer? _webui;
     private IContainer? _caddy;
     private IContainer? _mcpSugary;
+    private IContainer? _accounts;
     private WebApplication? _whisper;
+    private int _caddyPort;
 
     private int _sliceIndex = -1;
 
@@ -53,27 +60,26 @@ internal sealed class WebChatStack
     private static readonly string[] _spaces =
         ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett"];
 
-    // A user identity is cheap — two environment variables — so no test needs to inherit one, and
-    // a block is sized past the number of tests in its collection so none is handed out twice. A
+    // A user identity is an account in the stack's accounts service, made the first time a test
+    // asks for its index and signed in by a minted session rather than a passkey ceremony, so no
+    // test needs to inherit one, and a block is sized past the number of tests in its collection so
+    // none is handed out twice. A
     // pending approval is held against its topic, and a page opening as a user who already has
     // topics can be handed one, which is how a test that never asked for an approval met the
     // full-viewport modal and clicked a button that detached from under it. Raise these when a
     // collection grows past its block rather than letting the counter wrap.
     public const int UsersPerCollection = 24;
     public const int CollectionSlices = 10;
-    public const int UserCount = UsersPerCollection * CollectionSlices;
 
     public string WebChatUrl { get; private set; } = "";
 
-    // Her app and its API, published as compose publishes them (port 6017 there): straight from the
-    // Sugary server, not through the Caddy site her phone uses.
+    // The Sugary app and its API, published as compose publishes them (port 6017 there): straight
+    // from the Sugary server, not through the Caddy site a phone uses, so a test sends the session
+    // check's headers for the account it acts as (AccountForAsync) as that site's proxy would.
     public string SugaryUrl { get; private set; } = "";
 
     // The Sugary server's /mcp, where the tables an agent reads under /sugary are served.
     public string SugaryMcpEndpoint { get; private set; } = "";
-
-    // The code the app asks for once per phone. A test value, as the deployment secret is.
-    public const string SugaryAccessCode = "e2e-sugary-code";
 
     // How long the Sugary server waits on the agent's estimate before answering 504. An estimate is
     // a real model's answer over the network, so it is bounded by the provider, as the chat E2E's
@@ -147,13 +153,67 @@ internal sealed class WebChatStack
     // the browser learns the number from .NET and carries none of its own.
     public TimeSpan RecordingCap { get; } = TimeSpan.FromMinutes(2);
 
-    // A collection's own slice of the stack: the first dropdown index of its block of users, and
-    // the space its pages live in. Reserved once per collection, in whatever order they start.
+    // A collection's own slice of the stack: the first index of its block of users, and the space
+    // its pages live in. Reserved once per collection, in whatever order they start.
     public (int UserBlock, string Space) ReserveSlice()
     {
         var slice = (int)((uint)Interlocked.Increment(ref _sliceIndex) % CollectionSlices);
         return (slice * UsersPerCollection, _spaces[slice]);
     }
+
+    public static string NameOf(int userIndex) => $"TestUser-{userIndex}";
+
+    // The session cookie's value for a user index, the account behind it made on first asking. Each
+    // command is a .NET process started inside the container, about a second, so making all of the
+    // stack's users up front would cost minutes nobody uses; and they run one at a time, since every
+    // command writes the one SQLite file.
+    public async Task<string> SessionForAsync(int userIndex) => (await SeededAsync(userIndex)).Session;
+
+    // The account behind a user index, as the session check names it in its headers: what a test
+    // that reaches an app past the proxy presents to act as that person.
+    public async Task<Account> AccountForAsync(int userIndex) => (await SeededAsync(userIndex)).Account;
+
+    private Task<Seeded> SeededAsync(int userIndex) =>
+        _sessions.GetOrAdd(userIndex, index => new Lazy<Task<Seeded>>(() => SeedAsync(NameOf(index)))).Value;
+
+    private sealed record Seeded(string Session, Account Account);
+
+    private readonly ConcurrentDictionary<int, Lazy<Task<Seeded>>> _sessions = new();
+    private readonly SemaphoreSlim _seeding = new(1, 1);
+
+    private async Task<Seeded> SeedAsync(string name)
+    {
+        var (_, created) = await AccountsAsync("create-user", "--name", name);
+        var made = WhoWasMade().Match(created);
+        var account = new Account(made.Groups["household"].Value, made.Groups["user"].Value);
+        var (_, session) = await AccountsAsync("mint-session", "--user", account.UserId);
+        return new Seeded(session.Trim(), account);
+    }
+
+    // The accounts service's own commands, as the operator runs them: docker exec accounts dotnet
+    // Accounts.dll <verb>. A command that fails fails the test that asked, with what it printed.
+    public async Task<(int Exit, string Output)> AccountsAsync(params string[] args)
+    {
+        await _seeding.WaitAsync();
+        try
+        {
+            var result = await _accounts!.ExecAsync(["dotnet", "Accounts.dll", .. args]);
+            if (result.ExitCode != 0)
+            {
+                throw new InvalidOperationException(
+                    $"accounts {string.Join(' ', args)} exited {result.ExitCode}: {result.Stdout}{result.Stderr}");
+            }
+
+            return ((int)result.ExitCode, result.Stdout);
+        }
+        finally
+        {
+            _seeding.Release();
+        }
+    }
+
+    [GeneratedRegex(@"user (?<user>[0-9a-f]+), household (?<household>[0-9a-f]+)")]
+    private static partial Regex WhoWasMade();
 
     // Both phases are memoized separately so each keeps the caller's own budget: an image build is
     // allowed twenty minutes and a container start five, and folding them together would have a
@@ -234,7 +294,8 @@ internal sealed class WebChatStack
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.ChannelSignalR, ct),
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Agent, ct),
             TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.WebUi, ct),
-            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpSugary, ct));
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.McpSugary, ct),
+            TestHelpers.EnsureImageAsync(solutionRoot, E2EImages.Accounts, ct));
     }
 
     private static async Task<WebChatStack> StartAsync(CancellationToken ct)
@@ -288,33 +349,60 @@ internal sealed class WebChatStack
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
             .Build();
 
-        // Her carb log's server, wired as compose wires it: the deployment secret on /mcp, the app's
-        // access code, and the home's zone (a meal is filed under the month it was eaten in Madrid).
-        // Compose mounts ./volumes/sugary at /data; a tmpfs stands in, world-writable as Docker makes
-        // one, so the log, the cookie keys and the uploads keep their shipped paths and start empty.
+        // The Sugary log's server, wired as compose wires it: its own credential on /mcp and the
+        // home's zone (a meal is filed under the month it was eaten in Madrid). Compose mounts
+        // ./volumes/sugary at /data; a tmpfs stands in, world-writable as Docker makes one, so the log
+        // and the uploads keep their shipped paths and start empty.
         _mcpSugary = TestContainers.Container(E2EImages.McpSugary.ImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-sugary")
             .WithTmpfsMount("/data")
             .WithEnvironment("TZ", "Europe/Madrid")
             .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-sugary"))
-            .WithEnvironment("SUGARYAPP__ACCESSCODE", SugaryAccessCode)
             .WithEnvironment("TURNTIMEOUTSECONDS", ((int)SugaryTurnTimeout.TotalSeconds).ToString())
             .WithPortBinding(8080, true)
-            // The app's session route answers once the database is migrated and the routes are bound.
+            // The app's session route answers once the database is migrated and the routes are bound:
+            // 401 to a request naming nobody, which is every request here but the tests' own.
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/api/session")))
+                .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/api/session")
+                    .ForStatusCode(HttpStatusCode.Unauthorized)))
             .Build();
 
-        // Started together because nothing here waits on anything else here: redis, the vault and
-        // the Sugary server are roots of the graph and the whisper stub runs in this process.
-        // Starting them in a line spent each one's wait doing nothing, and redis alone is the
-        // longest of them.
+        // The browser reaches everything through Caddy at localhost on a port taken here rather than
+        // one Docker picks, because the accounts service has to be told where it is served before
+        // Caddy exists: a passkey belongs to its relying party, which cannot be an IP address, and
+        // sign-in returns only to the origins it was given. The session cookie is host-only, so the
+        // pages and sign-in share this one host exactly.
+        _caddyPort = TestPort.GetAvailable();
+        var baseUrl = $"http://localhost:{_caddyPort}";
+
+        // The accounts service, as compose wires it but for this host: its store in a tmpfs that
+        // starts empty, migrated before the sign-in page answers.
+        _accounts = TestContainers.Container(E2EImages.Accounts.ImageName)
+            .WithNetwork(_network)
+            .WithNetworkAliases("accounts")
+            .WithTmpfsMount("/data")
+            .WithEnvironment("WEBAUTHN__RELYINGPARTYID", "localhost")
+            .WithEnvironment("ALLOWEDORIGINS__0", baseUrl)
+            .WithEnvironment("PUBLICBASEURL", baseUrl)
+            // The hub asks the name of each connection's account with its own MCP credential, as
+            // compose wires it.
+            .WithEnvironment("CALLERS__mcp-channel-signalr", McpTestSecret.For("mcp-channel-signalr"))
+            .WithPortBinding(8080, true)
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/accounts/sign-in")))
+            .Build();
+
+        // Started together because nothing here waits on anything else here: redis, the vault,
+        // the Sugary server and the accounts service are roots of the graph and the whisper stub
+        // runs in this process. Starting them in a line spent each one's wait doing nothing, and
+        // redis alone is the longest of them.
         var whisperPortTask = StartWhisperStubAsync();
         await Task.WhenAll(
             E2ETrace.TimeAsync("start:redis", () => _redis.StartAsync(ct)),
             E2ETrace.TimeAsync("start:vault", () => _mcpVault.StartAsync(ct)),
             E2ETrace.TimeAsync("start:sugary", () => _mcpSugary.StartAsync(ct)),
+            E2ETrace.TimeAsync("start:accounts", () => _accounts.StartAsync(ct)),
             whisperPortTask);
         var whisperPort = await whisperPortTask;
 
@@ -353,7 +441,7 @@ internal sealed class WebChatStack
         var agentLogLevel = Environment.GetEnvironmentVariable("E2E_AGENT_LOG_LEVEL") ?? "Information";
         var sugaryAgent = ShippedAgent("sugary");
         // Without this, the default appsettings.json baked into the image also registers
-        // channels for telegram/servicebus and extra MCP endpoints that don't exist here.
+        // channels for telegram and extra MCP endpoints that don't exist here.
         var e2EAppSettings = Encoding.UTF8.GetBytes($$"""
             {
               "openRouter": { "apiUrl": "https://openrouter.ai/api/v1/", "apiKey": "{{apiKey}}" },
@@ -424,11 +512,6 @@ internal sealed class WebChatStack
             .WithNetwork(_network)
             .WithNetworkAliases("webui")
             .WithPortBinding(8080, true);
-        webui = Enumerable.Range(0, UserCount).Aggregate(webui, (builder, index) => builder
-            .WithEnvironment($"USERS__{index}__ID", $"TestUser-{index}")
-            .WithEnvironment(
-                $"USERS__{index}__AVATARURL",
-                $"https://api.dicebear.com/7.x/bottts/svg?seed=test{index}"));
         // These replace the image's own Spaces array element by element rather than adding to it,
         // so "default" has to be restated or a page that lands on "/" resolves no space at all.
         webui = _spaces
@@ -455,47 +538,56 @@ internal sealed class WebChatStack
             E2ETrace.TimeAsync("start:agent", () => _agent.StartAsync(ct)),
             E2ETrace.TimeAsync("start:webui", () => _webui.StartAsync(ct)));
 
+        // DockerCompose/caddy/Caddyfile's main host, minus TLS: the chat client, its hub and the
+        // hub's upload and dictation endpoints ask the accounts service's session check first and
+        // carry the person on in its headers; sign-in and the agent API do not.
+        static string Checked(string matcher, string upstream) =>
+            $"    handle {matcher}{{\n" +
+            "        forward_auth accounts:8080 {\n" +
+            "            uri /accounts/verify\n" +
+            "            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles\n" +
+            "        }\n" +
+            $"        reverse_proxy {upstream}\n" +
+            "    }\n";
+
         var testCaddyfile =
             ":80 {\n" +
-            "    handle /hubs/* {\n" +
-            "        reverse_proxy mcp-channel-signalr:8080\n" +
-            "    }\n" +
+            Checked("/hubs/* ", "mcp-channel-signalr:8080") +
             // The upload store lives beside the hub; without this route an upload POST lands on
             // the static webui and comes back 405, mirroring DockerCompose/caddy/Caddyfile.
-            "    handle /api/attachments* {\n" +
-            "        reverse_proxy mcp-channel-signalr:8080\n" +
-            "    }\n" +
+            Checked("/api/attachments* ", "mcp-channel-signalr:8080") +
             // Without this route a dictation POST lands on the static webui and comes back 405,
             // mirroring DockerCompose/caddy/Caddyfile.
-            "    handle /api/dictation* {\n" +
-            "        reverse_proxy mcp-channel-signalr:8080\n" +
-            "    }\n" +
+            Checked("/api/dictation* ", "mcp-channel-signalr:8080") +
             "    handle /api/agents* {\n" +
             "        reverse_proxy agent:8080\n" +
             "    }\n" +
-            "    handle {\n" +
-            "        reverse_proxy webui:8080\n" +
+            "    handle /accounts/internal/* {\n" +
+            "        respond 404\n" +
             "    }\n" +
+            "    handle /accounts/* {\n" +
+            "        reverse_proxy accounts:8080\n" +
+            "    }\n" +
+            Checked("", "webui:8080") +
             "}\n";
 
         var caddyfileBytes = Encoding.UTF8.GetBytes(testCaddyfile);
 
+        // Probed at sign-in, the one page here nothing checks, which also proves the route to the
+        // accounts service.
         _caddy = TestContainers.Container("caddy:2-alpine")
             .WithNetwork(_network)
             .WithNetworkAliases("caddy")
-            .WithPortBinding(80, true)
+            .WithPortBinding(_caddyPort, 80)
             .WithResourceMapping(caddyfileBytes, "/etc/caddy/Caddyfile")
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(r => r.ForPort(80).ForPath("/manifest.webmanifest")))
+                .UntilHttpRequestIsSucceeded(r => r.ForPort(80).ForPath("/accounts/sign-in")))
             .Build();
         await E2ETrace.TimeAsync("start:caddy", () => _caddy.StartAsync(ct));
 
-        var host = _caddy.Hostname;
-        var port = _caddy.GetMappedPublicPort(80);
-        var baseUrl = $"http://{host}:{port}";
-
-        // Wait for the full stack to be reachable through Caddy:
-        // SignalR negotiate endpoint is reachable (proves Caddy → mcp-channel-signalr routing works)
+        // Wait for the full stack to be reachable through Caddy, signed in: the hub's negotiate
+        // answering a session proves Caddy -> session check -> mcp-channel-signalr end to end.
+        var probe = await SeedAsync("Probe");
         using var httpClient = new HttpClient();
         httpClient.Timeout = TimeSpan.FromSeconds(5);
         var deadline = DateTime.UtcNow.Add(TimeSpan.FromMinutes(2));
@@ -503,8 +595,11 @@ internal sealed class WebChatStack
         {
             try
             {
-                var response = await httpClient.PostAsync($"{baseUrl}/hubs/chat/negotiate?negotiateVersion=1", null, ct);
-                if ((int)response.StatusCode < 500)
+                using var negotiate = new HttpRequestMessage(
+                    HttpMethod.Post, $"{baseUrl}/hubs/chat/negotiate?negotiateVersion=1");
+                negotiate.Headers.Add("Cookie", $"ziggurat_session={probe.Session}");
+                var response = await httpClient.SendAsync(negotiate, ct);
+                if (response.IsSuccessStatusCode)
                 {
                     break;
                 }
@@ -617,6 +712,7 @@ internal sealed class WebChatStack
             _whisper is null ? Task.CompletedTask : _whisper.DisposeAsync().AsTask(),
             _caddy is null ? Task.CompletedTask : _caddy.DisposeAsync().AsTask(),
             _mcpSugary is null ? Task.CompletedTask : _mcpSugary.DisposeAsync().AsTask(),
+            _accounts is null ? Task.CompletedTask : _accounts.DisposeAsync().AsTask(),
             _webui is null ? Task.CompletedTask : _webui.DisposeAsync().AsTask(),
             _agent is null ? Task.CompletedTask : _agent.DisposeAsync().AsTask(),
             _mcpChannelSignalR is null ? Task.CompletedTask : _mcpChannelSignalR.DisposeAsync().AsTask(),
@@ -626,6 +722,11 @@ internal sealed class WebChatStack
         if (_network is not null)
         {
             await _network.DeleteAsync();
+        }
+
+        if (_caddyPort != 0)
+        {
+            TestPort.Release(_caddyPort);
         }
     }
 }

@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The solution builds and the suite passes with the channel gone
-- [ ] No deployment, settings, rule or README reference to it remains
+- [x] The solution builds and the suite passes with the channel gone
+- [x] No deployment, settings, rule or README reference to it remains

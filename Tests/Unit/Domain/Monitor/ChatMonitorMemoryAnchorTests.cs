@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -49,7 +50,7 @@ public class ChatMonitorMemoryAnchorTests
 
         public Task EnrichAsync(
             ChatMessage message,
-            string userId,
+            Account? account,
             string? conversationId,
             string? agentId,
             AgentSession thread,

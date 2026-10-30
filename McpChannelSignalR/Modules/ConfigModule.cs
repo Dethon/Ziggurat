@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.Contracts;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Push;
 using Infrastructure.Clients.Transcription;
 using Infrastructure.Conversations;
@@ -47,6 +48,7 @@ public static class ConfigModule
             .AddMetricsPublishing("mcp-channel-signalr")
             .AddSingleton(settings.Dictation)
             .AddLemonadeTranscription(settings.Dictation.Transcription)
+            .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
             .AddSingleton<AttachmentTickets>()
             .AddSingleton<IConversationLiveness, AgentConversationLiveness>()
             .AddSingleton<AttachmentStore>()
@@ -77,6 +79,8 @@ public static class ConfigModule
             .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            .WithTools<OfferApprovalTool>()
+            .WithTools<SettleApprovalTool>()
             .WithTools<CreateConversationTool>()
             // This server's own register_agents, not the shared catalog-writing one: registration
             // here also broadcasts OnAgentsUpdated so WebChat refreshes live.
@@ -100,7 +104,8 @@ public static class ConfigModule
     // The registration guard rides with the hub's own options, so wherever the hub is served it is
     // served behind it.
     internal static IServiceCollection AddChatSignalR(this IServiceCollection services) =>
-        services.AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance)
-            .AddHubOptions<ChatHub>(options => options.AddFilter(new RegisteredConnectionFilter()))
+        services.AddSingleton<AccountConnections>()
+            .AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance)
+            .AddHubOptions<ChatHub>(options => options.AddFilter<SignedInConnectionFilter>())
             .Services;
 }

@@ -1,10 +1,14 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.DTOs.Channel;
+using Domain.Extensions;
 using Domain.Prompts;
 using McpServerSugary.Modules;
 using Microsoft.Data.Sqlite;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
+using Tests.Eval.Scenarios;
 using Tests.Integration.McpServers;
 
 namespace Tests.Eval.Fixtures;
@@ -75,9 +79,25 @@ public sealed class EvalSugaryLogTests : IAsyncLifetime
         names.ShouldContain("Yogur natural");
     }
 
+    // Asked as a scenario's turn asks it: the turn's context on `_meta`, built as a run builds it, so
+    // the account the mount reads by is the one the log was seeded under.
     private async Task<List<string?[]>> QueryAsync(string sql)
     {
-        var answer = await _server.Client.CallToolAsync("fs_query", new Dictionary<string, object?> { ["path"] = "/", ["sql"] = sql });
+        var turn = EvalRun.Turn(SugaryScenarios.HerLogIsReadThroughTheSkill, "conversation-1").GetConversationContext()!;
+        var answer = await _server.Client.CallToolAsync(new CallToolRequestParams
+        {
+            Name = "fs_query",
+            Arguments = new Dictionary<string, JsonElement>
+            {
+                ["path"] = JsonSerializer.SerializeToElement("/"),
+                ["sql"] = JsonSerializer.SerializeToElement(sql)
+            },
+            Meta = new JsonObject
+            {
+                [ChannelProtocol.ConversationContextMetaKey] =
+                    JsonSerializer.SerializeToNode(turn, ChannelProtocol.SerializerOptions)
+            }
+        });
         var json = JsonNode.Parse(string.Join("", answer.Content.OfType<TextContentBlock>().Select(block => block.Text)))!;
         return [.. (json["rows"] ?? throw new InvalidOperationException(json.ToJsonString())).AsArray()
             .Select(row => row!.AsArray().Select(cell => cell?.ToString()).ToArray())];

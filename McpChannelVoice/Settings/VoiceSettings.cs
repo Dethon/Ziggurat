@@ -1,5 +1,6 @@
 using Domain.DTOs;
 using Domain.Security;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Judgments;
 using Mcp.Hosting;
 
@@ -9,6 +10,9 @@ public record VoiceSettings : IMcpHostSettings
 {
     // This server's own credential, which its /mcp asks for (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
+
+    // Where a recognised speaker's profile is resolved to their account, asked with Mcp's credential.
+    public AccountsClientConfig Accounts { get; init; } = new();
 
     // Agent that handles voice transcripts. Sent as the message AgentId so the agent
     // host resolves this definition; null falls back to the first configured agent.

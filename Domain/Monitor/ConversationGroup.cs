@@ -25,6 +25,7 @@ namespace Domain.Monitor;
 // changing it is a local edit rather than an argument spread across ChatMonitor.
 internal sealed class ConversationGroup(
     AgentKey agentKey,
+    IReadOnlyList<IChannelConnection> channels,
     IAgentFactory agentFactory,
     DeliveryTargetResolver targetResolver,
     ChatThreadResolver threadResolver,
@@ -384,7 +385,7 @@ internal sealed class ConversationGroup(
     // for chat history it is worse than a label: WebChat reads history keyed on the
     // minted id and would see an empty conversation.
     //
-    // The approval channel follows the same anchor, not the origin. Schedule/ServiceBus
+    // The approval channel follows the same anchor, not the origin. Schedule
     // channels auto-approve silently, so binding approvals to the origin would hide tool
     // calls from the user in WebChat.
     //
@@ -407,8 +408,10 @@ internal sealed class ConversationGroup(
         var (approvalChannel, deliveryKey) = targets.Count > 0
             ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, x.Message.AgentId))
             : (x.Channel, agentKey);
+        // Asked where the delivery anchors, and offered to the turn's person wherever else they are.
+        var approvals = new ApprovalRelay(approvalChannel, channels, logger, TimeProvider.System);
         var agent = _agent = agentFactory.Create(
-            deliveryKey, x.Message.Sender, x.Message.AgentId, approvalChannel);
+            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account);
         var thread = await GetOrRestoreThread(agent, deliveryKey);
 
         // Start session warmup (MCP connections + tool discovery) without awaiting it yet, so
@@ -548,9 +551,13 @@ internal sealed class ConversationGroup(
         {
             // The delivery identity again, not the message's own: recall stamps durable
             // provenance on any memory extracted from this turn, so the source it names
-            // has to be a conversation that can still be opened.
+            // has to be a conversation that can still be opened. Whose memory it is comes from the
+            // account the turn acts for, never from its sender, which is only the name a channel
+            // shows: one person reaches one memory from every channel, and a turn with no account
+            // reaches none.
             await memoryRecallHook.EnrichAsync(
-                userMessage, message.Sender, state.DeliveryKey.ConversationId, message.AgentId, state.Thread, _turnCt);
+                userMessage, message.Principal?.Account, state.DeliveryKey.ConversationId, message.AgentId,
+                state.Thread, _turnCt);
         }
 
         return userMessage;

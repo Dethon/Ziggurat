@@ -6,11 +6,13 @@ using Domain.DTOs.Channel;
 using Domain.Security;
 using global::Agent.App;
 using global::Agent.Settings;
+using Infrastructure.Agents;
 using Infrastructure.Extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Moq;
 using Shouldly;
 
@@ -68,15 +70,18 @@ public class AgentApiTests
         provider.VerifyNoOtherCalls();
     }
 
+    // The person is the one SexyTime's server forwards from the signed-in request it is answering.
+    // A userId in the query names whoever the caller likes, so it is never read: each request below
+    // also names mallory there.
     [Fact]
-    public async Task Get_WithTheSecret_ListsTheCatalogueForTheUser()
+    public async Task Get_WithTheSecret_ListsTheForwardedPersonsCatalogue()
     {
-        var provider = new Mock<IAgentDefinitionProvider>();
+        var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
         provider.Setup(p => p.GetAll("alice")).Returns([_registered]);
         await using var app = await StartAsync(provider.Object, Secret);
         using var client = app.GetTestClient();
 
-        using var response = await client.SendAsync(Request("GET", "Bearer " + Secret));
+        using var response = await client.SendAsync(Request("GET", "Bearer " + Secret, user: "alice"));
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var catalogue = await response.Content.ReadFromJsonAsync<AgentCatalogEntry[]>();
@@ -84,15 +89,15 @@ public class AgentApiTests
     }
 
     [Fact]
-    public async Task Post_WithTheSecret_RegistersTheAgentForTheUser()
+    public async Task Post_WithTheSecret_RegistersTheAgentForTheForwardedPerson()
     {
-        var provider = new Mock<IAgentDefinitionProvider>();
+        var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
         provider.Setup(p => p.RegisterCustomAgent("alice", It.IsAny<CustomAgentRegistration>()))
             .Returns(_registered);
         await using var app = await StartAsync(provider.Object, Secret);
         using var client = app.GetTestClient();
 
-        using var response = await client.SendAsync(Request("POST", "Bearer " + Secret));
+        using var response = await client.SendAsync(Request("POST", "Bearer " + Secret, user: "alice"));
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await response.Content.ReadFromJsonAsync<AgentCatalogEntry>())
@@ -102,18 +107,55 @@ public class AgentApiTests
     }
 
     [Fact]
-    public async Task Delete_WithTheSecret_UnregistersTheUsersAgent()
+    public async Task Delete_WithTheSecret_UnregistersTheForwardedPersonsAgent()
     {
-        var provider = new Mock<IAgentDefinitionProvider>();
+        var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
         provider.Setup(p => p.UnregisterCustomAgent("alice", "custom-1")).Returns(true);
         await using var app = await StartAsync(provider.Object, Secret);
         using var client = app.GetTestClient();
 
-        using var response = await client.SendAsync(Request("DELETE", "Bearer " + Secret));
+        using var response = await client.SendAsync(Request("DELETE", "Bearer " + Secret, user: "alice"));
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await response.Content.ReadFromJsonAsync<bool>()).ShouldBeTrue();
         provider.Verify(p => p.UnregisterCustomAgent("alice", "custom-1"), Times.Once);
+    }
+
+    // Through the real catalogue: what alice registers, bob neither lists nor takes back, and alice
+    // still has it afterwards.
+    [Fact]
+    public async Task APersonsCustomAgent_IsListedAndDeletableOnlyByThem()
+    {
+        var builtIn = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
+        builtIn.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions { Agents = [] });
+        await using var app = await StartAsync(new AgentDefinitionProvider(builtIn.Object, new CustomAgentRegistry()), Secret);
+        using var client = app.GetTestClient();
+
+        using var registered = await client.SendAsync(Request("POST", "Bearer " + Secret, user: "alice"));
+        var agent = (await registered.Content.ReadFromJsonAsync<AgentCatalogEntry>())!;
+
+        (await ListAsync(client, "bob")).ShouldBeEmpty();
+        using var bobsDelete = await client.SendAsync(Request("DELETE", "Bearer " + Secret, user: "bob", agentId: agent.Id));
+        (await bobsDelete.Content.ReadFromJsonAsync<bool>()).ShouldBeFalse();
+        (await ListAsync(client, "alice")).ShouldBe([agent]);
+    }
+
+    // A custom agent belongs to somebody: a call naming nobody is refused before the catalogue is
+    // read or written, rather than filed under the query's user or none.
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("POST")]
+    [InlineData("DELETE")]
+    public async Task AVerbWithTheSecretButNoForwardedPerson_IsABadRequestAndTouchesNothing(string verb)
+    {
+        var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
+        await using var app = await StartAsync(provider.Object, Secret);
+        using var client = app.GetTestClient();
+
+        using var response = await client.SendAsync(Request(verb, "Bearer " + Secret));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        provider.VerifyNoOtherCalls();
     }
 
     // A page reaches the API with a visitor's credentials, so only an origin the agent's own
@@ -156,29 +198,42 @@ public class AgentApiTests
 
     private static HttpRequestMessage Preflight(string origin)
     {
-        var request = new HttpRequestMessage(HttpMethod.Options, "/api/agents?userId=alice");
+        var request = new HttpRequestMessage(HttpMethod.Options, "/api/agents");
         request.Headers.Add("Origin", origin);
         request.Headers.Add("Access-Control-Request-Method", "POST");
         request.Headers.Add("Access-Control-Request-Headers", "authorization");
         return request;
     }
 
-    private static HttpRequestMessage Request(string verb, string? authorization)
+    private static async Task<AgentCatalogEntry[]> ListAsync(HttpClient client, string user)
+    {
+        using var response = await client.SendAsync(Request("GET", "Bearer " + Secret, user: user));
+        return (await response.Content.ReadFromJsonAsync<AgentCatalogEntry[]>())!;
+    }
+
+    // Every request also names somebody else in the query, the parameter the API once read.
+    private static HttpRequestMessage Request(
+        string verb, string? authorization, string? user = null, string agentId = "custom-1")
     {
         var request = verb switch
         {
-            "GET" => new HttpRequestMessage(HttpMethod.Get, "/api/agents?userId=alice"),
-            "POST" => new HttpRequestMessage(HttpMethod.Post, "/api/agents?userId=alice")
+            "GET" => new HttpRequestMessage(HttpMethod.Get, "/api/agents?userId=mallory"),
+            "POST" => new HttpRequestMessage(HttpMethod.Post, "/api/agents?userId=mallory")
             {
                 Content = JsonContent.Create(_registration)
             },
-            "DELETE" => new HttpRequestMessage(HttpMethod.Delete, "/api/agents/custom-1?userId=alice"),
+            "DELETE" => new HttpRequestMessage(HttpMethod.Delete, $"/api/agents/{agentId}?userId=mallory"),
             _ => throw new ArgumentOutOfRangeException(nameof(verb), verb, null)
         };
 
         if (authorization is not null)
         {
             request.Headers.TryAddWithoutValidation("Authorization", authorization);
+        }
+
+        if (user is not null)
+        {
+            request.Headers.Add(ForwardedAccount.UserHeader, user);
         }
 
         return request;

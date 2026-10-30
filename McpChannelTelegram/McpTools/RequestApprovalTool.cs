@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text;
 using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -8,6 +7,7 @@ using McpChannelTelegram.Settings;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types.Enums;
 
 namespace McpChannelTelegram.McpTools;
@@ -24,22 +24,28 @@ public sealed class RequestApprovalTool
         [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
         [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests,
         RequestContext<CallToolRequestParams> context,
-        IServiceProvider services) =>
+        IServiceProvider services,
+        [Description("The question's own id, by which it is settled")] string? approvalId = null,
+        CancellationToken cancellationToken = default) =>
         // The asking turn, from the context the agent stamps on this hop.
-        RunAsync(conversationId, mode, requests, ConversationScope.Parse(context.Params?.Meta), services);
+        RunAsync(conversationId, mode, requests, ConversationScope.Parse(context.Params?.Meta), services,
+            approvalId, cancellationToken);
 
     public static async Task<string> RunAsync(
         string conversationId,
         ApprovalMode mode,
         IReadOnlyList<ToolApprovalRequest> requests,
         ConversationContext? turn,
-        IServiceProvider services)
+        IServiceProvider services,
+        string? approvalId = null,
+        CancellationToken cancellationToken = default)
     {
         var p = new RequestApprovalParams
         {
             ConversationId = conversationId,
             Mode = mode,
-            Requests = requests
+            Requests = requests,
+            ApprovalId = approvalId
         };
 
         var registry = services.GetRequiredService<BotRegistry>();
@@ -62,90 +68,65 @@ public sealed class RequestApprovalTool
             return "notified";
         }
 
-        var answerers = AnswerersOf(turn, router, services.GetRequiredService<ChannelSettings>());
-        var (approvalId, resultTask) = router.RegisterApproval(_approvalTimeout, answerers, CancellationToken.None);
-        var keyboard = ApprovalCallbackRouter.CreateApprovalKeyboard(approvalId);
+        var access = services.GetRequiredService<TelegramAccess>();
+        var answerers = await AnswerersOfAsync(turn, chatId, router, access);
+        var (id, resultTask) = router.RegisterApproval(_approvalTimeout, answerers, cancellationToken, p.ApprovalId);
 
-        var approvalMessage = FormatApprovalMessage(p.Requests);
-
-        await botClient.SendMessage(
+        var sent = await botClient.SendMessage(
             chatId,
-            approvalMessage,
+            ApprovalCallbackRouter.FormatApprovalMessage(p.Requests),
             ParseMode.Html,
-            replyMarkup: keyboard,
+            replyMarkup: ApprovalCallbackRouter.CreateApprovalKeyboard(id),
             messageThreadId: threadId,
             cancellationToken: CancellationToken.None);
+        router.Shown(id, botClient, chatId, sent.MessageId);
+
+        // Asked in a group, the question is also put in its asker's private chat with the bot, where
+        // a phone shows it to them alone; the same keyboard answers it from either.
+        if (chatId < 0 && Principal.Of(turn)?.Account is { } asker)
+        {
+            try
+            {
+                await router.ShowInPrivateChatAsync(id, asker, p.Requests, botClient, access, CancellationToken.None);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or ApiRequestException)
+            {
+                // The group already shows it; a private chat the person never opened with this bot, or
+                // an accounts service that could not say which it is, costs only the second copy.
+            }
+        }
 
         return await resultTask;
     }
 
-    // Who may answer, read from the turn's context on this hop. A turn that names a Telegram person
-    // — their own message, or a wake or fire stamped with them, like a login wake continuing their
-    // turn — is theirs: the bot recorded their numeric id against the sender it emitted when it
-    // admitted their message, so only that id. A fire that names nobody here was started by nobody's
-    // message, so anyone on the allowlist. A turn with no context, or a person this process never
-    // admitted (it restarted mid-turn), names nobody: every tap is refused and the approval times out
-    // as denied.
-    private static IReadOnlySet<long> AnswerersOf(
-        ConversationContext? turn, ApprovalCallbackRouter router, ChannelSettings settings)
+    // Who may answer, read from the turn's context on this hop. A turn acting for an account — a
+    // person's own message on any channel, or a fire stamped with whoever wrote the schedule — is
+    // that account's alone (TelegramAccess.AnswersFor). A Telegram person's turn from before accounts
+    // is theirs by the numeric id the bot recorded against the sender it emitted when it admitted
+    // their message. A fire that names nobody was started by nobody's message, so any linked member
+    // of the household whose chat it is: the person's own, for a private chat, or the one the group
+    // is bound to. A turn with no context, a person this process never admitted (it restarted
+    // mid-turn), or a chat no household holds names nobody: every tap is refused and the approval
+    // times out as denied.
+    private static async Task<ApprovalAnswerer> AnswerersOfAsync(
+        ConversationContext? turn, long chatId, ApprovalCallbackRouter router, TelegramAccess access)
     {
-        if (Principal.Of(turn) is { ChannelId: TelegramChannelId } asker)
+        if (Principal.Of(turn)?.Account is { } account)
         {
-            return router.SenderId(asker.UserId) is { } askerId
-                ? new HashSet<long> { askerId }
-                : new HashSet<long>();
+            return access.AnswersFor(account);
         }
 
-        return turn?.OriginKind is not null
-            ? settings.AllowedUserIds.ToHashSet()
-            : new HashSet<long>();
-    }
-
-    private const string TelegramChannelId = "telegram";
-
-    internal static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
-    {
-        var sb = new StringBuilder();
-        var toolNames = string.Join(", ", requests.Select(r => r.ToolName.Split("__").Last()));
-        sb.AppendLine($"<b>🔧 Approval Required:</b> <code>{HtmlEncode(toolNames)}</code>");
-
-        foreach (var request in requests)
+        if (Principal.Of(turn) is { ChannelId: ChannelIds.Telegram } asker)
         {
-            if (request.Arguments.Count == 0)
-            {
-                continue;
-            }
-
-            var details = new StringBuilder();
-            foreach (var (key, value) in request.Arguments)
-            {
-                var formatted = value?.ToString()?.Replace("\n", " ") ?? "null";
-                if (formatted.Length > 100)
-                {
-                    formatted = formatted[..100] + "...";
-                }
-
-                details.AppendLine($"<i>{HtmlEncode(key)}:</i> {HtmlEncode(formatted)}");
-            }
-
-            sb.AppendLine($"<blockquote expandable>{details.ToString().TrimEnd()}</blockquote>");
+            var askerId = router.SenderId(asker.UserId);
+            return (tapper, _) => Task.FromResult(tapper == askerId);
         }
 
-        // Why the exec screen put this to the person, last so it sits right above the keyboard.
-        var reason = ExecScreenReasons.English([.. requests.SelectMany(r => r.Screen ?? []).Distinct()]);
-        if (reason is not null)
+        if (turn?.OriginKind is null || await access.ChatTenantAsync(chatId, CancellationToken.None) is not { } household)
         {
-            sb.AppendLine($"<i>Why you're asked: {HtmlEncode(reason)}</i>");
+            return (_, _) => Task.FromResult(false);
         }
 
-        return sb.ToString().TrimEnd();
-    }
-
-    private static string HtmlEncode(string text)
-    {
-        return text
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;");
+        return async (tapper, ct) => (await access.PersonAsync(tapper, ct))?.Account.TenantId == household;
     }
 }

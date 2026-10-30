@@ -191,8 +191,8 @@ public class McpServerContractTests
     public static TheoryData<string> ToolOnlyServers => McpServerRegistrations.Ids(
         McpServerRegistrations.All.Where(row => row.Role == McpServerRole.Tool));
 
-    // The SignalR module connects its Redis multiplexer and ServiceBus its client eagerly, at
-    // Configure time, and registers them as instance singletons — which DI never disposes, in the
+    // The SignalR module connects its Redis multiplexer eagerly, at
+    // Configure time, and registers it as an instance singleton — which DI never disposes, in the
     // shipped server or here. There each instance lives exactly as long as the process; here a row
     // is configured once per theory case, so without this wrapper every case would leak a
     // multiplexer whose background reconnect loop runs until the test process exits.

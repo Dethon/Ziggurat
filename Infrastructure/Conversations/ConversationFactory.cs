@@ -25,6 +25,11 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
     private async Task<ConversationCreation> SaveAsync(
         string topicId, ConversationIdentity identity, CreateConversationParams p)
     {
+        // A group's conversation is everyone's in it, so nobody owns its topic and the household
+        // shares it, though the turn that opened it acts for its sender. The household is still
+        // recorded: it is the one the group is bound to, which the sender's must be to get a turn.
+        var account = p.Principal?.Account;
+        var owner = p.Group ? null : account;
         var topic = new TopicMetadata(
             topicId,
             identity.ChatId,
@@ -33,7 +38,11 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
             p.TopicName,
             time.GetUtcNow(),
             LastMessageAt: null,
-            SpaceSlug: "default");
+            SpaceSlug: "default",
+            OwnerId: owner?.UserId,
+            TenantId: account?.TenantId,
+            Shared: owner is null,
+            OwnerName: owner is null ? null : p.Sender);
 
         await store.SaveTopicAsync(topic);
         return new ConversationCreation(identity, topic);

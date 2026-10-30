@@ -11,4 +11,7 @@ public sealed class ApprovalService(IChatLiveConnection liveConnection) : IAppro
 
     public Task<HubResult<ToolApprovalRequestMessage>> GetPendingApprovalForTopicAsync(string topicId) =>
         liveConnection.InvokeAsync<ToolApprovalRequestMessage>("GetPendingApprovalForTopic", topicId);
+
+    public Task<HubResult<IReadOnlyList<ToolApprovalRequestMessage>>> GetOfferedApprovalsAsync() =>
+        liveConnection.InvokeAsync<IReadOnlyList<ToolApprovalRequestMessage>>("GetOfferedApprovals");
 }

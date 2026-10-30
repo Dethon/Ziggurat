@@ -30,10 +30,32 @@ public class McpChannelConnectionNotConnectedTests
     }
 
     [Fact]
-    public async Task RequestApprovalAsync_NotConnected_Throws()
+    public async Task AskApprovalAsync_NotConnected_Throws()
     {
-        await Should.ThrowAsync<InvalidOperationException>(() => NeverConnected().RequestApprovalAsync(
-            "conv-1", [], CancellationToken.None));
+        await Should.ThrowAsync<InvalidOperationException>(() => NeverConnected().AskApprovalAsync(
+            ApprovalAsk.For("conv-1", [], null), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task OfferApprovalAsync_NotConnected_ReturnsNull()
+    {
+        // Offered beside the question the turn asked elsewhere: a channel that is down has simply
+        // not been answered on, and the relay waits on the others rather than catching.
+        var turn = new ConversationContext(
+            "jonas", "1:2", "fran", new ReplyTarget("voice", "1:2"),
+            Principal: new Principal("voice", "fran", new Account("home", "fran")));
+
+        var answer = await NeverConnected().OfferApprovalAsync(ApprovalAsk.For("1:2", [], turn), CancellationToken.None);
+
+        answer.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task SettleApprovalAsync_NotConnected_ReturnsSilently()
+    {
+        // Telling a channel it was answered elsewhere runs off the turn and can only be logged.
+        await Should.NotThrowAsync(() => NeverConnected().SettleApprovalAsync(
+            Guid.NewGuid().ToString("N"), ToolApprovalResult.Approved, CancellationToken.None));
     }
 
     [Fact]
@@ -66,7 +88,7 @@ public class McpChannelConnectionNotConnectedTests
         // which is also what an attach-only channel and a channel with no create_conversation tool
         // return. An exception would make the resolver catch in order to keep trying targets.
         var result = await NeverConnected().CreateConversationAsync(
-            "agent-1", "topic", "sender", null, null, null, CancellationToken.None);
+            "agent-1", "topic", "sender", null, null, null, null, group: false, CancellationToken.None);
 
         result.ShouldBeNull();
     }

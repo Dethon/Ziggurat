@@ -54,6 +54,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
 
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
@@ -63,7 +64,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            threadStore: null!,
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             _attachments,
             new Mock<IHubNotificationSender>().Object,
@@ -71,7 +72,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
 
         _sessionService.StartSession(TopicId, "jack", 7, 42, "default", "Chat");
@@ -87,9 +88,9 @@ public sealed class ChatHubAttachmentTests : IDisposable
     }
 
     [Fact]
-    public void CreateUploadTicket_IsScopedToTheTopicAndExpires()
+    public async Task CreateUploadTicket_IsScopedToTheTopicAndExpires()
     {
-        var ticket = _hub.CreateUploadTicket(TopicId);
+        var ticket = await _hub.CreateUploadTicket(TopicId);
 
         ticket.Token.ShouldNotBeNullOrWhiteSpace();
         ticket.ExpiresAt.ShouldBe(_time.GetUtcNow().AddSeconds(_settings.TicketTtlSeconds));
@@ -98,9 +99,9 @@ public sealed class ChatHubAttachmentTests : IDisposable
     }
 
     [Fact]
-    public void CreateUploadTicket_ForAnUnknownTopic_IsRefused()
+    public async Task CreateUploadTicket_ForAnUnknownTopic_IsRefused()
     {
-        Should.Throw<HubException>(() => _hub.CreateUploadTicket("no-such-topic"));
+        await Should.ThrowAsync<HubException>(() => _hub.CreateUploadTicket("no-such-topic"));
     }
 
     [Fact]
@@ -118,7 +119,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
     {
         var reference = await StoreAsync("default");
 
-        var download = _hub.CreateAttachmentDownload(reference.Id);
+        var download = await _hub.CreateAttachmentDownload(reference.Id);
 
         download.ShouldNotBeNull();
         download.Url.ShouldStartWith($"/api/attachments/{reference.Id}?ticket=");
@@ -130,13 +131,13 @@ public sealed class ChatHubAttachmentTests : IDisposable
     {
         var reference = await StoreAsync("private");
 
-        _hub.CreateAttachmentDownload(reference.Id).ShouldBeNull();
+        (await _hub.CreateAttachmentDownload(reference.Id)).ShouldBeNull();
     }
 
     [Fact]
-    public void CreateAttachmentDownload_ForAFileThatIsGone_IsRefused()
+    public async Task CreateAttachmentDownload_ForAFileThatIsGone_IsRefused()
     {
-        _hub.CreateAttachmentDownload("7-42/deadbeef").ShouldBeNull();
+        (await _hub.CreateAttachmentDownload("7-42/deadbeef")).ShouldBeNull();
     }
 
     // The references are what the agent is woken with. Bytes never ride the hub, so if they do

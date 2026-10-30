@@ -161,8 +161,7 @@ public class SubAgentTests(RedisFixture redisFixture)
 
 file sealed class AutoApproveHandler : IToolApprovalHandler
 {
-    public Task<ToolApprovalResult> RequestApprovalAsync(
-        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+    public Task<ToolApprovalResult> RequestApprovalAsync(ApprovalAsk ask, CancellationToken cancellationToken)
         => Task.FromResult(ToolApprovalResult.Approved);
 
     public Task NotifyAutoApprovedAsync(

@@ -23,6 +23,10 @@ Optional publisher parameters coalesce once to `NoOpMetricsPublisher.Instance` w
 
 Published events reach the Redis Pub/Sub channel `metrics:events`. `MetricsCollectorService` subscribes, aggregates into Redis (sorted sets for time-series, hashes for totals, TTL keys for health), and forwards live events to the SignalR hub (`/hubs/metrics`); `MetricsQueryService` serves grouped aggregations by dimension/metric enum. The dashboard is hybrid: REST for history on page load, SignalR for live updates, `LocalStorageService` for UI state.
 
+## Who reaches the dashboard
+
+Only the operator: the dashboard host's Caddy block puts `forward_auth` to the accounts service's session check (`?role=operator`) in front of everything it serves, so a member is answered 403 and a signed-out page goes to sign-in on the main host and back (the dashboard's origin is one of the accounts service's `ALLOWEDORIGINS`). `DeploymentConformanceTests.TheDashboard_AdmitsOnlyTheOperatorsSession` holds it. Anything the browser fetches without cookies is refused, which is why the manifest link asks for `crossorigin="use-credentials"`. Do not add a site-level `request_header -X-Ziggurat-*` strip: Caddy orders it after `forward_auth`, so it would blank the identity `copy_headers` set, and `copy_headers` already deletes a client's own copies before setting them.
+
 ## The dashboard's live connection
 
 `MetricsLiveConnection` owns being live, and it is the only thing that does. Becoming live is one

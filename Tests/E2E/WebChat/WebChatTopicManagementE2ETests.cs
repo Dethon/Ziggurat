@@ -12,10 +12,10 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // A conversation outlives the run that made it, and the user this test is handed comes off a
         // counter that restarts every run — so a later run can be shown the rows an earlier one left
@@ -79,10 +79,9 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
-        var user = fixture.NextUserIndex();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, user);
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         var tag = Guid.NewGuid().ToString("N")[..4];
 
@@ -105,7 +104,7 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         // actually holds, because both conversations were created in this client and are held
         // whether they were paged to or not.
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, user);
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         await page.EvaluateAsync(
             "() => { const r = document.querySelector('.hearth-rows'); if (r) r.scrollTop = r.scrollHeight; }");
@@ -121,11 +120,11 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await page.SetViewportSizeAsync(390, 844);
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // Unique per run, for the same reason as the topic rows above: the name this test settles on
         // is the one it then looks up, and an earlier run's row carrying it would match too.
@@ -161,10 +160,10 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync();
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
 
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // Unique per run: this one deletes the row it finds, so matching an earlier run's row would
         // delete somebody else's conversation and then assert against the survivor.

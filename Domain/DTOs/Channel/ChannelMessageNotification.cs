@@ -14,8 +14,10 @@ public record ChannelMessageNotification
     public string? UserId { get; init; }
     // Who the turn acts for, as the channel that vouched for them (Principal): stamped by a server
     // that fires on somebody's behalf from the turn that set it going, never from what the model
-    // wrote. Null on a person's own message, whose channel is the voucher, and on a fire nobody's
-    // own turn stands behind.
+    // wrote, and by a channel that knows the person's account on their own message (the chat
+    // client, from the proxy's session check), so the account rides with it. Null on a person's own
+    // message from a channel that knows no account yet, whose channel and sender are the voucher, and
+    // on a fire nobody's own turn stands behind.
     public Principal? Principal { get; init; }
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
@@ -37,7 +39,7 @@ public record ChannelMessageNotification
     public ResponseFormat? ResponseFormat { get; init; }
     // Optional request that the conversation also be shown on the deployment's review host
     // (WebChat), with this channel kept as the conversation's first target. Asked for by a channel
-    // sending on a person's behalf whose conversations are worth reading afterwards (Sugary); left
+    // whose conversations are worth reading afterwards (Sugary, and Telegram on every turn); left
     // null by every other.
     public ReviewCopy? ReviewCopy { get; init; }
     // Optional key naming the turn this message opens, for a channel that has to recognise the

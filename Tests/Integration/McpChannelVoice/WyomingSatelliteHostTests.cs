@@ -19,6 +19,7 @@ using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 using Tests.Unit.Mcp.Hosting;
+using Tests.Unit.McpChannelVoice;
 
 namespace Tests.Integration.McpChannelVoice;
 
@@ -135,7 +136,7 @@ public class WyomingSatelliteHostTests
             factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
-            emitter.Emitter, publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), new ReplyTextAccumulator(), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
+            emitter.Emitter, new FakeAccountResolver(), publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), new ReplyTextAccumulator(), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);
         var sessions = new SatelliteSessionRegistry();
         var registry = new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
         {

@@ -82,6 +82,8 @@ public static class ServiceCollectionExtensions
             services.AddScoped<AttachmentEffect>();
             services.AddScoped<DictationEffect>();
             services.AddScoped<TopicRenameEffect>();
+            services.AddScoped<TopicShareEffect>();
+            services.AddScoped<OfferedApprovalsEffect>();
 
             return services;
         }

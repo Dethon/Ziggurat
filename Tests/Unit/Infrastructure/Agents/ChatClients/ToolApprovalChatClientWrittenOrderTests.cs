@@ -402,9 +402,8 @@ public class ToolApprovalChatClientWrittenOrderTests
 
     private sealed class PerToolApprovalHandler(Func<string, ToolApprovalResult> decide) : IToolApprovalHandler
     {
-        public Task<ToolApprovalResult> RequestApprovalAsync(
-            string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken) =>
-            Task.FromResult(decide(requests[0].ToolName));
+        public Task<ToolApprovalResult> RequestApprovalAsync(ApprovalAsk ask, CancellationToken cancellationToken) =>
+            Task.FromResult(decide(ask.Requests[0].ToolName));
 
         public Task NotifyAutoApprovedAsync(
             string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken) =>

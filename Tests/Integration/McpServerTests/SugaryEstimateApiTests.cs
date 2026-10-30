@@ -528,6 +528,52 @@ public class SugaryEstimateApiTests
         (await ReadAsync(await second))["conversationId"]!.GetValue<string>().ShouldBe(conversation);
     }
 
+    // An estimate is a turn of the person whose phone asked for it, on the Sugary channel: the
+    // principal carries their account, so whatever follows the person — their review copy among it —
+    // is theirs, and the turn goes by the account's id, which is all the proxy's headers say.
+    [Fact]
+    public async Task AnEstimateTurn_ActsForThePersonSignedIn_AndSoDoTheirAnswers()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = server.As(SugaryServer.Him);
+
+        var first = app.PostAsync("/api/estimates", Form("a bowl of lentils"));
+        var firstTurn = await NextTurnAsync(agent);
+        await ReplyAsync(agent, firstTurn, Estimate);
+        var conversation = (await ReadAsync(await first))["conversationId"]!.GetValue<string>();
+        var second = app.PostAsync("/api/estimates", FollowUp(conversation, Answer));
+        var followUp = await NextTurnAsync(agent);
+        await ReplyAsync(agent, followUp, AnsweredEstimate);
+        await ReadAsync(await second);
+
+        foreach (var turn in new[] { firstTurn, followUp })
+        {
+            turn.Principal.ShouldBe(new Principal("sugary", SugaryServer.Him.UserId, SugaryServer.Him));
+            turn.Sender.ShouldBe(SugaryServer.Him.UserId);
+        }
+    }
+
+    // A meal's conversation is its person's: somebody else's answers would continue it as their own
+    // turn, on her photos and her words.
+    [Fact]
+    public async Task HisAnswer_ToHerEstimate_IsRefusedAsGone_BeforeAnythingIsSent()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var conversation = await EstimateAsync(server.As(SugaryServer.Her), agent);
+
+        var response = await server.As(SugaryServer.Him).PostAsync("/api/estimates", FollowUp(conversation, Answer));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await DetailAsync(response)).ShouldContain("estimated again");
+        var mine = server.As(SugaryServer.Her).PostAsync("/api/estimates", FollowUp(conversation, Answer));
+        var next = await NextTurnAsync(agent);
+        next.Principal!.Account.ShouldBe(SugaryServer.Her, "nothing of his reached the agent first");
+        await ReplyAsync(agent, next, AnsweredEstimate);
+        await ReadAsync(await mine);
+    }
+
     // A conversation the server never opened is not one the agent can carry on: it would estimate
     // from her answers alone, with no photo and no words. Refused before anything is sent — there
     // is no agent even connected here — with a status the app reads as "start this meal again".

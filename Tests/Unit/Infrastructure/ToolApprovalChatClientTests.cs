@@ -199,12 +199,39 @@ public class ToolApprovalChatClientTests
         seen.ShouldBe(conversation);
     }
 
+    // An approval is its asker's, so the question carries the turn it is asked for — whose it is, a
+    // fire's creator included — as a field, never as whatever call happens to be in flight.
+    [Fact]
+    public async Task InvokeFunctionAsync_AsksTheQuestionForTheTurn_UnderAnIdOfItsOwn()
+    {
+        var handler = new TestApprovalHandler(result: ToolApprovalResult.Approved);
+        var function = AIFunctionFactory.Create(() => "result", "mcp__shop__buy");
+        var turn = new ConversationContext(
+            "jonas", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"),
+            OriginKind: MessageOriginKind.Schedule,
+            Principal: new Principal("signalr", "fran", new Account("home", "fran")));
+
+        var fakeClient = new FakeChatClient();
+        fakeClient.SetNextResponse(CreateToolCallResponse("mcp__shop__buy", "call1"));
+        var client = new ToolApprovalChatClient(fakeClient, handler, "conv-1");
+
+        await client.GetResponseAsync([new ChatMessage(ChatRole.User, "test")], new ChatOptions
+        {
+            Tools = [function],
+            AdditionalProperties = new AdditionalPropertiesDictionary { ["ConversationContext"] = turn }
+        });
+
+        var ask = handler.Asks.ShouldHaveSingleItem();
+        ask.Turn.ShouldBe(turn);
+        ask.Asker.ShouldBe(new Account("home", "fran"));
+        Guid.TryParseExact(ask.ApprovalId, "N", out _).ShouldBeTrue();
+    }
+
     private sealed class GatedNotifyApprovalHandler(Task gate) : IToolApprovalHandler
     {
         public int NotifyCalls;
 
-        public Task<ToolApprovalResult> RequestApprovalAsync(
-            string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken cancellationToken)
+        public Task<ToolApprovalResult> RequestApprovalAsync(ApprovalAsk ask, CancellationToken cancellationToken)
             => Task.FromResult(ToolApprovalResult.Rejected);
 
         public async Task NotifyAutoApprovedAsync(

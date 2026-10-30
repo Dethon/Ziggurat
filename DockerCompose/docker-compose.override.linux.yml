@@ -26,10 +26,6 @@ services:
     volumes:
       - ${HOME}/.microsoft/usersecrets/ead7bc91-e201-4c21-be64-d50ecc783ad6:/home/app/.microsoft/usersecrets/ead7bc91-e201-4c21-be64-d50ecc783ad6:ro
 
-  mcp-channel-servicebus:
-    volumes:
-      - ${HOME}/.microsoft/usersecrets/b2d039c8-952d-4510-9186-29fdc236fec9:/home/app/.microsoft/usersecrets/b2d039c8-952d-4510-9186-29fdc236fec9:ro
-
   mcp-channel-voice:
     volumes:
       - ${HOME}/.microsoft/usersecrets/b2c5d8e1-9f44-4a72-9eaf-2c8f3d6b1a07:/home/app/.microsoft/usersecrets/b2c5d8e1-9f44-4a72-9eaf-2c8f3d6b1a07:ro

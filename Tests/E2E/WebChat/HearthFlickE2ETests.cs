@@ -65,9 +65,9 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageAsync(hasTouch: true, isMobile: true);
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), hasTouch: true, isMobile: true);
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         var tag = Guid.NewGuid().ToString("N")[..4];
         await CreateTopicAsync(page, $"Scroll one {tag} answer briefly");
@@ -118,9 +118,9 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
     {
         // isMobile is not a synonym for hasTouch: it turns on Chromium's mobile emulation
         // (390x844, DSF 3, hasTouch) and with it the tap heuristics a phone is judged by.
-        var page = await fixture.CreatePageAsync(hasTouch: true, isMobile: true);
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), hasTouch: true, isMobile: true);
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // Topics from earlier runs survive in the stack, so unique names keep "the row I aimed at"
         // and "the row that got selected" from being two different rows with the same text.

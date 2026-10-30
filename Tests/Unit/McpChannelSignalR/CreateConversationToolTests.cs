@@ -24,12 +24,14 @@ public class CreateConversationToolTests
     {
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             new Mock<ILogger<StreamService>>().Object);
         _services = new ServiceCollection()
             .AddSingleton(_sessionService)
             .AddSingleton(_streamService)
             .AddSingleton(_hubSender.Object)
+            .AddSingleton(_topics.Store)
             .AddSingleton<IConversationFactory>(new ConversationFactory(_topics.Store, TimeProvider.System))
             .BuildServiceProvider();
     }

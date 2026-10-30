@@ -7,6 +7,7 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.State.Hub;
 
@@ -14,17 +15,27 @@ public sealed class HubEventDispatcher(
     IDispatcher dispatcher,
     TopicsStore topicsStore,
     TopicStreams topicStreams,
-    IMessagePipeline pipeline) : IHubEventDispatcher
+    IMessagePipeline pipeline,
+    UserIdentityStore identityStore) : IHubEventDispatcher
 {
     public void HandleTopicChanged(TopicChangedNotification notification)
     {
         switch (notification.ChangeType)
         {
             case TopicChangeType.Created when notification.Topic is not null:
-                dispatcher.Dispatch(new AddTopic(StoredTopic.FromMetadata(notification.Topic)));
+                if (MaySee(notification.Topic))
+                {
+                    dispatcher.Dispatch(new AddTopic(StoredTopic.FromMetadata(notification.Topic)));
+                }
+
+                break;
+            // Sharing and unsharing are told to the whole space, so the same news adds a row for
+            // whoever may now see the topic and takes it from whoever no longer may.
+            case TopicChangeType.Updated when notification.Topic is not null && MaySee(notification.Topic):
+                dispatcher.Dispatch(new UpdateTopic(StoredTopic.FromMetadata(notification.Topic)));
                 break;
             case TopicChangeType.Updated when notification.Topic is not null:
-                dispatcher.Dispatch(new UpdateTopic(StoredTopic.FromMetadata(notification.Topic)));
+                dispatcher.Dispatch(new RemoveTopic(notification.TopicId));
                 break;
             case TopicChangeType.Deleted:
                 dispatcher.Dispatch(new RemoveTopic(notification.TopicId));
@@ -36,6 +47,10 @@ public sealed class HubEventDispatcher(
                     "Invalid TopicChangeType or missing Topic");
         }
     }
+
+    // Until the accounts service has answered, the server's own audience is the only rule.
+    private bool MaySee(TopicMetadata topic) =>
+        identityStore.State.SignedIn?.Viewer is not { } viewer || viewer.Sees(topic);
 
     // Reporting the push is all this type does. Deciding whether to resume the stream or just
     // mark it started belongs to StreamResumeEffect — resuming is a hub call, and a dispatcher
@@ -53,7 +68,12 @@ public sealed class HubEventDispatcher(
     // Taking the prompt off screen is all this is. What the approval let through arrives on the
     // topic's stream like the rest of the reply.
     public void HandleApprovalResolved(ApprovalResolvedNotification notification) =>
-        dispatcher.Dispatch(new ApprovalResolved(notification.ApprovalId));
+        dispatcher.Dispatch(new ApprovalResolved(notification.ApprovalId, notification.AnsweredElsewhere));
+
+    // Shown apart from any topic's prompts, even when the hub names the topic it is about: a topic
+    // caught up says only what was asked in it, and this was asked somewhere else.
+    public void HandleApprovalOffered(ApprovalOfferedNotification notification) =>
+        dispatcher.Dispatch(new ShowApproval(null, notification.Request));
 
     public void HandleAgentsUpdated(IReadOnlyList<AgentCatalogEntry> agents)
     {

@@ -134,7 +134,8 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
                 MealOutcome.InRange, null,
                 [new LoggedItem(0, "toast", null, null, null, new CarbRange(20, 30, 40), ItemSource.Label, null, false, null)])
         ]);
-        var sugary = new SugaryFileSystem(log, TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"), new DuckDbTableEngine());
+        var sugary = new SugaryFileSystem(log, TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"), new DuckDbTableEngine())
+            .For(InMemorySugaryLog.Her);
         var call = Mint((sugary, "/sugary", null));
 
         var result = await ExecAsync(client,

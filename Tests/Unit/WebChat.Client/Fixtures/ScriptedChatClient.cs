@@ -61,7 +61,8 @@ public sealed class ScriptedChatClient : IAsyncDisposable
             typeof(TopicSelectionEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
             typeof(AgentSelectionEffect), typeof(UserIdentityEffect), typeof(SpaceEffect),
             typeof(AgentActivityEffect), typeof(AgentSettingsEffect), typeof(StreamResumeEffect),
-            typeof(AttachmentEffect), typeof(DictationEffect), typeof(TopicRenameEffect)
+            typeof(AttachmentEffect), typeof(DictationEffect), typeof(TopicRenameEffect),
+            typeof(TopicShareEffect)
         }.ToList().ForEach(type => Services.GetRequiredService(type));
     }
 
@@ -79,6 +80,8 @@ public sealed class ScriptedChatClient : IAsyncDisposable
     public FakeConfigService ConfigService { get; } = new FakeConfigService().WithSpace("default");
 
     public FakeLocalStorageService LocalStorage { get; } = new();
+
+    public FakeAccountService Accounts { get; } = new();
 
     public IChatLiveConnection LiveConnection => Services.GetRequiredService<IChatLiveConnection>();
 
@@ -160,6 +163,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         services.AddScoped<IHubConnectionFactory>(_ => Factory);
         services.AddScoped<IConfigService>(_ => ConfigService);
         services.AddScoped<ILocalStorageService>(_ => LocalStorage);
+        services.AddScoped<IAccountService>(_ => Accounts);
         services.AddScoped<IPushSubscriptionService>(_ => new FakePushSubscriptionService());
         services.AddScoped<IAttachmentUploader>(_ => Uploader);
         services.AddScoped<IDictationBridge>(_ => Dictation);
