@@ -27,10 +27,8 @@ internal sealed class SignedInConnectionFilter(
 
     public async Task OnConnectedAsync(HubLifetimeContext context, Func<HubLifetimeContext, Task> next)
     {
-        var assertion = context.Context.GetHttpContext()?.Request.Headers[ForwardedAccount.AssertionHeader] is { Count: 1 } values
-            ? values[0]
-            : null;
-        if (await assertions.VerifyAsync(assertion, ChannelIds.SignalR, context.Context.ConnectionAborted) is not { } account)
+        var headers = context.Context.GetHttpContext()?.Request.Headers ?? new HeaderDictionary();
+        if (await assertions.VerifyRequestAsync(headers, ChannelIds.SignalR, context.Context.ConnectionAborted) is not { } account)
         {
             throw new HubException(NotSignedInError);
         }

@@ -136,6 +136,9 @@ assertion must name the app's channel and a person — a guest assertion is nobo
 answers a `ForwardedAccount` built from the signed claims, or null, logging a refusal other than
 `Missing` at warning (`KeysUnavailable` there means the accounts service is unreachable and every
 signed-in person is being turned away). `ForwardedAccount.From`, which read the plain three, is gone.
+Each app asks `VerifyRequestAsync(request.Headers, channel)`, which reads the one header through
+`AssertionVerifier.AssertionOf` — none, or two values, is no assertion — and Sugary, which keeps the
+assertion to hand on, reads it there too.
 
 | App | Channel it holds the assertion to | Signed out | Else |
 |---|---|---|---|
