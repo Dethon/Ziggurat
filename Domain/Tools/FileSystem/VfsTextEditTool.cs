@@ -32,7 +32,7 @@ public class VfsTextEditTool(IVirtualFileSystemRegistry registry)
         AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
-        if (!registry.Resolve(filePath).TryGetValue(out var resolution, out var unresolved))
+        if (!registry.Resolve(filePath, arguments).TryGetValue(out var resolution, out var unresolved))
         {
             return unresolved.ToNode();
         }

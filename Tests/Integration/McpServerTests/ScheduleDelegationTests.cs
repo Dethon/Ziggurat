@@ -4,9 +4,12 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Security;
 using Domain.Security.Signing;
+using Domain.Tools.FileSystem;
 using Domain.Tools.Scheduling.Vfs;
+using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
 using McpServerScheduling.Services;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Client;
 using Shouldly;
@@ -180,6 +183,47 @@ public class ScheduleDelegationTests(McpSchedulingServerFixture fixture) : IClas
                 $$"""{"prompt":"remind me of the dentist","runAt":"{{at}}","deliverTo":["telegram"]}""", false, true,
                 CancellationToken.None))
             .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+
+        (await ActsForAsync(id)).ShouldBe(_fran);
+    }
+
+    // The agent reads an offset-less runAt in the zone it is handed, not the machine's: handed one the
+    // scheduling server does not share, the two read different instants and the fire acts for nobody.
+    [Fact]
+    public async Task AOneShotReadInAZoneTheServerDoesNotShare_FiresAsNobody()
+    {
+        var id = NewId();
+        var elsewhere = TimeZoneInfo.CreateCustomTimeZone("elsewhere",
+            TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow) + TimeSpan.FromHours(3), "elsewhere", "elsewhere");
+        await using var client = await McpClient.CreateAsync(McpTestSecret.Transport(fixture.McpEndpoint));
+        var backend = new McpFileSystemBackend(client, "schedules", null, localZone: elsewhere).As(TurnOf(_fran));
+        var at = DateTime.Now.AddDays(2).ToString("yyyy-MM-ddTHH:mm:ss");
+
+        (await backend.CreateAsync($"/jonas/{id}/schedule.json",
+                $$"""{"prompt":"remind me of the dentist","runAt":"{{at}}","deliverTo":["telegram"]}""", false, true,
+                CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+
+        (await AdmitAsync(id)).ShouldBe(new FireAdmission.Undelegated(DelegationVerifier.DigestMismatch));
+    }
+
+    // The model writes through the domain file tools, and who such a call acts for is the turn the
+    // approval client put on the call's own arguments — never whatever invocation is in flight.
+    [Fact]
+    public async Task AScheduleWrittenThroughTheFileTool_FiresAsThePersonItsCallNames()
+    {
+        var id = NewId();
+        await using var client = await McpClient.CreateAsync(McpTestSecret.Transport(fixture.McpEndpoint));
+        var registry = new VirtualFileSystemRegistry();
+        registry.Mount(new FileSystemMount("schedules", "/schedules", "schedules"),
+            new McpFileSystemBackend(client, "schedules", null));
+        var call = new AIFunctionArguments
+        {
+            Context = new Dictionary<object, object?> { [ConversationContext.ContextKey] = TurnOf(_fran) }
+        };
+
+        await new VfsTextCreateTool(registry).RunAsync($"/schedules/jonas/{id}/schedule.json",
+            """{"prompt":"summarize my unread mail","cron":"0 8 * * *"}""", arguments: call);
 
         (await ActsForAsync(id)).ShouldBe(_fran);
     }

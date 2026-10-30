@@ -148,7 +148,7 @@ public sealed class TranscriptDispatcher(
     // Either way the turn carries the accounts service's assertion of who it is for, which is what
     // the agent believes: the person's, from the same answer, or the household guest's, asked for.
     // One the service could not sign at all leaves the turn with none, and the agent refuses it.
-    private async Task<(Principal Principal, string Sender, string? Assertion)> SpeakerOfAsync(
+    private async Task<Speaker> SpeakerOfAsync(
         SatelliteSession session, string? identifiedSpeaker, CancellationToken ct)
     {
         if (identifiedSpeaker is null)
@@ -160,8 +160,8 @@ public sealed class TranscriptDispatcher(
         {
             if (await accounts.ResolveAsync(ChannelIds.Voice, identifiedSpeaker, ct) is { } resolved)
             {
-                return (new Principal(ChannelIds.Voice, resolved.Account.UserId, resolved.Account), resolved.DisplayName,
-                    resolved.Assertion);
+                return new Speaker(new Principal(ChannelIds.Voice, resolved.Account.UserId, resolved.Account),
+                    resolved.DisplayName, resolved.Assertion);
             }
 
             logger.LogWarning(
@@ -178,28 +178,30 @@ public sealed class TranscriptDispatcher(
         return await AsGuestAsync(session, ct);
     }
 
-    private async Task<(Principal Principal, string Sender, string? Assertion)> AsGuestAsync(
-        SatelliteSession session, CancellationToken ct)
+    private async Task<Speaker> AsGuestAsync(SatelliteSession session, CancellationToken ct)
     {
         try
         {
-            return (Guest, session.Config.Identity, (await accounts.GuestAsync(ChannelIds.Voice, ct)).Assertion);
+            return new Speaker(Guest, session.Config.Identity, (await accounts.GuestAsync(ChannelIds.Voice, ct)).Assertion);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex,
                 "Could not have the guest on {Satellite} vouched for; the agent will refuse the turn", session.SatelliteId);
-            return (Guest, session.Config.Identity, null);
+            return new Speaker(Guest, session.Config.Identity, null);
         }
     }
 
     // Whose a new conversation's topic is needs who spoke, not what vouched for them.
-    private static async Task<(Principal Principal, string Sender)> WhoSpokeAsync(
-        Task<(Principal Principal, string Sender, string? Assertion)> speaker)
+    private static async Task<(Principal Principal, string Sender)> WhoSpokeAsync(Task<Speaker> speaker)
     {
         var (principal, sender, _) = await speaker;
         return (principal, sender);
     }
+
+    // Who a turn is for, the name it goes out under, and the accounts service's word for it — none when
+    // the service could not sign one, which the agent refuses.
+    private sealed record Speaker(Principal Principal, string Sender, string? Assertion);
 
     // Every UtteranceTranscribed publish shares this shape; only the outcome label and the
     // conversation id (active vs. newly created vs. none) differ per call site.

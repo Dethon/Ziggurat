@@ -1,9 +1,11 @@
 using System.ComponentModel;
-using System.Reflection;
 using System.Text.Json.Nodes;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.Security;
+using Domain.Tools.FileSystem;
+using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
 using Mcp.Hosting;
 using Microsoft.Extensions.AI;
@@ -18,7 +20,8 @@ namespace Tests.Integration.Agents;
 // The model reaches a mount through the domain filesystem tools, which dispatch to the server's
 // fs_* tools through McpFileSystemBackend — a second hop that used to carry no `_meta`. The first
 // prod watch failed on exactly that: the mount asked who was calling and nobody had said. The
-// backend stamps the turn's conversation context the way a directly-called tool does.
+// backend stamps the conversation the tool call's own arguments name, the way a directly-called
+// tool carries its turn's.
 public class McpFileSystemBackendMetaTests
 {
     private sealed record ProbeSettings(string Name) : IMcpHostSettings
@@ -26,38 +29,26 @@ public class McpFileSystemBackendMetaTests
         public McpGateSettings Mcp => McpTestSecret.Gate;
     }
 
-    private static readonly PropertyInfo _currentContext =
-        typeof(FunctionInvokingChatClient).GetProperty("CurrentContext", BindingFlags.Public | BindingFlags.Static)!;
-
     [Fact]
-    public async Task AFilesystemCall_MadeInsideATurn_CarriesTheConversationContextToTheServer()
+    public async Task AFileToolCall_CarriesTheConversationItsArgumentsNameToTheServer()
     {
         await using var server = await InMemoryMcpServer.StartAsync(services => services
             .AddToolServer(new ProbeSettings("probe"))
             .WithTools<MetaEchoingFileSystemTools>());
-        var backend = new McpFileSystemBackend(server.Client, "probe", advertisedOperations: null);
+        var registry = new VirtualFileSystemRegistry();
+        registry.Mount(new FileSystemMount("probe", "/probe", "probe"),
+            new McpFileSystemBackend(server.Client, "probe", advertisedOperations: null));
         var context = new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("telegram", "conv-1"));
-        _currentContext.SetValue(null, new FunctionInvocationContext
+
+        var info = await new VfsFileInfoTool(registry).RunAsync("/probe/anything", new AIFunctionArguments
         {
-            Options = new ChatOptions
-            {
-                AdditionalProperties = new AdditionalPropertiesDictionary { [ConversationContextMeta.OptionsKey] = context }
-            }
+            Context = new Dictionary<object, object?> { [ConversationContext.ContextKey] = context }
         });
 
-        try
-        {
-            var info = (await backend.InfoAsync("/anything", CancellationToken.None))
-                .ShouldBeOfType<FsResult<FsInfoResult>.Ok>().Value;
-
-            info.Path.ShouldBe("jonas:conv-1");
-        }
-        finally
-        {
-            _currentContext.SetValue(null, null);
-        }
+        info["lastModified"]!.GetValue<string>().ShouldBe("jonas:conv-1");
     }
 
+    // The mount as discovered is nobody's: the invocation in flight is never asked who is calling.
     [Fact]
     public async Task AFilesystemCall_OutsideAnyTurn_CarriesNoContext()
     {
@@ -80,11 +71,18 @@ public sealed class MetaEchoingFileSystemTools
 {
     [McpServerTool(Name = "fs_info")]
     [Description("Answers the caller as the path.")]
-    public static string Info(RequestContext<CallToolRequestParams> context, string path, string? filesystem = null) =>
-        new JsonObject
+    public static string Info(RequestContext<CallToolRequestParams> context, string path, string? filesystem = null)
+    {
+        var caller = global::Domain.Channels.ConversationScope.Parse(context.Params?.Meta) is { } c
+            ? $"{c.AgentId}:{c.ConversationId}"
+            : "nobody";
+        return new JsonObject
         {
             ["exists"] = true,
             ["isDirectory"] = false,
-            ["path"] = global::Domain.Channels.ConversationScope.Parse(context.Params?.Meta) is { } caller ? $"{caller.AgentId}:{caller.ConversationId}" : "nobody"
+            ["path"] = caller,
+            // Again where a file tool, which echoes its caller's own path, leaves it alone.
+            ["lastModified"] = caller
         }.ToJsonString();
+    }
 }

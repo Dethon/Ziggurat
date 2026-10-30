@@ -35,7 +35,7 @@ public class VfsGlobFilesToolTests
             Total = 2
         }, out _);
 
-        var result = await tool.RunAsync("/ha/entities", "**", CancellationToken.None);
+        var result = await tool.RunAsync("/ha/entities", "**", cancellationToken: CancellationToken.None);
 
         Entries(result).ShouldBe(["/ha/entities/light/kitchen/", "/ha/entities/light/kitchen/state.json"]);
     }
@@ -50,7 +50,7 @@ public class VfsGlobFilesToolTests
             Total = 2
         }, out _);
 
-        var result = await tool.RunAsync("/print-queue", "*", CancellationToken.None);
+        var result = await tool.RunAsync("/print-queue", "*", cancellationToken: CancellationToken.None);
 
         Entries(result).ShouldBe(["/print-queue/note.txt", "/print-queue/status.json"]);
     }
@@ -70,7 +70,7 @@ public class VfsGlobFilesToolTests
             BudgetReached = true
         }, out _);
 
-        var result = await tool.RunAsync("/sandbox", "**/*.csv", CancellationToken.None);
+        var result = await tool.RunAsync("/sandbox", "**/*.csv", cancellationToken: CancellationToken.None);
 
         var hint = result["hint"]!.GetValue<string>();
         hint.ShouldContain("50,000");
@@ -89,7 +89,7 @@ public class VfsGlobFilesToolTests
             BudgetReached = false
         }, out _);
 
-        var result = await tool.RunAsync("/sandbox", "**/*.csv", CancellationToken.None);
+        var result = await tool.RunAsync("/sandbox", "**/*.csv", cancellationToken: CancellationToken.None);
 
         result["hint"].ShouldBeNull();
     }

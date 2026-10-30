@@ -1,5 +1,6 @@
 using Domain.Security.Signing;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
 
 namespace Domain.Security;
 
@@ -30,9 +31,22 @@ public sealed class AssertionVerifier(
 
     // A host hands in the fetch over its own HttpClient: Domain makes no HTTP call.
     public static AssertionVerifier OverJwks(
-        Func<CancellationToken, Task<string>> fetch, TimeProvider clock, ILoggerFactory? loggers = null) =>
-        new(new JwksCache(fetch, clock, logger: loggers?.CreateLogger<JwksCache>()), clock,
-            logger: loggers?.CreateLogger<AssertionVerifier>());
+        Func<CancellationToken, Task<string>> fetch, TimeProvider clock, TokenVerificationSettings settings,
+        ILoggerFactory? loggers = null) =>
+        new(new JwksCache(fetch, clock, settings, loggers?.CreateLogger<JwksCache>()), clock, settings,
+            loggers?.CreateLogger<AssertionVerifier>());
+
+    // The assertion a request past the proxy carries: the proxy sets the header once, so a request
+    // carrying none or two did not come from it alone and carries none.
+    public static string? AssertionOf(IDictionary<string, StringValues> headers) =>
+        headers.TryGetValue(ForwardedAccount.AssertionHeader, out var values) && values is [{ } assertion]
+            ? assertion
+            : null;
+
+    // Who a request to an app behind the proxy is from, for the app's channel.
+    public Task<ForwardedAccount?> VerifyRequestAsync(
+        IDictionary<string, StringValues> headers, string channel, CancellationToken ct) =>
+        VerifyAsync(AssertionOf(headers), channel, ct);
 
     public async Task<ForwardedAccount?> VerifyAsync(string? assertion, string channel, CancellationToken ct)
     {
