@@ -109,7 +109,7 @@ public class ChannelAttachmentSourceTests
 
         public Task<string?> CreateConversationAsync(
             string agentId, string topicName, string sender, string? initialPrompt,
-            string? address, string? existingConversationId, Principal? principal, CancellationToken ct) =>
+            string? address, string? existingConversationId, Principal? principal, bool group, CancellationToken ct) =>
             Task.FromResult<string?>(null);
     }
 }

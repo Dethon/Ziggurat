@@ -4,6 +4,7 @@ using Domain.DTOs.Channel;
 using Mcp.Hosting;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace McpChannelTelegram.Services;
 
@@ -231,6 +232,7 @@ public sealed class TelegramBotService : BackgroundService
                 // router still knows the person by.
                 Principal = new Principal(TelegramAccess.Channel, sender, person.Account),
                 Attachments = intake.Attachments.Count > 0 ? intake.Attachments : null,
+                ReviewCopy = ReviewOf(first.Chat, person),
                 Timestamp = DateTimeOffset.UtcNow
             },
             cancellationToken);
@@ -244,6 +246,14 @@ public sealed class TelegramBotService : BackgroundService
         _logger.LogDebug("Emitted message notification for conversation {ConversationId} from {Sender} (agent: {AgentId})",
             conversationId, sender, agentId);
     }
+
+    // Every turn asks, so a person's Telegram conversations sit among their topics in the chat
+    // client. The bot names the chat and says whether it is a group's; whose the copy is, and where
+    // it goes, is the review host's to decide (ADR 0046).
+    private static ReviewCopy ReviewOf(Chat chat, ResolvedAccount person) =>
+        chat.Type == ChatType.Private
+            ? new ReviewCopy { Title = $"Telegram: {person.DisplayName}" }
+            : new ReviewCopy { Title = $"Telegram: {chat.Title ?? "group"}", Group = true };
 
     // Every refusal for one message in a single reply quoting the item that failed and naming its
     // file, the way the gate answers a stranger. Answers whether the turn stops:
