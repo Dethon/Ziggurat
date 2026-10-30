@@ -99,6 +99,8 @@ internal sealed class ThreadSessionBuilder(
     [
         ChannelProtocol.SendReplyTool,
         ChannelProtocol.RequestApprovalTool,
+        ChannelProtocol.OfferApprovalTool,
+        ChannelProtocol.SettleApprovalTool,
         ChannelProtocol.CreateConversationTool,
         ChannelProtocol.RegisterAgentsTool,
         ChannelProtocol.ReceiveTool,

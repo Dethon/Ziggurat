@@ -43,6 +43,8 @@ public static class ConfigModule
             .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            .WithTools<OfferApprovalTool>()
+            .WithTools<SettleApprovalTool>()
             // Telegram has no agent picker and no per-message model override, so this catalogue
             // exists for one reason: the attachment capability resolution needs something to ask
             // about the model a turn will run on. It arrives through the registration the agent

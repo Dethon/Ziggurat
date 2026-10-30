@@ -290,7 +290,29 @@ public partial class TelegramLinkingTests
         (await StartWithAsync(server, LauraTelegram, token)).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
+    // A question a person's turn asks is offered to them in their Telegram private chat, whose id
+    // is their own Telegram id: the bot asks whose it is by the account, within its household.
+    [Fact]
+    public async Task APersonsTelegram_IsFoundByTheirAccount_AndNobodysForSomeoneUnlinked()
+    {
+        await using var server = await StartAsync();
+        var laura = await server.SeedMemberAsync("Laura");
+        var marta = await server.SeedMemberAsync("Marta");
+        await StartWithAsync(server, LauraTelegram, await TelegramCodeAsync(server, laura));
+        var tenantId = (await ResolveAsync(server, LauraTelegram))["tenantId"]!.GetValue<string>();
+
+        var found = await PostAsync(server, "/accounts/internal/telegram/of-account", new { tenantId, userId = laura });
+
+        found.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await found.Content.ReadFromJsonAsync<JsonObject>())!["telegramId"]!.GetValue<long>().ShouldBe(LauraTelegram);
+        (await PostAsync(server, "/accounts/internal/telegram/of-account", new { tenantId, userId = marta }))
+            .StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await PostAsync(server, "/accounts/internal/telegram/of-account", new { tenantId = "elsewhere", userId = laura }))
+            .StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
     [Theory]
+    [InlineData("/accounts/internal/telegram/of-account", null)]
     [InlineData("/accounts/internal/telegram/start", null)]
     [InlineData("/accounts/internal/telegram/start", "not-a-credential")]
     [InlineData("/accounts/internal/telegram/web-link", null)]

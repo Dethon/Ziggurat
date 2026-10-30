@@ -44,7 +44,10 @@ public class ChatMonitorReviewCopyTests
         // it, and the turn's context names it as the conversation the answer belongs to.
         var created = factory.Created.ShouldHaveSingleItem();
         created.Key.ShouldBe(new AgentKey(Conversation, "sugary"));
-        created.ApprovalHandler.ShouldBeSameAs(sugary);
+        await created.ApprovalHandler.RequestApprovalAsync(
+            ApprovalAsk.For(Conversation, [], null), CancellationToken.None);
+        sugary.AskedApprovals.ShouldHaveSingleItem().ConversationId.ShouldBe(Conversation);
+        webchat.AskedApprovals.ShouldBeEmpty();
         agent.ReceivedMessages.TryDequeue(out var messages).ShouldBeTrue();
         messages!.ShouldHaveSingleItem().GetConversationContext()!.Origin
             .ShouldBe(new ReplyTarget("sugary", Conversation));

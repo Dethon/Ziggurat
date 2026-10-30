@@ -215,8 +215,7 @@ public static class EvalRun
 // that decides whether asking is needed.
 public sealed class AutoApproveHandler : IToolApprovalHandler
 {
-    public Task<ToolApprovalResult> RequestApprovalAsync(
-        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct) =>
+    public Task<ToolApprovalResult> RequestApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
         Task.FromResult(ToolApprovalResult.Approved);
 
     public Task NotifyAutoApprovedAsync(

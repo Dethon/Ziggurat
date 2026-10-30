@@ -68,7 +68,12 @@ public sealed class HubEventDispatcher(
     // Taking the prompt off screen is all this is. What the approval let through arrives on the
     // topic's stream like the rest of the reply.
     public void HandleApprovalResolved(ApprovalResolvedNotification notification) =>
-        dispatcher.Dispatch(new ApprovalResolved(notification.ApprovalId));
+        dispatcher.Dispatch(new ApprovalResolved(notification.ApprovalId, notification.AnsweredElsewhere));
+
+    // Shown apart from any topic's prompts, even when the hub names the topic it is about: a topic
+    // caught up says only what was asked in it, and this was asked somewhere else.
+    public void HandleApprovalOffered(ApprovalOfferedNotification notification) =>
+        dispatcher.Dispatch(new ShowApproval(null, notification.Request));
 
     public void HandleAgentsUpdated(IReadOnlyList<AgentCatalogEntry> agents)
     {
