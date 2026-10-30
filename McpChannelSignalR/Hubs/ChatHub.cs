@@ -43,10 +43,6 @@ public sealed class ChatHub(
     // absent when the service could not say.
     internal const string DisplayNameItem = "DisplayName";
 
-    // This channel's own name, as the agent's channel endpoints call it and as a principal names the
-    // channel that vouched for it.
-    internal const string ChannelId = "signalr";
-
     // The one answer for a topic the caller may not see, worded as for one that does not exist, so
     // naming another person's private topic tells the namer nothing about it — not even that it is.
     private const string NoSuchConversation = "No such conversation.";
@@ -68,7 +64,7 @@ public sealed class ChatHub(
     private TopicViewer Viewer => SignedIn.Viewer;
 
     // Who a turn sent from here acts for: the account itself, never the name, which only labels it.
-    private Principal TurnPrincipal => SignedIn.PrincipalOn(ChannelId);
+    private Principal TurnPrincipal => SignedIn.PrincipalOn(ChannelIds.SignalR);
 
     // What a turn's sender shows the agent: the account's name, or its id when no name was learned.
     private string TurnSender => Context.Items.TryGetValue(DisplayNameItem, out var name) && name is string { Length: > 0 } shown

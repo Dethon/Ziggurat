@@ -10,10 +10,6 @@ namespace Domain.Tools.Web;
 // anonymous context or to another person, because a guess here is one person acting as another.
 public abstract record PersonResolution
 {
-    // The agent's channel endpoint ids, as a turn's origin names them.
-    public const string ChatClientChannelId = "signalr";
-    public const string VoiceChannelId = "voice";
-
     // The account's user id is the key the person's browser context, live logins and sealed
     // record go by: opaque and issued by the accounts service, never a name somebody can pick.
     public sealed record Found(Account Account) : PersonResolution
@@ -42,7 +38,7 @@ public abstract record PersonResolution
 
         // The voice channel's guest — nobody the satellite recognised — is a principal with no
         // account, and on their own turn the person is still there to be told so.
-        return principal is { ChannelId: VoiceChannelId } && context.OriginKind is null
+        return principal is { ChannelId: ChannelIds.Voice } && context.OriginKind is null
             ? new Refused(ToolError.Create(
                 ToolError.Codes.PermissionDenied,
                 "The speaker's voice was not recognised, so there is no person to browse as.",

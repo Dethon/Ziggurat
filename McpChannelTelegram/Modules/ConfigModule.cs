@@ -57,7 +57,7 @@ public static class ConfigModule
             // derives for itself; a mismatch would buffer into a queue nobody drains.
             .AddChannelServer(
                 DeliveryPolicy.BufferAlways,
-                ChannelProtocol.ChannelClientNamePrefix + "telegram");
+                ChannelProtocol.ChannelClientNamePrefix + ChannelIds.Telegram);
 
         return services;
     }

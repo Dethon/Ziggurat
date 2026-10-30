@@ -229,7 +229,7 @@ public sealed class TelegramBotService : BackgroundService
                 AgentId = agentId,
                 // The turn acts for the account; its user id stays the sender, the name the approval
                 // router still knows the person by.
-                Principal = new Principal(TelegramAccess.Channel, sender, person.Account),
+                Principal = new Principal(ChannelIds.Telegram, sender, person.Account),
                 Attachments = intake.Attachments.Count > 0 ? intake.Attachments : null,
                 ReviewCopy = ReviewOf(first.Chat, person),
                 Timestamp = DateTimeOffset.UtcNow

@@ -3,9 +3,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
 using ModelContextProtocol.Server;
-using Telegram.Bot;
 using Telegram.Bot.Exceptions;
-using Telegram.Bot.Types.Enums;
 
 namespace McpChannelTelegram.McpTools;
 
@@ -40,28 +38,28 @@ public sealed class OfferApprovalTool
         var router = services.GetRequiredService<ApprovalCallbackRouter>();
         var access = services.GetRequiredService<TelegramAccess>();
         var botClient = p.AgentId is null ? null : services.GetRequiredService<BotRegistry>().FindBotForAgent(p.AgentId);
-        if (botClient is null || await access.PrivateChatOfAsync(p.Asker, cancellationToken) is not { } privateChat)
+        if (botClient is null)
         {
             return ChannelProtocol.NoAnswer;
         }
 
         var (approvalId, resultTask) = router.RegisterApproval(
-            Timeout.InfiniteTimeSpan, RequestApprovalTool.AccountAnswers(p.Asker, access), cancellationToken,
-            p.ApprovalId);
+            Timeout.InfiniteTimeSpan, access.AnswersFor(p.Asker), cancellationToken, p.ApprovalId);
+        bool shown;
         try
         {
-            var sent = await botClient.SendMessage(
-                privateChat,
-                RequestApprovalTool.FormatApprovalMessage(p.Requests),
-                ParseMode.Html,
-                replyMarkup: ApprovalCallbackRouter.CreateApprovalKeyboard(approvalId),
-                cancellationToken: CancellationToken.None);
-            router.Shown(approvalId, botClient, privateChat, sent.MessageId);
+            shown = await router.ShowInPrivateChatAsync(approvalId, p.Asker, p.Requests, botClient, access, cancellationToken);
         }
         catch (Exception ex) when (ex is ApiRequestException or HttpRequestException)
         {
-            // A person who never opened a chat with this agent's bot cannot be written to first, and
-            // a question that reached nobody is withdrawn as one answered elsewhere would be.
+            // A person who never opened a chat with this agent's bot cannot be written to first, and an
+            // accounts service that could not say which chat is theirs shows it to nobody either.
+            shown = false;
+        }
+
+        if (!shown)
+        {
+            // A question that reached nobody is withdrawn as one answered elsewhere would be.
             await router.SettleAsync(approvalId, CancellationToken.None);
             return ChannelProtocol.NoAnswer;
         }

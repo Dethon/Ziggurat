@@ -35,7 +35,7 @@ public class WebLoginTool(ILoginHandoffs handoffs)
         // A voice turn cannot show a link, so its handoff is put in a conversation of the person's
         // chat client instead: the account the turn acts for is who that conversation is for, and
         // only their own sign-in opens the chat client as them.
-        var voice = context!.Origin.ChannelId == PersonResolution.VoiceChannelId;
+        var voice = context!.Origin.ChannelId == ChannelIds.Voice;
         string link;
         try
         {
@@ -105,7 +105,7 @@ public class WebLoginsTool(ILoginsPages pages, ILoginHandoffs handoffs)
             return refused.Error;
         }
 
-        if (context!.Origin.ChannelId == PersonResolution.VoiceChannelId)
+        if (context!.Origin.ChannelId == ChannelIds.Voice)
         {
             return ToolError.Create(
                 ToolError.Codes.UnsupportedOperation,

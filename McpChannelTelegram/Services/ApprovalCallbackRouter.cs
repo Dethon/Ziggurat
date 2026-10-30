@@ -1,10 +1,18 @@
 using System.Collections.Concurrent;
+using System.Text;
+using Domain.Channels;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace McpChannelTelegram.Services;
+
+// Whether the Telegram id behind a tap on an approval's keyboard may answer it, asked as each tap
+// comes: the asker's account, or a fire's household, is something only the accounts service can say.
+public delegate Task<bool> ApprovalAnswerer(long telegramId, CancellationToken ct);
 
 public sealed class ApprovalCallbackRouter
 {
@@ -27,12 +35,10 @@ public sealed class ApprovalCallbackRouter
         TimeSpan timeout, IReadOnlySet<long> answerers, CancellationToken cancellationToken) =>
         RegisterApproval(timeout, (tapper, _) => Task.FromResult(answerers.Contains(tapper)), cancellationToken);
 
-    // Who may answer, asked of each tap's numeric Telegram id when it comes: the asker's account, or a
-    // fire's household, which only the accounts service can say. The question keeps the id the agent
-    // gave it, so it can be settled by it; one asked without an id mints its own.
+    // The question keeps the id the agent gave it, so it can be settled by it; one asked without an id
+    // mints its own.
     public (string ApprovalId, Task<string> ResultTask) RegisterApproval(
-        TimeSpan timeout, Func<long, CancellationToken, Task<bool>> mayAnswer, CancellationToken cancellationToken,
-        string? approvalId = null)
+        TimeSpan timeout, ApprovalAnswerer mayAnswer, CancellationToken cancellationToken, string? approvalId = null)
     {
         var waiter = new ApprovalWaiter(timeout, mayAnswer, cancellationToken);
         // The whole GUID, not a prefix of it: 32 hex characters behind the longest prefix
@@ -59,6 +65,28 @@ public sealed class ApprovalCallbackRouter
         {
             waiter.Shown(new ShownMessage(botClient, chatId, messageId));
         }
+    }
+
+    // The question put in its asker's private chat with the bot, whose id is their own Telegram id,
+    // on the same keyboard, and kept with its other copies: where a group's question reaches its asker
+    // alone, and where another channel's is offered to them. False for a person who linked no Telegram;
+    // a chat the person never opened with this bot, or an accounts service that could not say which it
+    // is, throws, for each caller to weigh. Sent whatever the call's token says, so a copy that went
+    // out is always recorded for the answer to edit.
+    public async Task<bool> ShowInPrivateChatAsync(
+        string approvalId, Account asker, IReadOnlyList<ToolApprovalRequest> requests, ITelegramBotClient botClient,
+        TelegramAccess access, CancellationToken ct)
+    {
+        if (await access.PrivateChatOfAsync(asker, ct) is not { } privateChat)
+        {
+            return false;
+        }
+
+        var sent = await botClient.SendMessage(
+            privateChat, FormatApprovalMessage(requests), ParseMode.Html,
+            replyMarkup: CreateApprovalKeyboard(approvalId), cancellationToken: CancellationToken.None);
+        Shown(approvalId, botClient, privateChat, sent.MessageId);
+        return true;
     }
 
     // Answered on another of the asker's channels: every copy says so and asks nothing more, and the
@@ -162,9 +190,8 @@ public sealed class ApprovalCallbackRouter
         return true;
     }
 
-    private static async Task EditAllAsync(ApprovalWaiter waiter, string text, CancellationToken cancellationToken)
-    {
-        foreach (var shown in waiter.ShownMessages)
+    private static Task EditAllAsync(ApprovalWaiter waiter, string text, CancellationToken cancellationToken) =>
+        Task.WhenAll(waiter.ShownMessages.Select(async shown =>
         {
             try
             {
@@ -175,7 +202,54 @@ public sealed class ApprovalCallbackRouter
             {
                 // Best effort — message may have been deleted
             }
+        }));
+
+    // The question as both of its senders put it: the group or chat that asked, and a private chat it is
+    // offered or copied to.
+    public static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
+    {
+        var sb = new StringBuilder();
+        var toolNames = string.Join(", ", requests.Select(r => r.ToolName.Split("__").Last()));
+        sb.AppendLine($"<b>🔧 Approval Required:</b> <code>{HtmlEncode(toolNames)}</code>");
+
+        foreach (var request in requests)
+        {
+            if (request.Arguments.Count == 0)
+            {
+                continue;
+            }
+
+            var details = new StringBuilder();
+            foreach (var (key, value) in request.Arguments)
+            {
+                var formatted = value?.ToString()?.Replace("\n", " ") ?? "null";
+                if (formatted.Length > 100)
+                {
+                    formatted = formatted[..100] + "...";
+                }
+
+                details.AppendLine($"<i>{HtmlEncode(key)}:</i> {HtmlEncode(formatted)}");
+            }
+
+            sb.AppendLine($"<blockquote expandable>{details.ToString().TrimEnd()}</blockquote>");
         }
+
+        // Why the exec screen put this to the person, last so it sits right above the keyboard.
+        var reason = ExecScreenReasons.English([.. requests.SelectMany(r => r.Screen ?? []).Distinct()]);
+        if (reason is not null)
+        {
+            sb.AppendLine($"<i>Why you're asked: {HtmlEncode(reason)}</i>");
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string HtmlEncode(string text)
+    {
+        return text
+            .Replace("&", "&amp;")
+            .Replace("<", "&lt;")
+            .Replace(">", "&gt;");
     }
 
     public static InlineKeyboardMarkup CreateApprovalKeyboard(string approvalId)
@@ -217,7 +291,7 @@ public sealed class ApprovalCallbackRouter
         private readonly CancellationTokenRegistration _registration;
 
         public ApprovalWaiter(
-            TimeSpan timeout, Func<long, CancellationToken, Task<bool>> mayAnswer, CancellationToken cancellationToken)
+            TimeSpan timeout, ApprovalAnswerer mayAnswer, CancellationToken cancellationToken)
         {
             MayAnswer = mayAnswer;
             _timeoutCts = new CancellationTokenSource(timeout);
@@ -225,7 +299,7 @@ public sealed class ApprovalCallbackRouter
             _registration = _linkedCts.Token.Register(() => _tcs.TrySetCanceled(_linkedCts.Token));
         }
 
-        public Func<long, CancellationToken, Task<bool>> MayAnswer { get; }
+        public ApprovalAnswerer MayAnswer { get; }
 
         public Task<string> Task => _tcs.Task;
 

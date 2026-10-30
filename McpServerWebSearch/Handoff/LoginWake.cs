@@ -32,7 +32,7 @@ public static class LoginWake
             AgentId = handoff.Context.AgentId,
             UserId = handoff.Person,
             Principal = Principal.Of(handoff.Context),
-            ReplyTo = [new ReplyTarget(PersonResolution.ChatClientChannelId, null)],
+            ReplyTo = [new ReplyTarget(ChannelIds.SignalR, null)],
             Origin = new MessageOrigin(MessageOriginKind.Login, null, Title: $"Log in to {site}"),
             Timestamp = at
         };

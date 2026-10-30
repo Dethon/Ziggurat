@@ -1,6 +1,7 @@
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelTelegram.McpTools;
+using McpChannelTelegram.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Shouldly;
@@ -153,7 +154,7 @@ public class RequestApprovalToolTests : IDisposable
             Screen = [ExecScreenCodes.Destructive]
         };
 
-        var message = RequestApprovalTool.FormatApprovalMessage([request]);
+        var message = ApprovalCallbackRouter.FormatApprovalMessage([request]);
 
         message.ShouldEndWith("<i>Why you're asked: It would delete or change something that's already there.</i>");
     }
@@ -163,7 +164,7 @@ public class RequestApprovalToolTests : IDisposable
     {
         var request = new ToolApprovalRequest(null, "mcp__server__tool", new Dictionary<string, object?> { ["q"] = "x" });
 
-        RequestApprovalTool.FormatApprovalMessage([request]).ShouldBe(
+        ApprovalCallbackRouter.FormatApprovalMessage([request]).ShouldBe(
             $"<b>🔧 Approval Required:</b> <code>tool</code>{Environment.NewLine}<blockquote expandable><i>q:</i> x</blockquote>");
     }
 

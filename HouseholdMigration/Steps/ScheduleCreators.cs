@@ -16,7 +16,7 @@ namespace HouseholdMigration.Steps;
 // be told about.
 public sealed class ScheduleCreators(IScheduleStore schedules, IConnectionMultiplexer redis) : IMigrationStep
 {
-    private static readonly string[] _channelsKeyedByAccount = ["signalr", "voice"];
+    private static readonly string[] _channelsKeyedByAccount = [ChannelIds.SignalR, ChannelIds.Voice];
 
     public async Task<StepReport> RunAsync(Household household, bool dryRun, CancellationToken ct)
     {
@@ -50,5 +50,5 @@ public sealed class ScheduleCreators(IScheduleStore schedules, IConnectionMultip
                 old.ChannelId,
                 _channelsKeyedByAccount.Contains(old.ChannelId) ? runsAs.UserId! : old.UserId,
                 runsAs.Account)
-            : new Principal("signalr", runsAs.UserId!, runsAs.Account);
+            : new Principal(ChannelIds.SignalR, runsAs.UserId!, runsAs.Account);
 }

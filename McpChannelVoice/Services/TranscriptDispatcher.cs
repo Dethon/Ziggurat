@@ -23,12 +23,11 @@ public sealed class TranscriptDispatcher(
     TimeProvider timeProvider,
     ILogger<TranscriptDispatcher> logger)
 {
-    private const string ChannelId = "voice";
 
     // The guest's user id is fixed rather than the satellite's configured identity: an operator may
     // name a satellite after a person, and a guest's turn must never read as theirs. What keeps the
     // guest from anybody's memory and logins is the principal carrying no account.
-    private static readonly Principal Guest = new(ChannelId, "household");
+    private static readonly Principal Guest = new(ChannelIds.Voice, "household");
 
     public async Task<bool> DispatchAsync(
         SatelliteSession session,
@@ -154,9 +153,9 @@ public sealed class TranscriptDispatcher(
 
         try
         {
-            if (await accounts.ResolveAsync(ChannelId, identifiedSpeaker, ct) is { } resolved)
+            if (await accounts.ResolveAsync(ChannelIds.Voice, identifiedSpeaker, ct) is { } resolved)
             {
-                return (new Principal(ChannelId, resolved.Account.UserId, resolved.Account), resolved.DisplayName);
+                return (new Principal(ChannelIds.Voice, resolved.Account.UserId, resolved.Account), resolved.DisplayName);
             }
 
             logger.LogWarning(

@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.Security;
 using McpChannelSignalR.Services;
 using Microsoft.AspNetCore.SignalR;
@@ -65,7 +66,7 @@ internal sealed class SignedInConnectionFilter(
     {
         try
         {
-            return (await accounts.ResolveAsync(ChatHub.ChannelId, account.UserId, ct))?.DisplayName;
+            return (await accounts.ResolveAsync(ChannelIds.SignalR, account.UserId, ct))?.DisplayName;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
