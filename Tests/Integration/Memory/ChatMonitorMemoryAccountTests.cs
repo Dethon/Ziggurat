@@ -104,16 +104,19 @@ public class ChatMonitorMemoryAccountTests(MemorySearchFixture redisFixture)
     {
         var fran = NewAccount();
         await _store.StoreAsync(Memory(fran.UserId, "Le gusta el café solo"));
+        const string prompt = "Soy alérgico a los cacahuetes; recuérdame el café de las once";
 
         var fire = await TurnAsync(new ChannelMessage
         {
             ConversationId = $"sched-{Guid.NewGuid():N}",
-            Content = "Soy alérgico a los cacahuetes; recuérdame el café de las once",
+            Content = prompt,
             Sender = "scheduler",
             ChannelId = "scheduling",
+            AgentId = "jonas",
             UserId = fran.UserId,
             Origin = new MessageOrigin(MessageOriginKind.Schedule, "s-1"),
-            Principal = new Principal("signalr", fran.UserId, fran)
+            Delegation = TestDelegations.OfSchedule(fran, "signalr",
+                new Schedule { Id = "s-1", AgentId = "jonas", Prompt = prompt, CronExpression = "0 11 * * *" })
         });
 
         await Eventually.Settle();
@@ -162,7 +165,9 @@ public class ChatMonitorMemoryAccountTests(MemorySearchFixture redisFixture)
                 Mock.Of<IAgentDefinitionProvider>(), NullLogger<MemoryRecallHook>.Instance,
                 new MemoryRecallOptions()),
             Mock.Of<ILogger<ChatMonitor>>(),
-            TestAssertions.Verifier());
+            TestAssertions.Verifier(),
+            // A deployment whose fires deliver nowhere by default, as this one-channel monitor's do.
+            delegations: TestDelegations.Verifier(delivery: new DeliverySettings()));
 
         await monitor.Monitor(CancellationToken.None);
 

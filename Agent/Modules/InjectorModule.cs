@@ -8,6 +8,7 @@ using Domain.Judgments;
 using Domain.Monitor;
 using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Security;
 using Domain.Security.Signing;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
@@ -92,7 +93,14 @@ public static class InjectorModule
                 // against — not the TimeProvider registered below, which an eval pins to its
                 // scenario's day for what the prompt says the date is.
                 .AddSingleton(sp => new CallTokens(
-                    sp.GetRequiredService<SigningKeyStore>(), TimeProvider.System, settings.CallTokens))
+                    sp.GetRequiredService<SigningKeyStore>(), TimeProvider.System, settings.CallTokens,
+                    settings.Delegations))
+                // A fire's delegation is the agent's own word, checked against its own keys — every
+                // one it still publishes, so a rotation strands nothing before redelegate re-signs it —
+                // on the wall clock it was signed on, and against the delivery default the servers
+                // that raise fires resolve a deliverTo with (Domain/delivery.json).
+                .AddSingleton(sp => new DelegationVerifier(
+                    sp.GetRequiredService<SigningKeyStore>(), TimeProvider.System, settings.Delivery))
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")
                 .AddSingleton<ChatThreadResolver>()

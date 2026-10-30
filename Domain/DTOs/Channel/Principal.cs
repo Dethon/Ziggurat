@@ -3,9 +3,10 @@ using JetBrains.Annotations;
 namespace Domain.DTOs.Channel;
 
 // Who a turn acts for, as the channel that vouched for them: the user id is only as true as the
-// channel that issued it. A person's own message is vouched for by the channel it arrived on; a
-// turn nobody sent — a schedule's fire, a login wake — carries the principal of whoever's own turn
-// set it going, stamped by the server that recorded it and never written by the model.
+// channel that issued it. A person's own message is vouched for by the channel it arrived on, and the
+// agent takes its account from the turn's assertion; a turn nobody sent — a schedule's fire, a login
+// wake, a watch — acts for the principal the agent builds from the delegation it verified (the
+// person's channel, user id and account), or for none: whatever its server stamped is a label.
 //
 // UserId is the channel's own name for the person (a Telegram username, a voice profile, the chat
 // client's account id), which the Telegram approval router still matches on.

@@ -36,6 +36,7 @@ internal sealed class ConversationGroup(
     IMemoryRecallHook? memoryRecallHook,
     ISkillPreloader? skillPreloader,
     AssertionVerifier assertions,
+    DelegationVerifier? delegations,
     ILogger logger) : IAsyncDisposable
 {
     // What a person whose turn was refused is told. Who they are is the one thing the agent could
@@ -70,8 +71,8 @@ internal sealed class ConversationGroup(
     private DisposableAgent? _agent;
 
     // A turn the group has taken: the message as the agent believes it — its principal's account the
-    // one its assertion verified — and the identity that verified, which the turn acts for to its
-    // end. Null for a fire, which no assertion stands behind.
+    // one its assertion or its delegation verified — and the identity that verified, which the turn
+    // acts for to its end. Null for a fire no delegation stands behind, which acts for nobody.
     private sealed record AdmittedTurn(IChannelConnection Channel, ChannelMessage Message, IdentityClaims? Identity);
 
     private sealed record GroupState(
@@ -369,9 +370,9 @@ internal sealed class ConversationGroup(
     // here, as the message arrives, and never again: a turn queued behind a long one must not be
     // refused for the minutes it waited, and once believed it acts for its person to its end.
     //
-    // A fire, a login wake and a watch carry no assertion — nobody sent them at that moment — and are
-    // taken as their server stamped them, as before. Ticket 07 checks the delegation the agent signed
-    // for them here instead.
+    // A fire, a login wake and a watch carry no assertion — nobody sent them at that moment. They act
+    // for the person a delegation the agent signed names, when it holds for this very fire, and for
+    // nobody otherwise; either way the fire runs, since nobody is waiting on it to be refused.
     //
     // On the group token, not the pump's: a /cancel arriving behind this message must not drop it
     // half-checked rather than through the teardown drain that names it.
@@ -379,7 +380,7 @@ internal sealed class ConversationGroup(
     {
         if (x.Message.Origin is not null)
         {
-            return new AdmittedTurn(x.Channel, x.Message, null);
+            return await AdmitFireAsync(x.Channel, x.Message);
         }
 
         switch (await assertions.VerifyTurnAsync(x.Message.Assertion, x.Channel.ChannelId, _groupCt))
@@ -394,6 +395,35 @@ internal sealed class ConversationGroup(
             default:
                 throw new InvalidOperationException("An assertion was neither admitted nor refused.");
         }
+    }
+
+    // Nothing the fire's server stamped on it is believed: the principal is the delegation's person,
+    // channel, account and all, or there is none, and the turn acts for nobody.
+    private async Task<AdmittedTurn> AdmitFireAsync(IChannelConnection channel, ChannelMessage fire)
+    {
+        var admission = delegations is null
+            ? new FireAdmission.Undelegated(null)
+            : await delegations.VerifyFireAsync(fire, _groupCt);
+        switch (admission)
+        {
+            case FireAdmission.Delegated { Identity: var identity }:
+                return new AdmittedTurn(channel,
+                    fire with { Principal = new Principal(identity.ChannelId, identity.Subject, identity.Account) },
+                    identity);
+            case FireAdmission.Undelegated { Refusal: { } reason }:
+                logger.LogWarning(
+                    "A {Kind} fire on {ChannelId} for conversation {ConversationId} runs as nobody: its delegation was not believed ({Reason})",
+                    fire.Origin!.Kind, channel.ChannelId, fire.ConversationId, reason);
+                metricsPublisher.Publish(new ErrorEvent
+                {
+                    Service = "agent",
+                    ErrorType = ChatMonitor.DelegationRefusedErrorType,
+                    Message = $"A {fire.Origin.Kind} fire on {channel.ChannelId} for conversation {fire.ConversationId} runs as nobody: {reason}"
+                });
+                break;
+        }
+
+        return new AdmittedTurn(channel, fire with { Principal = null }, null);
     }
 
     // Reported where an operator looks, and answered on the channel the way a failed turn ends —

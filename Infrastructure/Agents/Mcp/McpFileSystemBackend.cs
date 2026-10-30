@@ -5,7 +5,9 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.Security;
 using Domain.Tools;
+using Domain.Tools.FileSystem;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
@@ -47,17 +49,27 @@ internal class McpFileSystemBackend(
             ["limit"] = limit
         }), ct);
 
-    public Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct) =>
-        CallTypedAsync<FsCreateResult>("fs_create", WithFilesystem(new Dictionary<string, object?>
+    public async Task<FsResult<FsCreateResult>> CreateAsync(string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
+    {
+        var delegated = await DelegatedAsync(path, ct => Task.FromResult<string?>(content),
+            DelegatedWrites.CreateReadsFirst(filesystemName, overwrite) ? path : null, ct);
+        return Typed<FsCreateResult>("fs_create", await CallWritingAsync("fs_create", WithFilesystem(new Dictionary<string, object?>
         {
             ["path"] = path,
             ["content"] = content,
             ["overwrite"] = overwrite,
             ["createDirectories"] = createDirectories
-        }), ct);
+        }), delegated, ct));
+    }
 
-    public Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct) =>
-        CallTypedAsync<FsEditResult>("fs_edit", WithFilesystem(new Dictionary<string, object?>
+    public async Task<FsResult<FsEditResult>> EditAsync(string path, IReadOnlyList<TextEdit> edits, CancellationToken ct)
+    {
+        // An edit is relative to what is there, so what it leaves is read first and edited here the
+        // way the mount edits it; a text the edits do not fit is refused by the mount, delegation or no.
+        var delegated = await DelegatedAsync(path, async ct => await TextAtAsync(path, ct) is { } current
+            ? edits.Aggregate(current, (text, e) => TextEdits.ReplaceFirstOrAll(text, e.OldString, e.NewString, e.ReplaceAll))
+            : null, path, ct);
+        return Typed<FsEditResult>("fs_edit", await CallWritingAsync("fs_edit", WithFilesystem(new Dictionary<string, object?>
         {
             ["path"] = path,
             ["edits"] = edits.Select(e => new Dictionary<string, object?>
@@ -66,7 +78,8 @@ internal class McpFileSystemBackend(
                 ["newString"] = e.NewString,
                 ["replaceAll"] = e.ReplaceAll
             }).ToList()
-        }), ct);
+        }), delegated, ct));
+    }
 
     public Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct) =>
         CallTypedAsync<FsGlobResult>("fs_glob", WithFilesystem(new Dictionary<string, object?>
@@ -89,12 +102,18 @@ internal class McpFileSystemBackend(
             ["outputMode"] = outputMode.ToString()
         }), ct);
 
-    public Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct) =>
-        CallTypedAsync<FsMoveResult>("fs_move", WithFilesystem(new Dictionary<string, object?>
+    public async Task<FsResult<FsMoveResult>> MoveAsync(string sourcePath, string destinationPath, CancellationToken ct)
+    {
+        var moved = DelegatedWrites.MovedFile(filesystemName, sourcePath);
+        var delegated = moved is null
+            ? null
+            : await DelegatedAsync(destinationPath, ct => TextAtAsync(moved, ct), null, ct);
+        return Typed<FsMoveResult>("fs_move", await CallWritingAsync("fs_move", WithFilesystem(new Dictionary<string, object?>
         {
             ["sourcePath"] = sourcePath,
             ["destinationPath"] = destinationPath
-        }), ct);
+        }), delegated, ct));
+    }
 
     public Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct) =>
         CallTypedAsync<FsRemoveResult>("fs_delete", WithFilesystem(new Dictionary<string, object?>
@@ -272,6 +291,42 @@ internal class McpFileSystemBackend(
     private static FileSystemOperationException Refused(string toolName, ToolErrorResult error) =>
         new(error with { Message = $"{toolName} failed: {error.Message}" });
 
+    // What a write by a person's turn delegates, said to the signing transport under the agent's own
+    // request key; the transport signs it as whoever the call acts for (SigningClientTransport). Asked
+    // only of a mount whose writes raise later turns, and only for a call acting for a person: nobody
+    // delegates nothing, so a turn of nobody's reads nothing first.
+    private async Task<JsonObject?> DelegatedAsync(
+        string path, Func<CancellationToken, Task<string?>> written, string? existingAt, CancellationToken ct)
+    {
+        var caller = Caller;
+        if (!DelegatedWrites.Delegates(filesystemName, path) || CallIdentity.Of(caller).Account is null
+            || await written(ct) is not { } text)
+        {
+            return null;
+        }
+
+        var existing = existingAt is null ? null : await TextAtAsync(existingAt, ct);
+        return DelegatedWrites.Of(filesystemName, path, text, existing, caller?.Origin, TimeZoneInfo.Local) is { } what
+            ? new JsonObject
+            {
+                [ChannelProtocol.DelegateMetaKey] = JsonSerializer.SerializeToNode(what, ChannelProtocol.SerializerOptions)
+            }
+            : null;
+    }
+
+    private Task<JsonNode> CallWritingAsync(
+        string toolName, Dictionary<string, object?> args, JsonObject? delegated, CancellationToken ct) =>
+        delegated is null ? CallToolAsync(toolName, args, ct) : CallToolWithMetaAsync(toolName, args, delegated, ct);
+
+    private async Task<string?> TextAtAsync(string path, CancellationToken ct) =>
+        await ReadAsync(path, null, null, ct) is FsResult<FsReadResult>.Ok { Value.Content: var content } ? content : null;
+
+    // The turn a call made now acts for: the bridge's caller on a view it asked for, else the one the
+    // invocation in flight carries.
+    private ConversationContext? Caller => _callerBound
+        ? _boundCaller
+        : ConversationContextMeta.TryRead(FunctionInvokingChatClient.CurrentContext?.Options);
+
     private Dictionary<string, object?> WithFilesystem(Dictionary<string, object?> args)
     {
         args["filesystem"] = filesystemName;
@@ -305,9 +360,7 @@ internal class McpFileSystemBackend(
     private async Task<JsonNode> CallToolWithMetaAsync(
         string toolName, Dictionary<string, object?> args, JsonObject? extraMeta, CancellationToken ct)
     {
-        var meta = _callerBound
-            ? ConversationContextMeta.Build(_boundCaller)
-            : ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options);
+        var meta = ConversationContextMeta.Build(Caller);
         if (extraMeta is not null)
         {
             meta ??= new JsonObject();

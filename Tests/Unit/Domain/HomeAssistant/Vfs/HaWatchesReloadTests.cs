@@ -25,7 +25,7 @@ public class HaWatchesReloadTests
         var time = new ArmedClock(_now);
         var watches = new HaWatches(() => client, time);
 
-        var write = watches.WriteAsync("sugar-low", _paused, "jonas", null, CancellationToken.None);
+        var write = watches.WriteAsync("sugar-low", _paused, "jonas", null, null, CancellationToken.None);
         var written = await Driven(write, time, delays: 2);
 
         client.AutomationListings.ShouldBe(3);
@@ -42,7 +42,7 @@ public class HaWatchesReloadTests
         var time = new ArmedClock(_now);
         var watches = new HaWatches(() => client, time);
 
-        var write = watches.WriteAsync("sugar-low", _paused, "jonas", null, CancellationToken.None);
+        var write = watches.WriteAsync("sugar-low", _paused, "jonas", null, null, CancellationToken.None);
         var written = await Driven(write, time, delays: 4);
 
         client.AutomationListings.ShouldBe(5);
@@ -60,7 +60,7 @@ public class HaWatchesReloadTests
         var time = new FakeTimeProvider(_now);
         var watches = new HaWatches(() => client, time);
 
-        await watches.WriteAsync("sugar-low", _paused, "jonas", null, CancellationToken.None);
+        await watches.WriteAsync("sugar-low", _paused, "jonas", null, null, CancellationToken.None);
 
         client.AutomationListings.ShouldBe(1);
         time.GetUtcNow().ShouldBe(_now);
