@@ -62,7 +62,8 @@ public static class AccountsApp
             .AddSingleton<TelegramLinks>()
             .AddSingleton<PasskeyStore>()
             .AddSingleton<MemberStore>()
-            .AddSingleton<PersonStore>();
+            .AddSingleton<PersonStore>()
+            .AddSingleton<HouseholdImporter>();
 
     public static WebApplication MapAccounts(this WebApplication app)
     {
