@@ -17,6 +17,12 @@ public record IdentityClaims
     // token is nobody at all.
     public const string GuestSubject = "guest";
 
+    // Nobody: what the agent signs a call as when no person or guest stands behind it — a fire nobody
+    // vouched for, a turn whose channel named no account, its own channel plumbing. Only a call
+    // token says it; an assertion that named nobody would vouch for nothing. Not hex either, and the
+    // one subject that may leave the household out.
+    public const string NobodySubject = "nobody";
+
     [JsonPropertyName("iss")]
     public string Issuer { get; init; } = "";
 
@@ -53,17 +59,20 @@ public record IdentityClaims
     [JsonIgnore]
     public bool IsGuest => Subject == GuestSubject;
 
-    // The person's account, as everything keyed by a person compares it; the guest has none.
     [JsonIgnore]
-    public Account? Account => IsGuest ? null : new Account(TenantId, Subject);
+    public bool IsNobody => Subject == NobodySubject;
+
+    // The person's account, as everything keyed by a person compares it; the guest and nobody have none.
+    [JsonIgnore]
+    public Account? Account => IsGuest || IsNobody ? null : new Account(TenantId, Subject);
 
     public static IdentityClaims Person(string userId, string tenantId, string channelId, IReadOnlyList<string> roles)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
         ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
-        if (userId == GuestSubject)
+        if (userId is GuestSubject or NobodySubject)
         {
-            throw new ArgumentException("the guest is signed as the guest, not as a person", nameof(userId));
+            throw new ArgumentException("the guest and nobody are signed as themselves, not as a person", nameof(userId));
         }
 
         return new IdentityClaims { Subject = userId, TenantId = tenantId, ChannelId = channelId, Roles = roles };
@@ -74,6 +83,9 @@ public record IdentityClaims
         ArgumentException.ThrowIfNullOrWhiteSpace(tenantId);
         return new IdentityClaims { Subject = GuestSubject, TenantId = tenantId, ChannelId = channelId };
     }
+
+    public static IdentityClaims Nobody(string channelId) =>
+        new() { Subject = NobodySubject, ChannelId = channelId };
 
     // The same identity under a fresh envelope: a new id, valid from now for the lifetime given. How
     // the agent turns the assertion it verified into a call token for each server, and how an
