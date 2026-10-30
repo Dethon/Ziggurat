@@ -79,6 +79,8 @@ public static class ConfigModule
             .AddMcpHost(settings)
             .WithTools<SendReplyTool>()
             .WithTools<RequestApprovalTool>()
+            .WithTools<OfferApprovalTool>()
+            .WithTools<SettleApprovalTool>()
             .WithTools<CreateConversationTool>()
             // This server's own register_agents, not the shared catalog-writing one: registration
             // here also broadcasts OnAgentsUpdated so WebChat refreshes live.
@@ -102,7 +104,8 @@ public static class ConfigModule
     // The registration guard rides with the hub's own options, so wherever the hub is served it is
     // served behind it.
     internal static IServiceCollection AddChatSignalR(this IServiceCollection services) =>
-        services.AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance)
+        services.AddSingleton<AccountConnections>()
+            .AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance)
             .AddHubOptions<ChatHub>(options => options.AddFilter<RegisteredConnectionFilter>())
             .Services;
 }

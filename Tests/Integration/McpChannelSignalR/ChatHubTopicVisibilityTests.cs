@@ -82,6 +82,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
             .AddSingleton<IThreadStateStore>(_store)
             .AddSingleton<IConversationFactory>(new ConversationFactory(_store, TimeProvider.System))
             .AddSingleton(new Mock<IPushSubscriptionStore>().Object)
+            .AddSingleton(new Mock<IPushNotificationService>().Object)
             .AddSingleton(new AttachmentService(
                 attachmentSettings,
                 new AttachmentTickets(attachmentSettings, time),
@@ -356,6 +357,116 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         (await asked.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBe("rejected");
     }
 
+    // An approval is its asker's: in a topic the whole household sees — a voice guest's, which
+    // nobody owns and anybody seeing it could answer for as long as nothing recorded the asker — the
+    // member reading along and the one who sees everything are told no, and only the person whose
+    // turn asked settles it.
+    [Fact]
+    public async Task AnApprovalIsItsAskers_EveryoneElsesAnswerIsIgnored()
+    {
+        var fran = await ConnectAsync(Fran);
+        var laura = await ConnectAsync(Laura);
+        var olga = await ConnectAsync(Olga, "sees-all");
+        await ShowReviewCopyAsync("33:43", new Principal("voice", "household"), "kitchen");
+        var topic = (await _store.GetTopicByChatIdAndThreadIdAsync(_agent, 33, 43)).ShouldNotBeNull();
+        topic.OwnerId.ShouldBeNull();
+        var asked = Approvals.RequestApprovalAsync(
+            new RequestApprovalParams
+            {
+                ConversationId = new ConversationIdentity(topic.ChatId, topic.ThreadId).ConversationId,
+                Mode = ApprovalMode.Request,
+                Requests = _buy
+            },
+            new Account(Home, Fran));
+
+        var shown = (await laura.InvokeAsync<ToolApprovalRequestMessage?>("GetPendingApprovalForTopic", topic.TopicId))
+            .ShouldNotBeNull();
+        shown.AskedBy.ShouldBe(Fran);
+        (await laura.InvokeAsync<bool>("RespondToApprovalAsync", shown.ApprovalId, ToolApprovalResult.Approved))
+            .ShouldBeFalse();
+        (await olga.InvokeAsync<bool>("RespondToApprovalAsync", shown.ApprovalId, ToolApprovalResult.Approved))
+            .ShouldBeFalse();
+        await Eventually.Settle();
+        asked.IsCompleted.ShouldBeFalse();
+
+        (await fran.InvokeAsync<bool>("RespondToApprovalAsync", shown.ApprovalId, ToolApprovalResult.Approved))
+            .ShouldBeTrue();
+        (await asked.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBe("approved");
+    }
+
+    // A question nabu asked aloud is offered to its asker on every chat client they hold, whichever
+    // space each is in — and to nobody else, not even whoever sees every topic.
+    [Fact]
+    public async Task AnApprovalOfferedToItsAsker_ReachesEveryConnectionOfTheirsAndNobodyElses()
+    {
+        var fran = await ConnectAsync(Fran);
+        var franElsewhere = await ConnectInSpaceAsync(Fran, "garden");
+        var laura = await ConnectAsync(Laura);
+        var olga = await ConnectAsync(Olga, "sees-all");
+        var offers = ListenForOffers(("fran", fran), ("fran-elsewhere", franElsewhere), ("laura", laura), ("olga", olga));
+        var approvalId = Guid.NewGuid().ToString("N");
+
+        var offered = Approvals.OfferApprovalAsync(new OfferApprovalParams
+        {
+            ApprovalId = approvalId, ConversationId = "31:41", Asker = new Account(Home, Fran), Requests = _buy
+        });
+
+        await Eventually.Until(() => offers.Count == 2, "both of Fran's connections to be offered it");
+        await Eventually.Settle();
+        offers.Who(approvalId).ShouldBe(["fran", "fran-elsewhere"], ignoreOrder: true);
+        (await franElsewhere.InvokeAsync<IReadOnlyList<ToolApprovalRequestMessage>>("GetOfferedApprovals"))
+            .ShouldHaveSingleItem().ApprovalId.ShouldBe(approvalId);
+        (await laura.InvokeAsync<IReadOnlyList<ToolApprovalRequestMessage>>("GetOfferedApprovals")).ShouldBeEmpty();
+        (await laura.InvokeAsync<bool>("RespondToApprovalAsync", approvalId, ToolApprovalResult.Approved))
+            .ShouldBeFalse();
+
+        (await franElsewhere.InvokeAsync<bool>("RespondToApprovalAsync", approvalId, ToolApprovalResult.Approved))
+            .ShouldBeTrue();
+        (await offered.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBe("approved");
+    }
+
+    // Answered on Telegram, the card in the chat client says so rather than vanishing.
+    [Fact]
+    public async Task AnApprovalAnsweredElsewhere_TellsEveryCardShowingItSo()
+    {
+        var fran = await ConnectAsync(Fran);
+        var resolved = new List<ApprovalResolvedNotification>();
+        fran.On<ApprovalResolvedNotification>("OnApprovalResolved", n =>
+        {
+            lock (resolved)
+            {
+                resolved.Add(n);
+            }
+        });
+        var topic = await StartTopicAsync(fran, "Fran's plum jam");
+        var approvalId = Guid.NewGuid().ToString("N");
+        var asked = Approvals.RequestApprovalAsync(
+            new RequestApprovalParams
+            {
+                ConversationId = new ConversationIdentity(topic.ChatId, topic.ThreadId).ConversationId,
+                Mode = ApprovalMode.Request,
+                Requests = _buy,
+                ApprovalId = approvalId
+            },
+            new Account(Home, Fran));
+        await Eventually.Until(() => Approvals.IsApprovalPending(approvalId), "the question to be asked");
+
+        await Approvals.SettleApprovalAsync(approvalId, ToolApprovalResult.Approved);
+
+        (await asked.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBe("approved");
+        await Eventually.Until(() =>
+        {
+            lock (resolved)
+            {
+                return resolved.Any(n => n.ApprovalId == approvalId);
+            }
+        }, "the card to be told");
+        lock (resolved)
+        {
+            resolved.ShouldHaveSingleItem().AnsweredElsewhere.ShouldBeTrue();
+        }
+    }
+
     // A private topic's news reaches its owner and whoever sees every topic, and nobody else in the
     // space: not even the fact that it went.
     [Fact]
@@ -433,6 +544,54 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
             initialPrompt: "a plate of paella", address: null, existingConversationId: conversationId,
             principal: principal);
 
+    private ApprovalService Approvals => _app.Services.GetRequiredService<ApprovalService>();
+
+    private static readonly IReadOnlyList<ToolApprovalRequest> _buy =
+        [new ToolApprovalRequest("msg-1", "mcp__shop__buy", new Dictionary<string, object?>())];
+
+    private sealed class Offers
+    {
+        private readonly List<(string Who, string ApprovalId)> _heard = [];
+
+        public void Add(string who, string approvalId)
+        {
+            lock (_heard)
+            {
+                _heard.Add((who, approvalId));
+            }
+        }
+
+        public int Count
+        {
+            get
+            {
+                lock (_heard)
+                {
+                    return _heard.Count;
+                }
+            }
+        }
+
+        public IReadOnlyList<string> Who(string approvalId)
+        {
+            lock (_heard)
+            {
+                return [.. _heard.Where(h => h.ApprovalId == approvalId).Select(h => h.Who)];
+            }
+        }
+    }
+
+    private static Offers ListenForOffers(params (string Who, HubConnection Connection)[] listeners)
+    {
+        var offers = new Offers();
+        foreach (var (who, connection) in listeners)
+        {
+            connection.On<ApprovalOfferedNotification>("OnApprovalOffered", n => offers.Add(who, n.Request.ApprovalId));
+        }
+
+        return offers;
+    }
+
     private sealed record Heard(string Who, string Topic, bool? Shared);
 
     // What each connection was told about topics, read under the lock the handlers write under.
@@ -504,7 +663,10 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         return turns.ShouldHaveSingleItem();
     }
 
-    private async Task<HubConnection> ConnectAsync(string userId, params string[] roles)
+    private Task<HubConnection> ConnectAsync(string userId, params string[] roles) =>
+        ConnectInSpaceAsync(userId, "default", roles);
+
+    private async Task<HubConnection> ConnectInSpaceAsync(string userId, string space, params string[] roles)
     {
         var server = _app.GetTestServer();
         var connection = new HubConnectionBuilder()
@@ -519,7 +681,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
             .Build();
         _connections.Add(connection);
         await connection.StartAsync();
-        await connection.InvokeAsync("JoinSpace", "default");
+        await connection.InvokeAsync("JoinSpace", space);
         return connection;
     }
 

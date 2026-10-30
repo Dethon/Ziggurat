@@ -1,7 +1,9 @@
 using System.ComponentModel;
+using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelSignalR.Services;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace McpChannelSignalR.McpTools;
@@ -15,13 +17,17 @@ public sealed class RequestApprovalTool
         [Description("Conversation ID")] string conversationId,
         [Description("Whether to ask the user (request) or just notify them (notify)")] ApprovalMode mode,
         [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests,
-        IServiceProvider services)
+        RequestContext<CallToolRequestParams> context,
+        IServiceProvider services,
+        [Description("The question's own id, by which it is settled")] string? approvalId = null,
+        CancellationToken cancellationToken = default)
     {
         var p = new RequestApprovalParams
         {
             ConversationId = conversationId,
             Mode = mode,
-            Requests = requests
+            Requests = requests,
+            ApprovalId = approvalId
         };
 
         var approvalService = services.GetRequiredService<IApprovalService>();
@@ -32,7 +38,8 @@ public sealed class RequestApprovalTool
             return "notified";
         }
 
-        var result = await approvalService.RequestApprovalAsync(p);
-        return result;
+        // Whose question it is, from the turn the agent stamps on this hop: only that account answers.
+        var asker = Principal.Of(ConversationScope.Parse(context.Params?.Meta))?.Account;
+        return await approvalService.RequestApprovalAsync(p, asker, cancellationToken);
     }
 }
