@@ -8,7 +8,7 @@ namespace Domain.DTOs.Channel;
 // set it going, stamped by the server that recorded it and never written by the model.
 //
 // UserId is the channel's own name for the person (a Telegram username, a voice profile, the chat
-// client's account id), which the identity map and the Telegram approval router still match on.
+// client's account id), which the Telegram approval router still matches on.
 // Account is the person's account in the accounts service, where the channel knows it: everything
 // keyed by a person moves onto it channel by channel, and it is absent wherever a channel has not
 // moved yet, so a record written before it existed reads exactly as it did.

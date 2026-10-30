@@ -9,8 +9,8 @@ using ModelContextProtocol.Server;
 namespace McpServerWebSearch.McpTools;
 
 [McpServerToolType]
-public class McpWebLoginsTool(IdentityMap identities, ILoginsPages pages, ILoginHandoffs handoffs)
-    : WebLoginsTool(identities, pages, handoffs)
+public class McpWebLoginsTool(ILoginsPages pages, ILoginHandoffs handoffs)
+    : WebLoginsTool(pages, handoffs)
 {
     [McpServerTool(Name = Name)]
     [Description(Description)]

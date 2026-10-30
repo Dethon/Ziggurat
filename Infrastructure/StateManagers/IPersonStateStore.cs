@@ -1,7 +1,8 @@
 namespace Infrastructure.StateManagers;
 
 // Where a person's remembered logins rest between restarts: their browser context's storage state
-// and the logins they handed off, encrypted at rest. No model tool reads or writes it.
+// and the logins they handed off, encrypted at rest, by their account's user id. No model tool reads
+// or writes it.
 public interface IPersonStateStore
 {
     // Whether a key is configured, so a record can be written. Without one remembering is off,
