@@ -101,6 +101,7 @@ public class DeploymentConformanceTests
     [InlineData("OPENROUTER__APIKEY", new[] { "agent", "mcp-websearch", "mcp-channel-voice" })]
     [InlineData("HOMEASSISTANT__TOKEN", new[] { "mcp-homeassistant" })]
     [InlineData("LOGINS__STATEKEY", new[] { "mcp-websearch", "household-migration" })]
+    [InlineData("HOUSEHOLD_MIGRATION_SECRET", new[] { "accounts", "household-migration" })]
     [InlineData("BOTS__0__BOTTOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("BOTS__1__BOTTOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("WEBPUSH__PRIVATEKEY", new[] { "mcp-channel-signalr", "mcp-sugary" })]
