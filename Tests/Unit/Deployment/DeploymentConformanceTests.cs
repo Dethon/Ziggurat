@@ -383,6 +383,8 @@ public class DeploymentConformanceTests
             .Select(l => l.Trim())
             .Where(l => l.StartsWith("reverse_proxy ", StringComparison.Ordinal))
             .SelectMany(l => l["reverse_proxy ".Length..].TrimEnd('{').Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            // http://mcp-websearch:8080 names the same listener as mcp-websearch:8080.
+            .Select(u => u.Contains("://", StringComparison.Ordinal) ? u[(u.IndexOf("://", StringComparison.Ordinal) + 3)..] : u)
             .Where(u => u.Split(':')[0] == BrowseServerListeners.Service)
             .ToList();
 
