@@ -13,7 +13,14 @@ namespace Domain.Security;
 // on top, and a create gives it nothing to lie about.
 public static class DelegatedWrites
 {
-    public static bool Delegates(string filesystem) => filesystem is ScheduleFileSystem.Name or HaFileSystem.Name;
+    // Whether a write to this path can leave something a later turn acts on: a schedule's file (or
+    // the directory a create or a move names it by), a watch's file. Asked before anything is read.
+    public static bool Delegates(string filesystem, string path) => filesystem switch
+    {
+        ScheduleFileSystem.Name => SchedulePath.Parse(path).Kind is ScheduleNodeKind.ScheduleFile or ScheduleNodeKind.ScheduleDir,
+        HaFileSystem.Name => HaVfsPath.Parse(path).Kind == HaVfsKind.WatchFile,
+        _ => false
+    };
 
     public static DelegatedObject? Of(
         string filesystem, string path, string text, string? existing, ReplyTarget? origin, TimeZoneInfo zone) =>
