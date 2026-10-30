@@ -39,11 +39,13 @@ public class TranscriptDispatcherTests
     private static (TranscriptDispatcher Sut, VoiceConversationManager Manager, ChannelInboxProbe Emitter) Build(
         CommandSettings? commands = null, IMetricsPublisher? publisher = null,
         double shortSpeechAvgLogProbThreshold = -1.4, int fullThresholdSpeechMs = 2000,
-        ReplyTextAccumulator? accumulator = null, FakeAccountResolver? accounts = null)
+        ReplyTextAccumulator? accumulator = null, FakeAccountResolver? accounts = null,
+        List<CreateConversationParams>? opened = null)
     {
         accumulator ??= new ReplyTextAccumulator();
         var factory = new Mock<IConversationFactory>();
         factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .Callback((CreateConversationParams p, CancellationToken _) => opened?.Add(p))
             .ReturnsAsync(() =>
             {
                 var identity = ConversationIdGenerator.CreateFor("topic-x");
@@ -169,6 +171,35 @@ public class TranscriptDispatcherTests
         message.Sender.ShouldBe("Fran");
         message.Principal.ShouldBe(new Principal("voice", "u-fran", new Account("t-home", "u-fran")));
         accounts.Asked.ShouldBe([("voice", "u-fran")]);
+    }
+
+    // Whose the conversation's topic is comes from who opened it, so the speaker is asked before the
+    // conversation is minted: a recognised speaker's is theirs, private like their other topics.
+    [Fact]
+    public async Task DispatchAsync_MatchedSpeakerOpeningAConversation_MintsItForTheirAccount()
+    {
+        var opened = new List<CreateConversationParams>();
+        var (sut, _, _) = Build(accounts: new FakeAccountResolver().Holding("u-fran", "t-home", "Fran"), opened: opened);
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.8, "u-fran", default);
+
+        var minted = opened.ShouldHaveSingleItem();
+        minted.Principal.ShouldBe(new Principal("voice", "u-fran", new Account("t-home", "u-fran")));
+        minted.Sender.ShouldBe("Fran");
+    }
+
+    // The guest acts for no account, so the conversation it opens is the household's.
+    [Fact]
+    public async Task DispatchAsync_GuestOpeningAConversation_MintsItForNoAccount()
+    {
+        var opened = new List<CreateConversationParams>();
+        var (sut, _, _) = Build(accounts: new FakeAccountResolver(), opened: opened);
+
+        await sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.5, null, default);
+
+        opened.ShouldHaveSingleItem().Principal.ShouldBe(new Principal("voice", "household"));
     }
 
     // Nobody matched is the guest: somebody in the house, acting as no person. The satellite's

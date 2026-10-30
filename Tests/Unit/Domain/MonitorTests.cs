@@ -231,6 +231,8 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public List<(string AgentId, string TopicName, string Sender, string? InitialPrompt, string? ExistingConversationId)> CreatedConversations { get; } = [];
 
+    public List<Principal?> CreatedFor { get; } = [];
+
     public List<(string ConversationId, IReadOnlyList<ToolApprovalRequest> Requests)> NotifyAutoApprovedCalls { get; } = [];
 
     public async Task SendReplyAsync(SendReplyParams reply, CancellationToken ct)
@@ -303,9 +305,10 @@ internal sealed class FakeChannelConnection : IChannelConnection
         return Task.CompletedTask;
     }
 
-    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, string? address, string? existingConversationId, CancellationToken ct)
+    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, string? address, string? existingConversationId, Principal? principal, CancellationToken ct)
     {
         CreatedConversations.Add((agentId, topicName, sender, initialPrompt, existingConversationId));
+        CreatedFor.Add(principal);
         return Task.FromResult(ConversationIdToReturn);
     }
 

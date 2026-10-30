@@ -14,4 +14,9 @@ public record CreateConversationParams
     // user-role prompt bubble from this so scheduled fires don't display the
     // topic title in place of the actual prompt.
     public string? InitialPrompt { get; init; }
+
+    // Who the turn that opens the conversation acts for, which decides whose topic it is: a
+    // person's account gives a topic that person owns, and a turn acting for no account — the voice
+    // guest's, a fire nobody signed — gives one the household shares.
+    public Principal? Principal { get; init; }
 }

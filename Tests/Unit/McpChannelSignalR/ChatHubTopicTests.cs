@@ -1,5 +1,6 @@
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
@@ -41,12 +42,14 @@ public sealed class ChatHubTopicTests : IDisposable
 
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
         var approvals = new ApprovalService(
             _streamService,
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IHubNotificationSender>().Object,
             NullLogger<ApprovalService>.Instance);
 
@@ -71,19 +74,25 @@ public sealed class ChatHubTopicTests : IDisposable
         // A page call nobody scripted still has to come back with something usable, or a test
         // about the cursor fails inside the live-stream reporting that runs after it.
         _store.Setup(s => s.GetTopicPageAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TopicViewer>(), It.IsAny<string?>(), It.IsAny<int>(),
+                It.IsAny<bool>()))
             .ReturnsAsync(new TopicPage([], null));
     }
 
+    // A new topic is the conversation its own id names, and it is the caller's: whose it is was
+    // settled when the connection arrived, whatever the browser's copy says.
     [Fact]
-    public async Task SaveTopic_WritesThroughTheTopicStore()
+    public async Task SaveTopic_ANewTopic_IsWrittenThroughTheTopicStoreAsTheCallers()
     {
+        var identity = ConversationIdGenerator.CreateFor("topic-1");
         var topic = new TopicMetadata(
-            "topic-1", 7, 42, "jack", "Chat", new DateTimeOffset(2026, 8, 12, 0, 0, 0, TimeSpan.Zero), null);
+            "topic-1", identity.ChatId, identity.ThreadId, "jack", "Chat",
+            new DateTimeOffset(2026, 8, 12, 0, 0, 0, TimeSpan.Zero), null, OwnerId: "someone-else", Shared: true);
 
         await _hub.SaveTopic(topic);
 
-        _store.Verify(s => s.SaveTopicAsync(topic, false), Times.Once);
+        var expected = topic with { OwnerId = "fran", TenantId = "home", Shared = false, OwnerName = "fran" };
+        _store.Verify(s => s.SaveTopicAsync(expected, false), Times.Once);
     }
 
     // A topic last driven by voice or a schedule has counters the browser never saw, so the
@@ -120,6 +129,8 @@ public sealed class ChatHubTopicTests : IDisposable
     {
         IReadOnlyList<ChatHistoryMessage> stored =
             [new ChatHistoryMessage("m-1", "user", "hello", "fran", null, null)];
+        _store.Setup(s => s.GetTopicByChatIdAndThreadIdAsync("jack", 7, 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Topic("topic-1"));
         _store.Setup(s => s.GetHistoryAsync("jack", 7, 42)).ReturnsAsync(stored);
 
         var history = await _hub.GetHistory("jack", 7, 42);
@@ -132,7 +143,7 @@ public sealed class ChatHubTopicTests : IDisposable
     [Fact]
     public async Task GetTopicPage_WithNoPageSizeAsked_UsesTheConfiguredOne()
     {
-        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", null, 2))
+        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), null, 2, false))
             .ReturnsAsync(new TopicPage([], "42"));
 
         var page = await _hub.GetTopicPage("jack", "kitchen");
@@ -145,7 +156,7 @@ public sealed class ChatHubTopicTests : IDisposable
     [Fact]
     public async Task GetTopicPage_SaysWhichOfItsTopicsHaveAReplyInFlight()
     {
-        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", null, 2))
+        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), null, 2, false))
             .ReturnsAsync(new TopicPage([Topic("busy"), Topic("quiet")], null));
         _streamService.GetOrCreateStream("busy", "prompt", "fran", CancellationToken.None);
 
@@ -162,7 +173,7 @@ public sealed class ChatHubTopicTests : IDisposable
     {
         await _hub.GetTopicPage("jack", "kitchen", cursor: "1700", pageSize: 5);
 
-        _store.Verify(s => s.GetTopicPageAsync("jack", "kitchen", "1700", 5), Times.Once);
+        _store.Verify(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), "1700", 5, false), Times.Once);
     }
 
     // The delete used to succeed and say nothing, so a second tab kept showing a row for a

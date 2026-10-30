@@ -21,12 +21,14 @@ public class ApprovalServiceTests : IDisposable
     {
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             _streamLogger.Object);
 
         _sut = new ApprovalService(
             _streamService,
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             _hubSender.Object,
             new Mock<ILogger<ApprovalService>>().Object);
     }

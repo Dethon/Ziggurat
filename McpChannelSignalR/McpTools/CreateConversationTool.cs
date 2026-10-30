@@ -20,14 +20,18 @@ public sealed class CreateConversationTool
         IServiceProvider services,
         [Description("Text of the originating prompt; rendered as the user-role bubble")] string? initialPrompt = null,
         [Description("Unused on this channel; voice uses it for satellite targeting")] string? address = null,
-        [Description("Existing conversation id: attaches this turn to it instead of creating a topic. With a topic name it is a later target of a fan-out, and a topic is minted over it if none holds it; without one it is the turn-start announce")] string? existingConversationId = null)
+        [Description("Existing conversation id: attaches this turn to it instead of creating a topic. With a topic name it is a later target of a fan-out, and a topic is minted over it if none holds it; without one it is the turn-start announce")] string? existingConversationId = null,
+        [Description("Who the turn acts for: a topic minted for it is that account's, or the household's when it acts for none")] Principal? principal = null)
     {
+        // Whose a minted topic is comes from the turn it shows, decided here: the channel that asked
+        // for the conversation to be shown never names where it goes, nor whose it is (ADR 0046).
         var p = new CreateConversationParams
         {
             AgentId = agentId,
             TopicName = topicName,
             Sender = sender,
-            InitialPrompt = initialPrompt
+            InitialPrompt = initialPrompt,
+            Principal = principal
         };
 
         if (existingConversationId is null)
@@ -74,11 +78,11 @@ public sealed class CreateConversationTool
             creation.Topic.TopicId, p.AgentId, creation.Identity.ChatId, creation.Identity.ThreadId,
             spaceSlug: "default", topicName: p.TopicName);
 
-        // Notify WebChat clients so the topic appears without refresh.
+        // Notify WebChat clients so the topic appears without refresh — the ones that may see it.
         var hubSender = services.GetRequiredService<IHubNotificationSender>();
         var notification = new TopicChangedNotification(
-            TopicChangeType.Created, creation.Topic.TopicId, creation.Topic, SpaceSlug: "default");
-        await hubSender.SendToGroupAsync("space:default", "OnTopicChanged", notification);
+            TopicChangeType.Created, creation.Topic.TopicId, creation.Topic, SpaceSlug: creation.Topic.SpaceSlug);
+        await hubSender.SendToTopicAsync(creation.Topic, creation.Topic.SpaceSlug, "OnTopicChanged", notification);
 
         // Create a stream so send_reply chunks have somewhere to go. The stream's
         // currentPrompt seeds the user-role bubble on WebChat, so it must be the
@@ -121,13 +125,13 @@ public sealed class CreateConversationTool
         }
 
         // Wake viewing clients: their OnStreamStarted handler resumes the stream
-        // (buffered replay + live subscription) without any client changes.
+        // (buffered replay + live subscription) without any client changes. Only those that may see
+        // the topic are woken, since a private one's activity is its owner's business.
         var spaceSlug = session.SpaceSlug ?? "default";
-        var hubSender = services.GetRequiredService<IHubNotificationSender>();
-        await hubSender.SendToGroupAsync(
-            $"space:{spaceSlug}",
-            "OnStreamStarted",
-            new StreamStartedNotification(topicId, spaceSlug));
+        var topic = await services.GetRequiredService<IThreadStateStore>()
+            .GetTopicByChatIdAndThreadIdAsync(session.AgentId, session.ChatId, session.ThreadId);
+        await services.GetRequiredService<IHubNotificationSender>().SendToTopicAsync(
+            topic, spaceSlug, "OnStreamStarted", new StreamStartedNotification(topicId, spaceSlug));
 
         return conversationId;
     }

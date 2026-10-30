@@ -207,7 +207,7 @@ public class McpChannelConnectionToolCacheTests
     private static Task<string?> CreateAsync(McpChannelConnection connection) =>
         connection.CreateConversationAsync(
             "agent-1", "topic", "sender", initialPrompt: null, address: null,
-            existingConversationId: null, CancellationToken.None);
+            existingConversationId: null, principal: null, CancellationToken.None);
 
     private static Task<RunningServer> StartServerAsync() => InMemoryMcpServer.StartAsync(services => services
         .AddMcpServer()

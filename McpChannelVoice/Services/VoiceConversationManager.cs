@@ -39,8 +39,13 @@ public sealed class VoiceConversationManager(
     // existence check. In practice a satellite's utterances are processed sequentially by its
     // own connection loop, so concurrent calls for the same satellite don't occur; the
     // double-check is a cheap safeguard that discards a redundant creation if they ever do.
+    //
+    // The speaker is who opens a conversation, so a minted one waits for them: its topic is a
+    // recognised speaker's own and the guest's the household's. A conversation that already exists
+    // never waits, which keeps every later turn's resolution beside the rest of its dispatch.
     public async Task<string> GetOrCreateAsync(
-        SatelliteSession session, string agentId, string firstUtterance, CancellationToken ct)
+        SatelliteSession session, string agentId, string firstUtterance, CancellationToken ct,
+        Task<(Principal Principal, string Sender)>? speaker = null)
     {
         lock (_gate)
         {
@@ -51,13 +56,15 @@ public sealed class VoiceConversationManager(
             }
         }
 
+        var (principal, sender) = speaker is null ? ((Principal?)null, session.Config.Identity) : await speaker;
         var creation = await factory.CreateAsync(
             new CreateConversationParams
             {
                 AgentId = agentId,
                 TopicName = $"{session.Config.Identity} @ {session.Config.Room}",
-                Sender = session.Config.Identity,
-                InitialPrompt = firstUtterance
+                Sender = sender,
+                InitialPrompt = firstUtterance,
+                Principal = principal
             },
             ct);
 

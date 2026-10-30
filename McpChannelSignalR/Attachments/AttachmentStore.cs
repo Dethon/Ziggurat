@@ -23,7 +23,8 @@ public sealed class AttachmentStore(
 {
     private const string MetadataFileName = "meta.json";
 
-    public sealed record Record(AttachmentReference Reference, string Path, string? SpaceSlug, DateTimeOffset StoredAt);
+    public sealed record Record(
+        AttachmentReference Reference, string Path, string? SpaceSlug, DateTimeOffset StoredAt, string ConversationId);
 
     private sealed record Metadata(
         string FileName,
@@ -134,7 +135,7 @@ public sealed class AttachmentStore(
             MediaType = metadata.MediaType,
             SizeBytes = metadata.SizeBytes
         };
-        return new Record(reference, path, metadata.SpaceSlug, metadata.StoredAt);
+        return new Record(reference, path, metadata.SpaceSlug, metadata.StoredAt, metadata.ConversationId);
     }
 
     public async Task<byte[]?> ReadBytesAsync(string id, CancellationToken ct)

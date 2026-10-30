@@ -90,13 +90,14 @@ public sealed class TranscriptDispatcher(
             return false;
         }
 
-        // Asked beside the conversation's creation rather than after it: both are round trips on the
-        // way to the agent, and neither needs the other's answer.
+        // Asked as the dispatch begins: a conversation that already exists needs nothing of the
+        // answer until the turn goes out, and a new one waits for it, because whose its topic is
+        // comes from who spoke.
         var speaker = SpeakerOfAsync(session, identifiedSpeaker, ct);
 
         // AgentId is required by CreateConversationParams; the dispatch path always supplies one in
         // production, so the null-coalesce is only a defensive fallback (not expected at runtime).
-        var conversationId = await manager.GetOrCreateAsync(session, agentId ?? string.Empty, transcript.Text, ct);
+        var conversationId = await manager.GetOrCreateAsync(session, agentId ?? string.Empty, transcript.Text, ct, speaker);
         var (principal, sender) = await speaker;
 
         var dismissedAlert = session.TryConsumeDismissedAlert(timeProvider.GetUtcNow());

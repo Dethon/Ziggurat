@@ -37,6 +37,7 @@ public sealed class ChatHubDictationTests : IDisposable
         var sessionService = new SessionService();
         _streamService = new StreamService(
             sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
@@ -46,7 +47,7 @@ public sealed class ChatHubDictationTests : IDisposable
             approvalService: null!,
             new ChannelNotificationEmitter(new ChannelInbox(_time), DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            threadStore: null!,
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             new AttachmentService(
                 _attachmentSettings,
