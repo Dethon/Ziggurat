@@ -40,6 +40,8 @@ public class ChatHubCancelTopicTests : IDisposable
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IHubNotificationSender>().Object,
+            new Mock<IPushNotificationService>().Object,
+            new AccountConnections(),
             NullLogger<ApprovalService>.Instance);
 
         _hub = new ChatHub(

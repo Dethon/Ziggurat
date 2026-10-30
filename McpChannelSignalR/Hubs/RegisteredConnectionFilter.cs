@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.Security;
+using McpChannelSignalR.Services;
 using Microsoft.AspNetCore.SignalR;
 
 namespace McpChannelSignalR.Hubs;
@@ -14,6 +15,7 @@ namespace McpChannelSignalR.Hubs;
 // future change to connecting does — and a method added to the hub needs nothing to be covered.
 internal sealed class RegisteredConnectionFilter(
     IAccountResolver accounts,
+    AccountConnections connections,
     ILogger<RegisteredConnectionFilter> logger) : IHubFilter
 {
     private const string NotSignedInError = "This connection is not signed in.";
@@ -29,7 +31,23 @@ internal sealed class RegisteredConnectionFilter(
         context.Context.Items[ChatHub.AccountItem] = account;
         context.Context.Items[ChatHub.DisplayNameItem] =
             await DisplayNameOfAsync(account, context.Context.ConnectionAborted);
+        // A question offered to this person reaches them on every connection they hold, whatever
+        // space it is in, and with none held goes to their devices instead.
+        await context.Hub.Groups.AddToGroupAsync(
+            context.Context.ConnectionId, TopicAudience.Account(account.UserId), context.Context.ConnectionAborted);
+        connections.Opened(account.UserId);
         await next(context);
+    }
+
+    public Task OnDisconnectedAsync(
+        HubLifetimeContext context, Exception? exception, Func<HubLifetimeContext, Exception?, Task> next)
+    {
+        if (context.Context.Items.TryGetValue(ChatHub.AccountItem, out var item) && item is ForwardedAccount account)
+        {
+            connections.Closed(account.UserId);
+        }
+
+        return next(context, exception);
     }
 
     public ValueTask<object?> InvokeMethodAsync(

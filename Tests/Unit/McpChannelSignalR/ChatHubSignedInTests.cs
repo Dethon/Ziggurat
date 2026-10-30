@@ -69,6 +69,8 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
             _sessionService,
             new Mock<IThreadStateStore>().Object,
                 new Mock<IHubNotificationSender>().Object,
+                new Mock<IPushNotificationService>().Object,
+                new AccountConnections(),
                 NullLogger<ApprovalService>.Instance))
             .AddSingleton(new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast))
             .AddSingleton<IAccountResolver>(_accounts)
