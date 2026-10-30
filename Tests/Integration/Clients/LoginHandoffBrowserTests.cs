@@ -86,13 +86,13 @@ public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, Red
             var cookies = new CookieContainer();
             using var http = new HttpClient(new HttpClientHandler { CookieContainer = cookies })
             {
-                BaseAddress = new Uri(server.BaseAddress)
+                BaseAddress = new Uri(server.PagesAddress)
             };
             (await http.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
 
             using var socket = new ClientWebSocket();
             socket.Options.Cookies = cookies;
-            await socket.ConnectAsync(new Uri($"{server.BaseAddress.Replace("http", "ws")}/browse/handoff/live"),
+            await socket.ConnectAsync(new Uri($"{server.PagesAddress.Replace("http", "ws")}/browse/handoff/live"),
                 CancellationToken.None);
             var buffer = new byte[512 * 1024];
             var frame = await socket.ReceiveAsync(buffer, CancellationToken.None);
