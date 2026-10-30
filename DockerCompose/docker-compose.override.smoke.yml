@@ -1,0 +1,33 @@
+# A smoke stack on somebody's own machine (scripts/smoke-stack.sh): every piece of state starts empty
+# under ./volumes/smoke, so a stale copy of the deployment's data in ./volumes is never loaded — its
+# schedules would fire — and Caddy serves the shipped Caddyfile through its own local CA instead of
+# Cloudflare's DNS challenge. The script starts only the servers that reach nothing outside this
+# machine: no Telegram bot, no satellites, no Home Assistant.
+services:
+  redis:
+    volumes: ["./volumes/smoke/redis:/data"]
+  accounts-volume:
+    volumes: ["./volumes/smoke/accounts:/data"]
+  accounts:
+    volumes: ["./volumes/smoke/accounts:/data"]
+  mcp-sugary-volume:
+    volumes: ["./volumes/smoke/sugary:/data"]
+  mcp-sugary:
+    volumes: ["./volumes/smoke/sugary:/data"]
+  mcp-sandbox:
+    volumes: ["./volumes/smoke/sandbox:/home/sandbox_user"]
+  mcp-vault:
+    volumes: ["./volumes/smoke/vault:/vault"]
+  mcp-library:
+    volumes: ["./volumes/smoke/media:/media"]
+  household-migration:
+    volumes:
+      - "./volumes/smoke/household-migration:/input"
+      - "./volumes/smoke/sugary:/sugary"
+      - "./volumes/smoke/voices:/voices"
+  caddy:
+    environment:
+      CADDY_TLS: internal
+    volumes:
+      - "./volumes/smoke/caddy_data:/data"
+      - "./volumes/smoke/caddy_config:/config"

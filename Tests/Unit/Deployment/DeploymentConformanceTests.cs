@@ -12,6 +12,18 @@ public class DeploymentConformanceTests
     private const string SexyHost = "sexy.herfluffness.com";
     private const string SugaryHost = "sugary.herfluffness.com";
 
+    // A local stack swaps the issuer by CADDY_TLS; the deployment never sets it, so every host must
+    // fall back to the Cloudflare challenge rather than to the local CA a phone would not trust.
+    [Fact]
+    public void EveryHost_TakesTheDeploymentsCertificateUnlessToldOtherwise()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+
+        hosts.ShouldNotBeEmpty();
+        hosts.ShouldAllBe(h => h.Body.Contains("import tls_{$CADDY_TLS:cloudflare}"));
+        DeploymentFiles.Compose().Service("caddy").Environment.ShouldNotContainKey("CADDY_TLS");
+    }
+
     [Fact]
     public void OutpostRegistration_ReachesTheAgentThroughTheProxy()
     {
