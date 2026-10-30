@@ -338,3 +338,37 @@ claims change in this phase.
     Sugary log it is;
   - send each person their passkey link;
   - set the accounts service's secrets and the proxy's session-check routes.
+- The deploy steps, in order (`.claude/rules/household-migration.md` says what each migration step
+  does; the launch-stack skill has the same commands):
+  1. **Before deploying**, copy prod's identity map out of its compose environment — the
+     `IDENTITY__PEOPLE__<n>__{NAME,TELEGRAM,WEBCHAT,VOICE}` entries of `mcp-websearch`
+     (`docker inspect mcp-websearch`), which the new compose file no longer carries — into
+     `DockerCompose/volumes/household-migration/people.json`:
+     `{ "people": [ { "name", "telegram", "telegramId", "webChat", "voice", "oldNames", "role" } ] }`.
+     `telegramId` is each person's numeric Telegram id (the bot now admits people by it alone).
+     `oldNames` lists any other name their memories or schedules were filed under; Redis keys are
+     case-sensitive, so `Fran` and `fran` are two names. `redis-cli --scan --pattern 'memory:*'`
+     shows the buckets, and the dry run below names any nobody is listed with.
+  2. Deploy: `docker compose build base-sdk`, then `up -d --build` the stack. Set the accounts
+     service's per-deployment values (`WEBAUTHN__RELYINGPARTYID`, `ALLOWEDORIGINS__n`,
+     `SESSIONCOOKIE__DOMAIN`, `PUBLICBASEURL`, `TELEGRAM__BOTUSERNAME`) and reload Caddy with the
+     session-check routes. Start `mcp-sugary` once with the new image (it adds the log's owner
+     columns; the migration would too).
+  3. Optionally mint the operator's own link first
+     (`docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"`): the
+     migration adopts that operator for the person named `--operator`. Otherwise it creates them and
+     prints their link.
+  4. Put a random `HOUSEHOLD_MIGRATION_SECRET` in `DockerCompose/.env` (`openssl rand -hex 32`) and
+     `docker compose up -d accounts`, so its `CALLERS__household-migration` admits the run.
+  5. Dry run, read it, fix the file until it lists every bucket and nothing is "left as it was":
+     `docker compose --profile migrate run --rm household-migration --people /input/people.json
+     --operator <name> --owner <name> --sugary <name> --dry-run` — each `<name>` a person's `name`.
+  6. The same without `--dry-run`. Keep the output: each person it created has a passkey link,
+     shown only this once (a lost one is `mint-link --user <id>`). Running it again changes nothing
+     and says so; a run that stopped part way is finished by running it again.
+  7. `docker compose restart mcp-channel-voice tse-extractor`: speaker profiles are read at start,
+     and their folders are now named by user id.
+  8. Send each person their link. Someone who only uses Telegram needs none: the bot already knows
+     their linked id.
+  9. Empty `HOUSEHOLD_MIGRATION_SECRET` and `docker compose up -d accounts` again: while it is set,
+     whoever holds it can make the operator.

@@ -68,6 +68,8 @@ The Telegram bot's ways in sit beside it under `/accounts/internal/telegram/` (`
 - The comparison is `Internal/CallerCredential`, `Domain.Security.SharedSecret`'s rule spelled again because this service references no project; `CallerCredentialTests` holds the two to the same answers.
 - Every Caddy host that reaches this service answers `handle /accounts/internal/*` with `respond 404` **before** `/accounts/*` (conformance-checked), so a browser never reaches it; a new host routing `/accounts/*` needs the same block.
 
+`POST /accounts/internal/household-import` is the household migration's one call and the exception to "any listed caller": it can make the operator and mint their passkey link, so it answers only `CALLERS__household-migration` (403 for any other caller), a credential the deployment leaves empty but for the run. It makes the retired identity map's people accounts of the home household all at once or not at all, finding each again by a `LinkedIdentity` on the `identity-map` channel (their map Name), which no resolution answers. `.claude/rules/household-migration.md` has the rest.
+
 The client every channel server shares is `IAccountResolver` (`Domain/Contracts`), implemented by `AccountsResolverClient` (`Infrastructure/Clients/Accounts`, registered by `AddAccountResolver(config, ownMcpCredential)`, `Accounts:BaseUrl` defaulting to `http://accounts:8080`): null is nobody, and a call the service could not answer throws, so a caller never takes an outage for a stranger.
 
 ## Ceremonies

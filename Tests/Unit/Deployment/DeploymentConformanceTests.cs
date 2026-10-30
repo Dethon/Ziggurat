@@ -100,7 +100,8 @@ public class DeploymentConformanceTests
     [Theory]
     [InlineData("OPENROUTER__APIKEY", new[] { "agent", "mcp-websearch", "mcp-channel-voice" })]
     [InlineData("HOMEASSISTANT__TOKEN", new[] { "mcp-homeassistant" })]
-    [InlineData("LOGINS__STATEKEY", new[] { "mcp-websearch" })]
+    [InlineData("LOGINS__STATEKEY", new[] { "mcp-websearch", "household-migration" })]
+    [InlineData("HOUSEHOLD_MIGRATION_SECRET", new[] { "accounts", "household-migration" })]
     [InlineData("BOTS__0__BOTTOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("BOTS__1__BOTTOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("WEBPUSH__PRIVATEKEY", new[] { "mcp-channel-signalr", "mcp-sugary" })]
@@ -376,6 +377,52 @@ public class DeploymentConformanceTests
         environment["SESSIONCOOKIE__DOMAIN"].ShouldBe("." + relyingParty);
         publicBase.Host.ShouldBe(MainHost);
         origins.ShouldContain(o => o.Host == publicBase.Host, "sign-in is served there, so its passkey ceremonies run there");
+    }
+
+    // The migration into the home household is run once, by hand, on deploy: under a profile, so no
+    // `up` starts it, and published nowhere.
+    [Fact]
+    public void TheHouseholdMigration_RunsOnlyWhenAskedFor()
+    {
+        var migration = DeploymentFiles.Compose().Service("household-migration");
+
+        migration.Profiles.ShouldBe(["migrate"]);
+        migration.Ports.ShouldBeEmpty();
+        migration.DependsOn.ShouldBe(["base-sdk", "redis", "accounts"], ignoreOrder: true);
+    }
+
+    // The household import can make the operator and mint their link, so the accounts service admits
+    // it by a credential nothing else holds — one the deployment leaves empty except for the run.
+    [Fact]
+    public void TheHouseholdImport_IsAdmittedByACredentialOnlyTheMigrationHolds()
+    {
+        var compose = DeploymentFiles.Compose();
+        const string credential = "${HOUSEHOLD_MIGRATION_SECRET}";
+
+        compose.Service("accounts").Environment["CALLERS__household-migration"].ShouldBe(credential);
+        compose.Service("household-migration").Environment["ACCOUNTS__CREDENTIAL"].ShouldBe(credential);
+        DeploymentFiles.Placeholders()["HOUSEHOLD_MIGRATION_SECRET"].ShouldBeEmpty();
+    }
+
+    // The migration moves data in the Sugary server's and the voice channel's own volumes, as their
+    // user, and finds them where its settings look.
+    [Fact]
+    public void TheHouseholdMigration_MountsTheVolumesItMovesDataInWhereItLooksForThem()
+    {
+        var compose = DeploymentFiles.Compose();
+        var migration = compose.Service("household-migration");
+        var defaults = new global::HouseholdMigration.MigrationSettings();
+        string Source(ComposeService service, string target) =>
+            service.Volumes.Single(v => v.EndsWith($":{target}", StringComparison.Ordinal)).Split(':')[0];
+
+        Source(migration, "/sugary").ShouldBe(Source(compose.Service("mcp-sugary"), "/data"));
+        Source(migration, "/voices").ShouldBe(Source(compose.Service("mcp-channel-voice"), "/voices"));
+        migration.Volumes.ShouldContain("./volumes/household-migration:/input:ro");
+        Path.GetDirectoryName(defaults.SugaryDatabasePath).ShouldBe("/sugary");
+        Path.GetFileName(defaults.SugaryDatabasePath)
+            .ShouldBe(Path.GetFileName(new global::McpServerSugary.Settings.SugarySettings().DatabasePath));
+        defaults.VoicesPath.ShouldBe("/voices");
+        migration.User.ShouldBe(compose.Service("mcp-sugary").User);
     }
 
     [Fact]

@@ -52,6 +52,24 @@ The dashboard (an installable PWA) is at `https://assistants.herfluffness.com/da
 
 `accounts` owns households, people, passkeys and sessions; Caddy routes `/accounts/*` on the main host to it (sign-in, a link's enrollment page, and the `/accounts/verify` session check). On a fresh store nobody can sign in until the operator mints their own link: `docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"` prints a one-time link (a week long) that enrolls a passkey; run it again after losing every passkey. `mint-link --user <id>` is a recovery link for anyone, `create-user --name <display name> [--role owner|member]` adds a person to the household (then give them a `mint-link --user`), and `mint-session --user <id>` prints a session cookie's value (`ziggurat_session`) for a test stack. A host run of the project (`Local: Accounts`, `http://localhost:5004`) uses `localhost` as the passkeys' relying party and a host-only cookie. The chat client and its hub are behind the session check, so they are reached through Caddy signed in; a host run of WebUI and the SignalR channel with no proxy in front has no session check to forward the person, and the hub refuses every connection.
 
+## Migrating into the home household
+
+The deploy that brings accounts runs `household-migration` once, by hand: it makes the retired identity map's people accounts and moves what was under their names — memories, remembered logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids. It is under the `migrate` profile, so no `up` starts it. The steps, in order, are `.scratch/accounts/spec.md`'s Further Notes; in short:
+
+```bash
+# people.json: { "people": [ { "name", "telegram", "telegramId", "webChat", "voice", "oldNames": [] }, ... ] }
+#   name/telegram/webChat/voice are prod's IDENTITY__PEOPLE__<n>__* values; telegramId the numeric id.
+mkdir -p DockerCompose/volumes/household-migration && cp people.json DockerCompose/volumes/household-migration/
+# HOUSEHOLD_MIGRATION_SECRET=<openssl rand -hex 32> in DockerCompose/.env, then:
+docker compose -f DockerCompose/docker-compose.yml -p jackbot up -d accounts
+docker compose -f DockerCompose/docker-compose.yml -p jackbot --profile migrate run --rm household-migration \
+  --people /input/people.json --operator <name> --owner <name> --sugary <name> --dry-run   # then without --dry-run
+docker compose -f DockerCompose/docker-compose.yml -p jackbot restart mcp-channel-voice tse-extractor
+# empty HOUSEHOLD_MIGRATION_SECRET again, and `up -d accounts`
+```
+
+Each `<name>` is a person's `name` in the file. The run prints a passkey link for each person it created; running it again changes nothing and says so. A bucket of memories under a name nobody is listed with is named in the output: add the name to its person's `oldNames` and run again. `.claude/rules/household-migration.md` has what each step does.
+
 ## The Sugary app
 
 `mcp-sugary` serves the carb-counting PWA (`Sugary.Client`, built into the image) on every route but `/mcp`: `http://localhost:6017/` with the ports override. It has no sign-in of its own: Caddy fronts it at `https://sugary.herfluffness.com` behind the accounts service's session check, as the chat client is (the site refuses `/mcp` and `/accounts/internal/*`, routes `/accounts/*` so the app sends a signed-out person to sign in same-origin, and allows 230 MiB bodies for a filmed meal), which installing it to a phone and live barcode scanning need. The app's API believes the `X-Ziggurat-*` headers the check copies and answers 401 without them, so `localhost:6017` straight answers every `/api` call 401 — send the three headers by hand to act as somebody. Each person's log is their own; foods and recipes are the household's. Port 6017 is published on loopback only, for local runs and the E2E. For frontend work, `npm run dev` in `Sugary.Client` proxies `/api` to that port with a local person's headers (`local-user` of `local-household`); `npm run build` writes into `McpServerSugary/wwwroot`, which `dotnet run` serves when started from the project directory. The client needs Node 22.12 or later: an older one installs without rolldown's native binding and vite cannot start.
