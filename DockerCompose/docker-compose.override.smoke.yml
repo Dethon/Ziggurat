@@ -20,6 +20,11 @@ services:
     volumes: ["./volumes/smoke/vault:/vault"]
   mcp-library:
     volumes: ["./volumes/smoke/media:/media"]
+  household-migration:
+    volumes:
+      - "./volumes/smoke/household-migration:/input"
+      - "./volumes/smoke/sugary:/sugary"
+      - "./volumes/smoke/voices:/voices"
   caddy:
     environment:
       CADDY_TLS: internal
