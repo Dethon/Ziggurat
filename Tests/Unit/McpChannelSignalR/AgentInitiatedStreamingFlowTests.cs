@@ -21,6 +21,7 @@ public class AgentInitiatedStreamingFlowTests
         var sessionService = new SessionService();
         var streamService = new StreamService(
             sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             new Mock<ILogger<StreamService>>().Object);
         var hubSender = new Mock<IHubNotificationSender>();

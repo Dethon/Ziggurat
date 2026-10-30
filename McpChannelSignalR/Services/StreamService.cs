@@ -9,6 +9,7 @@ namespace McpChannelSignalR.Services;
 
 public sealed class StreamService(
     SessionService sessionService,
+    IThreadStateStore threadStore,
     IPushNotificationService pushNotificationService,
     ILogger<StreamService> logger) : IStreamService, IDisposable
 {
@@ -148,6 +149,7 @@ public sealed class StreamService(
 
     private void CompleteStream(string topicId)
     {
+        ChannelSession? finished = null;
         string? spaceSlug = null;
         string? topicName = null;
 
@@ -163,6 +165,7 @@ public sealed class StreamService(
             // Resolve space slug and topic name before cleanup
             if (sessionService.TryGetSession(topicId, out var session))
             {
+                finished = session;
                 spaceSlug = session?.SpaceSlug;
                 topicName = session?.TopicName;
             }
@@ -175,22 +178,30 @@ public sealed class StreamService(
             CleanupStreamState(topicId);
         }
 
-        if (spaceSlug is not null)
+        if (finished is not null && spaceSlug is not null)
         {
-            _ = SendPushNotificationAsync(spaceSlug, topicName);
+            _ = SendPushNotificationAsync(finished, spaceSlug, topicName);
         }
     }
 
-    private async Task SendPushNotificationAsync(string spaceSlug, string? topicName)
+    // The topic's name rides on the push, so a private topic's goes to its owner's devices alone,
+    // the way its news on the hub does (TopicAudience); any other topic's goes to the space.
+    private async Task SendPushNotificationAsync(ChannelSession session, string spaceSlug, string? topicName)
     {
         try
         {
             var url = $"/{spaceSlug}";
-            await pushNotificationService.SendToSpaceAsync(
-                spaceSlug,
-                topicName ?? "New response",
-                "The agent has finished responding",
-                url);
+            var title = topicName ?? "New response";
+            const string body = "The agent has finished responding";
+            var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(
+                session.AgentId, session.ChatId, session.ThreadId);
+            if (topic is { IsPrivate: true, OwnerId: { } owner })
+            {
+                await pushNotificationService.SendToPersonAsync(owner, spaceSlug, title, body, url);
+                return;
+            }
+
+            await pushNotificationService.SendToSpaceAsync(spaceSlug, title, body, url);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
