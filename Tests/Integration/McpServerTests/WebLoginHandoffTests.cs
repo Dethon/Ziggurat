@@ -7,7 +7,9 @@ using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Security;
+using Domain.Security.Signing;
 using Domain.Tools;
+using Domain.Tools.Web;
 using Infrastructure.Clients.Browser;
 using Infrastructure.StateManagers;
 using McpServerWebSearch.Handoff;
@@ -339,6 +341,66 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         // the asking call's token named — their account on the channel the token names — and the
         // channel's own name for them was never signed, so it is not what the wake carries.
         wake.Principal.ShouldBe(new Principal("telegram", Fran.UserId, Fran));
+    }
+
+    // The wake acts for the person whose turn asked only on the delegation the agent signed as that
+    // turn called web_login; the browse server kept it beside the handoff and hands it back.
+    [Fact]
+    public async Task Done_WakesTheConversationAsThePersonWhoAsked()
+    {
+        await FinishHandoffAsync("{}", FromTelegram(Fran, conversationId: "tg-78"));
+
+        var wake = (await DrainAsync()).ShouldHaveSingleItem();
+
+        (await TestDelegations.AdmitAsync(wake, "websearch")).ShouldBeOfType<FireAdmission.Delegated>()
+            .Identity.Account.ShouldBe(Fran);
+    }
+
+    // The link a voice turn cannot show goes to a new conversation of the person's chat client, which
+    // is theirs because it acts for them, on the same delegation.
+    [Fact]
+    public async Task AVoiceLoginsLinkInTheChatClient_ActsForThePersonWhoAsked()
+    {
+        await _server.CallAsync("web_login", Login(), FromVoice(Fran));
+
+        var link = (await DrainAsync()).ShouldHaveSingleItem();
+
+        (await TestDelegations.AdmitAsync(link, "websearch")).ShouldBeOfType<FireAdmission.Delegated>()
+            .Identity.Account.ShouldBe(Fran);
+    }
+
+    // However well a wake names the handoff, one whose delegation the agent did not sign is nobody's.
+    [Fact]
+    public async Task AWakeWithADelegationTheAgentDidNotSign_IsRefused()
+    {
+        var asking = FromTelegram(Fran, conversationId: "tg-79");
+        await FinishHandoffAsync("{}", asking);
+        var wake = (await DrainAsync()).ShouldHaveSingleItem();
+
+        var forged = wake with
+        {
+            Delegation = wake.Delegation.ShouldNotBeNull() with
+            {
+                Token = TestDelegations.Forged(Fran, "telegram", LoginDelegation.Of(asking))
+            }
+        };
+
+        (await TestDelegations.AdmitAsync(forged, "websearch"))
+            .ShouldBe(new FireAdmission.Undelegated(nameof(TokenRefusal.UnknownKey)));
+    }
+
+    // The delegation names the conversation that asked: a browse server reusing a person's handoff to
+    // wake another conversation wakes it as nobody.
+    [Fact]
+    public async Task AWakeIntoAnotherConversation_IsRefused()
+    {
+        await FinishHandoffAsync("{}", FromTelegram(Fran, conversationId: "tg-80"));
+        var wake = (await DrainAsync()).ShouldHaveSingleItem();
+
+        var elsewhere = wake with { ConversationId = "tg-81", ReplyTo = [new ReplyTarget("telegram", "tg-81")] };
+
+        (await TestDelegations.AdmitAsync(elsewhere, "websearch"))
+            .ShouldBe(new FireAdmission.Undelegated(DelegationVerifier.NotThisFire));
     }
 
     [Fact]

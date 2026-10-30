@@ -104,7 +104,7 @@ public static class FileSystemServerTools
     // Read inside the handler, so a context that does not parse is the caller's error result
     // like any other failure rather than something the envelope never sees.
     private static FileSystemBackendBase As(FileSystemBackendBase backend, RequestContext<CallToolRequestParams> call) =>
-        backend.For(new FileSystemCaller(call.Turn, VfsBridgeGrant.Parse(call.Params?.Meta)));
+        backend.For(new FileSystemCaller(call.Turn, VfsBridgeGrant.Parse(call.Params?.Meta), call.Delegation));
 
     public static IMcpServerBuilder AddFileSystemTools<TBackend>(this IMcpServerBuilder builder)
         where TBackend : FileSystemBackendBase

@@ -1,8 +1,14 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading.Channels;
+using Domain.DTOs.Channel;
 using Domain.Security;
 using Domain.Security.Signing;
 using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
+using ModelContextProtocol;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 
 namespace Tests;
 
@@ -15,6 +21,11 @@ namespace Tests;
 // agent key (TestSigningKeys.Agent) — for whoever the call's own _meta names, and nobody when it names
 // nobody. The suite's servers check those tokens against the key's published half (TestJwks), and
 // answer to "localhost", the host every test server is dialled at.
+//
+// The agent signs only an identity its conversation group verified (ConversationContext.Identity).
+// A test's context that names a person's account and no identity stands for a turn the agent did
+// verify, so the stand-in vouches for that account first (Vouching); a context that names an identity
+// is signed as it, and one naming neither is nobody's, as the agent would sign them.
 internal static class McpTestSecret
 {
     public const string Value = "test-mcp-secret";
@@ -48,8 +59,8 @@ internal static class McpTestSecret
     // for a server a test reaches through a published port, for the name the stack's agent dials it
     // at, which is the name the server answers to.
     public static IClientTransport Transport(string endpoint, string secret = Value, string? audience = null) =>
-        new SigningClientTransport(
-            UnsignedTransport(endpoint, secret), CallTokens, audience ?? TokenAudiences.CallTo(endpoint));
+        new Vouching(new SigningClientTransport(
+            UnsignedTransport(endpoint, secret), CallTokens, audience ?? TokenAudiences.CallTo(endpoint)));
 
     // The credential alone, for a test that presents a token of its own making, or none.
     public static HttpClientTransport UnsignedTransport(string endpoint, string secret = Value) =>
@@ -58,4 +69,53 @@ internal static class McpTestSecret
             Endpoint = new Uri(endpoint),
             AdditionalHeaders = new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(secret) }
         });
+
+    // The agent's conversation group, as far as a test's call needs one: a context naming a person's
+    // account with no verified identity is given that person's, as the group would have given it on
+    // the turn's assertion, before the signing transport reads it.
+    private sealed class Vouching(IClientTransport inner) : IClientTransport
+    {
+        public string Name => inner.Name;
+
+        public async Task<ITransport> ConnectAsync(CancellationToken cancellationToken = default) =>
+            new Connected(await inner.ConnectAsync(cancellationToken));
+
+        private sealed class Connected(ITransport inner) : ITransport
+        {
+            public string? SessionId => inner.SessionId;
+
+            public ChannelReader<JsonRpcMessage> MessageReader => inner.MessageReader;
+
+            public Task SendMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken = default)
+            {
+                if (message is JsonRpcRequest { Method: RequestMethods.ToolsCall, Params: JsonObject parameters }
+                    && parameters["_meta"] is JsonObject meta
+                    && TurnOf(meta) is { Identity: null, Principal: { Account: { } account } principal } context)
+                {
+                    meta[ChannelProtocol.ConversationContextMetaKey] = JsonSerializer.SerializeToNode(
+                        context with { Identity = IdentityClaims.Person(account.UserId, account.TenantId, principal.ChannelId, []) },
+                        ChannelProtocol.SerializerOptions);
+                }
+
+                return inner.SendMessageAsync(message, cancellationToken);
+            }
+
+            // A context that does not read as one is a test of what the server says about it, and is
+            // sent as written.
+            private static ConversationContext? TurnOf(JsonObject meta)
+            {
+                try
+                {
+                    return meta[ChannelProtocol.ConversationContextMetaKey]?.Deserialize<ConversationContext>(
+                        ChannelProtocol.SerializerOptions);
+                }
+                catch (JsonException)
+                {
+                    return null;
+                }
+            }
+
+            public ValueTask DisposeAsync() => inner.DisposeAsync();
+        }
+    }
 }

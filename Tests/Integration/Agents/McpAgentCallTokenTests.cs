@@ -38,9 +38,12 @@ public class McpAgentCallTokenTests
 
     private sealed record GatedSettings(McpGateSettings Mcp) : IMcpHostSettings;
 
+    // Alice's turn as the conversation group leaves it: the identity her assertion verified as, which
+    // is what the agent signs — the principal beside it is only what her channel stamped.
     private static readonly ConversationContext _alicesTurn = new(
         "jonas", "conv-alice", "Alice", new ReplyTarget(ChannelIds.SignalR, "conv-alice"),
-        Principal: new Principal(ChannelIds.SignalR, Alice, new Account("home", Alice)));
+        Principal: new Principal(ChannelIds.SignalR, Alice, new Account("home", Alice)),
+        Identity: IdentityClaims.Person(Alice, Home, ChannelIds.SignalR, []));
 
     // A turn outlives its first token: the model thinks for minutes between calls. Each call still
     // presents a token the server admits, minted afresh once the last one neared its expiry, and the

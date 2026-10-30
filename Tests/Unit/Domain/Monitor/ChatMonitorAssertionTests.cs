@@ -16,7 +16,7 @@ namespace Tests.Unit.Domain.Monitor;
 // server says: the agent checks the assertion the turn arrived with — signed by the accounts service,
 // in date, for the channel it came on, a person or the household's guest — as it arrives, refuses one
 // that fails and says so on the errors feed and to the channel, and holds what it verified for the
-// whole turn. A fire carries none (its delegation is ticket 07's), and a chat command is no turn.
+// whole turn. A fire carries none (ChatMonitorDelegationTests), and a chat command is no turn.
 public class ChatMonitorAssertionTests
 {
     private const string ChatChannel = "signalr";
@@ -150,8 +150,8 @@ public class ChatMonitorAssertionTests
             .Identity.ShouldNotBeNull().Subject.ShouldBe(_fran.UserId);
     }
 
-    // Nobody's assertion stands behind a fire: it runs as its server stamped it until delegations
-    // (ticket 07) say who it may act for.
+    // Nobody's assertion stands behind a fire: it is never refused for lacking one, and acts for
+    // whoever its delegation verifies as, or nobody (ChatMonitorDelegationTests).
     [Fact]
     public async Task AFire_NeedsNoAssertion()
     {

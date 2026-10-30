@@ -18,6 +18,10 @@ public class McpSchedulingServerFixture : IAsyncLifetime
 
     public string McpEndpoint { get; private set; } = null!;
 
+    // The server's own services, for a test that reads what a write left in its store or composes
+    // the fire its dispatcher would send.
+    public IServiceProvider Services => _host.Services;
+
     public async Task InitializeAsync()
     {
         // The scheduling server only stores keys, so it takes a database on the shared pool like
