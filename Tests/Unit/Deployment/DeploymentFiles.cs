@@ -36,6 +36,30 @@ public static class DeploymentFiles
         CaddyConfig.Parse(File.ReadAllText(Path.Combine(Directory, "caddy", "Caddyfile")));
 }
 
+// The browse server's two listeners as it ships them: its appsettings.json, under whatever its
+// compose entry sets over it.
+public static class BrowseServerListeners
+{
+    public const string Service = "mcp-websearch";
+
+    public static int Mcp => Port("Mcp");
+
+    public static int Pages => Port("Pages");
+
+    private static int Port(string name)
+    {
+        var environment = DeploymentFiles.Compose().Service(Service).Environment;
+        if (environment.TryGetValue($"LISTENERS__{name.ToUpperInvariant()}", out var overridden))
+        {
+            return int.Parse(overridden);
+        }
+
+        var path = Path.Combine(TestHelpers.FindSolutionRoot(), "McpServerWebSearch", "appsettings.json");
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+        return document.RootElement.GetProperty("Listeners").GetProperty(name).GetInt32();
+    }
+}
+
 // The servers the shipped agent dials: its agents', its workers' and its channels' endpoints.
 public static class ShippedAgentSettings
 {

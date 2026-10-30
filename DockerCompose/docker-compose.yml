@@ -378,8 +378,11 @@ services:
       # remembering off). Changing it makes every saved login refuse until it is put back.
       LOGINS__STATEKEY: ${LOGINS__STATEKEY}
       # Where people open a login handoff's link: the assistants host Caddy routes /browse/ to this
-      # server on (e.g. https://assistants.example.com). Per deployment; empty is the handoff off.
+      # server's pages listener on (e.g. https://assistants.example.com). Per deployment; empty is
+      # the handoff off.
       HANDOFF__PUBLICBASEURL: ""
+    # Two listeners (Listeners in its appsettings.json): /mcp on 8080 for the agent, the /browse
+    # pages on 8081 for the proxy alone, which the ports override never publishes.
     networks:
       - jackbot
     depends_on:

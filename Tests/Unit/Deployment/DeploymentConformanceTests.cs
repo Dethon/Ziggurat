@@ -362,6 +362,34 @@ public class DeploymentConformanceTests
         route.ForwardAuth.ShouldBeNull();
     }
 
+    // A login handoff's live view and the logins page answer on the browse server's second
+    // listener, which serves nothing else, so the route that reaches them cannot reach its /mcp.
+    [Fact]
+    public void TheBrowsePages_ReachTheBrowseServersPagesListener()
+    {
+        var route = DeploymentFiles.Caddyfile().Host(MainHost).Routes.Single(r => r.Matcher == "/browse/*");
+
+        route.Upstream.ShouldBe($"{BrowseServerListeners.Service}:{BrowseServerListeners.Pages}");
+        BrowseServerListeners.Pages.ShouldNotBe(BrowseServerListeners.Mcp);
+    }
+
+    // Any host, any route, nested or not: whatever the proxy hands the browse server lands on the
+    // pages listener, never on the one /mcp answers.
+    [Fact]
+    public void NothingTheProxyRoutes_ReachesTheBrowseServersMcpListener()
+    {
+        var upstreams = DeploymentFiles.Caddyfile().Hosts
+            .SelectMany(h => h.Body.Split('\n'))
+            .Select(l => l.Trim())
+            .Where(l => l.StartsWith("reverse_proxy ", StringComparison.Ordinal))
+            .SelectMany(l => l["reverse_proxy ".Length..].TrimEnd('{').Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Where(u => u.Split(':')[0] == BrowseServerListeners.Service)
+            .ToList();
+
+        upstreams.ShouldNotBeEmpty();
+        upstreams.ShouldAllBe(u => u == $"{BrowseServerListeners.Service}:{BrowseServerListeners.Pages}");
+    }
+
     // Sugary's /mcp is the deployment's, gated by the server's own credential, and a person's phone
     // never needs it: the proxy answers it 404 before the checked catch-all could pass it on.
     [Fact]

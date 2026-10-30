@@ -54,10 +54,11 @@ assistants.herfluffness.com {
         reverse_proxy agent:8080
     }
 
-    # A login handoff's live view and a person's logins page (the browse server). Before the
-    # WebChat catch-all; reverse_proxy carries the live view's WebSocket upgrade as it is.
+    # A login handoff's live view and a person's logins page, on the browse server's pages listener:
+    # its /mcp answers on 8080 alone, which nothing here may name. Before the WebChat catch-all;
+    # reverse_proxy carries the live view's WebSocket upgrade as it is.
     handle /browse/* {
-        reverse_proxy mcp-websearch:8080
+        reverse_proxy mcp-websearch:8081
     }
 
     # Who holds which identity is asked by the deployment's servers on the compose network, never
