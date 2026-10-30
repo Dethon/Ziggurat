@@ -4,8 +4,8 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The public pages answer on the second listener and not on the internal one, and `/mcp` the reverse
-- [ ] The conformance check asserts the proxy routes `/browse/*` to the second listener's port
-- [ ] The login handoff tests pass through the new listener
+- [x] The public pages answer on the second listener and not on the internal one, and `/mcp` the reverse
+- [x] The conformance check asserts the proxy routes `/browse/*` to the second listener's port
+- [x] The login handoff tests pass through the new listener

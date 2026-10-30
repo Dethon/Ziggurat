@@ -54,6 +54,17 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   unset secret refuses every call. The SDK's legacy SSE endpoints are off, so streamable HTTP is the
   one transport; `McpSecretGateTests` pins all three verbs, and a test that boots a server through
   the hosting library presents `Tests/McpTestSecret`.
+- **A server whose pages the proxy routes keeps them on a listener of their own.** One server does
+  today: the browse server's login handoff and logins pages answer on its second listener (8081),
+  `/mcp` on the first (8080), both named by its `Listeners` settings and bound in `Program.cs`
+  (`ListenAnyIP`, so its image clears `ASPNETCORE_HTTP_PORTS` rather than have Kestrel warn it
+  overrode it). `PagesListener` keys on the socket a request arrived on — never `RequireHost`, which
+  reads the Host header the proxy passes on as the browser sent it — and answers 404 for anything
+  outside `/browse` on the pages listener and for `/browse` on the other. It is a startup filter
+  inserted first, ahead of the gate, so `/mcp` on the pages listener is absent rather than asking
+  for a credential. The Caddyfile names the pages port alone (`DeploymentConformanceTests` reads
+  it off the server's `appsettings.json`), and `WebIdentityServerHarness` opens both listeners, so
+  the handoff tests reach the pages the way the proxy does.
 - **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for the
   nine servers that offer the agent things to call. Being a tool server and being a channel server
   are independent, so a dual-role server calls `AddToolServer` and then `AddChannelServer`.

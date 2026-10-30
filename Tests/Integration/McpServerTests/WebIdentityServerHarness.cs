@@ -36,13 +36,19 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
 
     public RecordingBrowser Browser { get; }
 
-    public string BaseAddress { get; }
+    // The listener the agent dials, and the one the proxy routes /browse/* to: a person's browser
+    // only ever reaches the second.
+    public string McpAddress { get; }
 
-    private WebIdentityServerHarness(WebApplication app, string baseAddress, RecordingBrowser browser)
+    public string PagesAddress { get; }
+
+    private WebIdentityServerHarness(
+        WebApplication app, string mcpAddress, string pagesAddress, RecordingBrowser browser)
     {
         _app = app;
-        BaseAddress = baseAddress;
-        _endpoint = $"{baseAddress}/mcp";
+        McpAddress = mcpAddress;
+        PagesAddress = pagesAddress;
+        _endpoint = $"{mcpAddress}/mcp";
         Browser = browser;
     }
 
@@ -54,18 +60,22 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
         bool loggedIn = true)
     {
         var browser = new RecordingBrowser();
-        var port = TestPort.GetAvailable();
-        var baseAddress = $"http://localhost:{port}";
+        var listeners = new ListenerConfiguration { Mcp = TestPort.GetAvailable(), Pages = TestPort.GetAvailable() };
 
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.WebHost.UseKestrel(options =>
+        {
+            options.Listen(IPAddress.Loopback, listeners.Mcp);
+            options.Listen(IPAddress.Loopback, listeners.Pages);
+        });
         var configured = new McpSettings
         {
             BraveSearch = new BraveSearchConfiguration { ApiKey = "test" },
             Camoufox = null,
             CapSolver = null,
             RedisConnectionString = McpServerRegistrations.UnreachableRedis,
-            Mcp = McpTestSecret.Gate
+            Mcp = McpTestSecret.Gate,
+            Listeners = listeners
         };
         builder.Services.ConfigureMcp(settings?.Invoke(configured) ?? configured);
         builder.Services.RemoveAll<IWebBrowser>();
@@ -82,7 +92,8 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
         app.MapMcp("/mcp");
         app.MapHandoff();
         await app.StartAsync();
-        return new WebIdentityServerHarness(app, baseAddress, browser);
+        return new WebIdentityServerHarness(
+            app, $"http://localhost:{listeners.Mcp}", $"http://localhost:{listeners.Pages}", browser);
     }
 
     public async Task<CallToolResult> CallAsync(
