@@ -1,0 +1,34 @@
+using Domain.DTOs.Channel;
+using Domain.Security;
+using Domain.Security.Signing;
+
+namespace Tests;
+
+// Assertions as the proxy's session check hands them on, signed with the accounts service's test
+// key: what a test sends an app in X-Ziggurat-Assertion to be somebody, and the verifier an
+// in-process app is given to believe them, with no accounts service to fetch keys from.
+internal static class TestAssertions
+{
+    private static readonly SigningKeyStore _accounts = TestSigningKeys.Store(TestSigningKeys.Accounts);
+
+    // Longer than any test, so a slow run never ages one out; a test about expiry dates its own.
+    private static readonly TimeSpan _lifetime = TimeSpan.FromHours(12);
+
+    public static string Of(
+        Account person, string channel, IReadOnlyList<string>? roles = null, DateTimeOffset? now = null,
+        TimeSpan? lifetime = null) =>
+        new TokenSigner(_accounts).Sign(IdentityClaims.Person(person.UserId, person.TenantId, channel, roles ?? ["member"])
+            .Stamped(TokenIssuers.Accounts, TokenAudiences.Assertion, now ?? DateTimeOffset.UtcNow, lifetime ?? _lifetime));
+
+    public static string OfGuest(string tenantId, string channel) =>
+        new TokenSigner(_accounts).Sign(IdentityClaims.Guest(tenantId, channel)
+            .Stamped(TokenIssuers.Accounts, TokenAudiences.Assertion, DateTimeOffset.UtcNow, _lifetime));
+
+    // The same claims signed by a key the accounts service does not publish.
+    public static string Forged(Account person, string channel) =>
+        new TokenSigner(TestSigningKeys.Store(TestSigningKeys.Agent)).Sign(
+            IdentityClaims.Person(person.UserId, person.TenantId, channel, ["member"])
+                .Stamped(TokenIssuers.Accounts, TokenAudiences.Assertion, DateTimeOffset.UtcNow, _lifetime));
+
+    public static AssertionVerifier Verifier(TimeProvider? clock = null) => new(_accounts, clock ?? TimeProvider.System);
+}

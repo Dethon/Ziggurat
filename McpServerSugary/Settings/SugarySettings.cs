@@ -1,5 +1,6 @@
 using Domain.DTOs;
 using Domain.Security;
+using Infrastructure.Clients.Accounts;
 using Mcp.Hosting;
 
 namespace McpServerSugary.Settings;
@@ -8,6 +9,10 @@ public record SugarySettings : IMcpHostSettings
 {
     // This server's own credential, which its /mcp asks for (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
+
+    // Where the accounts service publishes the keys the app checks a request's assertion with
+    // (ACCOUNTS__JWKSURL). The app resolves no identity, so nothing else here is read.
+    public AccountsClientConfig Accounts { get; init; } = new();
 
     // The SQLite file, in the server's own volume. Its directory is created on first start.
     public string DatabasePath { get; init; } = "/data/sugary.db";
