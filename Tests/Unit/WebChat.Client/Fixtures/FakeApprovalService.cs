@@ -35,6 +35,13 @@ public sealed class FakeApprovalService : IApprovalService
         return Task.FromResult(HubResult<bool>.Answered(true));
     }
 
+    public List<ToolApprovalRequestMessage> Offered { get; } = [];
+
+    public Task<HubResult<IReadOnlyList<ToolApprovalRequestMessage>>> GetOfferedApprovalsAsync() =>
+        Task.FromResult(NotLive
+            ? HubResult<IReadOnlyList<ToolApprovalRequestMessage>>.NotLive
+            : HubResult<IReadOnlyList<ToolApprovalRequestMessage>>.Answered([.. Offered]));
+
     public Task<HubResult<ToolApprovalRequestMessage>> GetPendingApprovalForTopicAsync(string topicId)
     {
         return Task.FromResult(NotLive

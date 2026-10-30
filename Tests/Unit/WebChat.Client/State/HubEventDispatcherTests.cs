@@ -171,6 +171,30 @@ public sealed class HubEventDispatcherTests : IDisposable
             Times.Once);
     }
 
+    [Fact]
+    public void HandleApprovalResolved_AnsweredElsewhere_SaysSo()
+    {
+        _sut.HandleApprovalResolved(new ApprovalResolvedNotification("", "approval-123", AnsweredElsewhere: true));
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<ApprovalResolved>(a => a.ApprovalId == "approval-123" && a.AnsweredElsewhere)),
+            Times.Once);
+    }
+
+    // A question another channel asked is offered to its asker as itself, apart from any topic's
+    // prompts, so catching up on a topic never takes it away.
+    [Fact]
+    public void HandleApprovalOffered_ShowsTheQuestionApartFromAnyTopic()
+    {
+        var request = new ToolApprovalRequestMessage("offer-1", [], "fran");
+
+        _sut.HandleApprovalOffered(new ApprovalOfferedNotification(request, "topic-1"));
+
+        _mockDispatcher.Verify(
+            d => d.Dispatch(It.Is<ShowApproval>(a => a.TopicId == null && a.Request == request)),
+            Times.Once);
+    }
+
     // Taking the prompt off screen is all the push does. What the approval let through comes down
     // the topic's stream with the rest of the reply, so this must add nothing of its own.
     [Fact]
