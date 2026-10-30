@@ -137,8 +137,14 @@ spend the watch on a 503 nobody received; every callback call is `continue_on_er
 because a stack that is down does raise in the home and the effects after the prompt must still
 fire — and `Project`
 reads one back; the metadata the automation cannot carry (creating agent, effects as authored, once,
-deliverTo, userId, createdAt, and the on/off the agent last wrote) is JSON in its description
-(`HaWatchMetadata`). A one-shot is spent only when it is off with a fire on record **and** the
+deliverTo, userId, createdAt, the on/off the agent last wrote, and the delegation the agent signed
+for the write that last set it) is JSON in its description (`HaWatchMetadata`). A watch's fire acts
+for the person that delegation names: the callback looks the watch up at fire time and sends the
+delegation with what the watch does now (`WatchDelegation.Of`), a write carrying none (a turn acting
+for nobody) leaves the watch nobody's, and a home the callback cannot ask fires for nobody
+(`.claude/rules/service-identity.md`, "Deferred turns"). `WatchDelegationStore` answers the agent's
+`delegations_list` / `delegations_replace`, rewriting the config alone so a spent one-shot is not
+re-armed. A one-shot is spent only when it is off with a fire on record **and** the
 agent last wrote it armed: a refused fire stamps `last_triggered` on a watch that stays on, and a
 pause after it would otherwise read as spent and be removed. Only a prefixed
 automation with parsable metadata is a watch; the alarm bridge and blueprints are invisible to the
