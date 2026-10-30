@@ -17,7 +17,8 @@ public record ChannelMessageNotification
     // wrote, and by a channel that knows the person's account on their own message (the chat
     // client, from the proxy's session check), so the account rides with it. Null on a person's own
     // message from a channel that knows no account yet, whose channel and sender are the voucher, and
-    // on a fire nobody's own turn stands behind.
+    // on a fire nobody's own turn stands behind. On a person's own message the agent keeps only its
+    // user id: the account is the one the assertion below names.
     public Principal? Principal { get; init; }
     // The accounts service's signed word for who a person's own message is from, as the channel got
     // it when it learned the person — the session check's header, the resolution API's answer, the
