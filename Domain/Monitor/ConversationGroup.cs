@@ -385,10 +385,9 @@ internal sealed class ConversationGroup(
         switch (await assertions.VerifyTurnAsync(x.Message.Assertion, x.Channel.ChannelId, _groupCt))
         {
             case TurnAdmission.Admitted { Identity: var identity }:
-                var principal = (x.Message.Principal ?? new Principal(x.Message.ChannelId, x.Message.Sender))
-                    with
-                { Account = identity.Account };
-                return new AdmittedTurn(x.Channel, x.Message with { Principal = principal }, identity);
+                var named = x.Message.Principal ?? new Principal(x.Message.ChannelId, x.Message.Sender);
+                return new AdmittedTurn(
+                    x.Channel, x.Message with { Principal = named with { Account = identity.Account } }, identity);
             case TurnAdmission.Refused { Reason: var reason }:
                 await RefuseAsync(x.Channel, x.Message, reason);
                 return null;
