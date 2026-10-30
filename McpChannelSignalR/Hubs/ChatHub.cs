@@ -596,6 +596,14 @@ public sealed class ChatHub(
     {
         var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId);
         RequireMayChange(stored);
+
+        // The topic's own conversation and no other: a thread it does not hold is not the caller's
+        // to name into the delete.
+        if (stored is not null && stored.ThreadId != threadId)
+        {
+            throw new HubException(NoSuchConversation);
+        }
+
         var spaceSlug = stored?.SpaceSlug ?? CurrentSpaceSlug ?? SpaceConfig.DefaultSlug;
         var notification = new TopicChangedNotification(TopicChangeType.Deleted, topicId, SpaceSlug: spaceSlug);
 

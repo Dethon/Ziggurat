@@ -202,6 +202,23 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         (await _store.GetTopicByChatIdAndThreadIdAsync(_agent, 123, 0)).ShouldBeNull();
     }
 
+    // Deleting one's own topic deletes its conversation and no other: a thread the topic does not
+    // hold is not named into the delete beside it.
+    [Fact]
+    public async Task DeletingATopic_UnderAnotherThread_DeletesNothing()
+    {
+        var fran = await ConnectAsync(Fran);
+        var topic = await StartTopicAsync(fran, "Fran's plum jam");
+        var elsewhere = new AgentKey(new ConversationIdentity(topic.ChatId, topic.ThreadId + 1).ConversationId, _agent).ToString();
+        await _store.AppendMessagesAsync(elsewhere, [new ChatMessage(ChatRole.User, "someone else's")]);
+
+        await Should.ThrowAsync<HubException>(() =>
+            fran.InvokeAsync("DeleteTopic", topic.AgentId, topic.TopicId, topic.ChatId, topic.ThreadId + 1));
+
+        (await _store.GetMessagesAsync(elsewhere)).ShouldNotBeNull();
+        (await _store.GetTopicAsync(_agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task ASharedTopic_IsTheHouseholdsToReadAndContinue_EachMessageItsSendersOwnTurn()
     {

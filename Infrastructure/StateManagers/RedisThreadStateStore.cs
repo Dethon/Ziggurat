@@ -258,7 +258,14 @@ public sealed class RedisThreadStateStore(
                 break;
             }
 
-            from = cursorOf(run[^1]);
+            // A run that ends where it began cannot move the page on; ending short beats spinning.
+            var next = cursorOf(run[^1]);
+            if (next == from)
+            {
+                break;
+            }
+
+            from = next;
         }
 
         return new TopicPage(shown, null);

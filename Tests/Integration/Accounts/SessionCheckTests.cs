@@ -1,6 +1,7 @@
 using System.Net;
 using Accounts.Members;
 using Accounts.Sessions;
+using Domain.Security;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -51,7 +52,7 @@ public class SessionCheckTests
 
         var response = await server.VerifyAsync(await server.MintSessionAsync(laura));
 
-        response.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["member,sees-all"]);
+        response.Headers.GetValues("X-Ziggurat-Roles").ShouldBe([$"member,{ForwardedAccount.SeesAllRole}"]);
     }
 
     // A bookmark on any of the deployment's hosts still works: sign-in is on the main host, and it
