@@ -49,7 +49,7 @@ public static class ConfigModule
             .AddSingleton(settings.Dictation)
             .AddLemonadeTranscription(settings.Dictation.Transcription)
             .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
-            .AddAssertionVerifier(settings.Accounts.JwksUrl)
+            .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification)
             .AddSingleton<AttachmentTickets>()
             .AddSingleton<IConversationLiveness, AgentConversationLiveness>()
             .AddSingleton<AttachmentStore>()

@@ -32,8 +32,11 @@ public static class AgentCommand
     public static bool IsCommand(IReadOnlyList<string> args) =>
         args is [RotateSigningKey or RetireSigningKeys or Redelegate, ..];
 
+    // The clock is the wall clock the running agent signs on, handed in by the host: a command signs
+    // and verifies the same tokens the agent does.
     public static Task<int> RunAsync(
-        string[] args, AgentSettings settings, TextReader input, TextWriter output, CancellationToken ct)
+        string[] args, AgentSettings settings, TimeProvider clock, TextReader input, TextWriter output,
+        CancellationToken ct)
     {
         var yes = new Option<bool>("--yes")
         {
@@ -48,11 +51,12 @@ public static class AgentCommand
         rotate.SetAction((_, _) => RotateAsync(settings, output));
 
         var redelegate = new Command(Redelegate, "Sign every stored delegation again with the current key") { yes };
-        redelegate.SetAction((parse, token) => WithKeysAsync(settings, output, (keys, tokens) =>
-            new Redelegation(keys, tokens, input, output).RedelegateAsync(Servers(settings, tokens), parse.GetValue(yes), token)));
+        redelegate.SetAction((parse, token) => WithKeysAsync(settings, clock, output, (keys, tokens) =>
+            Redelegation(keys, tokens, settings, clock, input, output)
+                .RedelegateAsync(Servers(settings, tokens), parse.GetValue(yes), token)));
 
         var retire = new Command(RetireSigningKeys, "Unpublish every key but the current one") { force };
-        retire.SetAction((parse, token) => RetireAsync(settings, parse.GetValue(force), input, output, token));
+        retire.SetAction((parse, token) => RetireAsync(settings, clock, parse.GetValue(force), input, output, token));
 
         var root = new RootCommand("The agent's operator commands") { rotate, redelegate, retire };
         return root.Parse(args).InvokeAsync(new InvocationConfiguration { Output = output, Error = output }, ct);
@@ -76,10 +80,10 @@ public static class AgentCommand
     }
 
     private static Task<int> RetireAsync(
-        AgentSettings settings, bool force, TextReader input, TextWriter output, CancellationToken ct) =>
-        WithKeysAsync(settings, output, async (keys, tokens) =>
+        AgentSettings settings, TimeProvider clock, bool force, TextReader input, TextWriter output, CancellationToken ct) =>
+        WithKeysAsync(settings, clock, output, async (keys, tokens) =>
         {
-            var stranded = await new Redelegation(keys, tokens, input, output)
+            var stranded = await Redelegation(keys, tokens, settings, clock, input, output)
                 .StrandedByRetiringAsync(Servers(settings, tokens), ct);
             if (!force && stranded is not 0)
             {
@@ -97,7 +101,7 @@ public static class AgentCommand
         });
 
     private static async Task<int> WithKeysAsync(
-        AgentSettings settings, TextWriter output, Func<SigningKeyStore, CallTokens, Task<int>> run)
+        AgentSettings settings, TimeProvider clock, TextWriter output, Func<SigningKeyStore, CallTokens, Task<int>> run)
     {
         if (await ProvidedKeyAsync(settings, output))
         {
@@ -105,8 +109,13 @@ public static class AgentCommand
         }
 
         var keys = SigningKeyStore.Open(settings.Signing);
-        return await run(keys, new CallTokens(keys, TimeProvider.System, settings.CallTokens, settings.Delegations));
+        return await run(keys, new CallTokens(keys, clock, settings.CallTokens, settings.Delegations));
     }
+
+    private static Redelegation Redelegation(
+        SigningKeyStore keys, CallTokens tokens, AgentSettings settings, TimeProvider clock, TextReader input,
+        TextWriter output) =>
+        new(keys, tokens, clock, settings.Mcp.TokenVerification, input, output);
 
     // A test stack's agent signs with the one key it is handed, which is neither rotated nor retired,
     // and its delegations never need signing again.
@@ -142,5 +151,5 @@ public static class AgentCommand
 
     // The last call token the old key signed has run out, with the skew every verifier forgives.
     private static TimeSpan RetireAfter(AgentSettings settings) =>
-        settings.CallTokens.Lifetime + new TokenVerificationSettings().ClockSkew;
+        settings.CallTokens.Lifetime + settings.Mcp.TokenVerification.ClockSkew;
 }

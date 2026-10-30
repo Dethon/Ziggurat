@@ -24,12 +24,18 @@ namespace Infrastructure.Agents.Mcp;
 //
 // A delegation signed again is a fresh one over what the object does now, so a yes never blesses
 // anything but what was shown.
-public sealed class Redelegation(SigningKeyStore keys, CallTokens tokens, TextReader input, TextWriter output)
+public sealed class Redelegation(
+    SigningKeyStore keys,
+    CallTokens tokens,
+    TimeProvider clock,
+    TokenVerificationSettings verification,
+    TextReader input,
+    TextWriter output)
 {
     private static readonly JsonSerializerOptions _json = new(JsonSerializerDefaults.Web);
 
-    private readonly TokenVerifier _anyKey = new(TokenIssuers.Agent, keys, TimeProvider.System);
-    private readonly TokenVerifier _currentKey = new(TokenIssuers.Agent, new CurrentKeyOnly(keys), TimeProvider.System);
+    private readonly TokenVerifier _anyKey = new(TokenIssuers.Agent, keys, clock, verification);
+    private readonly TokenVerifier _currentKey = new(TokenIssuers.Agent, new CurrentKeyOnly(keys), clock, verification);
 
     // A server the agent dials, by the name its operator knows it by, signing its calls as nobody.
     public sealed record Server(string Name, Func<CancellationToken, Task<McpClient>> ConnectAsync);
@@ -108,14 +114,14 @@ public sealed class Redelegation(SigningKeyStore keys, CallTokens tokens, TextRe
             case Standing.Current:
                 return true;
             case Standing.EarlierKey { Claims: var claims }:
-                await output.WriteLineAsync($"{server.Name}: {Name(stored)} re-signed for {Person(claims)} with the current key.");
+                await output.WriteLineAsync($"{server.Name}: {Name(stored)} re-signed for {DescribePerson(claims)} with the current key.");
                 return await ReplaceAsync(server, stored, tokens.Delegate(PersonOf(claims), what), ct);
             case Standing.NotBelieved { Why: var why, Claims: { } claims } when claims.Account is not null:
-                return !await ConfirmAsync(server, stored, $"its delegation {why}; it claims to act for {Person(claims)}", assumeYes)
+                return !await ConfirmAsync(server, stored, $"its delegation {why}; it claims to act for {DescribePerson(claims)}", assumeYes)
                        || await ReplaceAsync(server, stored, tokens.Delegate(PersonOf(claims), what), ct);
             case Standing.None when stored.Writer is { Account: { } account } writer:
                 var person = IdentityClaims.Person(account.UserId, account.TenantId, writer.ChannelId, []);
-                return !await ConfirmAsync(server, stored, $"it has no delegation; it was written by {Person(person)}", assumeYes)
+                return !await ConfirmAsync(server, stored, $"it has no delegation; it was written by {DescribePerson(person)}", assumeYes)
                        || await ReplaceAsync(server, stored, tokens.Delegate(person, what), ct);
             default:
                 await output.WriteLineAsync($"{server.Name}: {Name(stored)} acts for nobody, and nothing says for whom it could.");
@@ -217,7 +223,7 @@ public sealed class Redelegation(SigningKeyStore keys, CallTokens tokens, TextRe
 
     private static string Name(StoredDelegation stored) => $"{stored.Kind} {stored.Id}";
 
-    private static string Person(IdentityClaims claims) =>
+    private static string DescribePerson(IdentityClaims claims) =>
         $"user {claims.Subject} of household {claims.TenantId} (on {(claims.ChannelId.Length > 0 ? claims.ChannelId : "no channel")})";
 
     private static IdentityClaims PersonOf(IdentityClaims claims) =>

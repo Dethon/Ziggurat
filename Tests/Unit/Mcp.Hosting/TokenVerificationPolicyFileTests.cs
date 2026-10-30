@@ -1,9 +1,12 @@
+using Accounts.Settings;
+using Agent.Modules;
 using Domain.Security;
 using Domain.Security.Signing;
 using Mcp.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
 using Microsoft.Extensions.Configuration.Json;
+using Observability;
 using Shouldly;
 
 namespace Tests.Unit.Mcp.Hosting;
@@ -49,4 +52,37 @@ public class TokenVerificationPolicyFileTests
         file.ShouldBeGreaterThanOrEqualTo(0, $"{TokenVerificationSettings.FileName} should be one of the sources");
         file.ShouldBeLessThan(environment);
     }
+
+    // Every host that verifies a token, besides the servers above: the agent (call tokens' issuer and
+    // the assertions' and delegations' verifier), the dashboard (assertions), and the accounts
+    // service, which verifies nothing but tells its operator when a retired key's last assertion is
+    // past every verifier's skew. Each must read the shared file, ahead of the environment.
+    public static TheoryData<string> VerifyingHosts => ["agent", "observability", "accounts"];
+
+    [Theory]
+    [MemberData(nameof(VerifyingHosts))]
+    public void EveryVerifyingHost_ReadsTheSharedFileBeforeTheEnvironment(string host)
+    {
+        // As a web host hands its configuration over: the environment is already one of its sources.
+        var configBuilder = new ConfigurationBuilder().AddEnvironmentVariables();
+        var skew = Load(host, configBuilder);
+        var sources = configBuilder.Sources.ToList();
+
+        var file = sources.FindIndex(source =>
+            source is JsonConfigurationSource json && json.Path == TokenVerificationSettings.FileName);
+        var environment = sources.FindLastIndex(source => source is EnvironmentVariablesConfigurationSource);
+
+        file.ShouldBeGreaterThanOrEqualTo(0, $"{host} should read {TokenVerificationSettings.FileName}");
+        file.ShouldBeLessThan(environment, $"{host} should read the environment after the shared file");
+        configBuilder.Build()["mcp:tokenVerification:clockSkew"].ShouldBe("00:00:30");
+        skew.ShouldBe(TimeSpan.FromSeconds(30));
+    }
+
+    private static TimeSpan Load(string host, IConfigurationBuilder configBuilder) => host switch
+    {
+        "agent" => configBuilder.GetSettings().Mcp.TokenVerification.ClockSkew,
+        "observability" => configBuilder.GetTokenVerification().ClockSkew,
+        "accounts" => AccountsSettings.Read(configBuilder).Mcp.TokenVerification.ClockSkew,
+        _ => throw new ArgumentOutOfRangeException(nameof(host), host, null)
+    };
 }

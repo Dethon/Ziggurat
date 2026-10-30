@@ -30,9 +30,10 @@ public sealed class AssertionVerifier(
 
     // A host hands in the fetch over its own HttpClient: Domain makes no HTTP call.
     public static AssertionVerifier OverJwks(
-        Func<CancellationToken, Task<string>> fetch, TimeProvider clock, ILoggerFactory? loggers = null) =>
-        new(new JwksCache(fetch, clock, logger: loggers?.CreateLogger<JwksCache>()), clock,
-            logger: loggers?.CreateLogger<AssertionVerifier>());
+        Func<CancellationToken, Task<string>> fetch, TimeProvider clock, TokenVerificationSettings settings,
+        ILoggerFactory? loggers = null) =>
+        new(new JwksCache(fetch, clock, settings, loggers?.CreateLogger<JwksCache>()), clock, settings,
+            loggers?.CreateLogger<AssertionVerifier>());
 
     public async Task<ForwardedAccount?> VerifyAsync(string? assertion, string channel, CancellationToken ct)
     {

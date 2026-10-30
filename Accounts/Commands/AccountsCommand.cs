@@ -165,7 +165,7 @@ public static class AccountsCommand
         }
 
         var store = SigningKeyStore.Open(keys);
-        var retiredAfter = TimeSpan.FromMinutes(settings.AssertionLifetimeMinutes) + new TokenVerificationSettings().ClockSkew;
+        var retiredAfter = settings.AssertionLifetime + settings.Mcp.TokenVerification.ClockSkew;
         await output.WriteLineAsync(rotate
             ? $"Assertions are now signed with key {store.CurrentKeyId}. Still published: {string.Join(", ", before)}. "
               + $"Run {RetireSigningKeys} once the last assertion they signed has run out, {retiredAfter.TotalMinutes:0.#} minutes from now."

@@ -223,7 +223,11 @@ port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.
   serves the JWKS at `/internal/jwks` (`AgentKeysApi`), which no Caddy route reaches. Each server binds
   `MCP__AUDIENCE` and `MCP__AGENTKEYSURL` (`http://agent:8080/internal/jwks`) in compose; either left
   empty refuses every tool call. The verifiers' timing is `Domain/token-verification.json`
-  (`mcp:tokenVerification`), read by `BindSettings` and the agent's configuration. The agent dials
+  (`mcp:tokenVerification`), read by `BindSettings`, the agent's configuration, the dashboard's
+  (`OperatorGate.GetTokenVerification`) and the accounts service's (`AccountsSettings.Read`, for the
+  skew its retirement waits out), and handed to every verifier they build — `AddAssertionVerifier`,
+  `AddOperatorGate`, `DelegationVerifier`, `Redelegation` — and to the commands' waits
+  (`TokenVerificationPolicyFileTests`). The agent dials
   its channels only once it is listening (`ChannelConnectionHost` waits for `ApplicationStarted`), or a
   channel server's first fetch of its keys would fail and refuse calls until the refetch interval.
   The agent's key is rotated and retired by its own commands (Deferred turns, below), which also
