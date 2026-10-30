@@ -1,7 +1,7 @@
 using System.ComponentModel;
-using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
 using ModelContextProtocol.Protocol;
@@ -28,7 +28,7 @@ public sealed class RequestApprovalTool
         [Description("The question's own id, by which it is settled")] string? approvalId = null,
         CancellationToken cancellationToken = default) =>
         // The asking turn, from the context the agent stamps on this hop.
-        RunAsync(conversationId, mode, requests, ConversationScope.Parse(context.Params?.Meta), services,
+        RunAsync(conversationId, mode, requests, context.Turn, services,
             approvalId, cancellationToken);
 
     public static async Task<string> RunAsync(
