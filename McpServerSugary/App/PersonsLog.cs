@@ -14,7 +14,7 @@ public partial class SugaryDbContext
 {
     public static ValueTask<SugaryDbContext?> BindAsync(HttpContext http)
     {
-        if (Person.Of(http.Request) is not { } person)
+        if (Person.Of(http) is not { } person)
         {
             return ValueTask.FromResult<SugaryDbContext?>(null);
         }

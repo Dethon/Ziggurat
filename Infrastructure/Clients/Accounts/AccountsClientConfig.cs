@@ -1,10 +1,12 @@
 using Domain.Contracts;
+using Domain.Security;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Infrastructure.Clients.Accounts;
 
-// Where a channel server finds the accounts service. Every server that resolves identities binds
-// its own `Accounts` section onto this record; the credential it asks with is its own MCP one.
+// Where a host finds the accounts service. Every server that resolves identities or verifies the
+// service's assertions binds its own `Accounts` section onto this record; the credential it asks
+// with is its own MCP one.
 public record AccountsClientConfig
 {
     public string BaseUrl { get; init; } = "http://accounts:8080";
@@ -12,6 +14,10 @@ public record AccountsClientConfig
     // Bounds a resolution: it is asked on the way to a person's turn, and an accounts service that
     // accepts connections but never answers must not hold the turn.
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(5);
+
+    // Where the service publishes the keys its assertions verify with: per deployment, so compose
+    // sets it (ACCOUNTS__JWKSURL); the default is compose's own value.
+    public string JwksUrl { get; init; } = AssertionVerifier.DefaultJwksUrl;
 }
 
 public static class AccountsClientRegistration
