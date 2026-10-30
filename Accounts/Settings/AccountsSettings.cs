@@ -1,3 +1,5 @@
+using Domain.Security.Signing;
+
 namespace Accounts.Settings;
 
 public record AccountsSettings
@@ -28,7 +30,23 @@ public record AccountsSettings
     // How long an invite or recovery link stays redeemable.
     public int LinkLifetimeDays { get; init; } = 7;
 
+    // The key assertions are signed with. Left empty it is generated on first start into `signing/`
+    // beside the database, in the service's own volume; a test stack sets SIGNING__PRIVATEKEY instead.
+    public SigningKeySettings Signing { get; init; } = new();
+
+    // An assertion only has to cover the hop from the channel that asked for it to the agent or app
+    // that verifies it, which holds the verified identity from then on.
+    public int AssertionLifetimeMinutes { get; init; } = 10;
+
     public Uri PublicBase => new(PublicBaseUrl.TrimEnd('/') + "/");
+
+    // The service's volume: the database's directory, which its keys sit beside.
+    public string DataDirectory => Path.GetDirectoryName(Path.GetFullPath(DatabasePath)) ?? ".";
+
+    public SigningKeySettings SigningKeys =>
+        Signing.PrivateKey.Length > 0 || Signing.KeyDirectory.Length > 0
+            ? Signing
+            : Signing with { KeyDirectory = Path.Combine(DataDirectory, "signing") };
 
     // A deployment missing any of these would mint links nobody can open or ceremonies no browser
     // accepts, so it refuses to start instead.

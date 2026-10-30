@@ -4,7 +4,7 @@ using Domain.DTOs.WebChat;
 namespace Domain.Security;
 
 // Who the proxy's session check says a request is from: the accounts service answers forward_auth
-// with these three headers and the proxy copies them onto the request it passes on, over anything
+// with these headers and the proxy copies them onto the request it passes on, over anything
 // the client sent. An app believes them because only the proxy reaches it; one that is reached
 // without them knows nobody.
 //
@@ -17,7 +17,12 @@ public sealed record ForwardedAccount(string UserId, string TenantId, IReadOnlyL
     public const string TenantHeader = "X-Ziggurat-Tenant";
     public const string RolesHeader = "X-Ziggurat-Roles";
 
-    public static IReadOnlyList<string> Headers { get; } = [UserHeader, TenantHeader, RolesHeader];
+    // The accounts service's signed assertion of the other three (Domain/Security/Signing), which
+    // the proxy copies with them. Copied but not yet read here: an app verifies it against the
+    // service's published keys.
+    public const string AssertionHeader = "X-Ziggurat-Assertion";
+
+    public static IReadOnlyList<string> Headers { get; } = [UserHeader, TenantHeader, RolesHeader, AssertionHeader];
 
     // The role the check names beside the household role for whoever an owner granted every topic
     // in the household. Read once per connection, so a grant or a withdrawal reaches an open chat
