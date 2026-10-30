@@ -49,12 +49,12 @@ public sealed class SugaryLog(string databasePath) : IMigrationStep
         report.Changes = personal + kitchen;
         if (personal > 0)
         {
-            report.Lines.Add($"{person.Label}: {personal} row{(personal == 1 ? "" : "s")} of the log");
+            report.Lines.Add($"{person.Label}: {Counted.Of(personal, "row")} of the log");
         }
 
         if (kitchen > 0)
         {
-            report.Lines.Add($"the household: {kitchen} food{(kitchen == 1 ? "" : "s")} and recipes");
+            report.Lines.Add($"the household: {Counted.Of(kitchen, "food")} and recipes");
         }
 
         return report;

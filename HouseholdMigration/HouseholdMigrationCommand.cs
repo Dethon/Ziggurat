@@ -59,12 +59,8 @@ public static class HouseholdMigrationCommand
 
         if (problems.Count > 0)
         {
-            await output.WriteLineAsync("nothing was migrated:");
-            foreach (var problem in problems)
-            {
-                await output.WriteLineAsync($"  {problem}");
-            }
-
+            await output.WriteLineAsync(
+                string.Join(output.NewLine, ["nothing was migrated:", .. problems.Select(problem => $"  {problem}")]));
             return 2;
         }
 
@@ -102,7 +98,7 @@ public static class HouseholdMigrationCommand
         await output.WriteLineAsync(
             changes == 0
                 ? "Nothing changed: everything listed was already migrated."
-                : $"{changes} change{(changes == 1 ? "" : "s")}{(asked.DryRun ? " would be made" : " made")}.");
+                : $"{Counted.Of(changes, "change")}{(asked.DryRun ? " would be made" : " made")}.");
         if (left > 0)
         {
             await output.WriteLineAsync($"{left} thing{(left == 1 ? " was" : "s were")} left where it was; see above.");
@@ -121,26 +117,20 @@ public static class HouseholdMigrationCommand
             BaseAddress = "http://unused.invalid/", Model = "unused", Dimension = settings.MemoryDimension
         })),
         new RememberedLogins(redis, new RedisPersonStateStore(redis, stateKey)),
-        new PushSubscriptions(redis),
+        new PushSubscriptions(redis, new RedisPushSubscriptionStore(redis)),
         new ScheduleCreators(new RedisScheduleStore(redis), redis),
         new TopicOwners(redis, new RedisThreadStateStore(redis, new RetentionSettings(), TimeProvider.System)),
         new VoiceProfiles(settings.VoicesPath),
         new SugaryLog(settings.SugaryDatabasePath)
     ];
 
-    private static async Task WriteAsync(StepReport report, TextWriter output)
-    {
-        await output.WriteLineAsync(report.Title);
-        foreach (var line in report.Lines.DefaultIfEmpty("nothing to move"))
-        {
-            await output.WriteLineAsync($"  {line}");
-        }
-
-        foreach (var problem in report.Problems)
-        {
-            await output.WriteLineAsync($"  left as it was: {problem}");
-        }
-    }
+    private static Task WriteAsync(StepReport report, TextWriter output) =>
+        output.WriteLineAsync(string.Join(output.NewLine,
+        [
+            report.Title,
+            .. report.Lines.DefaultIfEmpty("nothing to move").Select(line => $"  {line}"),
+            .. report.Problems.Select(problem => $"  left as it was: {problem}")
+        ]));
 
     private sealed record Arguments(string People, string Operator, string Owner, string Sugary, bool DryRun)
     {

@@ -39,6 +39,12 @@ public sealed class StepReport(string title)
     public int Changes { get; set; }
 }
 
+// "1 phone", "3 phones": how every report line counts what it moved.
+public static class Counted
+{
+    public static string Of(int count, string noun) => $"{count} {noun}{(count == 1 ? "" : "s")}";
+}
+
 public interface IMigrationStep
 {
     Task<StepReport> RunAsync(Household household, bool dryRun, CancellationToken ct);

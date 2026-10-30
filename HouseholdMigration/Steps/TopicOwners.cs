@@ -65,7 +65,7 @@ public sealed class TopicOwners(IConnectionMultiplexer redis, IThreadStateStore 
         report.Changes = owned.Count;
         report.Lines.AddRange(owned
             .GroupBy(o => o.Owner)
-            .Select(g => $"{g.Key.Label}: {g.Count()} shared topic{(g.Count() == 1 ? "" : "s")}"
+            .Select(g => $"{g.Key.Label}: {Counted.Of(g.Count(), "shared topic")}"
                          + (g.Count(o => !o.Started) is > 0 and var given ? $", {given} of them started by nobody it knows" : "")));
         return report;
     }
