@@ -57,11 +57,12 @@ internal sealed class ThreadSession : IAsyncDisposable
         IVfsBridge? bridge = null,
         bool noTools = false,
         IReadOnlySet<string>? withheldTools = null,
-        CallTokens? callTokens = null)
+        CallTokens? callTokens = null,
+        TimeZoneInfo? localZone = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
             userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge, noTools,
-            withheldTools, callTokens);
+            withheldTools, callTokens, localZone);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -90,7 +91,8 @@ internal sealed class ThreadSessionBuilder(
     IVfsBridge? bridge = null,
     bool noTools = false,
     IReadOnlySet<string>? withheldTools = null,
-    CallTokens? callTokens = null)
+    CallTokens? callTokens = null,
+    TimeZoneInfo? localZone = null)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 
@@ -137,7 +139,7 @@ internal sealed class ThreadSessionBuilder(
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         var fsRegistry = new VirtualFileSystemRegistry();
         var shadowed = await McpFileSystemDiscovery.DiscoverAndMountAsync(
-            clientManager.Clients, clientManager.DynamicClients, fsRegistry, fsLogger, ct);
+            clientManager.Clients, clientManager.DynamicClients, fsRegistry, fsLogger, ct, localZone);
 
         if (fsRegistry.GetMounts().Count > 0)
         {

@@ -19,12 +19,19 @@ namespace Infrastructure.Agents.Mcp;
 // on purpose: a caller that forgot to pass it would silently turn off the rules of every mount it
 // built, which is the shape of unreachable guard ADR-0015 exists to remove. Null says "nothing
 // listed" out loud.
+//
+// `localZone` is the zone the agent tells the model its time in (its TimeProvider's), which a write's
+// offset-less runAt is read in when it is delegated; a backend built outside a session takes the
+// machine's.
 internal class McpFileSystemBackend(
     McpClient client,
     string filesystemName,
     IReadOnlySet<string>? advertisedOperations,
-    ILogger? logger = null) : IFileSystemBackend, IBridgedExecBackend, ICallerBoundBackend
+    ILogger? logger = null,
+    TimeZoneInfo? localZone = null) : IFileSystemBackend, IBridgedExecBackend, ICallerBoundBackend
 {
+    private readonly TimeZoneInfo _localZone = localZone ?? TimeZoneInfo.Local;
+
     // Who every call this view makes acts for, as the caller that asked for the view named them: a
     // file tool for the call it serves (ToolCaller, off the call's own arguments), the exec bridge for
     // the command whose operations it answers. Never read off the invocation in flight, so the mount
@@ -305,7 +312,7 @@ internal class McpFileSystemBackend(
         }
 
         var existing = existingAt is null ? null : await TextAtAsync(existingAt, ct);
-        return DelegatedWrites.Of(filesystemName, path, text, existing, caller?.Origin, TimeZoneInfo.Local) is { } what
+        return DelegatedWrites.Of(filesystemName, path, text, existing, caller?.Origin, _localZone) is { } what
             ? new JsonObject
             {
                 [ChannelProtocol.DelegateMetaKey] = JsonSerializer.SerializeToNode(what, ChannelProtocol.SerializerOptions)
