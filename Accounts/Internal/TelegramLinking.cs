@@ -1,10 +1,11 @@
 using Accounts.Links;
+using Accounts.Signing;
 
 namespace Accounts.Internal;
 
 public sealed record TelegramStart(long TelegramId, string Code);
 
-public sealed record TelegramStarted(string Outcome, string TenantId, string UserId, string DisplayName);
+public sealed record TelegramStarted(string Outcome, string TenantId, string UserId, string DisplayName, string Assertion);
 
 public sealed record TelegramPerson(long TelegramId);
 
@@ -32,13 +33,13 @@ public static class TelegramLinking
     {
         var telegram = routes.MapGroup(Path);
 
-        telegram.MapPost("/start", async (TelegramStart start, TelegramLinks links, CancellationToken ct) =>
+        telegram.MapPost("/start", async (TelegramStart start, TelegramLinks links, Assertions assertions, CancellationToken ct) =>
             await links.RedeemStartAsync(start.TelegramId, start.Code, ct) switch
             {
                 { Outcome: StartOutcome.Invited or StartOutcome.Linked, Person: { } person } redeemed => Results.Ok(
                     new TelegramStarted(
                         redeemed.Outcome == StartOutcome.Invited ? "invited" : "linked",
-                        person.TenantId, person.Id, person.DisplayName)),
+                        person.TenantId, person.Id, person.DisplayName, assertions.Of(person, TelegramLinks.Channel))),
                 { Outcome: StartOutcome.TelegramTaken } => Results.Conflict(),
                 _ => Results.NotFound()
             });

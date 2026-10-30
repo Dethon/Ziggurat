@@ -50,6 +50,28 @@ public partial class TelegramLinkingTests
         (await owner.PageAsync(Members)).ShouldContain(">Laura<");
     }
 
+    // The person a redemption makes or links, and a linked Telegram resolved later, are each
+    // answered with an assertion of them on Telegram, which the bot carries on the turn it starts.
+    [Fact]
+    public async Task ARedeemedAndAResolvedTelegram_AreEachAnsweredWithAnAssertionOfThePersonOnTelegram()
+    {
+        await using var server = await StartAsync();
+        var laura = await server.SeedMemberAsync("Laura");
+        var code = await TelegramCodeAsync(server, laura);
+
+        var linked = (await (await StartWithAsync(server, LauraTelegram, code)).Content.ReadFromJsonAsync<JsonObject>())!;
+        var resolved = await ResolveAsync(server, LauraTelegram);
+
+        foreach (var answer in new[] { linked, resolved })
+        {
+            var assertion = await server.VerifyAssertionAsync(answer["assertion"]!.GetValue<string>());
+            assertion.IsVerified.ShouldBeTrue(assertion.Refusal.ToString());
+            assertion.Claims.Subject.ShouldBe(laura);
+            assertion.Claims.ChannelId.ShouldBe("telegram");
+            assertion.Claims.Roles.ShouldBe(["member"]);
+        }
+    }
+
     [Fact]
     public async Task TheAccountPagesCode_LinksItsPersonToTheTelegramThatRedeemsIt()
     {
