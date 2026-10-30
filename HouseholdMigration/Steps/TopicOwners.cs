@@ -75,8 +75,13 @@ public sealed class TopicOwners(IConnectionMultiplexer redis, IThreadStateStore 
         var messages = await threads.GetMessagesAsync(
             new AgentKey($"{topic.ChatId}:{topic.ThreadId}", topic.AgentId).ToString());
         var first = messages?.FirstOrDefault(m => m.Role == ChatRole.User);
-        var principal = Principal.Of(first?.GetConversationContext());
-        return new[] { principal?.Account?.UserId, principal?.UserId, first?.GetSenderId() }
+        // A message persisted before accounts carries no principal, only the channel's user id on its
+        // context: read here as the migration's evidence of who started the topic, which nothing that
+        // acts for a person believes any more (Principal.Of).
+        var context = first?.GetConversationContext();
+        var principal = Principal.Of(context);
+        var userId = principal?.UserId ?? (context is { OriginKind: null } ? context.UserId : null);
+        return new[] { principal?.Account?.UserId, userId, first?.GetSenderId() }
             .Select(household.Named)
             .FirstOrDefault(p => p is not null);
     }

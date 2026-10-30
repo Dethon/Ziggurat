@@ -9,21 +9,17 @@ namespace Domain.DTOs.Channel;
 // person's channel, user id and account), or for none: whatever its server stamped is a label.
 //
 // UserId is the channel's own name for the person (a Telegram username, a voice profile, the chat
-// client's account id), which the Telegram approval router still matches on.
+// client's account id), a label beside the account and never what anything is decided by.
 // Account is the person's account in the accounts service, where the channel knows it: everything
 // keyed by a person moves onto it channel by channel, and it is absent wherever a channel has not
 // moved yet, so a record written before it existed reads exactly as it did.
 [PublicAPI]
 public record Principal(string ChannelId, string UserId, Account? Account = null)
 {
-    // The stamped principal where there is one. A person's own turn without one is vouched for by
-    // the channel it arrived on; a turn nobody sent has none to fall back to, because its userId is
-    // what a schedule's JSON said and its origin is where it delivers.
-    public static Principal? Of(ConversationContext? context) =>
-        context is null
-            ? null
-            : context.Principal
-              ?? (context.OriginKind is null ? new Principal(context.Origin.ChannelId, context.UserId) : null);
+    // The stamped principal, and nothing else: a context's own UserId is whatever the call that
+    // carried it wrote, so a context with no principal names nobody. On a server the principal is
+    // the call token's (CallTurn), so this is who the agent signed the call for.
+    public static Principal? Of(ConversationContext? context) => context?.Principal;
 }
 
 // A person's account: the household (tenant) they belong to and their user id in it, both opaque

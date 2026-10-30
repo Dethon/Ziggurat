@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security.Signing;
 using McpServerWebSearch.Handoff;
 using McpServerWebSearch.Modules;
 using McpServerWebSearch.Settings;
@@ -131,9 +132,14 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
     public static ConversationContext FromVoice(Account account, string conversationId = "voice-9", string address = "kitchen-01") =>
         Context(account.UserId, account, conversationId, channelId: "voice", address: address);
 
-    // The satellite heard nobody it knows: the voice channel's guest, with no account.
+    // The satellite heard nobody it knows: the voice channel's guest, with no account — signed as the
+    // household's guest, which is what the agent's call names for a turn the accounts service vouched
+    // for as the guest.
     public static ConversationContext FromVoiceGuest(string conversationId = "voice-9") =>
-        Context("household", null, conversationId, channelId: "voice", address: "kitchen-01");
+        Context(IdentityClaims.GuestSubject, null, conversationId, channelId: "voice", address: "kitchen-01") with
+        {
+            Identity = IdentityClaims.Guest("home", "voice")
+        };
 
     public static JsonObject MetaFor(ConversationContext context) => new()
     {

@@ -22,15 +22,6 @@ public sealed class ApprovalCallbackRouter
 
     private readonly ConcurrentDictionary<string, ApprovalWaiter> _pending = new();
 
-    // The numeric id behind each sender the bot has admitted. A turn names its person by the
-    // sender the bot emitted (the username), and an approval inside that turn is answerable by
-    // that person's id alone, so the bot records the pair as it admits the message.
-    private readonly ConcurrentDictionary<string, long> _senderIds = new(StringComparer.Ordinal);
-
-    public void RecordSender(string sender, long userId) => _senderIds[sender] = userId;
-
-    public long? SenderId(string sender) => _senderIds.TryGetValue(sender, out var id) ? id : null;
-
     public (string ApprovalId, Task<string> ResultTask) RegisterApproval(
         TimeSpan timeout, IReadOnlySet<long> answerers, CancellationToken cancellationToken) =>
         RegisterApproval(timeout, (tapper, _) => Task.FromResult(answerers.Contains(tapper)), cancellationToken);

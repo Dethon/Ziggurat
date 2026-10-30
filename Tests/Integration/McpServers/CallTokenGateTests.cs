@@ -107,6 +107,21 @@ public class CallTokenGateTests : IAsyncLifetime
         asNobody["browsesAs"].ShouldBeNull();
     }
 
+    // The user id the _meta carries is the channel's unsigned word, and no principal either: a call
+    // signed for nobody names nobody, with no channel's name for somebody left to fall back to — the
+    // Telegram approval router once let whoever that name was answer.
+    [Fact]
+    public async Task AUserIdWrittenIntoTheMeta_NamesNobodyOnACallSignedForNobody()
+    {
+        await using var client = await McpClient.CreateAsync(McpTestSecret.UnsignedTransport(_server.Endpoint));
+
+        var who = await CallAsync(client, Sign(IdentityClaims.Nobody(ChannelIds.Telegram)), Turn(ChannelIds.Telegram));
+
+        who["user"].ShouldBeNull();
+        who["channel"].ShouldBeNull();
+        who["account"].ShouldBeNull();
+    }
+
     // The agent writes who the turn verified as into the context it sends, for its own signing; a
     // server reads the token's in its place, so a context claiming somebody names nobody it was not
     // signed for.
@@ -203,6 +218,7 @@ public class CallTokenGateTests : IAsyncLifetime
             {
                 ["conversation"] = turn?.ConversationId,
                 ["channel"] = principal?.ChannelId,
+                ["user"] = principal?.UserId,
                 ["account"] = principal?.Account is { } account
                     ? new JsonObject { ["tenantId"] = account.TenantId, ["userId"] = account.UserId }
                     : null,
