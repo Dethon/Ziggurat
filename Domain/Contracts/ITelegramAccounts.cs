@@ -17,4 +17,7 @@ public interface ITelegramAccounts
 
     // The household a group is bound to, or null for a group bound to none.
     Task<string?> GroupTenantAsync(long chatId, CancellationToken ct);
+
+    // The Telegram an account linked — its private chat with the bot — or null for one with none.
+    Task<long?> TelegramIdOfAsync(Account account, CancellationToken ct);
 }
