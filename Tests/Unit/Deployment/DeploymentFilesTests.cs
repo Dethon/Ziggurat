@@ -65,6 +65,7 @@ public class DeploymentFilesTests
         shipped.ShouldContain("McpChannelVoice/appsettings.Development.json");
         shipped.ShouldContain("Domain/retention.json");
         shipped.ShouldNotContain(f => f.StartsWith("Tests/", StringComparison.Ordinal));
+        shipped.ShouldNotContain(f => f.StartsWith("DockerCompose/volumes/", StringComparison.Ordinal));
         shipped.ShouldNotContain(f => f.Contains("/bin/", StringComparison.Ordinal) || f.Contains("/obj/", StringComparison.Ordinal));
     }
 }
