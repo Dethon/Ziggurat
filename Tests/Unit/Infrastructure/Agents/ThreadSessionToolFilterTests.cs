@@ -62,6 +62,23 @@ public class ThreadSessionToolFilterTests
         result.Select(t => t.Name).ShouldBe(["mcp__mcp-websearch__web_browse"]);
     }
 
+    // The operator commands' tools sit on the same /mcp as a schedule's or a watch's files; a model
+    // offered them could list whose delegations the house keeps.
+    [Fact]
+    public void FilterMcpTools_DelegationStoreTools_AreAlwaysRemoved()
+    {
+        AITool[] tools =
+        [
+            Tool($"mcp__mcp-scheduling__{ChannelProtocol.ListDelegationsTool}"),
+            Tool($"mcp__mcp-homeassistant__{ChannelProtocol.ReplaceDelegationTool}"),
+            Tool("mcp__mcp-websearch__web_browse")
+        ];
+
+        var result = ThreadSessionBuilder.FilterMcpTools(tools, filesystemToolsActive: false);
+
+        result.Select(t => t.Name).ShouldBe(["mcp__mcp-websearch__web_browse"]);
+    }
+
     [Fact]
     public void FilterMcpTools_ChannelProtocolTools_AreAlwaysRemoved()
     {

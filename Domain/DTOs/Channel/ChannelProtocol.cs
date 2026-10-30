@@ -79,6 +79,11 @@ public static class ChannelProtocol
     // transport removes it from every call it sends.
     public const string DelegateMetaKey = "com.herfluffness/delegate";
 
+    // The two tools a server that keeps delegations answers the agent's operator commands with
+    // (IDelegationStore): listed and replaced, never seen by a model.
+    public const string ListDelegationsTool = "delegations_list";
+    public const string ReplaceDelegationTool = "delegations_replace";
+
     // Sender attributed to channel/message notifications the system originates on a user's
     // behalf rather than the user themselves — e.g. the /cancel command and download-completion
     // alerts. Keeps these off the initiating user's identity (memory scoping, attribution).
