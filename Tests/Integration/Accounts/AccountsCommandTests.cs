@@ -2,7 +2,10 @@ using System.Diagnostics;
 using System.Net;
 using Accounts;
 using Accounts.Commands;
+using Accounts.Internal;
 using Accounts.Settings;
+using Domain.Security;
+using Domain.Security.Signing;
 using Microsoft.Data.Sqlite;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -181,12 +184,33 @@ public class AccountsCommandTests
     [Fact]
     public async Task Run_AsTheShippedBinary_PrintsAndExitsWithoutServing()
     {
+        var (exit, output, error) = await RunShippedBinaryAsync(new Dictionary<string, string>(), "mint-link", "--operator", "--name", "Fran");
+
+        exit.ShouldBe(0, error);
+        AccountsServer.MintedLink.Parse(output).Url.Host.ShouldBe("assistants.example");
+    }
+
+    // A test stack hands the service a fixed key by environment, as compose would: the variable
+    // reaches the signing settings, and a rotation then says there is nothing to rotate.
+    [Fact]
+    public async Task Run_AsTheShippedBinaryWithAFixedKey_HasNoKeyToRotate()
+    {
+        var (exit, output, _) = await RunShippedBinaryAsync(
+            new Dictionary<string, string> { ["SIGNING__PRIVATEKEY"] = TestSigningKeys.Accounts },
+            AccountsCommand.RotateSigningKey);
+
+        exit.ShouldBe(1);
+        output.ShouldContain("SIGNING__PRIVATEKEY");
+    }
+
+    private static async Task<(int Exit, string Output, string Error)> RunShippedBinaryAsync(
+        IReadOnlyDictionary<string, string> environment, params string[] args)
+    {
         var directory = Path.Combine(Path.GetTempPath(), "accounts-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var port = TestPort.GetAvailable();
         var start = new ProcessStartInfo("dotnet")
         {
-            ArgumentList = { Path.Combine(AppContext.BaseDirectory, "Accounts.dll"), "mint-link", "--operator", "--name", "Fran" },
             WorkingDirectory = directory,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -199,6 +223,9 @@ public class AccountsCommandTests
                 ["ASPNETCORE_URLS"] = $"http://127.0.0.1:{port}"
             }
         };
+        start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "Accounts.dll"));
+        args.ToList().ForEach(start.ArgumentList.Add);
+        environment.ToList().ForEach(e => start.Environment[e.Key] = e.Value);
         try
         {
             using var process = Process.Start(start)!;
@@ -215,8 +242,7 @@ public class AccountsCommandTests
                 throw new ShouldAssertException("the command was still running after a minute: it is serving");
             }
 
-            process.ExitCode.ShouldBe(0, await error);
-            AccountsServer.MintedLink.Parse(await output).Url.Host.ShouldBe("assistants.example");
+            return (process.ExitCode, await output, await error);
         }
         finally
         {
@@ -224,4 +250,71 @@ public class AccountsCommandTests
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    // Rotating the key assertions are signed with, beside the running service: a new key signs from
+    // the next assertion on, the previous one stays published so what it signed keeps verifying.
+    [Fact]
+    public async Task RotateSigningKey_SignsWithANewKeyAndKeepsThePreviousPublished()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var session = await server.MintSessionAsync(fran.UserId);
+        var before = await AssertionAsync(server, session);
+
+        var (exit, output) = await server.RunAsync(AccountsCommand.RotateSigningKey);
+
+        exit.ShouldBe(0, output);
+        var after = await AssertionAsync(server, session);
+        var published = await PublishedKeyIdsAsync(server);
+        published.Count.ShouldBe(2);
+        output.ShouldContain(published[^1]);
+        (await server.VerifyAssertionAsync(before)).IsVerified.ShouldBeTrue();
+        (await server.VerifyAssertionAsync(after)).IsVerified.ShouldBeTrue();
+    }
+
+    // Only retiring unpublishes the previous key, and with it everything it signed.
+    [Fact]
+    public async Task RetireSigningKeys_UnpublishesEveryKeyButTheOneSigning()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var session = await server.MintSessionAsync(fran.UserId);
+        var before = await AssertionAsync(server, session);
+        (await server.RunAsync(AccountsCommand.RotateSigningKey)).Exit.ShouldBe(0);
+        var after = await AssertionAsync(server, session);
+
+        var (exit, output) = await server.RunAsync(AccountsCommand.RetireSigningKeys);
+
+        exit.ShouldBe(0, output);
+        (await PublishedKeyIdsAsync(server)).Count.ShouldBe(1);
+        (await server.VerifyAssertionAsync(before)).Refusal.ShouldBe(TokenRefusal.UnknownKey);
+        (await server.VerifyAssertionAsync(after)).IsVerified.ShouldBeTrue();
+    }
+
+    // A test stack's fixed key is the only key: there is nothing to rotate to, and saying so beats
+    // writing a key file the service would never read.
+    [Theory]
+    [InlineData(AccountsCommand.RotateSigningKey)]
+    [InlineData(AccountsCommand.RetireSigningKeys)]
+    public async Task Run_RotationWithAProvidedKey_ChangesNothing(string verb)
+    {
+        await using var server = await AccountsServer.StartAsync(s => s with
+        {
+            Signing = TestSigningKeys.Settings(TestSigningKeys.Accounts)
+        });
+        var published = await PublishedKeyIdsAsync(server);
+
+        var (exit, output) = await server.RunAsync(verb);
+
+        exit.ShouldBe(1);
+        output.ShouldContain("SIGNING__PRIVATEKEY");
+        (await PublishedKeyIdsAsync(server)).ShouldBe(published);
+        published.ShouldBe([TestSigningKeys.Store(TestSigningKeys.Accounts).CurrentKeyId]);
+    }
+
+    private static async Task<string> AssertionAsync(AccountsServer server, string session) =>
+        (await server.VerifyAsync(session)).Headers.GetValues(ForwardedAccount.AssertionHeader).Single();
+
+    private static async Task<IReadOnlyList<string>> PublishedKeyIdsAsync(AccountsServer server) =>
+        [.. JsonWebKeySet.Parse(await server.Client().GetStringAsync(InternalApi.JwksPath)).Keys.Select(k => k.KeyId)];
 }

@@ -28,6 +28,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- For the signing piece alone (Domain/Security/Signing): the assertions this service signs are
+         verified by the agent and the apps with the same code. -->
+    <ProjectReference Include="..\Domain\Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="Tests" />
   </ItemGroup>
 

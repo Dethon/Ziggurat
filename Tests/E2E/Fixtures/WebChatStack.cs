@@ -385,6 +385,9 @@ internal sealed partial class WebChatStack
             .WithEnvironment("WEBAUTHN__RELYINGPARTYID", "localhost")
             .WithEnvironment("ALLOWEDORIGINS__0", baseUrl)
             .WithEnvironment("PUBLICBASEURL", baseUrl)
+            // The stack's fixed key (Tests/TestSigningKeys), as every test stack runs its issuers
+            // with, so a run signs the same way every time.
+            .WithEnvironment("SIGNING__PRIVATEKEY", TestSigningKeys.Accounts)
             // The hub asks the name of each connection's account with its own MCP credential, as
             // compose wires it.
             .WithEnvironment("CALLERS__mcp-channel-signalr", McpTestSecret.For("mcp-channel-signalr"))
@@ -544,8 +547,8 @@ internal sealed partial class WebChatStack
         static string Checked(string matcher, string upstream) =>
             $"    handle {matcher}{{\n" +
             "        forward_auth accounts:8080 {\n" +
-            "            uri /accounts/verify\n" +
-            "            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles\n" +
+            "            uri /accounts/verify?channel=signalr\n" +
+            "            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion\n" +
             "        }\n" +
             $"        reverse_proxy {upstream}\n" +
             "    }\n";
