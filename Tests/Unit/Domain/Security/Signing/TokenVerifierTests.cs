@@ -175,6 +175,18 @@ public class TokenVerifierTests
         verification.Refusal.ShouldBe(TokenRefusal.Malformed);
     }
 
+    // Signed, but by an issuer that left out who it is for or until when: nothing to act on.
+    [Fact]
+    public async Task ASignedTokenNamingNobodyOrNoExpiry_IsRefusedAsMalformed()
+    {
+        var signer = new TokenSigner(_agent);
+        var nobody = signer.Sign(PersonClaims() with { Subject = "" });
+        var forever = signer.Sign(PersonClaims() with { ExpiresAt = default });
+
+        (await Verifier.VerifyAsync(nobody, Audience)).Refusal.ShouldBe(TokenRefusal.Malformed);
+        (await Verifier.VerifyAsync(forever, Audience)).Refusal.ShouldBe(TokenRefusal.Malformed);
+    }
+
     // `alg: none` is the classic way to skip a verifier's check; only ES256 is ever read.
     [Theory]
     [InlineData("none")]
