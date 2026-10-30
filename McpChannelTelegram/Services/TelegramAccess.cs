@@ -12,15 +12,13 @@ namespace McpChannelTelegram.Services;
 public sealed class TelegramAccess(
     IAccountResolver resolver, ITelegramAccounts accounts, LinkCacheSettings cache, TimeProvider time)
 {
-    public const string Channel = "telegram";
-
     private readonly ConcurrentDictionary<long, Answer<ResolvedAccount>> _people = new();
     private readonly ConcurrentDictionary<long, Answer<string>> _groups = new();
     private long _version;
 
     public Task<ResolvedAccount?> PersonAsync(long telegramId, CancellationToken ct) =>
         CachedAsync(_people, telegramId,
-            () => resolver.ResolveAsync(Channel, telegramId.ToString(CultureInfo.InvariantCulture), ct));
+            () => resolver.ResolveAsync(ChannelIds.Telegram, telegramId.ToString(CultureInfo.InvariantCulture), ct));
 
     public Task<string?> GroupTenantAsync(long chatId, CancellationToken ct) =>
         CachedAsync(_groups, chatId, () => accounts.GroupTenantAsync(chatId, ct));
@@ -36,6 +34,11 @@ public sealed class TelegramAccess(
     // turn asked is offered. Not kept, since it is asked once per question and never for a stranger.
     public Task<long?> PrivateChatOfAsync(Account account, CancellationToken ct) =>
         accounts.TelegramIdOfAsync(account, ct);
+
+    // A question acting for an account is that account's alone: a tap counts when the Telegram it came
+    // from is linked to it, wherever the question is showing.
+    public ApprovalAnswerer AnswersFor(Account asker) =>
+        async (tapper, ct) => (await PersonAsync(tapper, ct))?.Account == asker;
 
     // What a redemption or a bind just made true, so the person or the group is let in on their very
     // next message, whatever refusal was remembered a moment before.

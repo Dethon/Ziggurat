@@ -36,13 +36,8 @@ internal static class TopicAudience
 
     // A topic the store does not hold — gone already, or never saved — has nobody to keep it from,
     // so its news goes to the space as every topic's once did.
-    public static async Task SendToTopicAsync(
+    public static Task SendToTopicAsync(
         this IHubNotificationSender sender, TopicMetadata? topic, string spaceSlug, string methodName,
-        object notification)
-    {
-        foreach (var group in Of(topic, spaceSlug))
-        {
-            await sender.SendToGroupAsync(group, methodName, notification);
-        }
-    }
+        object notification) =>
+        Task.WhenAll(Of(topic, spaceSlug).Select(group => sender.SendToGroupAsync(group, methodName, notification)));
 }
