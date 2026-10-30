@@ -115,7 +115,7 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
                 {
                     conversationId = await channel.CreateConversationAsync(
                         message.AgentId ?? "default", TopicName(message), message.Sender, message.Content,
-                        target.Address, shared, message.Principal, ct);
+                        target.Address, shared, message.Principal, message.ReviewCopy?.Group ?? false, ct);
                     wasMinted = true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
@@ -172,6 +172,7 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
                     address: target.Address,
                     existingConversationId: target.ConversationId,
                     message.Principal,
+                    message.ReviewCopy?.Group ?? false,
                     ct);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)

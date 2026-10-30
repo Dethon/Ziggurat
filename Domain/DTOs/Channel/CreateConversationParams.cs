@@ -19,4 +19,8 @@ public record CreateConversationParams
     // person's account gives a topic that person owns, and a turn acting for no account — the voice
     // guest's, a fire nobody signed — gives one the household shares.
     public Principal? Principal { get; init; }
+
+    // The conversation is several people's (a Telegram group's), so its topic is the household's
+    // whoever's turn opened it: the others in the group wrote in it too.
+    public bool Group { get; init; }
 }

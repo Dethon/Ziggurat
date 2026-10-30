@@ -39,7 +39,8 @@ public interface IChannelConnection : IToolApprovalHandler
         string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct);
 
     // The principal is the turn's, so a channel that keeps topics can say whose a minted one is —
-    // the review host decides that from the turn, never the channel that asked (ADR 0046).
+    // the review host decides that from the turn, never the channel that asked (ADR 0046). `group`
+    // says the conversation is several people's (ReviewCopy.Group), which the host decides from too.
     Task<string?> CreateConversationAsync(
         string agentId,
         string topicName,
@@ -48,5 +49,6 @@ public interface IChannelConnection : IToolApprovalHandler
         string? address,
         string? existingConversationId,
         Principal? principal,
+        bool group,
         CancellationToken ct);
 }

@@ -647,6 +647,7 @@ public sealed class McpChannelConnection(
         string? address,
         string? existingConversationId,
         Principal? principal,
+        bool group,
         CancellationToken ct)
     {
         var client = _client;
@@ -674,7 +675,8 @@ public sealed class McpChannelConnection(
                     ["existingConversationId"] = existingConversationId,
                     ["principal"] = principal is null
                         ? null
-                        : JsonSerializer.SerializeToElement(principal, ChannelProtocol.SerializerOptions)
+                        : JsonSerializer.SerializeToElement(principal, ChannelProtocol.SerializerOptions),
+                    ["group"] = group
                 },
                 cancellationToken: ct);
 
