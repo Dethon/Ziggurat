@@ -1,34 +1,25 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.RateLimiting;
 using McpServerSugary.Settings;
-using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace McpServerSugary.App;
 
-// Her app and the HTTP API it calls, on every route but /mcp. These routes are called by her phone,
-// so they carry the standalone app's own gate — an access code exchanged once for a long-lived
-// cookie — rather than the deployment secret /mcp asks for.
+// The app and the HTTP API it calls, on every route but /mcp. These routes are called by a person's
+// phone through the proxy, whose session check names the person in three headers (Person); /mcp is
+// the deployment's and keeps its own secret. There is no sign-in here: signing in is the accounts
+// service's, once for every app of the deployment.
 public static class SugaryApp
 {
     public static IServiceCollection AddSugaryApp(this IServiceCollection services, SugarySettings settings)
     {
-        services.AddSingleton(settings.SugaryApp);
         services.TryAddSingleton(TimeProvider.System);
         services.ConfigureHttpJsonOptions(json =>
             json.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
-
-        // The keys live beside the log, so a redeployed container still accepts the cookies it issued.
-        services.AddDataProtection()
-            .SetApplicationName("Sugary")
-            .PersistKeysToFileSystem(new DirectoryInfo(KeysDirectory(settings)));
 
         services.AddHttpClient<OpenFoodFactsClient>(http =>
         {
@@ -38,76 +29,47 @@ public static class SugaryApp
             http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Sugary", "1.0"));
         });
 
-        services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(cookie =>
-        {
-            cookie.Cookie.Name = "sugary";
-            cookie.Cookie.HttpOnly = true;
-            cookie.Cookie.SameSite = SameSiteMode.Strict;
-            cookie.ExpireTimeSpan = TimeSpan.FromDays(180);
-            cookie.SlidingExpiration = true;
-            // An API answers a missing cookie with 401, which is what the app listens for; a redirect
-            // to a sign-in page would come back as an HTML 200.
-            cookie.Events.OnRedirectToLogin = context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                return Task.CompletedTask;
-            };
-            cookie.Events.OnRedirectToAccessDenied = context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                return Task.CompletedTask;
-            };
-        });
-        services.AddAuthorization();
-        services.AddRateLimiter(limiter =>
-        {
-            limiter.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            // One window per address, so somebody guessing the code waits alone and her phone can
-            // still sign in. In the image the address is what X-Forwarded-For says, trusted from any
-            // peer (the Dockerfile's ASPNETCORE_FORWARDEDHEADERS_ENABLED): per phone behind the
-            // proxy, and per claimed address for a caller reaching the port directly, which the
-            // deployment must not allow (ticket 12's checklist).
-            limiter.AddPolicy(SessionEndpoints.SignInRateLimit, context => RateLimitPartition.GetFixedWindowLimiter(
-                context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }));
-        });
-
         return services;
     }
 
     public static WebApplication MapSugaryApp(this WebApplication app)
     {
         // The built app is the web root's: wwwroot beside the server in the image, filled by the
-        // image's node stage (Sugary.Client).
+        // image's node stage (Sugary.Client). The app itself holds nobody's data, so it is served to
+        // anyone the proxy lets through; everything a person keeps is under /api.
         var files = new StaticFileOptions { OnPrepareResponse = context => CacheRule(context.Context) };
         app.UseDefaultFiles();
         app.UseStaticFiles(files);
-        app.UseAuthentication();
-        app.UseAuthorization();
-        app.UseRateLimiter();
+
+        // Before any route binds its person, so a request naming nobody is told so plainly — a 401,
+        // which is what sends the app to sign in — rather than a route's 400 for a missing parameter.
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/api") && Person.Of(context.Request) is null)
+            {
+                await Results.Problem("Not signed in.", statusCode: StatusCodes.Status401Unauthorized)
+                    .ExecuteAsync(context);
+                return;
+            }
+
+            await next(context);
+        });
 
         var api = app.MapGroup("/api");
         api.MapSessionEndpoints();
-
-        var guarded = api.MapGroup("");
-        if (app.Services.GetRequiredService<SugaryAppSettings>().RequireAccessCode)
-        {
-            guarded.RequireAuthorization();
-        }
-
-        guarded.MapMealEndpoints();
-        guarded.MapDoseEndpoints();
-        guarded.MapPenEndpoints();
-        guarded.MapPushEndpoints();
-        guarded.MapExerciseEndpoints();
-        guarded.MapPeriodEndpoints();
-        guarded.MapDayNoteEndpoints();
-        guarded.MapFoodEndpoints();
-        guarded.MapRecipeEndpoints();
-        guarded.MapProductEndpoints();
-        guarded.MapExportEndpoints();
-        guarded.MapEstimateEndpoints();
-        guarded.MapLabelEndpoints();
+        api.MapMealEndpoints();
+        api.MapDoseEndpoints();
+        api.MapPenEndpoints();
+        api.MapPushEndpoints();
+        api.MapExerciseEndpoints();
+        api.MapPeriodEndpoints();
+        api.MapDayNoteEndpoints();
+        api.MapFoodEndpoints();
+        api.MapRecipeEndpoints();
+        api.MapProductEndpoints();
+        api.MapExportEndpoints();
+        api.MapEstimateEndpoints();
+        api.MapLabelEndpoints();
 
         api.MapFallback(() => Results.NotFound());
         // Any other path without a file name is one of the app's own screens.
@@ -121,7 +83,4 @@ public static class SugaryApp
         context.Response.Headers.CacheControl = context.Request.Path.StartsWithSegments("/assets")
             ? "public, max-age=31536000, immutable"
             : "no-cache";
-
-    private static string KeysDirectory(SugarySettings settings) =>
-        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(settings.DatabasePath)) ?? ".", "keys");
 }

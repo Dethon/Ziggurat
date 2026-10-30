@@ -207,8 +207,6 @@ export interface DraftItem extends MealItem {
 }
 
 export interface SessionState {
-  required: boolean;
-  authenticated: boolean;
   // Which of the model-backed actions the server answers. Off until the sugary agent answers them;
   // the app then shows them as not available rather than letting them fail.
   estimates: boolean;

@@ -81,6 +81,22 @@ public class SugaryLabelApiTests
         (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
+    // A label is a turn of the person whose phone read it, as a meal's estimate is.
+    [Fact]
+    public async Task ALabelTurn_ActsForThePersonSignedIn()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+
+        var answer = server.As(SugaryServer.Him).PostAsync("/api/labels", Form(Photo(1, 10)));
+        var turn = await NextTurnAsync(agent);
+
+        turn.Principal.ShouldBe(new Principal("sugary", SugaryServer.Him.UserId, SugaryServer.Him));
+        turn.Sender.ShouldBe(SugaryServer.Him.UserId);
+        await ReplyAsync(agent, turn, Galletas);
+        (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
     [Fact]
     public async Task TheAppsLanguage_ReachesTheLabelTurn()
     {

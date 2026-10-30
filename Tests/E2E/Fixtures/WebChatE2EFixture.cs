@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Microsoft.Playwright;
 
 namespace Tests.E2E.Fixtures;
@@ -25,6 +26,10 @@ public class WebChatE2EFixture : E2EFixtureBase
     public string SugaryUrl => _stack?.SugaryUrl ?? "";
 
     public string SugaryMcpEndpoint => _stack?.SugaryMcpEndpoint ?? "";
+
+    // The account a user index signs in as, which a test reaching the Sugary server past the proxy
+    // names in the session check's headers.
+    public Task<Account> AccountForAsync(int userIndex) => Stack.AccountForAsync(userIndex);
 
     // Scoped to this collection's space, so a test says what the transcriber answers without
     // knowing that another collection is dictating beside it.

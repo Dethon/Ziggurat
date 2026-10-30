@@ -13,8 +13,8 @@ public record PushDto(string? PublicKey);
 
 public record SavePushSubscriptionRequest(string? Endpoint, string? P256dh, string? Auth, string? Language);
 
-// Her phone subscribing to the pen reminders. The public key is what its browser subscribes with,
-// and null when the deployment has no keys: the app then offers no reminders.
+// A person's phone subscribing to their pen reminders. The public key is what its browser subscribes
+// with, and null when the deployment has no keys: the app then offers no reminders.
 public static class PushEndpoints
 {
     public const string BadSubscription = "That isn't a subscription a browser's push service makes.";
@@ -27,9 +27,13 @@ public static class PushEndpoints
         push.MapDelete("/subscription", DeleteAsync);
     }
 
-    // Saved again each time the app opens and when she changes its language, so one per endpoint.
+    // Saved again each time the app opens and when the person changes its language, so one per
+    // endpoint. An endpoint is one browser, and a browser is whoever last signed in on it: one that
+    // subscribed as somebody else becomes this person's phone, so it is looked for among everyone's
+    // and given to them.
     private static async Task<IResult> SaveAsync(
-        SavePushSubscriptionRequest request, SugarySettings settings, SugaryDbContext db, CancellationToken ct)
+        SavePushSubscriptionRequest request, SugarySettings settings, SugaryDbContext db, Person person,
+        CancellationToken ct)
     {
         if (Keys(settings) is null)
         {
@@ -41,13 +45,16 @@ public static class PushEndpoints
             return Results.Problem(BadSubscription, statusCode: StatusCodes.Status400BadRequest);
         }
 
-        var subscription = await db.PushSubscriptions.FindAsync([request.Endpoint], ct);
+        var subscription = await db.PushSubscriptions.IgnoreQueryFilters()
+            .FirstOrDefaultAsync(s => s.Endpoint == request.Endpoint, ct);
         if (subscription is null)
         {
             subscription = new PushSubscription { Endpoint = request.Endpoint! };
             db.PushSubscriptions.Add(subscription);
         }
 
+        subscription.UserId = person.Account.UserId;
+        subscription.TenantId = person.Account.TenantId;
         subscription.P256dh = request.P256dh!;
         subscription.Auth = request.Auth!;
         subscription.Language = request.Language!;

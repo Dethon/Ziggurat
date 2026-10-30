@@ -24,6 +24,10 @@ public static class EvalRun
     // always names one.
     public const string Tenant = "eval-home";
 
+    // The account that user signed in as, which every turn's principal carries as a signed-in
+    // channel stamps it: what follows the person — their memory, their Sugary log — is found by it.
+    public static readonly Account Account = new(Tenant, UserId);
+
     // One run in a slot of its own. The gate is what bounds how many stacks stand at once now
     // that a scenario's runs go out together, and the lease is the database this run is alone on.
     public static Task<Recording> ExecuteAsync(Scenario scenario) =>
@@ -149,7 +153,7 @@ public static class EvalRun
             scenario.AgentId, conversationId, UserId,
             new ReplyTarget(channel, conversationId, scenario.Turn.SatelliteId),
             OriginKind: scenario.Turn.Origin,
-            Principal: new Principal(channel, UserId, new Account(Tenant, UserId))));
+            Principal: new Principal(channel, UserId, Account)));
 
         return message;
     }

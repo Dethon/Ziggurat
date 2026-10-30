@@ -20,7 +20,7 @@ describe("no server sentence reaches the screen", () => {
     [502, "The model returned no answer."],
     [504, "Reading the label took too long. Try again, or add the food by hand."],
   ] as const;
-  const askings: Asking[] = ["estimate", "label", "product", "save", "deleteFood", "load", "signIn"];
+  const askings: Asking[] = ["estimate", "label", "product", "save", "deleteFood", "load"];
 
   it.each(askings)("asking for %s", (asking) => {
     for (const [status, sentence] of sentences) {

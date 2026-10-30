@@ -437,20 +437,12 @@ const en = {
   theme_system: "System",
   theme_light: "Light",
   theme_dark: "Dark",
-  signOut: "Sign out",
-  signOutTitle: "Sign out of Sugary?",
-  signOutBody: "Your log stays saved.",
+  account: "Your account and devices",
   about: "About the estimates",
   aboutText:
     "Sugary estimates carbs from photos and descriptions with an AI model. Portion size is the hardest part to judge from a photo, so every estimate comes as a range and every item can be corrected. It never suggests insulin doses: those stay between you and your diabetes team.",
 
-  signInTitle: "Sugary",
   tagline: "Carb counting, a piece of cake.",
-  signInPrompt: "Access code",
-  signIn: "Come in",
-  showCode: "Show the code",
-  hideCode: "Hide the code",
-  wrongCode: "That code is not right.",
 
   errorOffline: "No connection. Check your signal and try again.",
   errorNotConfigured: "The AI model isn't set up on the server yet.",
@@ -938,20 +930,12 @@ const es: Strings = {
   theme_system: "Sistema",
   theme_light: "Claro",
   theme_dark: "Oscuro",
-  signOut: "Cerrar sesión",
-  signOutTitle: "¿Cerrar sesión en Sugary?",
-  signOutBody: "Tu diario se queda guardado.",
+  account: "Tu cuenta y tus dispositivos",
   about: "Sobre las estimaciones",
   aboutText:
     "Sugary estima los hidratos a partir de fotos y descripciones con un modelo de IA. El tamaño de la porción es lo más difícil de calcular en una foto, así que cada estimación viene como un rango y cada alimento se puede corregir. Nunca sugiere dosis de insulina: eso queda entre tú y tu equipo de diabetes.",
 
-  signInTitle: "Sugary",
   tagline: "Contar hidratos, pan comido.",
-  signInPrompt: "Código de acceso",
-  signIn: "Entrar",
-  showCode: "Mostrar el código",
-  hideCode: "Ocultar el código",
-  wrongCode: "Ese código no es correcto.",
 
   errorOffline: "Sin conexión. Comprueba la cobertura e inténtalo de nuevo.",
   errorNotConfigured: "El modelo de IA aún no está configurado en el servidor.",

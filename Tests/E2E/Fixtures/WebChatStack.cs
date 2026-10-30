@@ -1,9 +1,11 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
@@ -71,15 +73,13 @@ internal sealed partial class WebChatStack
 
     public string WebChatUrl { get; private set; } = "";
 
-    // Her app and its API, published as compose publishes them (port 6017 there): straight from the
-    // Sugary server, not through the Caddy site her phone uses.
+    // The Sugary app and its API, published as compose publishes them (port 6017 there): straight
+    // from the Sugary server, not through the Caddy site a phone uses, so a test sends the session
+    // check's headers for the account it acts as (AccountForAsync) as that site's proxy would.
     public string SugaryUrl { get; private set; } = "";
 
     // The Sugary server's /mcp, where the tables an agent reads under /sugary are served.
     public string SugaryMcpEndpoint { get; private set; } = "";
-
-    // The code the app asks for once per phone. A test value, as the deployment secret is.
-    public const string SugaryAccessCode = "e2e-sugary-code";
 
     // How long the Sugary server waits on the agent's estimate before answering 504. An estimate is
     // a real model's answer over the network, so it is bounded by the provider, as the chat E2E's
@@ -167,18 +167,27 @@ internal sealed partial class WebChatStack
     // command is a .NET process started inside the container, about a second, so making all of the
     // stack's users up front would cost minutes nobody uses; and they run one at a time, since every
     // command writes the one SQLite file.
-    public Task<string> SessionForAsync(int userIndex) =>
-        _sessions.GetOrAdd(userIndex, index => new Lazy<Task<string>>(() => SeedAsync(NameOf(index)))).Value;
+    public async Task<string> SessionForAsync(int userIndex) => (await SeededAsync(userIndex)).Session;
 
-    private readonly ConcurrentDictionary<int, Lazy<Task<string>>> _sessions = new();
+    // The account behind a user index, as the session check names it in its headers: what a test
+    // that reaches an app past the proxy presents to act as that person.
+    public async Task<Account> AccountForAsync(int userIndex) => (await SeededAsync(userIndex)).Account;
+
+    private Task<Seeded> SeededAsync(int userIndex) =>
+        _sessions.GetOrAdd(userIndex, index => new Lazy<Task<Seeded>>(() => SeedAsync(NameOf(index)))).Value;
+
+    private sealed record Seeded(string Session, Account Account);
+
+    private readonly ConcurrentDictionary<int, Lazy<Task<Seeded>>> _sessions = new();
     private readonly SemaphoreSlim _seeding = new(1, 1);
 
-    private async Task<string> SeedAsync(string name)
+    private async Task<Seeded> SeedAsync(string name)
     {
         var (_, created) = await AccountsAsync("create-user", "--name", name);
-        var userId = WhoWasMade().Match(created).Groups["user"].Value;
-        var (_, session) = await AccountsAsync("mint-session", "--user", userId);
-        return session.Trim();
+        var made = WhoWasMade().Match(created);
+        var account = new Account(made.Groups["household"].Value, made.Groups["user"].Value);
+        var (_, session) = await AccountsAsync("mint-session", "--user", account.UserId);
+        return new Seeded(session.Trim(), account);
     }
 
     // The accounts service's own commands, as the operator runs them: docker exec accounts dotnet
@@ -203,7 +212,7 @@ internal sealed partial class WebChatStack
         }
     }
 
-    [GeneratedRegex(@"user (?<user>[0-9a-f]+), household")]
+    [GeneratedRegex(@"user (?<user>[0-9a-f]+), household (?<household>[0-9a-f]+)")]
     private static partial Regex WhoWasMade();
 
     // Both phases are memoized separately so each keeps the caller's own budget: an image build is
@@ -340,22 +349,23 @@ internal sealed partial class WebChatStack
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
             .Build();
 
-        // Her carb log's server, wired as compose wires it: the deployment secret on /mcp, the app's
-        // access code, and the home's zone (a meal is filed under the month it was eaten in Madrid).
-        // Compose mounts ./volumes/sugary at /data; a tmpfs stands in, world-writable as Docker makes
-        // one, so the log, the cookie keys and the uploads keep their shipped paths and start empty.
+        // The Sugary log's server, wired as compose wires it: its own credential on /mcp and the
+        // home's zone (a meal is filed under the month it was eaten in Madrid). Compose mounts
+        // ./volumes/sugary at /data; a tmpfs stands in, world-writable as Docker makes one, so the log
+        // and the uploads keep their shipped paths and start empty.
         _mcpSugary = TestContainers.Container(E2EImages.McpSugary.ImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("mcp-sugary")
             .WithTmpfsMount("/data")
             .WithEnvironment("TZ", "Europe/Madrid")
             .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-sugary"))
-            .WithEnvironment("SUGARYAPP__ACCESSCODE", SugaryAccessCode)
             .WithEnvironment("TURNTIMEOUTSECONDS", ((int)SugaryTurnTimeout.TotalSeconds).ToString())
             .WithPortBinding(8080, true)
-            // The app's session route answers once the database is migrated and the routes are bound.
+            // The app's session route answers once the database is migrated and the routes are bound:
+            // 401 to a request naming nobody, which is every request here but the tests' own.
             .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/api/session")))
+                .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/api/session")
+                    .ForStatusCode(HttpStatusCode.Unauthorized)))
             .Build();
 
         // The browser reaches everything through Caddy at localhost on a port taken here rather than
@@ -587,7 +597,7 @@ internal sealed partial class WebChatStack
             {
                 using var negotiate = new HttpRequestMessage(
                     HttpMethod.Post, $"{baseUrl}/hubs/chat/negotiate?negotiateVersion=1");
-                negotiate.Headers.Add("Cookie", $"ziggurat_session={probe}");
+                negotiate.Headers.Add("Cookie", $"ziggurat_session={probe.Session}");
                 var response = await httpClient.SendAsync(negotiate, ct);
                 if (response.IsSuccessStatusCode)
                 {

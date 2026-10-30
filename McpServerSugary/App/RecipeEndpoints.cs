@@ -21,8 +21,8 @@ public record SaveRecipeRequest(
     double? Servings,
     IReadOnlyList<RecipeIngredient>? Ingredients);
 
-// Her recipes, kept as their shape alone: which of her foods, how much of each, and what the pot
-// makes. The app works out the carbs from her foods as they are now.
+// The household's recipes, kept as their shape alone: which of its foods, how much of each, and
+// what the pot makes. The app works out the carbs from the foods as they are now.
 public static class RecipeEndpoints
 {
     private const double MaxAmount = 5000;
@@ -39,7 +39,7 @@ public static class RecipeEndpoints
         recipes.MapDelete("/{id:guid}", DeleteAsync);
     }
 
-    // Most recently eaten first, as her foods are, so the two sit in one list.
+    // Most recently eaten first by the person asking, as the foods are, so the two sit in one list.
     private static async Task<IReadOnlyList<RecipeDto>> ListAsync(SugaryDbContext db, CancellationToken ct)
     {
         var recipes = await db.Recipes.AsNoTracking().ToListAsync(ct);
