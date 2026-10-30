@@ -1,4 +1,6 @@
 using Domain.Security.Signing;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
+using Microsoft.Extensions.Configuration.Json;
 
 namespace Accounts.Settings;
 
@@ -36,7 +38,12 @@ public record AccountsSettings
 
     // An assertion only has to cover the hop from the channel that asked for it to the agent or app
     // that verifies it, which holds the verified identity from then on.
-    public int AssertionLifetimeMinutes { get; init; } = 10;
+    public TimeSpan AssertionLifetime { get; init; } = TimeSpan.FromMinutes(10);
+
+    // How every verifier of the service's assertions treats time (Domain/token-verification.json, under
+    // mcp:tokenVerification). The service verifies none itself; what it needs is the skew they forgive,
+    // which a retired key's last assertion must be past.
+    public VerifierPolicy Mcp { get; init; } = new();
 
     public Uri PublicBase => new(PublicBaseUrl.TrimEnd('/') + "/");
 
@@ -47,6 +54,26 @@ public record AccountsSettings
         Signing.PrivateKey.Length > 0 || Signing.KeyDirectory.Length > 0
             ? Signing
             : Signing with { KeyDirectory = Path.Combine(DataDirectory, "signing") };
+
+    // The service's settings with the shared policy file read after its appsettings.json and before
+    // the environment, as every verifying host reads it: put ahead of the environment the web host
+    // already added, so a single container can still be overridden.
+    public static AccountsSettings Read(IConfigurationBuilder configBuilder)
+    {
+        var policy = new JsonConfigurationSource { Path = TokenVerificationSettings.FileName, Optional = true };
+        policy.ResolveFileProvider();
+        var environment = configBuilder.Sources.ToList().FindIndex(source => source is EnvironmentVariablesConfigurationSource);
+        if (environment < 0)
+        {
+            configBuilder.Add(policy);
+        }
+        else
+        {
+            configBuilder.Sources.Insert(environment, policy);
+        }
+
+        return configBuilder.Build().Get<AccountsSettings>() ?? new AccountsSettings();
+    }
 
     // A deployment missing any of these would mint links nobody can open or ceremonies no browser
     // accepts, so it refuses to start instead.
@@ -59,6 +86,11 @@ public record AccountsSettings
             ($"{nameof(WebAuthn)}:{nameof(WebAuthnSettings.RelyingPartyId)}", WebAuthn.RelyingPartyId.Length == 0)
         }.Where(s => s.Absent).Select(s => s.Name)
     ];
+}
+
+public record VerifierPolicy
+{
+    public TokenVerificationSettings TokenVerification { get; init; } = new();
 }
 
 public record WebAuthnSettings

@@ -21,9 +21,9 @@ builder.Services.AddHostedService<MetricsCollectorService>();
 builder.Services.AddHttpClient();
 builder.Services.AddHostedService<HttpHealthProbeService>();
 // Where the accounts service publishes the keys its assertions verify with (ACCOUNTS__JWKSURL).
-builder.Services.AddOperatorGate(builder.Configuration["Accounts:JwksUrl"] is { Length: > 0 } jwksUrl
-    ? jwksUrl
-    : AssertionVerifier.DefaultJwksUrl);
+builder.Services.AddOperatorGate(
+    builder.Configuration["Accounts:JwksUrl"] is { Length: > 0 } jwksUrl ? jwksUrl : AssertionVerifier.DefaultJwksUrl,
+    builder.Configuration.GetTokenVerification());
 
 if (!builder.Environment.IsProduction())
 {

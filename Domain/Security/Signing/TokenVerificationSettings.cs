@@ -10,6 +10,9 @@ public sealed record TokenVerificationSettings
     // issuer's verifiers agree about time.
     public const string FileName = "token-verification.json";
 
+    // Where the file puts it, which is where a server's gate settings bind it (McpGateSettings).
+    public const string Section = "mcp:tokenVerification";
+
     // Forgiven on every expiry and not-before, so a few seconds of drift never refuses a call.
     public TimeSpan ClockSkew { get; init; } = TimeSpan.FromSeconds(30);
 
