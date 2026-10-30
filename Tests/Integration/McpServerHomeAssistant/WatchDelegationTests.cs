@@ -113,6 +113,28 @@ public class WatchDelegationTests : IAsyncLifetime
             .ShouldBe(new FireAdmission.Undelegated(nameof(TokenRefusal.UnknownKey)));
     }
 
+    // The agent's key was lost: the watch's delegation verifies no more until the operator confirms
+    // it again through the agent's redelegate, which rewrites the automation's metadata alone.
+    [Fact]
+    public async Task AWatchWhoseKeyWasLost_FiresAsItsWriterAgain_OnceRedelegated()
+    {
+        var watches = _app.Services.GetRequiredService<HaWatches>();
+        var lost = TestDelegations.Forged(_fran, ChannelIds.SignalR, WatchDelegation.OfWrite(Path, _watch, null, null)!);
+        await watches.WriteAsync(WatchId, HaWatchSpec.Parse(_watch), "jonas", null, lost, CancellationToken.None);
+        var keys = TestSigningKeys.Store(TestSigningKeys.Agent);
+        var output = new StringWriter();
+
+        var exit = await new Redelegation(keys, new CallTokens(keys, TimeProvider.System), new StringReader("y\n"), output)
+            .RedelegateAsync(
+                [new Redelegation.Server("homeassistant", ct => McpClient.CreateAsync(McpTestSecret.Transport(Endpoint), cancellationToken: ct))],
+                assumeYes: false, _cts.Token);
+
+        exit.ShouldBe(0);
+        output.ToString().ShouldContain($"watch {WatchId}");
+        (await TestDelegations.AdmitAsync(await FireAsync(), "homeassistant")).ShouldBeOfType<FireAdmission.Delegated>()
+            .Identity.Account.ShouldBe(_fran);
+    }
+
     // The automation is the home's to edit: one whose callback delivers somewhere the watch never
     // said answers there as nobody.
     [Fact]
