@@ -1,9 +1,9 @@
 using HouseholdMigration;
 using Microsoft.Extensions.Configuration;
 
+// Environment variables over MigrationSettings' defaults, and no appsettings.json: the Sugary server's,
+// which comes with its project, sits in this output too and configures that server, not this run.
 var settings = new ConfigurationBuilder()
-    .SetBasePath(AppContext.BaseDirectory)
-    .AddJsonFile("appsettings.json", optional: true)
     .AddEnvironmentVariables()
     .Build()
     .Get<MigrationSettings>() ?? new MigrationSettings();
