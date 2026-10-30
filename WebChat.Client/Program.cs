@@ -59,6 +59,7 @@ _ = app.Services.GetRequiredService<TopicSelectionEffect>();
 _ = app.Services.GetRequiredService<TopicDeleteEffect>();
 _ = app.Services.GetRequiredService<TopicPagingEffect>();
 _ = app.Services.GetRequiredService<InitializationEffect>();
+_ = app.Services.GetRequiredService<OfferedApprovalsEffect>();
 _ = app.Services.GetRequiredService<AgentSelectionEffect>();
 _ = app.Services.GetRequiredService<UserIdentityEffect>();
 _ = app.Services.GetRequiredService<SpaceEffect>();

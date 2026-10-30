@@ -22,6 +22,7 @@ public sealed class HubEventBinderTests : IDisposable
         "OnTopicChanged",
         "OnStreamStarted",
         "OnApprovalResolved",
+        "OnApprovalOffered",
         "OnUserMessage",
         "OnAgentsUpdated"
     ];

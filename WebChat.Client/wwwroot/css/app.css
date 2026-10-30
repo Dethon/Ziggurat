@@ -2346,6 +2346,23 @@ select:focus:not(:focus-visible) {
     box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
 }
 
+.approval-status {
+    margin-right: auto;
+    align-self: center;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.btn-close-approval {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color) !important;
+}
+
+.btn-close-approval:hover {
+    background: var(--bg-tertiary);
+}
+
 .btn-always {
     background: var(--bg-secondary);
     color: var(--accent);
