@@ -303,6 +303,6 @@ internal sealed class ApprovalChannel(string channelId) : IChannelConnection
 
     public Task<string?> CreateConversationAsync(
         string agentId, string topicName, string sender, string? initialPrompt, string? address,
-        string? existingConversationId, Principal? principal, CancellationToken ct) =>
+        string? existingConversationId, Principal? principal, bool group, CancellationToken ct) =>
         Task.FromResult<string?>(null);
 }
