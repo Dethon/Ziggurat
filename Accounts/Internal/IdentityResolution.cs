@@ -1,6 +1,7 @@
 using Accounts.Links;
 using Accounts.Signing;
 using Accounts.Store;
+using Domain.DTOs.Channel;
 using Microsoft.EntityFrameworkCore;
 
 namespace Accounts.Internal;
@@ -24,7 +25,7 @@ public static class IdentityResolution
 
     // The channels whose identity is the account's own id: the chat client's turns carry the id the
     // session check named, and a voice profile is named after the user id it belongs to.
-    private static readonly string[] _accountIdChannels = ["signalr", "voice"];
+    private static readonly string[] _accountIdChannels = [ChannelIds.SignalR, ChannelIds.Voice];
 
     // The channels whose identity a row of its own links to a person: a numeric Telegram id, written
     // when the bot redeemed the person's invite or link code.
@@ -33,7 +34,7 @@ public static class IdentityResolution
     // The channels with a household guest: a satellite hears whoever is in the house, and somebody
     // no voice profile matched is still somebody the house works for, as no person. Every other
     // channel knows who sent what it carries.
-    private static readonly string[] _guestChannels = ["voice"];
+    private static readonly string[] _guestChannels = [ChannelIds.Voice];
 
     public static void Map(IEndpointRouteBuilder routes)
     {
