@@ -17,7 +17,9 @@ namespace McpServerSugary.Store;
 // forget; a row it adds is stamped with that owner on the way in.
 public partial class SugaryDbContext(DbContextOptions<SugaryDbContext> options) : DbContext(options)
 {
-    // An account id is 32 hex characters; the column says so to a provider that sizes its strings.
+    // The accounts service's own key width (its IdLength), which a provider that sizes its strings is
+    // told: today's ids are 32 hex characters and "legacy" is six, and a column as wide as the one an
+    // id is issued from holds whatever that service issues later without a migration here.
     private const int OwnerIdLength = 64;
 
     // Whose log this context reads and writes. Null is nobody's: the factory's context, which reads

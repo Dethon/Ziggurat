@@ -39,7 +39,7 @@ public sealed class ScheduleCreators(IScheduleStore schedules, IConnectionMultip
         report.Changes = stamped.Count;
         report.Lines.AddRange(stamped
             .GroupBy(s => s.Writer ?? household.Owner)
-            .Select(g => $"{g.Key.Label}: {g.Count()} schedule{(g.Count() == 1 ? "" : "s")}"
+            .Select(g => $"{g.Key.Label}: {Counted.Of(g.Count(), "schedule")}"
                          + (g.Any(s => s.Writer is null) ? $", {g.Count(s => s.Writer is null)} of them written by nobody it knows" : "")));
         return report;
     }

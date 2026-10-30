@@ -59,7 +59,7 @@ public sealed class RememberedLogins(IConnectionMultiplexer redis, IPersonStateS
 
             report.Changes++;
             report.Lines.Add(
-                $"{person.Label}: {state.Logins.Count} login{(state.Logins.Count == 1 ? "" : "s")} re-sealed from '{old}'");
+                $"{person.Label}: {Counted.Of(state.Logins.Count, "login")} re-sealed from '{old}'");
         }
 
         return report;
