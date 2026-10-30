@@ -51,6 +51,10 @@ public sealed class ChatHub(
     // naming another person's private topic tells the namer nothing about it — not even that it is.
     private const string NoSuchConversation = "No such conversation.";
 
+    // Seeing a topic is not writing in it: someone who sees every topic of the household reads
+    // another person's private one and changes nothing in it.
+    private const string ReadOnlyConversation = "Only the person whose conversation this is can change it until they share it.";
+
     private string? CurrentSpaceSlug =>
         Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
 
@@ -109,17 +113,35 @@ public sealed class ChatHub(
         }
     }
 
+    private void RequireMayChange(TopicMetadata? topic)
+    {
+        RequireSees(topic);
+        if (topic is not null && !Viewer.MayChange(topic))
+        {
+            throw new HubException(ReadOnlyConversation);
+        }
+    }
+
     // Sessions are this process's and every connection's, so one existing says nothing about who
     // opened it: the topic its conversation belongs to says who may act on it. A session over a
     // conversation no topic holds yet is a topic its opener has not saved, whose id only they know.
-    private async Task<ChannelSession?> SessionOfAsync(string topicId)
+    private async Task<ChannelSession?> SessionOfAsync(string topicId, bool toChange = false)
     {
         if (!sessionService.TryGetSession(topicId, out var session) || session is null)
         {
             return null;
         }
 
-        RequireSees(await threadStore.GetTopicByChatIdAndThreadIdAsync(session.AgentId, session.ChatId, session.ThreadId));
+        var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(session.AgentId, session.ChatId, session.ThreadId);
+        if (toChange)
+        {
+            RequireMayChange(topic);
+        }
+        else
+        {
+            RequireSees(topic);
+        }
+
         return session;
     }
 
@@ -172,7 +194,7 @@ public sealed class ChatHub(
     // a conversation the connection already has a session for.
     public async Task<UploadTicket> CreateUploadTicket(string topicId)
     {
-        if (await SessionOfAsync(topicId) is not { } session)
+        if (await SessionOfAsync(topicId, toChange: true) is not { } session)
         {
             throw new HubException("Session not found. Please start a session first.");
         }
@@ -247,7 +269,7 @@ public sealed class ChatHub(
         IReadOnlyList<AttachmentReference>? attachments,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (await SessionOfAsync(topicId) is not { } session)
+        if (await SessionOfAsync(topicId, toChange: true) is not { } session)
         {
             yield return new ChatStreamMessage
             {
@@ -331,7 +353,7 @@ public sealed class ChatHub(
         AgentConfigPatch? configPatch,
         IReadOnlyList<AttachmentReference>? attachments = null)
     {
-        if (await SessionOfAsync(topicId) is not { } session)
+        if (await SessionOfAsync(topicId, toChange: true) is not { } session)
         {
             return false;
         }
@@ -437,7 +459,7 @@ public sealed class ChatHub(
 
     public async Task CancelTopic(string topicId)
     {
-        if (await SessionOfAsync(topicId) is { } session)
+        if (await SessionOfAsync(topicId, toChange: true) is { } session)
         {
             await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
             {
@@ -489,7 +511,7 @@ public sealed class ChatHub(
         var stored = await threadStore.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId);
         if (stored is not null)
         {
-            RequireSees(stored);
+            RequireMayChange(stored);
             await threadStore.SaveTopicAsync(stored with { Name = topic.Name }, keepTtl: true);
             return;
         }
@@ -544,10 +566,16 @@ public sealed class ChatHub(
 
     // Read state is the store's to work out: the count it would be compared against is one round
     // trip newer than anything the browser holds.
+    // How far a topic was read is its own people's: someone who sees every topic reading another
+    // person's private one leaves it as unread as its owner left it.
     public async Task MarkTopicRead(string agentId, long chatId, string topicId)
     {
-        RequireSees(await threadStore.GetTopicAsync(agentId, chatId, topicId));
-        await threadStore.MarkTopicReadAsync(agentId, chatId, topicId);
+        var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId);
+        RequireSees(stored);
+        if (stored is null || Viewer.MayChange(stored))
+        {
+            await threadStore.MarkTopicReadAsync(agentId, chatId, topicId);
+        }
     }
 
     // A conversation no topic holds is read by nobody here: it is another channel's, or one this
@@ -567,7 +595,7 @@ public sealed class ChatHub(
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
         var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId);
-        RequireSees(stored);
+        RequireMayChange(stored);
         var spaceSlug = stored?.SpaceSlug ?? CurrentSpaceSlug ?? SpaceConfig.DefaultSlug;
         var notification = new TopicChangedNotification(TopicChangeType.Deleted, topicId, SpaceSlug: spaceSlug);
 
