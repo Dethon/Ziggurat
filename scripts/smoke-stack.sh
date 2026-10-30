@@ -64,8 +64,12 @@ case "${1:-}" in
     ;;
   down)
     "${DC[@]}" down --volumes --remove-orphans
-    # The containers wrote as their own users; a throwaway container removes what they wrote.
-    docker run --rm -v "$ROOT/DockerCompose/volumes:/v" alpine rm -rf /v/smoke
+    # The containers wrote as their own users; a throwaway container removes what they wrote. Only
+    # where there is something: bind-mounting a missing ./volumes makes Docker create it as root,
+    # and the next up could then not make its directories.
+    if [[ -d DockerCompose/volumes/smoke ]]; then
+      docker run --rm -v "$ROOT/DockerCompose/volumes:/v" alpine rm -rf /v/smoke
+    fi
     ;;
   *)
     echo "usage: $0 up|test|migrate|down" >&2
