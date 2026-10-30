@@ -28,9 +28,12 @@ public sealed record ForwardedAccount(string UserId, string TenantId, IReadOnlyL
 
     public TopicViewer Viewer => new(UserId, TenantId, SeesAll);
 
+    // The account the check named, as everything keyed by a person compares it.
+    public Account Account => new(TenantId, UserId);
+
     // A turn this person sent on a channel behind the proxy: the account the check named, and the
     // account's id as the channel's own name for them, since such a channel knows them by nothing else.
-    public Principal PrincipalOn(string channelId) => new(channelId, UserId, new Account(TenantId, UserId));
+    public Principal PrincipalOn(string channelId) => new(channelId, UserId, Account);
 
     // All three or nobody: the check always answers all three, so a request carrying fewer did not
     // come through it.

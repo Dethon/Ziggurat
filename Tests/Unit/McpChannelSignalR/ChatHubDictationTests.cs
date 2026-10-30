@@ -59,7 +59,7 @@ public sealed class ChatHubDictationTests : IDisposable
             _dictation,
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
     }
 

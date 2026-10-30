@@ -243,6 +243,71 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         turn.Sender.ShouldBe("Laura");
     }
 
+    // Continuing a shared topic is anyone's who sees it; what it is called and whether it exists stay
+    // its owner's to say.
+    [Theory]
+    [InlineData("SaveTopic")]
+    [InlineData("DeleteTopic")]
+    public async Task ASharedTopic_IsRenamedOrDeletedByItsOwnerAlone(string call)
+    {
+        var fran = await ConnectAsync(Fran);
+        var laura = await ConnectAsync(Laura);
+        var topic = await StartTopicAsync(fran, "Fran's plum jam");
+        await fran.InvokeAsync("SetTopicShared", topic.AgentId, topic.ChatId, topic.TopicId, true);
+
+        var refusal = await Should.ThrowAsync<HubException>(() => Call(call, laura, topic));
+
+        refusal.Message.ShouldContain("Only the person whose conversation this is");
+        var stored = (await _store.GetTopicAsync(_agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
+        stored.Name.ShouldBe("Fran's plum jam");
+    }
+
+    [Fact]
+    public async Task ASharedTopic_IsStoppedAndAttachedToByWhoeverContinuesIt()
+    {
+        var fran = await ConnectAsync(Fran);
+        var laura = await ConnectAsync(Laura);
+        var topic = await StartTopicAsync(fran, "Fran's plum jam");
+        await fran.InvokeAsync("SetTopicShared", topic.AgentId, topic.ChatId, topic.TopicId, true);
+        (await laura.InvokeAsync<bool>("StartSession", topic.AgentId, topic.TopicId, topic.ChatId, topic.ThreadId, topic.Name))
+            .ShouldBeTrue();
+
+        (await laura.InvokeAsync<UploadTicket>("CreateUploadTicket", topic.TopicId)).ShouldNotBeNull();
+        await laura.InvokeAsync("MarkTopicRead", topic.AgentId, topic.ChatId, topic.TopicId);
+        await laura.InvokeAsync("CancelTopic", topic.TopicId);
+    }
+
+    // A topic nobody owns has nobody to defer to: whoever sees it names it, as before topics had owners.
+    [Fact]
+    public async Task ATopicNobodyOwns_IsRenamedByWhoeverSeesIt()
+    {
+        var laura = await ConnectAsync(Laura);
+        await ShowReviewCopyAsync("33:43", new Principal("voice", "household"), "kitchen");
+        var topic = (await _store.GetTopicByChatIdAndThreadIdAsync(_agent, 33, 43)).ShouldNotBeNull();
+
+        await laura.InvokeAsync("SaveTopic", topic with { Name = "The kitchen's paella" }, false);
+
+        (await _store.GetTopicAsync(_agent, 33, topic.TopicId))!.Name.ShouldBe("The kitchen's paella");
+    }
+
+    // A topic nobody owns is still the household's it was recorded for — a Telegram group's copy names
+    // the household the group is bound to — and no other household's.
+    [Fact]
+    public async Task ATopicNobodyOwns_OfAnotherHousehold_IsNotSeen()
+    {
+        var laura = await ConnectAsync(Laura);
+        var topicId = ConversationIdGenerator.NewTopicId();
+        var identity = ConversationIdGenerator.CreateFor(topicId);
+        await _store.SaveTopicAsync(new TopicMetadata(
+            topicId, identity.ChatId, identity.ThreadId, _agent, "The neighbours' group", DateTimeOffset.UtcNow, null,
+            TenantId: "away", Shared: true));
+
+        (await ListAsync(laura)).ShouldNotContain(topicId);
+        (await SearchAsync(laura, "neighbours")).ShouldNotContain(topicId);
+        (await Should.ThrowAsync<HubException>(() => laura.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>(
+            "GetHistory", _agent, identity.ChatId, identity.ThreadId))).Message.ShouldContain("No such conversation");
+    }
+
     [Fact]
     public async Task UnsharingATopic_HidesItFromTheHouseholdAgain()
     {

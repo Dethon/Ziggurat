@@ -254,8 +254,7 @@ public sealed class ApprovalService(
                 return;
             }
 
-            var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(
-                session.AgentId, session.ChatId, session.ThreadId);
+            var topic = await threadStore.TopicOfAsync(session);
             await hubNotificationSender.SendToTopicAsync(topic, spaceSlug, "OnApprovalResolved", notification);
         }
         catch (Exception ex)
