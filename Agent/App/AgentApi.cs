@@ -14,17 +14,19 @@ namespace Agent.App;
 // The comparison is SharedSecret's, the same rule the outposts and the MCP servers are held to,
 // and an unset secret refuses everything rather than leaving the door open.
 //
-// Whose catalogue it is comes from X-Ziggurat-User, which SexyTime's server copies off the
-// signed-in request the proxy's session check handed it. The proxy does not check this route, so
-// nothing strips a header a client wrote: it is believed only behind the secret, whose one holder
-// is that server (.claude/rules/accounts.md). A userId in the query is never read.
+// Whose catalogue it is comes from X-Ziggurat-Assertion, which SexyTime's server copies off the
+// signed-in request the proxy's session check handed it: the accounts service's signature over the
+// person, for SexyTime's channel, verified here against the service's published keys. The secret
+// says the caller is that server; the assertion says who it is acting for, so a holder of the
+// secret can no longer name anyone it likes. Neither opens the API alone. The plain X-Ziggurat-User
+// beside it, and a userId in the query, are never read (.claude/rules/accounts.md).
 public static class AgentApi
 {
     public static void MapAgents(this WebApplication app, string sharedSecret)
     {
         var agents = app.MapGroup("/api/agents")
             .RequireSharedSecret(sharedSecret)
-            .RequireForwardedUser();
+            .RequireAssertedPerson();
 
         agents.MapGet("/", (IAgentDefinitionProvider provider, HttpContext context) =>
             provider.GetAll(UserOf(context)).Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description)));
@@ -39,17 +41,29 @@ public static class AgentApi
             provider.UnregisterCustomAgent(UserOf(context), agentId));
     }
 
-    // After the secret's gate, so a caller without the secret learns only that it lacks it. One
-    // person or none: two values would join into an id nobody has.
-    private static RouteGroupBuilder RequireForwardedUser(this RouteGroupBuilder group)
+    private static readonly object _personItem = new();
+
+    // After the secret's gate, so a caller without the secret learns only that it lacks it. Without
+    // a believable assertion the call is signed out, as a request past the session check without one
+    // is everywhere else. One header value or none: the session check answers one.
+    private static RouteGroupBuilder RequireAssertedPerson(this RouteGroupBuilder group)
     {
         group.AddEndpointFilter(async (context, next) =>
-            context.HttpContext.Request.Headers[ForwardedAccount.UserHeader] is [{ Length: > 0 }]
-                ? await next(context)
-                : Results.BadRequest($"{ForwardedAccount.UserHeader} must name one person."));
+        {
+            var http = context.HttpContext;
+            var assertion = http.Request.Headers[ForwardedAccount.AssertionHeader] is [{ } value] ? value : null;
+            var person = await http.RequestServices.GetRequiredService<AssertionVerifier>()
+                .VerifyAsync(assertion, AppChannels.SexyTime, http.RequestAborted);
+            if (person is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            http.Items[_personItem] = person;
+            return await next(context);
+        });
         return group;
     }
 
-    private static string UserOf(HttpContext context) =>
-        context.Request.Headers[ForwardedAccount.UserHeader].ToString();
+    private static string UserOf(HttpContext context) => ((ForwardedAccount)context.Items[_personItem]!).UserId;
 }

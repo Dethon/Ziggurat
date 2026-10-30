@@ -23,10 +23,11 @@ using Shouldly;
 
 namespace Tests.Unit.McpChannelSignalR;
 
-// The hub knows its person from the proxy: the session check's three headers, copied onto every
-// request it lets through. A connection that arrives without them did not come through the check
-// and is refused before it can read a transcript, change a topic or answer an approval; one that
-// arrives with them is that person, with nothing to say about who it is. Asked over a real
+// The hub knows its person from the proxy: the assertion the session check signs, copied onto every
+// request it lets through and verified against the accounts service's keys — never the three plain
+// headers beside it. A connection that arrives without a believable one did not come through the
+// check and is refused before it can read a transcript, change a topic or answer an approval; one
+// that arrives with one is that person, with nothing to say about who it is. Asked over a real
 // connection to a hub registered the way the server registers it, because both the registration
 // and the refusal are the hub pipeline's and a call on a hub instance skips them.
 public sealed class ChatHubSignedInTests : IAsyncLifetime
@@ -84,37 +85,55 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
                 NullLogger<AttachmentService>.Instance))
             .AddSingleton(new Mock<IHubNotificationSender>().Object)
             .AddSingleton(new RetentionSettings())
-            .AddSingleton(new DictationSettings());
+            .AddSingleton(new DictationSettings())
+            .AddSingleton(TestAssertions.Verifier());
 
         _app = builder.Build();
         _app.MapHub<ChatHub>("/hubs/chat");
         await _app.StartAsync();
     }
 
-    private static Dictionary<string, string> SignedIn(string userId = Fran) => new()
-    {
-        [ForwardedAccount.UserHeader] = userId,
-        [ForwardedAccount.TenantHeader] = Home,
-        [ForwardedAccount.RolesHeader] = "owner,operator"
-    };
+    private const string Somebody = "91eb477ecd34251c52fd4493523a0334";
 
-    public static TheoryData<string[]> MissingHeaders => new()
+    // The session check's four headers as the proxy copies them: the plain three naming whoever a
+    // test likes, and the assertion, signed with the accounts service's test key, naming the person.
+    private static Dictionary<string, string> SignedIn(string userId = Fran, string? plainUserId = null) =>
+        Forwarded(plainUserId ?? userId, TestAssertions.Of(new Account(Home, userId), ChannelIds.SignalR, ["owner", "operator"]));
+
+    private static Dictionary<string, string> Forwarded(string plainUserId, string? assertion)
     {
-        new[] { ForwardedAccount.UserHeader, ForwardedAccount.TenantHeader, ForwardedAccount.RolesHeader },
-        new[] { ForwardedAccount.UserHeader },
-        new[] { ForwardedAccount.TenantHeader },
-        new[] { ForwardedAccount.RolesHeader }
+        var headers = new Dictionary<string, string>
+        {
+            [ForwardedAccount.UserHeader] = plainUserId,
+            [ForwardedAccount.TenantHeader] = Home,
+            [ForwardedAccount.RolesHeader] = "owner,operator"
+        };
+        if (assertion is not null)
+        {
+            headers[ForwardedAccount.AssertionHeader] = assertion;
+        }
+
+        return headers;
+    }
+
+    // No assertion beside the plain headers, which anything on the compose network could write; one
+    // signed by a key the accounts service does not publish; one signed for another app's route; and
+    // the household's guest, who is nobody to the chat client.
+    public static TheoryData<string, string?> Unbelieved => new()
+    {
+        { "none", null },
+        { "forged", TestAssertions.Forged(new Account(Home, Fran), ChannelIds.SignalR) },
+        { "for sugary", TestAssertions.Of(new Account(Home, Fran), "sugary") },
+        { "the guest", TestAssertions.OfGuest(Home, ChannelIds.SignalR) }
     };
 
     // The handshake is answered before the hub has looked at the request, so the refusal is the
     // connection being closed under the caller, with the reason in the close.
     [Theory]
-    [MemberData(nameof(MissingHeaders))]
-    public async Task AConnectionWithoutTheSessionChecksHeaders_IsClosed(string[] missing)
+    [MemberData(nameof(Unbelieved))]
+    public async Task AConnectionWithoutABelievableAssertion_IsClosed(string _, string? assertion)
     {
-        var headers = SignedIn();
-        missing.ToList().ForEach(h => headers.Remove(h));
-        var connection = await ConnectAsync(headers, out var closed);
+        var connection = await ConnectAsync(Forwarded(Fran, assertion), out var closed);
 
         var reason = await closed.WaitAsync(TimeSpan.FromSeconds(10));
 
@@ -173,6 +192,19 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         var turn = await SingleTurnAsync();
         turn.Principal.ShouldBe(new Principal("signalr", Fran, new Account(Home, Fran)));
         turn.Sender.ShouldBe("Fran");
+    }
+
+    // Who the connection is was signed; plain headers naming somebody else change nothing.
+    [Fact]
+    public async Task AnAssertionNamingFran_UnderHeadersNamingSomebodyElse_ActsForFran()
+    {
+        _sessionService.StartSession("topic-1", "jack", 7, 42, null);
+        var connection = await ConnectAsync(SignedIn(Fran, plainUserId: Somebody), out _);
+        await ReceiveAsync();
+
+        Send(connection, "hello");
+
+        (await SingleTurnAsync()).Principal.ShouldBe(new Principal("signalr", Fran, new Account(Home, Fran)));
     }
 
     // Asked once, as the connection arrives, rather than on every message.
