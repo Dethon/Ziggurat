@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Domain.Security;
+using Domain.Security.Signing;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -40,6 +41,88 @@ public class IdentityResolutionTests
         account["tenantId"]!.GetValue<string>().ShouldBe(fran.TenantId);
         account["userId"]!.GetValue<string>().ShouldBe(fran.UserId);
         account["displayName"]!.GetValue<string>().ShouldBe("Fran");
+    }
+
+    // The answer vouches for itself: a channel server carries the assertion on the turn it starts,
+    // and the agent believes the person it names because this service signed it for that channel.
+    [Theory]
+    [InlineData("signalr")]
+    [InlineData("voice")]
+    public async Task AResolvedIdentity_IsAnsweredWithAnAssertionOfItsPersonOnThatChannel(string channel)
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+
+        var response = await ResolveAsync(server, channel, fran.UserId, SignalRCredential);
+
+        var account = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
+        var assertion = await server.VerifyAssertionAsync(account["assertion"]!.GetValue<string>());
+        assertion.IsVerified.ShouldBeTrue(assertion.Refusal.ToString());
+        assertion.Claims.Subject.ShouldBe(fran.UserId);
+        assertion.Claims.TenantId.ShouldBe(fran.TenantId);
+        assertion.Claims.ChannelId.ShouldBe(channel);
+        assertion.Claims.Roles.ShouldBe(["owner", "operator"]);
+    }
+
+    // Somebody at a satellite whom no profile matched is the household's guest, and that too is
+    // vouched for: a signed guest, never the absence of a signature, which is nobody at all.
+    [Fact]
+    public async Task TheVoiceGuest_IsAnsweredWithASignedGuestOfTheHomeHousehold()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+
+        var response = await GuestAsync(server, "voice", SignalRCredential);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var guest = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
+        guest["tenantId"]!.GetValue<string>().ShouldBe(fran.TenantId);
+        var assertion = await server.VerifyAssertionAsync(guest["assertion"]!.GetValue<string>());
+        assertion.IsVerified.ShouldBeTrue(assertion.Refusal.ToString());
+        assertion.Claims.IsGuest.ShouldBeTrue();
+        assertion.Claims.Account.ShouldBeNull();
+        assertion.Claims.TenantId.ShouldBe(fran.TenantId);
+        assertion.Claims.ChannelId.ShouldBe("voice");
+        assertion.Claims.Roles.ShouldBeEmpty();
+    }
+
+    // Only a satellite has a household guest: anyone else a channel cannot name is nobody's turn.
+    [Theory]
+    [InlineData("signalr")]
+    [InlineData("telegram")]
+    [InlineData("servicebus")]
+    public async Task AGuestOnAnotherChannel_Is400(string channel)
+    {
+        await using var server = await StartAsync();
+
+        var response = await GuestAsync(server, channel, SignalRCredential);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-credential")]
+    public async Task AGuestAskedWithoutAConfiguredCredential_Is401(string? credential)
+    {
+        await using var server = await StartAsync();
+
+        var response = await GuestAsync(server, "voice", credential);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    // The keys are no secret and their verifiers hold no caller credential: the proxy is what keeps
+    // them on the compose network (DeploymentConformanceTests).
+    [Fact]
+    public async Task TheJwks_IsServedWithoutACredential()
+    {
+        await using var server = await StartAsync();
+
+        var response = await server.Client().GetAsync("/accounts/internal/jwks");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        JsonWebKeySet.Parse(await response.Content.ReadAsStringAsync()).Keys.ShouldNotBeEmpty();
     }
 
     [Fact]
@@ -109,13 +192,16 @@ public class IdentityResolutionTests
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
+    private static Task<HttpResponseMessage> GuestAsync(AccountsServer server, string channel, string? credential) =>
+        PostAsync(server, "/accounts/internal/guest", new { channel }, credential);
+
     private static Task<HttpResponseMessage> ResolveAsync(
-        AccountsServer server, string channel, string identity, string? credential)
+        AccountsServer server, string channel, string identity, string? credential) =>
+        PostAsync(server, "/accounts/internal/resolve", new { channel, identity }, credential);
+
+    private static Task<HttpResponseMessage> PostAsync<T>(AccountsServer server, string path, T body, string? credential)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/accounts/internal/resolve")
-        {
-            Content = JsonContent.Create(new { channel, identity })
-        };
+        var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
         if (credential is not null)
         {
             request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(credential));

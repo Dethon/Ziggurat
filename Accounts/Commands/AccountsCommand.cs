@@ -3,6 +3,7 @@ using Accounts.People;
 using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
+using Domain.Security.Signing;
 using Microsoft.EntityFrameworkCore;
 
 namespace Accounts.Commands;
@@ -13,28 +14,45 @@ namespace Accounts.Commands;
 //   docker exec accounts dotnet Accounts.dll mint-link --user <id>
 //   docker exec accounts dotnet Accounts.dll mint-session --user <id>
 //   docker exec accounts dotnet Accounts.dll create-user --name "<display name>" [--role owner|member]
+//   docker exec accounts dotnet Accounts.dll rotate-signing-key
+//   docker exec accounts dotnet Accounts.dll retire-signing-keys
 //
 // The first is the operator's way in before anyone can sign in, and back in after losing every
 // passkey; the second is a recovery link for anyone; the third prints a session cookie's value for
 // a seeded person, so a test stack signs in without a passkey ceremony per test; the fourth adds a
 // person to the home household, who then needs a link from the second — the operator's way to add
-// someone before the members page exists, and the test stack's way to seed its people.
+// someone before the members page exists, and the test stack's way to seed its people. The last two
+// change the key assertions are signed with, beside the running service, which notices on its next
+// signature: a rotation makes a new key the signing one and keeps the previous published, and a
+// retirement, once nothing the previous key signed can still be in date, unpublishes it.
 public static class AccountsCommand
 {
     public const string MintLink = "mint-link";
     public const string MintSession = "mint-session";
     public const string CreateUser = "create-user";
+    public const string RotateSigningKey = "rotate-signing-key";
+    public const string RetireSigningKeys = "retire-signing-keys";
 
     private const string Usage =
         $"usage: {MintLink} --operator [--name <display name>] | {MintLink} --user <id> | {MintSession} --user <id>"
-        + $" | {CreateUser} --name <display name> [--role owner|member]";
+        + $" | {CreateUser} --name <display name> [--role owner|member] | {RotateSigningKey} | {RetireSigningKeys}";
 
-    public static bool IsCommand(IReadOnlyList<string> args) => args is [MintLink or MintSession or CreateUser, ..];
+    public static bool IsCommand(IReadOnlyList<string> args) =>
+        args is [MintLink or MintSession or CreateUser or RotateSigningKey or RetireSigningKeys, ..];
 
     public static async Task<int> RunAsync(
         IReadOnlyList<string> args, AccountsSettings settings, AccountsClock clock, TextWriter output,
         CancellationToken ct)
     {
+        // The keys are files beside the store, not rows in it: nothing here needs the database.
+        switch (args)
+        {
+            case [RotateSigningKey]:
+                return await SigningKeysAsync(settings, rotate: true, output);
+            case [RetireSigningKeys]:
+                return await SigningKeysAsync(settings, rotate: false, output);
+        }
+
         await using var services = new ServiceCollection().AddAccountsCore(settings, clock).BuildServiceProvider();
         await AccountsDatabase.PrepareAsync(
             services.GetRequiredService<IDbContextFactory<AccountsDbContext>>(), clock.Time, ct);
@@ -121,6 +139,38 @@ public static class AccountsCommand
             $"Created {person.DisplayName} (user {person.Id}, household {person.TenantId}) as "
             + $"{(role == Role.Owner ? "an owner" : "a member")} of the home household. "
             + $"A passkey link for them: {MintLink} --user {person.Id}");
+        return 0;
+    }
+
+    private static async Task<int> SigningKeysAsync(AccountsSettings settings, bool rotate, TextWriter output)
+    {
+        var keys = settings.SigningKeys;
+        if (keys.PrivateKey.Length > 0)
+        {
+            await output.WriteLineAsync(
+                "nothing was changed: assertions are signed with the one key SIGNING__PRIVATEKEY provides, "
+                + "which is neither rotated nor retired here.");
+            return 1;
+        }
+
+        var previous = SigningKeyStore.Open(keys);
+        var before = previous.PublishedKeys.Keys.Select(k => k.KeyId).ToList();
+        if (rotate)
+        {
+            previous.Rotate();
+        }
+        else
+        {
+            previous.Retire();
+        }
+
+        var store = SigningKeyStore.Open(keys);
+        var retiredAfter = TimeSpan.FromMinutes(settings.AssertionLifetimeMinutes) + new TokenVerificationSettings().ClockSkew;
+        await output.WriteLineAsync(rotate
+            ? $"Assertions are now signed with key {store.CurrentKeyId}. Still published: {string.Join(", ", before)}. "
+              + $"Run {RetireSigningKeys} once the last assertion they signed has run out, {retiredAfter.TotalMinutes:0.#} minutes from now."
+            : $"Published now: {store.CurrentKeyId} alone. Retired: "
+              + $"{string.Join(", ", before.Where(id => id != store.CurrentKeyId).DefaultIfEmpty("none"))}.");
         return 0;
     }
 
