@@ -22,5 +22,6 @@ public static class InternalApi
         });
         IdentityResolution.Map(routes);
         TelegramLinking.Map(routes);
+        HouseholdImportApi.Map(routes);
     }
 }
