@@ -16,6 +16,10 @@ public sealed record TelegramChat(long ChatId);
 
 public sealed record TelegramGroupTenant(string TenantId);
 
+public sealed record TelegramAccount(string TenantId, string UserId);
+
+public sealed record TelegramOfAccount(long TelegramId);
+
 // What the Telegram bot asks with its own credential (InternalApi). Each answer is a status the bot
 // tells its person apart by: 404 is a code nothing open goes by (or a sender or group nothing links),
 // 409 a Telegram or a group that is somebody else's already, 403 the operator asking for a passkey
@@ -58,6 +62,12 @@ public static class TelegramLinking
         telegram.MapPost("/group", async (TelegramChat chat, TelegramLinks links, CancellationToken ct) =>
             await links.GroupTenantAsync(chat.ChatId, ct) is { } tenantId
                 ? Results.Ok(new TelegramGroupTenant(tenantId))
+                : Results.NotFound());
+
+        // Where an approval is offered to its asker: their private chat with the bot is their own id.
+        telegram.MapPost("/of-account", async (TelegramAccount account, TelegramLinks links, CancellationToken ct) =>
+            await links.TelegramIdOfAsync(account.TenantId, account.UserId, ct) is { } telegramId
+                ? Results.Ok(new TelegramOfAccount(telegramId))
                 : Results.NotFound());
     }
 }

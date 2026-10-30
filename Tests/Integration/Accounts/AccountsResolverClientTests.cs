@@ -119,6 +119,20 @@ public class AccountsResolverClientTests
     }
 
     [Fact]
+    public async Task APersonsTelegram_IsFoundByTheirAccount()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var laura = await server.SeedMemberAsync("Laura");
+        var client = ClientFor(server, Credential);
+        var code = await server.Service<LinkStore>().MintTelegramCodeAsync(fran.TenantId, laura, CancellationToken.None);
+        await client.RedeemStartAsync(5_550_001, code.Code, CancellationToken.None);
+
+        (await client.TelegramIdOfAsync(new Account(fran.TenantId, laura), CancellationToken.None)).ShouldBe(5_550_001);
+        (await client.TelegramIdOfAsync(new Account(fran.TenantId, fran.UserId), CancellationToken.None)).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task ARefusedCredential_IsAFailureForTelegramsCallsToo()
     {
         await using var server = await StartAsync();
@@ -128,6 +142,8 @@ public class AccountsResolverClientTests
         await Should.ThrowAsync<HttpRequestException>(() => client.MintWebLinkAsync(1, CancellationToken.None));
         await Should.ThrowAsync<HttpRequestException>(() => client.BindGroupAsync(-1, "code", CancellationToken.None));
         await Should.ThrowAsync<HttpRequestException>(() => client.GroupTenantAsync(-1, CancellationToken.None));
+        await Should.ThrowAsync<HttpRequestException>(() =>
+            client.TelegramIdOfAsync(new Account("home", "fran"), CancellationToken.None));
     }
 
     private static Task<AccountsServer> StartAsync() =>
