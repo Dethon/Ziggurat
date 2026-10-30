@@ -246,8 +246,19 @@ internal sealed class FakeChannelConnection : IChannelConnection
         OnReply?.Invoke(reply);
     }
 
-    public Task<ToolApprovalResult> RequestApprovalAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
-        => Task.FromResult(new ToolApprovalResult());
+    public List<ApprovalAsk> AskedApprovals { get; } = [];
+
+    public Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct)
+    {
+        AskedApprovals.Add(ask);
+        return Task.FromResult<ToolApprovalResult?>(ToolApprovalResult.Approved);
+    }
+
+    public Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
+        Task.FromResult<ToolApprovalResult?>(null);
+
+    public Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct) =>
+        Task.CompletedTask;
 
     public Dictionary<string, byte[]> Attachments { get; } = [];
 

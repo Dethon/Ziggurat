@@ -103,12 +103,9 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
     {
         public List<IReadOnlyList<ToolApprovalRequest>> RequestedApprovals { get; } = [];
 
-        public Task<ToolApprovalResult> RequestApprovalAsync(
-            string conversationId,
-            IReadOnlyList<ToolApprovalRequest> requests,
-            CancellationToken cancellationToken)
+        public Task<ToolApprovalResult> RequestApprovalAsync(ApprovalAsk ask, CancellationToken cancellationToken)
         {
-            RequestedApprovals.Add(requests);
+            RequestedApprovals.Add(ask.Requests);
             return Task.FromResult(result);
         }
 

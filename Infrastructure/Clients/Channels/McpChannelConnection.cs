@@ -493,33 +493,75 @@ public sealed class McpChannelConnection(
             cancellationToken: ct);
     }
 
-    public async Task<ToolApprovalResult> RequestApprovalAsync(
-        string conversationId,
-        IReadOnlyList<ToolApprovalRequest> requests,
-        CancellationToken ct)
+    public async Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct)
     {
         var client = RequireClient();
         // The turn's conversation context rides this hop as `_meta`, as it does on a tool the
         // model calls: an approval is asked from inside the tool invocation it guards, and the
-        // channel that reads the answer has to see what the turn asked for — a turn addressed to
-        // the local box is never put to a hosted judge.
+        // channel that reads the answer has to see what the turn asked for — whose question it is,
+        // and whether it was addressed to the local box, which is never put to a hosted judge.
         var result = await client.CallToolAsync(new CallToolRequestParams
         {
             Name = ChannelProtocol.RequestApprovalTool,
-            Arguments = ChannelProtocol.ToArguments(new RequestApprovalParams
+            Arguments = Arguments(new RequestApprovalParams
             {
-                ConversationId = conversationId,
+                ConversationId = ask.ConversationId,
                 Mode = ApprovalMode.Request,
-                Requests = requests
-            }).ToDictionary(a => a.Key, a => (JsonElement)a.Value!),
-            Meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options)
+                Requests = ask.Requests,
+                ApprovalId = ask.ApprovalId
+            }),
+            Meta = ConversationContextMeta.Build(ask.Turn)
         }, ct);
 
-        var text = result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text;
-        return Enum.TryParse<ToolApprovalResult>(text, ignoreCase: true, out var parsed)
-            ? parsed
-            : ToolApprovalResult.Rejected;
+        return ChannelProtocol.ParseApprovalAnswer(result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text);
     }
+
+    // Null on every way of not being answered here: not connected, a channel that offers nothing
+    // (a dual-role server, voice), a refusal of the call. None of them is the person saying no.
+    public async Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct)
+    {
+        var client = _client;
+        if (client is null || ask.Asker is not { } asker
+            || !await OffersToolAsync(client, ChannelProtocol.OfferApprovalTool, ct))
+        {
+            return null;
+        }
+
+        var result = await client.CallToolAsync(new CallToolRequestParams
+        {
+            Name = ChannelProtocol.OfferApprovalTool,
+            Arguments = Arguments(new OfferApprovalParams
+            {
+                ApprovalId = ask.ApprovalId,
+                ConversationId = ask.ConversationId,
+                Asker = asker,
+                AgentId = ask.Turn?.AgentId,
+                Requests = ask.Requests
+            }),
+            Meta = ConversationContextMeta.Build(ask.Turn)
+        }, ct);
+
+        return result.IsError == true
+            ? null
+            : ChannelProtocol.ParseApprovalAnswer(result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text);
+    }
+
+    public async Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct)
+    {
+        var client = _client;
+        if (client is null || !await OffersToolAsync(client, ChannelProtocol.SettleApprovalTool, ct))
+        {
+            return;
+        }
+
+        await client.CallToolAsync(
+            ChannelProtocol.SettleApprovalTool,
+            ChannelProtocol.ToArguments(new SettleApprovalParams { ApprovalId = approvalId, Result = result }),
+            cancellationToken: ct);
+    }
+
+    private static Dictionary<string, JsonElement> Arguments<T>(T value) =>
+        ChannelProtocol.ToArguments(value).ToDictionary(a => a.Key, a => (JsonElement)a.Value!);
 
     public async Task NotifyAutoApprovedAsync(
         string conversationId,
