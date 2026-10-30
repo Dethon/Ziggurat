@@ -4,9 +4,14 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The session check's assertion and the resolution API's verify against the service's JWKS and name the person, tenant, channel and roles
-- [ ] The JWKS is reachable on the internal network and refused through the proxy on every host
-- [ ] The conformance check asserts every protected route copies the fourth header
-- [ ] Rotating adds a new signing key while the previous one stays published until retired
+- [x] The session check's assertion and the resolution API's verify against the service's JWKS and name the person, tenant, channel and roles
+- [x] The JWKS is reachable on the internal network and refused through the proxy on every host
+- [x] The conformance check asserts every protected route copies the fourth header
+- [x] Rotating adds a new signing key while the previous one stays published until retired
+
+Notes: the session check takes a required `?channel=` (each `forward_auth` names `signalr`, `sugary`,
+`dashboard` or `sexytime`), because one check fronts two channels and the agent will hold an
+assertion's channel to the notification's. The voice guest is `POST /accounts/internal/guest
+{ channel: "voice" }`. The JWKS is `GET /accounts/internal/jwks`, asked without a credential.

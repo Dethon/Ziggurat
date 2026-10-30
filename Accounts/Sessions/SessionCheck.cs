@@ -1,22 +1,37 @@
 using Accounts.Pages;
 using Accounts.Settings;
+using Accounts.Signing;
+using Domain.Security;
 
 namespace Accounts.Sessions;
 
 // What the proxy's forward_auth asks before every protected request. Success carries the person in
-// three headers, always all three, which the proxy copies onto the request over anything the
-// client sent; an app believes them because only the proxy reaches it.
+// three plain headers and a fourth that signs them, always all four, which the proxy copies onto the
+// request over anything the client sent. The signed one is what an app can believe without trusting
+// the network: it verifies against this service's published keys.
+//
+// `?channel=` names what the route guards — a channel a turn will come on (`signalr`, `sugary`) or
+// an app that starts none — and the assertion names it, so one signed for Sugary cannot start a
+// turn on the chat hub. It is required: a forward_auth block that forgets it is refused outright.
 public static class SessionCheck
 {
     public const string Path = "/verify";
-    public const string UserHeader = "X-Ziggurat-User";
-    public const string TenantHeader = "X-Ziggurat-Tenant";
-    public const string RolesHeader = "X-Ziggurat-Roles";
+    public const string UserHeader = ForwardedAccount.UserHeader;
+    public const string TenantHeader = ForwardedAccount.TenantHeader;
+    public const string RolesHeader = ForwardedAccount.RolesHeader;
+    public const string AssertionHeader = ForwardedAccount.AssertionHeader;
 
     public static void Map(IEndpointRouteBuilder routes) =>
-        routes.MapGet(Path, async (HttpContext http, SessionStore sessions, AccountsSettings settings, string? role, CancellationToken ct) =>
+        routes.MapGet(Path, async (
+            HttpContext http, SessionStore sessions, Assertions assertions, AccountsSettings settings,
+            string? role, string? channel, CancellationToken ct) =>
         {
             http.Response.Headers.CacheControl = "no-store";
+            if (string.IsNullOrWhiteSpace(channel))
+            {
+                return Results.BadRequest();
+            }
+
             var token = http.Request.Cookies[SessionCookie.Name];
             var identity = string.IsNullOrEmpty(token) ? null : await sessions.VerifyAsync(token, ct);
             if (identity is null)
@@ -35,6 +50,8 @@ public static class SessionCheck
             http.Response.Headers[UserHeader] = identity.UserId;
             http.Response.Headers[TenantHeader] = identity.TenantId;
             http.Response.Headers[RolesHeader] = string.Join(',', identity.Roles);
+            http.Response.Headers[AssertionHeader] =
+                assertions.Of(identity.UserId, identity.TenantId, identity.Roles, channel);
             return Results.Ok();
         });
 }

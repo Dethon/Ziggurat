@@ -6,7 +6,9 @@ using Accounts.Passkeys;
 using Accounts.People;
 using Accounts.Sessions;
 using Accounts.Settings;
+using Accounts.Signing;
 using Accounts.Store;
+using Domain.Security.Signing;
 using Microsoft.AspNetCore.DataProtection;
 
 namespace Accounts;
@@ -46,7 +48,7 @@ public static class AccountsApp
             });
         // Beside the store, in the volume, so a restart leaves the pages' open forms valid.
         services.AddDataProtection().PersistKeysToFileSystem(
-            new DirectoryInfo(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(settings.DatabasePath)) ?? ".", "keys")));
+            new DirectoryInfo(Path.Combine(settings.DataDirectory, "keys")));
         return services;
     }
 
@@ -63,7 +65,11 @@ public static class AccountsApp
             .AddSingleton<PasskeyStore>()
             .AddSingleton<MemberStore>()
             .AddSingleton<PersonStore>()
-            .AddSingleton<HouseholdImporter>();
+            .AddSingleton<HouseholdImporter>()
+            // Opened when first asked rather than here, so a command that signs nothing never
+            // writes a key; the server's first assertion or JWKS request generates it.
+            .AddSingleton(_ => SigningKeyStore.Open(settings.SigningKeys))
+            .AddSingleton<Assertions>();
 
     public static WebApplication MapAccounts(this WebApplication app)
     {

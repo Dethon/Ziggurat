@@ -1,5 +1,6 @@
 using System.Globalization;
 using Accounts.Store;
+using Domain.DTOs.Channel;
 using Microsoft.EntityFrameworkCore;
 
 namespace Accounts.Links;
@@ -48,7 +49,7 @@ public sealed record GroupBinding(BindOutcome Outcome, string? TenantId = null);
 // already linked, and a group bound to a household.
 public sealed class TelegramLinks(IDbContextFactory<AccountsDbContext> contexts, LinkStore links, AccountsClock clock)
 {
-    public const string Channel = "telegram";
+    public const string Channel = ChannelIds.Telegram;
 
     private static readonly IReadOnlyList<LinkKind> _startable = [LinkKind.Invite, LinkKind.TelegramLink];
     private static readonly IReadOnlyList<LinkKind> _bindable = [LinkKind.TelegramGroup];

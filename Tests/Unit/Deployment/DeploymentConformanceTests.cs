@@ -1,4 +1,7 @@
+using Accounts.Internal;
+using Domain.DTOs.Channel;
 using Domain.Security;
+using McpServerSugary.Channel;
 using Shouldly;
 
 namespace Tests.Unit.Deployment;
@@ -278,6 +281,37 @@ public class DeploymentConformanceTests
         }
     }
 
+    // The keys assertions verify with are asked for without a credential, so it is the proxy alone
+    // that keeps them inside: on every host the route the path lands on is a refusal or an upstream
+    // that is not the accounts service, never the accounts route.
+    [Fact]
+    public void TheAccountsJwks_IsRefusedThroughTheProxyOnEveryHost()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+
+        hosts.ShouldNotBeEmpty();
+        foreach (var host in hosts)
+        {
+            var route = RouteFor(host, InternalApi.JwksPath);
+            route.ShouldNotBeNull(host.Name);
+            route.Upstream.ShouldNotBe("accounts:8080", host.Name);
+            if (host.Routes.Any(r => r.Upstream == "accounts:8080"))
+            {
+                route.Matcher.ShouldBe("/accounts/internal/*", host.Name);
+                route.Body.ShouldContain("respond 404", customMessage: host.Name);
+            }
+        }
+    }
+
+    // The handle a request path lands on, as Caddy sorts handle blocks: the most specific path
+    // matcher that matches it, else the catch-all.
+    private static CaddyRoute? RouteFor(CaddyHost host, string path) =>
+        host.Routes
+            .Where(r => r.Matcher is { } m && (m.EndsWith('*') ? path.StartsWith(m.TrimEnd('*'), StringComparison.Ordinal) : path == m))
+            .OrderByDescending(r => r.Matcher!.Length)
+            .FirstOrDefault()
+        ?? host.Routes.SingleOrDefault(r => r.Matcher is null);
+
     // A server asks the accounts service with the credential it already holds for its own /mcp, so
     // each caller the service admits is fed exactly the variable that server's own gate reads.
     [Theory]
@@ -313,8 +347,8 @@ public class DeploymentConformanceTests
 
         host.ForwardAuth.ShouldNotBeNull();
         host.ForwardAuth.Upstream.ShouldBe("accounts:8080");
-        host.ForwardAuth.Uri.ShouldBe("/accounts/verify?role=operator");
-        host.ForwardAuth.CopiedHeaders.ShouldBe(["X-Ziggurat-User", "X-Ziggurat-Tenant", "X-Ziggurat-Roles"]);
+        host.ForwardAuth.Uri.ShouldBe("/accounts/verify?role=operator&channel=dashboard");
+        host.ForwardAuth.CopiedHeaders.ShouldBe(ForwardedAccount.Headers, ignoreOrder: true);
         host.Routes.ShouldNotBeEmpty();
         host.Routes.ShouldAllBe(r => r.Upstream == "observability:8080");
     }
@@ -323,25 +357,42 @@ public class DeploymentConformanceTests
     // proxy hands them, so each asks the session check first and is given every header it answers.
     // SexyTime is behind the same sign-in: its server forwards the person it was handed to the
     // agent registration API, which is how a custom agent comes to be somebody's. So is Sugary, the
-    // app and its API alike: each person's log is found by the account the headers name.
+    // app and its API alike: each person's log is found by the account the headers name. Each check
+    // names the channel the route's turns come on, which the signed assertion then names; the agent
+    // refuses a turn whose assertion names another.
     [Theory]
-    [InlineData(MainHost, null)]
-    [InlineData(MainHost, "/hubs/*")]
-    [InlineData(MainHost, "/api/attachments*")]
-    [InlineData(MainHost, "/api/dictation*")]
-    [InlineData(SexyHost, null)]
-    [InlineData(SexyHost, "/hubs/*")]
-    [InlineData(SexyHost, "/api/attachments*")]
-    [InlineData(SexyHost, "/api/dictation*")]
-    [InlineData(SugaryHost, null)]
-    public void TheChatClientsRoutes_GoThroughTheSessionCheckAndCopyItsHeaders(string hostName, string? matcher)
+    [InlineData(MainHost, null, ChannelIds.SignalR)]
+    [InlineData(MainHost, "/hubs/*", ChannelIds.SignalR)]
+    [InlineData(MainHost, "/api/attachments*", ChannelIds.SignalR)]
+    [InlineData(MainHost, "/api/dictation*", ChannelIds.SignalR)]
+    [InlineData(SexyHost, null, "sexytime")]
+    [InlineData(SexyHost, "/hubs/*", ChannelIds.SignalR)]
+    [InlineData(SexyHost, "/api/attachments*", ChannelIds.SignalR)]
+    [InlineData(SexyHost, "/api/dictation*", ChannelIds.SignalR)]
+    [InlineData(SugaryHost, null, SugaryChannel.ChannelId)]
+    public void TheChatClientsRoutes_GoThroughTheSessionCheckAndCopyItsHeaders(string hostName, string? matcher, string channel)
     {
         var route = DeploymentFiles.Caddyfile().Host(hostName).Routes.Single(r => r.Matcher == matcher);
 
         var check = route.ForwardAuth.ShouldNotBeNull($"{hostName} {matcher ?? "(catch-all)"} is not checked");
         check.Upstream.ShouldBe("accounts:8080");
-        check.Uri.ShouldBe("/accounts/verify");
+        check.Uri.ShouldBe($"/accounts/verify?channel={channel}");
         check.CopiedHeaders.ShouldBe(ForwardedAccount.Headers, ignoreOrder: true);
+    }
+
+    // Whatever a forward_auth guards, it hands the app every header the check answers, the signed
+    // assertion among them, and names what it guards: the check refuses one that names nothing.
+    [Fact]
+    public void EverySessionCheck_NamesWhatItGuardsAndCopiesEveryHeader()
+    {
+        var checks = DeploymentFiles.Caddyfile().Hosts
+            .SelectMany(h => h.Routes.Select(r => r.ForwardAuth).Append(h.ForwardAuth).OfType<CaddyForwardAuth>()
+                .Select(check => (h.Name, Check: check)))
+            .ToList();
+
+        checks.ShouldNotBeEmpty();
+        checks.ShouldAllBe(c => c.Check.CopiedHeaders.Order().SequenceEqual(ForwardedAccount.Headers.Order()));
+        checks.ShouldAllBe(c => c.Check.Uri != null && c.Check.Uri.Contains("channel="));
     }
 
     // Sign-in and enrollment are how a signed-out person gets a session at all; a login handoff's
