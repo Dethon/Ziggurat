@@ -5,12 +5,15 @@
 #
 #   scripts/smoke-stack.sh up      build and start it (project jackbot-smoke)
 #   scripts/smoke-stack.sh test    run the Smoke tests against it (Category=Smoke)
+#   scripts/smoke-stack.sh migrate --operator <n> --owner <n> --sugary <n> [--dry-run]
+#                                  the household migration against it
 #   scripts/smoke-stack.sh down    stop it and remove its state
 #
 # Everything here is local. The tests reach the stack on 127.0.0.1 alone, whatever the deployment's
 # hostnames resolve to, and nothing starts that talks to the outside world on the household's
 # behalf: no Telegram bot (it would take the deployment's updates), no voice hub (it would dial the
-# satellites), no Home Assistant server. Never point this at the deployment's host.
+# satellites), no Home Assistant (its MCP server runs, with nothing to reach). Never point this at
+# the deployment's host.
 
 set -euo pipefail
 
@@ -52,13 +55,20 @@ case "${1:-}" in
   test)
     ZIGGURAT_SMOKE=1 dotnet test Tests/Tests.csproj --filter "Category=Smoke"
     ;;
+  migrate)
+    # The household migration against the smoke stack, its people file in
+    # DockerCompose/volumes/smoke/household-migration/people.json; the rest of the arguments are its.
+    shift
+    "${DC[@]}" --profile migrate build household-migration
+    "${DC[@]}" --profile migrate run --rm --no-deps household-migration --people /input/people.json "$@"
+    ;;
   down)
     "${DC[@]}" down --volumes --remove-orphans
     # The containers wrote as their own users; a throwaway container removes what they wrote.
     docker run --rm -v "$ROOT/DockerCompose/volumes:/v" alpine rm -rf /v/smoke
     ;;
   *)
-    echo "usage: $0 up|test|down" >&2
+    echo "usage: $0 up|test|migrate|down" >&2
     exit 2
     ;;
 esac
