@@ -58,6 +58,7 @@
     <ProjectReference Include="..\Observability\Observability.csproj" />
     <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
     <ProjectReference Include="..\Accounts\Accounts.csproj" />
+    <ProjectReference Include="..\HouseholdMigration\HouseholdMigration.csproj" />
   </ItemGroup>
 
   <ItemGroup>
