@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using HouseholdMigration.Steps;
 using Infrastructure.Memory;
 using Infrastructure.StateManagers;
@@ -120,7 +121,11 @@ public static class HouseholdMigrationCommand
             BaseAddress = "http://unused.invalid/", Model = "unused", Dimension = settings.MemoryDimension
         })),
         new RememberedLogins(redis, new RedisPersonStateStore(redis, stateKey)),
-        new PushSubscriptions(redis)
+        new PushSubscriptions(redis),
+        new ScheduleCreators(new RedisScheduleStore(redis), redis),
+        new TopicOwners(redis, new RedisThreadStateStore(redis, new RetentionSettings(), TimeProvider.System)),
+        new VoiceProfiles(settings.VoicesPath),
+        new SugaryLog(settings.SugaryDatabasePath)
     ];
 
     private static async Task WriteAsync(StepReport report, TextWriter output)
