@@ -82,6 +82,34 @@ public sealed partial class SmokeStack : IAsyncLifetime
         return process.ExitCode == 0 ? output : throw new InvalidOperationException($"docker {string.Join(' ', args)}: {error}{output}");
     }
 
+    // A request made from inside the deployment's network, past Caddy: from the browser container,
+    // which sits beside every server and opens whatever page the model asks for — where a forged
+    // call would come from. Its healthcheck is curl, so curl is there.
+    public static async Task<InsideAnswer> FromInsideAsync(
+        HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers = null, string? body = null)
+    {
+        string[] args =
+        [
+            "exec", Inside, "curl", "-sS", "--max-time", "30", "-D", "-", "-X", method.Method,
+            .. (headers ?? new Dictionary<string, string>()).SelectMany(h => new[] { "-H", $"{h.Key}: {h.Value}" }),
+            .. body is null ? [] : new[] { "--data-binary", body },
+            url
+        ];
+        // -D - writes the status line and the headers ahead of the body. Bodies here are small, so
+        // curl never asks for a 100 Continue that would come before them.
+        var parts = (await DockerAsync(args)).Split("\r\n\r\n", 2);
+        var lines = parts[0].Split("\r\n");
+        var answerHeaders = lines.Skip(1)
+            .Select(l => l.Split(':', 2))
+            .Where(p => p.Length == 2)
+            .GroupBy(p => p[0].Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First()[1].Trim(), StringComparer.OrdinalIgnoreCase);
+        return new InsideAnswer((HttpStatusCode)int.Parse(lines[0].Split(' ')[1]), answerHeaders,
+            parts.Length > 1 ? parts[1] : "");
+    }
+
+    public const string Inside = "camoufox";
+
     public static async Task<(int ExitCode, string Output)> TryDockerAsync(params string[] args)
     {
         try
@@ -109,3 +137,5 @@ public sealed partial class SmokeStack : IAsyncLifetime
     [GeneratedRegex(@"user (?<id>[0-9a-f]{32})")]
     private static partial Regex UserId();
 }
+
+public sealed record InsideAnswer(HttpStatusCode Status, IReadOnlyDictionary<string, string> Headers, string Body);

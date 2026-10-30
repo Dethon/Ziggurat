@@ -4,8 +4,8 @@
 
 **Blocked by:** 05, 06, 07
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A forged call from inside the network is refused by a server
-- [ ] A signed-in reply, Sugary's API and the operator's dashboard pass through verified assertions
-- [ ] The smoke suite passes on a fresh `scripts/smoke-stack.sh up`
+- [x] A forged call from inside the network is refused by a server
+- [x] A signed-in reply, Sugary's API and the operator's dashboard pass through verified assertions
+- [x] The smoke suite passes on a fresh `scripts/smoke-stack.sh up`
