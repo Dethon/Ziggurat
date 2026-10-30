@@ -352,6 +352,13 @@ timing is not checked: nothing in a fire says when it was due, so the digest's t
 store edited under a server that still tells the truth about it. `run_now` fires a schedule as its
 delegation says, whoever asked for it.
 
+**Delegations hold against an honest server.** The signature bounds *what* a fire does as the person,
+never *whether* or *when* it comes: a misbehaving server could keep a delegation it stored for an
+object since deleted or overwritten and fire it again (the delegation still names that object doing
+exactly that), at any time, since no due time is checked; and an edit or a move is signed over the
+content the server answered the agent's read with just before the write, so a server lying there gets
+a delegation for its own words with the turn's edit on top.
+
 **The commands** (`Agent/Commands/AgentCommand.cs`, System.CommandLine, detected in `Program` before
 anything builds and run instead of the agent): `rotate-signing-key` (a new key signs from the next
 call on; the agent and every server pick it up by themselves), `redelegate [--yes]` and
