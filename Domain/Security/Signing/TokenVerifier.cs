@@ -60,7 +60,7 @@ public sealed class TokenVerifier(
         TokenRefusal? refusal = claims switch
         {
             null => TokenRefusal.Malformed,
-            _ when string.IsNullOrEmpty(claims.Subject) || string.IsNullOrEmpty(claims.TenantId)
+            _ when string.IsNullOrEmpty(claims.Subject) || (string.IsNullOrEmpty(claims.TenantId) && !claims.IsNobody)
                    || string.IsNullOrEmpty(claims.Id) || claims.Roles is null || claims.ExpiresAt == default
                 => TokenRefusal.Malformed,
             _ when claims.Issuer != issuer => TokenRefusal.WrongIssuer,

@@ -220,6 +220,27 @@ public class TokenVerifierTests
         verification.Claims.Account.ShouldBeNull();
     }
 
+    // A call the agent makes for nobody — a fire nobody stands behind, its own channel plumbing — is
+    // signed all the same, as nobody: a marker of its own, never an empty subject, with no household
+    // and no account behind it. Only nobody may leave the household out.
+    [Fact]
+    public async Task ANobodyToken_CarriesTheNobodyMarkerAndNoHousehold()
+    {
+        var token = new TokenSigner(_agent).Sign(IdentityClaims.Nobody("scheduling")
+            .Stamped(TokenIssuers.Agent, Audience, _clock.GetUtcNow(), _lifetime));
+        var unhoused = new TokenSigner(_agent).Sign(PersonClaims() with { TenantId = "" });
+
+        var verification = await Verifier.VerifyAsync(token, Audience);
+
+        verification.IsVerified.ShouldBeTrue();
+        verification.Claims.IsNobody.ShouldBeTrue();
+        verification.Claims.IsGuest.ShouldBeFalse();
+        verification.Claims.Subject.ShouldBe(IdentityClaims.NobodySubject);
+        verification.Claims.ChannelId.ShouldBe("scheduling");
+        verification.Claims.Account.ShouldBeNull();
+        (await Verifier.VerifyAsync(unhoused, Audience)).Refusal.ShouldBe(TokenRefusal.Malformed);
+    }
+
     // A refused token is never the guest: there is no identity in a refusal to fall back on.
     [Fact]
     public async Task ARefusedGuestToken_CarriesNoIdentity()

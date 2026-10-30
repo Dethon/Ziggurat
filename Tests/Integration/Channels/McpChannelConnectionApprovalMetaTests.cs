@@ -36,7 +36,7 @@ public class McpChannelConnectionApprovalMetaTests
         var server = await InMemoryMcpServer.StartAsync(services => services
             .AddToolServer(new ProbeSettings("probe"))
             .WithTools<ProbeApprovalTools>());
-        var connection = new McpChannelConnection("test", mcpSecret: McpTestSecret.Value);
+        var connection = new McpChannelConnection("test", mcpSecret: McpTestSecret.Value, callTokens: McpTestSecret.CallTokens);
         await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
         return (server, connection);
     }

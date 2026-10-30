@@ -94,6 +94,37 @@ public class McpServerContractTests
             .ShouldBe(McpServerRegistrations.OutpostSecret);
     }
 
+    // Holding a server's credential is not enough to act through it: every deployment server checks a
+    // tool call's token, for the name its settings say the agent dials it at. Asserted on the
+    // registration because the behaviour over the wire is CallTokenGateTests', written once.
+    [Theory]
+    [MemberData(nameof(DeploymentServers))]
+    public void EveryDeploymentServer_ChecksCallTokensForTheNameItsSettingsCarry(string id)
+    {
+        var row = McpServerRegistrations.Get(id);
+        using var server = new ConfiguredServer(row);
+
+        var gate = server.Provider.GetService<CallTokenGate>();
+
+        gate.ShouldNotBeNull($"{id} must check every tool call's token");
+        gate.Audience.ShouldNotBeNullOrEmpty($"{id}'s row must name the server for this to mean anything");
+        gate.Audience.ShouldBe(((IMcpHostSettings)row.Settings).Mcp.Audience,
+            $"{id} must check tokens for the name its settings carry");
+    }
+
+    // The outpost receives the token and is not required to check it: a machine on somebody's desk
+    // knows nothing of the deployment's keys.
+    [Fact]
+    public void TheOutpost_DoesNotCheckCallTokens()
+    {
+        using var server = new ConfiguredServer(McpServerRegistrations.Get("outpost"));
+
+        server.Provider.GetService<CallTokenGate>().ShouldBeNull();
+    }
+
+    public static TheoryData<string> DeploymentServers => McpServerRegistrations.Ids(
+        McpServerRegistrations.All.Where(row => row.Id != "outpost"));
+
     // Two filters nested around each other is the failure this counts: the outer one converts the
     // very cancellation the inner deliberately rethrows, so a cancelled call comes back as an error
     // result the agent's pump will retry.

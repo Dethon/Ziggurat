@@ -20,6 +20,10 @@ services:
     volumes: ["./volumes/smoke/vault:/vault"]
   mcp-library:
     volumes: ["./volumes/smoke/media:/media"]
+  agent-volume:
+    volumes: ["./volumes/smoke/agent-keys:/keys"]
+  agent:
+    volumes: ["./volumes/smoke/agent-keys:/keys"]
   household-migration:
     volumes:
       - "./volumes/smoke/household-migration:/input"

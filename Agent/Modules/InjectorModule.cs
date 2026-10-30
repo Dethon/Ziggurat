@@ -8,10 +8,12 @@ using Domain.Judgments;
 using Domain.Monitor;
 using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Security.Signing;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Channels;
 using Infrastructure.Judgments;
@@ -82,6 +84,15 @@ public static class InjectorModule
                 // to every configured endpoint it composes, and each channel connection presents
                 // its own server's.
                 .AddSingleton(credentials)
+                // The agent's own key, opened before anything dials: a deployment generates it into
+                // its volume on first start, and its public half is what every server verifies a call
+                // token against (AgentKeysApi).
+                .AddSingleton(_ => SigningKeyStore.Open(settings.Signing))
+                // On the wall clock, which is what every server's gate checks a token's dates
+                // against — not the TimeProvider registered below, which an eval pins to its
+                // scenario's day for what the prompt says the date is.
+                .AddSingleton(sp => new CallTokens(
+                    sp.GetRequiredService<SigningKeyStore>(), TimeProvider.System, settings.CallTokens))
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")
                 .AddSingleton<ChatThreadResolver>()
@@ -180,7 +191,8 @@ public static class InjectorModule
                 services = services.AddSingleton<IChannelConnection>(sp =>
                     new McpChannelConnection(
                         channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
-                        mcpSecret: sp.GetRequiredService<McpCredentials>().For(endpoint.Endpoint))
+                        mcpSecret: sp.GetRequiredService<McpCredentials>().For(endpoint.Endpoint),
+                        callTokens: sp.GetRequiredService<CallTokens>())
                     {
                         HostsReviewCopies = hostsReviewCopies
                     });
@@ -205,7 +217,8 @@ public static class InjectorModule
                             settings.PatchableModels,
                             sp.GetRequiredService<IModelCapabilityCatalog>(),
                             sp.GetRequiredService<ILemonadeModelSource>()),
-                        sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
+                        sp.GetRequiredService<ILogger<ChannelConnectionHost>>(),
+                        sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default));
         }
 
         private IServiceCollection AddOutposts(OutpostConfiguration outposts) =>

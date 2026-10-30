@@ -30,8 +30,11 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   the plain call. A `required` member that bound to null fails startup naming it; **null only, never
   empty** — five shipped servers carry required members that ship as `""` and are filled from secrets
   (Telegram, WebSearch, HomeAssistant, Idealista, Library).
-- **`IServiceCollection.AddMcpHost(settings)`** is the four things every server has: the settings
-  singleton, the server, the HTTP transport and the gate on `/mcp`. All fourteen use it.
+- **`IServiceCollection.AddMcpHost(settings)`** is the five things every server has: the settings
+  singleton, the server, the HTTP transport, the gate on `/mcp` and the call-token gate on every tool
+  call (`CallTokenGate`; the outpost alone opts out, through `IMcpHostSettings.ChecksCallTokens`). All
+  fourteen use it. The credential lets a caller talk to a server; only the agent's call token says
+  who a tool call acts for (`.claude/rules/service-identity.md`, "Call tokens").
 - **Every `/mcp` asks for a secret, and the host installs the gate, not the server.** A tool
   believes whatever `ConversationContext` a call's `_meta` claims, so a call must present
   `Authorization: Bearer <secret>` first. `AddMcpHost` constrains its settings to
@@ -52,7 +55,8 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   Assistant and satellites, and the ones that need a gate carry their own token, so every server
   must map its endpoint at exactly `"/mcp"` (`McpServerTableTests` reads it off the source). An
   unset secret refuses every call. The SDK's legacy SSE endpoints are off, so streamable HTTP is the
-  one transport; `McpSecretGateTests` pins all three verbs, and a test that boots a server through
+  one transport; `McpSecretGateTests` pins all three verbs, `CallTokenGateTests` the token's refusals,
+  and a test that boots a server through
   the hosting library presents `Tests/McpTestSecret`.
 - **A server whose pages the proxy routes keeps them on a listener of their own.** One server does
   today: the browse server's login handoff and logins pages answer on its second listener (8081),
@@ -72,10 +76,12 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   propagates as the abort it is; anything else is logged and becomes the caller's error result.
   **Who is calling travels as data, never as an ambient**: a tool reads the call's
   `ConversationContext` through the one accessor over the call, `Mcp.Hosting/CallTurn.cs`
-  (`call.Turn`, and `call.TryScope` for a per-turn cache), and hands on what it needs. No server
-  parses the raw `_meta` for it (`CallTurnConformanceTests` reads the sources), so making the
-  accessor answer a verified identity instead is one change no tool reads around; the fs_*
-  registrar in `Infrastructure` references `Mcp.Hosting` for that alone. And
+  (`call.Turn`, and `call.TryScope` for a per-turn cache), and hands on what it needs. Its principal
+  is the identity the call token verified as (`call.Identity`, left on the call's `Items` by the gate),
+  never the one the `_meta` claims. No server parses the raw `_meta` for the turn or the token
+  (`CallTurnConformanceTests` reads the sources; the token is read in `CallTokenGate.cs` alone), so no
+  tool reads around the check; the fs_* registrar in `Infrastructure` references `Mcp.Hosting` for
+  that alone. And
   a filesystem backend — whose operations never see the request — is asked by the registrar for
   itself as that caller sees it (`FileSystemBackendBase.For(FileSystemCaller)`, per call: the
   conversation context and, on an exec the agent minted one for, the exec bridge's call token —
