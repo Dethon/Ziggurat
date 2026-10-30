@@ -37,6 +37,7 @@ public static class AccountsClientRegistration
             .AddSingleton(sp => new AccountsResolverClient(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(AccountsResolverClient.ClientName), credential))
             .AddSingleton<IAccountResolver>(sp => sp.GetRequiredService<AccountsResolverClient>())
-            .AddSingleton<ITelegramAccounts>(sp => sp.GetRequiredService<AccountsResolverClient>());
+            .AddSingleton<ITelegramAccounts>(sp => sp.GetRequiredService<AccountsResolverClient>())
+            .AddSingleton<ISessionAccounts>(sp => sp.GetRequiredService<AccountsResolverClient>());
     }
 }

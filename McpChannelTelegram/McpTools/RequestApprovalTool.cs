@@ -69,7 +69,7 @@ public sealed class RequestApprovalTool
         }
 
         var access = services.GetRequiredService<TelegramAccess>();
-        var answerers = await AnswerersOfAsync(turn, chatId, router, access);
+        var answerers = await AnswerersOfAsync(turn, chatId, access);
         var (id, resultTask) = router.RegisterApproval(_approvalTimeout, answerers, cancellationToken, p.ApprovalId);
 
         var sent = await botClient.SendMessage(
@@ -99,27 +99,20 @@ public sealed class RequestApprovalTool
         return await resultTask;
     }
 
-    // Who may answer, read from the turn's context on this hop. A turn acting for an account — a
-    // person's own message on any channel, or a fire stamped with whoever wrote the schedule — is
-    // that account's alone (TelegramAccess.AnswersFor). A Telegram person's turn from before accounts
-    // is theirs by the numeric id the bot recorded against the sender it emitted when it admitted
-    // their message. A fire that names nobody was started by nobody's message, so any linked member
-    // of the household whose chat it is: the person's own, for a private chat, or the one the group
-    // is bound to. A turn with no context, a person this process never admitted (it restarted
-    // mid-turn), or a chat no household holds names nobody: every tap is refused and the approval
-    // times out as denied.
+    // Who may answer, read from the turn's context on this hop — whose principal is the call token's,
+    // the one person the agent signed this call for, never a name the hop's own _meta claimed. A turn
+    // acting for an account — a person's own message on any channel, or a fire whose delegation
+    // verified as whoever wrote it — is that account's alone (TelegramAccess.AnswersFor). A fire that
+    // names nobody was started by nobody's message, so any linked member of the household whose chat
+    // it is: the person's own, for a private chat, or the one the group is bound to. Any other turn
+    // naming nobody — no context, a call signed for nobody, a chat no household holds — is answered by
+    // nobody: every tap is refused and the approval times out as denied.
     private static async Task<ApprovalAnswerer> AnswerersOfAsync(
-        ConversationContext? turn, long chatId, ApprovalCallbackRouter router, TelegramAccess access)
+        ConversationContext? turn, long chatId, TelegramAccess access)
     {
         if (Principal.Of(turn)?.Account is { } account)
         {
             return access.AnswersFor(account);
-        }
-
-        if (Principal.Of(turn) is { ChannelId: ChannelIds.Telegram } asker)
-        {
-            var askerId = router.SenderId(asker.UserId);
-            return (tapper, _) => Task.FromResult(tapper == askerId);
         }
 
         if (turn?.OriginKind is null || await access.ChatTenantAsync(chatId, CancellationToken.None) is not { } household)

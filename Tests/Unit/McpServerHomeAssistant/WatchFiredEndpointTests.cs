@@ -132,8 +132,11 @@ public class WatchFiredEndpointTests
         (await harness.DrainAsync()).ShouldBeEmpty();
     }
 
+    // What fired is the home's report, carried beside the prompt rather than in it: the home is the
+    // only one that saw it, and anything holding the announce token can say it. A home holding no such
+    // watch has no prompt of its own to run, so the rendered one is run, as nobody.
     [Fact]
-    public async Task AFire_Is202_AndTheAgentDrainsTheComposedPrompt()
+    public async Task AFire_Is202_AndTheAgentDrainsThePromptWithWhatFiredAsItsReport()
     {
         var harness = await BuildAsync();
 
@@ -146,9 +149,10 @@ public class WatchFiredEndpointTests
         fire.AgentId.ShouldBe("jonas");
         fire.UserId.ShouldBe("fran");
         fire.Timestamp.ShouldBe(_now);
-        fire.Content.Split('\n')[0].ShouldBe(
+        fire.FireReport.ShouldBe(
             "[watch \"Laura's sugar\" fired] Laura glucose (sensor.laura_glucose) went from 176 to 183 at 2026-09-05T05:14:00+02:00.");
-        fire.Content.ShouldEndWith("Look into it and warn Fran.");
+        fire.Content.ShouldBe("Look into it and warn Fran.");
+        fire.Delegation.ShouldBeNull();
         fire.ReplyTo.ShouldBe([new ReplyTarget("telegram", null)]);
         fire.Origin.ShouldBe(new MessageOrigin(MessageOriginKind.Watch, null, "laura-sugar-high", "Laura's sugar"));
     }
@@ -182,7 +186,7 @@ public class WatchFiredEndpointTests
 
         await harness.FireAsync(new { watchId = "w", name = "Template watch", agentId = "jonas", prompt = "p" });
 
-        (await harness.DrainAsync()).Single().Content.Split('\n')[0]
+        (await harness.DrainAsync()).Single().FireReport
             .ShouldBe("[watch \"Template watch\" fired] the home changed.");
     }
 

@@ -30,6 +30,11 @@ paths:
   - "McpChannelVoice/Services/TranscriptDispatcher.cs"
   - "McpServerSugary/Channel/SugaryChannel.cs"
   - "Domain/Security/DelegationVerifier.cs"
+  - "Domain/Channels/FireReports.cs"
+  - "McpServerHomeAssistant/Services/WatchFiredEndpoint.cs"
+  - "McpServerHomeAssistant/Services/WatchFire.cs"
+  - "McpServerWebSearch/Handoff/LoginWake.cs"
+  - "Domain/Contracts/ISessionAccounts.cs"
   - "Domain/Security/DelegatedObject.cs"
   - "Domain/Security/DelegatedWrites.cs"
   - "Domain/Contracts/IDelegationStore.cs"
@@ -80,7 +85,7 @@ is malformed — `none` and HMAC never reach a key.
 `IdentityClaims` is the one claim set: `iss`, `aud` (one string, the one server or app it is for),
 `sub` (the account's user id, or `IdentityClaims.GuestSubject` = `guest` — account ids are lowercase
 hex, so it can never be one), `tid`, `chn` (channel id), `roles`, `iat`, `nbf`, `exp` (whole
-seconds), `jti`. Build one with `IdentityClaims.Person(...)` or `.Guest(...)`, then date it with
+seconds), `jti`, and on the session check's assertion alone `sid`, the session it checked (what the chat hub refreshes its connection's person by; the agent drops it with the envelope). Build one with `IdentityClaims.Person(...)` or `.Guest(...)`, then date it with
 `.Stamped(issuer, audience, now, lifetime)`, which is also how the agent re-signs a verified
 identity per server. An assertion's audience is `TokenAudiences.Assertion`, one for every consumer
 (the agent and the apps); what binds it to one use is its `chn`, which the accounts service takes
@@ -216,8 +221,11 @@ port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.
   token's (the identity the agent wrote there is for its own signing, never a server's belief): a person
   is `Principal(chn, sub, Account(tid, sub))` — the channel's own name for them is not signed, so it
   is not kept — the guest `Principal(chn, "guest")`, nobody none. `call.Identity` is the verified
-  claims themselves. `Principal.Of` still falls back to the context's `UserId` for a person's own
-  turn with no principal, which reaches no account.
+  claims themselves. `Principal.Of` is the context's `Principal` and nothing else: the `UserId` the
+  `_meta` carries is never read as anybody, so a call signed for nobody names nobody — no channel, no
+  user — and a tool deciding who may do something (Telegram's `request_approval` among them) decides
+  from the token's person or refuses. Only the household migration still reads that `UserId`, off
+  persisted pre-account history, as evidence of who started a topic (`TopicOwners`).
 - **The outpost** answers `IMcpHostSettings.ChecksCallTokens` with false, explicitly: it receives the
   token and is not required to check it, and `CallTurn` then names nobody. Every other server says
   yes by saying nothing, and no setting can switch the check off.
@@ -245,7 +253,7 @@ notification's `Principal`.
 
 | Channel | Where its assertion comes from |
 |---|---|
-| Chat hub | a fresh one **per turn** from the resolution API (`signalr`, the connection's account): the connection's own was checked as it arrived and lives ten minutes, the connection hours; one the service cannot give ends the stream with an error and sends nothing |
+| Chat hub | a fresh one **per turn** for the connection's **session** (`/accounts/internal/session`, by the `sid` the session check signed into the connection's assertion; `ISessionAccounts`): the connection's own was checked as it arrived and lives ten minutes, the connection hours. A session revoked since ends the stream "signed out" and sends nothing — the spec's "stops the next one" — and an outage ends it with an error too. No caller can ask for a `signalr` person by account id |
 | Telegram | the resolution's answer that admitted the sender, or a redemption's for somebody just linked, kept by `TelegramAccess` for `LinkCache:Linked` — at most half an assertion's life (conformance-checked) |
 | Voice | the recognised speaker's resolution, else `POST /accounts/internal/guest` (`IAccountResolver.GuestAsync`); an outage leaves none, and the agent refuses and reports the turn |
 | Sugary | the request's own `X-Ziggurat-Assertion` (`Person.Assertion`), the estimate's and each answer's |
@@ -309,8 +317,27 @@ kind (`ScheduleDelegation`, `WatchDelegation`, `LoginDelegation`):
 | Kind | Description (`DelegatedObject.cs`) | What the fire must match |
 |---|---|---|
 | schedule | agent, prompt, cron, runAt (unix seconds, UTC), deliverTo as written | `Origin.ScheduleId` = oid, `AgentId`, `Content` = prompt, `ReplyTo` = the deliverTo resolved against the delivery default |
-| watch | the prompt effects' prompts as written, deliverTo as the write resolved it | `Origin.WatchId` = oid, `ReplyTo` as above; the prompt arrives rendered by the home and is not compared |
-| login | the asking turn's agent, conversation and origin | `AgentId`; then either the asking conversation answering at its origin (Done) or one fresh chat-client conversation (`[signalr, null]`, a voice login's link) |
+| watch | the agent that runs it, the prompt effects' prompts as written, deliverTo as the write resolved it | `Origin.WatchId` = oid, `AgentId`, `Content` = one of the prompts exactly, `ReplyTo` as above |
+| login | the asking turn's agent, conversation and origin, and the site (`Uri.Host` of the url `web_login` was called with) | `AgentId`; then either the asking conversation answering at its origin with `Content` = `LoginDelegation.DoneText(site)` (Done), or one fresh chat-client conversation (`[signalr, null]`) with `Content` = `LoginDelegation.LinkText(site)` (a voice login's link) |
+
+**What a fire asks is the object's own words; everything else is its report.** `Content` is the part
+a delegation covers, and anything a server learned at fire time rides beside it as
+`ChannelMessageNotification.FireReport` (`Fire.Report`), which the conversation group frames around
+`Content` only after the check (`FireReports.Frame`: a `<fire-report …>` block, information not
+instructions, any closing tag inside it escaped). A **watch**: the home renders a prompt's Jinja and
+anything holding the announce token can post to `WatchFiredEndpoint`, so the callback also posts
+which of the watch's prompts it rendered (`'promptIndex': N`, a literal `HaWatchAutomation` writes
+into every prompt callback) and the server asks the prompt **as the home keeps it** — looked up with
+the delegation — with the first line (what fired) and the prompt as the home rendered it as the
+report; a forged post's words are only ever report. A post naming no prompt of the watch (an
+automation from before `promptIndex`, one edited in the home) or a home that cannot be asked fires
+the rendered prompt with no delegation, as nobody. The agent that runs a watch is the creating turn's
+(`HaWatchMetadata.AgentId`, which a rewrite keeps): the agent side describes a write with the writing
+turn's agent (`DelegatedWrites.Of` takes the writer's context), so a rewrite by another agent's turn
+describes what the home will not run and its fires act for nobody. A **login**: both wakes say the
+handoff's own words for the site (`LoginDelegation.DoneText`/`LinkText`, spelled once for the browse
+server and the verifier), and the voice login's one-time link, minted by the browse server, is the
+link turn's report.
 
 `iss` the agent, `aud` `TokenAudiences.Delegation`, `sub`/`tid`/`chn`/`roles` the person's (only a
 person is delegated — the guest and nobody delegate nothing), `exp` **iat + 100 years** for a
@@ -324,8 +351,9 @@ token, for exactly what the call writes: a filesystem write states its object un
 `ChannelProtocol.DelegateMetaKey` (`McpFileSystemBackend`, through `DelegatedWrites`: a schedules or
 `ha` create from its content, an edit by reading the file first and laying the edits over it as the
 mount does, a schedule move by reading its file under the destination's name, a watch replace by
-reading the watch whose delivery it keeps), and `web_login` is a login handoff by its name,
-described off the call's own context. Whom a filesystem write acts for is the caller handed to the
+reading the watch whose delivery it keeps, and named with the writing turn's agent), and
+`web_login` is a login handoff by its name, described off the call's own context and its `url`
+argument. Whom a filesystem write acts for is the caller handed to the
 backend, never the invocation in flight: a file tool binds the mount to the conversation its call's
 arguments carry (`ToolCaller.Resolve`, `FileSystemResolution.As` over `ICallerBoundBackend` —
 `ToolApprovalChatClient` puts it there for every call), the exec bridge to its command's caller, and
@@ -363,6 +391,13 @@ none is ordinary and says nothing. A monitor built with no verifier believes no 
 timing is not checked: nothing in a fire says when it was due, so the digest's timing only catches a
 store edited under a server that still tells the truth about it. `run_now` fires a schedule as its
 delegation says, whoever asked for it.
+
+**Delegations hold against an honest server.** The signature bounds *what* a fire does as the person,
+never *whether* or *when* it comes: a misbehaving server could keep a delegation it stored for an
+object since deleted or overwritten and fire it again (the delegation still names that object doing
+exactly that), at any time, since no due time is checked; and an edit or a move is signed over the
+content the server answered the agent's read with just before the write, so a server lying there gets
+a delegation for its own words with the turn's edit on top.
 
 **The commands** (`Agent/Commands/AgentCommand.cs`, System.CommandLine, detected in `Program` before
 anything builds and run instead of the agent): `rotate-signing-key` (a new key signs from the next

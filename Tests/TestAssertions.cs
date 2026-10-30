@@ -14,10 +14,13 @@ internal static class TestAssertions
     // Longer than any test, so a slow run never ages one out; a test about expiry dates its own.
     private static readonly TimeSpan _lifetime = TimeSpan.FromHours(12);
 
+    // A session id makes it the session check's, which names the session it checked.
     public static string Of(
         Account person, string channel, IReadOnlyList<string>? roles = null, DateTimeOffset? now = null,
-        TimeSpan? lifetime = null) =>
-        new TokenSigner(_accounts).Sign(IdentityClaims.Person(person.UserId, person.TenantId, channel, roles ?? ["member"])
+        TimeSpan? lifetime = null, string? sessionId = null) =>
+        new TokenSigner(_accounts).Sign((IdentityClaims.Person(person.UserId, person.TenantId, channel, roles ?? ["member"])
+                with
+        { SessionId = sessionId })
             .Stamped(TokenIssuers.Accounts, TokenAudiences.Assertion, now ?? DateTimeOffset.UtcNow, lifetime ?? _lifetime));
 
     public static string OfGuest(string tenantId, string channel) =>

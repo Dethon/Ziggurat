@@ -12,7 +12,10 @@ namespace Domain.Security;
 // Spelled here because every app behind the check reads them, and the accounts service's session
 // check answers them by these names; the conformance check holds the proxy's copy_headers to this
 // list.
-public sealed record ForwardedAccount(string UserId, string TenantId, IReadOnlyList<string> Roles)
+//
+// SessionId is the session the check signed the assertion for, where it names one: the chat hub asks
+// the accounts service for its connection's person by it, so a revoked session stops starting turns.
+public sealed record ForwardedAccount(string UserId, string TenantId, IReadOnlyList<string> Roles, string? SessionId = null)
 {
     public const string UserHeader = "X-Ziggurat-User";
     public const string TenantHeader = "X-Ziggurat-Tenant";

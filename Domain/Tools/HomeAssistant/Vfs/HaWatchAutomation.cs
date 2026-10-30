@@ -128,9 +128,7 @@ public static class HaWatchAutomation
     {
         var prompts = spec.Once ? spec.Effects.OfType<HaPromptEffect>().Count() : 0;
         var actions = spec.Effects
-            .Select((effect, index) => (effect, promptIndex: spec.Once && effect is HaPromptEffect
-                ? spec.Effects.Take(index).OfType<HaPromptEffect>().Count()
-                : (int?)null))
+            .Select((effect, index) => (effect, promptIndex: spec.Effects.Take(index).OfType<HaPromptEffect>().Count()))
             .SelectMany(e => RenderEffect(e.effect, watchId, spec, meta, e.promptIndex))
             .ToList();
         if (spec.Once)
@@ -179,9 +177,10 @@ public static class HaWatchAutomation
         return automation;
     }
 
-    // `promptIndex` is set only for a one-shot: the index of this prompt among the watch's prompts,
-    // naming the variable its callback answer is kept in for the turn_off guard.
-    private static IEnumerable<JsonObject> RenderEffect(HaWatchEffect effect, string watchId, HaWatchSpec spec, HaWatchMetadata meta, int? promptIndex) =>
+    // `promptIndex` is a prompt's index among the watch's prompts: the callback says it, so the server
+    // runs that prompt as the watch keeps it, and a one-shot keeps its callback's answer under it for
+    // the turn_off guard.
+    private static IEnumerable<JsonObject> RenderEffect(HaWatchEffect effect, string watchId, HaWatchSpec spec, HaWatchMetadata meta, int promptIndex) =>
         effect switch
         {
             HaActionsEffect actions => actions.Actions.Select(a => a!.DeepClone().AsObject()),
@@ -220,9 +219,10 @@ public static class HaWatchAutomation
     }
 
     // The callback's body: the watch's identity and delivery as literals, the prompt rendered by
-    // the home, and the firing facts from the `trigger` variable — each guarded, because a template
-    // or time trigger carries no entity and an unguarded read would render as an error.
-    private static IEnumerable<JsonObject> RenderPrompt(HaPromptEffect prompt, string watchId, HaWatchSpec spec, HaWatchMetadata meta, int? promptIndex)
+    // the home and which of the watch's prompts it is (a number, which the home has nothing to render
+    // of), and the firing facts from the `trigger` variable — each guarded, because a template or time
+    // trigger carries no entity and an unguarded read would render as an error.
+    private static IEnumerable<JsonObject> RenderPrompt(HaPromptEffect prompt, string watchId, HaWatchSpec spec, HaWatchMetadata meta, int promptIndex)
     {
         var variables = new JsonObject
         {
@@ -246,7 +246,7 @@ public static class HaWatchAutomation
 
         var payload =
             "{'watchId': watch_id, 'name': watch_name, 'agentId': watch_agent, "
-            + $"'deliverTo': {deliverTo}, 'userId': {userId}, 'prompt': watch_prompt, "
+            + $"'deliverTo': {deliverTo}, 'userId': {userId}, 'prompt': watch_prompt, 'promptIndex': {promptIndex}, "
             + "'entityId': (trigger.entity_id if trigger.entity_id is defined else none), "
             + "'friendlyName': (trigger.to_state.name if trigger.to_state is defined and trigger.to_state else none), "
             + "'fromState': (trigger.from_state.state if trigger.from_state is defined and trigger.from_state else none), "
@@ -264,11 +264,11 @@ public static class HaWatchAutomation
             ["data"] = new JsonObject { ["payload"] = $"{{{{ {payload} | to_json }}}}" },
             ["continue_on_error"] = true
         };
-        if (promptIndex is { } index)
+        if (spec.Once)
         {
             // The answer is kept for the one-shot's turn_off guard, so the guard — not the
             // failure — decides whether the watch is spent.
-            call["response_variable"] = ResponseVariable(index);
+            call["response_variable"] = ResponseVariable(promptIndex);
         }
         yield return call;
     }

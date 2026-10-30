@@ -398,17 +398,19 @@ internal sealed class ConversationGroup(
     }
 
     // Nothing the fire's server stamped on it is believed: the principal is the delegation's person,
-    // channel, account and all, or there is none, and the turn acts for nobody.
+    // channel, account and all, or there is none, and the turn acts for nobody. What it asks is checked
+    // as it came, and only then framed with what its server reported beside it (FireReports).
     private async Task<AdmittedTurn> AdmitFireAsync(IChannelConnection channel, ChannelMessage fire)
     {
         var admission = delegations is null
             ? new FireAdmission.Undelegated(null)
             : await delegations.VerifyFireAsync(fire, _groupCt);
+        var framed = fire with { Content = FireReports.Frame(fire.Content, fire.FireReport), FireReport = null };
         switch (admission)
         {
             case FireAdmission.Delegated { Identity: var identity }:
                 return new AdmittedTurn(channel,
-                    fire with { Principal = new Principal(identity.ChannelId, identity.Subject, identity.Account) },
+                    framed with { Principal = new Principal(identity.ChannelId, identity.Subject, identity.Account) },
                     identity);
             case FireAdmission.Undelegated { Refusal: { } reason }:
                 logger.LogWarning(
@@ -423,7 +425,7 @@ internal sealed class ConversationGroup(
                 break;
         }
 
-        return new AdmittedTurn(channel, fire with { Principal = null }, null);
+        return new AdmittedTurn(channel, framed with { Principal = null }, null);
     }
 
     // Reported where an operator looks, and answered on the channel the way a failed turn ends —

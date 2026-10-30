@@ -30,6 +30,11 @@ public record ChannelMessageNotification
     // the schedule, the watch or the login handoff raising it, with what that object does now. The
     // agent checks it as the fire arrives; a fire carrying none, or one that fails, acts for nobody.
     public FireDelegation? Delegation { get; init; }
+    // What the server raising a fire reports beside it — what fired and how the home rendered a
+    // watch's prompt, the one-time link a voice login puts in the chat client — which is that server's
+    // word, never the instruction: Content is what the fire asks, the part a delegation covers, and
+    // the agent frames this as a report beside it (FireReports). Null on everything else.
+    public string? FireReport { get; init; }
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     // Optional originating room for room-aware prompts. Part of the shared channel protocol but

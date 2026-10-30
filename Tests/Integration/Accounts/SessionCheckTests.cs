@@ -51,6 +51,21 @@ public class SessionCheckTests
         assertion.Claims.IsGuest.ShouldBeFalse();
     }
 
+    // The assertion also names the session it was checked for, which is what the chat hub refreshes
+    // a connection's person by: while that session lives, and not after it is revoked.
+    [Fact]
+    public async Task ASessionsAssertion_NamesTheSessionItWasCheckedFor()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var phone = (await server.Service<SessionStore>().IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
+
+        var response = await server.VerifyAsync(phone.Token);
+
+        var assertion = await server.VerifyAssertionAsync(response.Headers.GetValues(ForwardedAccount.AssertionHeader).Single());
+        assertion.Claims.ShouldNotBeNull().SessionId.ShouldBe(phone.Id);
+    }
+
     [Fact]
     public async Task AnAssertion_LivesTenMinutes()
     {

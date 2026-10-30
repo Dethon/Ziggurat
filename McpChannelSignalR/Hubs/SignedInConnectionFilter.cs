@@ -19,7 +19,7 @@ namespace McpChannelSignalR.Hubs;
 // future change to connecting does — and a method added to the hub needs nothing to be covered.
 internal sealed class SignedInConnectionFilter(
     AssertionVerifier assertions,
-    IAccountResolver accounts,
+    ISessionAccounts sessions,
     AccountConnections connections,
     ILogger<SignedInConnectionFilter> logger) : IHubFilter
 {
@@ -63,14 +63,20 @@ internal sealed class SignedInConnectionFilter(
             : throw new HubException(NotSignedInError);
 
     // Asked once per connection, because a turn's sender is the name and the name does not change
-    // mid-connection often enough to ask on every message. The headers already said who this is, so
-    // a name the accounts service could not give is never a reason to refuse the person: their turns
-    // go out under the account's id instead.
+    // mid-connection often enough to ask on every message — of the session the assertion named, the
+    // one way the accounts service answers the chat hub's person. The assertion already said who this
+    // is, so a name the service could not give is never a reason to refuse the person: their turns go
+    // out under the account's id instead (and a session gone by now refuses each turn anyway).
     private async Task<string?> DisplayNameOfAsync(ForwardedAccount account, CancellationToken ct)
     {
+        if (account.SessionId is not { } sessionId)
+        {
+            return null;
+        }
+
         try
         {
-            return (await accounts.ResolveAsync(ChannelIds.SignalR, account.UserId, ct))?.DisplayName;
+            return (await sessions.SessionAsync(account.UserId, sessionId, ct))?.DisplayName;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {

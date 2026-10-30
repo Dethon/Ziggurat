@@ -50,8 +50,7 @@ public static class SessionCheck
             http.Response.Headers[UserHeader] = identity.UserId;
             http.Response.Headers[TenantHeader] = identity.TenantId;
             http.Response.Headers[RolesHeader] = string.Join(',', identity.Roles);
-            http.Response.Headers[AssertionHeader] =
-                assertions.Of(identity.UserId, identity.TenantId, identity.Roles, channel);
+            http.Response.Headers[AssertionHeader] = assertions.Of(identity, channel);
             return Results.Ok();
         });
 }
