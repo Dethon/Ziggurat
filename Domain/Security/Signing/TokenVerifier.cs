@@ -59,8 +59,10 @@ public sealed class TokenVerifier(
         var now = clock.GetUtcNow();
         TokenRefusal? refusal = claims switch
         {
-            null or { Subject.Length: 0 } or { TenantId.Length: 0 } or { Id.Length: 0 } => TokenRefusal.Malformed,
-            _ when claims.ExpiresAt == default => TokenRefusal.Malformed,
+            null => TokenRefusal.Malformed,
+            _ when string.IsNullOrEmpty(claims.Subject) || string.IsNullOrEmpty(claims.TenantId)
+                   || string.IsNullOrEmpty(claims.Id) || claims.Roles is null || claims.ExpiresAt == default
+                => TokenRefusal.Malformed,
             _ when claims.Issuer != issuer => TokenRefusal.WrongIssuer,
             _ when claims.Audience != audience => TokenRefusal.WrongAudience,
             _ when now >= claims.ExpiresAt + _skew => TokenRefusal.Expired,
