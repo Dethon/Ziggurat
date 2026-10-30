@@ -6,10 +6,12 @@ using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
 
-// A person's remembered logins in Redis, one record each, sealed with AES-GCM under a key from the
-// deployment's secrets, so a dump of the database hands out nobody's accounts. The blob is a
-// version byte, the nonce, the tag and the ciphertext; the person's name is the associated data,
-// so one person's record copied under another's key does not open.
+// A person's remembered logins in Redis, one record each under their account's user id, sealed with
+// AES-GCM under a key from the deployment's secrets, so a dump of the database hands out nobody's
+// accounts. The blob is a version byte, the nonce, the tag and the ciphertext; the user id is the
+// associated data, so one account's record copied under another's key does not open. A record
+// written under a person's name before accounts is nobody's: the migration re-seals it, and
+// nothing here reads one as a fallback.
 public sealed class RedisPersonStateStore(IConnectionMultiplexer redis, byte[]? key) : IPersonStateStore
 {
     public const int KeyBytes = 32;

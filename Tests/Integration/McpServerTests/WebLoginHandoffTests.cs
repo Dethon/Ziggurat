@@ -30,11 +30,12 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     private readonly FakeTimeProvider _time = new(DateTimeOffset.UtcNow);
     private WebIdentityServerHarness _server = null!;
 
-    // The class shares one database and the people are fixed names, so each test starts with
+    // The class shares one database and the people are fixed accounts, so each test starts with
     // nobody's logins remembered.
     public async Task InitializeAsync()
     {
-        await redis.Connection.GetDatabase().KeyDeleteAsync(["websearch:person:fran", "websearch:person:ana"]);
+        await redis.Connection.GetDatabase().KeyDeleteAsync(
+            [$"websearch:person:{Fran.UserId}", $"websearch:person:{Ana.UserId}"]);
         _server = await StartServerAsync();
     }
 
@@ -47,14 +48,16 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
             services.AddSingleton<IPersonContexts>(_browser);
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(_time);
+            // The server's own answer to whether a person holds a login: here the handoffs are what
+            // give them one, so an asMe browse reaches exactly what they handed off.
+            services.RemoveAll<ILoginSites>();
+            services.AddSingleton<ILoginSites>(sp => sp.GetRequiredService<PersonLogins>());
         },
         settings: s => s with
         {
             RedisConnectionString = redis.ConnectionString,
             Handoff = s.Handoff with { PublicBaseUrl = PublicBase },
-            Logins = s.Logins with { StateKey = StateKey },
-            // WebChat verified, so the voice logins below reach the delivery they are about.
-            Identity = s.Identity with { VerifiedChannels = WebChatVerified }
+            Logins = s.Logins with { StateKey = StateKey }
         });
 
     private static readonly string StateKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
@@ -67,9 +70,10 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
     private IPersonStateStore Store => _server.Services.GetRequiredService<IPersonStateStore>();
 
-    private async Task FinishHandoffAsync(string doneBody, string userId = "fran_tg", string url = "https://shop.test/login")
+    private async Task FinishHandoffAsync(
+        string doneBody, ConversationContext? from = null, string url = "https://shop.test/login")
     {
-        var envelope = Envelope(await _server.CallAsync("web_login", Login(url), Context(userId)));
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(url), from ?? FromTelegram(Fran)));
         var path = PathOf(envelope["link"]!.GetValue<string>());
         var (client, _) = NewBrowserSession();
         (await client.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
@@ -82,7 +86,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
     private async Task<string> StartHandoffAsync()
     {
-        var envelope = Envelope(await _server.CallAsync("web_login", Login(), Context("fran_tg")));
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(), FromTelegram(Fran)));
         envelope["status"]!.GetValue<string>().ShouldBe("handoff_started");
         return envelope["link"]!.GetValue<string>();
     }
@@ -106,7 +110,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         link.ShouldStartWith($"{PublicBase}/browse/handoff/");
         var opened = _browser.OpenedTabs.ShouldHaveSingleItem();
-        opened.Person.ShouldBe("fran");
+        opened.Person.ShouldBe(Fran.UserId);
         opened.Url.ShouldBe("https://shop.test/login");
         // The handoff never reaches the browse session's pool.
         _server.Browser.Browses.ShouldBeEmpty();
@@ -118,19 +122,22 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     [InlineData(MessageOriginKind.Login)]
     public async Task ALoginOnAFiresTurn_IsRefused_AndOpensNothing(MessageOriginKind kind)
     {
-        var envelope = Envelope(await _server.CallAsync("web_login", Login(), Context("fran_tg", originKind: kind)));
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(),
+            Context("fran_tg", Fran, originKind: kind)));
 
         envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
         envelope["message"]!.GetValue<string>().ShouldContain("not by the person");
         _browser.OpenedTabs.ShouldBeEmpty();
     }
 
+    // A principal with no account is nobody, whatever name its channel goes by.
     [Fact]
-    public async Task ALoginForAnUnmappedUser_IsRefused_AndOpensNothing()
+    public async Task ALoginForAPrincipalWithNoAccount_IsRefused_AndOpensNothing()
     {
-        var envelope = Envelope(await _server.CallAsync("web_login", Login(), Context("stranger")));
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(), Context("fran_tg", account: null)));
 
         envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
+        envelope["message"]!.GetValue<string>().ShouldContain("nobody vouched");
         _browser.OpenedTabs.ShouldBeEmpty();
     }
 
@@ -253,7 +260,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     public async Task Done_EmitsOneWake_IntoTheConversationThatAsked()
     {
         var envelope = Envelope(await _server.CallAsync("web_login", Login(),
-            Context("fran_tg", conversationId: "tg-77", channelId: "telegram")));
+            FromTelegram(Fran, conversationId: "tg-77")));
         var path = PathOf(envelope["link"]!.GetValue<string>());
         var (client, _) = NewBrowserSession();
         (await client.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
@@ -270,7 +277,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         wake.Content.ShouldContain("logged in");
         // The wake is a turn nobody sent, so the asking turn's principal is what lets it carry on
         // as the person: without it every asMe after Done would resolve to nobody.
-        wake.Principal.ShouldBe(new Principal("telegram", "fran_tg"));
+        wake.Principal.ShouldBe(new Principal("telegram", "fran_tg", Fran));
     }
 
     [Fact]
@@ -297,7 +304,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         await FinishHandoffAsync("""{"remember":true}""");
 
-        var record = (await Store.LoadAsync("fran")).ShouldNotBeNull();
+        var record = (await Store.LoadAsync(Fran.UserId)).ShouldNotBeNull();
         var login = record.Logins.ShouldHaveSingleItem();
         login.Site.ShouldBe("shop.test");
         login.Domains.ShouldBe(["shop.test"]);
@@ -312,7 +319,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         await FinishHandoffAsync("""{"remember":false}""");
 
-        var record = await Store.LoadAsync("fran");
+        var record = await Store.LoadAsync(Fran.UserId);
         (record?.Logins ?? []).ShouldBeEmpty();
         (record?.StorageState ?? "").ShouldNotContain("shop-session");
     }
@@ -325,12 +332,53 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         await FinishHandoffAsync("""{"remember":true}""");
         _browser.State = ShopState.Replace("shop-session", "rotated-session");
 
-        _browser.RaiseActivity("fran", "https://shop.test/orders");
+        _browser.RaiseActivity(Fran.UserId, "https://shop.test/orders");
         _time.Advance(TimeSpan.FromSeconds(5));
 
-        await Eventually.Until(() => Store.LoadAsync("fran").GetAwaiter().GetResult()!.StorageState.Contains("rotated-session"),
+        await Eventually.Until(() => Store.LoadAsync(Fran.UserId).GetAwaiter().GetResult()!.StorageState.Contains("rotated-session"),
             "the rotated cookie to be saved");
-        (await Store.LoadAsync("fran"))!.Logins.Single().LastUsedAt.ShouldNotBeNull();
+        (await Store.LoadAsync(Fran.UserId))!.Logins.Single().LastUsedAt.ShouldNotBeNull();
+    }
+
+    private static Dictionary<string, object?> BrowseAsMe(string url = "https://shop.test/orders") =>
+        new() { ["url"] = url, ["asMe"] = true };
+
+    // A login is the account's: handed off from Telegram, it is reached from the chat client as
+    // much as from Telegram, and by nobody else.
+    [Fact]
+    public async Task ARememberedLogin_IsReachedAsThePersonFromEveryChannelOfTheirAccount_AndByNobodyElse()
+    {
+        _browser.State = ShopState;
+        _browser.Hosts = ["shop.test"];
+        await FinishHandoffAsync("""{"remember":true}""", FromTelegram(Fran));
+
+        Envelope(await _server.CallAsync("web_browse", BrowseAsMe(), FromTelegram(Fran)))["asMe"]!
+            .GetValue<bool>().ShouldBeTrue();
+        Envelope(await _server.CallAsync("web_browse", BrowseAsMe(), FromChatClient(Fran)))["asMe"]!
+            .GetValue<bool>().ShouldBeTrue();
+        var ana = Envelope(await _server.CallAsync("web_browse", BrowseAsMe(), FromChatClient(Ana)));
+
+        ana["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
+        _server.Browser.Browses.Select(browse => browse.Person).ShouldBe([Fran.UserId, Fran.UserId]);
+    }
+
+    // The record is sealed with its account's user id: moved under another account's key, it opens
+    // for nobody, and that account is refused rather than browsed logged out.
+    [Fact]
+    public async Task ARememberedLoginCopiedUnderAnotherAccount_DoesNotOpenForIt()
+    {
+        _browser.State = ShopState;
+        _browser.Hosts = ["shop.test"];
+        await FinishHandoffAsync("""{"remember":true}""", FromTelegram(Fran));
+        var db = redis.Connection.GetDatabase();
+        await db.StringSetAsync($"websearch:person:{Ana.UserId}",
+            await db.StringGetAsync($"websearch:person:{Fran.UserId}"));
+
+        var ana = Envelope(await _server.CallAsync("web_browse", BrowseAsMe(), FromChatClient(Ana)));
+
+        ana["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
+        ana["message"]!.GetValue<string>().ShouldContain("cannot be read");
+        _server.Browser.Browses.ShouldBeEmpty();
     }
 
     [Fact]
@@ -349,7 +397,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     {
         _browser.OpenFails = new PersonStateUnreadableException("fran", "the configured key does not open them");
 
-        var envelope = Envelope(await _server.CallAsync("web_login", Login(), Context("fran_tg")));
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(), FromTelegram(Fran)));
 
         envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
         envelope["message"]!.GetValue<string>().ShouldContain("cannot be read");
@@ -369,9 +417,9 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         }.Order());
     }
 
-    private async Task<HttpClient> OpenLoginsPageAsync(string userId)
+    private async Task<HttpClient> OpenLoginsPageAsync(ConversationContext from)
     {
-        var envelope = Envelope(await _server.CallAsync("web_logins", [], Context(userId)));
+        var envelope = Envelope(await _server.CallAsync("web_logins", [], from));
         var link = envelope["link"]!.GetValue<string>();
         link.ShouldStartWith($"{PublicBase}/browse/logins/");
         var (client, _) = NewBrowserSession();
@@ -384,20 +432,22 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         JsonNode.Parse(await page.GetStringAsync("/browse/logins/sites"))!.AsArray()
             .Select(site => site!["site"]!.GetValue<string>()).ToList();
 
+    // The page is the account's, whichever channel asked for its link: a login handed off from
+    // Telegram is listed on a page asked for from the chat client.
     [Fact]
-    public async Task TheLoginsPage_ListsTheAskingPersonsSitesAndNobodyElses()
+    public async Task TheLoginsPage_ListsTheAskingAccountsSitesAndNobodyElses()
     {
         _browser.State = ShopState;
         _browser.Hosts = ["shop.test"];
         await FinishHandoffAsync("""{"remember":true}""");
         _browser.Hosts = ["bank.test"];
-        await FinishHandoffAsync("""{"remember":false}""", userId: "ana_tg", url: "https://bank.test/login");
+        await FinishHandoffAsync("""{"remember":false}""", FromTelegram(Ana, "ana_tg"), url: "https://bank.test/login");
 
-        var fran = await OpenLoginsPageAsync("fran_tg");
+        var fran = await OpenLoginsPageAsync(FromChatClient(Fran));
         (await SitesAsync(fran)).ShouldBe(["shop.test"]);
         JsonNode.Parse(await fran.GetStringAsync("/browse/logins/sites"))![0]!["domains"]!.AsArray()
             .Select(domain => domain!.GetValue<string>()).ShouldBe(["shop.test"]);
-        (await SitesAsync(await OpenLoginsPageAsync("ana_tg"))).ShouldBe(["bank.test"]);
+        (await SitesAsync(await OpenLoginsPageAsync(FromTelegram(Ana, "ana_tg")))).ShouldBe(["bank.test"]);
     }
 
     [Fact]
@@ -406,12 +456,12 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _browser.State = ShopState;
         _browser.Hosts = ["shop.test"];
         await FinishHandoffAsync("""{"remember":true}""");
-        var page = await OpenLoginsPageAsync("fran_tg");
+        var page = await OpenLoginsPageAsync(FromTelegram(Fran));
 
         (await page.PostAsync("/browse/logins/forget", Json("""{"site":"shop.test"}"""))).EnsureSuccessStatusCode();
 
         _browser.State.ShouldNotBeNull().ShouldNotContain("shop-session");
-        var record = (await Store.LoadAsync("fran")).ShouldNotBeNull();
+        var record = (await Store.LoadAsync(Fran.UserId)).ShouldNotBeNull();
         record.Logins.ShouldBeEmpty();
         record.StorageState.ShouldNotContain("shop-session");
         (await SitesAsync(page)).ShouldBeEmpty();
@@ -420,8 +470,8 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     [Fact]
     public async Task TheLoginsLink_OpensOnce_AndRunsOutInTenMinutes()
     {
-        var once = PathOf(Envelope(await _server.CallAsync("web_logins", [], Context("fran_tg")))["link"]!.GetValue<string>());
-        var late = PathOf(Envelope(await _server.CallAsync("web_logins", [], Context("fran_tg")))["link"]!.GetValue<string>());
+        var once = PathOf(Envelope(await _server.CallAsync("web_logins", [], FromTelegram(Fran)))["link"]!.GetValue<string>());
+        var late = PathOf(Envelope(await _server.CallAsync("web_logins", [], FromTelegram(Fran)))["link"]!.GetValue<string>());
         var (first, _) = NewBrowserSession();
         var (second, _) = NewBrowserSession();
 
@@ -435,19 +485,19 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     }
 
     [Fact]
-    public async Task TheLoginsLink_IsRefusedForAnUnmappedUser()
+    public async Task TheLoginsLink_IsRefusedForAPrincipalWithNoAccount()
     {
-        Envelope(await _server.CallAsync("web_logins", [], Context("stranger")))["errorCode"]!
+        Envelope(await _server.CallAsync("web_logins", [], Context("fran_tg", account: null)))["errorCode"]!
             .GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
     }
 
-    // nabu cannot speak a link, so a voice login puts it in a new WebChat conversation of the
-    // person's — whose end-of-stream Web Push pings them — and tells nabu so.
+    // nabu cannot speak a link, so a voice login puts it in a new conversation of the person's
+    // chat client — whose end-of-stream Web Push pings them — and tells nabu so. The fire acts for
+    // the account the voice turn did, which is what makes the conversation theirs.
     [Fact]
-    public async Task AVoiceLogin_PutsTheLinkInANewWebChatConversationOfThePersons()
+    public async Task AVoiceLogin_PutsTheLinkInANewConversationOfThePersonsChatClient()
     {
-        var envelope = Envelope(await _server.CallAsync("web_login", Login(),
-            Context("fran", conversationId: "voice-9", channelId: "voice", address: "kitchen-01")));
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(), FromVoice(Fran)));
 
         envelope["status"]!.GetValue<string>().ShouldBe("handoff_started");
         envelope["deliveredTo"]!.GetValue<string>().ShouldBe("webchat");
@@ -457,11 +507,25 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         var fire = (await DrainAsync()).ShouldHaveSingleItem();
         fire.ReplyTo.ShouldBe([new ReplyTarget("signalr", null)]);
         fire.ConversationId.ShouldNotBe("voice-9");
-        fire.Sender.ShouldBe("Fran");
-        fire.UserId.ShouldBe("Fran");
+        fire.Principal.ShouldBe(new Principal("voice", Fran.UserId, Fran));
+        fire.UserId.ShouldBe(Fran.UserId);
         fire.AgentId.ShouldBe("jonas");
         fire.Origin!.Kind.ShouldBe(MessageOriginKind.Login);
         fire.Content.ShouldContain($"{PublicBase}/browse/handoff/");
+    }
+
+    // The satellite heard nobody it knows, so there is no account to log in as and no chat client
+    // to put a link in.
+    [Fact]
+    public async Task AVoiceLoginFromTheGuest_IsRefusedSayingTheVoiceWasNotRecognised_AndOpensNothing()
+    {
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(), FromVoiceGuest()));
+
+        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied);
+        envelope["message"]!.GetValue<string>().ShouldContain("not recognised");
+        _browser.OpenedTabs.ShouldBeEmpty();
+        await Eventually.Settle();
+        (await DrainAsync()).ShouldBeEmpty();
     }
 
     [Fact]
@@ -473,52 +537,12 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         (await DrainAsync()).ShouldBeEmpty();
     }
 
-    [Fact]
-    public async Task AVoiceLoginForAPersonWithNoWebChatName_IsRefusedNamingThat_AndOpensNothing()
-    {
-        var envelope = Envelope(await _server.CallAsync("web_login", Login(),
-            Context("mo", channelId: "voice", address: "kitchen-01")));
-
-        envelope["errorCode"].ShouldNotBeNull();
-        envelope["message"]!.GetValue<string>().ShouldContain("WebChat");
-        _browser.OpenedTabs.ShouldBeEmpty();
-        (await DrainAsync()).ShouldBeEmpty();
-    }
-
-    // Until WebChat verifies who is speaking, anybody picking the person's name there could claim
-    // a link put in "their" WebChat conversation, so a voice login is refused before anything opens.
-    [Fact]
-    public async Task AVoiceLogin_WhileWebChatIsUnverified_IsRefusedNamingTelegram_AndOpensNothing()
-    {
-        var browser = new FakeHandoffBrowser();
-        await using var server = await StartAsync(
-            configure: services =>
-            {
-                services.RemoveAll<IHandoffBrowser>();
-                services.AddSingleton<IHandoffBrowser>(browser);
-            },
-            settings: s => s with
-            {
-                RedisConnectionString = redis.ConnectionString,
-                Handoff = s.Handoff with { PublicBaseUrl = PublicBase }
-            });
-
-        var envelope = Envelope(await server.CallAsync("web_login", Login(),
-            Context("fran", conversationId: "voice-9", channelId: "voice", address: "kitchen-01")));
-
-        envelope["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.UnsupportedOperation);
-        envelope["message"]!.GetValue<string>().ShouldContain("WebChat does not verify");
-        envelope["hint"]!.GetValue<string>().ShouldContain("Telegram");
-        browser.OpenedTabs.ShouldBeEmpty();
-    }
-
     // The answer comes back on the satellite the request came from: the wake keeps the voice
     // target with its address, and the voice channel's own announcement path speaks it there.
     [Fact]
     public async Task AVoiceLoginsWake_AnswersToTheSatelliteItCameFrom()
     {
-        var envelope = Envelope(await _server.CallAsync("web_login", Login(),
-            Context("fran", conversationId: "voice-9", channelId: "voice", address: "kitchen-01")));
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(), FromVoice(Fran)));
         var link = (await DrainAsync()).Single().Content.Split(' ', '\n').First(w => w.StartsWith(PublicBase));
         var (client, _) = NewBrowserSession();
         (await client.PostAsync($"{PathOf(link.TrimEnd('.', ')'))}/claim", null)).EnsureSuccessStatusCode();
@@ -563,12 +587,12 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         await Eventually.Until(() =>
         {
-            _browser.RaiseActivity("fran", "https://bank.test/");
+            _browser.RaiseActivity(Fran.UserId, "https://bank.test/");
             _time.Advance(TimeSpan.FromSeconds(5));
-            return Store.LoadAsync("fran").GetAwaiter().GetResult()!.StorageState.Contains("bank-rotated");
+            return Store.LoadAsync(Fran.UserId).GetAwaiter().GetResult()!.StorageState.Contains("bank-rotated");
         }, "a save to run");
 
-        (await Store.LoadAsync("fran"))!.StorageState.ShouldNotContain("shop-session");
+        (await Store.LoadAsync(Fran.UserId))!.StorageState.ShouldNotContain("shop-session");
     }
 
     [Fact]
@@ -578,11 +602,11 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _browser.Hosts = ["shop.test"];
         await FinishHandoffAsync("""{"remember":true}""");
         await StartHandoffAsync();
-        var page = await OpenLoginsPageAsync("fran_tg");
+        var page = await OpenLoginsPageAsync(FromTelegram(Fran));
 
         (await page.PostAsync("/browse/logins/forget", Json("""{"site":"shop.test"}"""))).StatusCode
             .ShouldBe(HttpStatusCode.Conflict);
-        (await Store.LoadAsync("fran"))!.Logins.Select(login => login.Site).ShouldBe(["shop.test"]);
+        (await Store.LoadAsync(Fran.UserId))!.Logins.Select(login => login.Site).ShouldBe(["shop.test"]);
     }
 
     [Theory]
@@ -591,7 +615,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     public async Task TheLoginsLink_IsRefusedWhereNobodyCanOpenIt(string channelId, MessageOriginKind? origin)
     {
         var envelope = Envelope(await _server.CallAsync("web_logins", [],
-            Context("fran_tg", channelId: channelId, originKind: origin)));
+            Context("fran_tg", Fran, channelId: channelId, originKind: origin)));
 
         envelope["errorCode"].ShouldNotBeNull();
         envelope["link"].ShouldBeNull();
@@ -621,10 +645,10 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         await StartHandoffAsync();
         _time.Advance(TimeSpan.FromSeconds(5));
-        _browser.RaiseActivity("fran", "https://shop.test/login?step=2");
+        _browser.RaiseActivity(Fran.UserId, "https://shop.test/login?step=2");
         _time.Advance(TimeSpan.FromSeconds(5));
 
         await Eventually.Settle();
-        (await Store.LoadAsync("fran")).ShouldBeNull();
+        (await Store.LoadAsync(Fran.UserId)).ShouldBeNull();
     }
 }

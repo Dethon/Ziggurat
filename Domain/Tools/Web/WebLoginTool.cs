@@ -7,7 +7,7 @@ namespace Domain.Tools.Web;
 // The handoff: the person logs in themselves on a live view of a tab in their own browser
 // context, and the agent inherits the session. Who may start one is decided here; the tab, the
 // link and the view are the browse server's.
-public class WebLoginTool(IdentityMap identities, ILoginHandoffs handoffs)
+public class WebLoginTool(ILoginHandoffs handoffs)
 {
     public const string Name = "web_login";
 
@@ -21,31 +21,10 @@ public class WebLoginTool(IdentityMap identities, ILoginHandoffs handoffs)
 
     protected async Task<JsonObject> RunAsync(ConversationContext? context, string url, CancellationToken ct)
     {
-        if (LoginLinks.Refuse(identities, context, handoffs.IsConfigured) is { } refused)
+        var resolution = LoginLinks.Resolve(context, handoffs.IsConfigured);
+        if (resolution is PersonResolution.Refused refused)
         {
-            return refused;
-        }
-
-        // A voice turn cannot show a link, so its handoff is put in a WebChat conversation of the
-        // person's instead — named by their WebChat name, which anybody who picks that name in
-        // WebChat would see. So it goes there only once WebChat verifies who is speaking.
-        var person = ((PersonResolution.Found)identities.Resolve(context)).Person;
-        var voice = context!.Origin.ChannelId == IdentityMap.VoiceChannelId;
-        if (voice && !identities.IsVerified(IdentityMap.WebChatChannelId))
-        {
-            return ToolError.Create(
-                ToolError.Codes.UnsupportedOperation,
-                "A login from voice would be sent to the person's WebChat, and WebChat does not verify who is speaking yet, so the link cannot be put there.",
-                "Tell them to ask from Telegram, where the link can be given to them directly.");
-        }
-
-        var webChatName = identities.WebChatNameOf(person);
-        if (voice && webChatName is null)
-        {
-            return ToolError.Create(
-                ToolError.Codes.UnsupportedOperation,
-                $"A login from voice is sent to the person's WebChat, and '{person}' has no WebChat name in this deployment's identity map.",
-                "Tell them to ask from Telegram instead, where the link can be given to them directly.");
+            return refused.Error;
         }
 
         if (!LoginLinks.IsWebUrl(url, out var uri))
@@ -53,10 +32,15 @@ public class WebLoginTool(IdentityMap identities, ILoginHandoffs handoffs)
             return ToolError.Create(ToolError.Codes.InvalidArgument, "Only an http or https url can be handed off.");
         }
 
+        // A voice turn cannot show a link, so its handoff is put in a conversation of the person's
+        // chat client instead: the account the turn acts for is who that conversation is for, and
+        // only their own sign-in opens the chat client as them.
+        var voice = context!.Origin.ChannelId == PersonResolution.VoiceChannelId;
         string link;
         try
         {
-            link = await handoffs.BeginAsync(person, context, uri.ToString(), voice ? webChatName : null, ct);
+            link = await handoffs.BeginAsync(
+                ((PersonResolution.Found)resolution).Person, context, uri.ToString(), inChatClient: voice, ct);
         }
         catch (PersonStateUnreadableException ex)
         {
@@ -106,7 +90,7 @@ public class WebLoginTool(IdentityMap identities, ILoginHandoffs handoffs)
 // The page where a person sees and revokes their logins. The model can hand them its link; it
 // cannot read the list or forget a login itself, so a page cannot talk it into revoking a session
 // or covering its tracks.
-public class WebLoginsTool(IdentityMap identities, ILoginsPages pages, ILoginHandoffs handoffs)
+public class WebLoginsTool(ILoginsPages pages, ILoginHandoffs handoffs)
 {
     public const string Name = "web_logins";
 
@@ -115,24 +99,24 @@ public class WebLoginsTool(IdentityMap identities, ILoginsPages pages, ILoginHan
 
     protected async Task<JsonObject> RunAsync(ConversationContext? context, CancellationToken ct)
     {
-        if (LoginLinks.Refuse(identities, context, handoffs.IsConfigured) is { } refused)
+        var resolution = LoginLinks.Resolve(context, handoffs.IsConfigured);
+        if (resolution is PersonResolution.Refused refused)
         {
-            return refused;
+            return refused.Error;
         }
 
-        if (context!.Origin.ChannelId == IdentityMap.VoiceChannelId)
+        if (context!.Origin.ChannelId == PersonResolution.VoiceChannelId)
         {
             return ToolError.Create(
                 ToolError.Codes.UnsupportedOperation,
                 "The logins page is a link, and a voice reply cannot show one.",
-                "Tell them to ask for it from Telegram.");
+                $"Tell them to ask for it {PersonResolution.WhereToAsk}.");
         }
 
-        var person = ((PersonResolution.Found)identities.Resolve(context)).Person;
         return new JsonObject
         {
             ["status"] = "link_ready",
-            ["link"] = await pages.MintAsync(person, ct),
+            ["link"] = await pages.MintAsync(((PersonResolution.Found)resolution).Person, ct),
             ["expiresInMinutes"] = handoffs.LinkMinutes,
             ["hint"] = "Give the person this link. It opens once; only they can see or forget their logins there."
         };
@@ -140,34 +124,30 @@ public class WebLoginsTool(IdentityMap identities, ILoginsPages pages, ILoginHan
 }
 
 // What both link tools refuse alike, in the order a caller reads it: no turn behind the call, a
-// turn nobody sent, nobody to give the link to, nowhere to point it.
+// turn nobody sent, nobody to give the link to, nowhere to point it. Otherwise the person found.
 internal static class LoginLinks
 {
-    public static JsonObject? Refuse(IdentityMap identities, ConversationContext? context, bool configured)
+    public static PersonResolution Resolve(ConversationContext? context, bool configured)
     {
         if (context is null)
         {
-            return ToolError.Create(
+            return new PersonResolution.Refused(ToolError.Create(
                 ToolError.Codes.InvalidArgument,
-                "Conversation context is missing from request _meta; cannot tell who is logging in.");
+                "Conversation context is missing from request _meta; cannot tell who is logging in."));
         }
 
         if (WebLoginTool.RefuseFire(context) is { } fire)
         {
-            return fire;
+            return new PersonResolution.Refused(fire);
         }
 
-        if (identities.Resolve(context) is PersonResolution.Refused refused)
-        {
-            return refused.Error;
-        }
-
-        return configured
-            ? null
-            : ToolError.Create(
+        var resolution = PersonResolution.Of(context);
+        return resolution is PersonResolution.Refused || configured
+            ? resolution
+            : new PersonResolution.Refused(ToolError.Create(
                 ToolError.Codes.UnsupportedOperation,
                 "Logins are not set up on this deployment: it has no public address for the link.",
-                "Tell the person their accounts cannot be reached until the operator sets the handoff address.");
+                "Tell the person their accounts cannot be reached until the operator sets the handoff address."));
     }
 
     public static bool IsWebUrl(string url, out Uri uri) =>
