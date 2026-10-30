@@ -35,7 +35,16 @@ public sealed class TokenVerifier(
             return TokenVerification<T>.Refused(TokenRefusal.Malformed);
         }
 
-        var key = await keys.FindAsync(keyId, ct);
+        VerificationKey? key;
+        try
+        {
+            key = await keys.FindAsync(keyId, ct);
+        }
+        catch (SigningKeysUnavailableException)
+        {
+            return TokenVerification<T>.Refused(TokenRefusal.KeysUnavailable);
+        }
+
         if (key is null)
         {
             return TokenVerification<T>.Refused(TokenRefusal.UnknownKey);
