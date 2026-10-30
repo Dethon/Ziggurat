@@ -13,6 +13,9 @@ namespace Domain.Security;
 // block names what it guards (`?channel=`), so one signed for Sugary opens neither the chat hub nor
 // the dashboard. And it must name a person: the guest is a signed claim for a satellite's turn, and
 // to an app the guest is nobody.
+//
+// The agent holds the same verifier, over the same copy of the keys, for a second use: the turn a
+// channel carries an assertion on (VerifyTurnAsync), where the guest is somebody after all.
 public sealed class AssertionVerifier(
     IVerificationKeys keys,
     TimeProvider clock,
