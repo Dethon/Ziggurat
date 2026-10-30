@@ -213,8 +213,11 @@ port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.
   token's (the identity the agent wrote there is for its own signing, never a server's belief): a person
   is `Principal(chn, sub, Account(tid, sub))` — the channel's own name for them is not signed, so it
   is not kept — the guest `Principal(chn, "guest")`, nobody none. `call.Identity` is the verified
-  claims themselves. `Principal.Of` still falls back to the context's `UserId` for a person's own
-  turn with no principal, which reaches no account.
+  claims themselves. `Principal.Of` is the context's `Principal` and nothing else: the `UserId` the
+  `_meta` carries is never read as anybody, so a call signed for nobody names nobody — no channel, no
+  user — and a tool deciding who may do something (Telegram's `request_approval` among them) decides
+  from the token's person or refuses. Only the household migration still reads that `UserId`, off
+  persisted pre-account history, as evidence of who started a topic (`TopicOwners`).
 - **The outpost** answers `IMcpHostSettings.ChecksCallTokens` with false, explicitly: it receives the
   token and is not required to check it, and `CallTurn` then names nobody. Every other server says
   yes by saying nothing, and no setting can switch the check off.
