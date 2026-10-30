@@ -374,3 +374,24 @@ claims change in this phase.
      their linked id.
   9. Empty `HOUSEHOLD_MIGRATION_SECRET` and `docker compose up -d accounts` again: while it is set,
      whoever holds it can make the operator.
+- Where the build deliberately differs from the decisions above:
+  - `/api/agents*` stays outside the session check, behind the agent API's own secret: its caller
+    is SexyTime's server, which holds the secret and forwards the signed-in person as
+    `X-Ziggurat-User`, the one header the API reads.
+  - A fire (a schedule's, a watch's, a login wake) recalls memory as the account that set it going
+    but is never extracted into memory: its words are a prompt left for later or a server's notice,
+    never something the person just said.
+  - The operator gets no recovery link from the members page and no `/web` link from Telegram: an
+    owner or a linked Telegram must not be a way onto the dashboard. The container command
+    (`mint-link --operator`) is the operator's way back.
+  - The migration also gives the owner the memory buckets that were nobody's — `scheduler` and
+    `watch` (fires) and `system` (download alerts) beside `household` — and gives every topic from
+    before an owner (whoever started it, else the household's owner) as well as marking it shared,
+    since only an owner may stop sharing one.
+  - A shared topic is continued, and its reply stopped, by anyone who sees it, but renamed or deleted
+    by its owner alone; a topic nobody owns (a voice guest's, a Telegram group's) by whoever sees it,
+    there being nobody to defer to. A topic nobody owns that records a household is that household's
+    alone.
+  - "Reachable only through the proxy" holds against the sandbox, which runs what the model writes:
+    it is on a compose network shared with the agent alone. Any other compromised container could
+    still send the identity headers itself; that stays the Service identity phase's job.
