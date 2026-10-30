@@ -318,7 +318,11 @@ token, for exactly what the call writes: a filesystem write states its object un
 `ha` create from its content, an edit by reading the file first and laying the edits over it as the
 mount does, a schedule move by reading its file under the destination's name, a watch replace by
 reading the watch whose delivery it keeps), and `web_login` is a login handoff by its name,
-described off the call's own context. The transport removes both keys from every call and writes
+described off the call's own context. Whom a filesystem write acts for is the caller handed to the
+backend, never the invocation in flight: a file tool binds the mount to the conversation its call's
+arguments carry (`ToolCaller.Resolve`, `FileSystemResolution.As` over `ICallerBoundBackend` —
+`ToolApprovalChatClient` puts it there for every call), the exec bridge to its command's caller, and
+the backend as discovered acts for nobody, so it delegates nothing and stamps no `_meta`. The transport removes both keys from every call and writes
 the delegation only for a person, so neither a model nor a caller can put one there. An edit or a
 move rests on what the server answered the agent's read with — a lying server gets a delegation for
 its own text with the turn's edit on top — while a create gives it nothing to lie about. A runAt
