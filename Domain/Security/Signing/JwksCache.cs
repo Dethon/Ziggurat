@@ -56,11 +56,19 @@ public sealed class JwksCache(
     private async Task RefreshAsync(CancellationToken ct)
     {
         var now = clock.GetUtcNow();
+        var attemptedBefore = _attemptedAt;
         _attemptedAt = now;
         try
         {
             _copy = new Copy(Read(await fetch(ct)), now);
             _failure = null;
+        }
+        // Abandoned by the caller, not failed: a long poll the agent dropped to reconnect learned
+        // nothing about the issuer, and counting it would refuse every call until the interval passed.
+        catch (Exception) when (ct.IsCancellationRequested)
+        {
+            _attemptedAt = attemptedBefore;
+            throw;
         }
         catch (Exception e) when (!ct.IsCancellationRequested)
         {

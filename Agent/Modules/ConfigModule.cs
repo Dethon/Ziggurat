@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Agent.Settings;
+using Domain.Security.Signing;
 using Infrastructure.Clients.Accounts;
 using RetentionSettings = Domain.DTOs.RetentionSettings;
 
@@ -11,6 +12,7 @@ public static class ConfigModule
     {
         var config = configBuilder
             .AddJsonFile(RetentionSettings.FileName, optional: true)
+            .AddJsonFile(TokenVerificationSettings.FileName, optional: true)
             .AddEnvironmentVariables()
             .AddUserSecrets<Program>()
             .Build();

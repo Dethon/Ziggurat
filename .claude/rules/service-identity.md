@@ -1,8 +1,18 @@
 ---
 paths:
   - "Domain/Security/Signing/**"
+  - "Domain/Security/McpGateSettings.cs"
+  - "Domain/token-verification.json"
+  - "Mcp.Hosting/CallTokenGate.cs"
+  - "Mcp.Hosting/CallTurn.cs"
+  - "Infrastructure/Agents/Mcp/CallTokens.cs"
+  - "Infrastructure/Agents/Mcp/CallIdentity.cs"
+  - "Infrastructure/Agents/Mcp/SigningClientTransport.cs"
+  - "Agent/App/AgentKeysApi.cs"
   - "Tests/Unit/Domain/Security/Signing/**"
   - "Tests/TestSigningKeys.cs"
+  - "Tests/TestJwks.cs"
+  - "Tests/McpTestSecret.cs"
   - "Tests/TestAssertions.cs"
   - "Domain/Security/AssertionVerifier.cs"
   - "Domain/Security/AppChannels.cs"
@@ -57,6 +67,14 @@ two `iss` values.
 
 **A refused token carries no claims.** The guest is a signed claim; a missing or failing token is
 nobody, never the guest.
+
+**Nobody is signed too, as nobody.** Every call the agent makes carries a token, and some act for no
+one: its own channel plumbing (`channel_receive`, `send_reply`, `register_agents`…), a fire nobody
+vouched for, a turn whose channel named no account. Those are signed with `IdentityClaims.Nobody(chn)`:
+`sub` = `IdentityClaims.NobodySubject` = `nobody` (not hex either), the one subject that may leave
+`tid` out — the verifier still refuses an empty subject, and an empty household for anyone else.
+`Account` is null for nobody as for the guest. Only a call token says nobody: the accounts service
+never signs one, and the agent's turn-start check (ticket 05) must refuse an assertion that does.
 
 ## Verifying
 
@@ -122,3 +140,65 @@ accounts service needed; a container stack whose accounts service runs with
 `SIGNING__PRIVATEKEY` = the test key verifies the same assertions through its real JWKS. They are
 private keys in git; `DeploymentConformanceTests.TheTestSigningKeys_AreNeverShipped` holds every
 shipped file (`DeploymentFiles.Shipped()`) to containing neither key nor its id.
+
+The suite's servers verify the agent's tokens against `TestJwks`, one listener for the run serving
+the test agent key's JWKS on every interface (containers reach it at `host.docker.internal`).
+`McpTestSecret.Gate` answers to `localhost` and fetches from it; `McpTestSecret.Transport` signs every
+tool call as the agent's clients do (the same `SigningClientTransport`, over `McpTestSecret.CallTokens`,
+the test key on the wall clock), for whoever the call's `_meta` names — pass `audience:` for a
+server reached through a published port under another name. `UnsignedTransport` presents the
+credential alone, for a test that writes its own token or none. A container the test process dials
+takes `WithCallTokensFromTheTestProcess()` (`MCP__AUDIENCE` = `TestContainers.DialledHost`, keys from
+`TestJwks`); a stack with an agent container gives it `SIGNING__PRIVATEKEY` and points its servers at
+`http://agent:8080/internal/jwks`, as compose does; the eval's agent signs with the test key through
+`AgentSettings.Signing`.
+
+## Call tokens
+
+The agent's token for one call to one server. **Audience**: the host the agent dials the server at
+(`TokenAudiences.CallTo(address)`, the same key `McpCredentials` finds its credential by, never the
+port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.herfluffness/callToken"]`
+(`ChannelProtocol.CallTokenMetaKey`) on every `tools/call`, beside the conversation context.
+**Lifetime** 2 minutes, a fresh one minted once the last is within `RefreshMargin` (30 s) of expiry
+(`CallTokens:Lifetime`, `CallTokens:RefreshMargin` in the agent's appsettings).
+
+- **The agent signs where a message leaves.** `SigningClientTransport` wraps every MCP client the
+  agent creates (`McpClientManager.Signed`: tool servers and outposts alike, and each
+  `McpChannelConnection`), so a tool the model calls, an fs_* operation, a reply and an approval are
+  signed by the same code and none can be sent unsigned; it overwrites anything under the key.
+  `CallTokens` keeps one token per identity and server and reuses it until it nears expiry — a reply
+  streamed in hundreds of `send_reply` calls costs one signature. Its clock is the wall clock
+  (`TimeProvider.System`), not the agent's registered `TimeProvider`, which an eval pins.
+- **Who it names** is `CallIdentity.Of(turn)` over the context in the same `_meta`: today the
+  account on the turn's principal is the person and anything else is nobody — the voice guest
+  included, because nothing in the agent knows a guest's household. **Ticket 05 changes that one
+  method** to answer the identity the agent verified from the turn's assertion, carried on the
+  turn's `ConversationContext`; nothing else in the signing path moves. A worker carries its parent's
+  context verbatim (`SubAgentRunTool`), so it signs for its parent's person with no plumbing of its own.
+- **The server checks in `CallTokenGate`**, which `AddMcpHost` installs after the credential gate: an
+  incoming message filter on `tools/call` alone, so the refusal is a JSON-RPC error
+  (`McpProtocolException`, `InvalidRequest`, "Refused (<TokenRefusal>): …") the call-tool error
+  filter never sees, and a server keeps one call-tool filter. Initialize, the tool and prompt lists and
+  resource reads pass on the credential alone: the agent makes them while it builds a session, for
+  nobody, and nothing but a tool call can read who it acts for. A refusal is logged and published as
+  an `ErrorEvent` (`ErrorType` `CallTokenRefused`, `Service` the audience) on a host that publishes
+  metrics. The verified claims go on the message's `Items`, which `CallTurn` reads; checked once on
+  arrival, so a long command or a held approval runs to its end. The gate's clock is the wall clock
+  unless a test registers one under `CallTokenGate.ClockKey`.
+- **`CallTurn.Turn`** is the `_meta` context with its `Principal` replaced by the token's: a person
+  is `Principal(chn, sub, Account(tid, sub))` — the channel's own name for them is not signed, so it
+  is not kept — the guest `Principal(chn, "guest")`, nobody none. `call.Identity` is the verified
+  claims themselves. `Principal.Of` still falls back to the context's `UserId` for a person's own
+  turn with no principal, which reaches no account.
+- **The outpost** answers `IMcpHostSettings.ChecksCallTokens` with false, explicitly: it receives the
+  token and is not required to check it, and `CallTurn` then names nobody. Every other server says
+  yes by saying nothing, and no setting can switch the check off.
+- **Keys and wiring.** The agent opens its `SigningKeyStore` from `Signing` (`SIGNING__KEYDIRECTORY`
+  = `/keys`, the `./volumes/agent-keys` volume `agent-volume` chowns, the agent running as PUID) and
+  serves the JWKS at `/internal/jwks` (`AgentKeysApi`), which no Caddy route reaches. Each server binds
+  `MCP__AUDIENCE` and `MCP__AGENTKEYSURL` (`http://agent:8080/internal/jwks`) in compose; either left
+  empty refuses every tool call. The verifiers' timing is `Domain/token-verification.json`
+  (`mcp:tokenVerification`), read by `BindSettings` and the agent's configuration. The agent dials
+  its channels only once it is listening (`ChannelConnectionHost` waits for `ApplicationStarted`), or a
+  channel server's first fetch of its keys would fail and refuse calls until the refetch interval.
+  There is no rotation command for the agent's key yet.

@@ -45,7 +45,7 @@ public class WatchFireReachesTheAgentTests
         try
         {
             await using var connection = new McpChannelConnection(
-                "homeassistant", healthCheckInterval: TimeSpan.FromMilliseconds(200), mcpSecret: McpTestSecret.Value);
+                "homeassistant", healthCheckInterval: TimeSpan.FromMilliseconds(200), mcpSecret: McpTestSecret.Value, callTokens: McpTestSecret.CallTokens);
             var run = connection.RunAsync($"http://localhost:{port}/mcp",
                 () => [new AgentCatalogEntry("jonas", "Jonas", "the assistant")], cts.Token);
             var reading = connection.Messages.FirstAsync(cts.Token).AsTask();

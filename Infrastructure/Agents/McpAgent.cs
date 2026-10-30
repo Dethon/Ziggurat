@@ -54,6 +54,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly McpPromptCache? _promptCache;
     private readonly ReadImageSupport? _readImages;
     private readonly IVfsBridge? _bridge;
+    private readonly CallTokens? _callTokens;
 
     private readonly SkillsProvider _skills;
     private readonly RedisChatMessageStore _history;
@@ -88,7 +89,8 @@ public sealed class McpAgent : DisposableAgent
         OutpostAccess? outposts = null,
         ReadImageSupport? readImages = null,
         ISkillPreloader? skillPreloader = null,
-        IVfsBridge? bridge = null)
+        IVfsBridge? bridge = null,
+        CallTokens? callTokens = null)
     {
         _endpoints = spec.McpServerEndpoints;
         _usesOutposts = spec.UsesOutposts;
@@ -119,6 +121,7 @@ public sealed class McpAgent : DisposableAgent
         _promptCache = promptCache;
         _readImages = readImages;
         _bridge = bridge;
+        _callTokens = callTokens;
         _history = new RedisChatMessageStore(stateStore, metricsPublisher, spec.ConversationId);
         _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided, RegistryOf);
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
@@ -564,7 +567,7 @@ public sealed class McpAgent : DisposableAgent
             var newSession = await ThreadSession
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
-                             ct, _promptCache, _readImages, _bridge, _noTools, _withheldTools);
+                             ct, _promptCache, _readImages, _bridge, _noTools, _withheldTools, _callTokens);
 
             // The one moment a shadowed outpost is knowable, and the machine serving it has no way
             // to find out for itself — the next keepalive carries the answer home. Whether this

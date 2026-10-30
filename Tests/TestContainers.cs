@@ -29,6 +29,22 @@ internal static class TestContainers
     public static NetworkBuilder Network() =>
         new NetworkBuilder().WithLabel(ProjectLabel, ProjectName);
 
+    // The host a test's own process dials a container it started at — Testcontainers answers the same
+    // for every container of a run, before one exists — and so the name a server in such a container
+    // must answer to as a call token's audience.
+    public static string DialledHost => _dialledHost.Value;
+
+    private static readonly Lazy<string> _dialledHost = new(() => new ContainerBuilder("alpine:3").Build().Hostname);
+
+    // A server container the test process itself dials, gated as compose gates one: it answers to the
+    // host the test dials it at, and checks call tokens against the suite's agent key, which the test
+    // process serves (TestJwks) since no agent of the stack's publishes one.
+    public static ContainerBuilder WithCallTokensFromTheTestProcess(this ContainerBuilder builder) =>
+        builder
+            .WithExtraHost("host.docker.internal", "host-gateway")
+            .WithEnvironment("MCP__AUDIENCE", DialledHost)
+            .WithEnvironment("MCP__AGENTKEYSURL", TestJwks.AgentUrlFromContainers);
+
     // The same two labels for a container the suite starts by shelling out to `docker run`. It
     // needs them more than a Testcontainers one does: labels are inherited from the image, and the
     // images the fixtures reuse were built by the dev stack's compose project, which stamps its own

@@ -1,0 +1,72 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Threading.Channels;
+using Domain.DTOs.Channel;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
+
+namespace Infrastructure.Agents.Mcp;
+
+// Every tool call one of the agent's MCP clients sends carries the agent's call token for the one
+// server the client is dialled to, beside the conversation context the call site already wrote.
+// Signing where the message leaves rather than where each call is made: a tool the model calls, a
+// filesystem operation, a send_reply and an approval all go out through here, so no call site — a
+// new one included — can send a call unsigned, and the audience is the client's own endpoint by
+// construction.
+//
+// Who the token names is read off the context in the same _meta (CallIdentity), so a worker that
+// carries its parent's context signs for its parent's person, and a call whose _meta names no turn —
+// the channel plumbing, a fire nobody vouched for — is signed as nobody. Anything a caller put under
+// the token's key is overwritten: only this signs.
+public sealed class SigningClientTransport(IClientTransport inner, CallTokens tokens, string audience) : IClientTransport
+{
+    public string Name => inner.Name;
+
+    public async Task<ITransport> ConnectAsync(CancellationToken cancellationToken = default) =>
+        new Signing(await inner.ConnectAsync(cancellationToken), tokens, audience);
+
+    private sealed class Signing(ITransport inner, CallTokens tokens, string audience) : ITransport
+    {
+        public string? SessionId => inner.SessionId;
+
+        public ChannelReader<JsonRpcMessage> MessageReader => inner.MessageReader;
+
+        public Task SendMessageAsync(JsonRpcMessage message, CancellationToken cancellationToken = default) =>
+            inner.SendMessageAsync(Signed(message), cancellationToken);
+
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
+
+        private JsonRpcMessage Signed(JsonRpcMessage message)
+        {
+            if (message is not JsonRpcRequest { Method: RequestMethods.ToolsCall } request)
+            {
+                return message;
+            }
+
+            var parameters = request.Params as JsonObject ?? new JsonObject();
+            if (parameters["_meta"] is not JsonObject meta)
+            {
+                meta = new JsonObject();
+                parameters["_meta"] = meta;
+            }
+
+            meta[ChannelProtocol.CallTokenMetaKey] = tokens.For(CallIdentity.Of(TurnOf(meta)), audience);
+            request.Params = parameters;
+            return request;
+        }
+
+        // A context that does not read as one names nobody; the server says what is wrong with it.
+        private static ConversationContext? TurnOf(JsonObject meta)
+        {
+            try
+            {
+                return meta[ChannelProtocol.ConversationContextMetaKey]
+                    ?.Deserialize<ConversationContext>(ChannelProtocol.SerializerOptions);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
+        }
+    }
+}

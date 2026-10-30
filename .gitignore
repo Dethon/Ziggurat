@@ -7,6 +7,8 @@ riderModule.iml
 *.DotSettings.user
 *.csproj.lscache
 DockerCompose/volumes
+# The agent's signing key on a host run (Agent/appsettings.Local.json).
+Agent/.signing
 .idea
 .playwright-mcp
 temp

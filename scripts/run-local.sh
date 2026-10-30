@@ -107,6 +107,10 @@ start_service() {
       "ASPNETCORE_URLS=http://localhost:$port"
       "MCP__SHAREDSECRET=$MCP_SECRET"
       "MCP__SECRETS__localhost=$MCP_SECRET"
+      # Every server checks a tool call's token for the name the agent dials it at, against the
+      # keys the agent (on 5000) publishes.
+      "MCP__AUDIENCE=localhost"
+      "MCP__AGENTKEYSURL=http://localhost:5000/internal/jwks"
     )
     [[ $aspnet_env == yes ]] && envs+=("ASPNETCORE_ENVIRONMENT=Local")
 
