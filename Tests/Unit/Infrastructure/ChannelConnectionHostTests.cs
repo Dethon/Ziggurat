@@ -79,6 +79,27 @@ public class ChannelConnectionHostTests
         warnings.Messages.ShouldContain(m => m.Contains("ch-ghost"));
     }
 
+    // A channel server checks the first tool call it takes against the keys this process publishes,
+    // so a connection dialled before the agent listens has its calls refused until the server may
+    // fetch again. The host dials once the agent is listening, and not before.
+    [Fact]
+    public async Task ExecuteAsync_BeforeTheAgentIsListening_DialsNothing()
+    {
+        var connection = new FakeMcpChannelConnection("ch-1");
+        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://localhost:9001" } };
+        using var listening = new CancellationTokenSource();
+        var sut = new ChannelConnectionHost(endpoints, [connection], () => _catalog, _logger, listening.Token);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _ = sut.StartAsync(cts.Token);
+        await Eventually.Settle();
+        connection.RunCount.ShouldBe(0);
+
+        await listening.CancelAsync();
+        await connection.WaitForRunAsync(cts.Token);
+        connection.RunCount.ShouldBe(1);
+    }
+
     [Fact]
     public void Constructor_TwoEndpointsForOneChannelId_FailsNamingTheDuplicate()
     {

@@ -56,11 +56,12 @@ internal sealed class ThreadSession : IAsyncDisposable
         ReadImageSupport? readImages = null,
         IVfsBridge? bridge = null,
         bool noTools = false,
-        IReadOnlySet<string>? withheldTools = null)
+        IReadOnlySet<string>? withheldTools = null,
+        CallTokens? callTokens = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
             userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge, noTools,
-            withheldTools);
+            withheldTools, callTokens);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -88,7 +89,8 @@ internal sealed class ThreadSessionBuilder(
     ReadImageSupport? readImages = null,
     IVfsBridge? bridge = null,
     bool noTools = false,
-    IReadOnlySet<string>? withheldTools = null)
+    IReadOnlySet<string>? withheldTools = null,
+    CallTokens? callTokens = null)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 
@@ -115,7 +117,7 @@ internal sealed class ThreadSessionBuilder(
         // hydration through the bridge without knowing either exists.
         var clientManager = await McpClientManager.CreateAsync(
             name, userId, description, endpoints, new McpClientHandlers(), promptCache, dialLogger,
-            readImages?.Store, ct);
+            readImages?.Store, callTokens, ct);
 
         // Dialled for its prompts alone: the servers still say how this agent works, but nothing
         // they offer to call or to load reaches it, and no mount is made that no tool could read.

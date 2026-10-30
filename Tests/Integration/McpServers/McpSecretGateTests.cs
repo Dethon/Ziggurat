@@ -113,7 +113,7 @@ public class McpSecretGateTests : IAsyncLifetime
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
         builder.Services
-            .AddToolServer(new GatedSettings(new McpGateSettings { SharedSecret = secret }))
+            .AddToolServer(new GatedSettings(McpTestSecret.Gate with { SharedSecret = secret }))
             .WithTools<FailingTools>();
 
         _app = builder.Build();

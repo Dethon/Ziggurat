@@ -15,5 +15,6 @@ app.UseCors();
 app.MapAgents(settings.AgentApi.SharedSecret);
 app.MapOutposts(settings.Outposts.SharedSecret);
 app.MapVfsBridge();
+app.MapAgentKeys();
 
 await app.RunAsync();

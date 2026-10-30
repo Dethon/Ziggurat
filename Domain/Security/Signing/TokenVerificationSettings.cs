@@ -6,6 +6,10 @@ namespace Domain.Security.Signing;
 // retirement of the key it replaced.
 public sealed record TokenVerificationSettings
 {
+    // The shared policy file every verifying host reads (Domain/token-verification.json), so the
+    // issuer's verifiers agree about time.
+    public const string FileName = "token-verification.json";
+
     // Forgiven on every expiry and not-before, so a few seconds of drift never refuses a call.
     public TimeSpan ClockSkew { get; init; } = TimeSpan.FromSeconds(30);
 

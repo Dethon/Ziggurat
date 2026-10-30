@@ -148,7 +148,7 @@ public class ChannelReceiveContractTests
             port,
             services => services.ConfigureChannel(
                 new TelegramSettings.ChannelSettings { Bots = [], Mcp = McpTestSecret.Gate }));
-        await using var connection = new McpChannelConnection("telegram", mcpSecret: McpTestSecret.Value);
+        await using var connection = new McpChannelConnection("telegram", mcpSecret: McpTestSecret.Value, callTokens: McpTestSecret.CallTokens);
         try
         {
             // Emitted before anything has ever polled: the cold-start window this policy exists for.
@@ -193,7 +193,7 @@ public class ChannelReceiveContractTests
         app.MapMcp("/mcp");
         await app.StartAsync();
 
-        await using var connection = new McpChannelConnection("signalr", mcpSecret: McpTestSecret.Value);
+        await using var connection = new McpChannelConnection("signalr", mcpSecret: McpTestSecret.Value, callTokens: McpTestSecret.CallTokens);
         try
         {
             await connection.ConnectAsync(endpoint, CancellationToken.None);

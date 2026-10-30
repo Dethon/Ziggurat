@@ -229,6 +229,9 @@ services:
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP_SECRET_LIBRARY}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-library
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -258,6 +261,9 @@ services:
     environment:
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP_SECRET_VAULT}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-vault
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -315,6 +321,9 @@ services:
     environment:
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP_SECRET_SANDBOX}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-sandbox
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
       HOME: /home/sandbox_user
       PATH: /home/sandbox_user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       PUID: ${PUID:-1654}
@@ -374,6 +383,9 @@ services:
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP_SECRET_WEBSEARCH}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-websearch
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
       # Seals each person's remembered logins in Redis (base64 of 32 random bytes; empty is
       # remembering off). Changing it makes every saved login refuse until it is put back.
       LOGINS__STATEKEY: ${LOGINS__STATEKEY}
@@ -410,6 +422,9 @@ services:
       IDEALISTA__SECRET: ${IDEALISTA__SECRET}
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP_SECRET_IDEALISTA}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-idealista
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -440,6 +455,9 @@ services:
       Announce__Token: ${Announce__Token}
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP_SECRET_HOMEASSISTANT}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-homeassistant
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -471,6 +489,9 @@ services:
       <<: [ *timezone, *cors-origins ]
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_SIGNALR}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-channel-signalr
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
       Dictation__Transcription__Model: *stt-model
     networks:
       - jackbot
@@ -500,6 +521,9 @@ services:
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_TELEGRAM}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-channel-telegram
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
       Dictation__Transcription__Model: *stt-model
     networks:
       - jackbot
@@ -524,6 +548,9 @@ services:
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP_SECRET_SCHEDULING}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-scheduling
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -548,6 +575,9 @@ services:
     environment:
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP_SECRET_PRINTER}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-printer
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -570,6 +600,9 @@ services:
       Announce__Token: ${Announce__Token}
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP_SECRET_TIMERS}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-timers
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -634,6 +667,9 @@ services:
       # installing it and live scanning need, and behind the proxy's session check: it has no sign-in
       # of its own. /mcp keeps this server's own credential.
       MCP__SHAREDSECRET: ${MCP_SECRET_SUGARY}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-sugary
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -667,6 +703,9 @@ services:
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_VOICE}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-channel-voice
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
       Announce__Escalation__WebhookUrl: ""
       Stt__OpenAi__Model: *stt-model
       Tse__Mode: "${Tse__Mode:-Off}"
@@ -786,6 +825,24 @@ services:
     networks:
       - jackbot
 
+  # Docker creates a missing bind-mount folder as root, and the agent runs as PUID, so on a fresh host
+  # it could not write its signing key. This one-shot step, from the same image, hands
+  # ./volumes/agent-keys to PUID:PGID and exits before the agent starts; a no-op on every later start.
+  agent-volume:
+    image: agent:latest
+    container_name: agent-volume
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: Agent/Dockerfile
+    user: "0:0"
+    entrypoint: ["chown", "${PUID:-1654}:${PGID:-1654}", "/keys"]
+    volumes:
+      - ./volumes/agent-keys:/keys
+    restart: "no"
+    depends_on:
+      base-sdk:
+        condition: service_started
+
   agent:
     image: agent:latest
     logging:
@@ -798,7 +855,14 @@ services:
       dockerfile: Agent/Dockerfile
     command: [ "--chat", "Web", "--reasoning" ]
     restart: unless-stopped
+    # The agent signs every call it makes to a server with a key it generates into this volume on
+    # first start, nothing to provision, and publishes the public half at /internal/jwks on the compose
+    # network alone. Losing the volume costs a new key, which every server picks up on its own.
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/agent-keys:/keys
     environment:
+      SIGNING__KEYDIRECTORY: /keys
       # The secrets this service reads, by name: it is never handed the whole .env.
       OPENROUTER__APIKEY: ${OPENROUTER__APIKEY}
       LemonadeChat__ApiUrl: ${LemonadeChat__ApiUrl}
@@ -853,6 +917,8 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+      agent-volume:
+        condition: service_completed_successfully
       base-sdk:
         condition: service_started
 

@@ -63,6 +63,11 @@ public static class ChannelProtocol
     // where a later spec revision is free to claim it out from under us.
     public const string ConversationContextMetaKey = "com.herfluffness/conversationContext";
 
+    // _meta key under which every tools/call the agent makes carries its call token for the one
+    // server it is sent to: who the call acts for, signed by the agent. A server acts for whoever the
+    // token names and for nobody the conversation context above merely claims.
+    public const string CallTokenMetaKey = "com.herfluffness/callToken";
+
     // Sender attributed to channel/message notifications the system originates on a user's
     // behalf rather than the user themselves — e.g. the /cancel command and download-completion
     // alerts. Keeps these off the initiating user's identity (memory scoping, attribution).

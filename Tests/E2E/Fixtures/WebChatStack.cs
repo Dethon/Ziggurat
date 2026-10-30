@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Agent.App;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using DotNet.Testcontainers.Builders;
@@ -32,6 +33,10 @@ namespace Tests.E2E.Fixtures;
 // it signs in as, and each collection reserves its own block of user identities from this stack.
 internal sealed partial class WebChatStack
 {
+    // Where the stack's agent publishes its keys, which every server checks a tool call's token
+    // against, as compose wires it.
+    private const string AgentKeysUrl = $"http://agent:8080{AgentKeysApi.Path}";
+
     private static readonly Lock _gate = new();
     private static Task? _images;
     private static Task<WebChatStack>? _started;
@@ -345,6 +350,8 @@ internal sealed partial class WebChatStack
             // The credential this server's /mcp asks for and the agent presents to it alone,
             // exactly as compose wires it.
             .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-vault"))
+            .WithEnvironment("MCP__AUDIENCE", "mcp-vault")
+            .WithEnvironment("MCP__AGENTKEYSURL", AgentKeysUrl)
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(8080))
             .Build();
@@ -359,6 +366,8 @@ internal sealed partial class WebChatStack
             .WithTmpfsMount("/data")
             .WithEnvironment("TZ", "Europe/Madrid")
             .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-sugary"))
+            .WithEnvironment("MCP__AUDIENCE", "mcp-sugary")
+            .WithEnvironment("MCP__AGENTKEYSURL", AgentKeysUrl)
             .WithEnvironment("TURNTIMEOUTSECONDS", ((int)SugaryTurnTimeout.TotalSeconds).ToString())
             .WithPortBinding(8080, true)
             // The app's session route answers once the database is migrated and the routes are bound:
@@ -415,6 +424,8 @@ internal sealed partial class WebChatStack
             .WithPortBinding(8080, true)
             .WithEnvironment("REDISCONNECTIONSTRING", "redis:6379")
             .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-channel-signalr"))
+            .WithEnvironment("MCP__AUDIENCE", "mcp-channel-signalr")
+            .WithEnvironment("MCP__AGENTKEYSURL", AgentKeysUrl)
             // Dictation reaches whisper through the shared transcription client, so pointing its
             // base URL at the test's own listener is the whole of the substitution.
             .WithExtraHost("host.docker.internal", "host-gateway")
@@ -504,6 +515,9 @@ internal sealed partial class WebChatStack
             .WithEnvironment("MCP__SECRETS__mcp-vault", McpTestSecret.For("mcp-vault"))
             .WithEnvironment("MCP__SECRETS__mcp-sugary", McpTestSecret.For("mcp-sugary"))
             .WithEnvironment("MCP__SECRETS__mcp-channel-signalr", McpTestSecret.For("mcp-channel-signalr"))
+            // The suite's fixed key instead of one generated into a volume, so the tests' own
+            // clients, which sign with the same key, are the agent as far as the servers can tell.
+            .WithEnvironment("SIGNING__PRIVATEKEY", TestSigningKeys.Agent)
             // Wait until Kestrel + hosted services (ChatMonitoring) are running. The agent
             // container has no published host port, so an HTTP probe isn't possible; the
             // log line is the cheapest reliable signal.
