@@ -28,6 +28,21 @@ public static class ChannelProtocol
     // one party connected to both channels; the message and the history still carry references.
     public const string StoreAttachmentTool = "store_attachment";
 
+    // An approval is its asker's, answered wherever they are (ApprovalRelay). The question is asked
+    // where the turn's delivery anchors (request_approval, carrying the question's own id) and
+    // offered to the asking account on every channel that can reach a person wherever they are; the
+    // first answer wins and every other channel is told it was answered elsewhere. Hidden from the
+    // model like every other channel-protocol tool, and offered only by a channel with a person to
+    // reach: a dual-role server answers no offer, which is how it is never asked one.
+    public const string OfferApprovalTool = "offer_approval";
+    public const string SettleApprovalTool = "settle_approval";
+
+    // What a channel answers an approval with when nobody answered it there: the question could not
+    // be shown (no live session, no satellite), the person could not be reached, or it was answered
+    // somewhere else first. It is not a refusal — a refusal is the person's, or the asking channel's
+    // own time-out — so it never ends a question another channel may still be showing.
+    public const string NoAnswer = "no_answer";
+
     // How long a channel_receive call may be held open server-side before returning an empty
     // batch. Verified safe: a 45s hold completes on the SDK's default client timeout, and no
     // reverse proxy sits between the agent and a channel server (ChannelEndpoints are
@@ -78,4 +93,14 @@ public static class ChannelProtocol
     }
 
     public static T? Deserialize<T>(JsonElement element) => element.Deserialize<T>(SerializerOptions);
+
+    // An approval's answer as a channel spelled it. Underscores are the Telegram keyboard's spelling
+    // of the same words, and "denied" its word for a refusal; anything else unreadable is a refusal,
+    // so a channel's reason for one ("rejected: …") still reads as one.
+    public static ToolApprovalResult? ParseApprovalAnswer(string? text) =>
+        string.IsNullOrWhiteSpace(text) || text == NoAnswer
+            ? null
+            : Enum.TryParse<ToolApprovalResult>(text.Replace("_", ""), ignoreCase: true, out var parsed)
+                ? parsed
+                : ToolApprovalResult.Rejected;
 }
