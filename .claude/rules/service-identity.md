@@ -44,6 +44,7 @@ paths:
   - "McpServerScheduling/Services/ScheduleDelegationStore.cs"
   - "McpServerHomeAssistant/Services/WatchDelegationStore.cs"
   - "Tests/TestDelegations.cs"
+  - "Tests/Smoke/**"
 ---
 
 # Service identity: signing and verifying
@@ -383,3 +384,17 @@ conversation refused), `RedelegationTests` (lost key, no writer, rotation and th
 and `ChatMonitorDelegationTests` (the monitor's admission, a download, the error feed).
 `TestDelegations` signs with the suite's agent key, forges with the accounts one, and checks a fire
 as the conversation group does.
+
+## The smoke tier (seam 6)
+
+`StackSmokeTests` asks a running stack (`scripts/smoke-stack.sh`) what the signing promises, from
+outside through Caddy and from **inside** the compose network (`SmokeStack.FromInsideAsync`, curl in
+the `camoufox` container, which sits beside every server). Every gated server it runs (compose's
+`MCP__AUDIENCE`) refuses a `tools/call` naming a person with its real credential and no token
+(`Missing`), a garbage one (`Malformed`) and one signed with the suite's agent key (`UnknownKey` —
+not `KeysUnavailable`, which is how a server that cannot reach the agent's JWKS shows). The apps
+refuse plain identity headers and a foreign-signed assertion when reached past Caddy; an assertion
+the stack's own session check signed opens its own app and not another's channel; both JWKS answer
+inside and on no host. The reply test waits for an assistant message that is **not**
+`.chat-message.error`: a refused turn is answered too, with text in it. Its stack's keys are generated
+fresh on each `up`; nothing in it holds the test keys.
