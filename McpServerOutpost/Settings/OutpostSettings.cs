@@ -56,4 +56,9 @@ public record OutpostSettings : IMcpHostSettings
     // here would make every outpost refuse the hub that dials it. Computed rather than bound, so
     // no variable of the deployment's name can reach it.
     McpGateSettings IMcpHostSettings.Mcp => new() { SharedSecret = SharedSecret };
+
+    // The agent's call token arrives on every tool call here as on any server, and is not checked:
+    // a machine on somebody's desk knows nothing of the deployment's keys, and checking would give it
+    // something new to configure for no person's data the outpost holds.
+    bool IMcpHostSettings.ChecksCallTokens => false;
 }

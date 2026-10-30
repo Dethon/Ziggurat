@@ -2,9 +2,11 @@ using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Security;
+using Domain.Security.Signing;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Judgments;
 using JetBrains.Annotations;
 
@@ -32,6 +34,13 @@ public record AgentSettings
     // (MCP__SECRETS__<host>): every configured endpoint and channel connection presents the one for
     // its host, the same value that server binds as its own (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
+
+    // The key the agent signs its call tokens with (and, later, the delegations deferred turns act
+    // on). A deployment names a directory in the agent's own volume (SIGNING__KEYDIRECTORY), where the
+    // key is generated on first start; a test stack hands it a fixed one (SIGNING__PRIVATEKEY).
+    public SigningKeySettings Signing { get; init; } = new();
+
+    public CallTokenSettings CallTokens { get; init; } = new();
 
     // The browser origins the registration API answers with credentials (CORS__ALLOWEDORIGINS__n),
     // the same section the hub binds.

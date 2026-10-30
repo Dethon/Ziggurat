@@ -4,10 +4,16 @@
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A real server refuses an unsigned, expired, wrong-audience and foreign-key call, each with its reason, and admits a person's and a guest's
-- [ ] A server acts for the person the verified token names and ignores a different principal written in `_meta`
-- [ ] A turn running past the first token's lifetime keeps presenting valid tokens, under a fake clock
-- [ ] A worker's calls act for its parent turn's person
-- [ ] The integration, E2E and eval stacks pass with the test key
+- [x] A real server refuses an unsigned, expired, wrong-audience and foreign-key call, each with its reason, and admits a person's and a guest's (`CallTokenGateTests`)
+- [x] A server acts for the person the verified token names and ignores a different principal written in `_meta` (`CallTokenGateTests`)
+- [x] A turn running past the first token's lifetime keeps presenting valid tokens, under a fake clock (`McpAgentCallTokenTests`)
+- [x] A worker's calls act for its parent turn's person (`McpAgentCallTokenTests`)
+- [x] The integration, E2E and eval stacks pass with the test key — integration and unit suites, the WebChat reply E2E and the eval harness's unarmed tests; no armed eval was run
+
+Notes for later tickets:
+- A call that acts for no one is signed as nobody (`IdentityClaims.Nobody`, `sub` = `nobody`, no household), an amendment to ticket 01's claim set: the agent's channel plumbing and a fire nobody vouched for still carry a token. 05 must refuse an assertion that names nobody.
+- 05 plugs the verified assertion in at `Infrastructure/Agents/Mcp/CallIdentity.cs`, the one method that says who a turn's calls are signed for (today: the principal's account, else nobody — the voice guest is nobody until 05, since the agent cannot know a guest's household).
+- A server's `Principal` for a person is now `Principal(chn, accountId, Account)`: the channel's own name for them is not signed.
+- There is no rotation command for the agent's key yet.

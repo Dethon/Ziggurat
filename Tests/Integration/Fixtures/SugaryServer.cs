@@ -132,7 +132,7 @@ public sealed class SugaryServer : IAsyncDisposable
     // off here so the first thing a test receives is its own turn.
     public async Task<McpChannelConnection> AgentAsync()
     {
-        var agent = new McpChannelConnection("sugary", mcpSecret: McpTestSecret.Value);
+        var agent = new McpChannelConnection("sugary", mcpSecret: McpTestSecret.Value, callTokens: McpTestSecret.CallTokens);
         _agents.Add(agent);
         await agent.ConnectAsync(_server.Endpoint, CancellationToken.None);
 

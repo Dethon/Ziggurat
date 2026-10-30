@@ -178,7 +178,7 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
 
     private async Task<JsonArray> QueryMountAsync(string sql, Account account)
     {
-        await using var mcp = await McpClient.CreateAsync(McpTestSecret.Transport(fixture.SugaryMcpEndpoint, McpTestSecret.For("mcp-sugary")));
+        await using var mcp = await McpClient.CreateAsync(McpTestSecret.Transport(fixture.SugaryMcpEndpoint, McpTestSecret.For("mcp-sugary"), audience: "mcp-sugary"));
         var turn = new ConversationContext("jonas", "e2e-sugary", account.UserId, new ReplyTarget("signalr", "e2e-sugary"),
             Principal: new Principal("signalr", account.UserId, account));
         var result = await mcp.CallToolAsync(new CallToolRequestParams

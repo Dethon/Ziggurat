@@ -1,4 +1,5 @@
 using Accounts.Internal;
+using Agent.App;
 using Domain.DTOs.Channel;
 using Domain.Security;
 using McpServerSugary.Channel;
@@ -482,6 +483,60 @@ public class DeploymentConformanceTests
         var volume = compose.Service("accounts-volume");
         volume.Volumes.ShouldBe(["./volumes/accounts:/data"]);
         accounts.DependsOn.ShouldContain("accounts-volume");
+    }
+
+    // The agent signs every call with a key it generates on first start and keeps across rebuilds, in
+    // a volume of its own; nothing else mounts it, and the one-shot step hands it to the agent's user.
+    [Fact]
+    public void TheAgent_KeepsItsSigningKeyInAVolumeOfItsOwnThatItsUserOwns()
+    {
+        var compose = DeploymentFiles.Compose();
+        var agent = compose.Service("agent");
+
+        agent.Volumes.ShouldContain("./volumes/agent-keys:/keys");
+        agent.Environment["SIGNING__KEYDIRECTORY"].ShouldBe("/keys");
+        agent.Environment.ShouldNotContainKey("SIGNING__PRIVATEKEY");
+        agent.User.ShouldBe("${PUID:-1654}:${PGID:-1654}");
+        compose.Services.Values.Where(s => s.Name != "agent" && s.Name != "agent-volume")
+            .ShouldNotContain(s => s.Volumes.Any(v => v.StartsWith("./volumes/agent-keys:", StringComparison.Ordinal)));
+        compose.Service("agent-volume").Volumes.ShouldBe(["./volumes/agent-keys:/keys"]);
+        agent.DependsOn.ShouldContain("agent-volume");
+    }
+
+    // Every server the agent dials checks each tool call's token: for itself, by the name the agent
+    // dials it at, against the keys the agent publishes on the compose network. A server told another
+    // name refuses every call as aimed elsewhere; one told no keys refuses every call as unverifiable.
+    [Fact]
+    public void EveryServer_ChecksCallTokensForItsOwnNameAgainstTheAgentsKeys()
+    {
+        var compose = DeploymentFiles.Compose();
+        var dialled = compose.Service("agent").Environment.Keys
+            .Where(key => key.StartsWith("MCP__SECRETS__", StringComparison.Ordinal))
+            .Select(key => key["MCP__SECRETS__".Length..])
+            .ToList();
+
+        dialled.ShouldNotBeEmpty();
+        foreach (var server in dialled)
+        {
+            var environment = compose.Service(server).Environment;
+            environment.GetValueOrDefault("MCP__AUDIENCE").ShouldBe(server, server);
+            environment.GetValueOrDefault("MCP__AGENTKEYSURL").ShouldBe($"http://agent:8080{AgentKeysApi.Path}", server);
+        }
+    }
+
+    // The agent's keys are fetched without a credential, so the proxy alone keeps them inside: on every
+    // host the path lands on a route that is not the agent's.
+    [Fact]
+    public void TheAgentsKeys_AreNeverRoutedThroughTheProxy()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+
+        hosts.ShouldNotBeEmpty();
+        hosts.ShouldContain(h => h.Routes.Any(r => r.Upstream == "agent:8080"), "a host routes the agent's API");
+        foreach (var host in hosts)
+        {
+            RouteFor(host, AgentKeysApi.Path)?.Upstream.ShouldNotBe("agent:8080", host.Name);
+        }
     }
 
     // A passkey is bound to the relying party, the cookie to its domain and a sign-in's return to the

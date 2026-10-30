@@ -12,4 +12,10 @@ namespace Mcp.Hosting;
 public interface IMcpHostSettings
 {
     McpGateSettings Mcp { get; }
+
+    // Whether a tool call must carry the agent's call token for this server (CallTokenGate). Every
+    // deployment server says yes by saying nothing; the outpost alone answers no, explicitly — it is
+    // somebody's own machine, configured by flags, and receives the token without being required to
+    // check it. Not a setting: nothing a deployment binds can switch the check off.
+    bool ChecksCallTokens => true;
 }
