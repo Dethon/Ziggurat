@@ -55,7 +55,11 @@ public static class BrowseServerListeners
         }
 
         var path = Path.Combine(TestHelpers.FindSolutionRoot(), "McpServerWebSearch", "appsettings.json");
-        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path),
+            new System.Text.Json.JsonDocumentOptions
+            {
+                CommentHandling = System.Text.Json.JsonCommentHandling.Skip, AllowTrailingCommas = true
+            });
         return document.RootElement.GetProperty("Listeners").GetProperty(name).GetInt32();
     }
 }

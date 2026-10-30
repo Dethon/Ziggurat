@@ -11,8 +11,9 @@ namespace Mcp.Hosting;
 //
 // A startup filter, because a server maps its own endpoints in Program.cs and the host only ever
 // sees its services: a filter is the one thing a service registration can add to the pipeline,
-// and it runs ahead of everything the server adds itself. Ahead of routing, too, which is why it
-// guards a path rather than an endpoint — and why that path alone: a server's other endpoints are
+// and it runs ahead of everything the server adds itself (the browse server's PagesListener alone
+// is inserted ahead of it, so /mcp is absent on its pages listener). Ahead of routing, too, which
+// is why it guards a path rather than an endpoint — and why that path alone: a server's other endpoints are
 // called by browsers, Home Assistant and satellites, which hold no deployment secret, and the ones
 // that need a gate carry their own token. McpServerTableTests holds every server to mapping its
 // MCP endpoint here.
