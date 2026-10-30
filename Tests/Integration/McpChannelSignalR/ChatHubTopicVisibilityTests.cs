@@ -272,6 +272,44 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         await olga.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", topic.AgentId, topic.ChatId, topic.ThreadId);
     }
 
+    // Seeing every topic is reading them: another person's private topic is theirs alone to
+    // continue, rename, delete or stop, and to mark read.
+    [Theory]
+    [MemberData(nameof(ChangesByName))]
+    public async Task SomeoneWhoSeesAll_CannotChangeAnotherPersonsPrivateTopic(string call)
+    {
+        var fran = await ConnectAsync(Fran);
+        var olga = await ConnectAsync(Olga, "sees-all");
+        var topic = await StartTopicAsync(fran, "Fran's plum jam");
+        (await olga.InvokeAsync<bool>("StartSession", topic.AgentId, topic.TopicId, topic.ChatId, topic.ThreadId, topic.Name))
+            .ShouldBeTrue();
+
+        await Should.ThrowAsync<HubException>(() => Call(call, olga, topic));
+
+        var stored = (await _store.GetTopicAsync(_agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
+        stored.Name.ShouldBe("Fran's plum jam");
+        (await ReceiveAsync()).ShouldBeEmpty();
+    }
+
+    public static TheoryData<string> ChangesByName =>
+        ["SaveTopic", "DeleteTopic", "SetTopicShared", "CancelTopic", "SendMessage", "EnqueueMessage", "CreateUploadTicket"];
+
+    [Fact]
+    public async Task SomeoneWhoSeesAll_ReadingAnotherPersonsTopic_LeavesItUnreadForItsOwner()
+    {
+        var fran = await ConnectAsync(Fran);
+        var olga = await ConnectAsync(Olga, "sees-all");
+        var topic = await StartTopicAsync(fran, "Fran's plum jam");
+        await _store.AppendMessagesAsync(
+            new AgentKey(new ConversationIdentity(topic.ChatId, topic.ThreadId).ConversationId, _agent).ToString(),
+            [new ChatMessage(ChatRole.Assistant, "plums need pectin")]);
+
+        await olga.InvokeAsync("MarkTopicRead", topic.AgentId, topic.ChatId, topic.TopicId);
+
+        var stored = (await _store.GetTopicAsync(_agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
+        (stored.MessageCount, stored.ReadPosition).ShouldBe((1L, 0L));
+    }
+
     // Reading is never deciding: the prompt is shown to whoever sees the topic, and only the person
     // whose topic it is settles it.
     [Fact]
