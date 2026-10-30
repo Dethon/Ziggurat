@@ -1,3 +1,4 @@
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Domain.Security;
@@ -129,11 +130,42 @@ public class EvalRunChannelTurnTests
         identity.ShouldBe(verified with { Roles = identity.Roles });
     }
 
-    // A fire carries no assertion in the deployment either: nobody sent it at that moment.
+    // A fire carries no assertion in the deployment either — nobody sent it at that moment — and acts
+    // for the person whose write the agent signed its delegation on: an eval's fire stands in for one
+    // the eval account wrote from the fire's channel.
     [Fact]
-    public void AFire_CarriesNoIdentity()
+    public async Task AFire_ActsForWhatItsDelegationWouldHaveVerified()
     {
         var fire = Formatted() with { Turn = Formatted().Turn with { Origin = MessageOriginKind.Schedule } };
+        var turn = EvalRun.Turn(fire, "eval:test").GetConversationContext().ShouldNotBeNull();
+        var channel = turn.Origin.ChannelId;
+        var schedule = new Schedule { Id = "s-1", AgentId = "jonas", Prompt = "summarize", CronExpression = "0 8 * * *" };
+
+        var verified = (await TestDelegations.Verifier().VerifyFireAsync(new ChannelMessage
+        {
+            ConversationId = "sched-s-1-1",
+            Content = schedule.Prompt,
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = schedule.AgentId,
+            ReplyTo = [new ReplyTarget(ChannelIds.SignalR, null)],
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, schedule.Id),
+            Delegation = TestDelegations.OfSchedule(EvalRun.Account, channel, schedule)
+        }, CancellationToken.None))
+            .ShouldBeOfType<FireAdmission.Delegated>().Identity;
+
+        var identity = turn.Identity.ShouldNotBeNull();
+        identity.Subject.ShouldBe(verified.Subject);
+        identity.TenantId.ShouldBe(verified.TenantId);
+        identity.ChannelId.ShouldBe(verified.ChannelId);
+        identity.Roles.ShouldBe(verified.Roles);
+    }
+
+    // A finished download reports back without acting as anybody, in the deployment and here.
+    [Fact]
+    public void ADownloadsFire_CarriesNoIdentity()
+    {
+        var fire = Formatted() with { Turn = Formatted().Turn with { Origin = MessageOriginKind.Download } };
 
         EvalRun.Turn(fire, "eval:test").GetConversationContext().ShouldNotBeNull().Identity.ShouldBeNull();
     }

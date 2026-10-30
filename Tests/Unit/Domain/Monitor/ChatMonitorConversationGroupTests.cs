@@ -253,6 +253,7 @@ public class ChatMonitorConversationGroupTests
             new FailingRecallHook(2, new HttpRequestException("memory store down")),
             skillPreloader: null,
             TestAssertions.Verifier(),
+            delegations: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -312,6 +313,7 @@ public class ChatMonitorConversationGroupTests
             null,
             skillPreloader: null,
             TestAssertions.Verifier(),
+            delegations: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -355,6 +357,7 @@ public class ChatMonitorConversationGroupTests
             null,
             skillPreloader: null,
             TestAssertions.Verifier(),
+            delegations: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage(content: "/cancel")));
@@ -393,6 +396,7 @@ public class ChatMonitorConversationGroupTests
             null,
             skillPreloader: null,
             TestAssertions.Verifier(),
+            delegations: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -460,6 +464,7 @@ public class ChatMonitorConversationGroupTests
             null,
             skillPreloader: null,
             TestAssertions.Verifier(),
+            delegations: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage() with { Content = null! }));
@@ -530,6 +535,7 @@ public class ChatMonitorConversationGroupTests
             null,
             skillPreloader: null,
             TestAssertions.Verifier(),
+            delegations: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));

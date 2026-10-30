@@ -1,6 +1,7 @@
 using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Tools.Scheduling.Vfs;
 
 namespace McpServerScheduling.Services;
 
@@ -25,7 +26,12 @@ public static class ScheduleFirePlanner
             schedule.UserId,
             new MessageOrigin(MessageOriginKind.Schedule, schedule.Id),
             now,
-            schedule.CreatedBy), defaultDeliverTo);
+            schedule.CreatedBy,
+            // The delegation as the last write left it, beside what the schedule does now: the agent
+            // acts for its person only if the two still agree with what it signed.
+            schedule.Delegation is { } token
+                ? new FireDelegation(token, ScheduleDelegation.Of(schedule).Description)
+                : null), defaultDeliverTo);
 
         return new FirePlan(payload, nextRun, DeleteAfterFire: schedule.CronExpression is null);
     }

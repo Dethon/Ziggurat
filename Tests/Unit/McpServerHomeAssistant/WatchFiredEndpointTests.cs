@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Tools.HomeAssistant.Vfs;
 using Mcp.Hosting;
 using McpServerHomeAssistant.Services;
 using McpServerHomeAssistant.Settings;
@@ -11,6 +12,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
+using Tests.Unit.Domain.HomeAssistant.Vfs;
 
 namespace Tests.Unit.McpServerHomeAssistant;
 
@@ -60,6 +62,9 @@ public class WatchFiredEndpointTests
             })
             .AddSingleton(inbox)
             .AddSingleton(new ChannelNotificationEmitter(inbox, DeliveryPolicy.Broadcast))
+            // A home holding no watch: what a fire's delegation is read from at fire time, which these
+            // fires have none of.
+            .AddSingleton(new HaWatches(() => new FakeHaClient(), clock))
             .AddSingleton<TimeProvider>(clock);
         var app = builder.Build();
         WatchFiredEndpoint.Map(app);

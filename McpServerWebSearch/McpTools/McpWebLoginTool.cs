@@ -19,5 +19,5 @@ public class McpWebLoginTool(ILoginHandoffs handoffs)
         [Description("The site's login page, or any page of the site that leads to it (http or https)")]
         string url,
         CancellationToken ct = default) =>
-        ToolResponse.Create(await RunAsync(context.Turn, url, ct));
+        ToolResponse.Create(await RunAsync(context.Turn, url, context.Delegation, ct));
 }

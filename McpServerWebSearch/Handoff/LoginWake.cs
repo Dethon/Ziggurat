@@ -32,11 +32,15 @@ public static class LoginWake
             AgentId = handoff.Context.AgentId,
             UserId = handoff.Person,
             Principal = Principal.Of(handoff.Context),
+            Delegation = DelegationOf(handoff),
             ReplyTo = [new ReplyTarget(ChannelIds.SignalR, null)],
             Origin = new MessageOrigin(MessageOriginKind.Login, null, Title: $"Log in to {site}"),
             Timestamp = at
         };
     }
+
+    private static FireDelegation? DelegationOf(LoginHandoffs.LiveHandoff handoff) =>
+        handoff.Delegation is { } token ? new FireDelegation(token, LoginDelegation.Of(handoff.Context).Description) : null;
 
     public static ChannelMessageNotification Compose(LoginHandoffs.LiveHandoff handoff, DateTimeOffset at)
     {
@@ -50,9 +54,11 @@ public static class LoginWake
                       + "to confirm.",
             AgentId = handoff.Context.AgentId,
             UserId = handoff.Context.UserId,
-            // The wake is a turn nobody sent: it acts for the person only through the principal
-            // of the turn that asked, which this server kept rather than anything it was told.
+            // The wake is a turn nobody sent: it acts for the person only through the delegation the
+            // agent signed as the asking call left, which this server kept beside the handoff. The
+            // principal is the asking turn's, a label the agent does not believe.
             Principal = Principal.Of(handoff.Context),
+            Delegation = DelegationOf(handoff),
             ReplyTo = [handoff.Context.Origin],
             Origin = new MessageOrigin(MessageOriginKind.Login, null, Title: $"Login to {site}"),
             Timestamp = at

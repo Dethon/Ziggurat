@@ -13,10 +13,12 @@ public interface ILoginHandoffs
 
     // Opens the url in a handoff tab of the person's context — the person being their account's user
     // id — and answers its link. With inChatClient, the link is also put in a new conversation of
-    // the person's chat client, for a turn that cannot show a link itself. Throws
-    // PersonStateUnreadableException when the person's saved logins will not open.
+    // the person's chat client, for a turn that cannot show a link itself. The delegation is the
+    // agent's for this handoff, as the call carried it, which every wake the handoff raises carries
+    // back: without one the wakes act for nobody. Throws PersonStateUnreadableException when the
+    // person's saved logins will not open.
     Task<string> BeginAsync(
-        string person, ConversationContext context, string url, bool inChatClient, CancellationToken ct);
+        string person, ConversationContext context, string url, bool inChatClient, string? delegation, CancellationToken ct);
 }
 
 public interface ILoginsPages

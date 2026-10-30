@@ -431,6 +431,7 @@ public sealed class McpChannelConnection(
             UserId = notification.UserId,
             Principal = notification.Principal,
             Assertion = notification.Assertion,
+            Delegation = notification.Delegation,
             ReplyTo = notification.ReplyTo,
             Origin = notification.Origin,
             Location = notification.Location,

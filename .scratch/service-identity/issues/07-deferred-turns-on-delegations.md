@@ -4,9 +4,9 @@
 
 **Blocked by:** 04, 05
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A schedule's fire acts for its writer on a stored delegation, and as nobody once another turn rewrites it without one or its digest no longer matches
-- [ ] A deleted schedule's delegation is gone
-- [ ] A login wake and a watch fire act for the person whose turn started them, and a forged one is refused
-- [ ] A download's fire stays nobody's
+- [x] A schedule's fire acts for its writer on a stored delegation, and as nobody once another turn rewrites it without one or its digest no longer matches
+- [x] A deleted schedule's delegation is gone
+- [x] A login wake and a watch fire act for the person whose turn started them, and a forged one is refused
+- [x] A download's fire stays nobody's
