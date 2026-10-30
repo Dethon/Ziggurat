@@ -9,6 +9,7 @@ using Domain.DTOs.WebChat;
 using Domain.Judgments;
 using McpChannelVoice.McpTools;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -33,6 +34,7 @@ public class RequestApprovalToolTests : IDisposable
     private IApprovalReader _reader = new JudgedApprovalReader(
         StubJudge.Absent(AbsenceReason.Unconfigured), new ApprovalJudgmentSettings(), TimeProvider.System);
     private readonly CancellationTokenSource _pump = new();
+    private readonly ScriptedSpeakerVerifier _verifier = new();
     private readonly Task _pumpTask;
     private readonly VoiceConversationManager _manager;
     private readonly string _conversationId;
@@ -107,6 +109,7 @@ public class RequestApprovalToolTests : IDisposable
             .AddSingleton(gates)
             .AddSingleton<IMetricsPublisher>(_metrics)
             .AddSingleton(sp => _reader)
+            .AddSingleton<ISpeakerVerifier>(_verifier)
             .AddSingleton<ILogger<RequestApprovalTool>>(NullLogger<RequestApprovalTool>.Instance)
             .AddSingleton<ILogger<ReplySpeaker>>(NullLogger<ReplySpeaker>.Instance)
             .AddSingleton<ReplySpeaker>()
@@ -196,6 +199,103 @@ public class RequestApprovalToolTests : IDisposable
 
     private static ToolApprovalRequest MakeRequest(string toolName = "mcp__lib__download") =>
         new(null, toolName, new Dictionary<string, object?>());
+
+    private static readonly Account _fran = new("home", "fran");
+
+    // An approval is its asker's: a yes the satellite heard from another enrolled person — or from a
+    // voice nobody enrolled — is not theirs, so the question is put again rather than taken as
+    // answered, and two such answers end it refused.
+    [Fact]
+    public async Task RequestMode_AnotherPersonsYes_IsIgnoredForAnAccountsQuestion()
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
+        _verifier.Answer = new SpeakerVerification(SpeakerDecision.Accepted, 0.8, "laura", IdentifiedSpeaker: "laura");
+        using var feed = new CancellationTokenSource();
+        _ = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services,
+            asker: _fran);
+
+        await feed.CancelAsync();
+        result.ShouldBe("rejected");
+        _tts.Verify(t => t.SynthesizeAsync(
+            It.Is<string>(text => text.StartsWith("No entendí")), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RequestMode_TheAskersOwnYes_Approves()
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
+        _verifier.Answer = new SpeakerVerification(SpeakerDecision.Accepted, 0.8, "fran", IdentifiedSpeaker: "fran");
+        using var feed = new CancellationTokenSource();
+        _ = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services,
+            asker: _fran);
+
+        await feed.CancelAsync();
+        result.ShouldBe("approved");
+    }
+
+    // A word as short as "sí" is too little to tell a voice by: what the verifier cannot judge is the
+    // asker's, who was recognised at that satellite a moment ago.
+    [Theory]
+    [InlineData(SpeakerDecision.Skipped)]
+    [InlineData(SpeakerDecision.Unavailable)]
+    public async Task RequestMode_AnAnswerTooShortToJudge_IsTheAskers(SpeakerDecision decision)
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí", Confidence = 0.9 });
+        _verifier.Answer = new SpeakerVerification(decision);
+        using var feed = new CancellationTokenSource();
+        _ = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services,
+            asker: _fran);
+
+        await feed.CancelAsync();
+        result.ShouldBe("approved");
+    }
+
+    // The voice guest is nobody, so whoever answers aloud answers.
+    [Fact]
+    public async Task RequestMode_AGuestsQuestion_IsAnsweredByWhoeverAnswersAloud()
+    {
+        _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });
+        _verifier.Answer = new SpeakerVerification(SpeakerDecision.Rejected, 0.1);
+        using var feed = new CancellationTokenSource();
+        _ = FeedAnswersAsync(feed.Token);
+
+        var result = await RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
+
+        await feed.CancelAsync();
+        result.ShouldBe("approved");
+    }
+
+    // Answered on Telegram while nabu still listens: the agent calls the question off and the
+    // satellite stops asking, its microphone closed.
+    [Fact]
+    public async Task RequestMode_CalledOffWhileListening_StopsAskingAndClosesTheMic()
+    {
+        using var calledOff = new CancellationTokenSource();
+
+        var run = RequestApprovalTool.RunAsync(
+            _conversationId, ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services,
+            calledOff.Token, asker: _fran);
+        await PromptHeardThenMicOpenAsync();
+        await calledOff.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(run);
+        _session.Mic.IsOpen.ShouldBeFalse();
+    }
 
     // An answer given in an audible room: the capture opens on the background itself (the prompt has
     // just finished playing), the user speaks over it, then stops.
@@ -342,7 +442,7 @@ public class RequestApprovalToolTests : IDisposable
         _session.Mic.Feed(Level(90));
         _session.Mic.TryAbort().ShouldBeTrue();
 
-        (await run).ShouldBe("rejected");
+        (await run).ShouldBe(ChannelProtocol.NoAnswer);
 
         // Uncapped: the next gate reads its own measurement of the loud frame, not a remembered one.
         FloorOfNextGateFor(gates, _session).ShouldBeGreaterThan(1000);
@@ -571,7 +671,7 @@ public class RequestApprovalToolTests : IDisposable
     }
 
     [Fact]
-    public async Task RequestMode_AnswerCaptureAbortedByArbiter_RejectsWithoutSttOrReprompt()
+    public async Task RequestMode_AnswerCaptureAbortedByArbiter_IsNoAnswerWithoutSttOrReprompt()
     {
         // If the partial audio were transcribed anyway, this setup would wrongly approve.
         _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
@@ -587,7 +687,7 @@ public class RequestApprovalToolTests : IDisposable
         // here to re-prompt.
         _session.Mic.TryAbort().ShouldBeTrue();
 
-        (await run).ShouldBe("rejected");
+        (await run).ShouldBe(ChannelProtocol.NoAnswer);
         _stt.Verify(
             s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -641,16 +741,16 @@ public class RequestApprovalToolTests : IDisposable
         }
 
         _session.Mic.TryAbort().ShouldBeTrue();
-        (await run).ShouldBe("rejected");
+        (await run).ShouldBe(ChannelProtocol.NoAnswer);
     }
 
     [Fact]
-    public async Task McpRun_UnknownConversation_ReturnsRejected()
+    public async Task McpRun_UnknownConversation_IsNoAnswer()
     {
         var result = await RequestApprovalTool.RunAsync(
             "ghost-01:999", ApprovalMode.Request, [MakeRequest()], caller: JudgmentCaller.None, _services);
 
-        result.ShouldBe("rejected");
+        result.ShouldBe(ChannelProtocol.NoAnswer);
     }
 
     [Fact]
@@ -874,4 +974,15 @@ public class RequestApprovalToolTests : IDisposable
         resolved.ApprovedProbability.ShouldBeNull();
         resolved.DeclinedProbability.ShouldBeNull();
     }
+}
+
+// The speaker verifier as an approval's answer meets it: whatever the test says the voice was.
+internal sealed class ScriptedSpeakerVerifier : ISpeakerVerifier
+{
+    public SpeakerVerification Answer { get; set; } = new(SpeakerDecision.Unavailable);
+
+    public Task<SpeakerVerification> VerifyAsync(
+        IReadOnlyList<AudioChunk> captureAudio, long speechMs, SatelliteConfig config, CancellationToken ct,
+        bool enforceMinSpeech = true) =>
+        Task.FromResult(Answer);
 }
