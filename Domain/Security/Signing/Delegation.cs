@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Domain.Security.Signing;
@@ -34,4 +35,24 @@ public sealed record Delegation : IdentityClaims
 
     [JsonPropertyName("dig")]
     public string Digest { get; init; } = "";
+
+    // What a token claims, believed by nobody: a server's check that a delegation it is handed names
+    // the object it is stored on, and what the operator is shown of a delegation whose key was lost
+    // before confirming it again. Null for anything that is not a delegation's three parts.
+    public static Delegation? Unverified(string? token)
+    {
+        if (token?.Split('.') is not [_, var payload, _] || JwsHeader.Decode(payload) is not { } bytes)
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<Delegation>(bytes);
+        }
+        catch (Exception e) when (e is JsonException or InvalidOperationException or FormatException)
+        {
+            return null;
+        }
+    }
 }

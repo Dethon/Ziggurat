@@ -101,6 +101,15 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
         return new HaWatch(watchId, spec with { Enabled = state?.IsOn ?? spec.Enabled }, meta, state);
     }
 
+    // The same automation with another delegation in its metadata, and nothing else touched: the
+    // entity's on/off is left where the home has it, so a spent one-shot is not re-armed by the
+    // operator re-signing its delegation.
+    public Task ReplaceDelegationAsync(HaWatch watch, string delegation, CancellationToken ct) =>
+        clientFactory().UpsertAutomationConfigAsync(
+            HaWatchAutomation.AutomationId(watch.Id),
+            HaWatchAutomation.Render(watch.Id, watch.Spec, watch.Meta with { Delegation = delegation }),
+            ct);
+
     private async Task<HaAutomationState?> ReloadedStateAsync(IHomeAssistantClient client, string id, CancellationToken ct)
     {
         for (var attempt = 0; ; attempt++)

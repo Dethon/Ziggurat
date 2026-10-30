@@ -38,6 +38,8 @@ public static class ConfigModule
             // behind — the schedule would fire twice.
             .AddChannelServer(DeliveryPolicy.GateOnLive, noOutboundSurface: true)
             .AddFileSystemTools<ScheduleFileSystem>()
+            // The schedules' delegations, for the agent's redelegate and retire-signing-keys.
+            .AddDelegationStore<ScheduleDelegationStore>()
             .AddFileSystemResource<ScheduleFileSystem>()
             // The skill that teaches this server's files ships beside them, in the zone the
             // server reads cron and runAt in.

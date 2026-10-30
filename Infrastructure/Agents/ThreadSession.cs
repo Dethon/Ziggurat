@@ -107,7 +107,10 @@ internal sealed class ThreadSessionBuilder(
         ChannelProtocol.RegisterAgentsTool,
         ChannelProtocol.ReceiveTool,
         ChannelProtocol.FetchAttachmentTool,
-        ChannelProtocol.StoreAttachmentTool
+        ChannelProtocol.StoreAttachmentTool,
+        // Not the channel's, but the operator commands' on the same /mcp, and as far from a model.
+        ChannelProtocol.ListDelegationsTool,
+        ChannelProtocol.ReplaceDelegationTool
     ];
 
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
