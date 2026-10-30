@@ -110,7 +110,8 @@ public sealed record ComposeService(
     IReadOnlyList<string> Volumes,
     IReadOnlyList<string> DependsOn,
     IReadOnlyList<string> Healthcheck,
-    string? User)
+    string? User,
+    IReadOnlyList<string> Profiles)
 {
     public bool TakesWholeSecretsFile => EnvFiles.Any(f => Path.GetFileName(f) == ".env");
 
@@ -127,7 +128,8 @@ public sealed record ComposeService(
             _ => []
         },
         Child(node, "healthcheck") is YamlMappingNode health ? Sequence(health, "test") : [],
-        Child(node, "user") is YamlScalarNode user ? user.Value : null);
+        Child(node, "user") is YamlScalarNode user ? user.Value : null,
+        Sequence(node, "profiles"));
 
     private static YamlNode? Child(YamlMappingNode node, string key) =>
         node.Children.TryGetValue(new YamlScalarNode(key), out var child) ? child : null;

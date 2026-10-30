@@ -961,12 +961,52 @@ services:
       CALLERS__mcp-channel-telegram: ${MCP_SECRET_CHANNEL_TELEGRAM}
       CALLERS__mcp-channel-voice: ${MCP_SECRET_CHANNEL_VOICE}
       CALLERS__mcp-sugary: ${MCP_SECRET_SUGARY}
+      # The household migration below, and only its household import: it can make the operator and
+      # mint their link, so it is admitted by a secret of its own, left empty — nobody — but for the run.
+      CALLERS__household-migration: ${HOUSEHOLD_MIGRATION_SECRET}
     networks:
       - jackbot
     depends_on:
       accounts-volume:
         condition: service_completed_successfully
       base-sdk:
+        condition: service_started
+
+  # One-shot, by hand, on the deploy that brings accounts: carries the retired identity map's people
+  # into the home household as accounts, and what was filed under their names — memories, remembered
+  # logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids.
+  # Under a profile, so `up` never starts it. Put the people in ./volumes/household-migration/people.json
+  # and HOUSEHOLD_MIGRATION_SECRET in .env (then `docker compose up -d accounts`), and run
+  #   docker compose --profile migrate run --rm household-migration \
+  #     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run]
+  # Running it again changes nothing. The steps are .scratch/accounts/spec.md's Further Notes.
+  household-migration:
+    image: household-migration:latest
+    profiles: ["migrate"]
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: HouseholdMigration/Dockerfile
+    restart: "no"
+    # The owner of the Sugary and voices volumes it writes in, as their services run.
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/household-migration:/input:ro
+      - ./volumes/sugary:/sugary
+      - ./volumes/voices:/voices
+    environment:
+      <<: *timezone
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      ACCOUNTS__CREDENTIAL: ${HOUSEHOLD_MIGRATION_SECRET}
+      # Opens each remembered login sealed under a person's name and seals it again under their user id.
+      LOGINS__STATEKEY: ${LOGINS__STATEKEY}
+    networks:
+      - jackbot
+    depends_on:
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      accounts:
         condition: service_started
 
   caddy:
