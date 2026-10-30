@@ -68,13 +68,16 @@ public sealed partial record PeopleFile
             .GroupBy(x => x.Old, StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Select(x => x.Person).Distinct().Count() > 1)
             .Select(g => $"'{g.Key}' is a name of {string.Join(" and ", g.Select(x => x.Person).Distinct())}"),
-        .. People.SelectMany(p => p.Names).Where(n => Unsafe().IsMatch(n))
+        .. People.SelectMany(p => p.Names).Where(n => Unsafe().IsMatch(n) || n == ProfilesSegment)
             .Select(n => $"'{n}' cannot be a name: a Redis pattern or a folder would read it as something else"),
         .. People.SelectMany(p => p.Names).Where(n => MemoryBuckets.Owners.Contains(n, StringComparer.OrdinalIgnoreCase))
             .Select(n => $"'{n}' is the household's, not a person's name"),
         .. People.Where(p => p.Role is not null and not ("owner" or "member"))
             .Select(p => $"{p.Name}'s role is '{p.Role}', which is neither owner nor member")
     ];
+
+    // memory:profile:{name} is every person's profile, so memories "under" this name would be all of them.
+    private const string ProfilesSegment = "profile";
 
     // A glob character would match other people's keys, and a path separator would leave /voices.
     [GeneratedRegex(@"[*?\[\]:/\\]|^\.\.?$")]
