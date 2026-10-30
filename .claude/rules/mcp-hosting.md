@@ -60,7 +60,11 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
 - **The error filter is one shared registration, installed at most once.** A cancelled call
   propagates as the abort it is; anything else is logged and becomes the caller's error result.
   **Who is calling travels as data, never as an ambient**: a tool reads the call's
-  `ConversationContext` off its `_meta` (`ConversationScope.Parse`) and hands on what it needs, and
+  `ConversationContext` through the one accessor over the call, `Mcp.Hosting/CallTurn.cs`
+  (`call.Turn`, and `call.TryScope` for a per-turn cache), and hands on what it needs. No server
+  parses the raw `_meta` for it (`CallTurnConformanceTests` reads the sources), so making the
+  accessor answer a verified identity instead is one change no tool reads around; the fs_*
+  registrar in `Infrastructure` references `Mcp.Hosting` for that alone. And
   a filesystem backend — whose operations never see the request — is asked by the registrar for
   itself as that caller sees it (`FileSystemBackendBase.For(FileSystemCaller)`, per call: the
   conversation context and, on an exec the agent minted one for, the exec bridge's call token —
@@ -75,7 +79,7 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   does, so Jev's cost lands on the dashboard's token totals with every other model's. No use
   publishes a usage event of its own; a use's own event (`SkillPreloadEvent`, `ExecScreenEvent`)
   may keep a copy of the cost for its dashboard family, and the eval's spend ignores that copy. The value is passed down as plain data, never read from an ambient: a
-  server's tool parses it from the call's `_meta` (`JudgmentCaller.For(ConversationScope.Parse(…))`)
+  server's tool takes it from the call (`JudgmentCaller.For(context.Turn)`)
   and hands it on as a parameter, the agent host takes it from the message, and a question with no
   turn behind it (memory) names the user with a null turn model. Two
   filters nested around each other would let the outer one convert the very cancellation the inner

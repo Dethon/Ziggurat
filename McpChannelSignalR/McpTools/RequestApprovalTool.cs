@@ -1,7 +1,7 @@
 using System.ComponentModel;
-using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Mcp.Hosting;
 using McpChannelSignalR.Services;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -39,7 +39,7 @@ public sealed class RequestApprovalTool
         }
 
         // Whose question it is, from the turn the agent stamps on this hop: only that account answers.
-        var asker = Principal.Of(ConversationScope.Parse(context.Params?.Meta))?.Account;
+        var asker = Principal.Of(context.Turn)?.Account;
         return await approvalService.RequestApprovalAsync(p, asker, cancellationToken);
     }
 }

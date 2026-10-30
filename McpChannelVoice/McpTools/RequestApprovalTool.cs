@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -7,6 +6,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.Judgments;
+using Mcp.Hosting;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Services.WyomingProtocol;
@@ -32,7 +32,7 @@ public sealed class RequestApprovalTool
         // The asking turn, from the context the agent stamps on this hop: the reader hands it to
         // the judge's client, which sends nothing for the local box and bills the rest to it, and
         // whose question it is says whose spoken answer counts.
-        var turn = ConversationScope.Parse(context.Params?.Meta);
+        var turn = context.Turn;
         return RunAsync(
             conversationId, mode, requests, JudgmentCaller.For(turn), services, cancellationToken,
             Principal.Of(turn)?.Account);
