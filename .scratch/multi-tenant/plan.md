@@ -135,7 +135,7 @@ Real users, with the tenant already in the model (only the home tenant exists ye
   Telegram and voice review copies included. Sessions last until revoked, approvals belong to the
   asker on any of their channels, Sugary logs are per person with a shared pantry, and the
   ServiceBus channel is removed.
-- **Service identity:** settled; spec and 9 tickets at `.scratch/service-identity/`. The accounts
+- **Service identity:** implemented 2026-10-30 on branch `service-identity` (9 tickets plus review fixes; full suite and smoke tier green; not yet merged into `web-identity`). The accounts
   service signs assertions, the agent signs per-call tokens and delegations for deferred turns,
   servers refuse unsigned calls, apps verify the assertion, keys are generated and published as
   JWKS, and a long turn keeps fresh call tokens while its identity is verified once at its start.
