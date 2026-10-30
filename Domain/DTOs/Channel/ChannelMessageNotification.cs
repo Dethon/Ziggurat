@@ -39,7 +39,7 @@ public record ChannelMessageNotification
     public ResponseFormat? ResponseFormat { get; init; }
     // Optional request that the conversation also be shown on the deployment's review host
     // (WebChat), with this channel kept as the conversation's first target. Asked for by a channel
-    // sending on a person's behalf whose conversations are worth reading afterwards (Sugary); left
+    // whose conversations are worth reading afterwards (Sugary, and Telegram on every turn); left
     // null by every other.
     public ReviewCopy? ReviewCopy { get; init; }
     // Optional key naming the turn this message opens, for a channel that has to recognise the
