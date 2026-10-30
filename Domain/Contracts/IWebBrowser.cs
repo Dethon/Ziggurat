@@ -87,8 +87,8 @@ public record BrowseRequest(
     // turn (a fixture, a harness).
     public required JudgmentCaller Caller { get; init; }
 
-    // The person whose own browser context the tab opens in, resolved from the turn through the
-    // identity map; null is the anonymous context, which carries nobody's cookies.
+    // The person whose own browser context the tab opens in, by the user id of the account the turn
+    // acts for; null is the anonymous context, which carries nobody's cookies.
     public string? Person { get; init; }
 }
 

@@ -54,7 +54,7 @@ public sealed class LoginHandoffs(
     public string LinkFor(string token) => BrowseLinks.For(settings, "handoff", token);
 
     public async Task<string> BeginAsync(
-        string person, ConversationContext context, string url, string? inWebChatOf, CancellationToken ct)
+        string person, ConversationContext context, string url, bool inChatClient, CancellationToken ct)
     {
         // Taken before the tab opens: the login page's own requests must not arm a save of a
         // login nobody has finished.
@@ -88,9 +88,9 @@ public sealed class LoginHandoffs(
         handoff.Expiry = time.CreateTimer(_ => _ = ExpireAsync(id), null, TicketLifetime, Timeout.InfiniteTimeSpan);
 
         var link = LinkFor(token);
-        if (inWebChatOf is not null)
+        if (inChatClient)
         {
-            await wakes.EmitAsync(LoginWake.LinkInWebChat(handoff, link, inWebChatOf, LinkMinutes, time.GetUtcNow()));
+            await wakes.EmitAsync(LoginWake.LinkInChatClient(handoff, link, LinkMinutes, time.GetUtcNow()));
         }
 
         return link;

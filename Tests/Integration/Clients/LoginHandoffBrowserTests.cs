@@ -2,8 +2,8 @@ using System.Net;
 using System.Net.WebSockets;
 using System.Text;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.Judgments;
-using Domain.Tools.Web;
 using Infrastructure.Clients.Browser;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -51,14 +51,15 @@ public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, Red
     {
         Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
 
-        var person = $"fran-{Guid.NewGuid():N}";
+        // A person is their account, and its opaque id is what their browser context goes by.
+        var account = new Account("home", Guid.NewGuid().ToString("N"));
+        var person = account.UserId;
         var telegram = $"tg-{Guid.NewGuid():N}";
         var conversation = $"conv-{Guid.NewGuid():N}";
         await fixture.Browser.RouteOnContextAsync($"{Site}/**", ServeAsync, person);
         await fixture.Browser.RouteOnContextAsync($"{Site}/**", ServeAsync);
 
         await using var server = await StartAsync(
-            people: [new PersonIdentity { Name = person, Telegram = telegram }],
             configure: services =>
             {
                 services.RemoveAll<IWebBrowser>();
@@ -71,7 +72,7 @@ public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, Red
                 RedisConnectionString = redis.ConnectionString,
                 Handoff = s.Handoff with { PublicBaseUrl = "https://assistants.test" }
             });
-        var context = Context(telegram, conversation);
+        var context = Context(telegram, account, conversation);
         var sessionId = $"jonas:{conversation}";
         try
         {

@@ -15,10 +15,6 @@ public record McpSettings : IMcpHostSettings
     public CamoufoxConfiguration? Camoufox { get; init; }
     public BrowsingConfiguration Browsing { get; init; } = new();
 
-    // Who the deployment's people are on each channel, for browsing as one of them. Per-deployment
-    // values in the compose environment only; empty is the feature off.
-    public IdentityConfiguration Identity { get; init; } = new();
-
     // The login handoff's link and lifetimes.
     public HandoffConfiguration Handoff { get; init; } = new();
 
@@ -50,17 +46,6 @@ public record BrowsingConfiguration
 
     // The session's one idle clock, refreshed by every routed call.
     public int SessionIdleTimeoutMinutes { get; init; } = 30;
-}
-
-public record IdentityConfiguration
-{
-    public IReadOnlyList<PersonIdentity> People { get; init; } = [];
-
-    // The channels that verify who is speaking, by channel endpoint id; a turn from any other
-    // resolves to nobody. A generic setting, in this server's appsettings.json — and empty here
-    // rather than defaulted, because the binder appends a bound list to a default one, so a
-    // shorter list in configuration could never take a channel off.
-    public IReadOnlyList<string> VerifiedChannels { get; init; } = [];
 }
 
 public record HandoffConfiguration
