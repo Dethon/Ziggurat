@@ -1,7 +1,18 @@
-assistants.herfluffness.com {
+# How every host gets its certificate. The deployment's is Let's Encrypt through Cloudflare's DNS
+# challenge; a stack on somebody's own machine (the smoke stack, docker-compose.override.smoke.yml)
+# sets CADDY_TLS=internal and is served by Caddy's own local CA, with the rest of this file as it ships.
+(tls_cloudflare) {
     tls {
         dns cloudflare {env.CF_API_TOKEN}
     }
+}
+
+(tls_internal) {
+    tls internal
+}
+
+assistants.herfluffness.com {
+    import tls_{$CADDY_TLS:cloudflare}
 
     # The chat client, its hub and the hub's upload and dictation endpoints ask the accounts service's
     # session check first. A signed-in request goes on carrying the person in three headers, which
@@ -71,9 +82,7 @@ assistants.herfluffness.com {
 }
 
 assistants-dashboard.herfluffness.com {
-    tls {
-        dns cloudflare {env.CF_API_TOKEN}
-    }
+    import tls_{$CADDY_TLS:cloudflare}
 
     # Memory text and usage per person are the operator's: every request is checked for the
     # operator's session first. A member is refused, a signed-out page is sent to sign-in on the main
@@ -91,9 +100,7 @@ assistants-dashboard.herfluffness.com {
 }
 
 sexy.herfluffness.com {
-    tls {
-        dns cloudflare {env.CF_API_TOKEN}
-    }
+    import tls_{$CADDY_TLS:cloudflare}
 
     # The chat hub and its endpoints, checked as on the main host.
     handle /hubs/* {
@@ -149,9 +156,7 @@ sexy.herfluffness.com {
 }
 
 sugary.herfluffness.com {
-    tls {
-        dns cloudflare {env.CF_API_TOKEN}
-    }
+    import tls_{$CADDY_TLS:cloudflare}
 
     # The agent's /mcp is for the deployment alone; a person's phone only ever needs the app and its API.
     handle /mcp* {
