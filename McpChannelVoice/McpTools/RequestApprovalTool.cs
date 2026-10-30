@@ -8,6 +8,7 @@ using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.Judgments;
 using McpChannelVoice.Services;
+using McpChannelVoice.Services.Verification;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
 using ModelContextProtocol.Protocol;
@@ -26,21 +27,28 @@ public sealed class RequestApprovalTool
         [Description("Tool requests to approve")] IReadOnlyList<ToolApprovalRequest> requests,
         RequestContext<CallToolRequestParams> context,
         IServiceProvider services,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default)
+    {
         // The asking turn, from the context the agent stamps on this hop: the reader hands it to
-        // the judge's client, which sends nothing for the local box and bills the rest to it.
-        RunAsync(
-            conversationId, mode, requests,
-            JudgmentCaller.For(ConversationScope.Parse(context.Params?.Meta)),
-            services, cancellationToken);
+        // the judge's client, which sends nothing for the local box and bills the rest to it, and
+        // whose question it is says whose spoken answer counts.
+        var turn = ConversationScope.Parse(context.Params?.Meta);
+        return RunAsync(
+            conversationId, mode, requests, JudgmentCaller.For(turn), services, cancellationToken,
+            Principal.Of(turn)?.Account);
+    }
 
+    // Being called off is how a prompt still waiting learns its question was answered elsewhere —
+    // on Telegram, in the chat client — so it stops asking: the token ends the spoken prompt and
+    // the open microphone alike, and nothing more is said.
     public static async Task<string> RunAsync(
         string conversationId,
         ApprovalMode mode,
         IReadOnlyList<ToolApprovalRequest> requests,
         JudgmentCaller caller,
         IServiceProvider services,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Account? asker = null)
     {
         var p = new RequestApprovalParams
         {
@@ -59,7 +67,8 @@ public sealed class RequestApprovalTool
         var session = satelliteId is null ? null : sessions.Get(satelliteId);
         if (session is null)
         {
-            return p.Mode == ApprovalMode.Notify ? "notified" : "rejected";
+            // Nobody could be asked: no answer, which ends it unless its asker is offered it elsewhere.
+            return p.Mode == ApprovalMode.Notify ? "notified" : ChannelProtocol.NoAnswer;
         }
 
         if (p.Mode == ApprovalMode.Notify)
@@ -75,6 +84,7 @@ public sealed class RequestApprovalTool
         var gates = services.GetRequiredService<SilenceGateFactory>();
         var time = services.GetRequiredService<TimeProvider>();
         var reader = services.GetRequiredService<IApprovalReader>();
+        var voices = asker is null ? null : services.GetService<ISpeakerVerifier>();
 
         var toolList = string.Join(", ", p.Requests.Select(r => r.ToolName.Split("__").Last()));
         var prompt = $"¿Apruebas {toolList}? Di sí o no.";
@@ -90,25 +100,33 @@ public sealed class RequestApprovalTool
             if (!await SpeakAndAwaitAsync(session, spoken, tts, settings, cancellationToken))
             {
                 // Satellite disconnected mid-approval; abandon rather than opening a capture on a
-                // dead session that would block until the request is cancelled.
-                return "rejected";
+                // dead session that would block until the request is cancelled. Nobody heard it.
+                return ChannelProtocol.NoAnswer;
             }
 
             // The same gate the wake turn the user is answering was endpointed against, room-noise
             // cap included: a confirmation mic that behaved differently from the mic that heard the
             // question cut people off mid-answer.
             var answer = await CaptureAnswerAsync(
-                session.Mic, gates.Create(session.SatelliteId, session.Config),
-                stt, settings, time, cancellationToken);
+                session, gates.Create(session.SatelliteId, session.Config),
+                stt, settings, time, asker is null ? null : (voices, asker), cancellationToken);
             if (answer is null)
             {
                 // Arbitration stole the turn mid-answer: the arbiter already re-armed this
                 // satellite via pause-satellite, so there is no one left here to re-prompt.
-                return "rejected";
+                return ChannelProtocol.NoAnswer;
+            }
+
+            if (answer.NotTheAsker)
+            {
+                // Somebody answered, and it was not the person whose question it is: asked again, as
+                // an answer not understood is, and never taken as theirs.
+                prompt = $"No entendí. ¿Apruebas {toolList}? Di sí o no.";
+                continue;
             }
             // Read for what it means, against the prompt as it was spoken: the re-ask's wording is
             // the prompt the person is answering.
-            var reading = await reader.ReadAsync(prompt, answer, caller, cancellationToken);
+            var reading = await reader.ReadAsync(prompt, answer.Text, caller, cancellationToken);
 
             metrics.Publish(new VoiceEvent
             {
@@ -177,15 +195,23 @@ public sealed class RequestApprovalTool
         return true;
     }
 
+    // What was heard, and whether the voice that said it was conclusively another enrolled person's,
+    // or one nobody enrolled: not the asker's, so never taken as their answer.
+    private sealed record HeardAnswer(string Text, bool NotTheAsker = false);
+
     // Returns null when arbitration abandoned the capture — distinct from an empty answer,
-    // which re-prompts.
-    // Holds a microphone, not a session: an approval prompt is a question the agent asked mid-turn,
-    // so it must not mark a turn start or a speech end on the playback queue — that would corrupt
-    // the latency reported for the turn actually in flight. Which type this takes is what says so.
-    private static async Task<string?> CaptureAnswerAsync(
-        Microphone mic, SilenceGate gate, ISpeechToText stt,
-        VoiceSettings settings, TimeProvider time, CancellationToken ct)
+    // which re-prompts — and an answer not the asker's for a voice that is not. A voice too short to
+    // judge, or a verifier with nothing to judge it by, is the asker's: they were recognised at this
+    // satellite a moment ago, and a one-word answer is all a person gives.
+    // Holds the session's microphone, not the session as a turn: an approval prompt is a question
+    // the agent asked mid-turn, so it must not mark a turn start or a speech end on the playback
+    // queue — that would corrupt the latency reported for the turn actually in flight.
+    private static async Task<HeardAnswer?> CaptureAnswerAsync(
+        SatelliteSession session, SilenceGate gate, ISpeechToText stt,
+        VoiceSettings settings, TimeProvider time, (ISpeakerVerifier? Voices, Account Asker)? whose,
+        CancellationToken ct)
     {
+        var mic = session.Mic;
         var followUp = settings.FollowUp;
         if (followUp.PlaybackTailMs > 0)
         {
@@ -220,10 +246,20 @@ public sealed class RequestApprovalTool
 
         if (outcome == CaptureOutcome.NoSpeech)
         {
-            return string.Empty;
+            return new HeardAnswer(string.Empty);
+        }
+
+        if (whose is ({ } voices, var asker))
+        {
+            var heard = await voices.VerifyAsync(capture.BufferedAudio, capture.Stats.SpeechMs, session.Config, ct);
+            if (heard.Decision == SpeakerDecision.Rejected
+                || heard is { Decision: SpeakerDecision.Accepted, IdentifiedSpeaker: { } speaker } && speaker != asker.UserId)
+            {
+                return new HeardAnswer(string.Empty, NotTheAsker: true);
+            }
         }
 
         var result = await stt.TranscribeAsync(capture.Audio, new TranscriptionOptions(), ct);
-        return result.Text ?? string.Empty;
+        return new HeardAnswer(result.Text ?? string.Empty);
     }
 }
