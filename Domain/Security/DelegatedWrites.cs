@@ -22,12 +22,14 @@ public static class DelegatedWrites
         _ => false
     };
 
+    // `writer` is the writing turn's context: its agent runs a watch it creates, its origin is where a
+    // watch naming no delivery answers. A write with none delegates nothing.
     public static DelegatedObject? Of(
-        string filesystem, string path, string text, string? existing, ReplyTarget? origin, TimeZoneInfo zone) =>
+        string filesystem, string path, string text, string? existing, ConversationContext? writer, TimeZoneInfo zone) =>
         filesystem switch
         {
             ScheduleFileSystem.Name => ScheduleDelegation.OfWrite(path, text, zone),
-            HaFileSystem.Name => WatchDelegation.OfWrite(path, text, existing, origin),
+            HaFileSystem.Name when writer is not null => WatchDelegation.OfWrite(path, text, existing, writer.AgentId, writer.Origin),
             _ => null
         };
 

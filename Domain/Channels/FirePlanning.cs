@@ -6,7 +6,8 @@ namespace Domain.Channels;
 // where the answer goes. Both the scheduler and the Home Assistant server's watch callback compose
 // their fires through this, so how a `deliverTo` list becomes reply targets cannot drift between
 // them. Principal is whose own turn last wrote the object, as the server recorded it — a label the
-// agent does not believe; Delegation is what it believes, and a fire with none acts for nobody.
+// agent does not believe; Delegation is what it believes, and a fire with none acts for nobody. Content
+// is what the fire asks, the object's own words; Report is whatever else the server saw, said beside it.
 public sealed record Fire(
     string ConversationId,
     string Sender,
@@ -17,7 +18,8 @@ public sealed record Fire(
     MessageOrigin Origin,
     DateTimeOffset At,
     Principal? Principal = null,
-    FireDelegation? Delegation = null);
+    FireDelegation? Delegation = null,
+    string? Report = null);
 
 public static class FirePlanning
 {
@@ -43,6 +45,7 @@ public static class FirePlanning
             UserId = fire.UserId,
             Principal = fire.Principal,
             Delegation = fire.Delegation,
+            FireReport = fire.Report,
             ReplyTo = ReplyTargets(fire.DeliverTo, defaultDeliverTo),
             Origin = fire.Origin,
             Timestamp = fire.At

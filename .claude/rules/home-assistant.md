@@ -166,8 +166,11 @@ error status at that check is `VoiceHubRejectedException` (Infrastructure's `Htt
 throws it, `ToolError.CodeFor` maps it by status), refused as `authentication` for a token
 mismatch and `transient_dependency` otherwise. The default `deliverTo` a fire falls back to is `Domain/delivery.json`.
 The prompt effect's callback (`McpServerHomeAssistant/Services/WatchFiredEndpoint.cs`, guarded by
-the announce token, 202/401/400/503 as the automation's trace reads them) and the bridges document
-are in `docs/home-assistant-bridges.md`; the decision is `docs/adr/0038`. Testing: `HaWatchesTests`
+the announce token, 202/401/400/503 as the automation's trace reads them) posts the rendered prompt
+and, as a literal, which of the watch's prompts it is (`promptIndex`); the fire asks the agent that
+prompt as the watch keeps it and carries what the home posted as its report, never as what is asked
+(`.claude/rules/service-identity.md`, Deferred turns). The bridges document is
+`docs/home-assistant-bridges.md`; the decision is `docs/adr/0038`. Testing: `HaWatchesTests`
 and `HaWatchEffectsTests` over `FakeHaClient`'s automation store; `WatchFiredEndpointTests` at the
 HTTP boundary over a real inbox; `HomeAssistantFixture` seeds the rest_command towards a listener
 it owns and `HomeAssistantWatchFireTests` drives a real crossing through it; the eval's fake home
