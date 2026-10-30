@@ -17,8 +17,7 @@ issuers sign with and every verifier verifies with.
 
 Every consumer reaches Domain and nothing lower: `Mcp.Hosting` references Domain alone and must
 never gain Infrastructure (`Dockerfile.base-sdk` says why), Observability references Domain and its
-client, and the accounts service references nothing yet — it gains Domain, which base-sdk already
-builds. Infrastructure would leave three of the six consumers out, and a project of its own would
+client, and the accounts service references Domain alone, which base-sdk already builds. Infrastructure would leave three of the six consumers out, and a project of its own would
 touch every host's Dockerfile.
 
 Two Domain rules bend for it, on purpose and no further:
@@ -41,7 +40,9 @@ is malformed — `none` and HMAC never reach a key.
 hex, so it can never be one), `tid`, `chn` (channel id), `roles`, `iat`, `nbf`, `exp` (whole
 seconds), `jti`. Build one with `IdentityClaims.Person(...)` or `.Guest(...)`, then date it with
 `.Stamped(issuer, audience, now, lifetime)`, which is also how the agent re-signs a verified
-identity per server. A delegation is a record derived from `IdentityClaims`; `TokenSigner.Sign<T>`
+identity per server. An assertion's audience is `TokenAudiences.Assertion`, one for every consumer
+(the agent and the apps); what binds it to one use is its `chn`, which the accounts service takes
+from the session check's `?channel=` or the resolution API's query (`.claude/rules/accounts.md`). A delegation is a record derived from `IdentityClaims`; `TokenSigner.Sign<T>`
 and `TokenVerifier.VerifyAsync<T>` carry whatever a derived record adds. `TokenIssuers` spells the
 two `iss` values.
 

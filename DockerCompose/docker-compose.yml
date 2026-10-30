@@ -932,6 +932,9 @@ services:
   # operator's way in, before anyone can sign in and after losing every passkey:
   #   docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"
   # and a recovery link for anyone: docker exec accounts dotnet Accounts.dll mint-link --user <id>
+  # It signs who a turn is for with a key it generates into this volume (signing/) on first start,
+  # nothing to provision; rotate-signing-key and, once the old key's assertions have run out,
+  # retire-signing-keys change it beside the running service.
   accounts:
     image: accounts:latest
     logging:
