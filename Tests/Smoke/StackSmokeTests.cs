@@ -190,7 +190,10 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
         var servers = await GatedServersAsync();
-        servers.ShouldNotBeEmpty();
+        // Every server the agent dials that this stack starts (all but the sandbox, on its own network),
+        // so a reader regression cannot shrink "every" to one.
+        servers.ShouldBe(["mcp-library", "mcp-vault", "mcp-websearch", "mcp-idealista", "mcp-homeassistant",
+            "mcp-channel-signalr", "mcp-scheduling", "mcp-printer", "mcp-timers", "mcp-sugary"], ignoreOrder: true);
         var foreign = new TokenSigner(TestSigningKeys.Store(TestSigningKeys.Agent));
 
         var refusals = await Task.WhenAll(servers.Select(async server =>
