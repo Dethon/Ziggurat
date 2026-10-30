@@ -38,7 +38,9 @@ public class ToolApprovalChatClientTests(McpVaultServerFixture mcpFixture, Redis
             NoOpMetricsPublisher.Instance,
             TimeProvider.System,
             [],
-            []);
+            [],
+            // Signed as the deployment's agent signs, or every gated server refuses its calls.
+            callTokens: McpTestSecret.CallTokens);
     }
 
     // Only the stall retry here, not the bad-answer one: what these tests assert on is what the
