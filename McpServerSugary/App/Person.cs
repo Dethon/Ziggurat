@@ -12,7 +12,10 @@ namespace McpServerSugary.App;
 // compose network could write them. Verified once per request, before any route runs (SugaryApp),
 // and kept on that request alone; a request with no believable assertion is answered 401 there, so
 // a route never binds nobody.
-public sealed record Person(Account Account)
+//
+// The assertion itself is kept beside the account: a turn the person's request opens carries it on
+// to the agent, which believes it and not this server (the agent checks it again as the turn arrives).
+public sealed record Person(Account Account, string Assertion)
 {
     private static readonly object _item = new();
 
@@ -33,7 +36,7 @@ public sealed record Person(Account Account)
             return null;
         }
 
-        var person = new Person(account.Account);
+        var person = new Person(account.Account, assertion!);
         http.Items[_item] = person;
         return person;
     }

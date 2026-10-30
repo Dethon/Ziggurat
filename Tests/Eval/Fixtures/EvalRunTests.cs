@@ -1,4 +1,6 @@
+using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Domain.Security;
 using Microsoft.Extensions.AI;
 using Shouldly;
 using Tests.Eval.Harness;
@@ -104,6 +106,36 @@ public class EvalRunChannelTurnTests
         {
             File.Delete(photo);
         }
+    }
+
+    // No monitor stands between an eval and its agent, so the run stamps who the turn acts for
+    // itself: exactly what the agent's turn-start check answers for the eval account's assertion,
+    // signed with the accounts test key for the turn's channel.
+    [Fact]
+    public async Task ATurn_ActsForWhatTheAgentWouldHaveVerified()
+    {
+        var turn = EvalRun.Turn(Formatted(), "eval:test").GetConversationContext().ShouldNotBeNull();
+        var channel = turn.Origin.ChannelId;
+
+        var verified = (await TestAssertions.Verifier().VerifyTurnAsync(
+                TestAssertions.Of(EvalRun.Account, channel, EvalRun.Roles), channel, CancellationToken.None))
+            .ShouldBeOfType<TurnAdmission.Admitted>().Identity;
+
+        var identity = turn.Identity.ShouldNotBeNull();
+        identity.Subject.ShouldBe(verified.Subject);
+        identity.TenantId.ShouldBe(verified.TenantId);
+        identity.ChannelId.ShouldBe(verified.ChannelId);
+        identity.Roles.ShouldBe(verified.Roles);
+        identity.ShouldBe(verified with { Roles = identity.Roles });
+    }
+
+    // A fire carries no assertion in the deployment either: nobody sent it at that moment.
+    [Fact]
+    public void AFire_CarriesNoIdentity()
+    {
+        var fire = Formatted() with { Turn = Formatted().Turn with { Origin = MessageOriginKind.Schedule } };
+
+        EvalRun.Turn(fire, "eval:test").GetConversationContext().ShouldNotBeNull().Identity.ShouldBeNull();
     }
 
     [Fact]
