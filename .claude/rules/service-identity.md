@@ -330,8 +330,9 @@ the backend as discovered acts for nobody, so it delegates nothing and stamps no
 the delegation only for a person, so neither a model nor a caller can put one there. An edit or a
 move rests on what the server answered the agent's read with — a lying server gets a delegation for
 its own text with the turn's edit on top — while a create gives it nothing to lie about. A runAt
-with no offset is read in the agent's zone (`TimeZoneInfo.Local`), which compose's shared `TZ` makes
-the scheduling server's; zones that disagree make such a one-shot fire for nobody.
+with no offset is read in the agent's zone — its `TimeProvider`'s `LocalTimeZone`, the zone the
+model is told its time in, handed to each mount's backend by the session (`ThreadSession`'s
+`localZone`) — which compose's shared `TZ` makes the scheduling server's; zones that disagree make such a one-shot fire for nobody.
 
 **Stored with the object, replaced by every write.** The server reads it with `call.Delegation`
 (`CallTurn`), never verifying it: `ScheduleFileSystem` keeps it on `Schedule.Delegation` for every

@@ -187,6 +187,26 @@ public class ScheduleDelegationTests(McpSchedulingServerFixture fixture) : IClas
         (await ActsForAsync(id)).ShouldBe(_fran);
     }
 
+    // The agent reads an offset-less runAt in the zone it is handed, not the machine's: handed one the
+    // scheduling server does not share, the two read different instants and the fire acts for nobody.
+    [Fact]
+    public async Task AOneShotReadInAZoneTheServerDoesNotShare_FiresAsNobody()
+    {
+        var id = NewId();
+        var elsewhere = TimeZoneInfo.CreateCustomTimeZone("elsewhere",
+            TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow) + TimeSpan.FromHours(3), "elsewhere", "elsewhere");
+        await using var client = await McpClient.CreateAsync(McpTestSecret.Transport(fixture.McpEndpoint));
+        var backend = new McpFileSystemBackend(client, "schedules", null, localZone: elsewhere).As(TurnOf(_fran));
+        var at = DateTime.Now.AddDays(2).ToString("yyyy-MM-ddTHH:mm:ss");
+
+        (await backend.CreateAsync($"/jonas/{id}/schedule.json",
+                $$"""{"prompt":"remind me of the dentist","runAt":"{{at}}","deliverTo":["telegram"]}""", false, true,
+                CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+
+        (await AdmitAsync(id)).ShouldBe(new FireAdmission.Undelegated(DelegationVerifier.DigestMismatch));
+    }
+
     // The model writes through the domain file tools, and who such a call acts for is the turn the
     // approval client put on the call's own arguments — never whatever invocation is in flight.
     [Fact]

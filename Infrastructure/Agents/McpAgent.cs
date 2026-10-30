@@ -567,7 +567,8 @@ public sealed class McpAgent : DisposableAgent
             var newSession = await ThreadSession
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
-                             ct, _promptCache, _readImages, _bridge, _noTools, _withheldTools, _callTokens);
+                             ct, _promptCache, _readImages, _bridge, _noTools, _withheldTools, _callTokens,
+                             _timeProvider.LocalTimeZone);
 
             // The one moment a shadowed outpost is knowable, and the machine serving it has no way
             // to find out for itself — the next keepalive carries the answer home. Whether this
