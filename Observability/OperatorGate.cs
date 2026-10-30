@@ -53,9 +53,8 @@ public static class OperatorGate
     public static IApplicationBuilder UseOperatorGate(this IApplicationBuilder app) =>
         app.Use(async (context, next) =>
         {
-            var assertion = context.Request.Headers[ForwardedAccount.AssertionHeader] is [{ } value] ? value : null;
             var person = await context.RequestServices.GetRequiredService<AssertionVerifier>()
-                .VerifyAsync(assertion, AppChannels.Dashboard, context.RequestAborted);
+                .VerifyRequestAsync(context.Request.Headers, AppChannels.Dashboard, context.RequestAborted);
             if (person is not { IsOperator: true })
             {
                 context.Response.StatusCode = person is null

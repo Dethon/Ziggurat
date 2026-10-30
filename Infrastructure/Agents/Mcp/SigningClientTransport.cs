@@ -74,28 +74,22 @@ public sealed class SigningClientTransport(IClientTransport inner, CallTokens to
             return request;
         }
 
-        private static DelegatedObject? Requested(JsonObject meta)
-        {
-            try
-            {
-                return meta[ChannelProtocol.DelegateMetaKey]?.Deserialize<DelegatedObject>(ChannelProtocol.SerializerOptions);
-            }
-            catch (JsonException)
-            {
-                return null;
-            }
-        }
+        private static DelegatedObject? Requested(JsonObject meta) =>
+            Read<DelegatedObject>(meta, ChannelProtocol.DelegateMetaKey);
 
         private static bool IsLogin(JsonObject parameters) =>
             parameters["name"] is JsonValue name && name.TryGetValue<string>(out var tool) && tool == WebLoginTool.Name;
 
         // A context that does not read as one names nobody; the server says what is wrong with it.
-        private static ConversationContext? TurnOf(JsonObject meta)
+        private static ConversationContext? TurnOf(JsonObject meta) =>
+            Read<ConversationContext>(meta, ChannelProtocol.ConversationContextMetaKey);
+
+        // What the `_meta` carries under a key, or nothing when it does not read as one.
+        private static T? Read<T>(JsonObject meta, string key) where T : class
         {
             try
             {
-                return meta[ChannelProtocol.ConversationContextMetaKey]
-                    ?.Deserialize<ConversationContext>(ChannelProtocol.SerializerOptions);
+                return meta[key]?.Deserialize<T>(ChannelProtocol.SerializerOptions);
             }
             catch (JsonException)
             {
