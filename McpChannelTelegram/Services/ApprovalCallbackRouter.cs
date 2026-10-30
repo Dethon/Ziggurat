@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.DTOs.Channel;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -26,19 +27,51 @@ public sealed class ApprovalCallbackRouter
         TimeSpan timeout, IReadOnlySet<long> answerers, CancellationToken cancellationToken) =>
         RegisterApproval(timeout, (tapper, _) => Task.FromResult(answerers.Contains(tapper)), cancellationToken);
 
-    // Who may answer, asked of each tap's numeric Telegram id when it comes: a fire's approval is any
-    // linked member's of the chat's household, which only the accounts service can say.
+    // Who may answer, asked of each tap's numeric Telegram id when it comes: the asker's account, or a
+    // fire's household, which only the accounts service can say. The question keeps the id the agent
+    // gave it, so it can be settled by it; one asked without an id mints its own.
     public (string ApprovalId, Task<string> ResultTask) RegisterApproval(
-        TimeSpan timeout, Func<long, CancellationToken, Task<bool>> mayAnswer, CancellationToken cancellationToken)
+        TimeSpan timeout, Func<long, CancellationToken, Task<bool>> mayAnswer, CancellationToken cancellationToken,
+        string? approvalId = null)
     {
+        var waiter = new ApprovalWaiter(timeout, mayAnswer, cancellationToken);
         // The whole GUID, not a prefix of it: 32 hex characters behind the longest prefix
         // ("tool_always:") is 44 bytes, inside the 64 Telegram allows a callback's data.
-        var approvalId = Guid.NewGuid().ToString("N");
-        var waiter = new ApprovalWaiter(timeout, mayAnswer, cancellationToken);
-        _pending[approvalId] = waiter;
+        var id = approvalId is not null && Guid.TryParseExact(approvalId, "N", out _) && _pending.TryAdd(approvalId, waiter)
+            ? approvalId
+            : Mint(waiter);
 
-        var resultTask = WaitAndCleanupAsync(approvalId, waiter);
-        return (approvalId, resultTask);
+        var resultTask = WaitAndCleanupAsync(id, waiter);
+        return (id, resultTask);
+    }
+
+    private string Mint(ApprovalWaiter waiter)
+    {
+        var approvalId = Guid.NewGuid().ToString("N");
+        _pending[approvalId] = waiter;
+        return approvalId;
+    }
+
+    // Where the question is showing, so an answer — here or elsewhere — reaches every copy of it.
+    public void Shown(string approvalId, ITelegramBotClient botClient, long chatId, int messageId)
+    {
+        if (_pending.TryGetValue(approvalId, out var waiter))
+        {
+            waiter.Shown(new ShownMessage(botClient, chatId, messageId));
+        }
+    }
+
+    // Answered on another of the asker's channels: every copy says so and asks nothing more, and the
+    // question here is no answer. What the answer was is the other channel's to show.
+    public async Task SettleAsync(string approvalId, CancellationToken cancellationToken)
+    {
+        if (!_pending.TryRemove(approvalId, out var waiter))
+        {
+            return;
+        }
+
+        waiter.SetResult(ChannelProtocol.NoAnswer);
+        await EditAllAsync(waiter, "Answered elsewhere", cancellationToken);
     }
 
     public async Task<bool> HandleCallbackQueryAsync(
@@ -121,21 +154,28 @@ public sealed class ApprovalCallbackRouter
 
         if (callbackQuery.Message is not null)
         {
+            waiter.Shown(new ShownMessage(botClient, callbackQuery.Message.Chat.Id, callbackQuery.Message.MessageId));
+        }
+
+        // Every copy of the question — the group's and the asker's private chat's — says what it was.
+        await EditAllAsync(waiter, $"{icon} {responseText}", cancellationToken);
+        return true;
+    }
+
+    private static async Task EditAllAsync(ApprovalWaiter waiter, string text, CancellationToken cancellationToken)
+    {
+        foreach (var shown in waiter.ShownMessages)
+        {
             try
             {
-                await botClient.EditMessageText(
-                    callbackQuery.Message.Chat.Id,
-                    callbackQuery.Message.MessageId,
-                    $"{icon} {responseText}",
-                    cancellationToken: cancellationToken);
+                await shown.BotClient.EditMessageText(
+                    shown.ChatId, shown.MessageId, text, cancellationToken: cancellationToken);
             }
             catch
             {
                 // Best effort — message may have been deleted
             }
         }
-
-        return true;
     }
 
     public static InlineKeyboardMarkup CreateApprovalKeyboard(string approvalId)
@@ -167,6 +207,8 @@ public sealed class ApprovalCallbackRouter
         }
     }
 
+    private sealed record ShownMessage(ITelegramBotClient BotClient, long ChatId, int MessageId);
+
     private sealed class ApprovalWaiter : IDisposable
     {
         private readonly TaskCompletionSource<string> _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -186,6 +228,12 @@ public sealed class ApprovalCallbackRouter
         public Func<long, CancellationToken, Task<bool>> MayAnswer { get; }
 
         public Task<string> Task => _tcs.Task;
+
+        private readonly ConcurrentDictionary<(long, int), ShownMessage> _shown = new();
+
+        public IReadOnlyList<ShownMessage> ShownMessages => [.. _shown.Values];
+
+        public void Shown(ShownMessage message) => _shown.TryAdd((message.ChatId, message.MessageId), message);
 
         public void SetResult(string result) => _tcs.TrySetResult(result);
 

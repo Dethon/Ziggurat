@@ -84,6 +84,14 @@ public sealed class AccountsResolverClient(HttpClient http, string credential) :
             : (await ReadAsync<GroupTenant>(response, ct)).TenantId;
     }
 
+    public async Task<long?> TelegramIdOfAsync(Account account, CancellationToken ct)
+    {
+        using var response = await PostAsync(TelegramPath + "of-account", new AccountQuery(account.TenantId, account.UserId), ct);
+        return response.StatusCode == HttpStatusCode.NotFound
+            ? null
+            : (await ReadAsync<OfAccount>(response, ct)).TelegramId;
+    }
+
     private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
@@ -115,4 +123,8 @@ public sealed class AccountsResolverClient(HttpClient http, string credential) :
     private sealed record ChatQuery(long ChatId);
 
     private sealed record GroupTenant(string TenantId);
+
+    private sealed record AccountQuery(string TenantId, string UserId);
+
+    private sealed record OfAccount(long TelegramId);
 }

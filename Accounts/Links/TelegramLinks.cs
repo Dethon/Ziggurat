@@ -189,6 +189,20 @@ public sealed class TelegramLinks(IDbContextFactory<AccountsDbContext> contexts,
         return new GroupBinding(BindOutcome.Bound, link.TenantId);
     }
 
+    // The Telegram a person linked, which is also their private chat with the bot; null for a person
+    // who linked none, or one the household named does not hold.
+    public async Task<long?> TelegramIdOfAsync(string tenantId, string userId, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var identity = await db.LinkedIdentities
+            .Where(l => l.Channel == Channel && l.UserId == userId)
+            .Join(db.Users.Where(u => u.TenantId == tenantId), l => l.UserId, u => u.Id, (l, _) => l.Identity)
+            .FirstOrDefaultAsync(ct);
+        return long.TryParse(identity, NumberStyles.Integer, CultureInfo.InvariantCulture, out var telegramId)
+            ? telegramId
+            : null;
+    }
+
     public async Task<string?> GroupTenantAsync(long chatId, CancellationToken ct)
     {
         var chat = IdentityOf(chatId);

@@ -239,6 +239,7 @@ public class ChatMonitorConversationGroupTests
         var threadResolver = new ChatThreadResolver();
         await using var group = new ConversationGroup(
             new AgentKey("conv-1"),
+            [channel],
             MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
             new DeliveryTargetResolver([channel], logger.Object),
             threadResolver,
@@ -296,6 +297,7 @@ public class ChatMonitorConversationGroupTests
         };
         await using var group = new ConversationGroup(
             agentKey,
+            [channel],
             MonitorTestMocks.CreateAgentFactory(fakeAgent),
             new DeliveryTargetResolver([channel], logger.Object),
             threadResolver,
@@ -337,6 +339,7 @@ public class ChatMonitorConversationGroupTests
         var threadResolver = new ChatThreadResolver();
         await using var group = new ConversationGroup(
             new AgentKey("conv-1"),
+            [channel],
             MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
             new DeliveryTargetResolver([channel], logger.Object),
             threadResolver,
@@ -373,6 +376,7 @@ public class ChatMonitorConversationGroupTests
         threadResolver.Dispose();
         await using var group = new ConversationGroup(
             new AgentKey("conv-1"),
+            [channel],
             MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
             new DeliveryTargetResolver([channel], logger.Object),
             threadResolver,
@@ -437,6 +441,7 @@ public class ChatMonitorConversationGroupTests
         var agentKey = new AgentKey("conv-1");
         await using var group = new ConversationGroup(
             agentKey,
+            [channel],
             MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
             new DeliveryTargetResolver([channel], logger.Object),
             threadResolver,
@@ -505,6 +510,7 @@ public class ChatMonitorConversationGroupTests
         threadResolver.Resolve(agentKey).Dispose();
         await using var group = new ConversationGroup(
             agentKey,
+            [channel],
             MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
             new DeliveryTargetResolver([channel], logger.Object),
             threadResolver,

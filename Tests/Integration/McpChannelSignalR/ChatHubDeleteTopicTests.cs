@@ -56,6 +56,8 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IHubNotificationSender>().Object,
+            new Mock<IPushNotificationService>().Object,
+            new AccountConnections(),
             NullLogger<ApprovalService>.Instance);
 
         _threads = new RedisThreadStateStore(redis.Connection, new RetentionSettings(), _time);

@@ -119,6 +119,15 @@ internal sealed class FakeTelegramAccounts : IAccountResolver, ITelegramAccounts
         return Task.FromResult(_groups.GetValueOrDefault(chatId));
     }
 
+    public Task<long?> TelegramIdOfAsync(Account account, CancellationToken ct)
+    {
+        ThrowIfUnreachable();
+        return Task.FromResult(_people
+            .Where(p => p.Value.Account == account)
+            .Select(p => (long?)p.Key)
+            .FirstOrDefault());
+    }
+
     private string StartCode(Func<string, long, TelegramStart> redeem)
     {
         var code = NewCode();

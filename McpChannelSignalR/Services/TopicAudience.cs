@@ -15,6 +15,10 @@ internal static class TopicAudience
 {
     public static string Space(string spaceSlug) => $"space:{spaceSlug}";
 
+    // Every connection of one person, whatever space it is in and whatever it may see: a question
+    // offered to them is theirs wherever they are, and a sees-all person is in no `user:` group.
+    public static string Account(string userId) => $"account:{userId}";
+
     private static string Person(string spaceSlug, string userId) => $"space:{spaceSlug}:user:{userId}";
 
     private static string SeesAll(string spaceSlug, string tenantId) => $"space:{spaceSlug}:sees-all:{tenantId}";

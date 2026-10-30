@@ -686,10 +686,16 @@ public sealed class ChatHub(
         }
     }
 
-    // False is "not yours to answer": the prompt stays pending for the one who may.
+    // False is "not yours to answer": the prompt stays pending for the one who may. An approval is
+    // its asker's, and only that account's answer settles it, from any of their connections; one
+    // acting for nobody is answered by its topic's own rule.
     public async Task<bool> RespondToApprovalAsync(string approvalId, ToolApprovalResult result)
     {
-        if (await ApprovalTopicAsync(approvalId) is { } topic && !MayAnswerIn(topic))
+        var topic = await ApprovalTopicAsync(approvalId);
+        var mayAnswer = approvalService.AskerOf(approvalId) is { } asker
+            ? asker.UserId == Account.UserId && asker.TenantId == Account.TenantId
+            : topic is null || MayAnswerIn(topic);
+        if (!mayAnswer)
         {
             return false;
         }
@@ -699,9 +705,14 @@ public sealed class ChatHub(
         return true;
     }
 
+    // The questions another channel asked that are offered to this connection's person, for a chat
+    // client that was not open when they were.
+    public IReadOnlyList<ToolApprovalRequestMessage> GetOfferedApprovals() =>
+        approvalService.OfferedTo(Account.UserId);
+
     // Reading is never deciding: whoever sees every topic sees another person's prompt and cannot
-    // settle it. Until an approval records who asked it, the owner answers in their topic, and in a
-    // shared one so does whoever's turn is running; a topic nobody owns is answered by whoever sees it.
+    // settle it. A prompt acting for nobody is answered in a topic by its owner, in a shared one also
+    // by whoever's turn is running, and in a topic nobody owns by whoever sees it.
     private bool MayAnswerIn(TopicMetadata topic) =>
         topic.OwnerId is null
         || Viewer.Owns(topic)

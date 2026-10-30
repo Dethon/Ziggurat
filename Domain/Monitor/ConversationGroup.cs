@@ -25,6 +25,7 @@ namespace Domain.Monitor;
 // changing it is a local edit rather than an argument spread across ChatMonitor.
 internal sealed class ConversationGroup(
     AgentKey agentKey,
+    IReadOnlyList<IChannelConnection> channels,
     IAgentFactory agentFactory,
     DeliveryTargetResolver targetResolver,
     ChatThreadResolver threadResolver,
@@ -407,8 +408,10 @@ internal sealed class ConversationGroup(
         var (approvalChannel, deliveryKey) = targets.Count > 0
             ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, x.Message.AgentId))
             : (x.Channel, agentKey);
+        // Asked where the delivery anchors, and offered to the turn's person wherever else they are.
+        var approvals = new ApprovalRelay(approvalChannel, channels, logger, TimeProvider.System);
         var agent = _agent = agentFactory.Create(
-            deliveryKey, x.Message.Sender, x.Message.AgentId, approvalChannel, x.Message.Principal?.Account);
+            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account);
         var thread = await GetOrRestoreThread(agent, deliveryKey);
 
         // Start session warmup (MCP connections + tool discovery) without awaiting it yet, so

@@ -69,6 +69,8 @@ public class ThreadSessionToolFilterTests
         [
             Tool("mcp__mcp-scheduling__send_reply"),
             Tool("mcp__mcp-scheduling__request_approval"),
+            Tool("mcp__mcp-telegram__offer_approval"),
+            Tool("mcp__mcp-telegram__settle_approval"),
             Tool("mcp__mcp-scheduling__register_agents"),
             Tool("mcp__mcp-scheduling__create_conversation"),
             Tool("mcp__mcp-scheduling__fs_glob")

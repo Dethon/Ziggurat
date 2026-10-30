@@ -99,9 +99,14 @@ public class ChannelAttachmentSourceTests
             string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct) =>
             Task.FromResult(false);
 
-        public Task<ToolApprovalResult> RequestApprovalAsync(
-            string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct) =>
-            Task.FromResult(new ToolApprovalResult());
+        public Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
+            Task.FromResult<ToolApprovalResult?>(null);
+
+        public Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
+            Task.FromResult<ToolApprovalResult?>(null);
+
+        public Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct) =>
+            Task.CompletedTask;
 
         public Task NotifyAutoApprovedAsync(
             string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct) =>

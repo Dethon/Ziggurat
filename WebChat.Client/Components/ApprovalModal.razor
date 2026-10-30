@@ -3,9 +3,11 @@
 @using WebChat.Client.Contracts
 @inherits StoreSubscriberComponent
 @inject ApprovalStore ApprovalStore
+@inject UserIdentityStore IdentityStore
 @inject ApprovalResponder ApprovalResponder
+@inject IDispatcher Dispatcher
 
-@if (_approvalRequest is not null)
+@if (_card is { Request: var _approvalRequest })
 {
     <div class="approval-modal-overlay">
         @* Answering the prompt on screen surfaces the next request waiting behind it, so which
@@ -42,29 +44,58 @@
             </div>
 
             <div class="approval-actions">
-                <button class="btn btn-reject" @onclick="HandleReject" disabled="@_isResponding">
-                    Reject
-                </button>
-                <button class="btn btn-always" @onclick="HandleAlways" disabled="@_isResponding">
-                    Always Approve
-                </button>
-                <button class="btn btn-approve" @onclick="HandleApprove" disabled="@_isResponding">
-                    Approve
-                </button>
+                @* A question is its asker's: anyone else sees it and answers nothing, and one answered on
+                   another of its asker's channels says so until it is closed. *@
+                @if (_card.Status == ApprovalCardStatus.Answerable)
+                {
+                    <button class="btn btn-reject" @onclick="HandleReject" disabled="@_isResponding">
+                        Reject
+                    </button>
+                    <button class="btn btn-always" @onclick="HandleAlways" disabled="@_isResponding">
+                        Always Approve
+                    </button>
+                    <button class="btn btn-approve" @onclick="HandleApprove" disabled="@_isResponding">
+                        Approve
+                    </button>
+                }
+                else
+                {
+                    <span class="approval-status" data-testid="approval-status">
+                        @(_card.Status == ApprovalCardStatus.AnsweredElsewhere
+                            ? "Answered elsewhere"
+                            : "Waiting for the person who asked")
+                    </span>
+                    <button class="btn btn-close-approval" @onclick="HandleClose">
+                        Close
+                    </button>
+                }
             </div>
         </div>
     </div>
 }
 
 @code {
-    private ToolApprovalRequestMessage? _approvalRequest;
+    private ApprovalCard? _card;
     private bool _isResponding;
 
     protected override void OnInitialized()
     {
         Subscribe(ApprovalStore.StateObservable,
-            state => state.CurrentRequest,
-            request => _approvalRequest = request);
+            state => ApprovalCard.Of(state, IdentityStore.State.SignedIn?.UserId),
+            card => _card = card);
+        // The person may be named after the card arrived, which changes whose question it reads as.
+        Subscribe(IdentityStore.StateObservable,
+            identity => ApprovalCard.Of(ApprovalStore.State, identity.SignedIn?.UserId),
+            card => _card = card);
+    }
+
+    // Closing a card someone else answers, or one already answered, answers nothing.
+    private void HandleClose()
+    {
+        if (_card is { } card)
+        {
+            Dispatcher.Dispatch(new ClearApproval(card.Request.ApprovalId));
+        }
     }
 
     private async Task HandleApprove() => await RespondAsync(ToolApprovalResult.Approved);
@@ -75,7 +106,7 @@
 
     private async Task RespondAsync(ToolApprovalResult result)
     {
-        if (_approvalRequest is null || _isResponding)
+        if (_card is not { Status: ApprovalCardStatus.Answerable } card || _isResponding)
             return;
 
         _isResponding = true;
@@ -83,7 +114,7 @@
 
         try
         {
-            await ApprovalResponder.RespondAsync(_approvalRequest.ApprovalId, result);
+            await ApprovalResponder.RespondAsync(card.Request.ApprovalId, result);
         }
         finally
         {
