@@ -60,8 +60,23 @@ falling back, because a verdict then belongs to a turn nobody is waiting for. **
 the Lemonade chat host is read by the word list alone** — the Jev client's rule, not the reader's
 (`.claude/rules/mcp-hosting.md`): it sends nothing and the absence falls to the word list like any
 other. `RequestApprovalTool.McpRun` reads the turn off the call's `_meta` and hands it to
-`IApprovalReader.ReadAsync`; it is there only because `McpChannelConnection.RequestApprovalAsync`
-stamps the turn's context on the approval hop (`McpChannelConnectionApprovalMetaTests`).
+`IApprovalReader.ReadAsync`; it is there only because `McpChannelConnection.AskApprovalAsync`
+stamps the ask's turn on the approval hop (`McpChannelConnectionApprovalMetaTests`).
+
+**A spoken approval is its asker's.** For a question an account's turn asked (`Principal.Of(turn)?.Account`
+off the same `_meta`), the answer's capture is put to `ISpeakerVerifier` before it is read: a voice
+conclusively another enrolled person's, or one the verifier rejects as nobody's, is not the asker's
+and the question is asked again with the measured `No entendí.` re-ask — never taken as theirs, so two
+of them end it refused. A voice too short to judge (`Skipped`, which a one-word "sí" usually is) or a
+verifier with nothing to judge by (`Unavailable`) is the asker's: they were recognised at that
+satellite a moment ago. The voice guest's question is still whoever answers aloud. Voice offers no
+`offer_approval` — a satellite cannot reach a person who is not in front of it — so a voice-asked
+question is offered on the person's other channels by the agent (`.claude/rules/channels.md`), and a
+prompt still waiting when they answer there is **called off**: the call's token ends the spoken
+prompt and closes the microphone, and nothing more is said. A question no satellite could put — none
+there, one gone mid-prompt, or arbitration taking the answer away — answers `no_answer` rather than
+`rejected`, which leaves it to the offers for a while; a person who heard it and said nothing, or
+answered unclearly twice, is still a refusal that ends it everywhere.
 
 **The wording is measured, and the prompt is part of the wording.** `jev-approval-cases.json` carries
 the labelled answers against every prompt shape the tool actually speaks — a natural-language one, a
