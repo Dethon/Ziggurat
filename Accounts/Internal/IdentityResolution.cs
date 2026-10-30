@@ -23,9 +23,10 @@ public static class IdentityResolution
     public const string Path = "/resolve";
     public const string GuestPath = "/guest";
 
-    // The channels whose identity is the account's own id: the chat client's turns carry the id the
-    // session check named, and a voice profile is named after the user id it belongs to.
-    private static readonly string[] _accountIdChannels = [ChannelIds.SignalR, ChannelIds.Voice];
+    // The channels whose identity is the account's own id: a voice profile is named after the user id
+    // it belongs to. The chat client's person is not resolved here by id, which would let whoever
+    // holds the chat hub's credential mint anybody: it is a live session's (SessionRefresh).
+    private static readonly string[] _accountIdChannels = [ChannelIds.Voice];
 
     // The channels whose identity a row of its own links to a person: a numeric Telegram id, written
     // when the bot redeemed the person's invite or link code.
@@ -39,20 +40,25 @@ public static class IdentityResolution
     public static void Map(IEndpointRouteBuilder routes)
     {
         routes.MapPost(Path, async (
-            IdentityQuery query, IDbContextFactory<AccountsDbContext> contexts, Assertions assertions, CancellationToken ct) =>
+            HttpContext http, IdentityQuery query, IDbContextFactory<AccountsDbContext> contexts, Assertions assertions,
+            CancellationToken ct) =>
         {
+            if (!_linkedIdentityChannels.Contains(query.Channel) && !_accountIdChannels.Contains(query.Channel))
+            {
+                return Results.BadRequest();
+            }
+
+            if (!InternalCallers.MayAskAbout(http, query.Channel))
+            {
+                return InternalCallers.NotYours;
+            }
+
             await using var db = await contexts.CreateDbContextAsync(ct);
             var people = _linkedIdentityChannels.Contains(query.Channel)
                 ? db.LinkedIdentities
                     .Where(i => i.Channel == query.Channel && i.Identity == query.Identity)
                     .Join(db.Users, i => i.UserId, u => u.Id, (_, u) => u)
-                : _accountIdChannels.Contains(query.Channel)
-                    ? db.Users.Where(u => u.Id == query.Identity)
-                    : null;
-            if (people is null)
-            {
-                return Results.BadRequest();
-            }
+                : db.Users.Where(u => u.Id == query.Identity);
 
             return await people.FirstOrDefaultAsync(ct) is { } user
                 ? Results.Ok(new ResolvedIdentity(user.TenantId, user.Id, user.DisplayName, assertions.Of(user, query.Channel)))
@@ -62,11 +68,17 @@ public static class IdentityResolution
         // The home household's, while it is the only one; a satellite's own household is the
         // Tenants phase's.
         routes.MapPost(GuestPath, async (
-            GuestQuery query, IDbContextFactory<AccountsDbContext> contexts, Assertions assertions, CancellationToken ct) =>
+            HttpContext http, GuestQuery query, IDbContextFactory<AccountsDbContext> contexts, Assertions assertions,
+            CancellationToken ct) =>
         {
             if (!_guestChannels.Contains(query.Channel))
             {
                 return Results.BadRequest();
+            }
+
+            if (!InternalCallers.MayAskAbout(http, query.Channel))
+            {
+                return InternalCallers.NotYours;
             }
 
             await using var db = await contexts.CreateDbContextAsync(ct);

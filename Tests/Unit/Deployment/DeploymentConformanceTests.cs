@@ -357,6 +357,21 @@ public class DeploymentConformanceTests
             .ShouldAllBe(caller => compose.Services.ContainsKey(caller));
     }
 
+    // The service confines each caller to its own channel by the name compose gives it
+    // (InternalCallers), so a channel server renamed on one side and not the other would be refused
+    // everything it asks.
+    [Fact]
+    public void EveryChannelCallerOfTheAccountsService_IsOneItKnowsTheChannelOf()
+    {
+        var compose = DeploymentFiles.Compose();
+
+        compose.Service("accounts").Environment.Keys
+            .Where(k => k.StartsWith("CALLERS__", StringComparison.Ordinal))
+            .Select(k => k["CALLERS__".Length..])
+            .Where(caller => caller != HouseholdImportApi.Caller)
+            .ShouldBe([InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Voice], ignoreOrder: true);
+    }
+
     // Memory text and usage per person are the operator's alone: every request to the dashboard is
     // checked for the operator's session first, and the identity the check answers is what the
     // dashboard is handed.

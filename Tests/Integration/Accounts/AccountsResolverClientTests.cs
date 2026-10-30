@@ -1,4 +1,5 @@
 using Accounts.Links;
+using Accounts.Sessions;
 using Accounts.Store;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Accounts;
@@ -12,7 +13,9 @@ namespace Tests.Integration.Accounts;
 // service could not answer is a failure the caller must not mistake for nobody.
 public class AccountsResolverClientTests
 {
-    private const string Credential = "signalr-credential";
+    // One credential every caller shares, as a host run's local secret is, so the client is asked
+    // about each channel's endpoints here; which caller may ask what is InternalCallersTests'.
+    private const string Credential = "local-mcp-secret";
 
     // The assertion is what the channel carries on the turn and what the agent believes, so it has
     // to verify against the service's keys and name the person on the channel asked about.
@@ -22,13 +25,36 @@ public class AccountsResolverClientTests
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
 
-        var resolved = await ClientFor(server, Credential).ResolveAsync("signalr", fran.UserId, CancellationToken.None);
+        var resolved = await ClientFor(server, Credential).ResolveAsync("voice", fran.UserId, CancellationToken.None);
 
         resolved.ShouldNotBeNull().Account.ShouldBe(new Account(fran.TenantId, fran.UserId));
         resolved.DisplayName.ShouldBe("Fran");
         var claims = (await server.VerifyAssertionAsync(resolved.Assertion)).Claims.ShouldNotBeNull();
         claims.Account.ShouldBe(new Account(fran.TenantId, fran.UserId));
-        claims.ChannelId.ShouldBe("signalr");
+        claims.ChannelId.ShouldBe("voice");
+    }
+
+    // The chat hub's turns: the person a live session is, signed afresh, and nobody once it is
+    // revoked — a revocation the hub must tell apart from an outage, which throws.
+    [Fact]
+    public async Task ALiveSession_IsItsPerson_AndARevokedOneIsNobody()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var sessions = server.Service<SessionStore>();
+        var phone = (await sessions.IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
+        var client = ClientFor(server, Credential);
+
+        var live = await client.SessionAsync(fran.UserId, phone.Id, CancellationToken.None);
+        await sessions.RevokeAsync(fran.UserId, phone.Id, CancellationToken.None);
+        var revoked = await client.SessionAsync(fran.UserId, phone.Id, CancellationToken.None);
+
+        live.ShouldNotBeNull().Account.ShouldBe(new Account(fran.TenantId, fran.UserId));
+        live.DisplayName.ShouldBe("Fran");
+        (await server.VerifyAssertionAsync(live.Assertion)).Claims.ShouldNotBeNull().SessionId.ShouldBe(phone.Id);
+        revoked.ShouldBeNull();
+        await Should.ThrowAsync<HttpRequestException>(
+            () => ClientFor(server, "wrong").SessionAsync(fran.UserId, phone.Id, CancellationToken.None));
     }
 
     // A satellite's speaker nobody recognised is still somebody: the household's guest, signed.
@@ -64,7 +90,7 @@ public class AccountsResolverClientTests
         var fran = await server.MintOperatorAsync("Fran");
 
         await Should.ThrowAsync<HttpRequestException>(
-            () => ClientFor(server, "wrong").ResolveAsync("signalr", fran.UserId, CancellationToken.None));
+            () => ClientFor(server, "wrong").ResolveAsync("voice", fran.UserId, CancellationToken.None));
     }
 
     // The Telegram bot's calls, through the same client: what a person sending the bot a code, or
@@ -176,7 +202,10 @@ public class AccountsResolverClientTests
     private static Task<AccountsServer> StartAsync() =>
         AccountsServer.StartAsync(s => s with
         {
-            Callers = new Dictionary<string, string> { ["mcp-channel-signalr"] = Credential }
+            Callers = new Dictionary<string, string>
+            {
+                ["mcp-channel-signalr"] = Credential, ["mcp-channel-telegram"] = Credential, ["mcp-channel-voice"] = Credential
+            }
         });
 
     private static AccountsResolverClient ClientFor(AccountsServer server, string credential) =>

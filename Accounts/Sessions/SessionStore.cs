@@ -71,6 +71,21 @@ public sealed class SessionStore(IDbContextFactory<AccountsDbContext> contexts, 
             found.User.AvatarUrl);
     }
 
+    // A session by its id, while it lives, named by its owner as well (the ids are on the account
+    // page, so they are no secret): how the chat hub learns its connection's person again for every
+    // turn, and learns nothing once the session is revoked. Last-seen is the session check's to keep.
+    public async Task<SessionIdentity?> LiveAsync(string userId, string sessionId, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var user = await db.Sessions
+            .Where(s => s.Id == sessionId && s.UserId == userId && s.RevokedAt == null)
+            .Join(db.Users, s => s.UserId, u => u.Id, (_, u) => u)
+            .SingleOrDefaultAsync(ct);
+        return user is null
+            ? null
+            : new SessionIdentity(sessionId, user.Id, user.TenantId, Roles.Of(user), user.DisplayName, user.AvatarUrl);
+    }
+
     public async Task<IReadOnlyList<SignedInDevice>> ListAsync(string userId, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
