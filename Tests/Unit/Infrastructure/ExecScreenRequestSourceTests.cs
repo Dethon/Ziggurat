@@ -75,7 +75,8 @@ public class ExecScreenRequestSourceTests
             MonitorTestMocks.CreateThreadResolver(),
             new RecordingMetricsPublisher(),
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 

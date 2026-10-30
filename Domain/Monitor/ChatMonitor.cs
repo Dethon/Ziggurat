@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
+using Domain.Security;
 using Domain.Skills;
 using Microsoft.Extensions.Logging;
 
@@ -16,6 +17,10 @@ public class ChatMonitor(
     IMetricsPublisher metricsPublisher,
     IMemoryRecallHook? memoryRecallHook,
     ILogger<ChatMonitor> logger,
+    // Who a person's turn acts for: the accounts service's assertion each one arrives with, checked
+    // against its keys. Required, since a monitor that believed the channels would act for whoever
+    // they named.
+    AssertionVerifier assertions,
     // Optional because a host may configure none — a test harness, or a deployment where every
     // channel names its agent. With none configured a message that names no agent is refused
     // when the agent is built, which is the point: nothing guesses.
@@ -23,6 +28,11 @@ public class ChatMonitor(
     // Nullable exactly as the recall hook is: a host without a judge preloads nothing.
     ISkillPreloader? skillPreloader = null)
 {
+    // A person's turn whose assertion was not believed, on the errors feed beside the servers'
+    // CallTokenRefused: a channel server that misbehaves, an accounts service the agent cannot
+    // reach, or a turn that sat too long on its way here.
+    public const string AssertionRefusedErrorType = "AssertionRefused";
+
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger);
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
 
@@ -85,7 +95,7 @@ public class ChatMonitor(
     {
         await using var conversation = new ConversationGroup(
             agentKey, channels, agentFactory, _targetResolver, threadResolver, metricsPublisher, memoryRecallHook,
-            skillPreloader, logger);
+            skillPreloader, assertions, logger);
 
         await foreach (var turnUpdate in conversation.RunAsync(group, group.Complete, ct).WithCancellation(ct))
         {

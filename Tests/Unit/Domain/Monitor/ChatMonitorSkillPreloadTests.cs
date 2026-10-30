@@ -226,6 +226,7 @@ public class ChatMonitorSkillPreloadTests
             new Mock<IMetricsPublisher>().Object,
             recall,
             Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier(),
             skillPreloader: preloader);
 
     private static JudgmentOutcome Sure(string skill) => JudgeAnswers.Sure(skill);
