@@ -7,14 +7,18 @@ using Microsoft.AspNetCore.SignalR;
 namespace McpChannelSignalR.Hubs;
 
 // Reaching the hub is not being somebody. A connection is the person the proxy's session check
-// named in the headers it copied onto the request, kept here as it arrives; one that arrives
-// without them did not come through the check, and is closed with the reason before it can call
-// anything. Nothing the browser says afterwards changes who it is.
+// named in the assertion it signed and copied onto the request — verified against the accounts
+// service's keys and held to the chat hub's channel — kept here as it arrives. The three plain
+// headers beside it are never read: anything on the compose network could write them. One that
+// arrives without a believable assertion did not come through the check, and is closed with the
+// reason before it can call anything. Nothing the browser says afterwards changes who it is, and the
+// assertion is not asked again as it ages: who the connection is was settled when it arrived.
 //
 // Every invocation is held to the same rule here as well, in front of every method rather than at
 // the top of each, so no method ever runs for a connection the check did not name — whatever a
 // future change to connecting does — and a method added to the hub needs nothing to be covered.
 internal sealed class SignedInConnectionFilter(
+    AssertionVerifier assertions,
     IAccountResolver accounts,
     AccountConnections connections,
     ILogger<SignedInConnectionFilter> logger) : IHubFilter
@@ -23,8 +27,10 @@ internal sealed class SignedInConnectionFilter(
 
     public async Task OnConnectedAsync(HubLifetimeContext context, Func<HubLifetimeContext, Task> next)
     {
-        var headers = context.Context.GetHttpContext()?.Request.Headers;
-        if (headers is null || ForwardedAccount.From(name => headers[name].ToString()) is not { } account)
+        var assertion = context.Context.GetHttpContext()?.Request.Headers[ForwardedAccount.AssertionHeader] is { Count: 1 } values
+            ? values[0]
+            : null;
+        if (await assertions.VerifyAsync(assertion, ChannelIds.SignalR, context.Context.ConnectionAborted) is not { } account)
         {
             throw new HubException(NotSignedInError);
         }

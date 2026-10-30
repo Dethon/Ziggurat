@@ -10,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace McpServerSugary.App;
 
 // The app and the HTTP API it calls, on every route but /mcp. These routes are called by a person's
-// phone through the proxy, whose session check names the person in three headers (Person); /mcp is
+// phone through the proxy, whose session check names the person in a signed assertion (Person); /mcp is
 // the deployment's and keeps its own secret. There is no sign-in here: signing in is the accounts
 // service's, once for every app of the deployment.
 public static class SugaryApp
@@ -43,9 +43,11 @@ public static class SugaryApp
 
         // Before any route binds its person, so a request naming nobody is told so plainly — a 401,
         // which is what sends the app to sign in — rather than a route's 400 for a missing parameter.
+        // The assertion is verified here, once a request, and every route binds the person it named.
         app.Use(async (context, next) =>
         {
-            if (context.Request.Path.StartsWithSegments("/api") && Person.Of(context.Request) is null)
+            if (context.Request.Path.StartsWithSegments("/api")
+                && await Person.SignedInAsync(context, context.RequestAborted) is null)
             {
                 await Results.Problem("Not signed in.", statusCode: StatusCodes.Status401Unauthorized)
                     .ExecuteAsync(context);

@@ -44,7 +44,7 @@ assistants.herfluffness.com {
         reverse_proxy mcp-channel-signalr:8080
     }
 
-    # SexyTime's server calls this with a secret of its own.
+    # SexyTime's server calls this with a secret of its own and the assertion the check signed for it.
     handle /api/agents* {
         reverse_proxy agent:8080
     }
@@ -130,8 +130,9 @@ sexy.herfluffness.com {
         reverse_proxy mcp-channel-signalr:8080
     }
 
-    # SexyTime's server calls this with the agent API's secret and the X-Ziggurat-User it was handed
-    # by the check below; the agent believes that header only beside the secret.
+    # SexyTime's server calls this with the agent API's secret and the X-Ziggurat-Assertion it was
+    # handed by the check below; the agent acts for the person it names once it verifies, and only
+    # beside the secret.
     handle /api/agents* {
         reverse_proxy agent:8080
     }

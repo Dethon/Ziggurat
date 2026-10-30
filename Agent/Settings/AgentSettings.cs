@@ -5,6 +5,7 @@ using Domain.Security;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Judgments;
 using JetBrains.Annotations;
 
@@ -27,6 +28,10 @@ public record AgentSettings
     public RetentionSettings Retention { get; init; } = new();
     public OutpostConfiguration Outposts { get; init; } = new();
     public AgentApiConfiguration AgentApi { get; init; } = new();
+
+    // Where the accounts service publishes the keys its assertions verify with (ACCOUNTS__JWKSURL):
+    // the registration API takes its person from the one SexyTime forwards.
+    public AccountsClientConfig Accounts { get; init; } = new();
 
     // Each configured MCP server's own credential, keyed by the host the agent dials it at
     // (MCP__SECRETS__<host>): every configured endpoint and channel connection presents the one for
