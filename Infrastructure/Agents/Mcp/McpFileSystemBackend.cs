@@ -299,7 +299,7 @@ internal class McpFileSystemBackend(
         string path, Func<CancellationToken, Task<string?>> written, string? existingAt, CancellationToken ct)
     {
         var caller = Caller;
-        if (!DelegatedWrites.Delegates(filesystemName) || CallIdentity.Of(caller).Account is null
+        if (!DelegatedWrites.Delegates(filesystemName, path) || CallIdentity.Of(caller).Account is null
             || await written(ct) is not { } text)
         {
             return null;

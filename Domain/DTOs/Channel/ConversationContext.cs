@@ -17,10 +17,11 @@ namespace Domain.DTOs.Channel;
 // delivers, so a server that acts as a person reads the principal and nothing else.
 //
 // Identity is who the turn acts for as the agent verified it when the turn arrived — the person or
-// the household's guest its assertion named, out of the assertion's envelope — and what the agent
-// signs every one of the turn's calls as, however long the turn runs. Null on a turn no assertion
-// stands behind: a fire, a login wake, a watch (ticket 07's delegations). It rides the _meta beside
-// the rest, and a server never believes it there: CallTurn answers the call token's in its place.
+// the household's guest its assertion named, or the person a fire's delegation named, out of the
+// token's envelope — and what the agent signs every one of the turn's calls as, however long the turn
+// runs. Null on a turn nothing verified (a fire no delegation stands behind, a download), which acts
+// for nobody. It rides the _meta beside the rest, and a server never believes it there: CallTurn
+// answers the call token's in its place.
 [PublicAPI]
 public record ConversationContext(
     string AgentId,
