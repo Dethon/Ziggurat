@@ -151,7 +151,9 @@ public sealed class TelegramBotService : BackgroundService
             return;
         }
 
-        var intake = AttachmentIntake.Read(agentId, messages);
+        var chatId = first.Chat.Id;
+        var conversationId = ConversationIdentity.ForChat(chatId, first.MessageThreadId).ConversationId;
+        var intake = AttachmentIntake.Read(agentId, conversationId, messages);
 
         // A voice note is the one piece of media that becomes words rather than a file, so it is
         // read here and not by the intake, which mints references.
@@ -177,9 +179,6 @@ public sealed class TelegramBotService : BackgroundService
         var from = first.From!;
         var sender = from.Username ?? $"{from.Id}";
         _approvalCallbackRouter.RecordSender(sender, from.Id);
-
-        var chatId = first.Chat.Id;
-        var conversationId = ConversationIdentity.ForChat(chatId, first.MessageThreadId).ConversationId;
 
         _botRegistry.RegisterChatAgent(chatId, agentId);
 

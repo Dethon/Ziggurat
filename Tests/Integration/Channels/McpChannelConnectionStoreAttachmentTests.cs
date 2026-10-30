@@ -5,6 +5,7 @@ using McpChannelSignalR.Attachments;
 using McpChannelSignalR.McpTools;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
+using McpChannelTelegram.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
@@ -56,6 +57,27 @@ public sealed class McpChannelConnectionStoreAttachmentTests : IDisposable
         kept.ShouldBeTrue();
         _attachments.MintDownload(_photo.Id, "default").ShouldNotBeNull();
         (await _attachments.ReadBytesAsync(_photo.Id, CancellationToken.None)).ShouldBe(new byte[] { 1, 2, 3 });
+    }
+
+    // Telegram keeps no files of its own, so its reference names the bot that fetches it — and the
+    // conversation it was sent in, which is where WebChat files a review copy's file.
+    [Fact]
+    public async Task ATelegramPhotosCopy_IsDownloadableThereUnderTelegramsReference()
+    {
+        await using var server = await StartWebChatAsync();
+        await using var connection = new McpChannelConnection("signalr");
+        await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
+        var photo = new AttachmentReference
+        {
+            Id = TelegramReference.For("-100200:-100200", "jack", "AgACAgQAAxkBAAIB-_photo"),
+            FileName = "attachment-10.jpg", MediaType = "image/jpeg", SizeBytes = 3
+        };
+
+        var kept = await connection.StoreAttachmentAsync("-100200:-100200", photo, [1, 2, 3], CancellationToken.None);
+
+        kept.ShouldBeTrue();
+        _attachments.MintDownload(photo.Id, "default").ShouldNotBeNull();
+        (await _attachments.ReadBytesAsync(photo.Id, CancellationToken.None)).ShouldBe(new byte[] { 1, 2, 3 });
     }
 
     [Fact]

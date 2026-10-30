@@ -26,7 +26,7 @@ public class TelegramBotServiceAlbumTests : IDisposable
         var notification = (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message.ShouldNotBeNull();
         notification.Content.ShouldBe("/ask compare these");
         notification.Attachments.ShouldNotBeNull().Select(a => a.Id)
-            .ShouldBe(["jack/one", "jack/two", "jack/three"]);
+            .ShouldBe(["100-100/jack.one", "100-100/jack.two", "100-100/jack.three"]);
     }
 
     // Telegram attaches the caption to whichever item of the album it feels like; the question is
@@ -96,9 +96,9 @@ public class TelegramBotServiceAlbumTests : IDisposable
         var notifications = (await _harness.ReceiveAsync()).Select(item => item.Message!).ToList();
         notifications.Count.ShouldBe(2);
         notifications.ShouldContain(n =>
-            n.Content == "/ask first pair" && n.Attachments!.Count == 2 && n.Attachments![0].Id == "jack/a1");
+            n.Content == "/ask first pair" && n.Attachments!.Count == 2 && n.Attachments![0].Id == "100-100/jack.a1");
         notifications.ShouldContain(n =>
-            n.Content == "/ask second pair" && n.Attachments!.Count == 2 && n.Attachments![0].Id == "jack/b1");
+            n.Content == "/ask second pair" && n.Attachments!.Count == 2 && n.Attachments![0].Id == "100-100/jack.b1");
     }
 
     public void Dispose() => _harness.Dispose();
