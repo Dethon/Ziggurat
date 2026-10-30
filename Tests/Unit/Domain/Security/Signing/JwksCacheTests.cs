@@ -150,6 +150,27 @@ public class JwksCacheTests
         _issuer.Fetches.ShouldBe(2);
     }
 
+    // A check whose caller hung up mid-fetch — a long poll the agent dropped to reconnect — did not
+    // find the issuer unreachable; it stopped asking. The next check fetches at once rather than
+    // refusing every call until the refetch interval has passed.
+    [Fact]
+    public async Task AFetchItsCallerAbandoned_DoesNotHoldOffTheNext()
+    {
+        var answer = new TaskCompletionSource();
+        var issuer = new Issuer(_current.PublishedKeys) { Gate = answer.Task };
+        var verifier = VerifierOver(new JwksCache(issuer.FetchAsync, _clock, _settings));
+        using var hangUp = new CancellationTokenSource();
+
+        var abandoned = verifier.VerifyAsync(Token(_current), Audience, hangUp.Token);
+        await Eventually.Until(() => issuer.Fetches == 1, "the first check to be fetching");
+        await hangUp.CancelAsync();
+        await Should.ThrowAsync<OperationCanceledException>(() => abandoned);
+        answer.SetResult();
+
+        (await verifier.VerifyAsync(Token(_current), Audience)).IsVerified.ShouldBeTrue();
+        issuer.Fetches.ShouldBe(2);
+    }
+
     // The issuer's JWKS endpoint, as a verifier's fetch sees it: whatever it publishes right now.
     private sealed class Issuer(JsonWebKeySet published)
     {
