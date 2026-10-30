@@ -7,6 +7,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      // The proxy's session check stands in front of every file, the manifest too, and a browser
+      // fetches a manifest without cookies unless told to; without them it is sent to sign in.
+      useCredentials: true,
       includeAssets: ["icon.svg", "favicon.svg", "apple-touch-icon.png", "push-handler.js"],
       manifest: {
         name: "Sugary",
@@ -35,15 +38,28 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg,png,wasm,woff2}"],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // The API is never served from cache: a stale estimate or log would be worse than an error.
-        navigateFallbackDenylist: [/^\/api\//, /^\/mcp/],
+        // Sign-in and the account page are the accounts service's, on this host through the proxy:
+        // answered with the app's own index.html they would send a signed-out person back to the
+        // app, which sends them to sign in, for ever.
+        navigateFallbackDenylist: [/^\/api\//, /^\/mcp/, /^\/accounts\//],
         // The pen reminders' push and click handlers, kept beside the generated worker in public/.
         importScripts: ["push-handler.js"],
       },
     }),
   ],
   server: {
-    // The Sugary server as compose publishes it.
-    proxy: { "/api": "http://localhost:6017" },
+    // The Sugary server as compose publishes it, on loopback with no proxy in front, so the dev
+    // server names the person the session check would: a local person of a local household.
+    proxy: {
+      "/api": {
+        target: "http://localhost:6017",
+        headers: {
+          "X-Ziggurat-User": "local-user",
+          "X-Ziggurat-Tenant": "local-household",
+          "X-Ziggurat-Roles": "owner",
+        },
+      },
+    },
   },
   build: {
     // The Sugary server serves the app from its wwwroot, so one container holds both halves.

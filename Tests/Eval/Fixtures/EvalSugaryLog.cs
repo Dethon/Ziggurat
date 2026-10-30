@@ -1,7 +1,6 @@
 using Domain.DTOs.Sugary;
 using McpServerSugary.Settings;
 using McpServerSugary.Store;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Eval.Fixtures;
@@ -25,10 +24,11 @@ public static class EvalSugaryLog
         Mcp = McpTestSecret.Gate
     };
 
+    // Hers: the account every eval turn acts for, so the mount reads it on a scenario's turn as it
+    // reads a person's log on theirs, and nothing else in the database answers.
     public static async Task SeedAsync(IServiceProvider services)
     {
-        var contexts = services.GetRequiredService<IDbContextFactory<SugaryDbContext>>();
-        await using var db = await contexts.CreateDbContextAsync();
+        await using var db = services.GetRequiredService<SugaryStore>().For(EvalRun.Account);
         db.Foods.AddRange(Foods);
         db.Meals.AddRange(Meals);
         db.Doses.AddRange(Doses);

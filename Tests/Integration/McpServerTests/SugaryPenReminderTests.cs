@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using Domain.DTOs.Channel;
 using Infrastructure.Clients.Push;
 using McpServerSugary.Reminders;
 using McpServerSugary.Store;
@@ -30,9 +31,10 @@ public class SugaryPenReminderTests
         public void At(int day, int hour) =>
             clock.SetUtcNow(TimeZoneInfo.ConvertTimeToUtc(new DateTime(2026, 10, day, hour, 0, 0), Madrid));
 
-        public async Task SubscribeAsync(string endpoint = "https://push.example.com/a", string language = "es")
+        public async Task SubscribeAsync(
+            string endpoint = "https://push.example.com/a", string language = "es", Account? person = null)
         {
-            var client = await server.SignedInAsync();
+            var client = server.As(person ?? SugaryServer.Her);
             (await client.PutAsJsonAsync("/api/push/subscription", new
             {
                 endpoint,
@@ -42,9 +44,9 @@ public class SugaryPenReminderTests
             })).EnsureSuccessStatusCode();
         }
 
-        public async Task PenAsync(string kind = "rapid", string insulin = "Fiasp", int days = 28)
+        public async Task PenAsync(string kind = "rapid", string insulin = "Fiasp", int days = 28, Account? person = null)
         {
-            var client = await server.SignedInAsync();
+            var client = server.As(person ?? SugaryServer.Her);
             (await client.PostAsJsonAsync("/api/pens", new { kind, insulin, openedOn = "2026-10-01", days }))
                 .EnsureSuccessStatusCode();
         }
@@ -53,7 +55,7 @@ public class SugaryPenReminderTests
         {
             await using var db = await server.Services.GetRequiredService<IDbContextFactory<SugaryDbContext>>()
                 .CreateDbContextAsync();
-            return await db.PushSubscriptions.Select(s => s.Endpoint).ToListAsync();
+            return await db.PushSubscriptions.IgnoreQueryFilters().Select(s => s.Endpoint).ToListAsync();
         }
 
         public ValueTask DisposeAsync() => server.DisposeAsync();
@@ -93,6 +95,30 @@ public class SugaryPenReminderTests
         Title(payload).ShouldBe("Mañana toca cambiar la pluma de Fiasp");
         Body(payload).ShouldBe("La empezaste el 1 de octubre y dura 28 días.");
         payload["tag"]!.GetValue<string>().ShouldBe("pen-rapid");
+    }
+
+    // A pen is one person's, and so is a phone that subscribed: each reminder reaches its pen's
+    // owner's phones and nobody else's in the household.
+    [Fact]
+    public async Task APensReminder_ReachesItsOwnersPhonesOnly()
+    {
+        await using var harness = await StartAsync();
+        await harness.SubscribeAsync("https://push.example.com/hers", "en");
+        await harness.SubscribeAsync("https://push.example.com/his", "en", SugaryServer.Him);
+        await harness.PenAsync(insulin: "Fiasp");
+        await harness.PenAsync(insulin: "Humalog", days: 27, person: SugaryServer.Him);
+
+        harness.At(27, 9);
+        await harness.Reminders.RemindAsync(CancellationToken.None);
+        harness.At(28, 9);
+        await harness.Reminders.RemindAsync(CancellationToken.None);
+
+        harness.Push.Sent.Select(s => $"{s.Endpoint} {Title(s.Payload)}").ShouldBe(
+        [
+            "https://push.example.com/his Change your Humalog pen tomorrow",
+            "https://push.example.com/his Time for a new Humalog pen",
+            "https://push.example.com/hers Change your Fiasp pen tomorrow"
+        ], ignoreOrder: true);
     }
 
     // Asked every quarter of an hour, she is told once a day, and once more on the day.
