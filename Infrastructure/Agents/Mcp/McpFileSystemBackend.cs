@@ -8,7 +8,6 @@ using Domain.DTOs.FileSystem;
 using Domain.Security;
 using Domain.Tools;
 using Domain.Tools.FileSystem;
-using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -20,22 +19,29 @@ namespace Infrastructure.Agents.Mcp;
 // on purpose: a caller that forgot to pass it would silently turn off the rules of every mount it
 // built, which is the shape of unreachable guard ADR-0015 exists to remove. Null says "nothing
 // listed" out loud.
+//
+// `localZone` is the zone the agent tells the model its time in (its TimeProvider's), which a write's
+// offset-less runAt is read in when it is delegated; a backend built outside a session takes the
+// machine's.
 internal class McpFileSystemBackend(
     McpClient client,
     string filesystemName,
     IReadOnlySet<string>? advertisedOperations,
-    ILogger? logger = null) : IFileSystemBackend, IBridgedExecBackend, ICallerBoundBackend
+    ILogger? logger = null,
+    TimeZoneInfo? localZone = null) : IFileSystemBackend, IBridgedExecBackend, ICallerBoundBackend
 {
-    // Set on a view the exec bridge asked for: the caller it names rides `_meta` in place of the
-    // turn's, because the bridge's operations run on its own request with no turn in flight.
-    private bool _callerBound;
-    private ConversationContext? _boundCaller;
+    private readonly TimeZoneInfo _localZone = localZone ?? TimeZoneInfo.Local;
+
+    // Who every call this view makes acts for, as the caller that asked for the view named them: a
+    // file tool for the call it serves (ToolCaller, off the call's own arguments), the exec bridge for
+    // the command whose operations it answers. Never read off the invocation in flight, so the mount
+    // as discovered — which nobody asked for — acts for nobody.
+    private ConversationContext? _caller;
 
     public IFileSystemBackend As(ConversationContext? caller)
     {
         var view = (McpFileSystemBackend)MemberwiseClone();
-        view._callerBound = true;
-        view._boundCaller = caller;
+        view._caller = caller;
         return view;
     }
 
@@ -298,7 +304,7 @@ internal class McpFileSystemBackend(
     private async Task<JsonObject?> DelegatedAsync(
         string path, Func<CancellationToken, Task<string?>> written, string? existingAt, CancellationToken ct)
     {
-        var caller = Caller;
+        var caller = _caller;
         if (!DelegatedWrites.Delegates(filesystemName, path) || CallIdentity.Of(caller).Account is null
             || await written(ct) is not { } text)
         {
@@ -306,7 +312,7 @@ internal class McpFileSystemBackend(
         }
 
         var existing = existingAt is null ? null : await TextAtAsync(existingAt, ct);
-        return DelegatedWrites.Of(filesystemName, path, text, existing, caller?.Origin, TimeZoneInfo.Local) is { } what
+        return DelegatedWrites.Of(filesystemName, path, text, existing, caller?.Origin, _localZone) is { } what
             ? new JsonObject
             {
                 [ChannelProtocol.DelegateMetaKey] = JsonSerializer.SerializeToNode(what, ChannelProtocol.SerializerOptions)
@@ -320,12 +326,6 @@ internal class McpFileSystemBackend(
 
     private async Task<string?> TextAtAsync(string path, CancellationToken ct) =>
         await ReadAsync(path, null, null, ct) is FsResult<FsReadResult>.Ok { Value.Content: var content } ? content : null;
-
-    // The turn a call made now acts for: the bridge's caller on a view it asked for, else the one the
-    // invocation in flight carries.
-    private ConversationContext? Caller => _callerBound
-        ? _boundCaller
-        : ConversationContextMeta.TryRead(FunctionInvokingChatClient.CurrentContext?.Options);
 
     private Dictionary<string, object?> WithFilesystem(Dictionary<string, object?> args)
     {
@@ -360,7 +360,7 @@ internal class McpFileSystemBackend(
     private async Task<JsonNode> CallToolWithMetaAsync(
         string toolName, Dictionary<string, object?> args, JsonObject? extraMeta, CancellationToken ct)
     {
-        var meta = ConversationContextMeta.Build(Caller);
+        var meta = ConversationContextMeta.Build(_caller);
         if (extraMeta is not null)
         {
             meta ??= new JsonObject();

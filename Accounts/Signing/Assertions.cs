@@ -24,5 +24,5 @@ public sealed class Assertions(SigningKeyStore keys, AccountsSettings settings, 
     private string Sign(IdentityClaims identity) =>
         _signer.Sign(identity.Stamped(
             TokenIssuers.Accounts, TokenAudiences.Assertion, clock.Time.GetUtcNow(),
-            TimeSpan.FromMinutes(settings.AssertionLifetimeMinutes)));
+            settings.AssertionLifetime));
 }

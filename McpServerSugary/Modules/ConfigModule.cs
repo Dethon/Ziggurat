@@ -51,7 +51,7 @@ public static class ConfigModule
             .AddSingleton<OpenEstimates>()
             .AddSingleton<SugaryChannel>()
             .AddSugaryApp(settings)
-            .AddAssertionVerifier(settings.Accounts.JwksUrl);
+            .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification);
 
         // Pen reminders are pushed with the deployment's VAPID keys, and without them there are none.
         if (settings.WebPush.IsConfigured)

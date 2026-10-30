@@ -10,7 +10,7 @@ var builder = WebApplication.CreateBuilder(command ? [] : args);
 var settings = builder.Configuration.GetSettings();
 if (command)
 {
-    return await AgentCommand.RunAsync(args, settings, Console.In, Console.Out, CancellationToken.None);
+    return await AgentCommand.RunAsync(args, settings, TimeProvider.System, Console.In, Console.Out, CancellationToken.None);
 }
 
 var cmdParams = ConfigModule.GetCommandLineParams(args);

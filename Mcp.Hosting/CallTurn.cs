@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Domain.Channels;
 using Domain.DTOs.Channel;
 using Domain.Security.Signing;
@@ -37,10 +36,7 @@ public static class CallTurn
         // watch, a login handoff — as the call carried it: the server stores it with the object and
         // hands it back with the object's fire, and never reads it, since only the agent can say
         // whether it holds. Null when the call delegates nothing, and the object is then nobody's.
-        public string? Delegation =>
-            call.Params?.Meta?[ChannelProtocol.DelegationMetaKey] is JsonValue value && value.TryGetValue<string>(out var token)
-                ? token
-                : null;
+        public string? Delegation => CallText.StringAt(call.Params?.Meta, ChannelProtocol.DelegationMetaKey);
 
         // The namespace a stateful tool caches the turn's state under (ConversationScope).
         public bool TryScope(out string scope)

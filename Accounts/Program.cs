@@ -5,7 +5,7 @@ using Accounts.Settings;
 // A verb's arguments are not configuration: `mint-link --user <id>` would read as switches.
 var command = AccountsCommand.IsCommand(args);
 var builder = WebApplication.CreateBuilder(command ? [] : args);
-var settings = builder.Configuration.Get<AccountsSettings>() ?? new AccountsSettings();
+var settings = AccountsSettings.Read(builder.Configuration);
 if (settings.Missing() is { Count: > 0 } missing)
 {
     await Console.Error.WriteLineAsync($"accounts cannot start without: {string.Join(", ", missing)}");

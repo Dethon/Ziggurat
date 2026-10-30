@@ -51,7 +51,7 @@ public class VfsExecTool(
         AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
-        if (!registry.Resolve(path).TryGetValue(out var resolution, out var unresolved))
+        if (!registry.Resolve(path, arguments).TryGetValue(out var resolution, out var unresolved))
         {
             return unresolved.ToNode();
         }
@@ -63,7 +63,7 @@ public class VfsExecTool(
             // translation glob entries and search hits use. The root comes back as the empty path,
             // which becomes the mount point with a trailing slash.
             return (await RunBridgedAsync(bridged, bridge, resolution.RelativePath, command, timeoutSeconds,
-                    Permission(arguments), Caller(arguments), cancellationToken))
+                    Permission(arguments), ToolCaller.Of(arguments), cancellationToken))
                 .Map(e => e with { Cwd = resolution.ToVirtualPath(e.Cwd) })
                 .ToNode();
         }
@@ -71,7 +71,7 @@ public class VfsExecTool(
         // A mount with no shell of its own runs the command in the sandbox, in that mount's
         // directory under /vfs — always there, whether or not the image let it have /<name> as well.
         // The caller named the directory, so it is echoed back as the working directory.
-        if (bridge is not null && Rerouted(resolution) is { } sandbox)
+        if (bridge is not null && Rerouted(resolution, arguments) is { } sandbox)
         {
             // The mount's directory in the sandbox is a real one, where `..` leads out — to /vfs, to
             // the image's own /usr/bin. The screen judged this command as one on the mount, and a bare
@@ -84,7 +84,7 @@ public class VfsExecTool(
 
             // Relative to the sandbox's root, as every path its backend takes is.
             var cwd = $"{ServedMount.PathOf(resolution.MountPoint).TrimStart('/')}/{resolution.RelativePath.Trim('/')}".TrimEnd('/');
-            return (await RunBridgedAsync(sandbox, bridge, cwd, command, timeoutSeconds, Permission(arguments), Caller(arguments), cancellationToken))
+            return (await RunBridgedAsync(sandbox, bridge, cwd, command, timeoutSeconds, Permission(arguments), ToolCaller.Of(arguments), cancellationToken))
                 .Map(e => e with { Cwd = path })
                 .ToNode();
         }
@@ -139,15 +139,10 @@ public class VfsExecTool(
     // The session's sandbox, for an exec on a mount that has no shell — whether the mount has an
     // exec of its own (the timers' catalog) or none (the vault): either is a directory there. Never
     // an outpost, which is somebody's own computer and keeps its own exec.
-    private IBridgedExecBackend? Rerouted(FileSystemResolution resolution) =>
+    private IBridgedExecBackend? Rerouted(FileSystemResolution resolution, AIFunctionArguments? arguments) =>
         ExecReach.SandboxFor(registry.GetMounts(), resolution.MountPoint) is { } sandbox
-        && registry.Resolve(sandbox.MountPoint).TryGetValue(out var resolved, out _)
+        && registry.Resolve(sandbox.MountPoint, arguments).TryGetValue(out var resolved, out _)
             ? resolved.Backend as IBridgedExecBackend
-            : null;
-
-    private static ConversationContext? Caller(AIFunctionArguments? arguments) =>
-        arguments?.Context?.TryGetValue(ConversationContext.ContextKey, out var caller) == true
-            ? caller as ConversationContext
             : null;
 
     private static ToolPermission Permission(AIFunctionArguments? arguments) =>

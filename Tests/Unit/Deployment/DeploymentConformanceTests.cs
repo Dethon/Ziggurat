@@ -637,7 +637,7 @@ public class DeploymentConformanceTests
     }
 
     // The Telegram bot carries the assertion of the answer it admitted a sender on, which it keeps for
-    // LinkCache:Linked. An assertion lives AssertionLifetimeMinutes from when the accounts service
+    // LinkCache:Linked. An assertion lives AssertionLifetime from when the accounts service
     // signed it and the agent refuses a turn whose assertion has run out, so a kept answer must leave
     // its assertion most of its life for the hop to the agent: at most half of it spent in the cache.
     [Fact]
@@ -645,7 +645,8 @@ public class DeploymentConformanceTests
     {
         var linked = TimeSpan.Parse(
             ShippedSetting("McpChannelTelegram", "LinkCache", "Linked").GetString()!, CultureInfo.InvariantCulture);
-        var lifetime = TimeSpan.FromMinutes(ShippedSetting("Accounts", "AssertionLifetimeMinutes").GetInt32());
+        var lifetime = TimeSpan.Parse(
+            ShippedSetting("Accounts", "AssertionLifetime").GetString()!, CultureInfo.InvariantCulture);
 
         linked.ShouldBeLessThanOrEqualTo(lifetime / 2);
     }
