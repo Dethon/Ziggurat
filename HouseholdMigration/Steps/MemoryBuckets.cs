@@ -85,7 +85,7 @@ public sealed partial class MemoryBuckets(IMemoryStore store) : IMigrationStep
         if (moved + dropped > 0 || profile is not null)
         {
             report.Lines.Add(
-                $"{into.Label}: {moved} from {string.Join(", ", from.Select(n => $"'{n}'"))}"
+                $"{into.Label}{(withProfile ? "" : ", as the owner")}: {moved} from {string.Join(", ", from.Select(n => $"'{n}'"))}"
                 + (dropped > 0 ? $", {dropped} already known and dropped" : "")
                 + (profile is null ? "" : $"; {profile}"));
         }
