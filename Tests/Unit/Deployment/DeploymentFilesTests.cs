@@ -23,6 +23,18 @@ public class DeploymentFilesTests
         compose.Service("agent").Environment.ShouldContainKey("TZ");
     }
 
+    // A service names its networks as a list or as a map; one naming none is on compose's default
+    // network, and one on the host's network is on none of them.
+    [Fact]
+    public void TheCompose_ReadsEachServicesNetworks()
+    {
+        var compose = DeploymentFiles.Compose();
+
+        compose.Service("agent").Networks.ShouldContain("jackbot");
+        compose.Service("plex").Networks.ShouldBeEmpty("a service on the host's network is on no compose network");
+        ComposeService.From("bare", new YamlDotNet.RepresentationModel.YamlMappingNode()).Networks.ShouldBe(["default"]);
+    }
+
     [Fact]
     public void TheCaddyfile_ReadsEachHostsRoutes()
     {

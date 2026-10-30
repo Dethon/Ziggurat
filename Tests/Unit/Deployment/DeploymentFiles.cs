@@ -111,7 +111,8 @@ public sealed record ComposeService(
     IReadOnlyList<string> DependsOn,
     IReadOnlyList<string> Healthcheck,
     string? User,
-    IReadOnlyList<string> Profiles)
+    IReadOnlyList<string> Profiles,
+    IReadOnlyList<string> Networks)
 {
     public bool TakesWholeSecretsFile => EnvFiles.Any(f => Path.GetFileName(f) == ".env");
 
@@ -129,7 +130,20 @@ public sealed record ComposeService(
         },
         Child(node, "healthcheck") is YamlMappingNode health ? Sequence(health, "test") : [],
         Child(node, "user") is YamlScalarNode user ? user.Value : null,
-        Sequence(node, "profiles"));
+        Sequence(node, "profiles"),
+        NetworksOf(node));
+
+    // A list of names or a map of them to their settings; none at all is compose's default network,
+    // and a service on another network mode (the host's) is on no compose network.
+    private static IReadOnlyList<string> NetworksOf(YamlMappingNode node) =>
+        Child(node, "network_mode") is not null
+            ? []
+            : Child(node, "networks") switch
+            {
+                YamlMappingNode map => [.. map.Children.Keys.Select(k => ((YamlScalarNode)k).Value!)],
+                YamlSequenceNode seq => [.. seq.Children.Select(c => ((YamlScalarNode)c).Value!)],
+                _ => ["default"]
+            };
 
     private static YamlNode? Child(YamlMappingNode node, string key) =>
         node.Children.TryGetValue(new YamlScalarNode(key), out var child) ? child : null;
