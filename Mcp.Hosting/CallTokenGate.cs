@@ -91,7 +91,7 @@ internal sealed class CallTokenGate
             return verification.Claims;
         }
 
-        var tool = StringAt(request.Params as JsonObject, "name") ?? "a tool";
+        var tool = CallText.StringAt(request.Params as JsonObject, "name") ?? "a tool";
         var refusal = verification.Refusal.Value;
         _logger?.LogWarning("Refused a call to {Tool}: its call token is {Refusal}", tool, refusal);
         services.GetService<IMetricsPublisher>()?.Publish(new ErrorEvent
@@ -105,10 +105,7 @@ internal sealed class CallTokenGate
 
     // Whatever shape a caller sent: anything that is not a string where the token goes is no token.
     private static string? TokenOf(JsonRpcRequest request) =>
-        StringAt((request.Params as JsonObject)?["_meta"] as JsonObject, ChannelProtocol.CallTokenMetaKey);
-
-    private static string? StringAt(JsonObject? node, string key) =>
-        node?[key] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
+        CallText.StringAt((request.Params as JsonObject)?["_meta"] as JsonObject, ChannelProtocol.CallTokenMetaKey);
 
     private static string Explain(TokenRefusal refusal) => refusal switch
     {

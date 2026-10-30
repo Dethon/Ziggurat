@@ -51,9 +51,8 @@ public static class AgentApi
         group.AddEndpointFilter(async (context, next) =>
         {
             var http = context.HttpContext;
-            var assertion = http.Request.Headers[ForwardedAccount.AssertionHeader] is [{ } value] ? value : null;
             var person = await http.RequestServices.GetRequiredService<AssertionVerifier>()
-                .VerifyAsync(assertion, AppChannels.SexyTime, http.RequestAborted);
+                .VerifyRequestAsync(http.Request.Headers, AppChannels.SexyTime, http.RequestAborted);
             if (person is null)
             {
                 return Results.Unauthorized();

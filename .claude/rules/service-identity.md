@@ -136,6 +136,9 @@ assertion must name the app's channel and a person — a guest assertion is nobo
 answers a `ForwardedAccount` built from the signed claims, or null, logging a refusal other than
 `Missing` at warning (`KeysUnavailable` there means the accounts service is unreachable and every
 signed-in person is being turned away). `ForwardedAccount.From`, which read the plain three, is gone.
+Each app asks `VerifyRequestAsync(request.Headers, channel)`, which reads the one header through
+`AssertionVerifier.AssertionOf` — none, or two values, is no assertion — and Sugary, which keeps the
+assertion to hand on, reads it there too.
 
 | App | Channel it holds the assertion to | Signed out | Else |
 |---|---|---|---|
@@ -223,7 +226,11 @@ port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.
   serves the JWKS at `/internal/jwks` (`AgentKeysApi`), which no Caddy route reaches. Each server binds
   `MCP__AUDIENCE` and `MCP__AGENTKEYSURL` (`http://agent:8080/internal/jwks`) in compose; either left
   empty refuses every tool call. The verifiers' timing is `Domain/token-verification.json`
-  (`mcp:tokenVerification`), read by `BindSettings` and the agent's configuration. The agent dials
+  (`mcp:tokenVerification`), read by `BindSettings`, the agent's configuration, the dashboard's
+  (`OperatorGate.GetTokenVerification`) and the accounts service's (`AccountsSettings.Read`, for the
+  skew its retirement waits out), and handed to every verifier they build — `AddAssertionVerifier`,
+  `AddOperatorGate`, `DelegationVerifier`, `Redelegation` — and to the commands' waits
+  (`TokenVerificationPolicyFileTests`). The agent dials
   its channels only once it is listening (`ChannelConnectionHost` waits for `ApplicationStarted`), or a
   channel server's first fetch of its keys would fail and refuse calls until the refetch interval.
   The agent's key is rotated and retired by its own commands (Deferred turns, below), which also
@@ -318,12 +325,17 @@ token, for exactly what the call writes: a filesystem write states its object un
 `ha` create from its content, an edit by reading the file first and laying the edits over it as the
 mount does, a schedule move by reading its file under the destination's name, a watch replace by
 reading the watch whose delivery it keeps), and `web_login` is a login handoff by its name,
-described off the call's own context. The transport removes both keys from every call and writes
+described off the call's own context. Whom a filesystem write acts for is the caller handed to the
+backend, never the invocation in flight: a file tool binds the mount to the conversation its call's
+arguments carry (`ToolCaller.Resolve`, `FileSystemResolution.As` over `ICallerBoundBackend` —
+`ToolApprovalChatClient` puts it there for every call), the exec bridge to its command's caller, and
+the backend as discovered acts for nobody, so it delegates nothing and stamps no `_meta`. The transport removes both keys from every call and writes
 the delegation only for a person, so neither a model nor a caller can put one there. An edit or a
 move rests on what the server answered the agent's read with — a lying server gets a delegation for
 its own text with the turn's edit on top — while a create gives it nothing to lie about. A runAt
-with no offset is read in the agent's zone (`TimeZoneInfo.Local`), which compose's shared `TZ` makes
-the scheduling server's; zones that disagree make such a one-shot fire for nobody.
+with no offset is read in the agent's zone — its `TimeProvider`'s `LocalTimeZone`, the zone the
+model is told its time in, handed to each mount's backend by the session (`ThreadSession`'s
+`localZone`) — which compose's shared `TZ` makes the scheduling server's; zones that disagree make such a one-shot fire for nobody.
 
 **Stored with the object, replaced by every write.** The server reads it with `call.Delegation`
 (`CallTurn`), never verifying it: `ScheduleFileSystem` keeps it on `Schedule.Delegation` for every

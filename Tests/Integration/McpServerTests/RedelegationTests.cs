@@ -128,7 +128,8 @@ public class RedelegationTests(McpSchedulingServerFixture fixture) : IClassFixtu
     }
 
     private Redelegation Redelegation(SigningKeyStore keys, string answers) =>
-        new(keys, new CallTokens(keys, TimeProvider.System), new StringReader(string.Concat(Enumerable.Repeat($"{answers}\n", 100))), _output);
+        new(keys, new CallTokens(keys, TimeProvider.System), TimeProvider.System, new TokenVerificationSettings(),
+            new StringReader(string.Concat(Enumerable.Repeat($"{answers}\n", 100))), _output);
 
     private IReadOnlyList<Redelegation.Server> Servers() =>
         [new("scheduling", ct => McpClient.CreateAsync(McpTestSecret.Transport(fixture.McpEndpoint), cancellationToken: ct))];

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.FileSystem;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
@@ -58,9 +59,10 @@ public class VfsFileReadTool(IVirtualFileSystemRegistry registry, ReadImageSuppo
         int? offset = null,
         [Description("Max lines to return. Ignored for an image.")]
         int? limit = null,
+        AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
-        if (!registry.Resolve(filePath).TryGetValue(out var resolution, out var unresolved))
+        if (!registry.Resolve(filePath, arguments).TryGetValue(out var resolution, out var unresolved))
         {
             return unresolved.ToNode();
         }

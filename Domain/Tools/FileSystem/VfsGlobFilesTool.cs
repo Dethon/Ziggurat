@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.Files;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
@@ -30,9 +31,10 @@ public class VfsGlobFilesTool(IVirtualFileSystemRegistry registry)
             + "A trailing slash (e.g. `*/`, `src/**/`) matches directories only; otherwise files "
             + "and directories both match, with directory results marked by a trailing slash.")]
         string pattern,
+        AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
-        if (!registry.Resolve(basePath).TryGetValue(out var resolution, out var unresolved))
+        if (!registry.Resolve(basePath, arguments).TryGetValue(out var resolution, out var unresolved))
         {
             return unresolved.ToNode();
         }

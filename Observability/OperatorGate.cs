@@ -1,4 +1,7 @@
 using Domain.Security;
+using Domain.Security.Signing;
+using Microsoft.Extensions.Configuration.EnvironmentVariables;
+using Microsoft.Extensions.Configuration.Json;
 
 namespace Observability;
 
@@ -10,7 +13,8 @@ namespace Observability;
 // the live hub — so nothing added later is served without it.
 public static class OperatorGate
 {
-    public static IServiceCollection AddOperatorGate(this IServiceCollection services, string jwksUrl)
+    public static IServiceCollection AddOperatorGate(
+        this IServiceCollection services, string jwksUrl, TokenVerificationSettings verification)
     {
         services.AddHttpClient();
         return services.AddSingleton(sp =>
@@ -19,16 +23,38 @@ public static class OperatorGate
             return AssertionVerifier.OverJwks(
                 ct => clients.CreateClient().GetStringAsync(jwksUrl, ct),
                 sp.GetRequiredService<TimeProvider>(),
+                verification,
                 sp.GetService<ILoggerFactory>());
         });
+    }
+
+    // How the gate treats time is the deployment's one answer (Domain/token-verification.json), read
+    // after this host's appsettings.json and before the environment, as every verifying host reads it:
+    // put ahead of the environment the web host already added, so a single container can still be
+    // overridden and neither the environment nor the user secrets behind it change rank.
+    public static TokenVerificationSettings GetTokenVerification(this IConfigurationBuilder configBuilder)
+    {
+        var policy = new JsonConfigurationSource { Path = TokenVerificationSettings.FileName, Optional = true };
+        policy.ResolveFileProvider();
+        var environment = configBuilder.Sources.ToList().FindIndex(source => source is EnvironmentVariablesConfigurationSource);
+        if (environment < 0)
+        {
+            configBuilder.Add(policy);
+        }
+        else
+        {
+            configBuilder.Sources.Insert(environment, policy);
+        }
+
+        return configBuilder.Build().GetSection(TokenVerificationSettings.Section).Get<TokenVerificationSettings>()
+               ?? new TokenVerificationSettings();
     }
 
     public static IApplicationBuilder UseOperatorGate(this IApplicationBuilder app) =>
         app.Use(async (context, next) =>
         {
-            var assertion = context.Request.Headers[ForwardedAccount.AssertionHeader] is [{ } value] ? value : null;
             var person = await context.RequestServices.GetRequiredService<AssertionVerifier>()
-                .VerifyAsync(assertion, AppChannels.Dashboard, context.RequestAborted);
+                .VerifyRequestAsync(context.Request.Headers, AppChannels.Dashboard, context.RequestAborted);
             if (person is not { IsOperator: true })
             {
                 context.Response.StatusCode = person is null

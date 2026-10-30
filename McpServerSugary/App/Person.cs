@@ -25,10 +25,10 @@ public sealed record Person(Account Account, string Assertion)
     public static Person? Of(HttpContext http) =>
         http.Items.TryGetValue(_item, out var person) ? person as Person : null;
 
-    // A header the proxy sets has one value; a request carrying two did not come from it alone.
+    // The assertion is kept as well as believed: the channel hands it on with every turn it starts.
     internal static async Task<Person?> SignedInAsync(HttpContext http, CancellationToken ct)
     {
-        var assertion = http.Request.Headers[ForwardedAccount.AssertionHeader] is { Count: 1 } values ? values[0] : null;
+        var assertion = AssertionVerifier.AssertionOf(http.Request.Headers);
         var account = await http.RequestServices.GetRequiredService<AssertionVerifier>()
             .VerifyAsync(assertion, SugaryChannel.ChannelId, ct);
         if (account is null)
