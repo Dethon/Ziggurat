@@ -30,6 +30,11 @@ paths:
   - "McpChannelVoice/Services/TranscriptDispatcher.cs"
   - "McpServerSugary/Channel/SugaryChannel.cs"
   - "Domain/Security/DelegationVerifier.cs"
+  - "Domain/Channels/FireReports.cs"
+  - "McpServerHomeAssistant/Services/WatchFiredEndpoint.cs"
+  - "McpServerHomeAssistant/Services/WatchFire.cs"
+  - "McpServerWebSearch/Handoff/LoginWake.cs"
+  - "Domain/Contracts/ISessionAccounts.cs"
   - "Domain/Security/DelegatedObject.cs"
   - "Domain/Security/DelegatedWrites.cs"
   - "Domain/Contracts/IDelegationStore.cs"
@@ -312,8 +317,27 @@ kind (`ScheduleDelegation`, `WatchDelegation`, `LoginDelegation`):
 | Kind | Description (`DelegatedObject.cs`) | What the fire must match |
 |---|---|---|
 | schedule | agent, prompt, cron, runAt (unix seconds, UTC), deliverTo as written | `Origin.ScheduleId` = oid, `AgentId`, `Content` = prompt, `ReplyTo` = the deliverTo resolved against the delivery default |
-| watch | the prompt effects' prompts as written, deliverTo as the write resolved it | `Origin.WatchId` = oid, `ReplyTo` as above; the prompt arrives rendered by the home and is not compared |
-| login | the asking turn's agent, conversation and origin | `AgentId`; then either the asking conversation answering at its origin (Done) or one fresh chat-client conversation (`[signalr, null]`, a voice login's link) |
+| watch | the agent that runs it, the prompt effects' prompts as written, deliverTo as the write resolved it | `Origin.WatchId` = oid, `AgentId`, `Content` = one of the prompts exactly, `ReplyTo` as above |
+| login | the asking turn's agent, conversation and origin, and the site (`Uri.Host` of the url `web_login` was called with) | `AgentId`; then either the asking conversation answering at its origin with `Content` = `LoginDelegation.DoneText(site)` (Done), or one fresh chat-client conversation (`[signalr, null]`) with `Content` = `LoginDelegation.LinkText(site)` (a voice login's link) |
+
+**What a fire asks is the object's own words; everything else is its report.** `Content` is the part
+a delegation covers, and anything a server learned at fire time rides beside it as
+`ChannelMessageNotification.FireReport` (`Fire.Report`), which the conversation group frames around
+`Content` only after the check (`FireReports.Frame`: a `<fire-report …>` block, information not
+instructions, any closing tag inside it escaped). A **watch**: the home renders a prompt's Jinja and
+anything holding the announce token can post to `WatchFiredEndpoint`, so the callback also posts
+which of the watch's prompts it rendered (`'promptIndex': N`, a literal `HaWatchAutomation` writes
+into every prompt callback) and the server asks the prompt **as the home keeps it** — looked up with
+the delegation — with the first line (what fired) and the prompt as the home rendered it as the
+report; a forged post's words are only ever report. A post naming no prompt of the watch (an
+automation from before `promptIndex`, one edited in the home) or a home that cannot be asked fires
+the rendered prompt with no delegation, as nobody. The agent that runs a watch is the creating turn's
+(`HaWatchMetadata.AgentId`, which a rewrite keeps): the agent side describes a write with the writing
+turn's agent (`DelegatedWrites.Of` takes the writer's context), so a rewrite by another agent's turn
+describes what the home will not run and its fires act for nobody. A **login**: both wakes say the
+handoff's own words for the site (`LoginDelegation.DoneText`/`LinkText`, spelled once for the browse
+server and the verifier), and the voice login's one-time link, minted by the browse server, is the
+link turn's report.
 
 `iss` the agent, `aud` `TokenAudiences.Delegation`, `sub`/`tid`/`chn`/`roles` the person's (only a
 person is delegated — the guest and nobody delegate nothing), `exp` **iat + 100 years** for a
@@ -327,8 +351,9 @@ token, for exactly what the call writes: a filesystem write states its object un
 `ChannelProtocol.DelegateMetaKey` (`McpFileSystemBackend`, through `DelegatedWrites`: a schedules or
 `ha` create from its content, an edit by reading the file first and laying the edits over it as the
 mount does, a schedule move by reading its file under the destination's name, a watch replace by
-reading the watch whose delivery it keeps), and `web_login` is a login handoff by its name,
-described off the call's own context. Whom a filesystem write acts for is the caller handed to the
+reading the watch whose delivery it keeps, and named with the writing turn's agent), and
+`web_login` is a login handoff by its name, described off the call's own context and its `url`
+argument. Whom a filesystem write acts for is the caller handed to the
 backend, never the invocation in flight: a file tool binds the mount to the conversation its call's
 arguments carry (`ToolCaller.Resolve`, `FileSystemResolution.As` over `ICallerBoundBackend` —
 `ToolApprovalChatClient` puts it there for every call), the exec bridge to its command's caller, and

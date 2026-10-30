@@ -59,8 +59,10 @@ public static class WatchFiredEndpoint
             }
 
             var logger = loggers.CreateLogger(typeof(WatchFiredEndpoint));
-            var payload = WatchFire.Compose(request, settings.Delivery.DefaultDeliverTo, time.GetUtcNow(),
-                await DelegationOfAsync(watches, request.WatchId!, logger, ct));
+            var watch = await StoredAsync(watches, request.WatchId!, logger, ct);
+            var written = watch?.Meta.Effects.OfType<HaPromptEffect>().ElementAtOrDefault(request.PromptIndex ?? -1)?.Prompt;
+            var payload = WatchFire.Compose(request, settings.Delivery.DefaultDeliverTo, time.GetUtcNow(), written,
+                watch is { Meta.Delegation: { } token } ? new FireDelegation(token, WatchDelegation.Of(watch).Description) : null);
             var receipt = await emitter.EmitWithReceiptAsync(payload, ct);
             if (!receipt.Accepted)
             {
@@ -77,18 +79,15 @@ public static class WatchFiredEndpoint
         });
     }
 
-    // The delegation the watch keeps, read off the home at fire time with what the watch does now,
-    // rather than anything the home posted: the payload is whatever the automation renders, and the
-    // automation is editable in the home. A watch the home cannot be asked about fires for nobody
-    // rather than not at all.
-    private static async Task<FireDelegation?> DelegationOfAsync(
-        HaWatches watches, string watchId, ILogger logger, CancellationToken ct)
+    // The watch as the home keeps it at fire time — its own prompts, its delegation and what it does
+    // now — rather than anything the home posted: the payload is whatever the automation renders, and
+    // anything holding the announce token can post one. A watch the home cannot be asked about fires
+    // for nobody rather than not at all.
+    private static async Task<HaWatch?> StoredAsync(HaWatches watches, string watchId, ILogger logger, CancellationToken ct)
     {
         try
         {
-            return await watches.GetAsync(watchId, ct) is { Meta.Delegation: { } token } watch
-                ? new FireDelegation(token, WatchDelegation.Of(watch).Description)
-                : null;
+            return await watches.GetAsync(watchId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

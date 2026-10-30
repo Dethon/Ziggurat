@@ -57,12 +57,14 @@ public sealed record DelegatedObject(string Kind, string Id, string Description)
 // the epoch, so the agent reading a runAt and the server storing it agree however each spelled it.
 public sealed record DelegatedSchedule(string AgentId, string Prompt, string? Cron, long? RunAt, IReadOnlyList<string>? DeliverTo);
 
-// What a watch does as far as the agent is concerned: the prompts it puts in front of the agent, as
-// written (the home renders them at fire time), and where their answers go, as the watch resolved it
-// when written. Its triggers and its other effects are the home's, and act for nobody.
-public sealed record DelegatedWatch(IReadOnlyList<string> Prompts, IReadOnlyList<string>? DeliverTo);
+// What a watch does as far as the agent is concerned: which agent runs it, the prompts it puts in
+// front of that agent as written — a fire asks one of these words exactly, and whatever the home
+// rendered of it arrives as the fire's report, never as what is asked — and where their answers go, as
+// the watch resolved it when written. Its triggers and its other effects are the home's, and act for
+// nobody.
+public sealed record DelegatedWatch(string AgentId, IReadOnlyList<string> Prompts, IReadOnlyList<string>? DeliverTo);
 
 // What a login handoff does: wakes the agent that asked, in the conversation that asked, answering
-// where that turn would have — or, for a turn that cannot show a link, puts the link in a new
-// conversation of the person's chat client.
-public sealed record DelegatedLogin(string AgentId, string ConversationId, ReplyTarget Origin);
+// where that turn would have, with the handoff's own words for the site it opened — or, for a turn
+// that cannot show a link, puts the link in a new conversation of the person's chat client.
+public sealed record DelegatedLogin(string AgentId, string ConversationId, ReplyTarget Origin, string Site);

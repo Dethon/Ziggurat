@@ -62,7 +62,7 @@ public sealed class SigningClientTransport(IClientTransport inner, CallTokens to
             var identity = CallIdentity.Of(turn);
             meta[ChannelProtocol.CallTokenMetaKey] = tokens.For(identity, audience);
 
-            var delegated = Requested(meta) ?? (IsLogin(parameters) && turn is not null ? LoginDelegation.Of(turn) : null);
+            var delegated = Requested(meta) ?? (turn is not null && LoginUrlOf(parameters) is { } url ? LoginDelegation.Of(turn, url) : null);
             meta.Remove(ChannelProtocol.DelegateMetaKey);
             meta.Remove(ChannelProtocol.DelegationMetaKey);
             if (delegated is not null && identity.Account is not null)
@@ -77,8 +77,12 @@ public sealed class SigningClientTransport(IClientTransport inner, CallTokens to
         private static DelegatedObject? Requested(JsonObject meta) =>
             Read<DelegatedObject>(meta, ChannelProtocol.DelegateMetaKey);
 
-        private static bool IsLogin(JsonObject parameters) =>
-            parameters["name"] is JsonValue name && name.TryGetValue<string>(out var tool) && tool == WebLoginTool.Name;
+        // The url a web_login call hands off, which the handoff it starts is for; null for any other call.
+        private static string? LoginUrlOf(JsonObject parameters) =>
+            parameters["name"] is JsonValue name && name.TryGetValue<string>(out var tool) && tool == WebLoginTool.Name
+            && parameters["arguments"]?["url"] is JsonValue value && value.TryGetValue<string>(out var url)
+                ? url
+                : null;
 
         // A context that does not read as one names nobody; the server says what is wrong with it.
         private static ConversationContext? TurnOf(JsonObject meta) =>
