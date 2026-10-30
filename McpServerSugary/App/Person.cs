@@ -17,6 +17,6 @@ public sealed record Person(Account Account)
     public static Person? Of(HttpRequest request) =>
         ForwardedAccount.From(header => request.Headers[header] is { Count: 1 } values ? values[0] : null)
             is { } forwarded
-            ? new Person(new Account(forwarded.TenantId, forwarded.UserId))
+            ? new Person(forwarded.Account)
             : null;
 }

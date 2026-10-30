@@ -51,7 +51,7 @@ public class ChatHubNotLiveTests
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
 
         _sessionService.StartSession(TopicId, "jack", 7, 42, "default", "Chat");
@@ -119,7 +119,7 @@ public class ChatHubNotLiveTests
             new DictationSettings(),
             factory.CreateLogger<ChatHub>())
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));

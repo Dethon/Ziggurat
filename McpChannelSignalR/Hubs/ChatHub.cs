@@ -36,7 +36,7 @@ public sealed class ChatHub(
     private const string NotLiveError = "No agent is connected right now, so this message has not been answered.";
 
     // Where the connection keeps the person the proxy's session check named as it arrived, which is
-    // also what says it may call anything (RegisteredConnectionFilter).
+    // also what says it may call anything (SignedInConnectionFilter).
     internal const string AccountItem = "Account";
 
     // Where it keeps the name that account goes by, asked of the accounts service as it arrived;
@@ -55,23 +55,25 @@ public sealed class ChatHub(
     // another person's private one and changes nothing in it.
     private const string ReadOnlyConversation = "Only the person whose conversation this is can change it until they share it.";
 
+    // Continuing a shared topic is not deciding it: its name and whether it exists stay its owner's.
+    private const string OwnersConversation = "Only the person whose conversation this is can rename or delete it.";
+
     private string? CurrentSpaceSlug =>
         Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
 
-    // Set as the connection arrives; RegisteredConnectionFilter admits no call on one without it.
-    private ForwardedAccount Account => (ForwardedAccount)Context.Items[AccountItem]!;
+    // The person this connection is, set as it arrives; SignedInConnectionFilter admits no call on one
+    // without it.
+    private ForwardedAccount SignedIn => (ForwardedAccount)Context.Items[AccountItem]!;
 
-    private string RegisteredUserId => Account.UserId;
-
-    private TopicViewer Viewer => Account.Viewer;
+    private TopicViewer Viewer => SignedIn.Viewer;
 
     // Who a turn sent from here acts for: the account itself, never the name, which only labels it.
-    private Principal TurnPrincipal => Account.PrincipalOn(ChannelId);
+    private Principal TurnPrincipal => SignedIn.PrincipalOn(ChannelId);
 
     // What a turn's sender shows the agent: the account's name, or its id when no name was learned.
     private string TurnSender => Context.Items.TryGetValue(DisplayNameItem, out var name) && name is string { Length: > 0 } shown
         ? shown
-        : Account.UserId;
+        : SignedIn.UserId;
 
     public IReadOnlyList<AgentCatalogEntry> GetAgents()
     {
@@ -113,35 +115,38 @@ public sealed class ChatHub(
         }
     }
 
-    private void RequireMayChange(TopicMetadata? topic)
+    private void RequireMayContinue(TopicMetadata? topic)
     {
         RequireSees(topic);
-        if (topic is not null && !Viewer.MayChange(topic))
+        if (topic is not null && !Viewer.MayContinue(topic))
         {
             throw new HubException(ReadOnlyConversation);
         }
     }
 
-    // Sessions are this process's and every connection's, so one existing says nothing about who
-    // opened it: the topic its conversation belongs to says who may act on it. A session over a
-    // conversation no topic holds yet is a topic its opener has not saved, whose id only they know.
-    private async Task<ChannelSession?> SessionOfAsync(string topicId, bool toChange = false)
+    private void RequireMayRenameOrDelete(TopicMetadata? topic)
+    {
+        RequireMayContinue(topic);
+        if (topic is not null && !Viewer.MayRenameOrDelete(topic))
+        {
+            throw new HubException(OwnersConversation);
+        }
+    }
+
+    // A session over a conversation no topic holds yet is a topic its opener has not saved, whose id
+    // only they know; any other is held to its topic's rule (TopicOfAsync).
+    private Task<ChannelSession?> SessionToReadAsync(string topicId) => SessionHeldToAsync(topicId, RequireSees);
+
+    private Task<ChannelSession?> SessionToContinueAsync(string topicId) => SessionHeldToAsync(topicId, RequireMayContinue);
+
+    private async Task<ChannelSession?> SessionHeldToAsync(string topicId, Action<TopicMetadata?> require)
     {
         if (!sessionService.TryGetSession(topicId, out var session) || session is null)
         {
             return null;
         }
 
-        var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(session.AgentId, session.ChatId, session.ThreadId);
-        if (toChange)
-        {
-            RequireMayChange(topic);
-        }
-        else
-        {
-            RequireSees(topic);
-        }
-
+        require(await threadStore.TopicOfAsync(session));
         return session;
     }
 
@@ -166,12 +171,12 @@ public sealed class ChatHub(
                 return;
             }
 
-            await Task.WhenAll(TopicAudience.GroupsOf(Account, prevSlug)
+            await Task.WhenAll(TopicAudience.GroupsOf(SignedIn, prevSlug)
                 .Select(group => Groups.RemoveFromGroupAsync(Context.ConnectionId, group)));
         }
 
         Context.Items["SpaceSlug"] = spaceSlug;
-        await Task.WhenAll(TopicAudience.GroupsOf(Account, spaceSlug)
+        await Task.WhenAll(TopicAudience.GroupsOf(SignedIn, spaceSlug)
             .Select(group => Groups.AddToGroupAsync(Context.ConnectionId, group)));
     }
 
@@ -194,7 +199,7 @@ public sealed class ChatHub(
     // a conversation the connection already has a session for.
     public async Task<UploadTicket> CreateUploadTicket(string topicId)
     {
-        if (await SessionOfAsync(topicId, toChange: true) is not { } session)
+        if (await SessionToContinueAsync(topicId) is not { } session)
         {
             throw new HubException("Session not found. Please start a session first.");
         }
@@ -222,13 +227,13 @@ public sealed class ChatHub(
 
     public async Task<bool> IsProcessing(string topicId)
     {
-        await SessionOfAsync(topicId);
+        await SessionToReadAsync(topicId);
         return streamService.IsStreaming(topicId);
     }
 
     public async Task<StreamState?> GetStreamState(string topicId)
     {
-        await SessionOfAsync(topicId);
+        await SessionToReadAsync(topicId);
         return streamService.GetStreamState(topicId);
     }
 
@@ -236,7 +241,7 @@ public sealed class ChatHub(
         string topicId,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        await SessionOfAsync(topicId);
+        await SessionToReadAsync(topicId);
         var state = streamService.GetStreamState(topicId);
         if (state is null || !state.IsProcessing)
         {
@@ -269,7 +274,7 @@ public sealed class ChatHub(
         IReadOnlyList<AttachmentReference>? attachments,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (await SessionOfAsync(topicId, toChange: true) is not { } session)
+        if (await SessionToContinueAsync(topicId) is not { } session)
         {
             yield return new ChatStreamMessage
             {
@@ -279,7 +284,7 @@ public sealed class ChatHub(
             yield break;
         }
 
-        var userId = RegisteredUserId;
+        var userId = SignedIn.UserId;
         var conversationId = session.Identity.ConversationId;
 
         var (broadcastChannel, linkedToken) =
@@ -353,7 +358,7 @@ public sealed class ChatHub(
         AgentConfigPatch? configPatch,
         IReadOnlyList<AttachmentReference>? attachments = null)
     {
-        if (await SessionOfAsync(topicId, toChange: true) is not { } session)
+        if (await SessionToContinueAsync(topicId) is not { } session)
         {
             return false;
         }
@@ -363,7 +368,7 @@ public sealed class ChatHub(
             return false;
         }
 
-        var userId = RegisteredUserId;
+        var userId = SignedIn.UserId;
         var conversationId = session.Identity.ConversationId;
 
         if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
@@ -459,7 +464,7 @@ public sealed class ChatHub(
 
     public async Task CancelTopic(string topicId)
     {
-        if (await SessionOfAsync(topicId, toChange: true) is { } session)
+        if (await SessionToContinueAsync(topicId) is { } session)
         {
             await notificationEmitter.EmitCancelAsync(new ChannelCancelNotification
             {
@@ -487,7 +492,7 @@ public sealed class ChatHub(
         bool archived = false)
     {
         return WithLiveStreams(await threadStore.GetTopicPageAsync(
-            agentId, spaceSlug, Account.Viewer, cursor, pageSize ?? retention.PageSize, archived));
+            agentId, spaceSlug, Viewer, cursor, pageSize ?? retention.PageSize, archived));
     }
 
     // Answered here rather than asked per topic: which replies are in flight is this process's
@@ -506,12 +511,13 @@ public sealed class ChatHub(
     // A new topic is the connection's person's, private until they share it, whatever the browser
     // sent: whose it is was settled when the connection arrived. It must be over the conversation
     // its own id names, so saving one never adopts a conversation another channel or person has.
+    // Renaming one is its owner's, shared or not.
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
     {
         var stored = await threadStore.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId);
         if (stored is not null)
         {
-            RequireMayChange(stored);
+            RequireMayRenameOrDelete(stored);
             await threadStore.SaveTopicAsync(stored with { Name = topic.Name }, keepTtl: true);
             return;
         }
@@ -523,8 +529,8 @@ public sealed class ChatHub(
 
         await threadStore.SaveTopicAsync(topic with
         {
-            OwnerId = Account.UserId,
-            TenantId = Account.TenantId,
+            OwnerId = SignedIn.UserId,
+            TenantId = SignedIn.TenantId,
             Shared = false,
             OwnerName = TurnSender
         });
@@ -561,7 +567,7 @@ public sealed class ChatHub(
         int? pageSize = null)
     {
         return WithLiveStreams(await threadStore.SearchTopicsAsync(
-            agentId, spaceSlug, Account.Viewer, query, cursor, pageSize ?? retention.PageSize));
+            agentId, spaceSlug, Viewer, query, cursor, pageSize ?? retention.PageSize));
     }
 
     // Read state is the store's to work out: the count it would be compared against is one round
@@ -572,7 +578,7 @@ public sealed class ChatHub(
     {
         var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId);
         RequireSees(stored);
-        if (stored is null || Viewer.MayChange(stored))
+        if (stored is null || Viewer.MayContinue(stored))
         {
             await threadStore.MarkTopicReadAsync(agentId, chatId, topicId);
         }
@@ -592,10 +598,11 @@ public sealed class ChatHub(
         return await threadStore.GetHistoryAsync(agentId, chatId, threadId);
     }
 
+    // Whether a topic exists is its owner's to decide, shared or not.
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
         var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId);
-        RequireMayChange(stored);
+        RequireMayRenameOrDelete(stored);
 
         // The topic's own conversation and no other: a thread it does not hold is not the caller's
         // to name into the delete.
@@ -643,17 +650,13 @@ public sealed class ChatHub(
 
     public async Task SubscribePush(PushSubscriptionDto subscription)
     {
-        var userId = RegisteredUserId;
-
         ValidateSubscription(subscription);
 
-        await pushSubscriptionStore.SaveAsync(userId, subscription, CurrentSpaceSlug ?? "default");
+        await pushSubscriptionStore.SaveAsync(SignedIn.UserId, subscription, CurrentSpaceSlug ?? "default");
     }
 
     public async Task ReplacePushSubscription(PushSubscriptionDto subscription, string oldEndpoint)
     {
-        var userId = RegisteredUserId;
-
         ValidateSubscription(subscription);
 
         if (string.IsNullOrWhiteSpace(oldEndpoint))
@@ -661,14 +664,13 @@ public sealed class ChatHub(
             throw new HubException("Old endpoint is required for replacement.");
         }
 
-        await pushSubscriptionStore.SaveAsync(userId, subscription, CurrentSpaceSlug ?? "default",
+        await pushSubscriptionStore.SaveAsync(SignedIn.UserId, subscription, CurrentSpaceSlug ?? "default",
             replacingEndpoint: oldEndpoint);
     }
 
     public async Task UnsubscribePush(string endpoint)
     {
-        var userId = RegisteredUserId;
-        await pushSubscriptionStore.RemoveAsync(userId, endpoint);
+        await pushSubscriptionStore.RemoveAsync(SignedIn.UserId, endpoint);
     }
 
     private static void ValidateSubscription(PushSubscriptionDto subscription)
@@ -693,7 +695,7 @@ public sealed class ChatHub(
     {
         var topic = await ApprovalTopicAsync(approvalId);
         var mayAnswer = approvalService.AskerOf(approvalId) is { } asker
-            ? asker.UserId == Account.UserId && asker.TenantId == Account.TenantId
+            ? asker == SignedIn.Account
             : topic is null || MayAnswerIn(topic);
         if (!mayAnswer)
         {
@@ -708,15 +710,16 @@ public sealed class ChatHub(
     // The questions another channel asked that are offered to this connection's person, for a chat
     // client that was not open when they were.
     public IReadOnlyList<ToolApprovalRequestMessage> GetOfferedApprovals() =>
-        approvalService.OfferedTo(Account.UserId);
+        approvalService.OfferedTo(SignedIn.UserId);
 
     // Reading is never deciding: whoever sees every topic sees another person's prompt and cannot
     // settle it. A prompt acting for nobody is answered in a topic by its owner, in a shared one also
     // by whoever's turn is running, and in a topic nobody owns by whoever sees it.
     private bool MayAnswerIn(TopicMetadata topic) =>
         topic.OwnerId is null
-        || Viewer.Owns(topic)
-        || topic.Shared && streamService.GetStreamState(topic.TopicId)?.CurrentSenderId == RegisteredUserId;
+            ? Viewer.Sees(topic)
+            : Viewer.Owns(topic)
+              || topic.Shared && streamService.GetStreamState(topic.TopicId)?.CurrentSenderId == SignedIn.UserId;
 
     // The stored topic a pending approval was asked in, refused like the topic itself to anyone who
     // may not see it. Null for an approval already answered, or one asked in a conversation no
@@ -729,7 +732,7 @@ public sealed class ChatHub(
             return null;
         }
 
-        var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(session.AgentId, session.ChatId, session.ThreadId);
+        var topic = await threadStore.TopicOfAsync(session);
         RequireSees(topic);
         return topic;
     }
@@ -742,7 +745,7 @@ public sealed class ChatHub(
 
     public async Task<ToolApprovalRequestMessage?> GetPendingApprovalForTopic(string topicId)
     {
-        await SessionOfAsync(topicId);
+        await SessionToReadAsync(topicId);
         return approvalService.GetPendingApprovalForTopic(topicId);
     }
 }

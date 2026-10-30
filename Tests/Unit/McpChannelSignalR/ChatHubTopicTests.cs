@@ -69,7 +69,7 @@ public sealed class ChatHubTopicTests : IDisposable
             new DictationSettings(),
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller(),
+            Context = new SignedInCaller(),
             Groups = new Mock<IGroupManager>().Object
         };
 

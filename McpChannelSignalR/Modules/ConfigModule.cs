@@ -106,6 +106,6 @@ public static class ConfigModule
     internal static IServiceCollection AddChatSignalR(this IServiceCollection services) =>
         services.AddSingleton<AccountConnections>()
             .AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance)
-            .AddHubOptions<ChatHub>(options => options.AddFilter<RegisteredConnectionFilter>())
+            .AddHubOptions<ChatHub>(options => options.AddFilter<SignedInConnectionFilter>())
             .Services;
 }

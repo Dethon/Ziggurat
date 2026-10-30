@@ -7,7 +7,7 @@ namespace Tests.Unit.McpChannelSignalR.Fixtures;
 
 // A hub caller the proxy named as it arrived, which is what every hub method needs before doing
 // anything. Shared because every hub test needs one and they all need the same one.
-public sealed class RegisteredCaller : HubCallerContext
+public sealed class SignedInCaller : HubCallerContext
 {
     public override string ConnectionId => "conn-1";
     public override string? UserIdentifier => "fran";
