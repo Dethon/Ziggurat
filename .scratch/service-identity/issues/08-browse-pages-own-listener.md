@@ -1,4 +1,4 @@
-# 07: The browse server's public pages get their own listener
+# 08: The browse server's public pages get their own listener
 
 **What to build:** No routing mistake can expose the browse server's `/mcp`: the login handoff's live view and the logins page move to a second listener, the proxy routes `/browse/*` to it, and `/mcp` stays on the internal listener alone. Spec: `../spec.md` ("The browse server").
 

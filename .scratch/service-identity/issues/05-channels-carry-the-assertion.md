@@ -1,8 +1,8 @@
-# 04: Channels carry the assertion; the agent verifies it at turn start
+# 05: Channels carry the assertion; the agent verifies it at turn start
 
 **What to build:** No turn acts for a person the accounts service did not vouch for. The chat hub takes the assertion from the session check's header, Telegram and voice from the resolution API's answer, Sugary from its request's header, and each carries it on the turn's notification. The agent verifies it once when the turn starts — signature, expiry, and that it names the channel the notification came on — refuses the turn and reports it if not, and holds the verified identity for the whole turn. Spec: `../spec.md` ("Channels and the agent", "Lifetimes and long turns").
 
-**Blocked by:** 02, 03
+**Blocked by:** 03, 04
 
 **Status:** ready-for-agent
 

@@ -42,30 +42,50 @@ the plain headers alone. The browse server's public handoff pages move to a list
 ### People
 
 1. As a person, I want nothing inside the deployment to be able to act as me without the accounts service having vouched for me, so that one leaked credential does not expose my memory, logins or health data.
-2. As a person, I want my scheduled task to act for me only because I wrote it, so that a misbehaving server cannot run a schedule as me.
-3. As a person, I want a schedule I delete or rewrite to stop acting for me on its old terms, so that what fires is what I last asked for.
-4. As a person who started a login handoff, I want only that handoff to wake my turn as me, so that a forged wake cannot use my logins.
-5. As a person, I want a Home Assistant watch I set to fire as me only because I set it.
-6. As a person in a long conversation, I want a turn that runs for hours to keep working, so that signing never cuts a long task short.
-7. As a person, I want a session I revoke to stop being able to start turns within minutes.
-8. As a household guest speaking to a satellite, I want the house to keep working for me, so that being nobody's account is not the same as being refused.
+2. As a person on WebChat, I want my turns to act for me because my session was vouched for, so that a container that can reach the hub cannot speak as me.
+3. As a person on Telegram, I want my turns to act for me because my linked Telegram id was vouched for, so that a misbehaving channel server cannot claim to be me.
+4. As a person speaking to a satellite, I want my turns to act for me only when my voice profile was vouched for, and as the household guest otherwise.
+5. As a person using Sugary, I want my estimates to act for me because my session was vouched for.
+6. As a person, I want my memory recalled only on a call the agent signed for me, so that no other server's request can read it.
+7. As a person, I want my remembered web logins used only on a call signed for me.
+8. As a person, I want my Sugary log read through Jonas only on a call signed for me.
+9. As a person, I want my scheduled task to act for me only because I wrote it, so that a misbehaving server cannot run a schedule as me.
+10. As a person, I want a schedule I delete to stop acting for me at once.
+11. As a person, I want a schedule rewritten by someone else to stop acting for me, so that what fires as me is what I last asked for.
+12. As a person who started a login handoff, I want only that handoff to wake my turn as me, so that a forged wake cannot use my logins.
+13. As a person, I want a Home Assistant watch I set to fire as me only because I set it.
+14. As a person, I want a download I started to report back without acting as me, so that a finished download never carries my identity.
+15. As a person in a long conversation, I want a turn that runs for hours to keep working, so that signing never cuts a long task short.
+16. As a person, I want a single long tool call — a long command, a slow page, an approval waiting for me — to run to its end, so that a token's lifetime never interrupts one.
+17. As a person, I want a worker my turn spawned to act for me, so that delegated work reaches my things and nobody else's.
+18. As a person, I want a session I revoke to stop being able to start turns within minutes.
+19. As a person, I want approvals I am asked for to still reach me on every channel, with their requests signed like any other call.
+20. As a household guest speaking to a satellite, I want the house to keep working for me, so that being nobody's account is not the same as being refused.
+21. As a household guest, I want my turn to be signed as the guest, so that it can never be mistaken for a person or for a forgery.
 
 ### The operator
 
-9. As the operator, I want each MCP server to refuse a call that carries no valid token from the agent, so that holding a server's credential is no longer enough to act through it.
-10. As the operator, I want a refused call reported on the errors feed, so that a signing mistake is visible rather than silent.
-11. As the operator, I want the apps behind the proxy to verify who a request is for, so that a container on the internal network cannot forge a person to the chat hub, Sugary, the dashboard or SexyTime.
-12. As the operator, I want signing keys generated and kept by the services that sign, with nothing new to put in `.env`, so that deploying this adds no secret to manage.
-13. As the operator, I want to rotate a signing key by adding a new one and retiring the old after the caches have turned over, so that rotation never breaks running turns.
-14. As the operator, I want the browse server's public pages on a listener of their own, so that no routing mistake can expose its `/mcp`.
-15. As the operator, I want the smoke stack to prove the whole chain is signed end to end, so that a key or wiring mistake is caught before a deploy.
-16. As SexyTime's server, I want to forward the signed assertion I received, so that registering a custom agent is tied to a person the accounts service vouched for.
+22. As the operator, I want each MCP server to refuse a call that carries no valid token from the agent, so that holding a server's credential is no longer enough to act through it.
+23. As the operator, I want a refused call to say why — missing, expired, wrong server, bad signature — on the errors feed, so that a signing mistake is diagnosed rather than guessed at.
+24. As the operator, I want the agent to refuse a turn whose assertion fails and report it, so that a channel that misbehaves is visible.
+25. As the operator, I want the apps behind the proxy to verify who a request is for, so that a container on the internal network cannot forge a person to the chat hub, Sugary, the dashboard or SexyTime.
+26. As the operator, I want signing keys generated and kept by the services that sign, with nothing new in `.env`, so that deploying this adds no secret to manage.
+27. As the operator, I want the public keys published only on the internal network, so that nothing outside learns more than it needs.
+28. As the operator, I want to rotate a signing key by adding a new one and retiring the old after the caches have turned over, so that rotation never breaks running turns.
+29. As the operator, I want a verifier to pick up a newly added key on its own, so that rotation needs no restart.
+30. As the operator, I want losing the agent's key to cost only re-delegating stored schedules and watches by one command, and losing the accounts service's key only a fresh sign-in, so that no loss is permanent.
+31. As the operator, I want a small clock difference between containers tolerated, so that a few seconds of drift never refuses a call.
+32. As the operator, I want the browse server's public pages on a listener of their own, so that no routing mistake can expose its `/mcp`.
+33. As the operator, I want the smoke stack to prove the whole chain is signed end to end before a deploy, so that a key or wiring mistake never reaches the household.
+34. As SexyTime's server, I want to forward the signed assertion I received, so that registering a custom agent is tied to a person the accounts service vouched for.
+35. As an outpost on somebody's machine, I want to receive the token without having to check it, so that an outpost keeps working with nothing new to configure.
 
 ### Developers
 
-17. As a developer, I want the test and eval stacks to run with a fixed test signing key, so that the suites need no key provisioning and stay deterministic.
-18. As a developer, I want a tool call made by a worker to carry its parent turn's identity, so that delegated work acts for the same person.
-19. As a developer, I want the signed identity to be an explicit field the call carries, never ambient state, so that what a call acts for is visible where it is handled.
+36. As a developer, I want the test and eval stacks to run with a fixed test signing key, so that the suites need no key provisioning and stay deterministic.
+37. As a developer, I want one way for a server to read who a call acts for, so that swapping it to the verified token is one change and no tool can read around it.
+38. As a developer, I want the signed identity to be an explicit field the call carries, never ambient state, so that what a call acts for is visible where it is handled.
+39. As a developer, I want a refused call's reason to be testable at the server's boundary, so that each refusal is pinned by a test.
 
 ## Implementation Decisions
 
@@ -128,6 +148,10 @@ the plain headers alone. The browse server's public handoff pages move to a list
   refused with an error that says why (missing, expired, wrong audience, bad signature) and reported.
 - What a server acts for comes from the verified token only. The unverified `_meta` principal is
   ignored by servers from here on.
+- Every server reads who a call acts for through one accessor over the call itself, never by
+  parsing the raw `_meta` where it needs it. Today a dozen tools and the filesystem caller each parse
+  it; first they all go through the accessor, then the accessor alone changes to answer the verified
+  token's identity, so no tool can read around the check.
 
 ### Deferred turns
 
