@@ -87,7 +87,7 @@ public static class HouseholdMigrationCommand
             return 1;
         }
 
-        foreach (var step in Steps(settings, redis, stateKey))
+        foreach (var step in Steps(settings, redis, stateKey, http))
         {
             var report = await step.RunAsync(household, asked.DryRun, ct);
             reports.Add(report);
@@ -109,9 +109,10 @@ public static class HouseholdMigrationCommand
     }
 
     // In the order a person would want them done if the run stopped part way: what they told the agent,
-    // then their logins, their phones, their schedules, their topics, their voice and their log; the
-    // dashboard's figures last, which are only ever the operator's.
-    private static IReadOnlyList<IMigrationStep> Steps(MigrationSettings settings, IConnectionMultiplexer redis, SealingKey? stateKey) =>
+    // then their logins, their phones and the spaces they are in, their schedules, their topics, their
+    // voice and their log; the dashboard's figures last, which are only ever the operator's.
+    private static IReadOnlyList<IMigrationStep> Steps(
+        MigrationSettings settings, IConnectionMultiplexer redis, SealingKey? stateKey, HttpClient accounts) =>
     [
         // The embedding service is never called; its options carry the index's width.
         new MemoryBuckets(new RedisStackMemoryStore(redis, new EmbeddingOptions
@@ -121,6 +122,7 @@ public static class HouseholdMigrationCommand
         new RememberedLogins(redis, new RedisPersonStateStore(redis, stateKey)),
         new PushSubscriptions(redis, new RedisPushSubscriptionStore(redis)),
         new PushSpaces(redis),
+        new HouseholdSpaces(accounts, settings.Accounts.Credential),
         new ScheduleCreators(redis),
         new ScheduleHouseholds(redis),
         new TopicOwners(redis, Threads(redis)),
