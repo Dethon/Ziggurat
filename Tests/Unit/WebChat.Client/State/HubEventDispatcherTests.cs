@@ -5,6 +5,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
+using WebChat.Client.State.Alert;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Hub;
 using WebChat.Client.State.Messages;
@@ -193,6 +194,19 @@ public sealed class HubEventDispatcherTests : IDisposable
         _mockDispatcher.Verify(
             d => d.Dispatch(It.Is<ShowApproval>(a => a.TopicId == null && a.Request == request)),
             Times.Once);
+    }
+
+    // A timer ringing for this person rings whatever topic is open, and stops when it ends anywhere.
+    [Fact]
+    public void HandleAlertOfferedAndSettled_RingAndEndTheAlert()
+    {
+        var alert = new AlertOfferedNotification("alert-1", "pasta is ready");
+
+        _sut.HandleAlertOffered(alert);
+        _sut.HandleAlertSettled(new AlertSettledNotification("alert-1", Dismissed: true));
+
+        _mockDispatcher.Verify(d => d.Dispatch(It.Is<AlertRang>(a => a.Alert == alert)), Times.Once);
+        _mockDispatcher.Verify(d => d.Dispatch(It.Is<AlertEnded>(a => a.AlertId == "alert-1")), Times.Once);
     }
 
     // Taking the prompt off screen is all the push does. What the approval let through comes down

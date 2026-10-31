@@ -3,6 +3,7 @@ using WebChat.Client.Services;
 using WebChat.Client.State;
 using WebChat.Client.State.AgentActivity;
 using WebChat.Client.State.AgentSettings;
+using WebChat.Client.State.Alert;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Composer;
 using WebChat.Client.State.Connection;
@@ -31,6 +32,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<StreamingStore>();
             services.AddScoped<ConnectionStore>();
             services.AddScoped<ApprovalStore>();
+            services.AddScoped<AlertStore>();
             services.AddScoped<UserIdentityStore>();
             services.AddScoped<ToastStore>();
             services.AddScoped<AgentSettingsStore>();
@@ -84,6 +86,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<TopicRenameEffect>();
             services.AddScoped<TopicShareEffect>();
             services.AddScoped<OfferedApprovalsEffect>();
+            services.AddScoped<RingingAlertsEffect>();
 
             return services;
         }
