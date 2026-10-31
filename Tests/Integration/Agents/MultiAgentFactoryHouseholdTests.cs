@@ -25,6 +25,7 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 {
     private const string Household = "0123456789abcdef0123456789abcdef";
     private const string Home = "fedcba9876543210fedcba9876543210";
+    private const string HouseholdKey = "household-key";
 
     // Nothing answers here: a session that dialled it would fail to build, and the turn with it.
     private const string UnansweredScheduling = "http://127.0.0.1:9/mcp";
@@ -164,10 +165,112 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         _model.Requests.ShouldHaveSingleItem();
     }
 
-    private async Task<string> TurnAsync(string agentId, string? household)
+    // Who pays: every model call made for a household goes out on its own OpenRouter key, the home's
+    // on the deployment's, and a household that set none is refused before anything is sent.
+    [Fact]
+    public async Task AHouseholdsTurn_IsSentWithItsOwnKey()
+    {
+        _households.Add(Household, isHome: false, Settings(), Jonas(), key: HouseholdKey);
+
+        await TurnAsync("jonas", Household);
+
+        _model.Requests.ShouldHaveSingleItem().Authorization.ShouldBe($"Bearer {HouseholdKey}");
+    }
+
+    // The home's calls are the deployment's, even where its keys section holds one of its own.
+    [Theory]
+    [InlineData(null)]
+    [InlineData("homes-own-key")]
+    public async Task TheHomesTurn_IsSentWithTheDeploymentsKey(string? homesKey)
+    {
+        _households.Add(Home, isHome: true, Settings(), Jonas(), key: homesKey);
+
+        await TurnAsync("jonas", Home);
+
+        _model.Requests.ShouldHaveSingleItem().Authorization.ShouldBe("Bearer deployment-key");
+    }
+
+    [Fact]
+    public async Task ATurnForNobody_IsSentWithTheDeploymentsKey()
+    {
+        _households.Add(Home, isHome: true, Settings(), Jonas(), key: null);
+
+        await TurnAsync("jonas", household: null);
+
+        _model.Requests.ShouldHaveSingleItem().Authorization.ShouldBe("Bearer deployment-key");
+    }
+
+    [Fact]
+    public async Task AHouseholdWithNoKey_IsRefusedItsTurn_AndNothingIsSent()
+    {
+        _households.Add(Household, isHome: false, Settings(), Jonas(), key: null);
+
+        var refused = await Should.ThrowAsync<HouseholdWithoutKeyException>(() => TurnAsync("jonas", Household));
+
+        refused.HouseholdId.ShouldBe(Household);
+        _model.Requests.ShouldBeEmpty();
+    }
+
+    // A worker runs its parent's model for its parent's household, and so on its parent's key.
+    [Fact]
+    public async Task AWorkerSpawnedByAHouseholdsAgent_IsSentWithThatHouseholdsKey()
+    {
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection
+        {
+            Agents =
+            [
+                new HouseholdAgent
+                {
+                    Id = "jonas",
+                    Definition = new AgentDefinition
+                    {
+                        Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = [], EnabledFeatures = ["subagents"]
+                    }
+                }
+            ]
+        }, key: HouseholdKey);
+        _model.Script(FakeOpenRouter.CallingTool(
+            $"domain__subagents__{SubAgentRunTool.Name}", """{"subAgentId":"worker","prompt":"go"}"""));
+
+        var approves = new Mock<IToolApprovalHandler>();
+        approves.Setup(a => a.RequestApprovalAsync(It.IsAny<ApprovalAsk>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ToolApprovalResult.Approved);
+
+        await TurnAsync("jonas", Household, approves.Object);
+
+        // The parent's call, the worker's, and the parent's again with the worker's answer.
+        _model.Requests.Count.ShouldBe(3);
+        _model.Requests.ShouldAllBe(request => request.Authorization == $"Bearer {HouseholdKey}");
+    }
+
+    [Fact]
+    public async Task AWorkerOfTheHome_IsSentWithTheDeploymentsKey()
+    {
+        await using var worker = Factory().CreateSubAgent(
+            new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = [] },
+            Mock.Of<IToolApprovalHandler>(),
+            new SpawnContext("conv-1", "fran", [], UsesOutposts: false, "m", TenantId: Home));
+
+        await worker.RunStreamingAsync([new ChatMessage(ChatRole.User, "go")]).ToListAsync();
+
+        _model.Requests.ShouldHaveSingleItem().Authorization.ShouldBe("Bearer deployment-key");
+    }
+
+    private static AgentsSection Jonas() => new()
+    {
+        Agents =
+        [
+            new HouseholdAgent
+            {
+                Id = "jonas", Definition = new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = [] }
+            }
+        ]
+    };
+
+    private async Task<string> TurnAsync(string agentId, string? household, IToolApprovalHandler? approvals = null)
     {
         await using var agent = await Factory().CreateAsync(
-            new AgentKey("conv-1", agentId), "fran", agentId, Mock.Of<IToolApprovalHandler>(), tenantId: household);
+            new AgentKey("conv-1", agentId), "fran", agentId, approvals ?? Mock.Of<IToolApprovalHandler>(), tenantId: household);
 
         await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hello")]).ToListAsync();
 
@@ -206,9 +309,10 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         private readonly Dictionary<string, AgentHouseholdConfig> _households = [];
 
         public void Add(
-            string id, bool isHome, HouseholdSettings settings, AgentsSection agents, FeaturesSection? features = null) =>
+            string id, bool isHome, HouseholdSettings settings, AgentsSection agents, FeaturesSection? features = null,
+            string? key = HouseholdKey) =>
             _households[id] = new AgentHouseholdConfig(
-                id, isHome, settings, agents, features ?? new FeaturesSection(), new SpacesSection(), null);
+                id, isHome, settings, agents, features ?? new FeaturesSection(), new SpacesSection(), key);
 
         public Task<AgentHouseholdConfig> ForAgentAsync(string householdId, CancellationToken ct) =>
             Task.FromResult(householdId == HouseholdConfigProtocol.HomeHousehold

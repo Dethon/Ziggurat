@@ -48,6 +48,9 @@ public class ChatMonitor(
     // presenting what it was never given.
     public const string DelegationRefusedErrorType = "DelegationRefused";
 
+    // A turn of a household that set no OpenRouter key, refused before its agent was asked anything.
+    public const string HouseholdWithoutKeyErrorType = "HouseholdWithoutKey";
+
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger, topics);
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
 

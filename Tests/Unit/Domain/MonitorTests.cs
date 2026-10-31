@@ -46,6 +46,10 @@ internal sealed class FakeAiAgent : DisposableAgent
 
     public IReadOnlyList<PromptSkill> Skills { get; set; } = [];
 
+    public ModelPayer PaidBy { get; set; } = ModelPayer.Deployment;
+
+    public override ModelPayer Payer => PaidBy;
+
     // Only once warmed up, as the real agent's are: the session that carries the skills is built
     // by the warmup, and a caller asking before it has run gets nothing.
     public override IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) =>
@@ -191,12 +195,15 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
     public List<(AgentKey Key, string? AgentId, IToolApprovalHandler ApprovalHandler, string UserId, Account? Account, string? TenantId)> Created { get; } = [];
 
+    // What building the agent throws instead, as the real factory does for a household that cannot pay.
+    public Exception? Refusal { get; set; }
+
     public Task<DisposableAgent> CreateAsync(
         AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
         string? tenantId = null, CancellationToken ct = default)
     {
         Created.Add((agentKey, agentId, approvalHandler, userId, account, tenantId));
-        return Task.FromResult(agent);
+        return Refusal is null ? Task.FromResult(agent) : Task.FromException<DisposableAgent>(Refusal);
     }
 
     public DisposableAgent CreateSubAgent(
