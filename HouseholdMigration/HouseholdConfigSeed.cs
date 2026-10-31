@@ -6,8 +6,8 @@ using System.Text.Json.Nodes;
 namespace HouseholdMigration;
 
 // The accounts service's seed route (Accounts/Internal/HouseholdConfigSeedApi): a section the household
-// never saved given a document, laid over what it reads now; one it saved left as it is; a dry run
-// validated and written nowhere. Spelled again here because that service references no project and
+// never saved given a document, laid over what it reads now; one it saved left as it is, but for a keys
+// section, given only the keys it lacks; a dry run validated and written nowhere. Spelled again here because that service references no project and
 // nothing references it.
 public sealed class HouseholdConfigSeed(HttpClient http, string credential)
 {
@@ -28,9 +28,8 @@ public sealed class HouseholdConfigSeed(HttpClient http, string credential)
             return new Seeding.Refused(await RefusalAsync(response, ct));
         }
 
-        return (await response.Content.ReadFromJsonAsync<Seeded>(_json, ct))!.AlreadySaved
-            ? new Seeding.AlreadySaved()
-            : new Seeding.Seeded();
+        var seeded = (await response.Content.ReadFromJsonAsync<Seeded>(_json, ct))!;
+        return seeded.AlreadySaved ? new Seeding.AlreadySaved() : new Seeding.Seeded(seeded.Kept ?? []);
     }
 
     private static async Task<string> RefusalAsync(HttpResponseMessage response, CancellationToken ct)
@@ -54,16 +53,16 @@ public sealed class HouseholdConfigSeed(HttpClient http, string credential)
 
     private sealed record SeedRequest(string HouseholdId, string Section, JsonObject Document, bool DryRun);
 
-    private sealed record Seeded(bool Saved, bool AlreadySaved);
+    private sealed record Seeded(bool Saved, bool AlreadySaved, IReadOnlyList<string>? Kept);
 
     private sealed record Refused(string Error, IReadOnlyList<string>? Problems);
 }
 
-// What became of a seeded section: given it (or in a dry run, would be), left as the household saved
-// it, or refused with why.
+// What became of a seeded section: given it (or in a dry run, would be) — a keys section given the
+// keys it lacked, keeping those named — left as the household saved it, or refused with why.
 public abstract record Seeding
 {
-    public sealed record Seeded : Seeding;
+    public sealed record Seeded(IReadOnlyList<string> Kept) : Seeding;
 
     public sealed record AlreadySaved : Seeding;
 

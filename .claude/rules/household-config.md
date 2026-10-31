@@ -20,7 +20,7 @@ paths:
   - "Agent/App/HomeAgentCatalog.cs"
   - "HouseholdMigration/Home/**"
   - "HouseholdMigration/Steps/HomeConfiguration.cs"
-  - "HouseholdMigration/Steps/HomeTelegramBots.cs"
+  - "HouseholdMigration/Steps/HomeKeys.cs"
   - "Domain/DTOs/ModelPayer.cs"
   - "Infrastructure/Memory/PaidChatClients.cs"
 ---
@@ -302,7 +302,7 @@ exist, secrets with no master, or readers not told. Saving `settings` also renam
   (`AGENTAPI__SHAREDSECRET`) and its own token. The household migration's `HomeConfiguration` seeds
   the home's settings (the deployment's zone, no language), its agents (`HouseholdMigration/Home/agents.json`,
   today's definitions, a threshold an object) and its features (every one on, Idealista too) through
-  the seed route below; the bots are 13's.
+  the seed route below; the keys are 13's and 15's.
 - **07** (done): who pays, below.
 - **08** (done): the accessor above (`CallHousehold`), its fire proof and the three `CALLERS__` entries.
 - **12** (done): the hub (`ChatHub.GetSpaces`, `JoinSpace`) proves with the **session refresh's**
@@ -313,24 +313,29 @@ exist, secrets with no master, or readers not told. Saving `settings` also renam
   (`HouseholdConfigSeedApi`, `{ householdId, section, document, dryRun }` → `{ saved, alreadySaved }`,
   400 with the problems), admitted for `CALLERS__household-migration` alone like the import. A section
   the household already saved is left as it is, so a rerun changes nothing and an owner's own edits
-  are never put over; a dry run checks the document and writes nothing. The document is laid over the
+  are never put over; a dry run checks the document and writes nothing. **A section of secrets (`keys`)
+  is the exception**: its keys are credentials, each its own — `openRouter`, `idealista`, and each bot
+  under `telegramBots` by its agent — so a saved one is given each seeded key it lacks and keeps every
+  one it holds, saved only when something was given (`{ saved, alreadySaved, kept }`, `kept` naming the
+  keys left as they were). The operator may so save the home's Idealista keys before the migration
+  without losing its bots, and a rerun saves nothing. The document is laid over the
   section as the household reads it now, top-level field by field, so what it leaves out stays the
   household's (the settings' name its row carries, the features it does not name). Any section: 06 seeds the
   agents through it as 12 seeds the spaces (`HouseholdMigration/Steps/HouseholdSpaces`). It tells
   readers as any save does but ignores a failure to, since nothing has read a section before it exists.
   A document carrying a secret on a service with no master key is 503, dry run or not, with the reason
-  (the smoke stack runs so: a migration given no bots seeds no keys and needs none).
+  (the smoke stack runs so: a migration given no keys seeds none and needs none).
 - **06**, from 08 (done): a session reads a write's bare `runAt` in the household's zone (`McpAgent.Zone`
   into `ThreadSession`'s `localZone`), as the scheduling server does.
-- **07** (done): who pays, below.
 - **13** (done): the Telegram server reads `telegram-bots` at its start and every `Bots:Refresh` (five
   seconds; the reader's cache makes that free, and a `keys` save drops it), starting and stopping each
   household's bots as the answer changes, and `agent-names` for `/agent` on the asking person's
-  assertion (`.claude/rules/channels.md`, Telegram). The household migration's `HomeTelegramBots` seeds
+  assertion (`.claude/rules/channels.md`, Telegram). The household migration's `HomeTelegramBots` seeded
   the home's jack and jonas bots into its `keys` through the seed route, from tokens piped into the run
-  (`--telegram-bots -`). Because the seed route leaves a saved section alone, the deploy runs the
-  migration with the bots **before** any `keys` save (08's Idealista key included), or adds the bots to
-  the saved section with `set-household-config`.
+  (`--telegram-bots -`). **15** (done) made that step `HomeKeys`, seeding Idealista's pair from the old
+  `.env` beside the bots, and made the seed route give a saved keys section the keys it lacks, so the
+  order of the migration and an operator's own `keys` save no longer matters
+  (`.scratch/tenants-config/deploy.md`).
 
 ## Tests
 

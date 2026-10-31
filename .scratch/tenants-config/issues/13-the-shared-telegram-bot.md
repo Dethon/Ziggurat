@@ -19,3 +19,5 @@ For 15: deploy with `TELEGRAM_SHARED_BOT_TOKEN` set, then run the migration with
 `--telegram-bots - < home-bots.json` (jack's and jonas's tokens, the old `BOTS__0`/`BOTS__1`) before any
 `keys` save — the Idealista key included — and only then delete the old `BOTS__*` lines from prod's
 `.env`. Until the migration runs, jack's and jonas's bots are silent.
+Superseded by 15: the input is `--home-keys -` (the bots and Idealista's pair), and the order no
+longer matters; see `../deploy.md`.

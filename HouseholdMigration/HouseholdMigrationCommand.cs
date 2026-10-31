@@ -13,7 +13,7 @@ namespace HouseholdMigration;
 //
 //   docker compose --profile migrate run --rm household-migration \
 //     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run] \
-//     [--telegram-bots -]    with the home's bots' tokens piped in (HomeTelegramBots)
+//     [--home-keys -]    with the home's bots' tokens and Idealista's keys piped in (HomeKeys)
 //
 // Every step finds what is still under an old name and moves it, so a second run finds nothing and
 // says so, and a run that stopped half way is finished by running it again. --dry-run says what it
@@ -21,9 +21,9 @@ namespace HouseholdMigration;
 public static class HouseholdMigrationCommand
 {
     private const string Usage =
-        "usage: --people <file> --operator <name> --owner <name> --sugary <name> [--dry-run] [--telegram-bots <file|->]\n"
+        "usage: --people <file> --operator <name> --owner <name> --sugary <name> [--dry-run] [--home-keys <file|->]\n"
         + "  each <name> is a person's \"name\" in the file: the identity map's Name\n"
-        + "  --telegram-bots: the home's own bots, { \"jack\": { \"token\": \"...\" }, \"jonas\": { ... } }; - reads the input";
+        + "  --home-keys: the home's own keys, " + HomeKeys.Shape + "; - reads the input";
 
     public static async Task<int> RunAsync(
         IReadOnlyList<string> args, MigrationSettings settings, TextWriter output, CancellationToken ct,
@@ -47,18 +47,18 @@ public static class HouseholdMigrationCommand
         }
 
         var problems = file.Problems(asked.Operator, asked.Owner, asked.Sugary).ToList();
-        JsonObject? bots = null;
-        if (asked.TelegramBots is { } botsFile)
+        JsonObject? homeKeys = null;
+        if (asked.HomeKeys is { } keysFile)
         {
             try
             {
-                var text = botsFile == "-" ? await (input ?? Console.In).ReadToEndAsync(ct) : await File.ReadAllTextAsync(botsFile, ct);
-                (bots, var botProblems) = HomeTelegramBots.Read(text);
-                problems.AddRange(botProblems);
+                var text = keysFile == "-" ? await (input ?? Console.In).ReadToEndAsync(ct) : await File.ReadAllTextAsync(keysFile, ct);
+                (homeKeys, var keyProblems) = HomeKeys.Read(text);
+                problems.AddRange(keyProblems);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                problems.Add($"{HomeTelegramBots.Argument}: {botsFile} could not be read: {ex.Message}");
+                problems.Add($"{HomeKeys.Argument}: {keysFile} could not be read: {ex.Message}");
             }
         }
 
@@ -106,7 +106,7 @@ public static class HouseholdMigrationCommand
             return 1;
         }
 
-        foreach (var step in Steps(settings, redis, stateKey, http, bots))
+        foreach (var step in Steps(settings, redis, stateKey, http, homeKeys))
         {
             var report = await step.RunAsync(household, asked.DryRun, ct);
             reports.Add(report);
@@ -132,12 +132,13 @@ public static class HouseholdMigrationCommand
     // agent, their logins, their phones and the spaces they are in, their schedules, their topics, their
     // voice and their log; the dashboard's figures last, which are only ever the operator's.
     private static IReadOnlyList<IMigrationStep> Steps(
-        MigrationSettings settings, IConnectionMultiplexer redis, SealingKey? stateKey, HttpClient accounts, JsonObject? bots) =>
+        MigrationSettings settings, IConnectionMultiplexer redis, SealingKey? stateKey, HttpClient accounts, JsonObject? homeKeys) =>
     [
         // Compose hands the run the deployment's shared TZ, the zone the home's schedules always ran in.
         new HomeConfiguration(new HouseholdConfigSeed(accounts, settings.Accounts.Credential), TimeZoneInfo.Local.Id),
-        // Beside its agents, the bots bound to them, so jack and jonas answer on Telegram again.
-        new HomeTelegramBots(new HouseholdConfigSeed(accounts, settings.Accounts.Credential), bots),
+        // Beside its agents, the bots bound to them, so jack and jonas answer on Telegram again, and
+        // Idealista's keys, which the deployment no longer holds.
+        new HomeKeys(new HouseholdConfigSeed(accounts, settings.Accounts.Credential), homeKeys),
         // The embedding service is never called; its options carry the index's width.
         new MemoryBuckets(new RedisStackMemoryStore(redis, new EmbeddingOptions
         {
@@ -167,7 +168,10 @@ public static class HouseholdMigrationCommand
             .. report.Problems.Select(problem => $"  left as it was: {problem}")
         ]));
 
-    private sealed record Arguments(string People, string Operator, string Owner, string Sugary, bool DryRun, string? TelegramBots)
+    // Spelled here because inside Arguments the name is its property's.
+    private const string KeysArgument = HomeKeys.Argument;
+
+    private sealed record Arguments(string People, string Operator, string Owner, string Sugary, bool DryRun, string? HomeKeys)
     {
         public static Arguments? Parse(IReadOnlyList<string> args)
         {
@@ -186,10 +190,10 @@ public static class HouseholdMigrationCommand
             }
 
             var values = named.ToDictionary(pair => pair[0], pair => pair[1]);
-            return values.Keys.Where(key => key != HomeTelegramBots.Argument).Order()
+            return values.Keys.Where(key => key != KeysArgument).Order()
                 .SequenceEqual(["--operator", "--owner", "--people", "--sugary"])
                 ? new Arguments(values["--people"], values["--operator"], values["--owner"], values["--sugary"], dryRun,
-                    values.GetValueOrDefault(HomeTelegramBots.Argument))
+                    values.GetValueOrDefault(KeysArgument))
                 : null;
         }
     }
