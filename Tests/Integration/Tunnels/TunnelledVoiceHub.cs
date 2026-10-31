@@ -94,7 +94,7 @@ internal sealed class TunnelledVoiceHub : IAsyncDisposable
             .AddHostedService<WyomingSatelliteHost>()
             .AddToolServer(new TunnelledServer.Settings(new McpGateSettings
             {
-                Tunnel = TunnelledServer.Tunnel(hub, credential, serverName)
+                Tunnel = TunnelledServer.Quick(hub, credential, serverName)
             }));
         var app = builder.Build();
         app.MapMcp("/mcp");

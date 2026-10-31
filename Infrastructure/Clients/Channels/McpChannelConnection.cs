@@ -6,6 +6,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Security;
+using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -103,12 +104,22 @@ public sealed class McpChannelConnection(
 
     public bool HostsReviewCopies { get; init; }
 
+    public bool IsConnected => _client is not null;
+
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
+
+    // A URL dialled with this connection's own credential.
+    public Task RunAsync(string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct) =>
+        RunAsync(McpServerEndpoint.Configured(endpoint, mcpSecret), catalog, ct);
 
     // Connect, register the catalog, watch health, reconnect, re-register — for as long as the
     // token lives. The order is here rather than in a caller because the order is about this.
+    //
+    // When the token goes the connection lets go: a run that ended is a channel not connected (ADR
+    // 0011), whether the agent is stopping or the household server's tunnel this run was bound to has
+    // closed, and the next run starts from nothing.
     public async Task RunAsync(
-        string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct)
+        McpServerEndpoint endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct)
     {
         var interval = healthCheckInterval ?? _defaultHealthCheckInterval;
         try
@@ -158,11 +169,15 @@ public sealed class McpChannelConnection(
             // Shutting down. A call in flight when the token trips reports the abort it is, and
             // this is where the run ends: it returns rather than faulting its caller.
         }
+        finally
+        {
+            await DisconnectAsync();
+        }
     }
 
     // One loop for both, because a reconnect is a connect that had a predecessor: a fix to the
     // back-off could otherwise land in one and miss the other.
-    private async Task WithRetryAsync(string endpoint, bool reconnect, CancellationToken ct)
+    private async Task WithRetryAsync(McpServerEndpoint endpoint, bool reconnect, CancellationToken ct)
     {
         var verb = reconnect ? "Reconnecting" : "Connecting";
         var attempt = 0;
@@ -174,7 +189,7 @@ public sealed class McpChannelConnection(
             {
                 logger?.LogInformation(
                     "{Verb} channel {ChannelId} to {Endpoint} (attempt {Attempt})",
-                    verb, ChannelId, endpoint, attempt);
+                    verb, ChannelId, endpoint.Address, attempt);
                 if (reconnect)
                 {
                     await ReconnectAsync(endpoint, ct);
@@ -235,20 +250,23 @@ public sealed class McpChannelConnection(
         }
     }
 
-    public async Task ConnectAsync(string endpoint, CancellationToken ct)
+    public Task ConnectAsync(string endpoint, CancellationToken ct) =>
+        ConnectAsync(McpServerEndpoint.Configured(endpoint, mcpSecret), ct);
+
+    // A dialled server presents the endpoint's credential; a household's server is reached through
+    // its tunnel's client, which presents the tunnel's own, and is signed for the synthetic address it
+    // was admitted with.
+    public async Task ConnectAsync(McpServerEndpoint endpoint, CancellationToken ct)
     {
         // Never leave a second pump alive on this connection: two of them share one subscriberId
         // and displace each other's waiter, which the inbox retires with an instant empty batch.
         await StopPumpAsync();
 
+        var transport = McpClientManager.TransportOf(endpoint);
         var client = await McpClient.CreateAsync(
-            McpClientManager.Signed(new HttpClientTransport(new HttpClientTransportOptions
-            {
-                Endpoint = new Uri(endpoint),
-                AdditionalHeaders = string.IsNullOrEmpty(mcpSecret)
-                    ? null
-                    : new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(mcpSecret) }
-            }), endpoint, callTokens),
+            endpoint.Server is { } server
+                ? McpClientManager.Signed(transport, server, callTokens)
+                : McpClientManager.Signed(transport, endpoint.Address, callTokens),
             new McpClientOptions
             {
                 ClientInfo = new Implementation
@@ -825,16 +843,23 @@ public sealed class McpChannelConnection(
         }
     }
 
-    public async Task ReconnectAsync(string endpoint, CancellationToken ct)
+    public Task ReconnectAsync(string endpoint, CancellationToken ct) =>
+        ReconnectAsync(McpServerEndpoint.Configured(endpoint, mcpSecret), ct);
+
+    public async Task ReconnectAsync(McpServerEndpoint endpoint, CancellationToken ct)
+    {
+        await DisconnectAsync();
+        await ConnectAsync(endpoint, ct);
+    }
+
+    private async Task DisconnectAsync()
     {
         await StopPumpAsync();
-        if (_client is not null)
+        if (_client is { } client)
         {
-            await _client.DisposeAsync();
             _client = null;
+            await client.DisposeAsync();
         }
-
-        await ConnectAsync(endpoint, ct);
     }
 
     // Two targets resolving at once can both find the set unfetched and each ask; that costs one

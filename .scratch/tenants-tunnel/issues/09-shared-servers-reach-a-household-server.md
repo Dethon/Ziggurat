@@ -12,6 +12,6 @@
 
 The endpoint is `/internal/relay/<server>/<path>` on the agent; the caller names itself and presents
 its own /mcp credential, which the agent already holds to dial it, and may reach only its listed
-server and path (`RelayedCalls`). The household is the one with a voice tunnel open
-(`SoleHousehold`), in this phase. The deployment's timers already ring through the relay; voice must
+server and path (`RelayedCalls`). The household is the home one (`HomeHousehold`, by
+`OpenTunnel.Home`), in this phase. The deployment's timers already ring through the relay; voice must
 run tunnelled (ticket 11) for them to ring in the deployment.
