@@ -94,6 +94,55 @@ public sealed class HouseholdConfigSeedTests
         offered.ShouldBe(new FeaturesSection { Idealista = true });
     }
 
+    // The home's bots are seeded as any secret is saved: sealed at rest, and answered unsealed to the
+    // Telegram server alone.
+    [Fact]
+    public async Task ASeededSecret_IsSealedAtRest_AndAnsweredToItsServer()
+    {
+        await using var server = await StartAsync();
+        var home = await HomeAsync(server);
+        var bots = new JsonObject { ["telegramBots"] = new JsonObject { ["jack"] = new JsonObject { ["token"] = "1001:jack-token" } } };
+
+        var seeded = await SeedAsync(server, home, bots, dryRun: false, section: "keys");
+
+        seeded.StatusCode.ShouldBe(HttpStatusCode.OK, await seeded.Content.ReadAsStringAsync());
+        await using (var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync())
+        {
+            var stored = (await db.HouseholdSections.SingleAsync()).Document;
+            stored.ShouldContain("\"sealed\"");
+            stored.ShouldNotContain("1001:jack-token");
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Post, HouseholdConfigProtocol.PathOf(HouseholdConfigProtocol.TelegramBotsView))
+        {
+            Content = JsonContent.Create(new { })
+        };
+        request.Headers.Add("Authorization", $"Bearer {TelegramCredential}");
+        var answered = await (await server.Client().SendAsync(request)).Content.ReadFromJsonAsync<HouseholdTelegramBots>();
+        answered!.Bots.ShouldBe([new HouseholdTelegramBot(home, "jack", "1001:jack-token")]);
+    }
+
+    // A stack with no master key can seal nothing: a secret seeded there is refused, dry run or not,
+    // and says why, rather than failing as a fault.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ASecretSeededWithNoMasterKey_IsRefusedAndSavesNothing(bool dryRun)
+    {
+        await using var server = await AccountsServer.StartAsync(s => s with
+        {
+            Callers = new Dictionary<string, string> { ["household-migration"] = Credential },
+            HouseholdConfig = new() { MasterKey = "" }
+        });
+        var bots = new JsonObject { ["telegramBots"] = new JsonObject { ["jack"] = new JsonObject { ["token"] = "1001:jack-token" } } };
+
+        var refused = await SeedAsync(server, await HomeAsync(server), bots, dryRun, section: "keys");
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        (await refused.Content.ReadAsStringAsync()).ShouldContain("no master key");
+        (await SectionsAsync(server)).ShouldBe(0);
+    }
+
     private static async Task<HttpResponseMessage> SeedAsync(
         AccountsServer server, string household, JsonObject document, bool dryRun, string credential = Credential,
         string section = "spaces")

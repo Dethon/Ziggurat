@@ -595,8 +595,11 @@ services:
   # and the chat client's spaces into the household's configuration.
   # Under a profile, so `up` never starts it. Put the people in ./volumes/household-migration/people.json
   # and HOUSEHOLD_MIGRATION_SECRET in .env (then `docker compose up -d accounts`), and run
-  #   docker compose --profile migrate run --rm household-migration \
-  #     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run]
+  #   docker compose --profile migrate run --rm -T household-migration \
+  #     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run] \
+  #     --telegram-bots - < home-bots.json
+  # where home-bots.json, kept outside the volume, is { "jack": { "token": "..." }, "jonas": { ... } },
+  # the two bot tokens .env held before the shared bot, which go into the home's keys section.
   # Running it again changes nothing. The steps are .scratch/accounts/spec.md's Further Notes.
   household-migration:
     image: household-migration:latest
