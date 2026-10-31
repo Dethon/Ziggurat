@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Net;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Agent.App;
 using Agent.Modules;
 using Domain.Contracts;
@@ -37,13 +39,16 @@ internal sealed class RelayHost : IAsyncDisposable
 {
     private readonly WebApplication _app;
 
-    private RelayHost(WebApplication app, int port, VfsBridge bridge, ConcurrentQueue<ReachedTarget> reached)
+    private RelayHost(WebApplication app, int port, VfsBridge bridge, ConcurrentQueue<ReachedTarget> reached, bool secure)
     {
         _app = app;
         Port = port;
         Bridge = bridge;
         Reached = reached;
+        _scheme = secure ? "wss" : "ws";
     }
+
+    private readonly string _scheme;
 
     public int Port { get; }
 
@@ -52,7 +57,7 @@ internal sealed class RelayHost : IAsyncDisposable
     // Every request the stand-in targets answered, with the headers that reached them.
     public ConcurrentQueue<ReachedTarget> Reached { get; }
 
-    public string Hub => $"ws://localhost:{Port}{TunnelProtocol.Path}";
+    public string Hub => $"{_scheme}://localhost:{Port}{TunnelProtocol.Path}";
 
     // Where the proxy sends what it routes to the agent.
     public string Address => $"http://localhost:{Port}";
@@ -73,7 +78,10 @@ internal sealed class RelayHost : IAsyncDisposable
     public static async Task<RelayHost> StartAsync(
         AccountsServer accounts, string agentCredential, string redis, SigningKeyStore keys,
         IMetricsPublisher metrics, int? port = null, IPAddress? on = null,
-        IReadOnlyDictionary<string, string>? sharedServers = null)
+        IReadOnlyDictionary<string, string>? sharedServers = null,
+        // Served over TLS with this certificate, as the proxy serves the tunnel's route: a hub the
+        // servers reach at wss://.
+        X509Certificate2? certificate = null)
     {
         // Picked ahead rather than bound on port 0: the shared Lemonade's stand-in is this host itself,
         // named in the back-call settings before it listens.
@@ -81,7 +89,13 @@ internal sealed class RelayHost : IAsyncDisposable
         var bridge = new VfsBridge(TimeProvider.System, new VfsBridgeSettings());
         var reached = new ConcurrentQueue<ReachedTarget>();
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(on ?? IPAddress.Loopback, listening));
+        builder.WebHost.UseKestrel(options => options.Listen(on ?? IPAddress.Loopback, listening, listen =>
+        {
+            if (certificate is not null)
+            {
+                listen.UseHttps(certificate);
+            }
+        }));
         builder.Services
             .AddSingleton(keys)
             .AddSingleton(metrics)
@@ -113,7 +127,7 @@ internal sealed class RelayHost : IAsyncDisposable
             return Results.Text("spoken");
         });
         await app.StartAsync();
-        return new RelayHost(app, listening, bridge, reached);
+        return new RelayHost(app, listening, bridge, reached, certificate is not null);
     }
 
     public async ValueTask DisposeAsync()
@@ -137,16 +151,22 @@ internal sealed class TunnelledServer : IAsyncDisposable
 
     internal sealed record Settings(McpGateSettings Mcp) : IMcpHostSettings;
 
-    // `backCalls` are the back-calls the server makes, each at the loopback port given.
+    // `backCalls` are the back-calls the server makes, each at the loopback port given;
+    // `hubAuthority` a certificate authority's PEM file the hub's certificate may chain to.
     public static async Task<TunnelledServer> StartAsync(
-        string hub, string credential, string serverName, Dictionary<string, int>? backCalls = null)
+        string hub, string credential, string serverName, Dictionary<string, int>? backCalls = null,
+        string hubAuthority = "")
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, 0));
         builder.Services
             .AddToolServer(new Settings(new McpGateSettings
             {
-                Tunnel = Quick(hub, credential, serverName) with { BackCalls = backCalls ?? [] }
+                Tunnel = Quick(hub, credential, serverName) with
+                {
+                    BackCalls = backCalls ?? [],
+                    HubCertificateAuthority = hubAuthority
+                }
             }))
             .WithTools<CallTokenGateTests.WhoTools>()
             .WithTools<WaitTools>();
@@ -259,4 +279,65 @@ internal sealed record ReachedTarget(string Path, string? Household, string? Ser
         http.Request.Headers[BackCallProtocol.HouseholdHeader].SingleOrDefault(),
         http.Request.Headers[BackCallProtocol.ServerHeader].SingleOrDefault(),
         http.Request.Headers.Authorization.SingleOrDefault());
+}
+// A certificate authority of a test's own, as a local stack's proxy has one (Caddy's `tls internal`):
+// its certificate written as a PEM file a server can be told of, and a certificate it issues a host.
+internal sealed class LocalAuthority : IDisposable
+{
+    private readonly X509Certificate2 _authority;
+
+    private LocalAuthority(X509Certificate2 authority, string file)
+    {
+        _authority = authority;
+        CertificateFile = file;
+    }
+
+    public string CertificateFile { get; }
+
+    public static LocalAuthority Create()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest(
+            "CN=Ziggurat Test Local Authority", key, HashAlgorithmName.SHA256);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(
+            X509KeyUsageFlags.KeyCertSign
+            | X509KeyUsageFlags.CrlSign, true));
+        request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+        var authority = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
+        var file = Path.Combine(Path.GetTempPath(), $"local-authority-{Guid.NewGuid():N}.crt");
+        File.WriteAllText(file, authority.ExportCertificatePem());
+        return new LocalAuthority(authority, file);
+    }
+
+    // A server certificate for `host`, signed by this authority, with its private key.
+    public X509Certificate2 Issue(string host)
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = new CertificateRequest(
+            $"CN={host}", key, HashAlgorithmName.SHA256);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(false, false, 0, false));
+        request.CertificateExtensions.Add(new X509KeyUsageExtension(
+            X509KeyUsageFlags.DigitalSignature, false));
+        request.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            [new Oid("1.3.6.1.5.5.7.3.1")], false));
+        var names = new SubjectAlternativeNameBuilder();
+        names.AddDnsName(host);
+        request.CertificateExtensions.Add(names.Build());
+        request.CertificateExtensions.Add(
+            X509AuthorityKeyIdentifierExtension.CreateFromCertificate(_authority, true, false));
+        using var issued = request.Create(
+            _authority, DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(29),
+            RandomNumberGenerator.GetBytes(16));
+        using var withKey = issued.CopyWithPrivateKey(key);
+        // Through PKCS#12, so the key is one Kestrel's TLS can use on every platform.
+        return X509CertificateLoader.LoadPkcs12(
+            withKey.Export(X509ContentType.Pkcs12), null);
+    }
+
+    public void Dispose()
+    {
+        _authority.Dispose();
+        File.Delete(CertificateFile);
+    }
 }

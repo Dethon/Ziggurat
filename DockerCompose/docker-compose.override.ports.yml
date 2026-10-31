@@ -3,33 +3,9 @@
 # file publishes only the proxy and the operator's LAN tools, so without this override nothing else
 # is reachable from outside the compose network. Opt in by adding it to the compose command.
 services:
-  mcp-library:
-    ports:
-      - "127.0.0.1:6001:8080"
-
-  mcp-vault:
-    ports:
-      - "127.0.0.1:6002:8080"
-
-  mcp-sandbox:
-    ports:
-      - "127.0.0.1:6004:8080"
-
-  camoufox:
-    ports:
-      - "127.0.0.1:9377:9377"
-
-  mcp-websearch:
-    ports:
-      - "127.0.0.1:6003:8080"
-
   mcp-idealista:
     ports:
       - "127.0.0.1:6005:8080"
-
-  mcp-homeassistant:
-    ports:
-      - "127.0.0.1:6006:8080"
 
   mcp-channel-signalr:
     ports:
@@ -43,10 +19,6 @@ services:
     ports:
       - "127.0.0.1:6013:8080"
 
-  mcp-printer:
-    ports:
-      - "127.0.0.1:6014:8080"
-
   mcp-timers:
     ports:
       - "127.0.0.1:6016:8080"
@@ -54,14 +26,6 @@ services:
   mcp-sugary:
     ports:
       - "127.0.0.1:6017:8080"
-
-  mcp-channel-voice:
-    ports:
-      - "127.0.0.1:6015:8080"
-
-  tse-extractor:
-    ports:
-      - "127.0.0.1:9098:9098"
 
   agent:
     ports:

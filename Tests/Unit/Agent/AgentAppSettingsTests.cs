@@ -9,6 +9,8 @@ using global::Agent.Settings;
 using Infrastructure.Agents;
 using Microsoft.Extensions.Configuration;
 using Shouldly;
+using Tests.Integration.McpServers;
+using Tests.Unit.Deployment;
 
 namespace Tests.Unit.Agent;
 
@@ -248,8 +250,31 @@ public class AgentAppSettingsTests
         var jonas = BoundAgents().Single(a => a.Id == "jonas");
 
         jonas.McpServerEndpoints.ShouldContain("http://mcp-sugary:8080/mcp");
-        jonas.McpServerEndpoints.ShouldContain("http://mcp-homeassistant:8080/mcp");
+        jonas.McpServerEndpoints.ShouldContain("homeassistant");
         settings.AgentDefaults.For("sugary").ShouldBe("sugary");
+    }
+
+    // A household's server is named rather than addressed, and one no stack runs under that name is
+    // never an error: it is offline, left out of the turn and named in its context. So a misspelt
+    // name would only ever show as a context line. Every name the definitions and the channels give
+    // is a server the repo has — the one the integration suites and the eval host in its place, by the
+    // same name — and a server of the kind it is named as: tools for an agent, a channel for a channel.
+    [Fact]
+    public void EveryHouseholdServerTheDefinitionsName_IsOneTheTestStacksHostInItsPlace()
+    {
+        var hosted = McpServerRegistrations.All.ToDictionary(row => row.Id, row => row.Role);
+        McpServerRole[] tools = [McpServerRole.Tool, McpServerRole.DualRole];
+        McpServerRole[] channels = [McpServerRole.Channel, McpServerRole.DualRole];
+
+        var toolServers = ShippedAgentSettings.ToolServerNames();
+        var channelServers = ShippedAgentSettings.ChannelServerNames();
+
+        toolServers.ShouldNotBeEmpty();
+        channelServers.ShouldNotBeEmpty();
+        toolServers.Where(name => !hosted.TryGetValue(name, out var role) || !tools.Contains(role))
+            .ShouldBeEmpty("an agent names a household server no stack hosts as a tool server");
+        channelServers.Where(name => !hosted.TryGetValue(name, out var role) || !channels.Contains(role))
+            .ShouldBeEmpty("a channel names a household server no stack hosts as a channel");
     }
 
     // The app's channel is connected, and a meal sent on it is answered by the agent that estimates:

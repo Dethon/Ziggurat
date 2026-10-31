@@ -43,9 +43,9 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   registers `McpSecretGate`, an `IStartupFilter` that answers 401 ahead of routing, comparing with
   `Domain/Security/SharedSecret.cs` (the one comparison every shared-secret gate uses). A deployment
   server's settings carry `McpGateSettings Mcp`, bound from `MCP__SHAREDSECRET` — that server's own
-  credential, fed from its own compose variable (`MCP_SECRET_<SERVER>`), so holding one (the
-  sandbox's included) opens no other. A server given a tunnel (`Mcp:Tunnel`, `.claude/rules/tunnel.md`)
-  asks for its tunnel credential instead, which the relay presents — no deployment holds a household
+  credential, fed from its own compose variable (`MCP_SECRET_<SERVER>`), so holding one opens no
+  other. A server given a tunnel (`Mcp:Tunnel`, `.claude/rules/tunnel.md`) — every household server,
+  the tenant kit's sandbox among them — asks for its tunnel credential instead, which the relay presents — no deployment holds a household
   server's secret. The agent binds every server's under `Mcp:Secrets` keyed by the
   name it answers to (`MCP__SECRETS__<host>`, the same variable on both ends) and `McpCredentials` hands
   each endpoint the deployment's own settings name its server's (`AgentSpecProjection`, agents and

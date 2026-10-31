@@ -143,6 +143,19 @@ public class OutpostConfigurationTests
         Tunnel(Bind(_minimal)).ReconnectAtMost.ShouldBe(TimeSpan.FromMinutes(1));
     }
 
+    // A deployment on a certificate authority of its own — a local stack's — is trusted by an outpost
+    // told so the way any tunnelled server is told: its environment, beside the timings.
+    [Fact]
+    public void TheHubsCertificateAuthority_IsReadFromTheEnvironment()
+    {
+        var environment = new Dictionary<string, string?>(_withCredential)
+        {
+            ["Mcp:Tunnel:HubCertificateAuthority"] = "/etc/local-ca.crt"
+        };
+
+        Tunnel(Bind(_minimal, environment)).HubCertificateAuthority.ShouldBe("/etc/local-ca.crt");
+    }
+
     // A name no credential can be minted for fails at startup with a message, rather than as a tunnel
     // the relay refuses forever.
     [Theory]

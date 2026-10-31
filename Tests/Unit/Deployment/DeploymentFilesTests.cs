@@ -15,10 +15,10 @@ public class DeploymentFilesTests
         var caddy = compose.Service("caddy");
         caddy.Ports.ShouldContain(p => p.Container == "443");
 
-        var sandbox = compose.Service("mcp-sandbox");
-        sandbox.TakesWholeSecretsFile.ShouldBeFalse("the sandbox is handed its secret by name");
-        sandbox.Environment.ShouldContainKey("TZ", "a merged anchor is part of the environment");
-        sandbox.Volumes.ShouldContain(v => v.EndsWith(":/home/sandbox_user", StringComparison.Ordinal));
+        var sugary = compose.Service("mcp-sugary");
+        sugary.TakesWholeSecretsFile.ShouldBeFalse("the server is handed its secrets by name");
+        sugary.Environment.ShouldContainKey("TZ", "a merged anchor is part of the environment");
+        sugary.Volumes.ShouldContain(v => v.EndsWith(":/data", StringComparison.Ordinal));
 
         compose.Service("agent").Environment.ShouldContainKey("CORS__ALLOWEDORIGINS__0", "a list of merged anchors is read too");
         compose.Service("agent").Environment.ShouldContainKey("TZ");
@@ -34,6 +34,26 @@ public class DeploymentFilesTests
         compose.Service("agent").Networks.ShouldContain("jackbot");
         compose.Service("plex").Networks.ShouldBeEmpty("a service on the host's network is on no compose network");
         ComposeService.From("bare", new YamlDotNet.RepresentationModel.YamlMappingNode()).Networks.ShouldBe(["default"]);
+    }
+
+    // The tenant kit is read the same way, with what it is built from and the networks it declares,
+    // and anchors merged as a list.
+    [Fact]
+    public void TheKitsCompose_ReadsEachServicesBuildNetworkModeAndTheNetworksItDeclares()
+    {
+        var kit = DeploymentFiles.KitCompose();
+
+        kit.Networks.ShouldContainKey("kit");
+        kit.Networks["kit"].ShouldBeFalse("a network declared with nothing is the project's own");
+        kit.Service("mcp-vault").BuildContext.ShouldBe("${REPOSITORY_PATH}");
+        kit.Service("mcp-vault").Dockerfile.ShouldBe("McpServerVault/Dockerfile");
+        kit.Service("camoufox").Dockerfile.ShouldBe("Dockerfile", "a context with no dockerfile builds its own");
+        kit.Service("mcp-vault").Environment.ShouldContainKey("TZ");
+        kit.Service("mcp-vault").Environment.ShouldContainKey("MCP__TUNNEL__HUB", "both anchors of a merged list");
+        kit.Service("music-assistant").NetworkMode.ShouldBe("host");
+        kit.Service("redis").Image.ShouldBe("redis/redis-stack-server:latest");
+        DeploymentFiles.KitPlaceholders().ShouldContainKey("DEPLOYMENT_HOST");
+        DeploymentFiles.Variables(DeploymentFiles.KitDirectory).ShouldContain("DEPLOYMENT_HOST", "a defaulted or required ${VAR} is read too");
     }
 
     [Fact]
@@ -58,6 +78,8 @@ public class DeploymentFilesTests
         shipped.ShouldContain("DockerCompose/docker-compose.override.smoke.yml");
         shipped.ShouldContain("DockerCompose/.env");
         shipped.ShouldContain("DockerCompose/caddy/Caddyfile");
+        shipped.ShouldContain("TenantKit/docker-compose.yml");
+        shipped.ShouldContain("TenantKit/.env");
         shipped.ShouldContain("Dockerfile.base-sdk");
         shipped.ShouldContain("Accounts/Dockerfile");
         shipped.ShouldContain("Accounts/appsettings.Local.json");
@@ -66,6 +88,7 @@ public class DeploymentFilesTests
         shipped.ShouldContain("Domain/retention.json");
         shipped.ShouldNotContain(f => f.StartsWith("Tests/", StringComparison.Ordinal));
         shipped.ShouldNotContain(f => f.StartsWith("DockerCompose/volumes/", StringComparison.Ordinal));
+        shipped.ShouldNotContain(f => f.StartsWith("TenantKit/volumes/", StringComparison.Ordinal));
         shipped.ShouldNotContain(f => f.Contains("/bin/", StringComparison.Ordinal) || f.Contains("/obj/", StringComparison.Ordinal));
     }
 }

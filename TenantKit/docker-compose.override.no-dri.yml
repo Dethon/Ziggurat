@@ -1,0 +1,11 @@
+# On a host WITHOUT a /dev/dri render node (e.g. NVIDIA-only WSL2): strips the sandbox's render node,
+# which would otherwise fail its start with
+#   error gathering device information while adding custom device "/dev/dri"
+# /dev/fuse stays, or the sandbox's commands lose the session's other mounts. Apply it after the base
+# file (Compose 2.24.4+ for the merge tag):
+#
+#   docker compose -f TenantKit/docker-compose.yml -f TenantKit/docker-compose.override.no-dri.yml up -d
+services:
+  mcp-sandbox:
+    devices: !override
+      - /dev/fuse:/dev/fuse
