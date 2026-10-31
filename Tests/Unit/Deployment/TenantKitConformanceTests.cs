@@ -104,6 +104,18 @@ public class TenantKitConformanceTests
         Kit.Service(service).Environment["MCP__TUNNEL__SERVERNAME"].ShouldBe(name);
     }
 
+    // The home's agents name its servers by the names their tunnels claim: a name nothing in the kit
+    // runs is a server that is offline forever — told to every turn as a context line and nothing
+    // louder — and a server the kit runs that nothing names is a tunnel nobody uses.
+    [Fact]
+    public void TheServersTheShippedAgentsName_AreTheServersTheKitRuns()
+    {
+        var named = ShippedAgentSettings.ServerNames();
+
+        named.ShouldNotBeEmpty();
+        named.ShouldBe(TunnelledServers.Select(s => s.Environment["MCP__TUNNEL__SERVERNAME"]), ignoreOrder: true);
+    }
+
     // The kit is on networks of its own, and every address a service is told is one of the kit's own
     // services, its own loopback or the deployment's main host: the deployment's agent, accounts
     // service, Lemonade and Redis are reached through a tunnel's back-calls, never by name.

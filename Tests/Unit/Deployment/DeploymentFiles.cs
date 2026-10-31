@@ -1,3 +1,4 @@
+using Domain.DTOs.Tunnel;
 using Tests.E2E.Fixtures;
 using YamlDotNet.RepresentationModel;
 
@@ -127,10 +128,29 @@ public static class BrowseServerListeners
     }
 }
 
-// The servers the shipped agent dials: its agents', its workers' and its channels' endpoints.
+// The servers the shipped agent reaches: its agents', its workers' and its channels' endpoints — the
+// deployment's own it dials at a URL, a household's it names by the server's name.
 public static class ShippedAgentSettings
 {
-    public static IReadOnlyList<string> DialledHosts()
+    public static IReadOnlyList<string> DialledHosts() =>
+    [
+        .. Endpoints()
+            .Where(endpoint => !TunnelCredentialProtocol.IsServerName(endpoint))
+            .Select(address => new Uri(address).Host)
+            .Distinct()
+    ];
+
+    public static IReadOnlyList<string> ServerNames() =>
+        [.. Endpoints().Where(TunnelCredentialProtocol.IsServerName).Distinct()];
+
+    // A tool server's names: what the agents and workers name for their tools, not the channels.
+    public static IReadOnlyList<string> ToolServerNames() =>
+        [.. Endpoints(channels: false).Where(TunnelCredentialProtocol.IsServerName).Distinct()];
+
+    public static IReadOnlyList<string> ChannelServerNames() =>
+        [.. Endpoints(tools: false).Where(TunnelCredentialProtocol.IsServerName).Distinct()];
+
+    private static IReadOnlyList<string> Endpoints(bool tools = true, bool channels = true)
     {
         var path = Path.Combine(TestHelpers.FindSolutionRoot(), "Agent", "appsettings.json");
         using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path),
@@ -140,7 +160,7 @@ public static class ShippedAgentSettings
             });
         var root = document.RootElement;
 
-        IEnumerable<string> Endpoints(string section, string property) =>
+        IEnumerable<string> Listed(string section, string property) =>
             root.TryGetProperty(section, out var list)
                 ? list.EnumerateArray().SelectMany(item => item.TryGetProperty(property, out var value)
                     ? value.ValueKind == System.Text.Json.JsonValueKind.Array
@@ -149,14 +169,9 @@ public static class ShippedAgentSettings
                     : [])
                 : [];
 
-        return
-        [
-            .. Endpoints("agents", "mcpServerEndpoints")
-                .Concat(Endpoints("subAgents", "mcpServerEndpoints"))
-                .Concat(Endpoints("channelEndpoints", "endpoint"))
-                .Select(address => new Uri(address).Host)
-                .Distinct()
-        ];
+        IEnumerable<string> tool = tools ? [.. Listed("agents", "mcpServerEndpoints"), .. Listed("subAgents", "mcpServerEndpoints")] : [];
+        IEnumerable<string> channel = channels ? Listed("channelEndpoints", "endpoint") : [];
+        return [.. tool, .. channel];
     }
 }
 
