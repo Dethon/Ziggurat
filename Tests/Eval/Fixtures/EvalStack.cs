@@ -451,6 +451,9 @@ public sealed class EvalStack : IAsyncDisposable
             Mcp = McpTestSecret.Gate
         });
         builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
+        // A stack with no accounts service: the eval household's schedules are read in the zone the
+        // pinned clock is in, as the home's are on the deployment.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(Clock.LocalTimeZone)));
 
         var endpoint = await StartAsync(builder, port);
 

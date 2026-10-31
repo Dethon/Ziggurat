@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Mcp.Hosting;
 using McpServerScheduling.Settings;
 using Microsoft.Extensions.Hosting;
@@ -10,6 +11,7 @@ public sealed class ScheduleDispatcherService(
     IScheduleStore store,
     ICronValidator cronValidator,
     ChannelNotificationEmitter emitter,
+    IHouseholdConfiguration households,
     SchedulingSettings settings,
     ILogger<ScheduleDispatcherService> logger,
     TimeProvider timeProvider) : BackgroundService
@@ -72,9 +74,14 @@ public sealed class ScheduleDispatcherService(
         var delivered = true;
         foreach (var schedule in due)
         {
+            if (await ZoneOfAsync(schedule, ct) is not { } zone)
+            {
+                continue;
+            }
+
             var nextRun = schedule.CronExpression is null
                 ? null
-                : cronValidator.GetNextOccurrence(schedule.CronExpression, now, timeProvider.LocalTimeZone);
+                : cronValidator.GetNextOccurrence(schedule.CronExpression, now, zone);
 
             var plan = ScheduleFirePlanner.Plan(schedule, settings.Delivery.DefaultDeliverTo, nextRun, now);
 
@@ -102,6 +109,37 @@ public sealed class ScheduleDispatcherService(
         }
 
         return delivered;
+    }
+
+    // The zone a cron's next run is read in: its household's, proved by the delegation the agent signed
+    // for the schedule's last write, since a fire has no call to prove it with. A one-shot's runAt was
+    // made UTC by the write and needs none. A schedule that delegates nothing (written for nobody, or
+    // before delegations) or whose delegation no longer verifies (its key retired) has no household
+    // anyone vouches for, and is read in the server's own zone, the deployment's. Null when the
+    // accounts service cannot answer: the schedule is left due for the next tick rather than advanced
+    // on a guessed clock.
+    private async Task<TimeZoneInfo?> ZoneOfAsync(Schedule schedule, CancellationToken ct)
+    {
+        if (schedule is not { CronExpression: not null, Delegation: { } delegation, TenantId.Length: > 0 })
+        {
+            return timeProvider.LocalTimeZone;
+        }
+
+        try
+        {
+            return await CallHousehold.OfFire(schedule.TenantId, delegation, households).ZoneAsync(timeProvider.LocalTimeZone, ct);
+        }
+        catch (HouseholdConfigRefusedException ex)
+        {
+            logger.LogWarning("Schedule {ScheduleId}'s delegation proves no household ({Reason}); reading it in the server's zone",
+                schedule.Id, ex.Refusal.Reason);
+            return timeProvider.LocalTimeZone;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Could not read schedule {ScheduleId}'s household zone; leaving it due", schedule.Id);
+            return null;
+        }
     }
 
     // One warning per outage rather than one per due schedule per tick: an overnight

@@ -61,14 +61,23 @@ public sealed class HouseholdProofs
             return BadQuery("a shared server never names a household: the call token or assertion it holds does");
         }
 
-        if (query is not ({ CallToken.Length: > 0, Assertion: null } or { CallToken: null, Assertion.Length: > 0 }))
+        if (new[] { query.CallToken, query.Assertion, query.Delegation }.Count(proof => proof is not null) != 1
+            || query is { CallToken.Length: 0 } or { Assertion.Length: 0 } or { Delegation.Length: 0 })
         {
-            return BadQuery("a shared server presents a call token or an assertion, exactly one");
+            return BadQuery("a shared server presents a call token, an assertion or a schedule's delegation, exactly one");
         }
 
-        var (claims, refusal) = query.CallToken is { } token
-            ? await CallTokenAsync(token, callers, ct)
-            : await AssertionAsync(query.Assertion!, callers, ct);
+        if (query.Delegation is not null && !callers.Contains(InternalCallers.Scheduling))
+        {
+            return BadQuery("only the scheduling server proves a household with a schedule's delegation");
+        }
+
+        var (claims, refusal) = query switch
+        {
+            { CallToken: { } token } => await CallTokenAsync(token, callers, ct),
+            { Assertion: { } assertion } => await AssertionAsync(assertion, callers, ct),
+            _ => await DelegationAsync(query.Delegation!, ct)
+        };
         return claims switch
         {
             null => Unproven(refusal ?? "the proof does not verify"),
@@ -94,6 +103,19 @@ public sealed class HouseholdProofs
         }
 
         return (null, $"the call token is {refusal}");
+    }
+
+    // The agent signs one for whatever a person's turn writes; only a schedule's names a schedule's
+    // household, so a watch's or a login's handed on by the scheduling server proves nothing here.
+    private async Task<(IdentityClaims? Claims, string? Refusal)> DelegationAsync(string delegation, CancellationToken ct)
+    {
+        var verified = await _agent.VerifyAsync<Delegation>(delegation, TokenAudiences.Delegation, ct);
+        return verified switch
+        {
+            { IsVerified: false } => (null, $"the delegation is {verified.Refusal}"),
+            { Claims.Kind: DelegatedObject.Schedule } => (verified.Claims, null),
+            _ => (null, $"the delegation is for a {verified.Claims.Kind}, not a schedule")
+        };
     }
 
     private async Task<(IdentityClaims? Claims, string? Refusal)> AssertionAsync(string assertion, IReadOnlyList<string> callers, CancellationToken ct)
