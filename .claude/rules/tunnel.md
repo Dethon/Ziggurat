@@ -158,13 +158,21 @@ server name)**. Each `OpenTunnel` is one connection generation in ADR 0012's sen
 What a household's server still needs of the deployment it asks for over its own tunnel, and only
 that: a stream it opens with one of `BackCallProtocol`'s tags, carrying HTTP/1.1.
 
-| Tag | Reaches | Paths (all POST) | For |
-|---|---|---|---|
-| `accounts` | the accounts service (`Accounts:BaseUrl`) | `/accounts/internal/resolve`, `/accounts/internal/guest` | voice's speakers and guest |
-| `topics` | the agent's own `TopicMinting.Path` | `/internal/topics` | voice's topics |
-| `lemonade` | the shared Lemonade (`backCalls:lemonadeUrl`) | `/v1/audio/transcriptions`, `/v1/audio/speech` | voice's STT and TTS |
-| `vfs-bridge` | the agent's own exec bridge | under `/api/vfs-bridge/` | the sandbox's FUSE daemon |
-| `metrics` | the relay itself | `BackCallProtocol.MetricsPath` (`/events`) | any server's metric events |
+| Tag | From (server name) | Reaches | Paths (all POST) | For |
+|---|---|---|---|---|
+| `accounts` | `voice` only | the accounts service (`Accounts:BaseUrl`) | `/accounts/internal/resolve`, `/accounts/internal/guest` | voice's speakers and guest |
+| `topics` | `voice` only | the agent's own `TopicMinting.Path` | `/internal/topics` | voice's topics |
+| `lemonade` | `voice` only | the shared Lemonade (`backCalls:lemonadeUrl`) | `/v1/audio/transcriptions`, `/v1/audio/speech` | voice's STT and TTS |
+| `vfs-bridge` | `sandbox` only | the agent's own exec bridge | under `/api/vfs-bridge/` | the sandbox's FUSE daemon |
+| `metrics` | any but an outpost | the relay itself | `BackCallProtocol.MetricsPath` (`/events`) | any server's metric events |
+
+**A back-call is for the servers that make it**, by the server name the tunnel's credential was
+minted for (`HouseholdServerNames.Voice`/`.Sandbox`; an outpost is `outpost-<NAME>`, which publishes
+no metrics). The accounts back-call mints a signed voice assertion for any person of the household by
+user id, and topics are minted on such assertions, so a household's printer, vault or library, or an
+outpost on a member's laptop, holding only its own credential must not reach them; nor voice the
+bridge. A new back-call, or a server that comes to need one, names its server here and in
+`BackCallTargets`.
 
 - **The server's end is a loopback port per back-call.** `MCP__TUNNEL__BACKCALLS__<tag>=<port>`
   (`TunnelSettings.BackCalls`): `BackCallForwarders` listens on `127.0.0.1:<port>` and turns every
@@ -181,7 +189,8 @@ that: a stream it opens with one of `BackCallProtocol`'s tags, carrying HTTP/1.1
   of ours; the tunnel rides on every connection as the `BackCallOrigin` feature. It is not the agent's
   Kestrel because a listener added in code replaces the agent's configured ones rather than joining
   them. A stream with another tag is reset; a request that is not a POST to its tag's paths (a `..`
-  in a bridge path included) is answered 403; both are logged and reported (`ErrorEvent`, `Service`
+  in a bridge path included), or that comes from a server its tag is not for, is answered 403; both
+  are logged and reported (`ErrorEvent`, `Service`
   `agent`, `ErrorType` `BackCallRefused`, naming the server and its household, never the credential).
 - **Every back-call it lets through says who asked**: `X-Ziggurat-Back-Call-Household` and
   `X-Ziggurat-Back-Call-Server`, from the tunnel's verified credential, after removing every header
@@ -193,7 +202,9 @@ that: a stream it opens with one of `BackCallProtocol`'s tags, carrying HTTP/1.1
   passes through in `Authorization`; topic minting still trusts only the accounts service's assertion.
   **The accounts back-call is shown the tunnel's own credential**: the relay replaces `Authorization`
   with the credential the tunnel was opened with, and the accounts service reads who asks off that
-  live credential itself (`InternalCallers.HouseholdServer`, accounts.md) — so a tunnelled voice holds
+  live credential itself (`InternalCallers.HouseholdServer`, accounts.md), admitting a credential
+  minted for `voice` alone and answering any other live one 403 rather than trusting the relay's
+  allowlist to be the only gate — so a tunnelled voice holds
   no deployment secret (its resolver presents an empty one, which is replaced), no header is believed
   by a service every compose container can reach, and the household it may ask about is the
   credential's. The relay's own `CALLERS__agent` is not lent out: SexyTime's server holds that too.

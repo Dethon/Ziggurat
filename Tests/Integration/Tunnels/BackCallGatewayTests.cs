@@ -4,6 +4,7 @@ using System.Text;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Tunnel;
+using Domain.Outposts;
 using Domain.Security;
 using Domain.Security.Signing;
 using Infrastructure.Clients.Accounts;
@@ -163,6 +164,35 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _relay.Reached.ShouldBeEmpty();
         Refusals().ShouldHaveSingleItem().ShouldSatisfyAllConditions(
             m => m.ShouldContain("'voice'"), m => m.ShouldContain(_home), m => m.ShouldContain("/" + path));
+    }
+
+    // A back-call is for the server that makes it: a household's printer, vault or library — or an
+    // outpost on a member's laptop — holding its own credential would otherwise mint voice assertions
+    // for anybody in its household, topics as them, or speech on the deployment's Lemonade; voice would
+    // reach the exec bridge; an outpost, which publishes nothing, would write onto the feed.
+    public static TheoryData<string, string, string> OtherServers => new()
+    {
+        { "vault", BackCallProtocol.Accounts, "accounts/internal/guest" },
+        { OutpostServerName.For("laptop"), BackCallProtocol.Accounts, "accounts/internal/resolve" },
+        { "printer", BackCallProtocol.Topics, TopicMinting.Path.TrimStart('/') },
+        { "library", BackCallProtocol.Lemonade, "v1/audio/speech" },
+        { HouseholdServerNames.Voice, BackCallProtocol.VfsBridge, $"{BackCallTargets.BridgeRoute.TrimStart('/')}/read?path=/notes/todo.md" },
+        { OutpostServerName.For("laptop"), BackCallProtocol.Metrics, BackCallProtocol.MetricsPath.TrimStart('/') }
+    };
+
+    [Theory]
+    [MemberData(nameof(OtherServers))]
+    public async Task ABackCallFromAServerItIsNotFor_IsRefusedAndReported(string serverName, string tag, string path)
+    {
+        var port = await ServerOfAsync(_home, serverName, tag);
+        using var http = new HttpClient { BaseAddress = Loopback(port) };
+
+        using var response = await http.PostAsync(path, new StringContent("{\"channel\":\"voice\"}"));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        _relay.Reached.ShouldBeEmpty();
+        Refusals().ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            m => m.ShouldContain($"'{serverName}'"), m => m.ShouldContain(_home), m => m.ShouldContain($"'{tag}'"));
     }
 
     // A server configured with a back-call the deployment does not offer opens a stream nobody takes.

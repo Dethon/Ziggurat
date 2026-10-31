@@ -320,6 +320,23 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
         (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("tenantId").GetString().ShouldBe(household);
     }
 
+    // Only the household's voice server speaks for its people, whatever the relay lets through: a
+    // printer's, vault's or outpost's live credential asks nothing here.
+    [Theory]
+    [InlineData("vault", "accounts/internal/guest")]
+    [InlineData("outpost-laptop", "accounts/internal/resolve")]
+    public async Task AHouseholdsOtherServer_Is403(string serverName, string path)
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var other = await server.MintTunnelCredentialAsync(fran.TenantId, serverName);
+
+        var response = await InternalAsync(
+            server, path, new { channel = "voice", identity = fran.UserId }, other.Credential);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
     // Revoking a credential closes the tunnel it opened and its back-calls with it, and one that still
     // arrived is nobody's.
     [Fact]
