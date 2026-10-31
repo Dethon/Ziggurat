@@ -1,4 +1,5 @@
 using System.Net;
+using Domain.DTOs.Tunnel;
 using Domain.Exceptions;
 
 namespace Infrastructure.Clients.Voice;
@@ -14,6 +15,19 @@ public static class VoiceHubHttp
     // timers server's DI). Created fresh per send so the factory's handler rotation keeps working
     // even though the adapters themselves are singletons.
     public const string ClientName = "voice-hub";
+
+    // What every request to the hub says about itself: the deployment's announce token, which a hub
+    // dialled directly asks for, and the household it is for, which the relay reaches that
+    // household's voice server by and withholds, as it withholds the token. A hub dialled directly
+    // (the eval's, a test's) is one household's and ignores the header.
+    public static void Address(HttpRequestMessage message, string token, string? household)
+    {
+        message.Headers.Add("X-Announce-Token", token);
+        if (household is not null)
+        {
+            message.Headers.Add(RelayedCallProtocol.HouseholdHeader, household);
+        }
+    }
 
     public static async Task<HttpResponseMessage> SendAsync(
         IHttpClientFactory factory, HttpRequestMessage message, CancellationToken ct)
