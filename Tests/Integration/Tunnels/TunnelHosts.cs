@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Net;
 using Agent.App;
 using Agent.Modules;
@@ -12,6 +14,7 @@ using Mcp.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Server;
 using StackExchange.Redis;
 using Tests.Integration.Fixtures;
 using Tests.Integration.McpServers;
@@ -96,7 +99,8 @@ internal sealed class TunnelledServer : IAsyncDisposable
                     ReconnectAtMost = TimeSpan.FromMilliseconds(200)
                 }
             }))
-            .WithTools<CallTokenGateTests.WhoTools>();
+            .WithTools<CallTokenGateTests.WhoTools>()
+            .WithTools<WaitTools>();
         var app = builder.Build();
         app.MapMcp("/mcp");
         await app.StartAsync();
@@ -107,5 +111,24 @@ internal sealed class TunnelledServer : IAsyncDisposable
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
+    }
+
+    // A call that stays in flight until its caller gives up, so a test can drop the tunnel under it.
+    // Each call names itself, so a test knows its own call has reached the server.
+    [McpServerToolType]
+    public sealed class WaitTools
+    {
+        private static readonly ConcurrentDictionary<string, bool> _waiting = new();
+
+        public static bool IsWaiting(string call) => _waiting.ContainsKey(call);
+
+        [McpServerTool(Name = "wait")]
+        [Description("Waits until the call is cancelled.")]
+        public static async Task<string> Wait(string call, CancellationToken ct)
+        {
+            _waiting[call] = true;
+            await Task.Delay(Timeout.Infinite, ct);
+            return call;
+        }
     }
 }

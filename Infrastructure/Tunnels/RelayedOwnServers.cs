@@ -10,5 +10,5 @@ public sealed class RelayedOwnServers(TunnelRegistry registry) : IOwnServers
     public McpServerEndpoint? Resolve(string? tenantId, string serverName) =>
         tenantId is null || registry.Find(tenantId, serverName) is not { IsOpen: true } tunnel
             ? null
-            : McpServerEndpoint.Relayed(tunnel.Address, tunnel.Client);
+            : McpServerEndpoint.Relayed(tunnel.Address, tunnel.Client, tunnel.Generation, tunnel.Closed);
 }

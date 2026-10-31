@@ -47,7 +47,8 @@ public static class TurnDecoration
         var sender = message.GetSenderId();
         var timestamp = message.GetTimestamp();
         var dismissedAlert = message.GetDismissedAlert();
-        if (sender is null && timestamp is null && dismissedAlert is null)
+        var offline = message.GetOfflineServers();
+        if (sender is null && timestamp is null && dismissedAlert is null && offline is null)
         {
             return null;
         }
@@ -65,10 +66,17 @@ public static class TurnDecoration
             _ => ""
         };
 
-        return string.IsNullOrWhiteSpace(dismissedAlert)
+        var alerted = string.IsNullOrWhiteSpace(dismissedAlert)
             ? prefix
             : $"[The user just dismissed the {dismissedAlert}]\n{prefix}";
+        return offline is { Count: > 0 } ? $"{OfflineLine(offline)}\n{alerted}" : alerted;
     }
+
+    // One line, so the model can say which of the household's machines is off instead of looking for
+    // tools it was never given or answering as if they had come back empty.
+    public static string OfflineLine(IReadOnlyList<string> serverNames) =>
+        $"[Offline household servers: {string.Join(", ", serverNames)}. Their tools are missing this turn; " +
+        "tell the user if the request needs them]";
 
     // The room and the satellite qualify the sender, so neither is rendered without one.
     private static string? BuildSenderSegment(ChatMessage message, string? sender)
