@@ -215,8 +215,9 @@ bridge. A new back-call, or a server that comes to need one, names its server he
   (`HttpMetricSink`, the feed's JSON) instead of publishing onto Redis (`AddMetricsPublishing(name,
   feed)`), so voice opens no Redis connection at all; the relay reads the event (64 KiB at most, a
   `MetricEvent` or 400) and publishes it through its own publisher with `Origin` set to the server's
-  synthetic address. Two households' servers of one service still share a heartbeat's `Service` on
-  the dashboard's roster; telling them apart there is 4b's.
+  synthetic address and `TenantId` to the tunnel's household, both over whatever the server said.
+  The dashboard keys roll-ups and heartbeats by that household (`.claude/rules/observability.md`,
+  "Households"), so two households' servers of one service are two tiles.
 - **Tested at the round trip** (`BackCallGatewayTests`: each back-call through a real server's port and
   a real relay, reading what the target saw; `SandboxOverTunnelE2ETests`: the sandbox image tunnelled,
   a command's `cat` and `>` on another mount through its bridge back-call).

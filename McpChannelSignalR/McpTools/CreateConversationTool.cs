@@ -21,7 +21,7 @@ public sealed class CreateConversationTool
         [Description("Text of the originating prompt; rendered as the user-role bubble")] string? initialPrompt = null,
         [Description("Unused on this channel; voice uses it for satellite targeting")] string? address = null,
         [Description("Existing conversation id: attaches this turn to it instead of creating a topic. With a topic name it is a later target of a fan-out, and a topic is minted over it if none holds it; without one it is the turn-start announce")] string? existingConversationId = null,
-        [Description("Who the turn acts for: a topic minted for it is that account's, or the household's when it acts for none")] Principal? principal = null,
+        [Description("Who the turn acts for: a topic minted for it is that account's; one for a turn acting for no account records no household, and nobody sees it")] Principal? principal = null,
         [Description("The conversation is several people's, a group chat: a topic minted for it is the household's whoever's turn it shows")] bool group = false)
     {
         // Whose a minted topic is comes from the turn it shows, decided here: the channel that asked

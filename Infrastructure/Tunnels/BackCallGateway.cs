@@ -129,7 +129,8 @@ public sealed class BackCallGateway(
     }
 
     // The relay publishes it onto the feed itself, as the server's own: a household's server reaches
-    // no deployment database. Origin is the relay's to say, never the event's.
+    // no deployment database. Origin and the household it counts against are the relay's to say,
+    // from the tunnel's verified credential, never the event's.
     private async Task PublishAsync(HttpContext http, OpenTunnel tunnel)
     {
         MetricEvent? published = null;
@@ -154,7 +155,7 @@ public sealed class BackCallGateway(
             return;
         }
 
-        metrics.Publish(published with { Origin = tunnel.Address.Name });
+        metrics.Publish(published with { Origin = tunnel.Address.Name, TenantId = tunnel.TenantId });
         http.Response.StatusCode = StatusCodes.Status202Accepted;
     }
 

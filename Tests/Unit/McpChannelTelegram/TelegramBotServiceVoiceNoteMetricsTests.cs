@@ -53,6 +53,19 @@ public class TelegramBotServiceVoiceNoteMetricsTests : IDisposable
         Published(VoiceMetric.UtteranceTranscribed).ShouldHaveSingleItem().Outcome.ShouldBe("rejected");
     }
 
+    // The voice note is heard by the shared Lemonade for the household of the account its sender is
+    // linked to, and what it records about it is that household's too.
+    [Fact]
+    public async Task ADictation_IsTranscribedAndRecordedForTheSendersHousehold()
+    {
+        _harness.Transcriber.Result = new() { Text = "hola" };
+
+        await DriveAsync();
+
+        _harness.Transcriber.Requests.ShouldHaveSingleItem().TenantId.ShouldBe(FakeTelegramAccounts.Household);
+        Published(VoiceMetric.UtteranceTranscribed).ShouldHaveSingleItem().TenantId.ShouldBe(FakeTelegramAccounts.Household);
+    }
+
     public void Dispose() => _harness.Dispose();
 
     private IReadOnlyList<VoiceEvent> Published(VoiceMetric metric) =>

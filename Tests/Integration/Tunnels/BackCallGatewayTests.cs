@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Tunnel;
 using Domain.Outposts;
 using Domain.Security;
@@ -123,6 +124,19 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _metrics.Published.OfType<HeartbeatEvent>().ShouldHaveSingleItem().ShouldSatisfyAllConditions(
             e => e.Service.ShouldBe("a-household-server"),
             e => e.Origin.ShouldBe(ServerAddress.Tunnelled(_home, serverName).Name));
+    }
+
+    // A kit server's events count against the household its tunnel's credential names, never the one
+    // it says, so one household cannot bill its speech to another.
+    [Fact]
+    public async Task AMetricEventClaimingAnotherHousehold_CountsAgainstTheTunnelsOwn()
+    {
+        var port = await ServerOfAsync(_home, HouseholdServerNames.Voice, BackCallProtocol.Metrics);
+        var sink = new HttpMetricSink(new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}{BackCallProtocol.MetricsPath}") });
+
+        await sink.SendAsync(new LemonadeUsageEvent { Use = LemonadeUse.Speech, Amount = 12, TenantId = "somebody-else" });
+
+        _metrics.Published.OfType<LemonadeUsageEvent>().ShouldHaveSingleItem().TenantId.ShouldBe(_home);
     }
 
     // The sandbox's FUSE daemon asks the bridge one operation per request, with the exec's call token

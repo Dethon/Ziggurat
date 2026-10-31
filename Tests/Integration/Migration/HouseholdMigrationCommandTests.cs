@@ -1,14 +1,23 @@
+using System.Text.Json;
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
+using Domain.Metrics;
 using Infrastructure.Memory;
 using Infrastructure.StateManagers;
 using McpServerSugary.Store;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Observability.Hubs;
+using Observability.Services;
 using Shouldly;
+using StackExchange.Redis;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Migration;
@@ -132,14 +141,40 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         var (fran, ana) = (Fran(), Ana());
         var push = new RedisPushSubscriptionStore(redis.Connection);
         var phone = new PushSubscriptionDto($"https://push.example/{_tag}", "p256dh", "auth");
-        await push.SaveAsync(fran.WebChat, phone, $"kitchen-{_tag}");
+        await BeforeHouseholds.PhoneAsync(redis.Connection.GetDatabase(), fran.WebChat, phone, $"kitchen-{_tag}");
 
         var (exit, output) = await RunAsync(rig, fran, ana);
 
         exit.ShouldBe(0, output);
-        var franId = (await rig.AccountOfAsync(fran.TelegramId)).UserId;
-        (await push.GetBySpaceAsync($"kitchen-{_tag}")).ShouldBe([(franId, phone)]);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        (await push.GetBySpaceAsync(franAccount.TenantId, $"kitchen-{_tag}")).ShouldBe([(franAccount.UserId, phone)]);
         (await push.GetAllAsync()).ShouldNotContain(s => s.UserId == fran.WebChat);
+    }
+
+    // A space is the household's now, and so are the phones that hear of it: a phone already under
+    // its person's account, in a space every household shared, joins the home household's space.
+    [Fact]
+    public async Task ASpacesPhones_AreTheHomeHouseholdsSpacesPhones()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var push = new RedisPushSubscriptionStore(redis.Connection);
+        var phone = new PushSubscriptionDto($"https://push.example/space-{_tag}", "p256dh", "auth");
+        var elsewhere = new Account($"elsewhere{_tag}", $"laura{_tag}");
+        var hers = new PushSubscriptionDto($"https://push.example/elsewhere-{_tag}", "p256dh", "auth");
+        await push.SaveAsync(elsewhere, hers, $"porch-{_tag}");
+
+        var (first, _) = await RunAsync(rig, fran, ana);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        await BeforeHouseholds.PhoneAsync(db, franAccount.UserId, phone, $"porch-{_tag}");
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        first.ShouldBe(0);
+        exit.ShouldBe(0, output);
+        (await push.GetBySpaceAsync(franAccount.TenantId, $"porch-{_tag}")).ShouldBe([(franAccount.UserId, phone)]);
+        (await push.GetBySpaceAsync(elsewhere.TenantId, $"porch-{_tag}")).ShouldBe([(elsewhere.UserId, hers)]);
+        (await db.KeyExistsAsync($"push:space:porch-{_tag}")).ShouldBeFalse();
     }
 
     [Fact]
@@ -147,22 +182,49 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     {
         await using var rig = await MigrationRig.StartAsync(redis, Dimension);
         var (fran, ana) = (Fran(), Ana());
-        var schedules = new RedisScheduleStore(redis.Connection);
-        var byTelegram = await schedules.CreateAsync(Schedule(new Principal("telegram", fran.Telegram)));
-        var byChatClient = await schedules.CreateAsync(Schedule(new Principal("signalr", ana.WebChat.ToUpperInvariant())));
-        var byGuest = await schedules.CreateAsync(Schedule(new Principal("voice", "household")));
-        var fromBefore = await schedules.CreateAsync(Schedule(null));
+        var db = redis.Connection.GetDatabase();
+        var byTelegram = await BeforeHouseholds.ScheduleAsync(db, Schedule(new Principal("telegram", fran.Telegram)));
+        var byChatClient = await BeforeHouseholds.ScheduleAsync(db, Schedule(new Principal("signalr", ana.WebChat.ToUpperInvariant())));
+        var byGuest = await BeforeHouseholds.ScheduleAsync(db, Schedule(new Principal("voice", "household")));
+        var fromBefore = await BeforeHouseholds.ScheduleAsync(db, Schedule(null));
 
         var (exit, output) = await RunAsync(rig, fran, ana);
 
         exit.ShouldBe(0, output);
         var franAccount = await rig.AccountOfAsync(fran.TelegramId);
         var anaAccount = await rig.AccountOfAsync(ana.TelegramId);
-        (await schedules.GetAsync(byTelegram.Id))!.CreatedBy.ShouldBe(new Principal("telegram", fran.Telegram, franAccount));
-        (await schedules.GetAsync(byChatClient.Id))!.CreatedBy.ShouldBe(new Principal("signalr", anaAccount.UserId, anaAccount));
-        (await schedules.GetAsync(byGuest.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
-        (await schedules.GetAsync(fromBefore.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
-        (await schedules.GetAsync(fromBefore.Id))!.Prompt.ShouldBe(fromBefore.Prompt);
+        var home = franAccount.TenantId;
+        var schedules = new RedisScheduleStore(redis.Connection);
+        (await schedules.GetAsync(home, byTelegram.Id))!.CreatedBy.ShouldBe(new Principal("telegram", fran.Telegram, franAccount));
+        (await schedules.GetAsync(home, byChatClient.Id))!.CreatedBy.ShouldBe(new Principal("signalr", anaAccount.UserId, anaAccount));
+        (await schedules.GetAsync(home, byGuest.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
+        (await schedules.GetAsync(home, fromBefore.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
+        (await schedules.GetAsync(home, fromBefore.Id))!.Prompt.ShouldBe(fromBefore.Prompt);
+    }
+
+    // The deployment's schedules were all the home household's, so each is moved under it as it was —
+    // still due when it was due — and nothing is left under the shape from before households.
+    [Fact]
+    public async Task ASchedule_IsKeptUnderTheHomeHousehold_AndStillComesDue()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var bins = await BeforeHouseholds.ScheduleAsync(db,
+            Schedule(new Principal("telegram", fran.Telegram)) with { NextRunAt = DateTime.UtcNow.AddMinutes(-1) });
+        var schedules = new RedisScheduleStore(redis.Connection);
+        var elsewhere = await schedules.CreateAsync(Schedule(null) with { TenantId = $"elsewhere{_tag}" });
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var home = (await rig.AccountOfAsync(fran.TelegramId)).TenantId;
+        (await schedules.ListAsync(home)).Where(s => s.Prompt.EndsWith(_tag, StringComparison.Ordinal))
+            .Select(s => (s.Id, s.TenantId, s.Prompt)).ShouldBe([(bins.Id, home, bins.Prompt)]);
+        (await schedules.GetDueSchedulesAsync(DateTime.UtcNow)).ShouldContain(s => s.Id == bins.Id && s.TenantId == home);
+        (await db.KeyExistsAsync($"schedule:{bins.Id}")).ShouldBeFalse();
+        (await db.SetContainsAsync("schedules", bins.Id)).ShouldBeFalse();
+        (await schedules.GetAsync(elsewhere.TenantId, elsewhere.Id)).ShouldBe(elsewhere);
     }
 
     [Fact]
@@ -183,22 +245,62 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         exit.ShouldBe(0, output);
         var franAccount = await rig.AccountOfAsync(fran.TelegramId);
         var anaAccount = await rig.AccountOfAsync(ana.TelegramId);
-        (await threads.GetTopicAsync(anasTopic.AgentId, anasTopic.ChatId, anasTopic.TopicId)).ShouldBe(anasTopic with
+        var home = franAccount.TenantId;
+        (await threads.GetTopicAsync(home, anasTopic.AgentId, anasTopic.ChatId, anasTopic.TopicId)).ShouldBe(anasTopic with
         {
             OwnerId = anaAccount.UserId,
             TenantId = anaAccount.TenantId,
             Shared = true,
             OwnerName = ana.Name
         });
-        (await threads.GetTopicAsync(guestsTopic.AgentId, guestsTopic.ChatId, guestsTopic.TopicId)).ShouldBe(guestsTopic with
+        (await threads.GetTopicAsync(home, guestsTopic.AgentId, guestsTopic.ChatId, guestsTopic.TopicId)).ShouldBe(guestsTopic with
         {
             OwnerId = franAccount.UserId,
             TenantId = franAccount.TenantId,
             Shared = true
         });
-        (await threads.GetTopicAsync(someonesPrivate.AgentId, someonesPrivate.ChatId, someonesPrivate.TopicId))
+        (await threads.GetTopicAsync("home", someonesPrivate.AgentId, someonesPrivate.ChatId, someonesPrivate.TopicId))
             .ShouldBe(someonesPrivate);
-        (await threads.GetTopicAsync(aGroupsCopy.AgentId, aGroupsCopy.ChatId, aGroupsCopy.TopicId)).ShouldBe(aGroupsCopy);
+        (await threads.GetTopicAsync("home", aGroupsCopy.AgentId, aGroupsCopy.ChatId, aGroupsCopy.TopicId)).ShouldBe(aGroupsCopy);
+    }
+
+    // The deployment's topics were all the home household's, so each is moved under it as it was: still
+    // listed in its space, still found by what was said in it, its conversation still leading to it —
+    // and the search index from before households, which had no household to filter on, is gone.
+    // Another household's topic is nothing this run touches.
+    [Fact]
+    public async Task ATopic_IsListedAndSearchedInTheHomeHousehold_AndItsConversationStillLeadsToIt()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var threads = new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System);
+        await BeforeHouseholds.SearchIndexAsync(db);
+        var quince = await TopicAsync(threads, firstSender: ana.WebChat, text: $"quince{_tag} jelly");
+        var elsewhere = new TopicMetadata(Guid.NewGuid().ToString("N"), Random.Shared.NextInt64(1, long.MaxValue), 1,
+            "jonas", $"Topic {_tag}", DateTimeOffset.UtcNow, null, TenantId: $"elsewhere{_tag}", Shared: true);
+        await threads.SaveTopicAsync(elsewhere);
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        var franSees = new TopicViewer(franAccount.UserId, franAccount.TenantId);
+        var held = (await threads.GetTopicByChatIdAndThreadIdAsync(quince.AgentId, quince.ChatId, quince.ThreadId))
+            .ShouldNotBeNull();
+        held.TenantId.ShouldBe(franAccount.TenantId);
+        IReadOnlyList<TopicMetadata> found = [];
+        await Eventually.Until(
+            async () => (found = (await threads.SearchTopicsAsync("jonas", "default", franSees, $"quince{_tag}", null, 10)).Topics)
+                .Count > 0,
+            "the moved topic to be indexed");
+        found.Select(t => t.TopicId).ShouldBe([quince.TopicId]);
+        (await threads.GetTopicPageAsync("jonas", "default", franSees, null, 500)).Topics
+            .ShouldContain(t => t.TopicId == quince.TopicId);
+        (await db.KeyExistsAsync($"topic:jonas:{quince.ChatId}:{quince.TopicId}")).ShouldBeFalse();
+        (await db.KeyExistsAsync($"topicdoc:jonas:{quince.ChatId}:{quince.TopicId}")).ShouldBeFalse();
+        ((RedisResult[])(await db.ExecuteAsync("FT._LIST"))!).Select(i => i.ToString()).ShouldNotContain("idx:topics");
+        (await threads.GetTopicAsync(elsewhere.TenantId!, "jonas", elsewhere.ChatId, elsewhere.TopicId)).ShouldBe(elsewhere);
     }
 
     [Fact]
@@ -248,6 +350,43 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         await using var his = rig.SugaryOf(franAccount);
         (await his.Meals.CountAsync()).ShouldBe(0);
         (await his.Foods.Select(f => f.Name).ToListAsync()).ShouldBe(["Pan de molde"]);
+    }
+
+    // The collector keys by household from the deploy on, so the day of the deploy is in both shapes
+    // when the run comes: what the dashboard counted before is the home's, added to what it counted since.
+    [Fact]
+    public async Task TheRollUpsFromBeforeHouseholds_AreTheHomeHouseholds_AddedToWhatItCountedSince()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        (await RunAsync(rig, fran, ana)).Exit.ShouldBe(0);
+        var home = (await rig.AccountOfAsync(fran.TelegramId)).TenantId;
+        var day = Day();
+        var db = redis.Connection.GetDatabase();
+        var collector = new MetricsCollectorService(
+            redis.Connection, Mock.Of<IHubContext<MetricsHub>>(h => h.Clients.All == Mock.Of<IClientProxy>()),
+            NullLogger<MetricsCollectorService>.Instance);
+        await SeedLegacyRollUpsAsync(day, input: 100, error: $"Vault gone {_tag}");
+        await collector.ProcessEventAsync(
+            new TokenUsageEvent
+            {
+                Sender = "fran", Model = "z-ai/glm-5", InputTokens = 20, OutputTokens = 0, Cost = 0m,
+                TenantId = home, Timestamp = Noon(day)
+            },
+            db);
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        output.ShouldContain("Metric roll-ups");
+        var query = new MetricsQueryService(redis.Connection);
+        (await query.GetSummaryAsync(day, day, home)).InputTokens.ShouldBe(120);
+        (await query.GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, day, day, home))
+            .Select(e => e.InputTokens).ShouldBe([100, 20], ignoreOrder: true);
+        (await query.GetRecentErrorsAsync(household: home)).ShouldContain(e => e.Message == $"Vault gone {_tag}");
+        (await query.GetHouseholdsAsync()).ShouldContain(home);
+        (await db.KeyExistsAsync(LegacyKey("totals", day))).ShouldBeFalse();
+        (await db.KeyTimeToLiveAsync(MetricKeys.Daily(MetricKeys.Tokens, home, day))).ShouldNotBeNull();
     }
 
     [Fact]
@@ -305,15 +444,46 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         (await SnapshotAsync(rig)).ShouldBe(before);
     }
 
+    // The dashboard's lists as the collector kept them before households: one set for everybody.
+    private async Task SeedLegacyRollUpsAsync(DateOnly day, int input, string error)
+    {
+        var db = redis.Connection.GetDatabase();
+        var usage = new TokenUsageEvent
+        {
+            Sender = "fran", Model = "z-ai/glm-5", InputTokens = input, OutputTokens = 0, Cost = 0m, Timestamp = Noon(day)
+        };
+        await db.SortedSetAddAsync(
+            LegacyKey("tokens", day), JsonSerializer.Serialize<MetricEvent>(usage, _metricJson),
+            usage.Timestamp.ToUnixTimeMilliseconds());
+        await db.KeyExpireAsync(LegacyKey("tokens", day), TimeSpan.FromDays(30));
+        await db.HashIncrementAsync(LegacyKey("totals", day), "tokens:input", input);
+        await db.KeyExpireAsync(LegacyKey("totals", day), TimeSpan.FromDays(30));
+        await db.ListLeftPushAsync(
+            MetricKeys.LegacyRecentErrors,
+            JsonSerializer.Serialize<MetricEvent>(
+                new ErrorEvent { Service = "agent", ErrorType = "Gone", Message = error, Timestamp = Noon(day) },
+                _metricJson));
+    }
+
+    private static readonly JsonSerializerOptions _metricJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    private static string LegacyKey(string family, DateOnly day) => $"metrics:{family}:{day:yyyy-MM-dd}";
+
+    // A day of the class's own, so two tests' roll-ups never fall on one key.
+    private static DateOnly Day() => new DateOnly(2026, 1, 1).AddDays(Random.Shared.Next(0, 3000));
+
+    private static DateTimeOffset Noon(DateOnly day) => new(day.ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero);
+
     private async Task SeedEverythingAsync(MigrationRig rig, Person fran, Person ana)
     {
+        await SeedLegacyRollUpsAsync(Day(), input: 7, error: $"Printer jammed {_tag}");
         await Memories().StoreAsync(Memory(fran.Telegram, $"Likes game meat {_tag}", [1, 0, 0, 0]));
         await Memories().StoreAsync(Memory("household", $"The cat is called Mus {_tag}", [1, 1, 0, 0]));
         await new RedisPersonStateStore(redis.Connection, MigrationRig.StateKey)
             .SaveAsync(fran.Name, new PersonState("{}", []));
-        await new RedisPushSubscriptionStore(redis.Connection)
-            .SaveAsync(ana.WebChat, new PushSubscriptionDto($"https://push.example/{_tag}", "p", "a"));
-        await new RedisScheduleStore(redis.Connection).CreateAsync(Schedule(new Principal("telegram", fran.Telegram)));
+        await BeforeHouseholds.PhoneAsync(
+            redis.Connection.GetDatabase(), ana.WebChat, new PushSubscriptionDto($"https://push.example/{_tag}", "p", "a"));
+        await BeforeHouseholds.ScheduleAsync(redis.Connection.GetDatabase(), Schedule(new Principal("telegram", fran.Telegram)));
         await TopicAsync(
             new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System), ana.WebChat);
         Directory.CreateDirectory(Path.Combine(rig.Voices, fran.Voice));
@@ -392,20 +562,21 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     // A topic whose conversation began with a message the chat client stamped with whatever name its
     // picker sent, as every message did before accounts.
     private async Task<TopicMetadata> TopicAsync(
-        RedisThreadStateStore threads, string firstSender, Func<TopicMetadata, TopicMetadata>? owned = null)
+        RedisThreadStateStore threads, string firstSender, Func<TopicMetadata, TopicMetadata>? owned = null,
+        string? text = null)
     {
         var now = DateTimeOffset.UtcNow;
         var topic = new TopicMetadata(
             Guid.NewGuid().ToString("N"), Random.Shared.NextInt64(1, long.MaxValue), Random.Shared.NextInt64(1, 1_000_000),
             "jonas", $"Topic {_tag}", now, now, "default");
         topic = owned?.Invoke(topic) ?? topic;
-        await threads.SaveTopicAsync(topic);
+        await BeforeHouseholds.TopicAsync(redis.Connection.GetDatabase(), topic, text);
         var first = new ChatMessage(ChatRole.User, "What's for dinner?");
         first.SetSenderId(firstSender);
         await threads.AppendMessagesAsync(
             new AgentKey($"{topic.ChatId}:{topic.ThreadId}", topic.AgentId).ToString(),
             [first, new ChatMessage(ChatRole.Assistant, "Pasta.")]);
-        return (await threads.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId))!;
+        return topic;
     }
 
     private static object Entry(Person p, params string[] oldNames) => new

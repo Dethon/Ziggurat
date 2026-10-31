@@ -2,10 +2,13 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Monitor;
 using Domain.Security;
 using Domain.Security.Signing;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -83,6 +86,24 @@ public class ChatMonitorAssertionTests
         await run.MonitorAsync();
 
         run.Factory.Created.ShouldHaveSingleItem().TenantId.ShouldBe(Household);
+    }
+
+    // What the turn cost the household in time is its own: the dashboard reads the first reply's
+    // latency per household as it reads the agent's tokens.
+    [Fact]
+    public async Task ATurnsFirstReplyLatency_CountsAgainstTheHouseholdItsAssertionNames()
+    {
+        var run = new Run(replies: [new AgentResponseUpdate { Contents = [new TextContent("hola")] }]);
+        run.Channel.WriteMessage(Message() with
+        {
+            Principal = new Principal(ChatChannel, _fran.UserId, _fran),
+            Assertion = TestAssertions.Of(_fran, ChatChannel)
+        });
+
+        await run.MonitorAsync();
+
+        run.Published.OfType<LatencyEvent>().Where(e => e.Stage == LatencyStage.FirstReply)
+            .ShouldHaveSingleItem().TenantId.ShouldBe(Household);
     }
 
     public static TheoryData<string, string?> Unbelievable => new()
@@ -214,11 +235,13 @@ public class ChatMonitorAssertionTests
         private readonly AssertionVerifier _verifier;
         private readonly List<MetricEvent> _published = [];
 
-        public Run(string channel = ChatChannel, AssertionVerifier? verifier = null, Func<CancellationToken, Task>? turnGate = null)
+        public Run(
+            string channel = ChatChannel, AssertionVerifier? verifier = null, Func<CancellationToken, Task>? turnGate = null,
+            AgentResponseUpdate[]? replies = null)
         {
             _verifier = verifier ?? MonitorTestMocks.Assertions;
             Channel = new FakeChannelConnection { ChannelId = channel };
-            Agent = new FakeAiAgent { TurnGate = turnGate };
+            Agent = new FakeAiAgent { TurnGate = turnGate, UpdatesToYield = replies ?? [] };
             Factory = MonitorTestMocks.CreateAgentFactory(Agent);
         }
 
@@ -228,13 +251,15 @@ public class ChatMonitorAssertionTests
 
         public FakeAgentFactory Factory { get; }
 
-        public IReadOnlyList<ErrorEvent> Errors
+        public IReadOnlyList<ErrorEvent> Errors => [.. Published.OfType<ErrorEvent>()];
+
+        public IReadOnlyList<MetricEvent> Published
         {
             get
             {
                 lock (_published)
                 {
-                    return [.. _published.OfType<ErrorEvent>()];
+                    return [.. _published];
                 }
             }
         }

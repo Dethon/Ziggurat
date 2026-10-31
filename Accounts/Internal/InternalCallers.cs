@@ -2,6 +2,7 @@ using Accounts.Links;
 using Accounts.Settings;
 using Accounts.Tunnels;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Tunnel;
 using Domain.Security;
 
@@ -38,6 +39,15 @@ public static class InternalCallers
     // household credential mints that household's voice people and nobody else's.
     public const string HouseholdServer = "household-server";
 
+    // Shared servers that ask for their own view of a household's configuration and nothing else
+    // (.claude/rules/household-config.md). Compose gives each an entry only once it asks.
+    public const string Idealista = "mcp-idealista";
+    public const string Scheduling = "mcp-scheduling";
+    public const string Sugary = "mcp-sugary";
+
+    // Sugary's channel (SugaryChannel.ChannelId), spelled again: this service references no server.
+    public const string SugaryChannel = "sugary";
+
     private const string ItemKey = "accounts.internal.callers";
     private const string HouseholdKey = "accounts.internal.household";
 
@@ -48,6 +58,27 @@ public static class InternalCallers
         [Voice] = [ChannelIds.Voice],
         [Agent] = [Tunnels],
         [HouseholdServer] = [ChannelIds.Voice]
+    };
+
+    // Which views of a household's configuration each caller may ask for: the agent its own, each
+    // shared server the one section it serves with, its secrets unsealed for it alone.
+    private static readonly Dictionary<string, string[]> _views = new(StringComparer.Ordinal)
+    {
+        [Agent] = [HouseholdConfigProtocol.AgentView],
+        [Idealista] = [HouseholdConfigProtocol.IdealistaView],
+        [Scheduling] = [HouseholdConfigProtocol.SettingsView],
+        [Sugary] = [HouseholdConfigProtocol.SettingsView],
+        [SignalR] = [HouseholdConfigProtocol.SpacesView],
+        [Telegram] = [HouseholdConfigProtocol.TelegramBotsView]
+    };
+
+    // The channel an assertion a caller forwards as its proof of a household must name: the one it
+    // serves people on. A caller with none proves a household with call tokens alone.
+    private static readonly Dictionary<string, string> _assertionChannels = new(StringComparer.Ordinal)
+    {
+        [SignalR] = ChannelIds.SignalR,
+        [Telegram] = ChannelIds.Telegram,
+        [Sugary] = SugaryChannel
     };
 
     // The entries whose credential this request presented; none is a caller this service does not know.
@@ -93,6 +124,15 @@ public static class InternalCallers
     public static bool MayAskAbout(HttpContext http, string channel) =>
         http.Items.TryGetValue(ItemKey, out var item) && item is IReadOnlyList<string> callers
         && callers.Any(caller => _channels.TryGetValue(caller, out var channels) && channels.Contains(channel));
+
+    // The callers this request presented that may read the view, in the order the settings name them;
+    // none is a caller asking for another's view.
+    public static IReadOnlyList<string> Reading(HttpContext http, string view) =>
+        http.Items.TryGetValue(ItemKey, out var item) && item is IReadOnlyList<string> callers
+            ? [.. callers.Where(caller => _views.TryGetValue(caller, out var views) && views.Contains(view))]
+            : [];
+
+    public static string? AssertionChannelOf(string caller) => _assertionChannels.GetValueOrDefault(caller);
 
     // The answer to a caller asking about a channel that is not its own, before anything is read.
     public static IResult NotYours => Results.StatusCode(StatusCodes.Status403Forbidden);

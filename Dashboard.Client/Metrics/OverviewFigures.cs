@@ -100,7 +100,7 @@ public sealed class OverviewFigures(
         }
 
         healthStore.UpdateHealth(health
-            .Select(h => new ServiceHealth(h.Service, h.IsHealthy, h.LastSeen))
+            .Select(h => new ServiceHealth(h.Service, h.IsHealthy, h.LastSeen, h.Household))
             .ToList());
     }
 }

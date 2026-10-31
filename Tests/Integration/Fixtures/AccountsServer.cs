@@ -7,6 +7,7 @@ using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
 using Domain.DTOs.Channel;
+using Domain.Security.Sealing;
 using Domain.Security.Signing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -27,14 +28,17 @@ public sealed partial class AccountsServer : IAsyncDisposable
     private readonly WebApplication _app;
     private readonly int _port;
     private readonly string _directory;
+    private readonly bool _ownsDirectory;
 
-    private AccountsServer(WebApplication app, AccountsSettings settings, FakeTimeProvider clock, int port, string directory)
+    private AccountsServer(
+        WebApplication app, AccountsSettings settings, FakeTimeProvider clock, int port, string directory, bool ownsDirectory)
     {
         _app = app;
         Settings = settings;
         Clock = clock;
         _port = port;
         _directory = directory;
+        _ownsDirectory = ownsDirectory;
     }
 
     public AccountsSettings Settings { get; }
@@ -43,17 +47,29 @@ public sealed partial class AccountsServer : IAsyncDisposable
 
     public Uri Address => new($"http://localhost:{_port}/");
 
-    public static async Task<AccountsServer> StartAsync(Func<AccountsSettings, AccountsSettings>? configure = null)
+    // Where its database and keys are, for a second server started over the same store (a restart
+    // with another master key); the second leaves the directory to the first to delete.
+    public string Directory => _directory;
+
+    // The test's master key for households' secrets, unless a test configures another or none.
+    public static readonly string MasterKey = Convert.ToBase64String(SealingKey.Generate().Export());
+
+    public static async Task<AccountsServer> StartAsync(
+        Func<AccountsSettings, AccountsSettings>? configure = null, string? directory = null)
     {
         var port = TestPort.GetAvailable();
-        var directory = Path.Combine(Path.GetTempPath(), "accounts-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
+        var ownsDirectory = directory is null;
+        directory ??= Path.Combine(Path.GetTempPath(), "accounts-tests", Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(directory);
         var settings = new AccountsSettings
         {
             DatabasePath = Path.Combine(directory, "accounts.db"),
             PublicBaseUrl = $"http://localhost:{port}",
             AllowedOrigins = [$"http://localhost:{port}"],
-            WebAuthn = new WebAuthnSettings { RelyingPartyId = "localhost" }
+            WebAuthn = new WebAuthnSettings { RelyingPartyId = "localhost" },
+            HouseholdConfig = new HouseholdConfigSettings { MasterKey = MasterKey },
+            // The suite's agent key, which every test signs its call tokens with (McpTestSecret).
+            AgentKeysUrl = TestJwks.AgentUrl
         };
         settings = configure?.Invoke(settings) ?? settings;
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 29, 9, 0, 0, TimeSpan.Zero));
@@ -64,7 +80,7 @@ public sealed partial class AccountsServer : IAsyncDisposable
         var app = builder.Build();
         app.MapAccounts();
         await app.StartAsync();
-        return new AccountsServer(app, settings, clock, port, directory);
+        return new AccountsServer(app, settings, clock, port, directory, ownsDirectory);
     }
 
     public T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();
@@ -86,10 +102,15 @@ public sealed partial class AccountsServer : IAsyncDisposable
         AssertionVerifier().VerifyAsync(assertion, TokenAudiences.Assertion);
 
     // The container's command, run as `docker exec accounts dotnet Accounts.dll <args>` runs it.
-    public async Task<(int Exit, string Output)> RunAsync(params string[] args)
+    public Task<(int Exit, string Output)> RunAsync(params string[] args) => RunAsync(Settings, "", args);
+
+    // The command with something on its input, as `docker exec -i accounts ... < file` hands it, and
+    // with the settings it runs under — a container recreated with another master key, say.
+    public async Task<(int Exit, string Output)> RunAsync(AccountsSettings settings, string input, params string[] args)
     {
         await using var output = new StringWriter();
-        var exit = await AccountsCommand.RunAsync(args, Settings, new AccountsClock(Clock), output, CancellationToken.None);
+        using var reader = new StringReader(input);
+        var exit = await AccountsCommand.RunAsync(args, settings, new AccountsClock(Clock), reader, output, CancellationToken.None);
         return (exit, output.ToString());
     }
 
@@ -185,7 +206,10 @@ public sealed partial class AccountsServer : IAsyncDisposable
         await _app.DisposeAsync();
         TestPort.Release(_port);
         SqliteConnection.ClearAllPools();
-        Directory.Delete(_directory, recursive: true);
+        if (_ownsDirectory)
+        {
+            System.IO.Directory.Delete(_directory, recursive: true);
+        }
     }
 
     public sealed partial class PageClient(HttpClient client, string session)

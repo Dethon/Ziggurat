@@ -121,7 +121,9 @@ public sealed class LemonadeTranscriptionClient(
             Text = json["text"]?.GetValue<string>() ?? string.Empty,
             Language = json["language"]?.GetValue<string>(),
             AvgLogProb = WeightedMean(weighted, s => ReadDouble(s, "avg_logprob")),
-            NoSpeechProb = WeightedMean(weighted, s => ReadDouble(s, "no_speech_prob"))
+            NoSpeechProb = WeightedMean(weighted, s => ReadDouble(s, "no_speech_prob")),
+            AudioSeconds = ReadDouble(json, "duration")
+                ?? weighted.Select(w => ReadDouble(w.Segment, "end")).Max()
         };
     }
 

@@ -1,5 +1,9 @@
+using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.FileSystem;
 using Domain.Prompts;
+using Domain.Security.Signing;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
@@ -14,6 +18,16 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
         await McpClient.CreateAsync(
             McpTestSecret.Transport(fixture.McpEndpoint),
             cancellationToken: CancellationToken.None);
+
+    // A schedule is kept under the household of the call that writes it, so a write is a person's turn,
+    // signed as the agent signs one.
+    private static IFileSystemBackend AsAPerson(McpClient client) =>
+        new McpFileSystemBackend(client, "schedules", null).As(new ConversationContext(
+            "jonas", "conv-1", "u-1", new ReplyTarget(ChannelIds.SignalR, "conv-1"),
+            Principal: new Principal(ChannelIds.SignalR, "a3f09c1d7e2b4c6a8d5e0f1b2c3d4e5f",
+                new Account("4f1c9a7e2b6d4e0a9c3b8d5e7f1a2c4b", "a3f09c1d7e2b4c6a8d5e0f1b2c3d4e5f")),
+            Identity: IdentityClaims.Person(
+                "a3f09c1d7e2b4c6a8d5e0f1b2c3d4e5f", "4f1c9a7e2b6d4e0a9c3b8d5e7f1a2c4b", ChannelIds.SignalR, ["member"])));
 
     [Fact]
     public async Task McpServer_ReadFilesystemResource_ReturnsMetadata()
@@ -101,16 +115,9 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
 
         (register.IsError ?? false).ShouldBeFalse();
 
-        var create = await client.CallToolAsync(
-            "fs_create",
-            new Dictionary<string, object?>
-            {
-                ["path"] = "/jack/itest-register/schedule.json",
-                ["content"] = """{"prompt":"do the thing","cron":"0 7 * * *"}"""
-            },
-            cancellationToken: CancellationToken.None);
-
-        (create.IsError ?? false).ShouldBeFalse();
+        (await AsAPerson(client).CreateAsync("/jack/itest-register/schedule.json",
+                """{"prompt":"do the thing","cron":"0 7 * * *"}""", false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
 
         var info = await client.CallToolAsync(
             "fs_read",
@@ -144,30 +151,17 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
     {
         var client = await ConnectAsync();
 
-        var create = await client.CallToolAsync(
-            "fs_create",
-            new Dictionary<string, object?>
-            {
-                ["path"] = "/jonas/itest-news/schedule.json",
-                ["content"] = """{"prompt":"summarize the integration news","cron":"0 8 * * *"}"""
-            },
-            cancellationToken: CancellationToken.None);
+        var person = AsAPerson(client);
 
-        (create.IsError ?? false).ShouldBeFalse();
+        (await person.CreateAsync("/jonas/itest-news/schedule.json",
+                """{"prompt":"summarize the integration news","cron":"0 8 * * *"}""", false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
 
-        var glob = await client.CallToolAsync(
-            "fs_glob",
-            new Dictionary<string, object?> { ["pattern"] = "*", ["basePath"] = "/jonas" },
-            cancellationToken: CancellationToken.None);
+        (await person.GlobAsync("/jonas", "*", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries.ShouldContain("/jonas/itest-news/");
 
-        glob.Content.OfType<TextContentBlock>().First().Text.ShouldContain("/jonas/itest-news");
-
-        var read = await client.CallToolAsync(
-            "fs_read",
-            new Dictionary<string, object?> { ["path"] = "/jonas/itest-news/schedule.json" },
-            cancellationToken: CancellationToken.None);
-
-        read.Content.OfType<TextContentBlock>().First().Text.ShouldContain("summarize the integration news");
+        (await person.ReadAsync("/jonas/itest-news/schedule.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("summarize the integration news");
 
         await client.DisposeAsync();
     }
