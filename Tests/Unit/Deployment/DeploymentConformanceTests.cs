@@ -657,6 +657,41 @@ public class DeploymentConformanceTests
         }
     }
 
+    // A shared server reaches a household's server through the relay's endpoint on the agent, which
+    // the deployment's own network alone may call: on every host the path lands on a route that is
+    // not the agent's.
+    [Fact]
+    public void TheRelaysEndpointForSharedServers_IsNeverRoutedThroughTheProxy()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+
+        hosts.ShouldContain(h => h.Routes.Any(r => r.Upstream == "agent:8080"), "a host routes the agent's API");
+        foreach (var host in hosts)
+        {
+            RouteFor(host, $"{RelayedCallProtocol.For(HouseholdServerNames.Voice)}/api/voice/announce")?.Upstream
+                .ShouldNotBe("agent:8080", host.Name);
+        }
+    }
+
+    // The timers server rings the household's voice server through the relay's endpoint alone, and
+    // presents there the credential the agent dials it with under the name the agent dials it at; it
+    // holds no address of the voice server, nor the deployment's announce secret, which the voice
+    // server reached through its tunnel never asks it for.
+    [Fact]
+    public void TheTimersServer_ReachesTheHouseholdsVoiceThroughTheRelayAlone()
+    {
+        var compose = DeploymentFiles.Compose();
+        var timers = compose.Service("mcp-timers");
+
+        timers.Environment.GetValueOrDefault("VOICEHUB__BASEURL")
+            .ShouldBe($"http://agent:8080{RelayedCallProtocol.For(HouseholdServerNames.Voice)}/");
+        compose.Service("agent").Environment.GetValueOrDefault($"MCP__SECRETS__{timers.Environment["MCP__AUDIENCE"]}")
+            .ShouldBe(timers.Environment["MCP__SHAREDSECRET"]);
+        timers.Environment.Keys.ShouldNotContain(key => key.StartsWith("Announce__", StringComparison.OrdinalIgnoreCase));
+        timers.Environment.Values.ShouldNotContain(value => value.Contains("mcp-channel-voice", StringComparison.Ordinal));
+        timers.DependsOn.ShouldNotContain("mcp-channel-voice");
+    }
+
     // A passkey is bound to the relying party, the cookie to its domain and a sign-in's return to the
     // allowed origins, so the three must describe the hosts the proxy actually serves.
     [Fact]
