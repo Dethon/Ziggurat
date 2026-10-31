@@ -49,6 +49,8 @@ public static class ConfigModule
             .AddSingleton(settings.Dictation)
             .AddLemonadeTranscription(settings.Dictation.Transcription)
             .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
+            // The household's spaces, asked with this server's own credential and its person's assertion.
+            .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret)
             .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification)
             .AddSingleton<AttachmentTickets>()
             .AddSingleton<IConversationLiveness, AgentConversationLiveness>()

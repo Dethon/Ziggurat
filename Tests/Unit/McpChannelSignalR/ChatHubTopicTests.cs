@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
@@ -29,6 +30,12 @@ public sealed class ChatHubTopicTests : IDisposable
     private readonly Mock<IHubNotificationSender> _hubSender = new();
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
     private readonly ChatHub _hub;
+
+    // The kitchen is a space of the caller's household, so joining it is joining it.
+    private readonly HouseholdSpacesAccounts _households = new()
+    {
+        Saved = { ["home"] = new SpacesSection { Spaces = [HouseholdSpace.Default, HouseholdSpace.Default with { Slug = "kitchen", Name = "Kitchen" }] } }
+    };
 
     public ChatHubTopicTests()
     {
@@ -68,6 +75,7 @@ public sealed class ChatHubTopicTests : IDisposable
             new RetentionSettings { PageSize = 2 },
             new DictationSettings(),
             new VouchingAccounts(),
+            _households,
             NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller(),

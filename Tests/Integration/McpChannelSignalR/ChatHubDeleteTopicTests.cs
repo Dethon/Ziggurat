@@ -74,6 +74,7 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
             new RetentionSettings(),
             new DictationSettings(),
             new VouchingAccounts(),
+            new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller()
