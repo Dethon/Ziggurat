@@ -38,5 +38,13 @@ public sealed record TunnelSettings
 
     public TimeSpan ReconnectAtMost { get; init; } = TimeSpan.FromMinutes(1);
 
+    // The back-calls this server makes (BackCallProtocol's tags), each at a loopback port of its own
+    // (MCP__TUNNEL__BACKCALLS__<tag>): whatever the server dials there goes over its tunnel to that
+    // deployment service, so a client pointed at `http://127.0.0.1:<port>` — the accounts resolver,
+    // the topic minter, the sandbox's FUSE daemon — reaches it with nothing changed but its address.
+    // Per server, so the tenant kit sets them; a server names only the ones it makes, because a port
+    // here is reachable by anything running beside the server, a sandbox command included.
+    public Dictionary<string, int> BackCalls { get; init; } = [];
+
     public bool IsConfigured => Hub.Length > 0 && Credential.Length > 0 && ServerName.Length > 0;
 }

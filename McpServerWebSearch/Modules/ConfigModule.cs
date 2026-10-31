@@ -33,7 +33,7 @@ public static class ConfigModule
                 // publish resolves the publisher, so registration runs with no container.
                 .AddSingleton<IConnectionMultiplexer>(
                     _ => RedisConnection.ConnectResiliently(settings.RedisConnectionString))
-                .AddMetricsPublishing("mcp-websearch")
+                .AddMetricsPublishing("mcp-websearch", settings.Metrics)
                 .AddTypeSafeJudge(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey))
                 .AddPagesListener(settings.Listeners)
                 .AddSingleton(settings.Handoff)

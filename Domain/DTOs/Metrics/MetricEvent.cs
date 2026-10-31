@@ -24,4 +24,9 @@ public abstract record MetricEvent
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
     public string? AgentId { get; init; }
     public string? ConversationId { get; init; }
+
+    // The household server a back-call brought this event from (its synthetic address,
+    // `<name>.<household>.tunnel`), stamped by the relay over whatever the server said; null for an
+    // event a deployment service published itself.
+    public string? Origin { get; init; }
 }
