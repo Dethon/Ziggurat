@@ -39,6 +39,7 @@ namespace Tests.Integration.Tunnels;
 internal sealed class RelayHost : IAsyncDisposable
 {
     private readonly WebApplication _app;
+    private bool _keepsPort;
 
     private RelayHost(WebApplication app, int port, VfsBridge bridge, ConcurrentQueue<ReachedTarget> reached, bool secure)
     {
@@ -135,11 +136,25 @@ internal sealed class RelayHost : IAsyncDisposable
         return new RelayHost(app, listening, bridge, reached, certificate is not null);
     }
 
+    // A restart must come back on the same port, so this stop keeps the number out of the pool for
+    // the relay started on it next, which gives it back when it is disposed.
+    public async Task<int> StopKeepingItsPortAsync()
+    {
+        _keepsPort = true;
+        await DisposeAsync();
+        return Port;
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
+        if (!_keepsPort)
+        {
+            TestPort.Release(Port);
+        }
     }
+
 }
 
 // A server built on the hosting library and told only a hub, a credential and its name: a real host
