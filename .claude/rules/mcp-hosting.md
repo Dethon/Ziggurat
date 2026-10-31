@@ -29,8 +29,8 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   `--jailed` somebody typed. `McpServerTableTests` names that exemption by file; nothing else may
   copy it. Nested sections bind through
   the plain call. A `required` member that bound to null fails startup naming it; **null only, never
-  empty** — five shipped servers carry required members that ship as `""` and are filled from secrets
-  (Telegram, WebSearch, HomeAssistant, Idealista, Library).
+  empty** — four shipped servers carry required members that ship as `""` and are filled from secrets
+  (Telegram, WebSearch, HomeAssistant, Library).
 - **`IServiceCollection.AddMcpHost(settings)`** is the five things every server has: the settings
   singleton, the server, the HTTP transport, the gate on `/mcp` and the call-token gate on every tool
   call (`CallTokenGate`; every server checks, the outpost too, against the keys its tunnel delivers). All
@@ -101,7 +101,10 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   `ConversationContext` through the one accessor over the call, `Mcp.Hosting/CallTurn.cs`
   (`call.Turn`, and `call.TryScope` for a per-turn cache), and hands on what it needs. Its principal
   is the identity the call token verified as (`call.Identity`, left on the call's `Items` by the gate),
-  never the one the `_meta` claims. No server parses the raw `_meta` for the turn or the token
+  never the one the `_meta` claims. The household it acts for is read the same way, `call.Household`
+(`Mcp.Hosting/CallHousehold.cs`), which proves it to the accounts service with the token the gate
+verified, so a tool reads its section of that household's configuration and no other's
+(`.claude/rules/household-config.md`, "A shared server's accessor"). No server parses the raw `_meta` for the turn or the token
   (`CallTurnConformanceTests` reads the sources; the token is read in `CallTokenGate.cs` alone), so no
   tool reads around the check; the fs_* registrar in `Infrastructure` references `Mcp.Hosting` for
   that alone. And

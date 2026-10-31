@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Security;
 using Infrastructure.Clients.Channels;
@@ -11,6 +12,7 @@ using McpServerSugary.Store;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -85,6 +87,10 @@ public sealed class SugaryServer : IAsyncDisposable
                 collection.ConfigureSugary(settings);
                 // The accounts service's keys without the service: what As signs with verifies.
                 collection.AddSingleton(TestAssertions.Verifier());
+                // And its households' settings without it: every household keeps the home's zone. A
+                // household's own is CallHouseholdTests'.
+                collection.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
+                    new EveryHouseholdIn(ConfigModule.HomeZone(settings))));
                 if (turnClock is not null)
                 {
                     collection.AddSingleton(sp => ActivatorUtilities.CreateInstance<SugaryChannel>(sp, turnClock));

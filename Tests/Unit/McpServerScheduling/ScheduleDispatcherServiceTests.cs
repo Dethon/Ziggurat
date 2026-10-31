@@ -214,6 +214,9 @@ public class ScheduleDispatcherServiceTests
             store,
             cron ?? new Mock<ICronValidator>().Object,
             emitter.Emitter,
+            // These schedules delegate nothing, so no household is asked about: a fire's zone from its
+            // household is seam 4's (CallHouseholdTests).
+            new Mock<IHouseholdConfiguration>(MockBehavior.Strict).Object,
             new SchedulingSettings { RedisConnectionString = "x", Delivery = new DeliverySettings { DefaultDeliverTo = ["signalr"] } },
             logs is null
                 ? new Mock<ILogger<ScheduleDispatcherService>>().Object

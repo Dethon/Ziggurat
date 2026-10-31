@@ -30,29 +30,38 @@ public interface IHouseholdConfiguration
     Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct);
 }
 
-// What a shared server holds that names a household: the agent's call token it was called with, or
-// the accounts service's assertion of the person it serves on its own channel. Exactly one.
+// What a shared server holds that names a household: the agent's call token it was called with, the
+// accounts service's assertion of the person it serves on its own channel, or — for a schedule's fire,
+// which no call raised — the delegation the agent signed for the schedule's last write. Exactly one.
 public sealed record HouseholdProof
 {
-    private HouseholdProof(string? callToken, string? assertion)
+    private HouseholdProof(string? callToken, string? assertion, string? delegation)
     {
         CallToken = callToken;
         Assertion = assertion;
+        Delegation = delegation;
     }
 
     public string? CallToken { get; }
     public string? Assertion { get; }
+    public string? Delegation { get; }
 
     public static HouseholdProof OfCallToken(string callToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(callToken);
-        return new HouseholdProof(callToken, null);
+        return new HouseholdProof(callToken, null, null);
     }
 
     public static HouseholdProof OfAssertion(string assertion)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(assertion);
-        return new HouseholdProof(null, assertion);
+        return new HouseholdProof(null, assertion, null);
+    }
+
+    public static HouseholdProof OfDelegation(string delegation)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(delegation);
+        return new HouseholdProof(null, null, delegation);
     }
 }
 

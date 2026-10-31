@@ -51,7 +51,11 @@ public static class ConfigModule
             .AddSingleton<OpenEstimates>()
             .AddSingleton<SugaryChannel>()
             .AddSugaryApp(settings)
-            .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification);
+            .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification)
+            // The household's settings, for the clock its people's times are read on: asked with this
+            // server's own credential over a call's token or a request's assertion. It has no Redis to
+            // hear a save on, so a saved zone reaches it when what it kept runs out.
+            .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret);
 
         // Pen reminders are pushed with the deployment's VAPID keys, and without them there are none.
         if (settings.WebPush.IsConfigured)
@@ -82,8 +86,9 @@ public static class ConfigModule
         return services;
     }
 
-    // Resolved at registration so an id the container does not know stops the server at startup,
-    // before a single time is written on the wrong clock.
+    // The server's own zone: a household's whose zone this host cannot place, and the pen reminders',
+    // which no household's call raises. Resolved at registration so an id the container does not
+    // know stops the server at startup, before a single time is written on the wrong clock.
     public static TimeZoneInfo HomeZone(SugarySettings settings) =>
         string.IsNullOrWhiteSpace(settings.HomeZone)
             ? TimeZoneInfo.Local

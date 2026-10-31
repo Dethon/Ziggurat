@@ -6,7 +6,9 @@ using Domain.DTOs;
 
 namespace Domain.Tools.RealEstate;
 
-public class PropertySearchTool(IIdealistaClient idealistaClient)
+// The search itself, made on whichever account the caller hands it: a household's own (the
+// Idealista server's tool, through the household's keys).
+public class PropertySearchTool
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -25,7 +27,8 @@ public class PropertySearchTool(IIdealistaClient idealistaClient)
         rooms, description, condition, age, and URLs.
         """;
 
-    protected async Task<JsonNode> RunAsync(
+    protected static async Task<JsonNode> RunAsync(
+        IIdealistaClient idealistaClient,
         IdealistaCountry country,
         IdealistaOperation operation,
         IdealistaPropertyType propertyType,

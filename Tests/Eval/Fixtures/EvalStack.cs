@@ -430,7 +430,11 @@ public sealed class EvalStack : IAsyncDisposable
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services.ConfigureSugary(EvalSugaryLog.Settings(_sugaryPath));
+        var settings = EvalSugaryLog.Settings(_sugaryPath);
+        builder.Services.ConfigureSugary(settings);
+        // No accounts service: her household keeps the home's zone, as on the deployment.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
+            new EveryHouseholdIn(McpServerSugary.Modules.ConfigModule.HomeZone(settings))));
 
         var endpoint = await StartAsync(builder, port);
         await EvalSugaryLog.SeedAsync(_servers[^1].Services);
@@ -459,6 +463,9 @@ public sealed class EvalStack : IAsyncDisposable
             Mcp = McpTestSecret.Gate
         });
         builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
+        // A stack with no accounts service: the eval household's schedules are read in the zone the
+        // pinned clock is in, as the home's are on the deployment.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(Clock.LocalTimeZone)));
 
         var endpoint = await StartAsync(builder, port);
 

@@ -78,9 +78,9 @@ public class SettingsBinderTests : IDisposable
             .Message.ShouldContain("Search.ApiKey");
 
     // Null only, never empty. Telegram's bot tokens, WebSearch's Brave key, Home Assistant's
-    // token, Idealista's key and secret and Library's Jackett/qBittorrent credentials all ship as
+    // token and Library's Jackett/qBittorrent credentials all ship as
     // "" in appsettings.json and are filled from secrets, and an empty CapSolver key is how that
-    // feature is switched off. Empty-is-invalid would refuse to start five shipped servers.
+    // feature is switched off. Empty-is-invalid would refuse to start four shipped servers.
     [Fact]
     public void AnEmptyRequiredMember_Binds() =>
         Bind(("Search:ApiKey", "")).Search.ApiKey.ShouldBe("");
