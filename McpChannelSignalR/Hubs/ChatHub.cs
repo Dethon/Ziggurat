@@ -727,7 +727,7 @@ public sealed class ChatHub(
     {
         ValidateSubscription(subscription);
 
-        await pushSubscriptionStore.SaveAsync(SignedIn.UserId, subscription, CurrentSpaceSlug ?? "default");
+        await pushSubscriptionStore.SaveAsync(SignedIn.Account, subscription, CurrentSpaceSlug ?? "default");
     }
 
     public async Task ReplacePushSubscription(PushSubscriptionDto subscription, string oldEndpoint)
@@ -739,7 +739,7 @@ public sealed class ChatHub(
             throw new HubException("Old endpoint is required for replacement.");
         }
 
-        await pushSubscriptionStore.SaveAsync(SignedIn.UserId, subscription, CurrentSpaceSlug ?? "default",
+        await pushSubscriptionStore.SaveAsync(SignedIn.Account, subscription, CurrentSpaceSlug ?? "default",
             replacingEndpoint: oldEndpoint);
     }
 

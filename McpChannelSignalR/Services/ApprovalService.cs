@@ -151,7 +151,7 @@ public sealed class ApprovalService(
         {
             var tools = string.Join(", ", p.Requests.Select(r => r.ToolName.Split("__").Last()));
             await pushNotifications.SendToPersonAsync(
-                p.Asker.UserId, spaceSlug, "Approval needed", $"Approve {tools}?", "/");
+                p.Asker, spaceSlug, "Approval needed", $"Approve {tools}?", "/");
         }
         catch (Exception ex)
         {
