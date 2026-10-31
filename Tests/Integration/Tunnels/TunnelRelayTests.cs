@@ -169,6 +169,68 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         ToolErrorResult.FromEnvelope(JsonNode.Parse(answer)).ShouldBeNull(answer);
     }
 
+    // The operator asks the running agent which of a household's servers are connected: each one
+    // open, since when, and the tools it offers through its tunnel now — and nothing of another
+    // household's.
+    [Fact]
+    public async Task TheListHouseholdServersCommand_ListsEachConnectedServerSinceWhenAndItsTools()
+    {
+        var vault = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+        await using var server = await TunnelledServer.StartAsync(_relay.Hub, vault.Credential, "vault");
+        var other = await _accounts.SeedHouseholdAsync("Ana");
+        var library = await _accounts.MintTunnelCredentialAsync(other, "library");
+        await using var elsewhere = await TunnelledServer.StartAsync(_relay.Hub, library.Credential, "library");
+        await ConnectedAsync(_relay, "vault");
+        await Eventually.Until(() => _relay.Registry.Find(other, "library") is not null, "library's tunnel opens");
+        var opened = _relay.Registry.Find(_household, "vault")!.OpenedAt;
+        var output = new StringWriter();
+
+        var exit = await global::Agent.Commands.AgentCommand.RunAsync(
+            [global::Agent.Commands.AgentCommand.ListHouseholdServers, "--household", _household, "--agent", _relay.Address],
+            AgentSettings(), TimeProvider.System, TextReader.Null, output, CancellationToken.None);
+
+        exit.ShouldBe(0, output.ToString());
+        output.ToString().ShouldContain($"vault  connected since {opened:u}");
+        output.ToString().ShouldContain("tools: wait, who");
+        output.ToString().ShouldNotContain("library");
+    }
+
+    [Fact]
+    public async Task TheListHouseholdServersCommand_SaysSoWhenNoneIsConnected()
+    {
+        var output = new StringWriter();
+
+        var exit = await global::Agent.Commands.AgentCommand.RunAsync(
+            [global::Agent.Commands.AgentCommand.ListHouseholdServers, "--household", _household, "--agent", _relay.Address],
+            AgentSettings(), TimeProvider.System, TextReader.Null, output, CancellationToken.None);
+
+        exit.ShouldBe(0, output.ToString());
+        output.ToString().ShouldContain($"No server of household {_household} is connected.");
+    }
+
+    // The listing is the agent's own: asked without the agent API's secret, it says nothing.
+    [Fact]
+    public async Task TheListHouseholdServersCommand_WithoutTheAgentsSecret_IsRefused()
+    {
+        var output = new StringWriter();
+
+        var exit = await global::Agent.Commands.AgentCommand.RunAsync(
+            [global::Agent.Commands.AgentCommand.ListHouseholdServers, "--household", _household, "--agent", _relay.Address],
+            AgentSettings() with { AgentApi = new global::Agent.Settings.AgentApiConfiguration { SharedSecret = "wrong" } },
+            TimeProvider.System, TextReader.Null, output, CancellationToken.None);
+
+        exit.ShouldBe(1, output.ToString());
+        output.ToString().ShouldContain("refused");
+    }
+
+    private static global::Agent.Settings.AgentSettings AgentSettings() => new()
+    {
+        OpenRouter = new global::Agent.Settings.OpenRouterConfiguration { ApiUrl = "http://test", ApiKey = "test" },
+        Redis = new global::Agent.Settings.RedisConfiguration { ConnectionString = "localhost" },
+        Agents = [],
+        AgentApi = new global::Agent.Settings.AgentApiConfiguration { SharedSecret = AgentCredential }
+    };
+
     public static TheoryData<string, TunnelCredentialRefusal> Refusals => new()
     {
         { "unknown", TunnelCredentialRefusal.Unknown },
