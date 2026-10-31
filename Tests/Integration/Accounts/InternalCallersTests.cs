@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Domain.Security;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -105,6 +106,26 @@ public class InternalCallersTests
             .StatusCode.ShouldBe(HttpStatusCode.OK);
         (await PostAsync(server, "/accounts/internal/resolve", new { channel = "telegram", identity = "123456789" }, "local-mcp-secret"))
             .StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    // The relay's credential verifies tunnel credentials (TunnelCredentialsTests) and resolves nobody.
+    [Theory]
+    [InlineData("/accounts/internal/resolve", "{\"channel\":\"voice\",\"identity\":\"0123456789abcdef0123456789abcdef\"}")]
+    [InlineData("/accounts/internal/resolve", "{\"channel\":\"telegram\",\"identity\":\"123456789\"}")]
+    [InlineData("/accounts/internal/guest", "{\"channel\":\"voice\"}")]
+    [InlineData("/accounts/internal/session", "{\"userId\":\"fran\",\"sessionId\":\"session\"}")]
+    [InlineData("/accounts/internal/telegram/group", "{\"chatId\":-100}")]
+    public async Task TheAgentsCredential_AsksAboutNoChannel(string path, string body)
+    {
+        await using var server = await AccountsServer.StartAsync(s => s with
+        {
+            Callers = new Dictionary<string, string> { ["agent"] = "agent-credential" }
+        });
+        await server.MintOperatorAsync("Fran");
+
+        var response = await PostAsync(server, path, JsonDocument.Parse(body).RootElement, "agent-credential");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
     // A caller the service has no channel for — a credential added for something else — asks about

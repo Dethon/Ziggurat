@@ -141,3 +141,15 @@ public sealed class Session
     public DateTimeOffset LastSeenAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
 }
+// What one of a household's own servers opens its tunnel with, for one server name. Only a hash of
+// the credential is kept, so the store alone opens no tunnel. Revoked rather than deleted, so a list
+// still shows what was minted and when it stopped working.
+public sealed class TunnelCredential
+{
+    public required string Id { get; init; }
+    public required string CredentialHash { get; init; }
+    public required string TenantId { get; init; }
+    public required string ServerName { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? RevokedAt { get; set; }
+}

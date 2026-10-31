@@ -29,6 +29,10 @@ public record AccountsSettings
     // empty admits nobody.
     public Dictionary<string, string> Callers { get; init; } = [];
 
+    // The deployment's Redis, where a revoked tunnel credential is announced to the relay
+    // (TunnelRevocations). Nothing is stored there.
+    public RedisSettings Redis { get; init; } = new();
+
     // How long an invite or recovery link stays redeemable.
     public int LinkLifetimeDays { get; init; } = 7;
 
@@ -91,6 +95,12 @@ public record AccountsSettings
 public record VerifierPolicy
 {
     public TokenVerificationSettings TokenVerification { get; init; } = new();
+}
+
+public record RedisSettings
+{
+    // Empty tells nobody of a revocation: a test stack with no relay, or a host run without Redis.
+    public string ConnectionString { get; init; } = "";
 }
 
 public record WebAuthnSettings

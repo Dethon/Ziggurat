@@ -1,4 +1,5 @@
 using Accounts.People;
+using Domain.DTOs.Tunnel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -23,6 +24,7 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<LinkedIdentity> LinkedIdentities => Set<LinkedIdentity>();
     public DbSet<BoundChat> BoundChats => Set<BoundChat>();
+    public DbSet<TunnelCredential> TunnelCredentials => Set<TunnelCredential>();
 
     // An instant is kept as UTC, because not every provider has an offset type and SQLite cannot
     // order or compare the text of one.
@@ -95,6 +97,14 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
         chat.Property(c => c.BoundBy).HasMaxLength(IdLength);
         chat.HasIndex(c => new { c.Channel, c.ChatId }).IsUnique();
         chat.HasOne<Tenant>().WithMany().HasForeignKey(c => c.TenantId).OnDelete(DeleteBehavior.Restrict);
+
+        var tunnel = modelBuilder.Entity<TunnelCredential>();
+        tunnel.Property(t => t.Id).HasMaxLength(IdLength);
+        tunnel.Property(t => t.CredentialHash).HasMaxLength(IdLength);
+        tunnel.HasIndex(t => t.CredentialHash).IsUnique();
+        tunnel.Property(t => t.TenantId).HasMaxLength(IdLength);
+        tunnel.Property(t => t.ServerName).HasMaxLength(TunnelCredentialProtocol.ServerNameMaxLength);
+        tunnel.HasOne<Tenant>().WithMany().HasForeignKey(t => t.TenantId).OnDelete(DeleteBehavior.Restrict);
     }
 
     private sealed class UtcConverter() : ValueConverter<DateTimeOffset, DateTime>(
