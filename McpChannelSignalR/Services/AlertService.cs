@@ -93,7 +93,7 @@ public sealed class AlertService(
         try
         {
             await push.SendToPersonAsync(
-                p.Owner.UserId, SpaceConfig.DefaultSlug, p.Kind == AnnounceKind.Alarm ? "Alarm" : "Timer", p.Text, "/");
+                p.Owner, SpaceConfig.DefaultSlug, p.Kind == AnnounceKind.Alarm ? "Alarm" : "Timer", p.Text, "/");
         }
         catch (Exception ex)
         {
