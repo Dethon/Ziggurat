@@ -12,16 +12,22 @@ public static class TunnelHostExtensions
         public IServiceCollection AddTunnelListener(string tag, int port) =>
             services.AddSingleton(new TunnelListener(tag, port));
 
-        // What AddMcpHost adds for a server given a tunnel: the client that keeps it open, and the
-        // trust its call-token gate checks against. Registered as a plain IHostedService so a second
+        // What AddMcpHost adds for a server given a tunnel: the client that keeps it open, the
+        // trust its call-token gate checks against, and the ports its back-calls go out from. Registered as a plain IHostedService so a second
         // host in one process (a test's) is not deduplicated away by implementation type.
         internal IServiceCollection AddTunnel(TunnelSettings tunnel) =>
             services
                 .AddSingleton<TunnelTrust>()
+                .AddSingleton<TunnelLink>()
                 .AddSingleton<IHostedService>(sp => new TunnelClient(
                     tunnel,
                     sp.GetRequiredService<TunnelTrust>(),
+                    sp.GetRequiredService<TunnelLink>(),
                     sp,
-                    sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TunnelClient>>()));
+                    sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TunnelClient>>()))
+                .AddSingleton<IHostedService>(sp => new BackCallForwarders(
+                    tunnel,
+                    sp.GetRequiredService<TunnelLink>(),
+                    sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<BackCallForwarders>>()));
     }
 }
