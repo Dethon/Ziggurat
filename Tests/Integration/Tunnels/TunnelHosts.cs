@@ -4,6 +4,8 @@ using System.Net;
 using Agent.App;
 using Agent.Modules;
 using Domain.Contracts;
+using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Tunnel;
 using Domain.Security;
 using Domain.Security.Signing;
@@ -43,6 +45,8 @@ internal sealed class RelayHost : IAsyncDisposable
     public TunnelRegistry Registry => _app.Services.GetRequiredService<TunnelRegistry>();
 
     public IOwnServers OwnServers => _app.Services.GetRequiredService<IOwnServers>();
+
+    public IOwnChannelServers ChannelServers => _app.Services.GetRequiredService<IOwnChannelServers>();
 
     public static async Task<RelayHost> StartAsync(
         AccountsServer accounts, string agentCredential, string redis, SigningKeyStore keys,
@@ -92,15 +96,7 @@ internal sealed class TunnelledServer : IAsyncDisposable
         builder.Services
             .AddToolServer(new Settings(new McpGateSettings
             {
-                Tunnel = new TunnelSettings
-                {
-                    Hub = hub,
-                    Credential = credential,
-                    ServerName = serverName,
-                    // Quick to come back, so a test waits on the reconnect rather than the schedule.
-                    ReconnectAfter = TimeSpan.FromMilliseconds(50),
-                    ReconnectAtMost = TimeSpan.FromMilliseconds(200)
-                }
+                Tunnel = Quick(hub, credential, serverName)
             }))
             .WithTools<CallTokenGateTests.WhoTools>()
             .WithTools<WaitTools>();
@@ -109,6 +105,16 @@ internal sealed class TunnelledServer : IAsyncDisposable
         await app.StartAsync();
         return new TunnelledServer(app);
     }
+
+    // Quick to come back, so a test waits on the reconnect rather than the schedule.
+    public static TunnelSettings Quick(string hub, string credential, string serverName) => new()
+    {
+        Hub = hub,
+        Credential = credential,
+        ServerName = serverName,
+        ReconnectAfter = TimeSpan.FromMilliseconds(50),
+        ReconnectAtMost = TimeSpan.FromMilliseconds(200)
+    };
 
     public async ValueTask DisposeAsync()
     {
@@ -132,6 +138,65 @@ internal sealed class TunnelledServer : IAsyncDisposable
             _waiting[call] = true;
             await Task.Delay(Timeout.Infinite, ct);
             return call;
+        }
+    }
+}
+
+// A channel server built on the hosting library and told only a hub, a credential and its name, as a
+// household's dual-role server is: its notifications are raised through its own emitter, and every
+// reply chunk the agent sends back through the tunnel is kept for the test to read.
+internal sealed class TunnelledChannelServer : IAsyncDisposable
+{
+    private readonly WebApplication _app;
+
+    private TunnelledChannelServer(WebApplication app) => _app = app;
+
+    private sealed record Settings(McpGateSettings Mcp) : IMcpHostSettings;
+
+    public ChannelNotificationEmitter Emitter => _app.Services.GetRequiredService<ChannelNotificationEmitter>();
+
+    public IReadOnlyCollection<string> Replies => _app.Services.GetRequiredService<ReceivedReplies>().Contents;
+
+    public static async Task<TunnelledChannelServer> StartAsync(string hub, string credential, string serverName)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, 0));
+        builder.Services.AddSingleton<ReceivedReplies>();
+        builder.Services
+            .AddToolServer(new Settings(new McpGateSettings { Tunnel = TunnelledServer.Quick(hub, credential, serverName) }))
+            .AddChannelServer(DeliveryPolicy.Broadcast)
+            .WithTools<ReplyTools>();
+        var app = builder.Build();
+        app.MapMcp("/mcp");
+        await app.StartAsync();
+        return new TunnelledChannelServer(app);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _app.StopAsync();
+        await _app.DisposeAsync();
+    }
+
+    internal sealed class ReceivedReplies
+    {
+        private readonly ConcurrentQueue<string> _contents = new();
+
+        public IReadOnlyCollection<string> Contents => _contents;
+
+        public void Add(string content) => _contents.Enqueue(content);
+    }
+
+    [McpServerToolType]
+    internal sealed class ReplyTools(ReceivedReplies replies)
+    {
+        [McpServerTool(Name = ChannelProtocol.SendReplyTool)]
+        public string SendReply(
+            string conversationId, string content, ReplyContentType contentType, bool isComplete, string? messageId,
+            string? turnKey = null, bool? agentInitiated = null)
+        {
+            replies.Add(content);
+            return "ok";
         }
     }
 }
