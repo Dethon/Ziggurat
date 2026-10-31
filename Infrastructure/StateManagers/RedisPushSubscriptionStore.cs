@@ -38,6 +38,10 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
             if (previousOwner.ToString() != userId)
             {
                 await db.HashDeleteAsync($"{KeyPrefix}{previousOwner}", subscription.Endpoint);
+
+                // The spaces it was in were its last owner's household's, which may not be this one's:
+                // left there, a push to that household's space would reach this person's phone.
+                await RemoveFromAllSpaceSetsAsync(db, subscription.Endpoint);
             }
         }
 

@@ -226,6 +226,24 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         newSpaceSubs.First(x => x.Subscription.Endpoint == endpoint).UserId.ShouldBe(userB);
     }
 
+    // A browser signed in as somebody of another household now is theirs: the spaces it was in under
+    // its last owner no longer list it, or a push to their household's space would reach the new one's.
+    [Fact]
+    public async Task SaveAsync_AnEndpointNowSomebodyOfAnotherHouseholds_LeavesTheOldHouseholdsSpaces()
+    {
+        var userA = $"test-user-{Guid.NewGuid():N}";
+        var userB = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.AddRange([userA, userB]);
+        var elsewhere = $"elsewhere{Guid.NewGuid():N}";
+        var phone = CreateSubscription($"https://push.example/moved-{userA}");
+
+        await _store.SaveAsync(As(userA), phone);
+        await _store.SaveAsync(new Account(elsewhere, userB), phone);
+
+        (await _store.GetBySpaceAsync(_home, "default")).ShouldBeEmpty();
+        (await _store.GetBySpaceAsync(elsewhere, "default")).ShouldBe([(userB, phone)]);
+    }
+
     [Fact]
     public async Task SaveAsync_SameEndpointDifferentSpaces_AccumulatesInBothSpaceSets()
     {
