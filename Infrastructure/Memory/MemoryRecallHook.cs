@@ -249,7 +249,8 @@ public class MemoryRecallHook(
         {
             return await agentDefinitionProvider.GetByIdAsync(agentId, account?.TenantId, account, ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException)
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+                                       or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read agent {AgentId}; recalling as for an unknown agent", agentId);
             return null;
