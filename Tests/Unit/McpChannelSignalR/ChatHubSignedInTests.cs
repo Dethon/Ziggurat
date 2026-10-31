@@ -21,6 +21,8 @@ using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 
+using Tests.Unit.McpChannelSignalR.Fixtures;
+
 namespace Tests.Unit.McpChannelSignalR;
 
 // The hub knows its person from the proxy: the assertion the session check signs, copied onto every
@@ -75,6 +77,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
                 NullLogger<ApprovalService>.Instance))
             .AddSingleton(new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast))
             .AddSingleton<ISessionAccounts>(_accounts)
+            .AddSingleton<IHouseholdConfiguration>(new HouseholdSpacesAccounts())
             .AddSingleton(new Mock<IAgentCatalog>().Object)
             .AddSingleton(_store.Object)
             .AddSingleton(_pushStore.Object)

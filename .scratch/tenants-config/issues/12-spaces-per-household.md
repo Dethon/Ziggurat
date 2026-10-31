@@ -4,10 +4,10 @@
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A person sees only their household's spaces with their names and colours
-- [ ] The hub refuses a space of another household
-- [ ] A space opens on its default agent
-- [ ] A new household has one default space
-- [ ] A household-migration step seeds the home household's spaces from the chat client's list
+- [x] A person sees only their household's spaces with their names and colours
+- [x] The hub refuses a space of another household
+- [x] A space opens on its default agent
+- [x] A new household has one default space
+- [x] A household-migration step seeds the home household's spaces from the chat client's list (through `POST /accounts/internal/household-config-seed`, added here for `CALLERS__household-migration`; 06 can seed its sections through it)

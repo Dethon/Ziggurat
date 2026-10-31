@@ -83,20 +83,15 @@ public sealed class InitializationEffect : IDisposable
         // Nothing to say about who this is: the hub took the person from the proxy's headers as
         // the connection arrived, so everything below may be asked at once.
 
-        // Validate and join space (must happen before push subscribe so space context is set)
-        var spaceSlug = _spaceStore.State.CurrentSlug;
-        var space = await _configService.GetSpaceAsync(spaceSlug);
-        if (space is null)
+        // Validate and join space (must happen before push subscribe so space context is set). The
+        // household's spaces are the hub's to say; a slug that is none of them opens the household's
+        // first space instead.
+        var spaces = await _topicService.GetSpacesAsync();
+        if (spaces is { IsLive: true, Value: { } household }
+            && (household.FirstOrDefault(s => s.Slug == _spaceStore.State.CurrentSlug) ?? household.FirstOrDefault()) is { } space)
         {
-            _dispatcher.Dispatch(new InvalidSpace());
-            spaceSlug = _spaceStore.State.CurrentSlug;
-            space = await _configService.GetSpaceAsync(spaceSlug);
-        }
-
-        if (space is not null)
-        {
-            await _topicService.JoinSpaceAsync(spaceSlug);
-            _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
+            await _topicService.JoinSpaceAsync(space.Slug);
+            _dispatcher.Dispatch(new SpaceValidated(space.Slug, space.Name, space.AccentColor, space.DefaultAgent));
         }
 
         // Best-effort, network/browser-dependent — must not gate the rest of init
@@ -167,15 +162,10 @@ public sealed class InitializationEffect : IDisposable
             return;
         }
 
-        var savedAgentId = await _localStorage.GetAsync("selectedAgentId");
-        var savedAgent = agents.FirstOrDefault(a => a.Id == savedAgentId);
-        var agentToSelect = savedAgent ?? agents[0];
-        _dispatcher.Dispatch(new SelectAgent(agentToSelect.Id));
-
-        if (savedAgent is null)
-        {
-            await _localStorage.SetAsync("selectedAgentId", agentToSelect.Id);
-        }
+        // Not remembered: what the space opened on is the person's pick only once they pick it, so a
+        // default the household changes later still reaches them.
+        var agentToSelect = await SpaceAgent.ChooseAsync(_localStorage, agents, _spaceStore.State);
+        _dispatcher.Dispatch(new SelectAgent(agentToSelect.Id, Picked: false));
 
         var firstPage = await _topicService.GetTopicPageAsync(agentToSelect.Id, _spaceStore.State.CurrentSlug);
         if (!firstPage.IsLive)

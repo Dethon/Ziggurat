@@ -71,6 +71,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
             new RetentionSettings(),
             new DictationSettings(),
             new VouchingAccounts(),
+            new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller()

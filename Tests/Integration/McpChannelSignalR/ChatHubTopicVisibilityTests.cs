@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Security;
 using Infrastructure.Conversations;
@@ -28,6 +29,7 @@ using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Unit.McpChannelSignalR;
+using Tests.Unit.McpChannelSignalR.Fixtures;
 
 namespace Tests.Integration.McpChannelSignalR;
 
@@ -79,6 +81,10 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
             .AddSingleton<AlertService>()
             .AddSingleton(new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast))
             .AddSingleton<ISessionAccounts>(new NamedAccounts())
+            .AddSingleton<IHouseholdConfiguration>(new HouseholdSpacesAccounts
+            {
+                Saved = { [Home] = new SpacesSection { Spaces = [HouseholdSpace.Default, HouseholdSpace.Default with { Slug = "garden", Name = "Garden" }] } }
+            })
             .AddSingleton(catalog.Object)
             .AddSingleton<IThreadStateStore>(_store)
             .AddSingleton<IConversationFactory>(new ConversationFactory(_store, TimeProvider.System))

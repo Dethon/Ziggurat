@@ -1,7 +1,9 @@
 using System.Text.Json;
+using Accounts.Configuration;
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
@@ -389,6 +391,43 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         (await db.KeyTimeToLiveAsync(MetricKeys.Daily(MetricKeys.Tokens, home, day))).ShouldNotBeNull();
     }
 
+    // The chat client's spaces were a list in its own settings, the same for everybody; they are the
+    // home household's configuration now, and each opens on whatever agent was picked in it.
+    [Fact]
+    public async Task TheHomeHouseholdsSpaces_AreTheChatClientsList()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var home = (await rig.AccountOfAsync(fran.TelegramId)).TenantId;
+        var spaces = await rig.Accounts.Service<HouseholdConfigStore>().ReadAsync(home, HouseholdSections.SpacesSchema, CancellationToken.None);
+        spaces.ShouldNotBeNull().Spaces.Select(s => (s.Slug, s.Name, s.AccentColor, s.DefaultAgent, s.Order))
+            .ShouldBe([("default", "Main", "#e9601f", (string?)null, 0), ("x", "X", "#e3c727", (string?)null, 1)]);
+    }
+
+    // Spaces an owner saved before the migration ran are theirs, and the list is not put over them.
+    [Fact]
+    public async Task AHomeHouseholdThatSavedItsSpaces_KeepsThem()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var store = rig.Accounts.Service<HouseholdConfigStore>();
+        var home = await rig.HomeHouseholdAsync();
+        var kitchen = new SpacesSection { Spaces = [HouseholdSpace.Default with { Slug = "kitchen", Name = "Kitchen" }] };
+        (await store.SaveAsync(home, HouseholdSections.SpacesSchema, HouseholdSections.SpacesSchema.Write(kitchen), CancellationToken.None))
+            .ShouldBeOfType<SectionSave.Saved>();
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        (await store.ReadAsync(home, HouseholdSections.SpacesSchema, CancellationToken.None)).ShouldNotBeNull().Spaces.Select(s => s.Slug)
+            .ShouldBe(["kitchen"]);
+        output.ShouldContain("already saved");
+    }
+
     [Fact]
     public async Task RunningItAgain_ChangesNothingAndSaysSo()
     {
@@ -522,6 +561,7 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
             $"people={await accounts.Users.CountAsync()}",
             $"links={await accounts.Links.CountAsync()}",
             $"identities={await accounts.LinkedIdentities.CountAsync()}",
+            $"sections={string.Join(',', await accounts.HouseholdSections.OrderBy(s => s.Section).Select(s => s.Section + s.Document + s.UpdatedAt).ToListAsync())}",
             $"voices={string.Join(',', Directory.EnumerateFileSystemEntries(rig.Voices, "*", SearchOption.AllDirectories).Order())}",
             $"meals={string.Join(',', await sugary.Meals.IgnoreQueryFilters().Select(m => m.UserId).ToListAsync())}"
         ]));
