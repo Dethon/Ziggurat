@@ -89,12 +89,12 @@ public static class McpServerRegistrations
     //
     // The tool servers all take unreachable-but-well-formed connection details for the same reason
     // the channel rows do: registration must run with no container and no network.
-    // Every deployment row gates /mcp behind the one deployment secret; the outpost behind its own,
-    // which is deliberately a different value so a row that fell through to the deployment's
-    // would be caught rather than agree by coincidence.
+    // Every deployment row gates /mcp behind the one deployment secret; the outpost behind its tunnel
+    // credential, which is deliberately a different value so a row that fell through to the
+    // deployment's would be caught rather than agree by coincidence.
     public static McpGateSettings DeploymentGate => McpTestSecret.Gate;
 
-    public const string OutpostSecret = "outpost-own-secret";
+    public const string OutpostCredential = "outpost-tunnel-credential";
 
     public static IReadOnlyList<McpServerRow> All =>
     [
@@ -181,7 +181,8 @@ public static class McpServerRegistrations
             {
                 Name = "outpost",
                 WorkingDirectory = "/home/someone/project",
-                SharedSecret = OutpostSecret
+                Hub = "https://assistants.example",
+                Credential = OutpostCredential
             },
             (services, settings) => services.ConfigureMcp(settings)),
 

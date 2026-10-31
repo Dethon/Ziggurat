@@ -1,0 +1,466 @@
+# The tenant kit: a household's own servers, run at its own site. Each one opens its one tunnel out to
+# the deployment's relay through the proxy's tunnel route, and that tunnel is the only way it reaches
+# the deployment or is reached by it: the networks below are this project's own, nothing is dialled
+# from the deployment, and the few requests a server makes back (voice's speakers, topics and speech,
+# the sandbox's bridge, the metrics feed) go out over its own tunnel as back-calls to a port on its
+# own loopback. Every server holds the credential the operator minted for it and no secret of the
+# deployment's (TenantKitConformanceTests). See README.md beside this file.
+name: tenant-kit
+
+x-timezone: &timezone
+  TZ: Europe/Madrid
+
+# The relay every server's tunnel opens to: the deployment's main host, which the proxy routes
+# /tunnel on. Per deployment, so it comes from .env; the servers refuse to start without it.
+x-hub: &hub
+  MCP__TUNNEL__HUB: wss://${DEPLOYMENT_HOST:?set DEPLOYMENT_HOST in .env}/tunnel
+
+x-logging: &logging
+  options:
+    max-size: "5m"
+    max-file: "3"
+
+services:
+  # The kit's own store: web search's remembered logins and one-time links, and the library's
+  # download routing. The deployment's Redis is never this one. Published on loopback only, for the
+  # state move (the `move` profile below) and the operator.
+  redis:
+    image: redis/redis-stack-server:latest
+    logging: *logging
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - ./volumes/redis_data:/data
+    environment:
+      <<: *timezone
+      REDIS_ARGS: "--appendonly yes --requirepass ${KIT_REDIS_PASSWORD:?set KIT_REDIS_PASSWORD in .env}"
+      REDISCLI_AUTH: ${KIT_REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - kit
+
+  base-sdk:
+    image: base-sdk:latest
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: Dockerfile.base-sdk
+      labels:
+        keep: "true"
+    entrypoint: ["true"]
+    restart: "no"
+    networks:
+      - kit
+
+  # The browser web search drives, with the one fingerprint it keeps, so the sites people are logged
+  # into see the same device from the household's own address.
+  camoufox:
+    image: camoufox:latest
+    build:
+      context: ${REPOSITORY_PATH}/DockerCompose/camoufox
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9377/json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    environment:
+      <<: *timezone
+    volumes:
+      - camoufox-identity:/data
+    restart: unless-stopped
+    networks:
+      - kit
+
+  mcp-websearch:
+    image: mcp-websearch:latest
+    logging: *logging
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerWebSearch/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: [*timezone, *hub]
+      OPENROUTER__APIKEY: ${OPENROUTER__APIKEY}
+      BRAVESEARCH__APIKEY: ${BRAVESEARCH__APIKEY}
+      CAPSOLVER__APIKEY: ${CAPSOLVER__APIKEY}
+      REDISCONNECTIONSTRING: redis:6379,password=${KIT_REDIS_PASSWORD}
+      # Seals each person's remembered logins in the kit's Redis. Moving the home keeps the value the
+      # deployment had, or every record the state move carries over refuses to open.
+      LOGINS__STATEKEY: ${LOGINS__STATEKEY}
+      # Where people open a login handoff's link: the deployment's main host, whose /browse/ the relay
+      # forwards down this server's tunnel to its pages listener (the `pages` tag).
+      HANDOFF__PUBLICBASEURL: https://${DEPLOYMENT_HOST}
+      # The name the deployment finds the household's browser by (HouseholdServerNames.WebSearch).
+      MCP__TUNNEL__SERVERNAME: websearch
+      MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_WEBSEARCH}
+      MCP__TUNNEL__BACKCALLS__metrics: "7801"
+      METRICS__URL: http://127.0.0.1:7801/events
+    networks:
+      - kit
+    depends_on:
+      camoufox:
+        condition: service_healthy
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  mcp-vault:
+    image: mcp-vault:latest
+    logging: *logging
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerVault/Dockerfile
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ${VAULT_PATH:-./volumes/vault}:/vault
+    restart: unless-stopped
+    environment:
+      <<: [*timezone, *hub]
+      MCP__TUNNEL__SERVERNAME: vault
+      MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_VAULT}
+    networks:
+      - kit
+    depends_on:
+      - base-sdk
+
+  qbittorrent:
+    image: qbittorrentofficial/qbittorrent-nox:latest
+    logging: *logging
+    ports:
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:8001:8001"
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:6881:6881/tcp"
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:6881:6881/udp"
+    volumes:
+      - ./volumes/qbittorrent_config:/config
+      - ${DATA_PATH:-./volumes/data}/downloads:/downloads
+    environment:
+      <<: *timezone
+      PUID: ${PUID:-1654}
+      PGID: ${PGID:-1654}
+      QBT_LEGAL_NOTICE: confirm
+      QBT_VERSION: 5.1.2-2
+      QBT_TORRENTING_PORT: 6881
+      QBT_WEBUI_PORT: 8001
+      UMASK: "002"
+    stop_grace_period: 30m
+    restart: unless-stopped
+    networks:
+      - kit
+
+  jackett:
+    image: lscr.io/linuxserver/jackett:latest
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+    ports:
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:8003:9117"
+    volumes:
+      - ./volumes/jackett_config:/config
+      - ./volumes/jackett_data/downloads:/downloads
+    environment:
+      <<: *timezone
+      PUID: ${PUID:-1654}
+      PGID: ${PGID:-1654}
+      UMASK: "022"
+    restart: unless-stopped
+    networks:
+      - kit
+
+  mcp-library:
+    image: mcp-library:latest
+    logging: *logging
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerLibrary/Dockerfile
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ${DATA_PATH:-./volumes/data}:/media
+    restart: unless-stopped
+    environment:
+      <<: [*timezone, *hub]
+      JACKETT__APIKEY: ${JACKETT__APIKEY}
+      QBITTORRENT__USERNAME: ${QBITTORRENT__USERNAME}
+      QBITTORRENT__PASSWORD: ${QBITTORRENT__PASSWORD}
+      REDISCONNECTIONSTRING: redis:6379,password=${KIT_REDIS_PASSWORD}
+      MCP__TUNNEL__SERVERNAME: library
+      MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_LIBRARY}
+    networks:
+      - kit
+    depends_on:
+      qbittorrent:
+        condition: service_started
+      jackett:
+        condition: service_started
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  # The household's LAN tools over its media: Plex streams it to the household's players, on the
+  # host's network so they find it, with the render node for transcoding; filebrowser manages the
+  # files on the LAN address. Neither is reached through the deployment.
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    logging: *logging
+    network_mode: host
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      - ./volumes/plex_config:/config
+      - ${DATA_PATH:-./volumes/data}:/media
+    environment:
+      <<: *timezone
+      PUID: ${PUID:-1654}
+      PGID: ${PGID:-1654}
+      VERSION: docker
+    restart: unless-stopped
+
+  filebrowser:
+    image: filebrowser/filebrowser:v2
+    logging: *logging
+    user: ${PUID:-1654}:${PGID:-1654}
+    ports:
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:8002:80"
+    volumes:
+      - ${DATA_PATH:-./volumes/data}:/srv
+      - ./volumes/filebrowser_database:/database
+      - ./volumes/filebrowser_config:/config
+    environment:
+      <<: *timezone
+    restart: unless-stopped
+    networks:
+      - kit
+
+  mcp-sandbox:
+    image: mcp-sandbox:latest
+    logging: *logging
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerSandbox/Dockerfile
+    # No `user:` — the image's entrypoint is a root launcher (sandbox-runtime/) that starts the MCP
+    # server as a uid of its own and runs every command as PUID:PGID, its bounding set dropped. It
+    # needs SYS_ADMIN for the per-command mount namespace and the FUSE mount of the session's other
+    # mounts at /vfs (with /dev/fuse below); commands never hold it.
+    cap_add:
+      - SYS_ADMIN
+    # The host's AppArmor profile and the deployment's syscall filter, as the deployment ran it
+    # (DockerCompose/apparmor, DockerCompose/seccomp): install the profile on the host before `up`.
+    security_opt:
+      - apparmor=ziggurat-sandbox
+      - seccomp=${REPOSITORY_PATH}/DockerCompose/seccomp/ziggurat-sandbox.json
+    # The render node alone (docker-compose.override.rocm.yml adds ROCm's compute node; .no-dri.yml
+    # strips it on a host without one), and FUSE.
+    devices:
+      - /dev/dri:/dev/dri
+      - /dev/fuse:/dev/fuse
+    # /dev/dri/renderD* is root:render 0660: getent group render | cut -d: -f3
+    group_add:
+      - "${RENDER_GID:-993}"
+    volumes:
+      - ${SANDBOX_HOME_PATH:-./volumes/sandbox}:/home/sandbox_user
+    restart: unless-stopped
+    # Its tunnel credential and nothing else: commands get none of it either way — the launcher gives
+    # them a minimal environment, and the server runs as a uid they cannot inspect.
+    environment:
+      <<: [*timezone, *hub]
+      HOME: /home/sandbox_user
+      PATH: /home/sandbox_user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PUID: ${PUID:-1654}
+      PGID: ${PGID:-1654}
+      MCP__TUNNEL__SERVERNAME: sandbox
+      MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_SANDBOX}
+      # A command's file operations on the session's other mounts: the agent's exec bridge, reached
+      # over this server's tunnel from its own loopback.
+      MCP__TUNNEL__BACKCALLS__vfs-bridge: "7805"
+      VFSBRIDGEURL: http://127.0.0.1:7805/api/vfs-bridge
+    # A network of its own, which no other server of the kit is on: a command written by the model
+    # reaches the internet and its own tunnel's back-call, never Home Assistant, qBittorrent or the
+    # kit's Redis.
+    networks:
+      - sandbox
+    depends_on:
+      - base-sdk
+
+  mcp-printer:
+    image: mcp-printer:latest
+    logging: *logging
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerPrinter/Dockerfile
+    volumes:
+      - printer-spool:/spool
+    restart: unless-stopped
+    environment:
+      <<: [*timezone, *hub]
+      MCP__TUNNEL__SERVERNAME: printer
+      MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_PRINTER}
+    networks:
+      - kit
+    depends_on:
+      - base-sdk
+
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    logging: *logging
+    ports:
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:8123:8123"
+    volumes:
+      - ./volumes/homeassistant_config:/config
+    environment:
+      <<: *timezone
+    restart: unless-stopped
+    networks:
+      - kit
+
+  # Host networking for mDNS/zeroconf discovery (Spotify Connect, AirPlay, Chromecast): 8095 (web UI
+  # and API), 1704/1705/1780 (snapcast), 8097 (stream server) bind on the host directly.
+  music-assistant:
+    image: ghcr.io/music-assistant/server:latest
+    logging: *logging
+    network_mode: host
+    volumes:
+      - ./volumes/music-assistant-data:/data
+    environment:
+      <<: *timezone
+    restart: unless-stopped
+
+  mcp-homeassistant:
+    image: mcp-homeassistant:latest
+    logging: *logging
+    # Music Assistant is on the host's network, so its podcast-episode API is reached through the host
+    # gateway.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpServerHomeAssistant/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: [*timezone, *hub]
+      HOMEASSISTANT__TOKEN: ${HOMEASSISTANT__TOKEN}
+      MUSICASSISTANT__TOKEN: ${MUSICASSISTANT__TOKEN}
+      # The watch callback Home Assistant's rest_command presents, and what this server asks the
+      # kit's voice server with when a watch's announcement target is written: the kit's own, which
+      # the deployment never holds.
+      Announce__Token: ${Announce__Token}
+      MCP__TUNNEL__SERVERNAME: homeassistant
+      MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_HOMEASSISTANT}
+    networks:
+      - kit
+    depends_on:
+      base-sdk:
+        condition: service_started
+      homeassistant:
+        condition: service_started
+      mcp-channel-voice:
+        condition: service_started
+
+  mcp-channel-voice:
+    image: mcp-channel-voice:latest
+    logging: *logging
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: McpChannelVoice/Dockerfile
+    restart: unless-stopped
+    # The hub writes these (profile.json cache, audit ring), as PUID:PGID.
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/voices:/voices
+      - ./volumes/tse-audit:/tse-audit
+    environment:
+      <<: [*timezone, *hub]
+      OPENROUTER__APIKEY: ${OPENROUTER__APIKEY}
+      # Home Assistant's watch callback and resolve, on the kit's own network. The deployment's timers
+      # server rings through the relay, which presents this server's tunnel credential instead.
+      Announce__Token: ${Announce__Token}
+      Announce__Escalation__WebhookUrl: ""
+      # The name the deployment's timers server rings through (HouseholdServerNames.Voice).
+      MCP__TUNNEL__SERVERNAME: voice
+      MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_VOICE}
+      # Every deployment service it needs, each through its own tunnel from a port on its loopback:
+      # the accounts service for a speaker and the guest, the agent's topic minting, the shared
+      # Lemonade's speech-to-text and text-to-speech, and the metrics feed — so it opens no Redis.
+      MCP__TUNNEL__BACKCALLS__accounts: "7802"
+      MCP__TUNNEL__BACKCALLS__topics: "7803"
+      MCP__TUNNEL__BACKCALLS__lemonade: "7804"
+      MCP__TUNNEL__BACKCALLS__metrics: "7801"
+      ACCOUNTS__BASEURL: http://127.0.0.1:7802
+      AGENT__BASEURL: http://127.0.0.1:7803
+      Stt__OpenAi__BaseUrl: http://127.0.0.1:7804/v1
+      Tts__OpenAi__BaseUrl: http://127.0.0.1:7804/v1
+      METRICS__URL: http://127.0.0.1:7801/events
+      # The deployment's Lemonade warms one STT model; asking it for another pays a lazy pull on every
+      # first utterance, so this must name the deployment's STT_MODEL.
+      Stt__OpenAi__Model: ${STT_MODEL:-Whisper-Large-v3-Turbo}
+      Tse__Mode: "${Tse__Mode:-Off}"
+      Tse__Endpoint: http://tse-extractor:9098
+      Tse__TimeoutMs: "${Tse__TimeoutMs:-90000}"
+      Tse__NoiseFloorThreshold: "${Tse__NoiseFloorThreshold:-400}"
+      Tse__AuditDir: "${Tse__AuditDir:-}"
+    networks:
+      - kit
+    depends_on:
+      base-sdk:
+        condition: service_started
+
+  # Speech extraction beside voice: it reads the enrolled profiles and keeps its own models.
+  tse-extractor:
+    image: tse-extractor:latest
+    logging: *logging
+    build:
+      context: ${REPOSITORY_PATH}/DockerCompose/tse-extractor
+    restart: unless-stopped
+    user: ${PUID:-1654}:${PGID:-1654}
+    environment:
+      TSE_TORCH_THREADS: "${TSE_TORCH_THREADS:-0}"
+      TSE_ONNX: "${TSE_ONNX:-1}"
+      ENROLL_CACHE: /models/enroll-cache
+    volumes:
+      - ./volumes/tse-models:/models
+      - ./volumes/voices:/voices:ro
+    networks:
+      - kit
+
+  # One-shot, by hand, when the home moves in: copies the remembered logins, one-time links and
+  # download routing the deployment's Redis holds into the kit's (README.md, "Moving the home"). On the
+  # host's network so it reaches both on loopback — the deployment's on its published port, or through
+  # an ssh tunnel to it. The deployment's password is given on the run's command line, never here:
+  #   docker compose --profile move run --rm -e HOMESTATE__FROM="127.0.0.1:6379,password=<the deployment's REDIS_PASSWORD>" state-move [--dry-run]
+  state-move:
+    image: household-migration:latest
+    profiles: ["move"]
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: HouseholdMigration/Dockerfile
+    entrypoint: ["dotnet", "HouseholdMigration.dll", "move-home-state"]
+    network_mode: host
+    restart: "no"
+    environment:
+      HOMESTATE__TO: 127.0.0.1:6380,password=${KIT_REDIS_PASSWORD}
+    depends_on:
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+# This project's own: no network is another's (`external`), so nothing here is on the deployment's.
+networks:
+  kit:
+  sandbox:
+
+volumes:
+  printer-spool:
+  camoufox-identity:

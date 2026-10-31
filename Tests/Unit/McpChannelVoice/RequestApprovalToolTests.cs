@@ -48,21 +48,13 @@ public class RequestApprovalToolTests : IDisposable
 
         _pumpTask = _session.Playback.RunAsync(async (_, _) => await Task.Yield(), _pump.Token);
 
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-kitchen");
-                var topic = new TopicMetadata("topic-kitchen", identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
+        var factory = new FakeTopicMinter();
 
         _manager = new VoiceConversationManager(
-            factory.Object, _accumulator, new FakeTimeProvider(DateTimeOffset.UtcNow),
+            factory, _accumulator, new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
 
-        _conversationId = _manager.GetOrCreateAsync(_session, "agent-1", "hi", default).GetAwaiter().GetResult();
+        _conversationId = _manager.GetOrCreateAsync(_session, "agent-1", default).GetAwaiter().GetResult();
 
         _tts.Setup(t => t.SynthesizeAsync(It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
             .Returns(Audio());
@@ -555,7 +547,7 @@ public class RequestApprovalToolTests : IDisposable
         var session = new SatelliteSession("office-01",
             new SatelliteConfig { Identity = "household", Room = "Office" });
         _sessions.Register(session);
-        var conversationId = await _manager.GetOrCreateAsync(session, "agent-1", "hi", default);
+        var conversationId = await _manager.GetOrCreateAsync(session, "agent-1", default);
         _accumulator.Append(conversationId, "Dame un momento");
         _tts.Setup(t => t.SynthesizeAsync("Dame un momento", It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
             .Returns(ThrowingAudio());
@@ -773,7 +765,7 @@ public class RequestApprovalToolTests : IDisposable
         var pumpTask = session.Playback.RunAsync(async (_, _) => await Task.Yield(), pump.Token);
         try
         {
-            var conversationId = await _manager.GetOrCreateAsync(session, "agent-1", "hi", default);
+            var conversationId = await _manager.GetOrCreateAsync(session, "agent-1", default);
 
             _stt.Setup(s => s.TranscribeAsync(It.IsAny<IAsyncEnumerable<AudioChunk>>(), It.IsAny<TranscriptionOptions>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new TranscriptionResult { Text = "sí, claro", Confidence = 0.9 });

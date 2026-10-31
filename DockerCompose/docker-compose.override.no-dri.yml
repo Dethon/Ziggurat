@@ -1,12 +1,12 @@
 # Use on hosts WITHOUT a /dev/dri render node (e.g. NVIDIA-only WSL2).
 #
 # NVIDIA GPUs under WSL2 expose /dev/dxg + the NVIDIA Container Toolkit, never a
-# DRI render node, so the `devices: - /dev/dri:/dev/dri` mappings in the base
-# compose file fail with:
+# DRI render node, so Lemonade's `devices: - /dev/dri:/dev/dri` mapping in the
+# base compose file fails with:
 #   error gathering device information while adding custom device "/dev/dri"
 #
 # This override uses the Compose `!reset` merge tag (Compose 2.24.4+) to strip
-# those device lists after merge. Apply it as an extra `-f` *after* the base and
+# that device list after merge. Apply it as an extra `-f` *after* the base and
 # OS override files, e.g.:
 #
 #   docker compose \
@@ -18,14 +18,6 @@
 # Hosts that DO have /dev/dri simply omit this file and run the documented command.
 
 services:
-  plex:
-    devices: !reset []
-
-  # The render node goes; /dev/fuse stays, or the sandbox's commands lose the session's mounts.
-  mcp-sandbox:
-    devices: !override
-      - /dev/fuse:/dev/fuse
-
   lemonade:
     devices: !reset []
     environment:

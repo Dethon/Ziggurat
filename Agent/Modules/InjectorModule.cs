@@ -4,9 +4,9 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Judgments;
 using Domain.Monitor;
-using Domain.Outposts;
 using Domain.Prompts;
 using Domain.Security;
 using Domain.Security.Signing;
@@ -17,6 +17,7 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Channels;
+using Infrastructure.Conversations;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
@@ -48,6 +49,21 @@ public static class InjectorModule
             // every unattributed message into an error, and the deployment should refuse to start
             // rather than discover it one message at a time.
             settings.AgentDefaults.Validate(settings.Agents.Select(a => a.Id));
+
+            // An endpoint is a server's URL or a household server's name (reached through its tunnel),
+            // and nothing else: anything else would slip past the credential check below and fail in
+            // the first session that dialled it — or, for a channel, in a connection retrying for ever.
+            var unreadable = settings.Agents.SelectMany(a => a.McpServerEndpoints)
+                .Concat(settings.SubAgents.SelectMany(a => a.McpServerEndpoints))
+                .Concat(settings.ChannelEndpoints.Select(c => c.Endpoint))
+                .Where(endpoint => ServerAddress.FromUrl(endpoint) is null && !TunnelCredentialProtocol.IsServerName(endpoint))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (unreadable.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"MCP endpoints that are neither an http(s) URL nor a household server's name: {string.Join(", ", unreadable)}.");
+            }
 
             // And for a server the deployment configured without its credential: dialled bare, its
             // gate would refuse every call, and the session that needed it would fail far from here.
@@ -145,8 +161,7 @@ public static class InjectorModule
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
                 .AddHostedService<ModelCapabilityRefresher>()
                 .AddLemonadeChatHost(lemonadeChatHost)
-                .AddTypeSafe(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey), settings.SkillPreload, settings.ExecScreen)
-                .AddOutposts(settings.Outposts);
+                .AddTypeSafe(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey), settings.SkillPreload, settings.ExecScreen);
         }
 
         // The judge is registered as every Jev host registers it; the preloader and the exec screen
@@ -195,12 +210,13 @@ public static class InjectorModule
                 var channelId = endpoint.ChannelId;
                 var attachOnly = endpoint.AttachOnly;
                 var hostsReviewCopies = endpoint.HostsReviewCopies;
-                // A channel server's /mcp is gated like every other deployment server's, so each
-                // connection — and every reconnect it makes — presents that server's credential.
+                // A channel server's /mcp is gated like every other deployment server's, so each run
+                // of the connection — and every reconnect it makes — presents that server's
+                // credential, which the host hands it with the endpoint (a household server's tunnel
+                // presents its own).
                 services = services.AddSingleton<IChannelConnection>(sp =>
                     new McpChannelConnection(
                         channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
-                        mcpSecret: sp.GetRequiredService<McpCredentials>().For(endpoint.Endpoint),
                         callTokens: sp.GetRequiredService<CallTokens>())
                     {
                         HostsReviewCopies = hostsReviewCopies
@@ -227,14 +243,12 @@ public static class InjectorModule
                             sp.GetRequiredService<IModelCapabilityCatalog>(),
                             sp.GetRequiredService<ILemonadeModelSource>()),
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>(),
-                        sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default));
+                        sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default,
+                        sp.GetRequiredService<McpCredentials>(),
+                        // A channel endpoint naming a household server follows the home household's
+                        // tunnel of that name (the relay's, AddTunnelRelay).
+                        sp.GetService<IOwnChannelServers>()));
         }
-
-        private IServiceCollection AddOutposts(OutpostConfiguration outposts) =>
-            // The registry and the secret travel together, because neither is any use without the
-            // other: a registration nobody may dial is a mount that cannot be reached.
-            services.AddSingleton(sp => new OutpostAccess(
-                sp.GetRequiredService<IOutpostRegistry>(), outposts.SharedSecret));
 
         private IServiceCollection AddRedis(RedisConfiguration config, RetentionSettings retention)
         {
@@ -245,21 +259,16 @@ public static class InjectorModule
                     sp.GetRequiredService<IConnectionMultiplexer>(),
                     retention,
                     sp.GetRequiredService<TimeProvider>()))
+                // The topics the agent mints itself: a voice conversation's (TopicMintingApi), and a
+                // fire's that only an attach-only channel delivers, which nothing else anchors.
+                .AddSingleton<IConversationFactory>(sp => new ConversationFactory(
+                    sp.GetRequiredService<IThreadStateStore>(), sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
                     sp.GetRequiredService<IConnectionMultiplexer>()))
-                // Outside this process for the same reason an outpost registration is: recycling the
-                // agent must not blind it to a picture that is still in view.
+                // Outside this process: recycling the agent must not blind it to a picture that is
+                // still in view.
                 .AddSingleton<IReadImageStore>(sp => new RedisReadImageStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>()))
-                // An outpost registration survives the agent recycling because it lives here
-                // rather than in this process: a container restart must not silently drop every
-                // machine that had announced itself.
-                .AddSingleton<IOutpostStore>(sp => new RedisOutpostStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>()))
-                .AddSingleton<IOutpostRegistry>(sp => new OutpostRegistry(
-                    sp.GetRequiredService<IOutpostStore>(),
-                    sp.GetRequiredService<IMetricsPublisher>(),
-                    sp.GetRequiredService<TimeProvider>()));
+                    sp.GetRequiredService<IConnectionMultiplexer>()));
         }
     }
 }

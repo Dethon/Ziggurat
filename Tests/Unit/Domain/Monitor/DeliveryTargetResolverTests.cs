@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
@@ -233,6 +234,71 @@ public class DeliveryTargetResolverTests
         targets.Count.ShouldBe(2);
         targets[0].Channel.ChannelId.ShouldBe("signalr");
         targets.ShouldAllBe(t => t.ConversationId == "minted-signalr");
+    }
+
+    // An attach-only channel shows no topic of its own, so a fire it alone delivers would anchor on
+    // nothing: the agent mints the topic itself, for the fire's verified principal, and hands the
+    // channel that conversation to attach to — the channel never decides whose a topic is.
+    [Fact]
+    public async Task ResolveDeliveryTargets_AnAttachOnlyChannelAlone_AttachesToATopicTheAgentMints()
+    {
+        var origin = Channel("scheduling");
+        var voice = new Mock<IChannelConnection>();
+        voice.SetupGet(c => c.ChannelId).Returns("voice");
+        voice.SetupGet(c => c.AttachOnly).Returns(true);
+        voice.SetupGet(c => c.IsConnected).Returns(true);
+        voice.Setup(c => c.CreateConversationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, Principal? _, bool _, CancellationToken _) => existing);
+        var topics = new Mock<IConversationFactory>();
+        var fran = new Principal("scheduling", "u-fran", new Account("t-home", "u-fran"));
+        topics.Setup(t => t.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConversationCreation(
+                new ConversationIdentity(7, 9),
+                new global::Domain.DTOs.WebChat.TopicMetadata("topic-7", 7, 9, "jonas", "Scheduled task", DateTimeOffset.UtcNow, null)));
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1", Content = "riega las plantas", Sender = "scheduler", ChannelId = "scheduling",
+            AgentId = "jonas", Principal = fran,
+            ReplyTo = [new ReplyTarget("voice", null, "kitchen-01")]
+        };
+
+        var targets = await new DeliveryTargetResolver([origin, voice.Object], NullLogger.Instance, topics.Object)
+            .ResolveAsync(msg, origin, CancellationToken.None);
+
+        targets.ShouldHaveSingleItem().ConversationId.ShouldBe("7:9");
+        topics.Verify(t => t.CreateAsync(
+            It.Is<CreateConversationParams>(p =>
+                p.AgentId == "jonas" && p.TopicName == "Scheduled task" && p.Sender == "scheduler" && p.Principal == fran),
+            It.IsAny<CancellationToken>()), Times.Once);
+        voice.Verify(c => c.CreateConversationAsync(
+            "jonas", "Scheduled task", "scheduler", "riega las plantas", "kitchen-01", "7:9", fran, false,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // Voice is the fire's only target and its server is not connected: nothing would attach to a
+    // topic minted for it, and an empty "Scheduled task" would be left in the person's sidebar.
+    [Fact]
+    public async Task ResolveDeliveryTargets_AnAttachOnlyChannelAloneThatIsNotConnected_MintsNoTopic()
+    {
+        var origin = Channel("scheduling");
+        var voice = new Mock<IChannelConnection>();
+        voice.SetupGet(c => c.ChannelId).Returns("voice");
+        voice.SetupGet(c => c.AttachOnly).Returns(true);
+        voice.SetupGet(c => c.IsConnected).Returns(false);
+        var topics = new Mock<IConversationFactory>();
+        var msg = new ChannelMessage
+        {
+            ConversationId = "fire-1", Content = "riega las plantas", Sender = "scheduler", ChannelId = "scheduling",
+            AgentId = "jonas", Principal = new Principal("scheduling", "u-fran", new Account("t-home", "u-fran")),
+            ReplyTo = [new ReplyTarget("voice", null, "kitchen-01")]
+        };
+
+        var targets = await new DeliveryTargetResolver([origin, voice.Object], NullLogger.Instance, topics.Object)
+            .ResolveAsync(msg, origin, CancellationToken.None);
+
+        targets.ShouldBeEmpty();
+        topics.Verify(t => t.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

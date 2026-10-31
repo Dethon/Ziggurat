@@ -1,6 +1,7 @@
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Judgments;
 using Domain.Prompts;
 using Domain.Tools.Web;
@@ -12,6 +13,7 @@ using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Mcp.Hosting;
+using Mcp.Hosting.Tunnel;
 using McpServerWebSearch.Handoff;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
@@ -33,9 +35,12 @@ public static class ConfigModule
                 // publish resolves the publisher, so registration runs with no container.
                 .AddSingleton<IConnectionMultiplexer>(
                     _ => RedisConnection.ConnectResiliently(settings.RedisConnectionString))
-                .AddMetricsPublishing("mcp-websearch")
+                .AddMetricsPublishing("mcp-websearch", settings.Metrics)
                 .AddTypeSafeJudge(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey))
                 .AddPagesListener(settings.Listeners)
+                // Tunnelled, the proxy's /browse/* reaches the pages listener through the relay, by
+                // this tag; dialled, nothing reads it.
+                .AddTunnelListener(TunnelProtocol.PagesTag, settings.Listeners.Pages)
                 .AddSingleton(settings.Handoff)
                 .AddSingleton(TimeProvider.System)
                 .AddSingleton<OneTimeLinks>()

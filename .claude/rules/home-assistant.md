@@ -10,14 +10,14 @@ paths:
 
 # Home Assistant
 
-Home Assistant runs at `http://<host>:8123` (published on all interfaces). On first run:
+Home Assistant is a household's: it runs in the tenant kit (`TenantKit/`) beside its server, at `http://<host>:8123` (`LAN_BIND_ADDRESS`). On first run:
 
 1. Create the owner account through the browser onboarding flow.
 2. Profile menu → **Security → Long-Lived Access Tokens** → create one.
-3. Set `HOMEASSISTANT__TOKEN=...` in `DockerCompose/.env` and restart `mcp-homeassistant`.
+3. Set `HOMEASSISTANT__TOKEN=...` in `TenantKit/.env` and restart the kit's `mcp-homeassistant`.
 4. For the Roborock S8: Settings → Devices & Services → Add Integration → **Roborock**; the vacuum appears as `vacuum.<name>`.
 
-The agent reaches HA in-network at `http://homeassistant:8123` via `McpServerHomeAssistant`. For voice alarms/reminders it creates events on a dedicated Local Calendar (prod: `calendar.assistant_alarms`, "Assistant Alarms" — the prompt never hard-codes the id, it says "the calendar the setup index lists as alarms") that an HA automation bridges to the voice announce endpoint; the `home_assistant_guide` prompt (`Domain/Prompts/HomeAssistantPrompt.cs`) teaches the idiom, and the one-time `rest_command` + automation provisioning lives in the HA instance itself — `docs/home-assistant-bridges.md` has the YAML. Without that automation an event is created and nothing rings.
+`McpServerHomeAssistant` reaches HA on the kit's own network at `http://homeassistant:8123`, and the agent reaches the server through its tunnel as `homeassistant` (`.claude/rules/tunnel.md`); the watch callback and announcement targets stay inside the kit, between it and the kit's voice server, under the kit's own `Announce__Token`. For voice alarms/reminders it creates events on a dedicated Local Calendar (prod: `calendar.assistant_alarms`, "Assistant Alarms" — the prompt never hard-codes the id, it says "the calendar the setup index lists as alarms") that an HA automation bridges to the voice announce endpoint; the `home_assistant_guide` prompt (`Domain/Prompts/HomeAssistantPrompt.cs`) teaches the idiom, and the one-time `rest_command` + automation provisioning lives in the HA instance itself — `docs/home-assistant-bridges.md` has the YAML. Without that automation an event is created and nothing rings.
 
 The HA VFS engine is `Domain/Tools/HomeAssistant/Vfs/*.cs`. Each action an entity admits is an
 **action file** named for its service with no extension (`turn_on`, `music_assistant.play_media`),

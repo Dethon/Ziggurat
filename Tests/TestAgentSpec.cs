@@ -32,7 +32,6 @@ internal static class TestAgentSpec
         WhitelistPatterns = [],
         PromptSections = [],
         KeepsHistory = true,
-        RecordsOutpostVerdicts = true,
         PatchableModels = FixedPatchableModelSource.None
     };
 }

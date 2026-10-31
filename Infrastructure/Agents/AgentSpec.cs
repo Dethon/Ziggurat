@@ -28,7 +28,12 @@ public sealed record AgentSpec
     public ProviderRouting? ProviderRouting { get; init; }
     public required IReadOnlyList<McpServerEndpoint> McpServerEndpoints { get; init; }
 
-    // Whether live outposts join the endpoint list above when a session is built. A deliberate
+    // The household this agent's turns are for, which a household server the endpoints name is
+    // resolved against when a session is built. A worker's is its parent's. Null where the turn that
+    // built the agent named none (it acted for nobody), and then no household server is reached.
+    public string? TenantId { get; init; }
+
+    // Whether the household's live outposts join the endpoint list above when a session is built. A deliberate
     // choice per agent, never a default.
     public bool UsesOutposts { get; init; }
 
@@ -54,13 +59,6 @@ public sealed record AgentSpec
     public required IReadOnlyList<PromptSection> PromptSections { get; init; }
     public string? Language { get; init; }
     public required bool KeepsHistory { get; init; }
-
-    // Whether this build writes each outpost's mount verdict back onto its registration. True for
-    // an agent and false for a subagent: the verdict is a machine's one feedback channel and it
-    // answers "did the agent you registered with mount you", so a collision reached inside a
-    // delegated task is not the operator's to be told about. Its own field rather than a second
-    // meaning for KeepsHistory, which is about thread state and would answer this by coincidence.
-    public required bool RecordsOutpostVerdicts { get; init; }
 
     // Asked per turn rather than copied here: part of the list is discovered while the agent
     // runs, so a spec holding the ids would refuse a model that appeared after it was built.

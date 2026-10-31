@@ -8,6 +8,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Tunnel;
 using Domain.DTOs.Voice;
 using Domain.Tools.FileSystem.Bridge;
 using Domain.Tools.Memory;
@@ -211,10 +212,28 @@ public sealed class EvalStack : IAsyncDisposable
         return
         [
             .. agent.McpServerEndpoints.Concat(workers)
-                .Select(endpoint => new Uri(endpoint).Host)
+                .Select(HostOf)
                 .Distinct(StringComparer.Ordinal)
         ];
     }
+
+    // The compose host an endpoint stands for: a URL's, or for a household's own server named by its
+    // name, the host the deployment ran it at before it moved to the household's site (vault ->
+    // mcp-vault), which is the server this stack hosts in its place.
+    public static string HostOf(string endpoint) =>
+        TunnelCredentialProtocol.IsServerName(endpoint)
+            ? endpoint.StartsWith("mcp-", StringComparison.Ordinal) ? endpoint : $"mcp-{endpoint}"
+            : new Uri(endpoint).Host;
+
+    // Where each household server the definitions name is reached in this stack: the server it hosts
+    // in that server's place, dialled directly — the eval runs no tunnel.
+    public static InProcessOwnServers OwnServers(AgentSettings settings, IReadOnlyDictionary<string, string> hosted) =>
+        new(settings.Agents.SelectMany(a => a.McpServerEndpoints)
+            .Concat(settings.SubAgents.SelectMany(w => w.McpServerEndpoints))
+            .Where(TunnelCredentialProtocol.IsServerName)
+            .Distinct(StringComparer.Ordinal)
+            .Where(name => hosted.ContainsKey(HostOf(name)))
+            .ToDictionary(name => name, name => hosted[HostOf(name)]));
 
     private async Task<string> StartBridgeAsync()
     {
@@ -512,6 +531,9 @@ public sealed class EvalStack : IAsyncDisposable
         }
 
         services.AddSingleton<IVfsBridge>(Bridge);
+        // A household server the definition names by its name is the one this stack hosts in its
+        // place, reached without a tunnel.
+        services.AddSingleton<IOwnServers>(OwnServers(settings, hosted));
         // After the agent's own source, so it wins the resolution: the channel's fetch, answered
         // from the scenario's files because nothing here dials the channel that would hold them.
         services.AddSingleton<IAttachmentSource>(Attachments);
@@ -535,10 +557,16 @@ public sealed class EvalStack : IAsyncDisposable
     // the alternative is a scenario that cannot run at all. The agent under test therefore has a
     // smaller toolset than the shipped one until every family's servers are hosted, and which
     // sections it actually got is readable in the dump's assembled prompt.
+    //
+    // A household server named by its name stays named, and is resolved to the server standing in
+    // for it when the session is built (OwnServers).
     private static string[] Rewrite(IEnumerable<string> endpoints, IReadOnlyDictionary<string, string> hosted) =>
         [.. endpoints
-            .Select(endpoint => hosted.FirstOrDefault(h => endpoint.Contains(h.Key)).Value)
-            .Where(rewritten => rewritten is not null)];
+            .Select(endpoint => TunnelCredentialProtocol.IsServerName(endpoint)
+                ? hosted.ContainsKey(HostOf(endpoint)) ? endpoint : null
+                : hosted.FirstOrDefault(h => endpoint.Contains(h.Key)).Value)
+            .Where(rewritten => rewritten is not null)
+            .Select(rewritten => rewritten!)];
 
     // One agent without the feature that gives it workers: no tool to call them with and no
     // section telling it they exist. Everything else about it, and everything about every other

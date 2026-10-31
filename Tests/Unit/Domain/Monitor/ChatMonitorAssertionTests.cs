@@ -66,6 +66,25 @@ public class ChatMonitorAssertionTests
         identity.TenantId.ShouldBe(Household);
     }
 
+    // A household's own servers are reached in the household the turn is for, and the guest has one
+    // as much as a person does — a satellite's guest still runs the home's lights.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ATurnsAgent_IsBuiltForTheHouseholdItsAssertionNames(bool guest)
+    {
+        var run = new Run("voice");
+        run.Channel.WriteMessage(Message("voice") with
+        {
+            Principal = new Principal("voice", "household"),
+            Assertion = guest ? TestAssertions.OfGuest(Household, "voice") : TestAssertions.Of(_fran, "voice")
+        });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldHaveSingleItem().TenantId.ShouldBe(Household);
+    }
+
     public static TheoryData<string, string?> Unbelievable => new()
     {
         { "Missing", null },

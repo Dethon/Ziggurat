@@ -189,12 +189,13 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
-    public List<(AgentKey Key, string? AgentId, IToolApprovalHandler ApprovalHandler, string UserId, Account? Account)> Created { get; } = [];
+    public List<(AgentKey Key, string? AgentId, IToolApprovalHandler ApprovalHandler, string UserId, Account? Account, string? TenantId)> Created { get; } = [];
 
     public DisposableAgent Create(
-        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null)
+        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
+        string? tenantId = null)
     {
-        Created.Add((agentKey, agentId, approvalHandler, userId, account));
+        Created.Add((agentKey, agentId, approvalHandler, userId, account, tenantId));
         return agent;
     }
 
@@ -212,6 +213,8 @@ internal sealed class FakeChannelConnection : IChannelConnection
     public bool AttachOnly { get; init; }
 
     public bool HostsReviewCopies { get; init; }
+
+    public bool IsConnected { get; init; } = true;
 
     public string? ConversationIdToReturn { get; init; }
 

@@ -9,6 +9,7 @@ using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Judgments;
+using Infrastructure.Tunnels;
 using JetBrains.Annotations;
 
 namespace Agent.Settings;
@@ -28,16 +29,16 @@ public record AgentSettings
     public AttachmentConfiguration Attachments { get; init; } = new();
     public ReadImageConfiguration ReadImages { get; init; } = new();
     public RetentionSettings Retention { get; init; } = new();
-    public OutpostConfiguration Outposts { get; init; } = new();
     public AgentApiConfiguration AgentApi { get; init; } = new();
 
     // Where the accounts service publishes the keys its assertions verify with (ACCOUNTS__JWKSURL):
     // the registration API takes its person from the one SexyTime forwards.
     public AccountsClientConfig Accounts { get; init; } = new();
 
-    // Each configured MCP server's own credential, keyed by the host the agent dials it at
-    // (MCP__SECRETS__<host>): every configured endpoint and channel connection presents the one for
-    // its host, the same value that server binds as its own (MCP__SHAREDSECRET).
+    // Each configured MCP server's own credential, keyed by the name it answers to (ServerAddress.Name,
+    // the host the agent dials it at — MCP__SECRETS__<host>): every configured endpoint and channel
+    // connection presents the one for its server, the same value that server binds as its own
+    // (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
 
     // The key the agent signs its call tokens with, and the delegations deferred turns act on. A deployment names a directory in the agent's own volume (SIGNING__KEYDIRECTORY), where the
@@ -63,6 +64,9 @@ public record AgentSettings
     public SkillPreloadSettings SkillPreload { get; init; } = new();
     public ExecScreenSettings ExecScreen { get; init; } = new();
     public VfsBridgeSettings VfsBridge { get; init; } = new();
+
+    // Where a household server's back-calls reach beside the agent: the shared Lemonade.
+    public required BackCallSettings BackCalls { get; init; }
 }
 
 // The Lemonade chat host: somebody's own box on the local network, outside the compose stack, and
@@ -72,15 +76,6 @@ public record LemonadeChatConfiguration
 {
     public string ApiUrl { get; [UsedImplicitly] init; } = "";
     public string? ApiKey { get; [UsedImplicitly] init; }
-}
-
-public record OutpostConfiguration
-{
-    // The one value on either side of an outpost's life that is a secret, so the only one that
-    // arrives as an environment variable rather than as configuration or a flag. Empty means no
-    // machine may attach: an unset secret refuses every registration rather than accepting any,
-    // because a deployment that forgot to set it must not be one anyone on the network can join.
-    public string SharedSecret { get; [UsedImplicitly] init; } = "";
 }
 
 // The custom-agent registration API's gate. A secret, so it arrives as an environment variable

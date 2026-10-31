@@ -12,12 +12,14 @@ description: Launch the local jackbot Docker Compose stack and reach its UIs —
 | `DockerCompose/docker-compose.yml`                  | Main service definitions |
 | `DockerCompose/docker-compose.override.windows.yml` | Windows user secrets mount (`%APPDATA%/Microsoft/UserSecrets`) |
 | `DockerCompose/docker-compose.override.linux.yml`   | Linux user secrets mount (`$HOME/.microsoft/usersecrets`) |
-| `DockerCompose/docker-compose.override.ports.yml`   | Publishes the MCP servers, channel servers, agent, webui, observability, accounts, Camoufox and tse-extractor on `127.0.0.1` at their usual ports, for a project run on the host against the stack (`appsettings.Local.json`). The base file publishes only Caddy's 443, Redis on loopback and the operator's LAN tools on `${LAN_BIND_ADDRESS}` (loopback when unset) |
-| `DockerCompose/docker-compose.override.no-dri.yml`  | Strips `/dev/dri` from `plex`/`mcp-sandbox`/`lemonade` (and forces `lemonade` STT to CPU) on hosts without a DRI render node |
+| `DockerCompose/docker-compose.override.ports.yml`   | Publishes the shared MCP servers, channel servers, agent, webui, observability and accounts on `127.0.0.1` at their usual ports, for a project run on the host against the stack (`appsettings.Local.json`). The base file publishes only Caddy's 443, Redis on loopback and Lemonade on `${LAN_BIND_ADDRESS}` (loopback when unset), for the speech typist |
+| `DockerCompose/docker-compose.override.no-dri.yml`  | Strips `/dev/dri` from `lemonade` (and forces its STT to CPU) on hosts without a DRI render node |
+| `TenantKit/docker-compose.yml`                      | The tenant kit: a household's own servers (web search + Camoufox, vault, library + qBittorrent + Jackett, sandbox, printer, Home Assistant server + Home Assistant + Music Assistant, voice + tse-extractor), the kit's own Redis, each server opening its tunnel to the deployment, and the household's LAN tools over its media (Plex on the host's network, filebrowser on `${LAN_BIND_ADDRESS}:8002`). `TenantKit/README.md` |
+| `TenantKit/docker-compose.override.{no-dri,rocm,ports}.yml` | The sandbox and Plex without a render node / the sandbox with ROCm's `/dev/kfd`; Camoufox (9377) and tse-extractor (9098) on loopback for a host-run web search or voice |
 
 ## Launching
 
-Every server needs its own `MCP_SECRET_<SERVER>` and the stack needs `REDIS_PASSWORD` (compose refuses to start without it). For a local stack, export each `MCP_SECRET_*` as `local-mcp-secret`: a project run on the host as the agent dials every server at `localhost` and holds that one value as its `localhost` credential (`.vscode/launch.json`, `.zed/debug.json`, `scripts/run-local.sh`). The Local profiles connect to Redis with `local-redis-password`, which the editor tasks start it with. Holding a server's credential lets a caller talk to it, not act through it: every tool call must also carry the agent's call token for that server. Compose tells each server its own name (`MCP__AUDIENCE`) and where the agent publishes its keys (`MCP__AGENTKEYSURL`, `http://agent:8080/internal/jwks`, never routed by Caddy); the agent generates its key into `./volumes/agent-keys` on first start (`agent-volume` hands the folder to PUID). A host run of the agent keeps its key in `Agent/.signing/` (`appsettings.Local.json`), and the editor profiles and `scripts/run-local.sh` tell every host-run server `localhost` and `http://localhost:5000/internal/jwks` — a server refuses tool calls until the agent is up to publish them. Something you point at a server's `/mcp` by hand gets through the handshake and the tool list, and is refused on every tool call (`Refused (Missing)`).
+Every shared server needs its own `MCP_SECRET_<SERVER>` and the stack needs `REDIS_PASSWORD` (compose refuses to start without it). For a local stack, export each `MCP_SECRET_*` as `local-mcp-secret`: a project run on the host as the agent dials every server at `localhost` and holds that one value as its `localhost` credential (`.vscode/launch.json`, `.zed/debug.json`, `scripts/run-local.sh`). The Local profiles connect to Redis with `local-redis-password`, which the editor tasks start it with. Holding a server's credential lets a caller talk to it, not act through it: every tool call must also carry the agent's call token for that server. Compose tells each server its own name (`MCP__AUDIENCE`) and where the agent publishes its keys (`MCP__AGENTKEYSURL`, `http://agent:8080/internal/jwks`, never routed by Caddy); the agent generates its key into `./volumes/agent-keys` on first start (`agent-volume` hands the folder to PUID). A host run of the agent keeps its key in `Agent/.signing/` (`appsettings.Local.json`), and the editor profiles and `scripts/run-local.sh` tell every host-run server `localhost` and `http://localhost:5000/internal/jwks` — a server refuses tool calls until the agent is up to publish them. Something you point at a server's `/mcp` by hand gets through the handshake and the tool list, and is refused on every tool call (`Refused (Missing)`).
 
 To read prod's Redis, tunnel to its loopback port: `ssh -L 6379:127.0.0.1:6379 192.168.5.45`, then connect to `localhost:6379`.
 
@@ -25,12 +27,27 @@ Swap the override for your OS (`linux` on Linux/WSL, `windows` on Windows):
 
 ```bash
 REDIS_PASSWORD=local-redis-password docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot up -d --build \
-  agent webui observability accounts mcp-vault mcp-sandbox mcp-websearch mcp-idealista mcp-homeassistant mcp-library \
-  mcp-channel-signalr mcp-channel-telegram mcp-channel-voice mcp-scheduling mcp-printer mcp-timers mcp-sugary \
-  lemonade tse-extractor qbittorrent jackett redis caddy camoufox homeassistant music-assistant
+  agent webui observability accounts mcp-idealista mcp-channel-signalr mcp-channel-telegram mcp-scheduling \
+  mcp-timers mcp-sugary lemonade redis caddy
 ```
 
-The base compose maps `/dev/dri` into `plex`/`mcp-sandbox`/`lemonade` for GPU acceleration. Only the render node is mapped — the Vulkan tier needs nothing more, so `/dev/dri` without `/dev/kfd` (Intel iGPU, Raspberry Pi) still comes up; `/dev/kfd` (ROCm) is never mapped. The opt-in NPU tier (`docker-compose.override.npu.yml`) maps `/dev/accel/accel0` instead. Hosts with **no** DRI render node (NVIDIA-only WSL2 has `/dev/dxg`, never `/dev/dri`) fail with `error gathering device information while adding custom device "/dev/dri"` — append `-f DockerCompose/docker-compose.override.no-dri.yml` last to strip it (the VS Code `docker-debug-up` task already does).
+That is the deployment alone: a household's own servers are not in it. The agent names them (`vault`, `websearch`, ...) and, with none connected, every turn goes without their tools and is told they are offline. To have them, run the tenant kit beside it (below).
+
+The base compose maps `/dev/dri` into `lemonade` alone, for GPU acceleration (the kit maps it into its sandbox and Plex). Only the render node is mapped — the Vulkan tier needs nothing more, so `/dev/dri` without `/dev/kfd` (Intel iGPU, Raspberry Pi) still comes up; `/dev/kfd` (ROCm) is never mapped. The opt-in NPU tier (`docker-compose.override.npu.yml`) maps `/dev/accel/accel0` instead. Hosts with **no** DRI render node (NVIDIA-only WSL2 has `/dev/dxg`, never `/dev/dri`) fail with `error gathering device information while adding custom device "/dev/dri"` — append `-f DockerCompose/docker-compose.override.no-dri.yml` last to strip it (the VS Code `docker-debug-up` task already does), and the kit's own `TenantKit/docker-compose.override.no-dri.yml` for its sandbox and Plex.
+
+## The tenant kit
+
+A household's own servers run from `TenantKit/docker-compose.yml` (project `tenant-kit`), beside the deployment on this machine or anywhere else: each opens one tunnel to `wss://${DEPLOYMENT_HOST}/tunnel` with the credential minted for it, and reaches the deployment through it alone — its networks are its own and it holds no deployment secret (`TenantKitConformanceTests`). `TenantKit/README.md` has the table of servers, their tunnel names and back-calls, `.env`, and the steps that moved the home into it. In short:
+
+```bash
+for s in websearch vault library sandbox printer homeassistant voice; do
+  docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household <id> --server $s   # -> TUNNEL_CREDENTIAL_<S> in TenantKit/.env
+done
+docker compose -f TenantKit/docker-compose.yml build base-sdk && docker compose -f TenantKit/docker-compose.yml up -d --build
+docker exec agent dotnet Agent.dll list-household-servers --household <id>
+```
+
+Compose reads the whole file, so `DEPLOYMENT_HOST` and `KIT_REDIS_PASSWORD` must be set even to start one kit service. A local stack's Caddy serves its own CA, which a tunnel trusts only when told (`MCP__TUNNEL__HUBCERTIFICATEAUTHORITY`, a PEM file inside the container), and the main host must resolve to this machine inside the kit's containers (`extra_hosts: <main host>:host-gateway`). A host run of the projects needs only the kit's helpers: the editor tasks' `local-deps` start the deployment's Redis and the kit's qBittorrent, Jackett, Camoufox and Home Assistant (with `TenantKit/docker-compose.override.ports.yml`).
 
 ## Secrets
 
@@ -38,7 +55,7 @@ Services read secrets from .NET User Secrets mounted at `/home/app/.microsoft/us
 
 These secrets live in `DockerCompose/.env` and must be set (any non-empty value) before the stack is useful:
 
-- `MCP_SECRET_<SERVER>` (one per MCP server, channel servers included) — each server's `/mcp` refuses a call without its own, which it reads as `MCP__SHAREDSECRET`; the agent holds them all as `MCP__SECRETS__<host>` and refuses to start without one for a server it dials. Anything you point at a server's `/mcp` by hand (an MCP inspector, a script) sends `Authorization: Bearer <that server's value>`.
+- `MCP_SECRET_<SERVER>` (one per shared MCP server, channel servers included; a household's own servers hold a tunnel credential in `TenantKit/.env` instead) — each server's `/mcp` refuses a call without its own, which it reads as `MCP__SHAREDSECRET`; the agent holds them all as `MCP__SECRETS__<host>` and refuses to start without one for a server it dials. Anything you point at a server's `/mcp` by hand (an MCP inspector, a script) sends `Authorization: Bearer <that server's value>`.
 - `REDIS_PASSWORD` — compose refuses to start the stack without it.
 - `AGENTAPI__SHAREDSECRET` — `/api/agents` (custom-agent registration, routed by Caddy) refuses every verb without `Authorization: Bearer <value>`, and answers 400 without `X-Ziggurat-User: <user id>` (whose catalogue it is; a `userId` parameter is ignored).
 
@@ -66,9 +83,11 @@ mkdir -p DockerCompose/volumes/household-migration && cp people.json DockerCompo
 docker compose -f DockerCompose/docker-compose.yml -p jackbot up -d accounts
 docker compose -f DockerCompose/docker-compose.yml -p jackbot --profile migrate run --rm household-migration \
   --people /input/people.json --operator <name> --owner <name> --sugary <name> --dry-run   # then without --dry-run
-docker compose -f DockerCompose/docker-compose.yml -p jackbot restart mcp-channel-voice tse-extractor
+docker compose -f DockerCompose/docker-compose.yml -p jackbot restart mcp-channel-voice tse-extractor   # before the home moved into the kit
 # empty HOUSEHOLD_MIGRATION_SECRET again, and `up -d accounts`
 ```
+
+The migration runs before the home moves into the tenant kit: the voice profiles and remembered logins it renames are still the deployment's then (`./volumes/voices`, the deployment's Redis), and the move carries them over afterwards (`TenantKit/README.md`, "Moving the home onto the tunnel").
 
 Each `<name>` is a person's `name` in the file. The run prints a passkey link for each person it created; running it again changes nothing and says so. A bucket of memories under a name nobody is listed with is named in the output: add the name to its person's `oldNames` and run again. `.claude/rules/household-migration.md` has what each step does.
 
@@ -78,7 +97,7 @@ Each `<name>` is a person's `name` in the file. The run prints a passkey link fo
 
 ## The smoke stack
 
-`scripts/smoke-stack.sh up|test|down` runs the shipped compose file and Caddyfile on this machine as project `jackbot-smoke`, from empty state under `DockerCompose/volumes/smoke` (`docker-compose.override.smoke.yml`), with local secrets and Caddy on its own CA (`CADDY_TLS=internal`). It starts every server an agent dials but never Telegram, voice or Home Assistant itself, so a stale copy of the deployment's data cannot fire schedules, take the bot's updates or dial the satellites. `test` runs `Category=Smoke`, which reaches Caddy at 127.0.0.1 by the deployment's hostnames.
+`scripts/smoke-stack.sh up|test|down` runs the shipped compose file and Caddyfile on this machine as project `jackbot-smoke`, from empty state under `DockerCompose/volumes/smoke` (`docker-compose.override.smoke.yml`), with local secrets and Caddy on its own CA (`CADDY_TLS=internal`). It starts every shared server an agent dials but never Telegram, so a stale copy of the deployment's data cannot fire schedules or take the bot's updates; a household's own servers are the tenant kit's and are not started, so its turns go without them. `test` runs `Category=Smoke`, which reaches Caddy at 127.0.0.1 by the deployment's hostnames.
 
 ## Debugging with Playwright
 

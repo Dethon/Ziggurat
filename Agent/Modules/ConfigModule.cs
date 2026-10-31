@@ -1,5 +1,6 @@
 using System.CommandLine;
 using Agent.Settings;
+using Domain.DTOs.Tunnel;
 using Domain.Security.Signing;
 using Infrastructure.Clients.Accounts;
 using DeliverySettings = Domain.DTOs.DeliverySettings;
@@ -15,6 +16,7 @@ public static class ConfigModule
             .AddJsonFile(RetentionSettings.FileName, optional: true)
             .AddJsonFile(DeliverySettings.FileName, optional: true)
             .AddJsonFile(TokenVerificationSettings.FileName, optional: true)
+            .AddJsonFile(TunnelSettings.FileName, optional: true)
             .AddEnvironmentVariables()
             .AddUserSecrets<Program>()
             .Build();
@@ -31,6 +33,7 @@ public static class ConfigModule
             .AddSubAgents(settings.SubAgents)
             .AddMemory(config)
             .AddChatMonitoring(settings, cmdParams)
+            .AddTunnelRelay(settings.Mcp.Tunnel, settings.Accounts, settings.AgentApi.SharedSecret, settings.BackCalls)
             // The registration API's person is the accounts service's assertion SexyTime forwards.
             .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification);
     }

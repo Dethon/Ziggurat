@@ -1,12 +1,9 @@
-using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
-using Domain.DTOs.WebChat;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
-using Moq;
 using Shouldly;
 
 namespace Tests.Unit.McpChannelVoice;
@@ -18,53 +15,41 @@ public class VoiceConversationManagerTests
     private static SatelliteSession Session() =>
         new("kitchen-01", new SatelliteConfig { Identity = "household", Room = "Kitchen" });
 
-    private static (VoiceConversationManager Sut, Mock<IConversationFactory> Factory) Build(FakeTimeProvider clock)
+    private static (VoiceConversationManager Sut, FakeTopicMinter Topics) Build(FakeTimeProvider clock)
     {
-        var factory = new Mock<IConversationFactory>();
-        var counter = 0;
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                counter++;
-                var topicId = $"topic-{counter}";
-                var identity = ConversationIdGenerator.CreateFor(topicId);
-                var topic = new TopicMetadata(topicId, identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", clock.GetUtcNow(), null);
-                return new ConversationCreation(identity, topic);
-            });
-
+        var topics = new FakeTopicMinter();
         var sut = new VoiceConversationManager(
-            factory.Object, new ReplyTextAccumulator(), clock, _lifetime,
+            topics, new ReplyTextAccumulator(), clock, _lifetime,
             NullLogger<VoiceConversationManager>.Instance);
-        return (sut, factory);
+        return (sut, topics);
     }
 
     [Fact]
     public async Task FirstUtterance_MintsConversation()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (sut, factory) = Build(clock);
+        var (sut, topics) = Build(clock);
 
-        var id = await sut.GetOrCreateAsync(Session(), "agent-1", "hello", default);
+        var id = await sut.GetOrCreateAsync(Session(), "agent-1", default);
 
         id.ShouldNotBeNullOrWhiteSpace();
         sut.GetActiveConversationId("kitchen-01").ShouldBe(id);
         sut.ResolveSatelliteId(id).ShouldBe("kitchen-01");
-        factory.Verify(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()), Times.Once);
+        topics.Minted.Count.ShouldBe(1);
     }
 
     [Fact]
     public async Task SecondUtteranceWithinWindow_ReusesAndRenews()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (sut, factory) = Build(clock);
+        var (sut, topics) = Build(clock);
 
-        var first = await sut.GetOrCreateAsync(Session(), "agent-1", "hello", default);
+        var first = await sut.GetOrCreateAsync(Session(), "agent-1", default);
         clock.Advance(TimeSpan.FromMinutes(4));
-        var second = await sut.GetOrCreateAsync(Session(), "agent-1", "again", default);
+        var second = await sut.GetOrCreateAsync(Session(), "agent-1", default);
 
         second.ShouldBe(first);
-        factory.Verify(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()), Times.Once);
+        topics.Minted.Count.ShouldBe(1);
 
         clock.Advance(TimeSpan.FromMinutes(4));
         sut.GetActiveConversationId("kitchen-01").ShouldBe(first);
@@ -76,13 +61,13 @@ public class VoiceConversationManagerTests
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var (sut, _) = Build(clock);
 
-        var first = await sut.GetOrCreateAsync(Session(), "agent-1", "hello", default);
+        var first = await sut.GetOrCreateAsync(Session(), "agent-1", default);
         clock.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
 
         sut.GetActiveConversationId("kitchen-01").ShouldBeNull();
         sut.ResolveSatelliteId(first).ShouldBeNull();
 
-        var second = await sut.GetOrCreateAsync(Session(), "agent-1", "fresh", default);
+        var second = await sut.GetOrCreateAsync(Session(), "agent-1", default);
         second.ShouldNotBe(first);
         sut.ResolveSatelliteId(second).ShouldBe("kitchen-01");
     }
@@ -91,17 +76,28 @@ public class VoiceConversationManagerTests
     public async Task BuildsTopicNameFromIdentityAndRoom()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var (sut, factory) = Build(clock);
+        var (sut, topics) = Build(clock);
 
-        await sut.GetOrCreateAsync(Session(), "agent-1", "hello", default);
+        await sut.GetOrCreateAsync(Session(), "agent-1", default);
 
-        factory.Verify(f => f.CreateAsync(
-            It.Is<CreateConversationParams>(p =>
-                p.AgentId == "agent-1" &&
-                p.TopicName == "household @ Kitchen" &&
-                p.Sender == "household" &&
-                p.InitialPrompt == "hello"),
-            It.IsAny<CancellationToken>()), Times.Once);
+        topics.Minted.ShouldHaveSingleItem().Request
+            .ShouldBe(new TopicMintRequest("agent-1", "household @ Kitchen", "household"));
+    }
+
+    // Whose the topic is, is the agent's to decide from the accounts service's word for who spoke,
+    // so the mint carries the assertion the speaker came with, under the name they go by.
+    [Fact]
+    public async Task AMintedConversation_CarriesTheSpeakersAssertionToTheAgent()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var (sut, topics) = Build(clock);
+
+        var id = await sut.GetOrCreateAsync(
+            Session(), "agent-1", default, Task.FromResult<(string, string?)>(("Fran", "fran's assertion")));
+
+        var (request, assertion) = topics.Minted.ShouldHaveSingleItem();
+        (request.Sender, assertion).ShouldBe(("Fran", "fran's assertion"));
+        id.ShouldBe(ConversationIdGenerator.CreateFor("topic-1").ConversationId);
     }
 
     [Fact]
@@ -110,7 +106,7 @@ public class VoiceConversationManagerTests
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var (sut, _) = Build(clock);
         var sessionA = new SatelliteSession("sat-a", new SatelliteConfig { Identity = "household", Room = "Office A" });
-        var conversationId = await sut.GetOrCreateAsync(sessionA, "agent-1", "hola", default);
+        var conversationId = await sut.GetOrCreateAsync(sessionA, "agent-1", default);
 
         clock.Advance(TimeSpan.FromMinutes(2));
         sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBe(BindingTransfer.Moved);
@@ -142,8 +138,8 @@ public class VoiceConversationManagerTests
         var (sut, _) = Build(clock);
         var sessionA = new SatelliteSession("sat-a", new SatelliteConfig { Identity = "household", Room = "Office A" });
         var sessionB = new SatelliteSession("sat-b", new SatelliteConfig { Identity = "household", Room = "Office B" });
-        var conversationA = await sut.GetOrCreateAsync(sessionA, "agent-1", "hola", default);
-        var conversationB = await sut.GetOrCreateAsync(sessionB, "agent-1", "hey", default);
+        var conversationA = await sut.GetOrCreateAsync(sessionA, "agent-1", default);
+        var conversationB = await sut.GetOrCreateAsync(sessionB, "agent-1", default);
 
         clock.Advance(TimeSpan.FromMinutes(2));
         sut.TransferBinding("sat-a", "sat-b", clock.GetTimestamp()).ShouldBe(BindingTransfer.Moved);
@@ -166,12 +162,12 @@ public class VoiceConversationManagerTests
         var (sut, _) = Build(clock);
         var sessionA = new SatelliteSession("sat-a", new SatelliteConfig { Identity = "household", Room = "Office A" });
         var sessionB = new SatelliteSession("sat-b", new SatelliteConfig { Identity = "household", Room = "Office B" });
-        var conversationA = await sut.GetOrCreateAsync(sessionA, "agent-1", "hola", default);
+        var conversationA = await sut.GetOrCreateAsync(sessionA, "agent-1", default);
 
         clock.Advance(TimeSpan.FromMinutes(1));
         var claimedAt = clock.GetTimestamp(); // sat-b's wake claim arrives
         clock.Advance(TimeSpan.FromSeconds(2)); // decision delayed (e.g. a wedged loser's re-arm)
-        var conversationB = await sut.GetOrCreateAsync(sessionB, "agent-1", "enciende la luz", default);
+        var conversationB = await sut.GetOrCreateAsync(sessionB, "agent-1", default);
 
         // sat-b's own turn already ran and bound its own conversation after the claim: the
         // handoff is stale, and displacing conversationB would silently drop its in-flight reply.

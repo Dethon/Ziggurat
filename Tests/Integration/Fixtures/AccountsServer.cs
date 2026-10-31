@@ -107,6 +107,13 @@ public sealed partial class AccountsServer : IAsyncDisposable
         return output.Trim();
     }
 
+    public async Task<MintedTunnelCredential> MintTunnelCredentialAsync(string tenantId, string serverName)
+    {
+        var (exit, output) = await RunAsync(AccountsCommand.MintTunnelCredential, "--household", tenantId, "--server", serverName);
+        exit.ShouldBe(0, output);
+        return MintedTunnelCredential.Parse(output);
+    }
+
     // What the proxy's forward_auth sends: a GET to the check carrying the browser's cookie and
     // Accept, and the original request's method, host and path in its forwarded headers.
     public Task<HttpResponseMessage> VerifyAsync(
@@ -143,6 +150,33 @@ public sealed partial class AccountsServer : IAsyncDisposable
         db.Users.Add(member);
         await db.SaveChangesAsync();
         return member.Id;
+    }
+
+    // A household besides the home one, which nothing but the tenants admin will make: written straight
+    // into the store, its id handed back.
+    public async Task<string> SeedHouseholdAsync(string name)
+    {
+        await using var db = await Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        var household = new Tenant { Id = Tokens.NewId(), Name = name, CreatedAt = Clock.GetUtcNow() };
+        db.Tenants.Add(household);
+        await db.SaveChangesAsync();
+        return household.Id;
+    }
+
+    // A second household and a person in it, which nothing but the Tenants phase's admin area makes:
+    // written straight into the store, as the home's member above is.
+    public async Task<(string TenantId, string UserId)> SeedHouseholdAsync(string name, string person)
+    {
+        await using var db = await Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        var household = new Tenant { Id = Tokens.NewId(), Name = name, CreatedAt = Clock.GetUtcNow() };
+        var user = new User
+        {
+            Id = Tokens.NewId(), TenantId = household.Id, DisplayName = person, Role = Role.Owner, CreatedAt = Clock.GetUtcNow()
+        };
+        db.Tenants.Add(household);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return (household.Id, user.Id);
     }
 
     public async ValueTask DisposeAsync()
@@ -225,6 +259,22 @@ public sealed partial class AccountsServer : IAsyncDisposable
 
     [GeneratedRegex(@"user (?<user>[0-9a-f]+), household (?<tenant>[0-9a-f]+)")]
     private static partial Regex Who();
+
+    // What `mint-tunnel-credential` prints: the credential's id, and on a line of its own, last, the
+    // credential, the only time it is shown.
+    public sealed partial record MintedTunnelCredential(string Id, string Credential)
+    {
+        public static MintedTunnelCredential Parse(string output)
+        {
+            var id = CredentialId().Match(output);
+            id.Success.ShouldBeTrue(output);
+            var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            return new MintedTunnelCredential(id.Groups["id"].Value, lines[^1]);
+        }
+
+        [GeneratedRegex(@"credential (?<id>[0-9a-f]{32})")]
+        private static partial Regex CredentialId();
+    }
 
     // What `mint-link` prints: who the link is for, and the link.
     public sealed record MintedLink(string UserId, string TenantId, Uri Url)

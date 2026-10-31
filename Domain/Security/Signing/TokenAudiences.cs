@@ -12,10 +12,8 @@ public static class TokenAudiences
     // binds one to one use is the object it names and the kind of fire that object raises.
     public const string Delegation = "ziggurat-delegation";
 
-    // A call token's: the one server it is for, named by the host the agent dials it at — the name
-    // the agent keys that server's credential by (McpCredentials) and the one the server binds as its
-    // own (MCP__AUDIENCE). The host and not the port, so a test server on localhost is "localhost"
-    // whatever port it took. Empty for an address that is not one, which no server answers to.
-    public static string CallTo(string address) =>
-        Uri.TryCreate(address, UriKind.Absolute, out var uri) ? uri.Host : "";
+    // A call token's: the one server it is for, by the name it answers to (ServerAddress.Name) — the
+    // name the agent keys that server's credential by (McpCredentials) and the one the server binds as
+    // its own (MCP__AUDIENCE).
+    public static string CallTo(ServerAddress server) => server.Name;
 }

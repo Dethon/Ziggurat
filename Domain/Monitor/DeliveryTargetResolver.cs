@@ -5,7 +5,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
 
-public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, ILogger logger)
+// The topic store is where the agent mints a topic itself, for a fan-out that only attach-only
+// channels deliver. Optional because a host with no topic store (a test harness) leaves such a fire
+// to whatever the channel answers when it has no conversation to attach to.
+public class DeliveryTargetResolver(
+    IReadOnlyList<IChannelConnection> channels, ILogger logger, IConversationFactory? topics = null)
 {
     public async Task<IReadOnlyList<DeliveryTarget>> ResolveAsync(
         ChannelMessage message,
@@ -113,6 +117,21 @@ public class DeliveryTargetResolver(IReadOnlyList<IChannelConnection> channels, 
             {
                 try
                 {
+                    // Nothing anchors yet and this channel shows no topic of its own (voice): the agent
+                    // mints the topic, for the principal it verified, so the channel only attaches.
+                    if (shared is null && channel.AttachOnly && channel.IsConnected && topics is not null)
+                    {
+                        shared = (await topics.CreateAsync(new CreateConversationParams
+                        {
+                            AgentId = message.AgentId ?? "default",
+                            TopicName = TopicName(message),
+                            Sender = message.Sender,
+                            InitialPrompt = message.Content,
+                            Principal = message.Principal,
+                            Group = message.ReviewCopy?.Group ?? false
+                        }, ct)).Identity.ConversationId;
+                    }
+
                     conversationId = await channel.CreateConversationAsync(
                         message.AgentId ?? "default", TopicName(message), message.Sender, message.Content,
                         target.Address, shared, message.Principal, message.ReviewCopy?.Group ?? false, ct);

@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Tunnel;
 using Domain.Prompts;
 using Domain.Security;
 using Domain.Tools.FileSystem;
@@ -23,7 +24,8 @@ internal static class AgentSpecProjection
         string? lemonadeHostAddress,
         McpCredentials credentials,
         DeploymentEndpoints deployment,
-        ILogger? logger) => new()
+        ILogger? logger,
+        string? tenantId = null) => new()
         {
             NoTools = RefuseFeaturesWithoutTools(definition),
             WithheldTools = new HashSet<string>(),
@@ -42,15 +44,19 @@ internal static class AgentSpecProjection
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, definition.Id, logger),
             // Every endpoint a definition names is dialled as configured, but only the ones the
-            // deployment's own settings name present a deployment credential, each its own host's.
+            // deployment's own settings name present a deployment credential, each its own server's.
             // A built-in agent's all do; a registered agent's are whatever the registration said,
-            // and no credential may follow it to an address of its choosing. Dynamic endpoints — live outposts — are merged in downstream, where the
-            // registry of them is reachable, each with its own secret.
+            // and no credential may follow it to an address of its choosing. Dynamic endpoints — the
+            // household's live outposts — are merged in downstream, each through its own tunnel.
+            //
+            // A household's own server is named rather than addressed, and presents no deployment
+            // credential: its tunnel's client presents the tunnel's own (OwnServerEndpoints).
             McpServerEndpoints =
             [
-                .. definition.McpServerEndpoints.Select(address =>
-                    McpServerEndpoint.Configured(address, deployment.Names(address) ? credentials.For(address) : null))
+                .. definition.McpServerEndpoints.Select(address => EndpointOf(
+                    address, server => deployment.Names(server) ? credentials.For(server) : null))
             ],
+            TenantId = tenantId,
             UsesOutposts = definition.UsesOutposts,
             EnabledFeatures = definition.EnabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures),
@@ -59,7 +65,6 @@ internal static class AgentSpecProjection
             PromptSections = ResolveSections(definition.Id, definition.PromptSections),
             Language = definition.Language,
             KeepsHistory = true,
-            RecordsOutpostVerdicts = true,
             PatchableModels = patchableModels,
             LemonadeHostAddress = lemonadeHostAddress
         };
@@ -104,8 +109,9 @@ internal static class AgentSpecProjection
             // A worker's endpoints are the deployment's servers as much as its parent's are.
             // A worker's definition is the deployment's own — nothing registers one — so every
             // endpoint it names is a deployment server.
-            McpServerEndpoints =
-                [.. definition.McpServerEndpoints.Select(address => McpServerEndpoint.Configured(address, credentials.For(address)))],
+            McpServerEndpoints = [.. definition.McpServerEndpoints.Select(address => EndpointOf(address, credentials.For))],
+            // The parent's household, whose servers the worker reaches as its parent does.
+            TenantId = spawn.TenantId,
             // Two yeses, and neither alone is enough. The parent's is the ceiling — a subagent
             // acts on its behalf and cannot reach a machine it could not — and the definition's
             // is what keeps a narrow worker off the machines: the list of subagents is shared by
@@ -129,7 +135,6 @@ internal static class AgentSpecProjection
             // that agent: its endpoint list is its own, so it can reach a different verdict for
             // the same machine, and writing it would report a collision inside somebody's
             // delegated task as the operator's name being taken.
-            RecordsOutpostVerdicts = false,
             // The parent's whitelist, because the parent's model on a turn the person moved
             // elsewhere is the model that turn asked for. The run tool writes that model onto the
             // worker's request and the worker resolves it here exactly as the parent did, so the
@@ -183,4 +188,11 @@ internal static class AgentSpecProjection
             .Select(p => p[1])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
+
+    // A definition's endpoint: a household server's name, or a URL presenting what `credential` hands
+    // the server it reaches — nothing for an address that is no server's.
+    private static McpServerEndpoint EndpointOf(string address, Func<ServerAddress, string?> credential) =>
+        TunnelCredentialProtocol.IsServerName(address)
+            ? McpServerEndpoint.OwnServer(address)
+            : McpServerEndpoint.Configured(address, ServerAddress.FromUrl(address) is { } server ? credential(server) : null);
 }
