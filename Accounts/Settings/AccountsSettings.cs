@@ -30,8 +30,17 @@ public record AccountsSettings
     public Dictionary<string, string> Callers { get; init; } = [];
 
     // The deployment's Redis, where a revoked tunnel credential is announced to the relay
-    // (TunnelRevocationPublisher). Nothing is stored there.
+    // (TunnelRevocationPublisher) and a saved household configuration to its readers. Nothing is
+    // stored there.
     public RedisSettings Redis { get; init; } = new();
+
+    // Households' configuration: the master key their data keys are wrapped with.
+    public HouseholdConfigSettings HouseholdConfig { get; init; } = new();
+
+    // Where the agent publishes the keys its call tokens verify with: a shared server proves which
+    // household it asks about with the call token it was handed, and the agent proves it is the agent
+    // with one of its own. Per deployment (AGENTKEYSURL in compose); the default is compose's value.
+    public string AgentKeysUrl { get; init; } = DefaultAgentKeysUrl;
 
     // How long an invite or recovery link stays redeemable.
     public int LinkLifetimeDays { get; init; } = 7;
@@ -48,6 +57,8 @@ public record AccountsSettings
     // mcp:tokenVerification). The service verifies none itself; what it needs is the skew they forgive,
     // which a retired key's last assertion must be past.
     public VerifierPolicy Mcp { get; init; } = new();
+
+    public const string DefaultAgentKeysUrl = "http://agent:8080/internal/jwks";
 
     public Uri PublicBase => new(PublicBaseUrl.TrimEnd('/') + "/");
 
@@ -95,6 +106,15 @@ public record AccountsSettings
 public record VerifierPolicy
 {
     public TokenVerificationSettings TokenVerification { get; init; } = new();
+}
+
+public record HouseholdConfigSettings
+{
+    // The deployment's master key (HOUSEHOLDCONFIG__MASTERKEY, the base64 of 32 random bytes): it
+    // wraps each household's data key, which seals that household's secrets. Empty seals nothing — a
+    // section with a secret cannot be saved and a sealed one cannot be read — which is what a stack
+    // with no household secrets runs on. Losing it loses every household's secrets.
+    public string MasterKey { get; init; } = "";
 }
 
 public record RedisSettings
