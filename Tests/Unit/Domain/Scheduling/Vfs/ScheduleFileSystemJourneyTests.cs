@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.Security.Signing;
 using Domain.Tools;
 using Domain.Tools.Scheduling.Vfs;
 using Infrastructure.Validation;
@@ -19,6 +20,9 @@ public class ScheduleFileSystemJourneyTests
 {
     private const string ValidSpec = """{"prompt":"summarize news","cron":"0 8 * * *"}""";
 
+    // The household every call here acts in, unless a test says otherwise.
+    private const string Home = "home";
+
     private static readonly TimeZoneInfo _testZone =
         TimeZoneInfo.CreateCustomTimeZone("test-plus2", TimeSpan.FromHours(2), "test-plus2", "test-plus2");
 
@@ -33,7 +37,8 @@ public class ScheduleFileSystemJourneyTests
         catalog.Replace(entries);
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
         clock.SetLocalTimeZone(_testZone);
-        return new ScheduleFileSystem(store ?? new FakeScheduleStore(), catalog, new CronValidator(), clock);
+        return (ScheduleFileSystem)new ScheduleFileSystem(store ?? new FakeScheduleStore(), catalog, new CronValidator(), clock)
+            .For(Caller("signalr", "fran"));
     }
 
     private static Schedule SeedSchedule(string id = "morning-news", string agentId = "jonas",
@@ -42,6 +47,7 @@ public class ScheduleFileSystemJourneyTests
         new()
         {
             Id = id,
+            TenantId = Home,
             AgentId = agentId,
             Prompt = prompt,
             CronExpression = cron,
@@ -52,11 +58,12 @@ public class ScheduleFileSystemJourneyTests
 
     // A call as a server reads it: the principal the agent's call token names, the person's account
     // on the channel their turn came from.
-    private static FileSystemCaller Caller(string channelId, string userId) =>
+    private static FileSystemCaller Caller(string channelId, string userId, string household = Home) =>
         new(new ConversationContext("jonas", "conv-1", userId, new ReplyTarget(channelId, "conv-1"),
-            Principal: WriterOn(channelId, userId)), null);
+            Principal: new Principal(channelId, userId, new Account(household, userId)),
+            Identity: IdentityClaims.Person(userId, household, channelId, [])), null);
 
-    private static Principal WriterOn(string channelId, string userId) => new(channelId, userId, new Account("home", userId));
+    private static Principal WriterOn(string channelId, string userId) => new(channelId, userId, new Account(Home, userId));
 
     // A schedule runs as whoever's own turn wrote it, recorded from that turn's context: the
     // `userId` in its JSON is the model's to write, and a fire that trusted it would let any turn
@@ -70,24 +77,49 @@ public class ScheduleFileSystemJourneyTests
         await fs.CreateAsync("/jonas/orders/schedule.json",
             """{"prompt":"check my orders","cron":"0 8 * * *","userId":"ana"}""", false, true, CancellationToken.None);
 
-        var schedule = (await store.GetAsync("orders", CancellationToken.None)).ShouldNotBeNull();
+        var schedule = (await store.GetAsync(Home, "orders", CancellationToken.None)).ShouldNotBeNull();
         schedule.CreatedBy.ShouldBe(WriterOn("telegram", "FranTG"));
         schedule.UserId.ShouldBe("ana");
     }
 
-    // The user id a call's context carries is the channel's unsigned word: a call the agent signed
-    // for nobody names no writer, whatever that says.
+    // A schedule is kept under the household of the call that wrote it, and the user id a call's
+    // context carries is the channel's unsigned word: a call the agent signed for nobody names no
+    // household, so it writes no schedule, whatever that says.
     [Fact]
-    public async Task Create_ByACallSignedForNobody_RecordsNobody_WhateverUserIdItsContextCarries()
+    public async Task Create_ByACallSignedForNobody_IsRefused_WhateverUserIdItsContextCarries()
     {
         var store = new FakeScheduleStore();
         var fs = Build(store).For(new FileSystemCaller(
-            new ConversationContext("jonas", "conv-1", "FranTG", new ReplyTarget("telegram", "conv-1")), null));
+            new ConversationContext("jonas", "conv-1", "FranTG", new ReplyTarget("telegram", "conv-1"),
+                Identity: IdentityClaims.Nobody("telegram")), null));
 
-        await fs.CreateAsync("/jonas/orders/schedule.json",
+        var created = await fs.CreateAsync("/jonas/orders/schedule.json",
             """{"prompt":"check my orders","cron":"0 8 * * *"}""", false, true, CancellationToken.None);
 
-        (await store.GetAsync("orders", CancellationToken.None)).ShouldNotBeNull().CreatedBy.ShouldBeNull();
+        created.ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        store.Items.ShouldBeEmpty();
+    }
+
+    // Each household's schedules are its own: another household's never list, read or answer to a
+    // create under the same id.
+    [Fact]
+    public async Task Glob_ListsOnlyTheCallersHouseholdsSchedules()
+    {
+        var store = new FakeScheduleStore();
+        await store.CreateAsync(SeedSchedule(), CancellationToken.None);
+        await store.CreateAsync(SeedSchedule(id: "away-news") with { TenantId = "away" }, CancellationToken.None);
+        var away = Build(store).For(Caller("signalr", "laura", household: "away"));
+
+        var listed = (await away.GlobAsync("/", "**", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
+        var read = await away.ReadAsync("/jonas/morning-news/schedule.json", null, null, CancellationToken.None);
+        var created = await away.CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+
+        listed.Entries.ShouldContain("/jonas/away-news/");
+        listed.Entries.ShouldNotContain(e => e.Contains("morning-news"));
+        read.ShouldBeOfType<FsResult<FsReadResult>.Err>();
+        created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        (await store.GetAsync(Home, "morning-news", CancellationToken.None))!.Prompt.ShouldBe("summarize news");
     }
 
     // A chat-client turn's principal names the person's account, and a schedule it writes runs as
@@ -96,15 +128,16 @@ public class ScheduleFileSystemJourneyTests
     public async Task Create_OnAChatClientTurn_RecordsTheWritersAccount()
     {
         var store = new FakeScheduleStore();
-        var principal = new Principal("signalr", "u-1", new Account("t-1", "u-1"));
+        var principal = new Principal("signalr", "u-1", new Account(Home, "u-1"));
         var caller = new FileSystemCaller(
-            new ConversationContext("jonas", "7:42", "Fran", new ReplyTarget("signalr", "7:42"), Principal: principal),
+            new ConversationContext("jonas", "7:42", "Fran", new ReplyTarget("signalr", "7:42"), Principal: principal,
+                Identity: IdentityClaims.Person("u-1", Home, "signalr", [])),
             null);
 
         await Build(store).For(caller).CreateAsync("/jonas/orders/schedule.json",
             """{"prompt":"check my orders","cron":"0 8 * * *"}""", false, true, CancellationToken.None);
 
-        (await store.GetAsync("orders", CancellationToken.None))!.CreatedBy.ShouldBe(principal);
+        (await store.GetAsync(Home, "orders", CancellationToken.None))!.CreatedBy.ShouldBe(principal);
     }
 
     // Whoever last wrote the schedule is who it runs as: an edit or a move by another turn would
@@ -119,7 +152,7 @@ public class ScheduleFileSystemJourneyTests
         await fs.EditAsync("/jonas/morning-news/schedule.json",
             [new TextEdit("summarize news", "summarize sport")], CancellationToken.None);
 
-        (await store.GetAsync("morning-news", CancellationToken.None))!.CreatedBy
+        (await store.GetAsync(Home, "morning-news", CancellationToken.None))!.CreatedBy
             .ShouldBe(WriterOn("signalr", "Ana"));
     }
 
@@ -132,19 +165,21 @@ public class ScheduleFileSystemJourneyTests
 
         await fs.MoveAsync("/jonas/morning-news", "/jonas/evening-news", CancellationToken.None);
 
-        (await store.GetAsync("evening-news", CancellationToken.None))!.CreatedBy
+        (await store.GetAsync(Home, "evening-news", CancellationToken.None))!.CreatedBy
             .ShouldBe(WriterOn("signalr", "Ana"));
     }
 
-    // A write with no turn behind it vouches for nobody.
+    // A write with no turn behind it names no household, so it keeps nothing.
     [Fact]
-    public async Task Create_WithNoCaller_RecordsNobody()
+    public async Task Create_WithNoCaller_IsRefused()
     {
         var store = new FakeScheduleStore();
 
-        await Build(store).CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
+        var created = await Build(store).For(FileSystemCaller.Nobody)
+            .CreateAsync("/jonas/morning-news/schedule.json", ValidSpec, false, true, CancellationToken.None);
 
-        (await store.GetAsync("morning-news", CancellationToken.None))!.CreatedBy.ShouldBeNull();
+        created.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        store.Items.ShouldBeEmpty();
     }
 
     // The mount says the file is `/<agentId>/<id>/schedule.json`, and a model writes the body to
@@ -161,7 +196,7 @@ public class ScheduleFileSystemJourneyTests
 
         var ok = create.ShouldBeOfType<FsResult<FsCreateResult>.Ok>().Value;
         ok.FilePath.ShouldEndWith("/jonas/morning-news/schedule.json");
-        (await store.GetAsync("morning-news", CancellationToken.None)).ShouldNotBeNull();
+        (await store.GetAsync(Home, "morning-news", CancellationToken.None)).ShouldNotBeNull();
     }
 
     [Fact]
@@ -670,7 +705,7 @@ public class ScheduleFileSystemJourneyTests
         catalog.Replace([new AgentCatalogEntry("jonas", "Jonas", "general")]);
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
         clock.SetLocalTimeZone(madrid);
-        var fs = new ScheduleFileSystem(store, catalog, new CronValidator(), clock);
+        var fs = new ScheduleFileSystem(store, catalog, new CronValidator(), clock).For(Caller("signalr", "fran"));
 
         var result = await fs.CreateAsync(
             "/jonas/wake/schedule.json",
@@ -694,7 +729,7 @@ public class ScheduleFileSystemJourneyTests
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
         clock.SetLocalTimeZone(_testZone);
         var fs = new ScheduleFileSystem(store, catalog, new CronValidator(), clock,
-            regexMatchTimeout: TimeSpan.FromMilliseconds(1));
+            regexMatchTimeout: TimeSpan.FromMilliseconds(1)).For(Caller("signalr", "fran"));
 
         var result = await fs.SearchAsync(
             "(a+)+b", regex: true, null, null, null, 10, 0,

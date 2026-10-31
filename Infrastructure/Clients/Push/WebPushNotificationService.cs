@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging;
 
@@ -11,17 +12,17 @@ public sealed class WebPushNotificationService(
     IPushMessageSender pushClient,
     ILogger<WebPushNotificationService> logger) : IPushNotificationService
 {
-    public async Task SendToSpaceAsync(string spaceSlug, string title, string body, string url,
+    public async Task SendToSpaceAsync(string tenantId, string spaceSlug, string title, string body, string url,
         CancellationToken ct = default)
     {
-        await SendAsync(await store.GetBySpaceAsync(spaceSlug, ct), spaceSlug, title, body, url, ct);
+        await SendAsync(await store.GetBySpaceAsync(tenantId, spaceSlug, ct), spaceSlug, title, body, url, ct);
     }
 
-    public async Task SendToPersonAsync(string userId, string spaceSlug, string title, string body, string url,
+    public async Task SendToPersonAsync(Account person, string spaceSlug, string title, string body, string url,
         CancellationToken ct = default)
     {
-        var subscriptions = await store.GetBySpaceAsync(spaceSlug, ct);
-        await SendAsync([.. subscriptions.Where(s => s.UserId == userId)], spaceSlug, title, body, url, ct);
+        var subscriptions = await store.GetBySpaceAsync(person.TenantId, spaceSlug, ct);
+        await SendAsync([.. subscriptions.Where(s => s.UserId == person.UserId)], spaceSlug, title, body, url, ct);
     }
 
     private async Task SendAsync(

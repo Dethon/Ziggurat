@@ -108,8 +108,8 @@ public sealed class ChatHubTopicTests : IDisposable
             "topic-1", 7, 42, "jack", "Chat",
             new DateTimeOffset(2026, 8, 10, 0, 0, 0, TimeSpan.Zero),
             new DateTimeOffset(2026, 8, 12, 9, 0, 0, TimeSpan.Zero),
-            LastMessageSnippet: "the latest reply", MessageCount: 9, ReadPosition: 4);
-        _store.Setup(s => s.GetTopicAsync("jack", 7, "topic-1")).ReturnsAsync(stored);
+            LastMessageSnippet: "the latest reply", MessageCount: 9, ReadPosition: 4, TenantId: "home");
+        _store.Setup(s => s.GetTopicAsync("home", "jack", 7, "topic-1")).ReturnsAsync(stored);
         var stale = stored with
         {
             Name = "Renamed",
@@ -169,7 +169,7 @@ public sealed class ChatHubTopicTests : IDisposable
     }
 
     private static TopicMetadata Topic(string topicId) => new(
-        topicId, 7, 42, "jack", topicId, new DateTimeOffset(2026, 8, 12, 0, 0, 0, TimeSpan.Zero), null);
+        topicId, 7, 42, "jack", topicId, new DateTimeOffset(2026, 8, 12, 0, 0, 0, TimeSpan.Zero), null, TenantId: "home");
 
     [Fact]
     public async Task GetTopicPage_CarriesTheCursorThroughToTheStore()
@@ -190,7 +190,7 @@ public sealed class ChatHubTopicTests : IDisposable
         await _hub.DeleteTopic("jack", "topic-1", 7, 42);
 
         _hubSender.Verify(s => s.SendToGroupAsync(
-            "space:kitchen",
+            "space:home:kitchen",
             "OnTopicChanged",
             It.Is<TopicChangedNotification>(n =>
                 n.ChangeType == TopicChangeType.Deleted && n.TopicId == "topic-1"),
@@ -208,7 +208,7 @@ public sealed class ChatHubTopicTests : IDisposable
         await _hub.DeleteTopic("jack", "topic-1", 7, 42);
 
         _hubSender.Verify(s => s.SendToGroupAsync(
-            "space:kitchen",
+            "space:home:kitchen",
             "OnTopicChanged",
             It.Is<TopicChangedNotification>(n => n.TopicId == "topic-1"),
             It.IsAny<CancellationToken>()), Times.Exactly(2));

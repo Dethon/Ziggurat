@@ -467,10 +467,19 @@ public sealed class EvalStack : IAsyncDisposable
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
         var database = connection.GetDatabase();
-        var ids = await database.SetMembersAsync("schedules");
+        var server = connection.GetServer(connection.GetEndPoints()[0]);
 
-        await Task.WhenAll(ids.Select(id => database.KeyDeleteAsync($"schedule:{id}")));
-        await database.KeyDeleteAsync(["schedules", "schedules:due"]);
+        // Every household's: a schedule is kept under the household that wrote it (RedisScheduleStore).
+        List<RedisKey> keys = [RedisScheduleStore.DueSetKey];
+        foreach (var pattern in (string[])["schedule@*", "schedules@*"])
+        {
+            await foreach (var key in server.KeysAsync(database.Database, pattern))
+            {
+                keys.Add(key);
+            }
+        }
+
+        await database.KeyDeleteAsync([.. keys]);
     }
 
     private async Task<string> StartAsync(WebApplicationBuilder builder, int port)

@@ -4,6 +4,11 @@ using Microsoft.Extensions.AI;
 
 namespace Domain.Contracts;
 
+// Topics are kept under their household: a page and a search are of the viewer's household, and a
+// read, a mark or a delete by id names the household, so the store never answers one household with
+// another's topic. A conversation's own history and the topic it leads to are reached by the
+// conversation, whose id is the same whichever household holds it; what that topic says about whose it
+// is (TopicViewer) is the caller's to apply.
 public interface IThreadStateStore
 {
     Task DeleteAsync(AgentKey key);
@@ -34,12 +39,12 @@ public interface IThreadStateStore
     // keepTtl is for writes that are not the conversation's own: a rename must not push the purge
     // horizon back, or search returns a topic whose transcript expired months before its record.
     Task SaveTopicAsync(TopicMetadata topic, bool keepTtl = false);
-    Task DeleteTopicAsync(string agentId, long chatId, string topicId);
+    Task DeleteTopicAsync(string tenantId, string agentId, long chatId, string topicId);
 
     // Moves the topic's read position up to what it currently holds. Asked of the store rather
     // than told by a caller, so a message that landed while the reader was reading is not
     // counted unread.
-    Task MarkTopicReadAsync(string agentId, long chatId, string topicId);
+    Task MarkTopicReadAsync(string tenantId, string agentId, long chatId, string topicId);
 
     // The conversation as a reader sees it, which is the same history the agent restores read
     // through a projection. It lives here rather than beside the chat hub so there is one
@@ -51,5 +56,5 @@ public interface IThreadStateStore
 
     // The stored topic a caller already names. A writer holding a client's copy reads this first,
     // so counters the store learned while the browser wasn't looking are never written back stale.
-    Task<TopicMetadata?> GetTopicAsync(string agentId, long chatId, string topicId);
+    Task<TopicMetadata?> GetTopicAsync(string tenantId, string agentId, long chatId, string topicId);
 }

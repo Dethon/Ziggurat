@@ -300,7 +300,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         await connection.InvokeAsync("SubscribePush", subscription);
         await connection.InvokeAsync("UnsubscribePush", "https://push.example/1");
 
-        _pushStore.Verify(s => s.SaveAsync(Fran, subscription, It.IsAny<string>(), null, It.IsAny<CancellationToken>()));
+        _pushStore.Verify(s => s.SaveAsync(new Account(Home, Fran), subscription, It.IsAny<string>(), null, It.IsAny<CancellationToken>()));
         _pushStore.Verify(s => s.RemoveAsync(Fran, "https://push.example/1", It.IsAny<CancellationToken>()));
     }
 
