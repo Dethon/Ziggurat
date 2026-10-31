@@ -3,9 +3,13 @@
     "options": {
         "env": {
             "DC": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.debug.yml -f DockerCompose/docker-compose.override.ports.yml -f DockerCompose/docker-compose.override.no-dri.yml -p jackbot",
-            "SERVICES": "agent webui observability mcp-vault mcp-websearch mcp-idealista mcp-homeassistant mcp-library mcp-sandbox mcp-channel-signalr mcp-channel-telegram mcp-channel-voice mcp-scheduling mcp-printer mcp-timers tse-extractor lemonade qbittorrent jackett redis camoufox homeassistant",
+            "SERVICES": "agent webui observability mcp-idealista mcp-channel-signalr mcp-channel-telegram mcp-scheduling mcp-timers lemonade redis",
             "DC_LOCAL": "docker compose -f DockerCompose/docker-compose.yml -f DockerCompose/docker-compose.override.linux.yml -f DockerCompose/docker-compose.override.ports.yml -p jackbot",
-            "LOCAL_DEPS": "qbittorrent jackett redis camoufox homeassistant",
+            "LOCAL_DEPS": "redis",
+            "KIT_LOCAL": "docker compose -f TenantKit/docker-compose.yml -f TenantKit/docker-compose.override.ports.yml",
+            "KIT_DEPS": "qbittorrent jackett camoufox homeassistant",
+            "DEPLOYMENT_HOST": "localhost",
+            "KIT_REDIS_PASSWORD": "local-redis-password",
             "REDIS_PASSWORD": "local-redis-password"
         }
     },
@@ -19,7 +23,7 @@
         {
             "label": "local-deps",
             "type": "shell",
-            "command": "$DC_LOCAL up -d --build $LOCAL_DEPS",
+            "command": "$DC_LOCAL up -d --build $LOCAL_DEPS && $KIT_LOCAL up -d --build $KIT_DEPS",
             "problemMatcher": []
         },
         {

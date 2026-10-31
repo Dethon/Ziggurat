@@ -2,7 +2,7 @@
 # under ./volumes/smoke, so a stale copy of the deployment's data in ./volumes is never loaded — its
 # schedules would fire — and Caddy serves the shipped Caddyfile through its own local CA instead of
 # Cloudflare's DNS challenge. The script starts only the servers that reach nothing outside this
-# machine: no Telegram bot, no satellites, no Home Assistant.
+# machine: no Telegram bot. A household's own servers are the tenant kit's, not this file's.
 services:
   redis:
     volumes: ["./volumes/smoke/redis:/data"]
@@ -14,12 +14,6 @@ services:
     volumes: ["./volumes/smoke/sugary:/data"]
   mcp-sugary:
     volumes: ["./volumes/smoke/sugary:/data"]
-  mcp-sandbox:
-    volumes: ["./volumes/smoke/sandbox:/home/sandbox_user"]
-  mcp-vault:
-    volumes: ["./volumes/smoke/vault:/vault"]
-  mcp-library:
-    volumes: ["./volumes/smoke/media:/media"]
   agent-volume:
     volumes: ["./volumes/smoke/agent-keys:/keys"]
   agent:

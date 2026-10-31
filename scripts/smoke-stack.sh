@@ -11,9 +11,10 @@
 #
 # Everything here is local. The tests reach the stack on 127.0.0.1 alone, whatever the deployment's
 # hostnames resolve to, and nothing starts that talks to the outside world on the household's
-# behalf: no Telegram bot (it would take the deployment's updates), no voice hub (it would dial the
-# satellites), no Home Assistant (its MCP server runs, with nothing to reach). Never point this at
-# the deployment's host.
+# behalf: no Telegram bot (it would take the deployment's updates). A household's own servers —
+# web search, vault, library, sandbox, printer, Home Assistant, voice — are the tenant kit's
+# (TenantKit/), not this file's, so none of them starts here: a turn goes without them and is told
+# they are offline. Never point this at the deployment's host.
 
 set -euo pipefail
 
@@ -29,12 +30,10 @@ DC=(docker compose -f DockerCompose/docker-compose.yml -f "$OS_OVERRIDE"
     -f DockerCompose/docker-compose.override.smoke.yml -p jackbot-smoke)
 [[ -e /dev/dri ]] || DC+=(-f DockerCompose/docker-compose.override.no-dri.yml)
 
-# Every server an agent dials is here, since a session whose configured server does not answer fails
-# to build. The library and Home Assistant servers reach only qBittorrent, Jackett and Home
-# Assistant by their compose names, none of which is started, so they answer and touch nothing.
-SERVICES=(redis accounts-volume agent-volume mcp-sugary-volume accounts camoufox mcp-vault mcp-sandbox
-          mcp-websearch mcp-idealista mcp-library mcp-homeassistant mcp-channel-signalr
-          mcp-scheduling mcp-printer mcp-timers mcp-sugary agent webui observability caddy)
+# Every shared server an agent dials at a URL is here, since a session whose configured URL does not
+# answer fails to build; a household's server it names is offline instead, never fatal.
+SERVICES=(redis accounts-volume agent-volume mcp-sugary-volume accounts mcp-idealista mcp-channel-signalr
+          mcp-scheduling mcp-timers mcp-sugary agent webui observability caddy)
 
 # Local values for every secret the started servers ask for. The real ones come from the project's
 # user secrets (mounted by the OS override), which win over these where both exist.
@@ -43,11 +42,10 @@ while read -r name; do export "$name=${!name:-local-mcp-secret}"; done \
   < <(grep -o '^MCP_SECRET_[A-Z_]*' DockerCompose/.env)
 export AGENTAPI__SHAREDSECRET="${AGENTAPI__SHAREDSECRET:-local-agentapi-secret}"
 export HOUSEHOLD_MIGRATION_SECRET="${HOUSEHOLD_MIGRATION_SECRET:-local-migration-secret}"
-export Announce__Token="${Announce__Token:-local-announce-token}"
 
 case "${1:-}" in
   up)
-    mkdir -p DockerCompose/volumes/smoke/{redis,accounts,agent-keys,sugary,sandbox,vault,media,caddy_data,caddy_config}
+    mkdir -p DockerCompose/volumes/smoke/{redis,accounts,agent-keys,sugary,caddy_data,caddy_config}
     "${DC[@]}" build base-sdk
     "${DC[@]}" build "${SERVICES[@]}"
     "${DC[@]}" up -d --no-deps "${SERVICES[@]}"
