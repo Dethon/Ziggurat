@@ -290,6 +290,58 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
+    // A household's server on its accounts back-call is shown here by its own tunnel credential: it
+    // may ask about voice in its household, and about nothing the relay asks — so a server cannot
+    // verify another's credential with its own.
+    [Fact]
+    public async Task VerifyingAsAHouseholdsServer_Is403()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var voice = await server.MintTunnelCredentialAsync(fran.TenantId, "voice");
+        var vault = await server.MintTunnelCredentialAsync(fran.TenantId, "vault");
+
+        var response = await VerifyAsync(server, vault.Credential, "vault", caller: voice.Credential);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task AHouseholdsServer_AsksTheGuestOfItsOwnHousehold()
+    {
+        await using var server = await StartAsync();
+        await server.MintOperatorAsync("Fran");
+        var (household, _) = await server.SeedHouseholdAsync("Ana's", "Ana");
+        var voice = await server.MintTunnelCredentialAsync(household, "voice");
+
+        var response = await InternalAsync(server, "accounts/internal/guest", new { channel = "voice" }, voice.Credential);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("tenantId").GetString().ShouldBe(household);
+    }
+
+    // Revoking a credential closes the tunnel it opened and its back-calls with it, and one that still
+    // arrived is nobody's.
+    [Fact]
+    public async Task ARevokedCredentialsServer_AsksNothing()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var voice = await server.MintTunnelCredentialAsync(fran.TenantId, "voice");
+        (await server.RunAsync(AccountsCommand.RevokeTunnelCredential, "--id", voice.Id)).Exit.ShouldBe(0);
+
+        var response = await InternalAsync(server, "accounts/internal/guest", new { channel = "voice" }, voice.Credential);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    private static Task<HttpResponseMessage> InternalAsync(AccountsServer server, string path, object body, string caller)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
+        request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(caller));
+        return server.Client().SendAsync(request);
+    }
+
     private async Task<ConcurrentBag<TunnelCredentialRevoked>> ListenAsync()
     {
         var heard = new ConcurrentBag<TunnelCredentialRevoked>();
