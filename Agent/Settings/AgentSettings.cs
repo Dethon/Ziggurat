@@ -66,7 +66,7 @@ public record AgentSettings
     public VfsBridgeSettings VfsBridge { get; init; } = new();
 
     // Where a household server's back-calls reach beside the agent: the shared Lemonade.
-    public BackCallSettings BackCalls { get; init; } = new();
+    public required BackCallSettings BackCalls { get; init; }
 }
 
 // The Lemonade chat host: somebody's own box on the local network, outside the compose stack, and

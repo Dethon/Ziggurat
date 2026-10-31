@@ -89,7 +89,7 @@ then:
   agent's published JWKS. Then it is registered.
 
 How a tunnel ends, as the close description the server reads: a refusal's reason; `Replaced` (a newer
-opening of the same server); `Revoked` (`TunnelRevocations` heard the accounts service's
+opening of the same server); `Revoked` (`TunnelRevocationListener` heard the accounts service's
 `accounts:tunnel-credentials:revoked` on the agent's Redis and closed the tunnel that credential
 opened — it is removed from the registry first, so nothing reaches the server while the close is on
 its way); `Restarting` (the agent is stopping: every tunnel is closed `EndpointUnavailable` so the
@@ -232,7 +232,7 @@ bridge. A new back-call, or a server that comes to need one, names its server he
 - **Resolved at every turn's start** (`OwnServerEndpoints`, beside the outposts in
   `McpAgent.GetOrCreateSessionAsync`), in the definition's order, through **`IOwnServers`** — the
   resolver seam. The deployment's is `RelayedOwnServers`: the open tunnel's
-  `McpServerEndpoint.Relayed(address, client, generation, closed)`, bound to that generation. A stack that hosts its
+  `OpenTunnel.Endpoint` (`McpServerEndpoint.Relayed`: its address, client, generation and `Closed`), bound to that generation. A stack that hosts its
   servers in process registers its own: the eval (`EvalStack.OwnServers`: a name stands for the
   compose server `mcp-<name>`) and integration tests (`Tests/InProcessOwnServers.cs`), which answer
   the hosted server's URL — **no tunnel runs in either**.
@@ -257,13 +257,13 @@ broken. Shared servers' URL endpoints keep ADR 0027's rule: retried, then fatal.
 
 - **Reconciled at each turn's start.** `OwnServerEndpoints.Resolve` answers an `OwnServerResolution`:
   the endpoints to dial with every unreachable household server left out, the names left out, and one
-  `OwnServerState(name, online, generation)` per named server. `McpAgent` keeps it beside the session
+  `ServerState(name, online, generation)` per named server. `McpAgent` keeps it beside the session
   and compares it with the next turn's (`ReachesTheSameServersAs`): equal, the session is reused;
   different — a server came online, went offline, or **reconnected as a new tunnel generation** — the
   old session is disposed and a new one built, outposts and shared servers redialled with it. An
   agent that uses outposts (its own `usesOutposts`, a worker's ANDed with its parent's, ADR 0028)
   compares its machines the same way (`ComposedEndpoints.ReachesTheSameMachinesAs`: each live
-  outpost's name and tunnel generation), so a machine that opens, closes or reopens joins or leaves
+  outpost's name and tunnel generation, as the same `ServerState`s), so a machine that opens, closes or reopens joins or leaves
   at the next turn too; an agent that does not never asks. That is
   how a new generation's tools enter (ADR 0012): only at a turn's start, never under a running turn.
   Turns of one conversation group run one at a time, so the session replaced has no call in flight.
@@ -398,7 +398,7 @@ validates satellites on the household's voice server (`.claude/rules/timers.md`)
 
 Nothing in a browse link — nor in a timer's ring — names a household. In this phase only the home
 household runs servers, so **a request that names none is for the home household's server of that
-name** (`HomeHousehold.Find`, by `HouseholdServerNames` and `OpenTunnel.Home`, as a channel endpoint
+name** (`TunnelRegistry.FindHome`, by `HouseholdServerNames` and `OpenTunnel.IsHome`, as a channel endpoint
 named by server name is); none open is answered as unreachable with the reason, and another
 household's server of that name is never a fallback. Once a second household runs servers (4b) the
 request must name its household: web search knows it where the link is minted (`web_login`'s call
@@ -412,7 +412,7 @@ An outpost (`.claude/rules/outpost.md`) is a server whose credential was minted 
 (`Domain/Outposts/OutpostServerName.cs`): the prefix on the **verified** name is what tells it apart
 from a household's own server, never anything on the open, and it keeps an outpost from replacing an
 own server of the same NAME in the registry. `TunnelledOutposts` reads `Open` for a session's live
-outposts (each `McpServerEndpoint.RelayedOutpost`, dynamic) and consumes `WatchAsync` to record each
+outposts (each `OpenTunnel.OutpostEndpoint`, `McpServerEndpoint.RelayedOutpost`, dynamic) and consumes `WatchAsync` to record each
 opening and closing as an `OutpostEvent`. A consumer of `Open` or `WatchAsync` tells a machine apart with
 `OutpostServerName.NameOf`: a channel follows its tunnel by its own server name, so it never takes a
 machine for a channel, and the operator's listing (`TunnelListing`) shows a machine as `outpost-<NAME>`

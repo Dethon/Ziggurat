@@ -18,7 +18,7 @@ namespace Infrastructure.Tunnels;
 // origin check compares the browser's Origin with the Host it asked for, and its cookie is Secure
 // by the X-Forwarded-Proto the proxy set. Only the path is the caller's to choose, and the headers
 // it withholds.
-public sealed class TunnelForwarder(IHttpForwarder forwarder, ILogger<TunnelForwarder> logger)
+public sealed class TunnelForwarder(IHttpForwarder forwarder, TunnelRegistry registry, ILogger<TunnelForwarder> logger)
 {
     // A live view a person is reading sends nothing while its page stands still, and a quiet view is
     // not a dead one: as long as the longest a view may last (web search's Handoff:ViewMinutes).
@@ -30,8 +30,28 @@ public sealed class TunnelForwarder(IHttpForwarder forwarder, ILogger<TunnelForw
         VersionPolicy = HttpVersionPolicy.RequestVersionExact
     };
 
+    // To the home household's server of that name (TunnelRegistry.FindHome). With none open, or one
+    // whose tunnel closed before its answer began, `offline` answers the exchange with the reason.
+    public async Task ForwardHomeAsync(
+        HttpContext context,
+        string serverName,
+        string tag,
+        PathString path,
+        IReadOnlyCollection<string> withheld,
+        Func<HttpContext, string, Task> offline)
+    {
+        if (registry.FindHome(serverName) is not { } tunnel)
+        {
+            await offline(context, $"{serverName} is offline: its tunnel is not open");
+        }
+        else if (!await ForwardAsync(context, tunnel, tag, path, withheld) && !context.Response.HasStarted)
+        {
+            await offline(context, $"{serverName} went offline: its tunnel closed");
+        }
+    }
+
     // False when the exchange could not be forwarded; the caller answers it if nothing was sent yet.
-    public async Task<bool> ForwardAsync(
+    private async Task<bool> ForwardAsync(
         HttpContext context, OpenTunnel tunnel, string tag, PathString path, IReadOnlyCollection<string> withheld)
     {
         var error = await forwarder.SendAsync(

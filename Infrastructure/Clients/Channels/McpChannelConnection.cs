@@ -264,9 +264,7 @@ public sealed class McpChannelConnection(
 
         var transport = McpClientManager.TransportOf(endpoint);
         var client = await McpClient.CreateAsync(
-            endpoint.Server is { } server
-                ? McpClientManager.Signed(transport, server, callTokens)
-                : McpClientManager.Signed(transport, endpoint.Address, callTokens),
+            McpClientManager.Signed(transport, McpClientManager.ServerOf(endpoint), callTokens),
             new McpClientOptions
             {
                 ClientInfo = new Implementation
