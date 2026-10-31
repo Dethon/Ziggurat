@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.Prompts;
 using Domain.Tools.Scheduling.Vfs;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Infrastructure.Validation;
@@ -28,7 +29,10 @@ public static class ConfigModule
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<ScheduleFileSystem>()
             .AddSingleton<ScheduleSetupSummary>()
-            .AddHostedService<ScheduleDispatcherService>();
+            .AddHostedService<ScheduleDispatcherService>()
+            // Each household's settings, for the zone its schedules are read and fired in: asked with
+            // this server's own credential, and dropped when a save is announced on its Redis.
+            .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret);
 
         services
             .AddToolServer(settings, ToolResponse.Create)

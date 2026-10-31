@@ -28,6 +28,10 @@ public sealed class ScheduleFileSystem(
     // none, and sees no schedule and may write none.
     private string? _household;
 
+    // That household as the call proved it, whose settings say the zone its schedules are read in: a
+    // bare runAt, a cron and every time the files show. A call for nobody reads them in the server's.
+    private ICallHousehold? _householdOfCall;
+
     // A shallow copy with the caller swapped, as HaFileSystem does: the copy carries every
     // dependency this mount was built with, and the store is shared by reference.
     public override FileSystemBackendBase For(FileSystemCaller caller)
@@ -36,6 +40,7 @@ public sealed class ScheduleFileSystem(
         view._caller = caller.Conversation;
         view._delegation = caller.Delegation;
         view._household = caller.Conversation?.Identity?.TenantId is { Length: > 0 } household ? household : null;
+        view._householdOfCall = caller.Household;
         return view;
     }
 
@@ -140,10 +145,10 @@ public sealed class ScheduleFileSystem(
                 content = JsonSerializer.Serialize(info, _json);
                 break;
             case ScheduleNodeKind.ScheduleFile when await GetScheduleAsync(node, ct) is { } s:
-                content = RenderSpec(s);
+                content = RenderSpec(s, await ZoneAsync(ct));
                 break;
             case ScheduleNodeKind.StatusFile when await GetScheduleAsync(node, ct) is { } s:
-                content = RenderStatus(s);
+                content = RenderStatus(s, await ZoneAsync(ct));
                 break;
             case ScheduleNodeKind.RunNowFile when await GetScheduleAsync(node, ct) is not null:
                 return ExecutableOnly<FsReadResult>(path, SchedulePath.RunNowFileName);
@@ -179,11 +184,12 @@ public sealed class ScheduleFileSystem(
         var scoped = admits(SchedulePath.ScheduleFileName)
             ? await ScopeSchedulesAsync(scope, ct)
             : [];
+        var zone = scoped.Count > 0 ? await ZoneAsync(ct) : timeProvider.LocalTimeZone;
 
         return await SearchNodesAsync(
             scoped,
             (schedule, _) => ValueTask.FromResult<(string, string?)>(
-                ($"/{schedule.AgentId}/{schedule.Id}/{SchedulePath.ScheduleFileName}", RenderSpec(schedule))),
+                ($"/{schedule.AgentId}/{schedule.Id}/{SchedulePath.ScheduleFileName}", RenderSpec(schedule, zone))),
             new FsSearchScan
             {
                 Query = query,
@@ -219,21 +225,25 @@ public sealed class ScheduleFileSystem(
         };
     }
 
-    private string RenderSpec(Schedule s) => JsonSerializer.Serialize(new
+    private static string RenderSpec(Schedule s, TimeZoneInfo zone) => JsonSerializer.Serialize(new
     {
         prompt = s.Prompt,
         cron = s.CronExpression,
-        runAt = ToZone(s.RunAt),
+        runAt = ToZone(s.RunAt, zone),
         userId = s.UserId,
         deliverTo = s.DeliverTo
     }, _json);
 
-    private string RenderStatus(Schedule s) => JsonSerializer.Serialize(new
+    private static string RenderStatus(Schedule s, TimeZoneInfo zone) => JsonSerializer.Serialize(new
     {
-        createdAt = ToZone(s.CreatedAt),
-        lastRunAt = ToZone(s.LastRunAt),
-        nextRunAt = ToZone(s.NextRunAt)
+        createdAt = ToZone(s.CreatedAt, zone),
+        lastRunAt = ToZone(s.LastRunAt, zone),
+        nextRunAt = ToZone(s.NextRunAt, zone)
     }, _json);
+
+    // Asked only by what reads or writes a time, so listing and deleting never wait on the accounts
+    // service; the reader keeps the answer, so one call asks it once at most.
+    private Task<TimeZoneInfo> ZoneAsync(CancellationToken ct) => _householdOfCall.ZoneAsync(timeProvider.LocalTimeZone, ct);
 
     private async Task<Schedule?> GetScheduleAsync(ScheduleNode node, CancellationToken ct)
     {
@@ -306,13 +316,14 @@ public sealed class ScheduleFileSystem(
             return new FsResult<FsCreateResult>.Err(specError);
         }
 
-        var validation = ValidateSpec(spec!);
+        var zone = await ZoneAsync(ct);
+        var validation = ValidateSpec(spec!, zone);
         if (validation is not null)
         {
             return new FsResult<FsCreateResult>.Err(validation);
         }
 
-        spec = spec! with { RunAt = spec.RunAt is { } r ? ToUtc(r) : null };
+        spec = spec! with { RunAt = spec.RunAt is { } r ? ToUtc(r, zone) : null };
 
         var schedule = new Schedule
         {
@@ -327,7 +338,7 @@ public sealed class ScheduleFileSystem(
             Delegation = _delegation,
             DeliverTo = spec.DeliverTo,
             CreatedAt = timeProvider.GetUtcNow().UtcDateTime,
-            NextRunAt = ComputeNextRunAt(spec)
+            NextRunAt = ComputeNextRunAt(spec, zone)
         };
 
         await store.CreateAsync(schedule, ct);
@@ -350,7 +361,8 @@ public sealed class ScheduleFileSystem(
             return NotFound<FsEditResult>(path);
         }
 
-        var current = RenderSpec(existing);
+        var zone = await ZoneAsync(ct);
+        var current = RenderSpec(existing, zone);
         var updatedText = edits.Aggregate(current, (acc, e) =>
             TextEdits.ReplaceFirstOrAll(acc, e.OldString, e.NewString, e.ReplaceAll));
 
@@ -360,13 +372,13 @@ public sealed class ScheduleFileSystem(
             return new FsResult<FsEditResult>.Err(specError);
         }
 
-        var validation = ValidateSpec(spec!);
+        var validation = ValidateSpec(spec!, zone);
         if (validation is not null)
         {
             return new FsResult<FsEditResult>.Err(validation);
         }
 
-        spec = spec! with { RunAt = spec.RunAt is { } r ? ToUtc(r) : null };
+        spec = spec! with { RunAt = spec.RunAt is { } r ? ToUtc(r, zone) : null };
 
         // Only recompute the next fire when the timing actually changes; a prompt-only edit must
         // not push out (or skip) an already-scheduled run by recomputing NextRunAt from "now".
@@ -381,7 +393,7 @@ public sealed class ScheduleFileSystem(
             CreatedBy = Principal.Of(_caller),
             Delegation = _delegation,
             DeliverTo = spec.DeliverTo,
-            NextRunAt = timingChanged ? ComputeNextRunAt(spec) : existing.NextRunAt
+            NextRunAt = timingChanged ? ComputeNextRunAt(spec, zone) : existing.NextRunAt
         };
 
         await store.CreateAsync(updated, ct);
@@ -526,7 +538,7 @@ public sealed class ScheduleFileSystem(
         }
     }
 
-    private ToolErrorResult? ValidateSpec(SpecDto spec)
+    private ToolErrorResult? ValidateSpec(SpecDto spec, TimeZoneInfo zone)
     {
         if (string.IsNullOrWhiteSpace(spec.Prompt))
         {
@@ -550,13 +562,13 @@ public sealed class ScheduleFileSystem(
 
         if (spec.RunAt is { } runAt)
         {
-            if (runAt.Kind == DateTimeKind.Unspecified && timeProvider.LocalTimeZone.IsInvalidTime(runAt))
+            if (runAt.Kind == DateTimeKind.Unspecified && zone.IsInvalidTime(runAt))
             {
                 return Error(ToolError.Codes.InvalidArgument,
                     "runAt falls in a daylight-saving gap (that local time does not exist); pick another time or add an explicit offset");
             }
 
-            if (ToUtc(runAt) <= timeProvider.GetUtcNow().UtcDateTime)
+            if (ToUtc(runAt, zone) <= timeProvider.GetUtcNow().UtcDateTime)
             {
                 return Error(ToolError.Codes.InvalidArgument, "runAt must be in the future");
             }
@@ -565,23 +577,21 @@ public sealed class ScheduleFileSystem(
         return null;
     }
 
-    // A bare (zoneless) runAt is wall-clock time in the operating zone; an offset/Z runAt is honored.
-    private DateTime ToUtc(DateTime runAt) => ToUtc(runAt, timeProvider.LocalTimeZone);
-
+    // A bare (zoneless) runAt is wall-clock time in the household's zone; an offset/Z runAt is honored.
     internal static DateTime ToUtc(DateTime runAt, TimeZoneInfo zone) =>
         runAt.Kind == DateTimeKind.Unspecified
             ? TimeZoneInfo.ConvertTimeToUtc(runAt, zone)
             : runAt.ToUniversalTime();
 
-    // Stored times are UTC; render them in the operating zone so the LLM reads local wall-clock.
-    private DateTimeOffset? ToZone(DateTime? utc) =>
+    // Stored times are UTC; render them in the household's zone so the LLM reads local wall-clock.
+    private static DateTimeOffset? ToZone(DateTime? utc, TimeZoneInfo zone) =>
         utc is { } u
-            ? TimeZoneInfo.ConvertTime(new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)), timeProvider.LocalTimeZone)
+            ? TimeZoneInfo.ConvertTime(new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)), zone)
             : null;
 
-    private DateTime? ComputeNextRunAt(SpecDto spec) =>
+    private DateTime? ComputeNextRunAt(SpecDto spec, TimeZoneInfo zone) =>
         spec.RunAt ?? (spec.Cron is not null
-            ? cronValidator.GetNextOccurrence(spec.Cron, timeProvider.GetUtcNow(), timeProvider.LocalTimeZone)
+            ? cronValidator.GetNextOccurrence(spec.Cron, timeProvider.GetUtcNow(), zone)
             : null);
 
     // The files the mount renders rather than stores: the two read-only ones refuse as read-only,

@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using Accounts.Commands;
 using Accounts.Signing;
 using Accounts.Store;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.Security;
 using Domain.Security.Sealing;
@@ -281,6 +282,33 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         refusal.Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
         refusal.Detail.ShouldContain(why);
         (await response.Content.ReadAsStringAsync()).ShouldNotContain(IdealistaKey);
+    }
+
+    // A schedule fires with no call behind it: the delegation the agent signed for its last write is
+    // what names its household, to the scheduling server alone and for a schedule alone.
+    [Fact]
+    public async Task AScheduleDelegation_ProvesTheHouseholdToTheSchedulingServerAlone()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(server, household, HouseholdSections.Settings, """{ "name": "Casa", "timeZone": "Asia/Tokyo" }""");
+        await SetAsync(server, household, HouseholdSections.Keys, Keys);
+        var account = new Account(household, person);
+        var schedule = TestDelegations.For(account, "signalr", new DelegatedObject(DelegatedObject.Schedule, "nightly", "{}"));
+        var watch = TestDelegations.For(account, "signalr", new DelegatedObject(DelegatedObject.Watch, "nightly", "{}"));
+
+        var answered = await AskAsync<HouseholdConfigAnswer<HouseholdSettings>>(server, Scheduling, HouseholdConfigProtocol.SettingsView,
+            new HouseholdConfigQuery(Delegation: schedule));
+        var aWatch = await PostAsync(server, Scheduling, HouseholdConfigProtocol.SettingsView, new HouseholdConfigQuery(Delegation: watch));
+        var toIdealista = await PostAsync(server, Idealista, HouseholdConfigProtocol.IdealistaView, new HouseholdConfigQuery(Delegation: schedule));
+        var twoProofs = await PostAsync(server, Scheduling, HouseholdConfigProtocol.SettingsView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-scheduling", household, person), Delegation: schedule));
+
+        answered.ShouldBe(new HouseholdConfigAnswer<HouseholdSettings>(household, new HouseholdSettings { Name = "Casa", TimeZone = "Asia/Tokyo" }));
+        (await RefusalAsync(aWatch, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+        (await RefusalAsync(toIdealista, HttpStatusCode.BadRequest)).Reason.ShouldBe(HouseholdConfigRefusal.BadQuery);
+        (await toIdealista.Content.ReadAsStringAsync()).ShouldNotContain(IdealistaKey);
+        (await RefusalAsync(twoProofs, HttpStatusCode.BadRequest)).Reason.ShouldBe(HouseholdConfigRefusal.BadQuery);
     }
 
     // The chat hub holds the accounts service's assertion of its connection's person, not a call token.
