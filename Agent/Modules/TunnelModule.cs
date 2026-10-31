@@ -40,7 +40,12 @@ public static class TunnelModule
                     sp.GetRequiredService<ILogger<TunnelRelay>>(),
                     sp.GetService<IHostApplicationLifetime>()))
                 .AddSingleton<IOwnServers>(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
-                .AddHostedService<TunnelRevocations>();
+                .AddHostedService<TunnelRevocations>()
+                // Exchanges that arrive at the agent for a household's server and go on down its
+                // tunnel: the browse pages a person opens from a link.
+                .AddHttpForwarder()
+                .AddSingleton<TunnelForwarder>()
+                .AddSingleton<BrowsePages>();
         }
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text.Json;
 using Domain.DTOs.Tunnel;
@@ -24,6 +25,7 @@ public sealed class OpenTunnel : IAsyncDisposable
     private readonly SocketsHttpHandler _connections;
     private readonly CancellationTokenSource _closing = new();
     private readonly CancellationTokenSource _closed;
+    private readonly ConcurrentDictionary<string, HttpMessageInvoker> _forwarding = new(StringComparer.Ordinal);
     private string _sentKeys;
 
     internal OpenTunnel(
@@ -87,6 +89,25 @@ public sealed class OpenTunnel : IAsyncDisposable
     // What the server is told on open: who it is, the name its tokens are signed for, and the keys.
     internal TunnelAdmitted Admitted => new(TenantId, ServerName, Address.Name, _sentKeys);
 
+    // What TunnelForwarder sends an exchange arriving at the agent through, to the listener this tag
+    // names: the mcp listener's presents the credential as Client does, any other presents nothing.
+    // Its own pool rather than Client's, set as a reverse proxy's must be — a cookie a response sets
+    // is the browser's, never kept here for whoever comes next, and a redirect or a compressed body
+    // is passed on as it came.
+    internal HttpMessageInvoker Forwarding(string tag) =>
+        _forwarding.GetOrAdd(tag, t => new HttpMessageInvoker(
+            new RelayHandler(this, new SocketsHttpHandler
+            {
+                ConnectCallback = async (_, ct) => await OpenStreamAsync(t, ct),
+                PooledConnectionLifetime = Timeout.InfiniteTimeSpan,
+                UseCookies = false,
+                UseProxy = false,
+                AllowAutoRedirect = false,
+                AutomaticDecompression = System.Net.DecompressionMethods.None,
+                ActivityHeadersPropagator = null
+            }, presents: t == TunnelProtocol.McpTag),
+            disposeHandler: true));
+
     internal Task<TunnelStream> OpenStreamAsync(string tag, CancellationToken ct) =>
         IsOpen
             ? _mux.OpenAsync(tag, ct)
@@ -134,6 +155,11 @@ public sealed class OpenTunnel : IAsyncDisposable
         await _closing.CancelAsync();
         await _mux.DisposeAsync();
         _connections.Dispose();
+        foreach (var invoker in _forwarding.Values)
+        {
+            invoker.Dispose();
+        }
+
         _closed.Dispose();
     }
 }

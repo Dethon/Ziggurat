@@ -8,6 +8,7 @@ paths:
   - "Infrastructure/Agents/McpServerEndpoint.cs"
   - "Infrastructure/Clients/Accounts/TunnelCredentialClient.cs"
   - "Agent/App/TunnelApi.cs"
+  - "Agent/App/BrowsePagesApi.cs"
   - "Agent/Modules/TunnelModule.cs"
   - "Domain/DTOs/Tunnel/**"
   - "Domain/tunnel.json"
@@ -162,6 +163,53 @@ the server's name alone, so its tools are `mcp__vault__…` for every household 
 same everywhere; `CacheKey` = the full name, so the prompt cache (one per process) never serves one
 household's server prompts to another. A URL's `CacheKey` is its qualifier, as before.
 
+## Exchanges the relay forwards to a household's server
+
+Some requests arrive at the agent for a household's server rather than from a turn: a browse page a
+person opens from a link. **`TunnelForwarder`** (Infrastructure/Tunnels) forwards one such HTTP
+exchange down the server's tunnel to the listener a tag names, and its answer back — a WebSocket
+upgraded inside it included, whose bytes then run both ways until either end closes.
+
+- It is **YARP's `IHttpForwarder`** (`Yarp.ReverseProxy`, `AddHttpForwarder()` in `AddTunnelRelay`)
+  over `OpenTunnel.Forwarding(tag)`: an `HttpMessageInvoker` whose `ConnectCallback` opens a stream
+  with that tag, one pool per tag per opening, set as a reverse proxy's must be — `UseCookies = false`
+  above all, or the pool would keep the cookie one person's claim set and send it with the next
+  person's request. A raw pipe of our own was the alternative; forwarding HTTP/1.1 well (hop-by-hop
+  headers, streamed bodies, a client gone mid-response, a 101 handed to an opaque duplex stream) is
+  what the library is, and the live view needs every part of it.
+- The request goes on **as it came**: the base `HttpTransformer` (not `HttpTransformer.Default`,
+  which adds X-Forwarded-* of its own and drops Host) copies Host and the proxy's `X-Forwarded-Proto`.
+  The handoff page needs both — its live view's origin check compares `Origin` with the Host the
+  browser asked for, and its cookie is `Secure` by `X-Forwarded-Proto`. Only the path is the caller's
+  to choose, and the headers it withholds.
+- The `mcp` tag's pool presents the tunnel credential and sends rotated keys first (`RelayHandler`),
+  like `Client`; any other tag's presents nothing — a browser's request is not the agent's to vouch for.
+- `ActivityTimeout` is 30 minutes, the longest a live view lasts: a view whose page stands still
+  sends nothing and is not dead. The tunnel's end, or the browser's, still ends it at once.
+- A forward that fails before anything was sent (the tunnel closed under it) is answered by the
+  caller, as the server being offline.
+
+### Browse pages
+
+The proxy routes `/browse/*` on the main host to the agent (`BrowsePagesApi`, `BrowsePages.Path`),
+never to the web search container (`DeploymentConformanceTests`: no route names it). `BrowsePages`
+forwards the exchange **unchanged, path included,** to the household's web search under the
+`pages` tag (`TunnelProtocol.PagesTag`), which web search registers for its pages listener
+(`AddTunnelListener`); the stream lands on that listener's port, so `PagesListener`'s split holds as
+before. The link, its claim, the cookie and the live view are the server's, unchanged. With no
+tunnel open it answers **502 with a page of its own** saying the household's browser is offline.
+
+### Which household: `SoleHousehold`, a stopgap
+
+Nothing in a browse link — nor in a timer's ring — names a household. In this phase only the home
+household runs servers, so **a request that names none is for the one household whose server of
+that name has its tunnel open** (`SoleHousehold.Find`, by `HouseholdServerNames`); none open, or
+more than one, is answered as unreachable with the reason, never sent to whichever came first. Once
+a second household runs servers (4b) the request must name its household: web search knows it where
+the link is minted (`web_login`'s call token carries the person's account), and the timers server
+knows it where a timer is created. The cookie's `Path=/browse` must then become per household too, or
+one household's server would be sent another's view key.
+
 ## Not yet (later tickets)
 
 - **04** connects a tunnelled channel server when its tunnel opens and drops it when it closes:
@@ -171,7 +219,9 @@ household's server prompts to another. A URL's `CacheKey` is its qualifier, as b
   configured endpoint does (ADR 0027): `OwnServerEndpoints` throws `HttpRequestException`. A call in
   flight when a tunnel drops fails with the stream's `IOException`, or the client's went-offline
   `HttpRequestException` on its next exchange.
-- **06** adds the `pages` tag (`AddTunnelListener`) and routes `/browse/*` to the relay.
+- **11** must run web search under `HouseholdServerNames.WebSearch`: until it is tunnelled, the
+  deployment's (and the smoke stack's) `/browse/*` answers the offline page, and
+  `StackSmokeTests.TheBrowsePages_AreReachedThroughTheProxy…` with it.
 - **08** gives the relay an `accept` for server-opened streams, with its allowlist.
 - **09** lets shared servers reach a household's server through the relay.
 - **10** moves outposts onto the tunnel (their `Address` and verdicts are still URL strings).

@@ -28,6 +28,7 @@ app.MapVfsBridge();
 app.MapAgentKeys();
 app.MapTopicMinting();
 app.MapTunnel();
+app.MapBrowsePages();
 
 await app.RunAsync();
 return 0;
