@@ -99,6 +99,7 @@ Assistant would fight over their ports.
 2. **Remove the moved services from the deployment** and reload the proxy for the tunnel's route:
 
    ```bash
+   # with the override files the deployment runs with (the OS's user secrets, ...)
    docker compose -f DockerCompose/docker-compose.yml -p jackbot up -d --build --remove-orphans
    docker exec caddy caddy reload --config /etc/caddy/Caddyfile
    ```
@@ -124,20 +125,23 @@ Assistant would fight over their ports.
    | vault | `VAULT_PATH` | `VAULT_PATH` |
    | sandbox home | `SANDBOX_HOME_PATH` | `SANDBOX_HOME_PATH` |
 
-   Two are named volumes; a throwaway container copies each into the kit's (create them first with
-   `docker compose -f TenantKit/docker-compose.yml create camoufox mcp-printer`):
+   Two are named volumes, the browser's identity and the printer's spool; they are carried once the
+   kit has made its own (step 4).
+
+4. **Start the kit** ("Running it" 2 and 3). `LOGINS__STATEKEY` must be the value the deployment's
+   `.env` holds — the remembered logins move sealed — and `Announce__Token` the deployment's old one,
+   or Home Assistant's `rest_command` for watches must be given the new one. Then carry the two named
+   volumes into the ones the kit made, with their services stopped, and start them again:
 
    ```bash
-   docker run --rm -v jackbot_camoufox-identity:/from -v tenant-kit_camoufox-identity:/to alpine cp -a /from/. /to/
-   docker run --rm -v jackbot_printer-spool:/from -v tenant-kit_printer-spool:/to alpine cp -a /from/. /to/
+   docker compose -f TenantKit/docker-compose.yml stop mcp-websearch camoufox mcp-printer
+   docker run --rm -v jackbot_camoufox-identity:/from -v tenant-kit_camoufox-identity:/to alpine sh -c 'cp -a /from/. /to/'
+   docker run --rm -v jackbot_printer-spool:/from -v tenant-kit_printer-spool:/to alpine sh -c 'cp -a /from/. /to/'
+   docker compose -f TenantKit/docker-compose.yml up -d
    ```
 
    The browser's identity is its one fingerprint: carried over, the sites people are logged into see
    the same device.
-
-4. **Start the kit** ("Running it" 2 and 3). `LOGINS__STATEKEY` must be the value the deployment's
-   `.env` holds — the remembered logins move sealed — and `Announce__Token` the deployment's old one,
-   or Home Assistant's `rest_command` for watches must be given the new one.
 
 5. **Run the state move**: the remembered logins, the one-time links and the library's download
    routing, out of the deployment's Redis and into the kit's. It reaches both on the host's loopback

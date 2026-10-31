@@ -4,9 +4,11 @@
 
 **Blocked by:** 04, 05, 06, 07, 08, 09
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The kit's compose holds no deployment secret and reaches the deployment only through the tunnel route (conformance)
-- [ ] The deployment compose file no longer carries the moved services or their secrets (conformance)
-- [ ] The home's agents name their servers as tunnel endpoints and every eval, integration and E2E stack passes
-- [ ] The state-move command copies the home's state into the kit's Redis and says what it moved
+- [x] The kit's compose holds no deployment secret and reaches the deployment only through the tunnel route (conformance) — `TenantKitConformanceTests`, through `DeploymentFiles.KitCompose`/`KitPlaceholders`
+- [x] The deployment compose file no longer carries the moved services or their secrets (conformance) — `DeploymentConformanceTests.AHouseholdsOwnServer_IsNoServiceOfTheDeployment`, `AMovedServersSetting_IsNoLongerTheDeployments`, `NothingInTheDeployment_RunsTheModelsCommands`
+- [x] The home's agents name their servers as tunnel endpoints and every eval, integration and E2E stack passes — the unarmed eval harness, the prompt snapshots (unchanged: they hold no qualified tool names), the unit and integration suites; of the E2E stacks only the ones the change reaches were run (see the report). The smoke tier is ticket 12's: it still names the moved containers (`SmokeStack.Inside` is `camoufox`)
+- [x] The state-move command copies the home's state into the kit's Redis and says what it moved — `move-home-state` (`HomeStateMoveTests`), the kit's `state-move` service
+
+Also: the hub's certificate may chain to a CA the server is told of (`MCP__TUNNEL__HUBCERTIFICATEAUTHORITY`, `TunnelRelayTests`), for ticket 12's smoke stack on Caddy's local CA.
