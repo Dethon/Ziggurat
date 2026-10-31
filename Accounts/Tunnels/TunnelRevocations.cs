@@ -32,7 +32,8 @@ public sealed class TunnelRevocations(AccountsSettings settings) : IAsyncDisposa
                 RedisChannel.Literal(TunnelCredentialProtocol.RevokedChannel), JsonSerializer.Serialize(revoked, JsonSerializerOptions.Web));
             return null;
         }
-        catch (RedisException ex)
+        // A publish that times out throws a TimeoutException, which is not a RedisException.
+        catch (Exception ex) when (ex is RedisException or TimeoutException)
         {
             return $"Redis could not be reached ({ex.Message})";
         }

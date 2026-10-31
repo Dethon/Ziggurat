@@ -140,7 +140,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
 
     // Shown once: the list names every credential and whether it is live, and never a secret.
     [Fact]
-    public async Task List_NamesEveryCredentialAndWhetherItIsLive_WithoutItsSecret()
+    public async Task TheList_NamesEveryCredentialAndWhetherItIsLiveButNoSecret()
     {
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
@@ -160,7 +160,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
     }
 
     [Fact]
-    public async Task List_WithNothingMinted_SaysSo()
+    public async Task AListWithNothingMinted_SaysSo()
     {
         await using var server = await StartAsync();
 
@@ -176,7 +176,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
     [InlineData("my vault")]
     [InlineData("vault.home")]
     [InlineData("")]
-    public async Task Mint_AnUnreadableServerName_MintsNothing(string serverName)
+    public async Task AnUnreadableServerName_MintsNothing(string serverName)
     {
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
@@ -190,7 +190,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
     }
 
     [Fact]
-    public async Task Mint_ForAHouseholdThatDoesNotExist_MintsNothing()
+    public async Task AHouseholdThatDoesNotExist_IsMintedNothing()
     {
         await using var server = await StartAsync();
 
@@ -202,7 +202,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
     }
 
     [Fact]
-    public async Task Revoke_ACredentialThatDoesNotExist_RevokesNothing()
+    public async Task RevokingACredentialThatDoesNotExist_RevokesNothing()
     {
         await using var server = await StartAsync();
 
@@ -216,7 +216,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
     // The relay closes the tunnel a revoked credential opened when it hears of it, so the revocation
     // names the credential, its household and its server.
     [Fact]
-    public async Task Revoke_TellsTheListenersWhichCredentialHouseholdAndServer()
+    public async Task Revoking_TellsTheListenersWhichCredentialHouseholdAndServer()
     {
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
@@ -233,7 +233,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
 
     // Running the command again is the retry when the listeners could not be told the first time.
     [Fact]
-    public async Task Revoke_AnAlreadyRevokedCredential_TellsTheListenersAgain()
+    public async Task RevokingAnAlreadyRevokedCredential_TellsTheListenersAgain()
     {
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
@@ -251,7 +251,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
     // The revocation stands when nobody could be told, and the command says the open tunnel is not
     // closed yet rather than letting the operator believe it is.
     [Fact]
-    public async Task Revoke_WithNoRedisToTell_RevokesAndSaysTheRelayWasNotTold()
+    public async Task RevokingWithNoRedisToTell_RevokesAndSaysTheRelayWasNotTold()
     {
         await using var server = await StartAsync(withRedis: false);
         var fran = await server.MintOperatorAsync("Fran");
@@ -265,7 +265,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
     }
 
     [Fact]
-    public async Task Verify_WithoutACallersCredential_Is401()
+    public async Task VerifyingWithoutACallersCredential_Is401()
     {
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
@@ -279,7 +279,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
     // The relay is the agent's: a channel server's credential, which opens that channel's people,
     // opens no tunnel question.
     [Fact]
-    public async Task Verify_AskedByAChannelServer_Is403()
+    public async Task VerifyingAsAChannelServer_Is403()
     {
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
