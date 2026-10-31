@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Agent.App;
 using Agent.Settings;
 using Domain.DTOs.Channel;
+using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -101,6 +104,51 @@ public class ChannelConnectionHostTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_AUrlEndpoint_IsRunPresentingItsServersCredential()
+    {
+        var connection = new FakeMcpChannelConnection("ch-1");
+        var endpoints = new[] { new ChannelEndpoint { ChannelId = "ch-1", Endpoint = "http://mcp-channel:8080/mcp" } };
+        var sut = new ChannelConnectionHost(
+            endpoints, [connection], () => _catalog, _logger,
+            credentials: new McpCredentials(new Dictionary<string, string> { ["mcp-channel"] = "its-secret" }));
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _ = sut.StartAsync(cts.Token);
+        await connection.WaitForRunAsync(cts.Token);
+
+        connection.Secret.ShouldBe("its-secret");
+    }
+
+    // A household server's channel is not dialled: its connection runs once per opening of its
+    // tunnel, lets go when the opening closes, and runs again on the next, never two at once.
+    [Fact]
+    public async Task ExecuteAsync_AnEndpointNamingAHouseholdServer_RunsOncePerOpeningOfItsTunnel()
+    {
+        var connection = new FakeMcpChannelConnection("homeassistant");
+        var servers = new FakeOwnChannelServers();
+        var endpoints = new[] { new ChannelEndpoint { ChannelId = "homeassistant", Endpoint = "homeassistant" } };
+        var sut = new ChannelConnectionHost(endpoints, [connection], () => _catalog, _logger, ownServers: servers);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _ = sut.StartAsync(cts.Token);
+        await Eventually.Until(() => servers.Watched == "homeassistant", "the host follows the server's openings");
+
+        using var first = servers.Open("http://homeassistant.home.tunnel/mcp");
+        await Eventually.Until(() => connection.Running == 1, "the first opening is run");
+        await first.CancelAsync();
+        await Eventually.Until(() => connection.Running == 0, "the closed opening's run ends");
+        using var replaced = servers.Open("http://homeassistant.home.tunnel/mcp#2");
+        await Eventually.Until(() => connection.RunCount == 2, "the next opening is run");
+        servers.Open("http://homeassistant.home.tunnel/mcp#3").Dispose();
+        await Eventually.Until(() => connection.RunCount == 3, "a newer opening replaces the one still open");
+
+        connection.Runs.ShouldBe(
+            ["http://homeassistant.home.tunnel/mcp", "http://homeassistant.home.tunnel/mcp#2", "http://homeassistant.home.tunnel/mcp#3"]);
+        connection.MostAtOnce.ShouldBe(1);
+        await sut.StopAsync(CancellationToken.None);
+        connection.Running.ShouldBe(0);
+    }
+
+    [Fact]
     public void Constructor_TwoEndpointsForOneChannelId_FailsNamingTheDuplicate()
     {
         // A duplicated entry stops the agent either way; the difference is whether an operator can
@@ -143,18 +191,33 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
 {
     private readonly TaskCompletionSource _started =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly ConcurrentQueue<string> _runs = new();
     private int _runCount;
+    private int _running;
+    private int _mostAtOnce;
 
     public string ChannelId { get; } = channelId;
     public int RunCount => Volatile.Read(ref _runCount);
     public string? Endpoint { get; private set; }
+    public string? Secret { get; private set; }
     public IReadOnlyList<AgentCatalogEntry>? Agents { get; private set; }
 
+    // Every run's endpoint, in the order they started.
+    public IReadOnlyList<string> Runs => [.. _runs];
+
+    public int Running => Volatile.Read(ref _running);
+
+    public int MostAtOnce => Volatile.Read(ref _mostAtOnce);
+
     public async Task RunAsync(
-        string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct)
+        McpServerEndpoint endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct)
     {
-        Endpoint = endpoint;
+        Endpoint = endpoint.Address;
+        Secret = endpoint.Secret;
         Agents = catalog();
+        var running = Interlocked.Increment(ref _running);
+        InterlockedMax(ref _mostAtOnce, running);
+        _runs.Enqueue(endpoint.Address);
         Interlocked.Increment(ref _runCount);
         _started.TrySetResult();
 
@@ -166,7 +229,41 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
         {
             // A run returns when it is cancelled; it does not fault.
         }
+        finally
+        {
+            Interlocked.Decrement(ref _running);
+        }
+    }
+
+    private static void InterlockedMax(ref int target, int value)
+    {
+        int seen;
+        while ((seen = Volatile.Read(ref target)) < value && Interlocked.CompareExchange(ref target, value, seen) != seen)
+        {
+        }
     }
 
     public Task WaitForRunAsync(CancellationToken ct) => _started.Task.WaitAsync(ct);
+}
+
+internal sealed class FakeOwnChannelServers : IOwnChannelServers
+{
+    private readonly Channel<OwnServerOpening> _openings = Channel.CreateUnbounded<OwnServerOpening>();
+    private string? _watched;
+
+    public string? Watched => Volatile.Read(ref _watched);
+
+    // An opening of the server, open until the returned source is cancelled.
+    public CancellationTokenSource Open(string address)
+    {
+        var closed = new CancellationTokenSource();
+        _openings.Writer.TryWrite(new OwnServerOpening(McpServerEndpoint.Configured(address), closed.Token));
+        return closed;
+    }
+
+    public IAsyncEnumerable<OwnServerOpening> WatchAsync(string serverName, CancellationToken ct)
+    {
+        Volatile.Write(ref _watched, serverName);
+        return _openings.Reader.ReadAllAsync(ct);
+    }
 }
