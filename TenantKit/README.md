@@ -83,7 +83,8 @@ A deployment served by a certificate the system's roots do not trust — a smoke
 local CA — is trusted by naming that CA's certificate (PEM) to each server:
 `MCP__TUNNEL__HUBCERTIFICATEAUTHORITY=<path inside the container>`, with the file mounted there. The
 hub's certificate is then accepted if it chains to the system's roots or to that one; its name must
-still match.
+still match. `docker-compose.override.smoke.yml` is both at once, for the smoke stack
+(`scripts/smoke-stack.sh`, which starts the kit beside it as project `tenant-kit-smoke`).
 
 ## Moving the home onto the tunnel
 
