@@ -3,6 +3,7 @@ paths:
   - "McpServerWebSearch/**"
   - "Domain/Tools/Web/**"
   - "Domain/Prompts/WebBrowsingPrompt.cs"
+  - "Domain/Prompts/Sections/websearch_prompt.md"
   - "Domain/Prompts/WebBrowsingSkill.cs"
   - "Domain/Contracts/IWebBrowser.cs"
   - "Infrastructure/Clients/Browser/**"

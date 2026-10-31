@@ -5,6 +5,7 @@ paths:
   - "Domain/Memory/**"
   - "Domain/Contracts/IMemory*.cs"
   - "Domain/Prompts/MemoryPrompts.cs"
+  - "Domain/Prompts/Sections/memory.md"
   - "Agent/Modules/MemoryModule.cs"
 ---
 

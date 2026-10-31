@@ -39,6 +39,11 @@ public sealed record PromptContext
 // plus a line that binds its text, and never an argument about where a Prepend should go.
 public static class PromptComposer
 {
+    private static readonly PromptTemplate _date = PromptDocuments.Section(PromptManifest.Date).Template("date");
+
+    private static readonly PromptTemplate _customInstructions =
+        PromptDocuments.Section(PromptManifest.CustomInstructions).Template("instructions");
+
     public static PromptAssembly Compose(PromptContext context)
     {
         IEnumerable<PromptSection> sections =
@@ -50,7 +55,11 @@ public static class PromptComposer
             .. context.FileSystem,
             .. context.Client,
             PromptManifest.Bind(PromptManifest.Date, Today(context.Now)),
-            .. Optional(PromptManifest.CustomInstructions, context.CustomInstructions),
+            .. Optional(
+                PromptManifest.CustomInstructions,
+                string.IsNullOrEmpty(context.CustomInstructions)
+                    ? null
+                    : _customInstructions.Fill(("instructions", context.CustomInstructions))),
             .. context.Selected,
             .. Optional(PromptManifest.Language, LanguagePrompt.Build(context.Language))
         ];
@@ -69,5 +78,5 @@ public static class PromptComposer
         string.IsNullOrEmpty(text) ? [] : [PromptManifest.Bind(name, text)];
 
     private static string Today(DateTimeOffset now) =>
-        $"Today is {now.ToString("dddd, yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)}.";
+        _date.Fill(("date", now.ToString("dddd, yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)));
 }

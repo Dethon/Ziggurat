@@ -1,10 +1,9 @@
-using Domain.Tools.FileSystem;
-
 namespace Domain.Prompts;
 
-// Every section that can reach a system prompt, declared in one table. What a section is for,
-// where it sits, what it may cost, who it is for and what it beats are answered here rather than
-// distributed between an assembly method, a settings file and the prose of the prompt itself.
+// Every section that can reach a system prompt, declared in one table read from the section
+// documents. What a section is for, where it sits, what it may cost, who it is for and what it beats
+// are answered in its document's header rather than distributed between an assembly method, a
+// settings file and the prose of the prompt itself.
 //
 // Text is bound to a declaration rather than stored in it, because half of these sections are
 // written by somebody else: an MCP server serves its own prompt and may change it without this
@@ -45,230 +44,16 @@ public static class PromptManifest
     public static bool FitsCeiling(int tokens, int standingTokens = StandingTokens) =>
         tokens <= standingTokens + Headroom;
 
+    // Read from the section documents (Domain/Prompts/Sections), whose headers are these
+    // declarations: a section's purpose, band, budget, audience, conflicts and claims sit at the top
+    // of the file holding its words. In band order, then by name, so the table reads the way the
+    // prompt does.
     public static IReadOnlyList<PromptDeclaration> Declarations { get; } =
     [
-        new()
-        {
-            Name = CoreDirective,
-            Purpose = "The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.",
-            Priority = PromptPriority.CoreDirective,
-            // 250 covered the refusals prose alone; the tool-call rule landed exactly on it,
-            // leaving a section every agent reads one word from failing the build. 400 for the
-            // irreversible-change carve-out: it is the one exception to "never hedge", and the
-            // words that keep a model from reading it as stop-and-wait are the words that earn
-            // its place — seven of the user's notes went the turn it was missing. 500 for the
-            // beside-a-call rule: it has to be read before the first call, so it cannot live in
-            // a skill, and the voice section's version of it never reaches a text agent. 550 for
-            // what the carve-out's "work" is: widened from files in bulk to one file or many, it
-            // read to gpt-6-luna as covering a watch, and a removal the user named outright was
-            // answered with a confirmation question three runs of three. 650 for the adult-content
-            // paragraph: "assumptions about content" left several models, open ones included,
-            // refusing or lecturing on NSFW requests their training treats as unsafe by default, and
-            // it has to sit in the section that governs refusals, read before anything else.
-            TokenBudget = 650,
-            Conflict = ConflictPolicy.Governs(PromptRules.Refusals),
-            Claims = CoreDirectivePrompt.Claims
-        },
-        new()
-        {
-            Name = Identity,
-            Purpose = "Which agent this is, before any tool or feature prompt is read.",
-            Priority = PromptPriority.Identity,
-            TokenBudget = 100
-        },
-        new()
-        {
-            Name = UserContext,
-            Purpose = "The user every user-scoped tool call in this conversation belongs to.",
-            Priority = PromptPriority.UserContext,
-            TokenBudget = 100
-        },
-        new()
-        {
-            Name = Subagents,
-            Purpose = "When to delegate to a worker, and how to answer from what it returns.",
-            Priority = PromptPriority.Feature,
-            // Ratcheted from 600: the two when-to-delegate bullets the model was measured ignoring
-            // (2026-08-18, 2026-08-20) and the exploration one, none of them claimed, left; what
-            // stays is every sentence a claim or the voice override reads.
-            TokenBudget = 400,
-            Conflict = ConflictPolicy.Governs(
-                PromptRules.ToolUse, PromptRules.Formatting, PromptRules.Verbosity),
-            Claims = SubAgentPrompt.Claims
-        },
-        new()
-        {
-            Name = Memory,
-            Purpose = "Memory is invisible plumbing: applied silently, never narrated, forgotten on request.",
-            Priority = PromptPriority.Feature,
-            TokenBudget = 500,
-            Conflict = ConflictPolicy.Governs(PromptRules.Memory),
-            Claims = MemoryPrompts.Claims
-        },
-        new()
-        {
-            Name = SkillsSection,
-            Purpose = "What the advertised skill list is, and that a skill is loaded once, before acting, and only when a request calls for it.",
-            Priority = PromptPriority.Feature,
-            TokenBudget = 250
-        },
-        new()
-        {
-            Name = FilesystemMounts,
-            Purpose = "The mounts this session actually has, and which one a path belongs under.",
-            Priority = PromptPriority.FileSystem,
-            // Raised from 500 for the section saying which mounts a sandbox command sees.
-            TokenBudget = 600,
-            // The words are generated from the registry, so the claims live beside the code that
-            // builds them rather than in a prompt file of their own.
-            Claims = FileSystemToolFeature.Claims
-        },
-        new()
-        {
-            Name = SandboxPrompt.Name,
-            Purpose = "That the sandbox is the one mount with a shell, that its commands see the other mounts, where its workspace is, and that a run loads the skill.",
-            Priority = PromptPriority.Client,
-            // The stub: the section had no choosing rule of its own and moved whole into the
-            // sandbox skill. Ratcheted from 1,400.
-            TokenBudget = 250,
-            ServedBy = "mcp-sandbox"
-        },
-        new()
-        {
-            Name = VaultPrompt.Name,
-            Purpose = "What the vault is, that script work over it runs in the sandbox on /vault in place, and that a transfer is one call.",
-            Priority = PromptPriority.Client,
-            // The stub: the conventions are the obsidian-vault skill. Ratcheted from 2,000.
-            TokenBudget = 400,
-            ServedBy = "mcp-vault",
-            Claims = VaultPrompt.Claims
-        },
-        new()
-        {
-            Name = WebBrowsingPrompt.Name,
-            Purpose = "That the browser exists, that a url comes from a search, and that no call is a probe.",
-            Priority = PromptPriority.Client,
-            // The stub: the workflow is the web-browsing skill. Ratcheted from 1,500.
-            TokenBudget = 400,
-            ServedBy = "mcp-websearch",
-            Claims = WebBrowsingPrompt.Claims
-        },
-        new()
-        {
-            Name = DownloaderPrompt.Name,
-            Purpose = "Finding and fetching media, and the download assistant's persona.",
-            Priority = PromptPriority.Client,
-            TokenBudget = 4_000,
-            ServedBy = "mcp-library",
-            Conflict = ConflictPolicy.Governs(PromptRules.Formatting, PromptRules.Verbosity)
-        },
-        new()
-        {
-            Name = IdealistaPrompt.Name,
-            Purpose = "Property search: the filters that exist and how a listing is read back.",
-            Priority = PromptPriority.Client,
-            TokenBudget = 600,
-            ServedBy = "mcp-idealista"
-        },
-        new()
-        {
-            Name = HomeAssistantPrompt.Name,
-            Purpose = "The house: which mechanism a request is, and that a home task starts by loading the skill and reading the setup index.",
-            Priority = PromptPriority.Client,
-            // The stub of what was the largest section: the setup index is a file the mount
-            // serves, the watches are a skill, and the doing rules are the home-assistant skill.
-            // Ratcheted from 6,500 through 5,000, 4,500 and 1,200 as each of them left, the last
-            // when the mechanism rule moved to its one statement under Timers.
-            TokenBudget = 1_000,
-            ServedBy = "mcp-homeassistant",
-            Claims = HomeAssistantPrompt.Claims
-        },
-        new()
-        {
-            Name = SchedulingPrompt.Name,
-            Purpose = "That a schedule is a deferred action of the agent's own, never a human reminder, and that writing one loads the skill.",
-            Priority = PromptPriority.Client,
-            // The stub plus the live agent list the server appends: the file's rules are the
-            // scheduling skill. Ratcheted from 2,000, then from 700 when the mechanism rule moved
-            // to its one statement under Timers.
-            TokenBudget = 500,
-            ServedBy = "mcp-scheduling",
-            Claims = SchedulingPrompt.Claims
-        },
-        new()
-        {
-            Name = PrintingPrompt.Name,
-            Purpose = "The printer's queue, the formats it takes and what it rejects.",
-            Priority = PromptPriority.Client,
-            TokenBudget = 600,
-            ServedBy = "mcp-printer"
-        },
-        new()
-        {
-            Name = TimerPrompt.Name,
-            Purpose = "Which mechanism a moment is — a countdown, a calendar alarm, a scheduled task — and the live satellite roster.",
-            Priority = PromptPriority.Client,
-            // The stub plus the roster the server appends: the file's rules are the
-            // countdown-timers skill. Ratcheted from 1,500.
-            TokenBudget = 900,
-            ServedBy = "mcp-timers",
-            Claims = TimerPrompt.Claims
-        },
-        new()
-        {
-            Name = SugaryPrompt.Name,
-            Purpose = "How a meal's carbs are estimated for her, item by item with honest ranges, and that no insulin dose is ever suggested.",
-            Priority = PromptPriority.Client,
-            // The standalone Sugary app's system prompt as it was measured on the benchmark meals,
-            // whole: every sentence of it is read while estimating, so none of it is a skill.
-            TokenBudget = 1_200,
-            ServedBy = "mcp-sugary",
-            // Jonas dials the same server for her log; these words are for the agent that
-            // estimates, and a reader of the log is not one.
-            Audience = PromptAudience.ForAgents("sugary"),
-            // The dose rule is a refusal, and the one thing the core directive's "do not refuse"
-            // must lose to: it is read later, and it governs every turn of this agent.
-            Conflict = ConflictPolicy.Governs(PromptRules.Refusals).Beating(CoreDirective),
-            Claims = SugaryPrompt.Claims
-        },
-        new()
-        {
-            Name = Date,
-            Purpose = "Today's date. Last of the static sections, because it is the only one that changes on its own.",
-            Priority = PromptPriority.Date,
-            TokenBudget = 30
-        },
-        new()
-        {
-            Name = CustomInstructions,
-            Purpose = "Per-agent configuration, read closest to the conversation.",
-            Priority = PromptPriority.CustomInstructions,
-            TokenBudget = 800
-        },
-        new()
-        {
-            Name = VoicePrompt.Name,
-            Purpose = "Every reply is spoken aloud, so it is one short sentence of plain words.",
-            Priority = PromptPriority.ChannelOverride,
-            TokenBudget = 800,
-            Audience = PromptAudience.ForChannels("voice"),
-            // The prose says it too, in its last paragraph. Both statements are about the same two
-            // sections: the ones above that tell a screen-reader how to shape and how long to make
-            // an answer.
-            Conflict = ConflictPolicy
-                .Governs(PromptRules.Formatting, PromptRules.Verbosity, PromptRules.ToolUse)
-                .Beating(Subagents, DownloaderPrompt.Name),
-            Claims = VoicePrompt.Claims
-        },
-        new()
-        {
-            Name = Language,
-            Purpose = "The reply language, stated absolutely, against a request that is otherwise all English.",
-            Priority = PromptPriority.Language,
-            TokenBudget = 300,
-            Conflict = ConflictPolicy.Governs(PromptRules.Language),
-            Claims = LanguagePrompt.Claims
-        }
+        .. PromptDocuments.Sections
+            .Select(document => document.AsSection())
+            .OrderBy(declaration => (int)declaration.Priority)
+            .ThenBy(declaration => declaration.Name, StringComparer.Ordinal)
     ];
 
     // Every skill a server in this deployment ships, declared beside the sections. A skill is read
@@ -380,10 +165,12 @@ public static class PromptManifest
     private static readonly Dictionary<string, PromptDeclaration> _byName =
         Declarations.ToDictionary(d => d.Name, StringComparer.OrdinalIgnoreCase);
 
-    // Sections whose words live in this repo and are chosen by name in an agent's configuration.
-    // Everything else is bound by whoever produces its text.
-    private static readonly Dictionary<string, string> _selectable =
-        new(StringComparer.OrdinalIgnoreCase) { [VoicePrompt.Name] = VoicePrompt.Instructions };
+    // Sections whose words live in this repo and are chosen by name in an agent's configuration —
+    // a document whose header says `selectable: true`. Everything else is bound by whoever produces
+    // its text.
+    private static readonly Dictionary<string, string> _selectable = PromptDocuments.Sections
+        .Where(document => document.IsSelectable)
+        .ToDictionary(document => document.Name, document => document.Text, StringComparer.OrdinalIgnoreCase);
 
     public static IReadOnlyCollection<string> SelectableSections => _selectable.Keys;
 

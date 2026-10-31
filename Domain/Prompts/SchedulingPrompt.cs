@@ -1,5 +1,7 @@
 namespace Domain.Prompts;
 
+// That a schedule is a deferred action of the agent's own, and the live agent list the server
+// appends (Sections/scheduling_prompt.md), served by mcp-scheduling.
 public static class SchedulingPrompt
 {
     public const string Name = "scheduling_prompt";
@@ -7,24 +9,22 @@ public static class SchedulingPrompt
     public const string Description =
         "Explains how to schedule agent tasks via the /schedules filesystem (cron/one-shot, delivery, run-now)";
 
-    public const string Prompt =
-        """
-        ## Scheduled Tasks
+    private static readonly PromptDocument _document = PromptDocuments.Section(Name);
 
-        You can schedule prompts to run later — once at a future time, or repeatedly on a cron schedule. Schedules live in the virtual filesystem mounted at `/schedules`, one directory per agent, and you manage them entirely with the `domain__filesystem__*` tools. When a schedule fires, its prompt is delivered to an agent as if a user had sent it. Before you create, change, run or remove one, load the `scheduling` skill: the layout, which agent's directory to write in, the file's fields, cron and `runAt`, delivery and the managing actions are there.
+    private static readonly PromptTemplate _prompt = _document.Template("setup");
 
-        A schedule is a **deferred action of your own** — "turn the air conditioning off in an hour", "start the washing machine at three", "check tomorrow whether the import finished" — with the absolute time worked out into `runAt` and the action in `prompt`, however the time was phrased. It is **not an alarm clock**: a human alarm, wake-up or reminder never goes here, because a schedule speaks once at most and skips offline satellites. Which of the alarms calendar, `/timers` and `/schedules` a request is, is decided once, under **Which mechanism** in the Timers section.
-        """;
+    // The words a setup summary is made of; ScheduleSetupSummary fills them from the agent catalog.
+    internal static readonly PromptTemplate Setup = _document.Part("setup", "directories", "agents");
 
-    // The choosing rules' claims: what is decided before the scheduling skill is loaded. The file's
-    // rules are the skill's, which declares only its trigger so far.
+    // The words with no setup: what a deployment with no agents serves.
+    public static readonly string Prompt = _prompt.Fill(("setup", ""));
+
     public static readonly PromptClaim NeverAHumanReminder =
-        new("scheduling.never-a-human-reminder",
-            "A human alarm, wake-up or reminder is never written as a schedule; it goes to the alarms calendar or to /timers.");
+        _document.Claim("scheduling.never-a-human-reminder");
 
     public static readonly PromptClaim DeferredActionIsASchedule =
-        new("scheduling.deferred-action-is-a-schedule",
-            "An action the agent itself must perform later becomes a schedule with an absolute runAt, however the time was phrased.");
+        _document.Claim("scheduling.deferred-action-is-a-schedule");
 
-    public static readonly IReadOnlyList<PromptClaim> Claims = [NeverAHumanReminder, DeferredActionIsASchedule];
+    public static string Build(string setup) =>
+        string.IsNullOrEmpty(setup) ? Prompt : _prompt.Fill(("setup", "\n\n" + setup));
 }

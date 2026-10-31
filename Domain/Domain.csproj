@@ -29,6 +29,23 @@
     </ItemGroup>
 
     <ItemGroup>
+      <!-- The prompt documents: every section's header and words (PromptDocuments). Embedded for the
+           suffix list's reason - the code's own words, not a policy a host may override. The
+           repository's .dockerignore drops **/*.md, so it re-includes these by name; the target
+           below turns a context that lost them into a failed build rather than a prompt-less
+           container. -->
+      <EmbeddedResource Include="Prompts/Sections/*.md" LogicalName="Domain.Prompts.Sections.%(Filename)%(Extension)" />
+    </ItemGroup>
+
+    <Target Name="RequirePromptDocuments" BeforeTargets="BeforeBuild">
+      <ItemGroup>
+        <_PromptDocument Include="@(EmbeddedResource)" Condition="'%(Extension)' == '.md'" />
+      </ItemGroup>
+      <Error Condition="'@(_PromptDocument)' == ''"
+             Text="No prompt document was found under Domain/Prompts/Sections. A build context that drops *.md (see .dockerignore) leaves every section without its words." />
+    </Target>
+
+    <ItemGroup>
       <PackageReference Include="FluentResults" Version="4.0.0" />
       <PackageReference Include="JetBrains.Annotations" Version="2026.2.0" />
       <PackageReference Include="Microsoft.Agents.AI.Abstractions" Version="1.25.0" />

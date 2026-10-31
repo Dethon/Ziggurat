@@ -25,47 +25,45 @@ public class FileSystemToolFeature(
         .Select(o => o.ToolKey!)
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-    // The falsifiable statements the section above makes. They are declared here rather than in
-    // Domain/Prompts because this is where the words are: the mounts section is generated from the
-    // registry a session actually has, so its prose has no file of its own.
+    // The mounts section's words and claims are its document's (Sections/filesystem_mounts.md); what
+    // is generated here is only what the registry a session actually has decides — which mounts,
+    // which machines, which parts of the words apply.
+    private static readonly PromptDocument _document = PromptDocuments.Section(PromptManifest.FilesystemMounts);
+
+    private static readonly PromptTemplate _section = _document.Template("mounts", "machines", "shell", "reach");
+
+    private static readonly PromptTemplate _machines = _document.Part("machines", "scheme", "list");
+
+    private static readonly PromptTemplate _shell = _document.Part("shell", "sandbox", "places", "rerouted");
+
+    private static readonly PromptTemplate _rerouted = _document.Part("rerouted", "exec_mounts");
+
+    private static readonly PromptTemplate _occupiedPlace = _document.Part("occupied-place", "mount", "path");
+
+    private static readonly string _reachInACommand = _document.Part("reach-in-a-command").Fill();
+
+    private static readonly string _reachByCopy = _document.Part("reach-by-copy").Fill();
+
     public static readonly PromptClaim PathStartsAtAMount =
-        new("mounts.path-starts-at-a-mount",
-            "Every filesystem tool path starts at one of the mount prefixes the session declares, rather than at a bare path.");
+        _document.Claim("mounts.path-starts-at-a-mount");
 
     public static readonly PromptClaim CapabilitiesAreAdvertised =
-        new("mounts.capabilities-are-advertised",
-            "An operation is called only on a mount that advertises it, rather than discovered to be unsupported by trying.");
+        _document.Claim("mounts.capabilities-are-advertised");
 
     public static readonly PromptClaim AnEnvelopeIsDataNotAReasonToRetry =
-        new("mounts.an-envelope-is-data-not-a-reason-to-retry",
-            "An error envelope is read as a hint to pick a different mount or operation, and never as a reason to retry the same call.");
+        _document.Claim("mounts.an-envelope-is-data-not-a-reason-to-retry");
 
     public static readonly PromptClaim ExecWorkGoesWhereExecLives =
-        new("mounts.exec-work-goes-where-exec-lives",
-            "Programmatic work runs on a mount that advertises exec, and the readable result is persisted on the mount that owns it.");
+        _document.Claim("mounts.exec-work-goes-where-exec-lives");
 
     public static readonly PromptClaim TransferIsOneCall =
-        new("mounts.transfer-is-one-call",
-            "Data needed on another mount is moved with a single copy or move call rather than a read on one and a create on the other.");
+        _document.Claim("mounts.transfer-is-one-call");
 
     public static readonly PromptClaim AnUnmountedPathIsAnswered =
-        new("mounts.an-unmounted-path-is-answered",
-            "A path under none of the session's mounts is answered with a sentence saying it is not reachable, never hunted for through other tools, searched for across a mount or handed to a worker.");
+        _document.Claim("mounts.an-unmounted-path-is-answered");
 
     public static readonly PromptClaim AnOutpostIsNeverInTheSandbox =
-        new("mounts.an-outpost-is-never-in-the-sandbox",
-            "A path on a machine (outpost:<NAME>) is never looked for from a sandbox command, which cannot reach it; it is reached only by the file tools on that machine's own address.");
-
-    public static readonly IReadOnlyList<PromptClaim> Claims =
-    [
-        AnOutpostIsNeverInTheSandbox,
-        PathStartsAtAMount,
-        CapabilitiesAreAdvertised,
-        AnEnvelopeIsDataNotAReasonToRetry,
-        ExecWorkGoesWhereExecLives,
-        TransferIsOneCall,
-        AnUnmountedPathIsAnswered
-    ];
+        _document.Claim("mounts.an-outpost-is-never-in-the-sandbox");
 
     public string FeatureName => Feature;
 
@@ -184,22 +182,16 @@ public class FileSystemToolFeature(
 
         var occupied = sandbox.OccupiedNames ?? [];
         var places = string.Join(", ", served.Select(m => occupied.Contains(ServedMount.NameOf(m.MountPoint))
-            ? $"`{m.MountPoint}` only at `{ServedMount.PathOf(m.MountPoint)}` (the sandbox has a `{m.MountPoint}` of its own)"
+            ? _occupiedPlace.Fill(("mount", m.MountPoint), ("path", ServedMount.PathOf(m.MountPoint)))
             : $"`{m.MountPoint}`"));
         // Every served mount is rerouted, but only the ones that offer `exec` are named: those are
         // the mounts the model is told it can exec on, so they are the ones whose exec moved.
         var offeringExec = served.Where(m => m.Capabilities.Contains(VfsExecTool.Name)).Select(m => $"`{m.MountPoint}`").ToList();
         var rerouted = offeringExec.Count == 0
             ? ""
-            : $" `exec` on {string.Join(", ", offeringExec)} runs in the sandbox, with that directory as the working directory.";
+            : " " + _rerouted.Fill(("exec_mounts", string.Join(", ", offeringExec)));
 
-        return $$"""
-            ### The other mounts inside a command
-
-            A command run with `exec` on `{{sandbox.MountPoint}}` sees every mount above but the machines as an ordinary directory, at the same path the tools take: {{places}}. Pipes, `grep -r`, `jq`, `sed -i` and scripts in any language work on them, and an action file runs as `./<name>` from its directory, or by its path, from any script.{{rerouted}} A machine is never inside a command: reach one only with the file tools, at its own `outpost:` address.
-
-            A command can do there only what the file tools would do unasked — a write is a `text_create` (or a copy, for anything that is not text), `rm` a `remove`, `mv` a `move` — and what would need the person's approval is refused. Bash does not report a refused write, so read the result's `vfsChanges`: every change the command made through these mounts, `applied`, `refused` with the mount's own reason, or `dropped` because a timeout cut it off. `vfsTruncated` names a directory a recursive command saw only part of.
-            """;
+        return _shell.Fill(("sandbox", sandbox.MountPoint), ("places", places), ("rerouted", rerouted));
     }
 
     private string? BuildPrompt()
@@ -210,34 +202,13 @@ public class FileSystemToolFeature(
             return null;
         }
 
-        var mountList = string.Join("\n", mounts.Where(m => !IsMachine(m)).Select(FormatMount));
         var machines = MachinesSection(mounts);
         var shell = ShellReachesMounts ? ShellSection(mounts) : "";
-        return $$"""
-            ## Available Filesystems
-
-            All `domain__filesystem__*` tool paths must start with one of these mount prefixes. Pick the mount whose description matches your task; don't scatter related files across mounts.
-            {{mountList}}
-            {{(machines.Length > 0 ? $"\n{machines}\n" : "")}}{{(shell.Length > 0 ? $"\n{shell}\n" : "")}}
-            ### How capabilities work
-
-            Each mount is backed by a different MCP server, and **each backend implements only the operations that make sense for it** — read-only mounts won't accept writes, non-shell mounts won't accept `exec`, and so on. Each mount lists the operations it supports above — call only an operation a mount advertises, so you don't waste a turn discovering an unsupported one by trial and error.
-
-            If you call a tool the backend doesn't implement, the response is a structured error envelope (`{"ok": false, "errorCode": "unsupported_operation", "message": "...", "retryable": false, "hint": "..."}`) — treat it as data, not as an exception. Use it as a hint to pick a different mount or a different operation, not as a reason to retry.
-
-            ### Choosing a mount
-
-            - Programmatic work — parsing, transforming, scraping, extracting archives, generating charts, exercising a CLI — belongs on a mount that advertises `exec`. Hand-editing is fragile for these.
-            - A targeted text change belongs on the mount that owns the file: edit it in place rather than scripting the edit somewhere else.
-            - When a task spans mounts, run the computation where `exec` lives and persist the readable result on the mount that owns it.
-
-            ### Cross-mount reminders
-
-            - Each mount is its own backend. Tools see only the filesystem of the mount you target — they cannot reach files on a different mount. {{(shell.Length > 0 ? "A sandbox command sees the other mounts directly (above), so data a command needs from one stays where it is." : "If you need data from one mount available to a command on another (e.g. for `exec`), copy it across first.")}}
-            - `move` and `copy` accept source and destination on different mounts and handle the transfer natively (streaming for cross-FS, recursing into directories) — prefer a single `copy`/`move` call over reading on one mount and creating on another.
-            - Paths are virtual: always include the mount prefix. Don't pass bare `/home/...` or `/notes/...` — start with one of the mount points listed above.
-            - A path that starts under none of these mounts is not reachable in this session, by any tool or by a worker — the mount list above is complete. Say so in one sentence instead of hunting for it: no retries under other spellings, no search of a mount for a folder of that name (a `find` or a glob from the mount's root, a look through its home directory), no web tools, no delegation.
-            """;
+        return _section.Fill(
+            ("mounts", string.Join("\n", mounts.Where(m => !IsMachine(m)).Select(FormatMount))),
+            ("machines", machines.Length > 0 ? $"\n{machines}\n" : ""),
+            ("shell", shell.Length > 0 ? $"\n{shell}\n" : ""),
+            ("reach", shell.Length > 0 ? _reachInACommand : _reachByCopy));
     }
 
     // The outposts among a session's mounts, under a heading that says what they are, or nothing
@@ -249,12 +220,9 @@ public class FileSystemToolFeature(
         var machines = mounts.Where(IsMachine).ToList();
         return machines.Count == 0
             ? ""
-            : $"""
-              ### Other machines
-
-              These are not part of your filesystem. Each is a separate computer, somebody's own, that offered its files to this conversation and can be gone in the next one. Address one as `{OutpostMountPoint.Scheme}<NAME>/<absolute path on that machine>` — never as `/<NAME>`, which would be a path in your own tree. A copy or move to or from one sends data between computers, and its `exec` runs on that person's machine, not in a sandbox.
-              {string.Join("\n", machines.Select(FormatMount))}
-              """;
+            : _machines.Fill(
+                ("scheme", OutpostMountPoint.Scheme),
+                ("list", string.Join("\n", machines.Select(FormatMount))));
     }
 
     private static bool IsMachine(FileSystemMount mount) => OutpostMountPoint.Addresses(mount.MountPoint);
