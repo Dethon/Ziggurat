@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Infrastructure.Agents;
 
 namespace Infrastructure.Clients.Channels;
 
@@ -40,5 +41,9 @@ public interface IMcpChannelConnection
     // The catalog is a function rather than a list because it is not constant: attachment
     // capability is discovered from the model provider and refreshed hourly, so every registration
     // has to read what is true now rather than what was true when the host started.
-    Task RunAsync(string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct);
+    //
+    // The endpoint carries what the connection presents and what carries it: a deployment server's
+    // URL and credential, or one opening of a household server's tunnel. A run bound to a tunnel is
+    // given a token that goes with the tunnel, and once a run returns the connection is not connected.
+    Task RunAsync(McpServerEndpoint endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct);
 }

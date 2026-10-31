@@ -53,9 +53,10 @@ public static class InjectorModule
 
             // An endpoint is a server's URL or a household server's name (reached through its tunnel),
             // and nothing else: anything else would slip past the credential check below and fail in
-            // the first session that dialled it.
+            // the first session that dialled it — or, for a channel, in a connection retrying for ever.
             var unreadable = settings.Agents.SelectMany(a => a.McpServerEndpoints)
                 .Concat(settings.SubAgents.SelectMany(a => a.McpServerEndpoints))
+                .Concat(settings.ChannelEndpoints.Select(c => c.Endpoint))
                 .Where(endpoint => ServerAddress.FromUrl(endpoint) is null && !TunnelCredentialProtocol.IsServerName(endpoint))
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
@@ -211,12 +212,13 @@ public static class InjectorModule
                 var channelId = endpoint.ChannelId;
                 var attachOnly = endpoint.AttachOnly;
                 var hostsReviewCopies = endpoint.HostsReviewCopies;
-                // A channel server's /mcp is gated like every other deployment server's, so each
-                // connection — and every reconnect it makes — presents that server's credential.
+                // A channel server's /mcp is gated like every other deployment server's, so each run
+                // of the connection — and every reconnect it makes — presents that server's
+                // credential, which the host hands it with the endpoint (a household server's tunnel
+                // presents its own).
                 services = services.AddSingleton<IChannelConnection>(sp =>
                     new McpChannelConnection(
                         channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
-                        mcpSecret: sp.GetRequiredService<McpCredentials>().For(endpoint.Endpoint),
                         callTokens: sp.GetRequiredService<CallTokens>())
                     {
                         HostsReviewCopies = hostsReviewCopies
@@ -243,7 +245,11 @@ public static class InjectorModule
                             sp.GetRequiredService<IModelCapabilityCatalog>(),
                             sp.GetRequiredService<ILemonadeModelSource>()),
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>(),
-                        sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default));
+                        sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default,
+                        sp.GetRequiredService<McpCredentials>(),
+                        // A channel endpoint naming a household server follows the home household's
+                        // tunnel of that name (the relay's, AddTunnelRelay).
+                        sp.GetService<IOwnChannelServers>()));
         }
 
         private IServiceCollection AddOutposts(OutpostConfiguration outposts) =>

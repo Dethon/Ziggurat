@@ -4,6 +4,8 @@ paths:
   - "Mcp.Hosting/ToolServerExtensions.cs"
   - "Infrastructure/Tunnels/**"
   - "Infrastructure/Agents/IOwnServers.cs"
+  - "Infrastructure/Agents/IOwnChannelServers.cs"
+  - "Agent/App/ChannelConnectionHost.cs"
   - "Infrastructure/Agents/OwnServerEndpoints.cs"
   - "Infrastructure/Agents/McpServerEndpoint.cs"
   - "Infrastructure/Clients/Accounts/TunnelCredentialClient.cs"
@@ -162,10 +164,41 @@ the server's name alone, so its tools are `mcp__vault__…` for every household 
 same everywhere; `CacheKey` = the full name, so the prompt cache (one per process) never serves one
 household's server prompts to another. A URL's `CacheKey` is its qualifier, as before.
 
+## A household's channel server
+
+A server that is also a channel (web search, library, Home Assistant, voice) is named in
+`channelEndpoints` **by its server name instead of a URL** — `{ "channelId": "homeassistant",
+"endpoint": "homeassistant" }` — and `AddAgent` refuses a channel endpoint that is neither. Such an
+endpoint is **the home household's server of that name**: a channel connection is one per channel id,
+for the deployment, and in this phase the operator's household is the only one with servers. The
+agent learns which household is the home from the accounts service, not from a setting: the verify
+answer carries `TunnelCredentialVerified.Home` (the credential's household `IsHome`), and the opening
+keeps it as `OpenTunnel.Home`.
+
+- `ChannelConnectionHost` runs a URL endpoint once, as before, presenting `McpCredentials.For(url)`
+  (the host hands the credential with the endpoint now: `IMcpChannelConnection.RunAsync` takes a
+  `McpServerEndpoint`). A server-name endpoint it **follows**: `IOwnChannelServers.WatchAsync(name)`
+  (the deployment's is `RelayedOwnServers`, over `TunnelRegistry.WatchAsync`) yields every opening of
+  the home's tunnel of that name as an `OwnServerOpening` — the `Relayed` endpoint and the opening's
+  `Closed` token — and the host runs the connection once per opening, on a token linked to it. A newer
+  opening (a replacement, a reconnect) finishes the old run before the new one starts, since one
+  connection holds one client.
+- **A run that returns lets go**: `McpChannelConnection.RunAsync` stops its pump and disposes its
+  client whenever its token goes, so a channel whose tunnel closed is **not connected** (ADR 0011's
+  five behaviours) until the next opening, and the next opening starts from nothing — its tool set is
+  asked again (ADR 0012). The run's registration, health checks and `channel_receive` long-poll are
+  the dialled channel's, carried over the tunnel's client and signed for the synthetic address.
+- Nothing about a turn changes: a fire through the tunnel carries the delegation the server stored and
+  is checked as every fire is (`.claude/rules/service-identity.md`, "Deferred turns"); a reply goes
+  back through whichever opening is current.
+- A stack hosting its servers in process names its channels by URL; nothing there follows a tunnel.
+
+Tested at the round trip (`TunnelledChannelTests`: a notification and its reply, a drop and a reopen
+without a restart, a watch's delegated fire through the real Home Assistant server) and in
+`ChannelConnectionHostTests` (one run per opening, never two at once).
+
 ## Not yet (later tickets)
 
-- **04** connects a tunnelled channel server when its tunnel opens and drops it when it closes:
-  consume `WatchAsync`.
 - **05** reconciles a conversation's sessions at each turn's start and names offline servers. Today a
   household server that is offline, or a turn that names no household, **fails the session** as a
   configured endpoint does (ADR 0027): `OwnServerEndpoints` throws `HttpRequestException`. A call in
