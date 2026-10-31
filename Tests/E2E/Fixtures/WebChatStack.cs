@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Agent.App;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
@@ -60,9 +61,17 @@ internal sealed partial class WebChatStack
     // topic the chat suite renamed was appearing at the top of the gesture suite's sidebar and
     // being tapped instead of the row that suite had just made. Per-collection users do not fix
     // that and did not; a space is the boundary the application itself draws, so each collection
-    // takes one. They must be configured on the webui or the client bounces back to the default.
+    // takes one. They must be spaces of the household's configuration, which the stack saves as it
+    // starts, or the client opens the household's first space instead.
     private static readonly string[] _spaces =
         ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett"];
+
+    // A space no collection works in, with a name, colour and agent of its own: what a person sees of
+    // a space is its configuration's.
+    public static readonly HouseholdSpace Kitchen = new()
+    {
+        Slug = "kilo", Name = "Kilo Kitchen", AccentColor = "#2a9d8f", DefaultAgent = "vision-agent", Order = 99
+    };
 
     // A user identity is an account in the stack's accounts service, made the first time a test
     // asks for its index and signed in by a minted session rather than a passkey ceremony, so no
@@ -399,6 +408,9 @@ internal sealed partial class WebChatStack
             // The hub asks the name of each connection's account with its own MCP credential, as
             // compose wires it.
             .WithEnvironment("CALLERS__mcp-channel-signalr", McpTestSecret.For("mcp-channel-signalr"))
+            // Where a saved household configuration is announced, as compose wires it: the stack saves
+            // its spaces, and a save nobody could be told of is a failed command.
+            .WithEnvironment("REDIS__CONNECTIONSTRING", "redis:6379")
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/accounts/sign-in")))
@@ -527,20 +539,10 @@ internal sealed partial class WebChatStack
                 .UntilMessageIsLogged("Application started"))
             .Build();
 
-        var webui = TestContainers.Container(webuiImageName)
+        _webui = TestContainers.Container(webuiImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("webui")
-            .WithPortBinding(8080, true);
-        // These replace the image's own Spaces array element by element rather than adding to it,
-        // so "default" has to be restated or a page that lands on "/" resolves no space at all.
-        webui = _spaces
-            .Prepend("default")
-            .Index()
-            .Aggregate(webui, (builder, entry) => builder
-                .WithEnvironment($"SPACES__{entry.Index}__SLUG", entry.Item)
-                .WithEnvironment($"SPACES__{entry.Index}__NAME", entry.Item)
-                .WithEnvironment($"SPACES__{entry.Index}__ACCENTCOLOR", SpaceConfig.DefaultAccentColor));
-        _webui = webui
+            .WithPortBinding(8080, true)
             // Empty string: browser falls back to relative /hubs/chat, which Caddy routes to mcp-channel-signalr
             .WithEnvironment("AGENTURL", "")
             .WithWaitStrategy(Wait.ForUnixContainer()
@@ -607,6 +609,7 @@ internal sealed partial class WebChatStack
         // Wait for the full stack to be reachable through Caddy, signed in: the hub's negotiate
         // answering a session proves Caddy -> session check -> mcp-channel-signalr end to end.
         var probe = await SeedAsync("Probe");
+        await SaveSpacesAsync(probe.Account.TenantId);
         using var httpClient = new HttpClient();
         httpClient.Timeout = TimeSpan.FromSeconds(5);
         var deadline = DateTime.UtcNow.Add(TimeSpan.FromMinutes(2));
@@ -634,6 +637,28 @@ internal sealed partial class WebChatStack
         SugaryUrl = $"http://{_mcpSugary.Hostname}:{_mcpSugary.GetMappedPublicPort(8080)}";
         SugaryMcpEndpoint = $"{SugaryUrl}/mcp";
         WebChatUrl = $"{baseUrl}/";
+    }
+
+    // The household's spaces as its owner would save them: the default space, one per collection,
+    // and the kitchen. Saved before any page has asked the hub for them, so none is kept from before.
+    private async Task SaveSpacesAsync(string household)
+    {
+        var section = new SpacesSection
+        {
+            Spaces =
+            [
+                HouseholdSpace.Default,
+                .. _spaces.Select((slug, index) => new HouseholdSpace
+                {
+                    Slug = slug, Name = slug, AccentColor = SpaceConfig.DefaultAccentColor, Order = index + 1
+                }),
+                Kitchen
+            ]
+        };
+        await _accounts!.CopyAsync(
+            Encoding.UTF8.GetBytes(HouseholdSections.SpacesSchema.Write(section).ToJsonString()), "/tmp/spaces.json");
+        await AccountsAsync(
+            "set-household-config", "--household", household, "--section", HouseholdSections.Spaces, "--file", "/tmp/spaces.json");
     }
 
     // whisper-server's own route, answered in process. The channel container reaches it through
