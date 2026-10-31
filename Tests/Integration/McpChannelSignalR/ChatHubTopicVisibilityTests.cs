@@ -76,6 +76,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
             .AddSingleton(_streams)
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
             .AddSingleton<ApprovalService>()
+            .AddSingleton<AlertService>()
             .AddSingleton(new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast))
             .AddSingleton<ISessionAccounts>(new NamedAccounts())
             .AddSingleton(catalog.Object)
@@ -491,6 +492,46 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         (await offered.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBe("approved");
     }
 
+    // A timer with no satellite rings on every chat client its person holds, whichever space each is
+    // in, and on nobody else's; dismissed on one of them, it stops on all of them.
+    [Fact]
+    public async Task AnAlertRingingForItsOwner_ReachesEveryConnectionOfTheirs_AndADismissalOnOneStopsItOnAll()
+    {
+        var fran = await ConnectAsync(Fran);
+        var franElsewhere = await ConnectInSpaceAsync(Fran, "garden");
+        var laura = await ConnectAsync(Laura);
+        var olga = await ConnectAsync(Olga, "sees-all");
+        var rung = new Offers();
+        var stopped = new Offers();
+        foreach (var (who, connection) in new[] { ("fran", fran), ("fran-elsewhere", franElsewhere), ("laura", laura), ("olga", olga) })
+        {
+            connection.On<AlertOfferedNotification>("OnAlertOffered", n => rung.Add(who, n.AlertId));
+            connection.On<AlertSettledNotification>("OnAlertSettled", n => stopped.Add(who, n.AlertId));
+        }
+
+        var alertId = Guid.NewGuid().ToString("N");
+
+        var ringing = Alerts.OfferAlertAsync(new OfferAlertParams
+        {
+            AlertId = alertId, Owner = new Account(Home, Fran), Text = "pasta is ready"
+        }, CancellationToken.None);
+
+        await Eventually.Until(() => rung.Count == 2, "both of Fran's connections to ring");
+        await Eventually.Settle();
+        rung.Who(alertId).ShouldBe(["fran", "fran-elsewhere"], ignoreOrder: true);
+        (await franElsewhere.InvokeAsync<IReadOnlyList<AlertOfferedNotification>>("GetOfferedAlerts"))
+            .ShouldHaveSingleItem().Text.ShouldBe("pasta is ready");
+        (await laura.InvokeAsync<IReadOnlyList<AlertOfferedNotification>>("GetOfferedAlerts")).ShouldBeEmpty();
+        (await olga.InvokeAsync<bool>("DismissAlert", alertId)).ShouldBeFalse();
+
+        (await franElsewhere.InvokeAsync<bool>("DismissAlert", alertId)).ShouldBeTrue();
+
+        (await ringing.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBe(ChannelProtocol.AlertDismissed);
+        await Eventually.Until(() => stopped.Count == 2, "both of Fran's connections to stop ringing");
+        stopped.Who(alertId).ShouldBe(["fran", "fran-elsewhere"], ignoreOrder: true);
+        (await fran.InvokeAsync<bool>("DismissAlert", alertId)).ShouldBeFalse();
+    }
+
     // Answered on Telegram, the card in the chat client says so rather than vanishing.
     [Fact]
     public async Task AnApprovalAnsweredElsewhere_TellsEveryCardShowingItSo()
@@ -632,6 +673,8 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         ShowReviewCopyAsync(conversationId, new Principal("telegram", Fran, new Account(Home, Fran)), "Fran", group: true);
 
     private ApprovalService Approvals => _app.Services.GetRequiredService<ApprovalService>();
+
+    private AlertService Alerts => _app.Services.GetRequiredService<AlertService>();
 
     private static readonly IReadOnlyList<ToolApprovalRequest> _buy =
         [new ToolApprovalRequest("msg-1", "mcp__shop__buy", new Dictionary<string, object?>())];

@@ -1,10 +1,12 @@
 using System.Text.Json.Nodes;
+using Agent.App;
 using Agent.Modules;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Judgments;
+using Domain.Monitor;
 using Domain.Security;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
@@ -143,6 +145,22 @@ public class InjectorModuleTests
         provider.GetRequiredService<IOwnServers>().ShouldBeOfType<RelayedOwnServers>();
         provider.GetRequiredService<IOwnChannelServers>().ShouldBeOfType<RelayedOwnServers>();
         services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(TunnelRevocationListener));
+    }
+
+    // A timer with no satellite is rung on its person's channels by the agent, which alone holds
+    // them: the deployment's composition runs one alert relay over its channel connections.
+    [Fact]
+    public void ConfigureAgents_RingsAlertsOverItsChannelConnections()
+    {
+        var settings = Settings(openRouterKey: "key") with { Signing = TestSigningKeys.Settings(TestSigningKeys.Agent) };
+        var services = new ServiceCollection().AddLogging();
+        services.ConfigureAgents(settings, new CommandLineParams(), new ConfigurationBuilder().Build());
+        services.RemoveAll<IMetricsPublisher>();
+        services.AddSingleton<IMetricsPublisher>(new RecordingMetricsPublisher());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<AlertRelay>().ShouldNotBeNull();
+        services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(AlertRinging));
     }
 
     // An outpost is one of the household's tunnels, so the deployment's outposts are the relay's.
