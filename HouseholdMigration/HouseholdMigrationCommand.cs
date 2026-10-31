@@ -1,4 +1,5 @@
 using Domain.DTOs;
+using Domain.Security.Sealing;
 using HouseholdMigration.Steps;
 using Infrastructure.Memory;
 using Infrastructure.StateManagers;
@@ -47,10 +48,10 @@ public static class HouseholdMigrationCommand
             problems.Add("ACCOUNTS__CREDENTIAL is not set (HOUSEHOLD_MIGRATION_SECRET in .env)");
         }
 
-        byte[]? stateKey = null;
+        SealingKey? stateKey = null;
         try
         {
-            stateKey = RedisPersonStateStore.ParseKey(settings.Logins.StateKey, "LOGINS__STATEKEY");
+            stateKey = SealingKey.Parse(settings.Logins.StateKey, "LOGINS__STATEKEY");
         }
         catch (InvalidOperationException ex)
         {
@@ -109,7 +110,7 @@ public static class HouseholdMigrationCommand
 
     // In the order a person would want them done if the run stopped part way: what they told the agent,
     // then their logins, their phones, their schedules, their topics, their voice and their log.
-    private static IReadOnlyList<IMigrationStep> Steps(MigrationSettings settings, IConnectionMultiplexer redis, byte[]? stateKey) =>
+    private static IReadOnlyList<IMigrationStep> Steps(MigrationSettings settings, IConnectionMultiplexer redis, SealingKey? stateKey) =>
     [
         // The embedding service is never called; its options carry the index's width.
         new MemoryBuckets(new RedisStackMemoryStore(redis, new EmbeddingOptions

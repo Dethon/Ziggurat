@@ -4,6 +4,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Tunnel;
 using Domain.Judgments;
 using Domain.Prompts;
+using Domain.Security.Sealing;
 using Domain.Tools.Web;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Browser;
@@ -46,7 +47,7 @@ public static class ConfigModule
                 .AddSingleton<OneTimeLinks>()
                 .AddSingleton<IPersonStateStore>(sp => new RedisPersonStateStore(
                     sp.GetRequiredService<IConnectionMultiplexer>(),
-                    RedisPersonStateStore.ParseKey(settings.Logins.StateKey, "Logins:StateKey")))
+                    SealingKey.Parse(settings.Logins.StateKey, "Logins:StateKey")))
                 .AddSingleton(sp => new PersonLogins(
                     sp.GetRequiredService<IPersonContexts>(),
                     sp.GetRequiredService<IPersonStateStore>(),
