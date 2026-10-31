@@ -36,6 +36,8 @@ public sealed class McpAgent : DisposableAgent
     private readonly bool _noTools;
     private readonly IReadOnlySet<string> _withheldTools;
     private readonly OutpostAccess? _outposts;
+    private readonly IOwnServers? _ownServers;
+    private readonly string? _tenantId;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger<McpAgent>? _logger;
@@ -90,9 +92,12 @@ public sealed class McpAgent : DisposableAgent
         ReadImageSupport? readImages = null,
         ISkillPreloader? skillPreloader = null,
         IVfsBridge? bridge = null,
-        CallTokens? callTokens = null)
+        CallTokens? callTokens = null,
+        IOwnServers? ownServers = null)
     {
         _endpoints = spec.McpServerEndpoints;
+        _tenantId = spec.TenantId;
+        _ownServers = ownServers;
         _usesOutposts = spec.UsesOutposts;
         _recordsOutpostVerdicts = spec.RecordsOutpostVerdicts;
         _noTools = spec.NoTools;
@@ -562,7 +567,8 @@ public sealed class McpAgent : DisposableAgent
             // outpost outlives none, so a machine that appeared since the last session is picked
             // up by the next one and nothing mutates a session already built.
             var composed = await OutpostEndpoints.ComposeAsync(
-                _endpoints, _outposts, _usesOutposts, _logger, ct);
+                OwnServerEndpoints.Resolve(_endpoints, _tenantId, _ownServers),
+                _outposts, _usesOutposts, _logger, ct);
 
             var newSession = await ThreadSession
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,

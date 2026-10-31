@@ -1,3 +1,4 @@
+using Mcp.Hosting.Tunnel;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Protocol;
@@ -24,9 +25,20 @@ public static class ToolServerExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(settings);
 
-        var server = services
+        // A household's server given a tunnel opens it instead of waiting to be dialled, and its /mcp
+        // asks for the tunnel credential: the relay presents the credential the tunnel was opened
+        // with, so no deployment holds a secret of a household's server. Its call tokens are checked
+        // against what the relay hands over the tunnel (TunnelTrust), which the gate finds registered.
+        var tunnel = settings.Mcp.Tunnel;
+        services
             .AddSingleton(settings)
-            .AddSingleton<IStartupFilter>(new McpSecretGate(settings.Mcp.SharedSecret))
+            .AddSingleton<IStartupFilter>(new McpSecretGate(tunnel.IsConfigured ? tunnel.Credential : settings.Mcp.SharedSecret));
+        if (tunnel.IsConfigured)
+        {
+            services.AddTunnel(tunnel);
+        }
+
+        var server = services
             .AddMcpServer()
             .WithHttpTransport();
         return settings.ChecksCallTokens ? CallTokenGate.Install(server, settings.Mcp) : server;

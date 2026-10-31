@@ -30,6 +30,32 @@ public class DeploymentConformanceTests
         DeploymentFiles.Compose().Service("caddy").Environment.ShouldNotContainKey("CADDY_TLS");
     }
 
+    // A household's server opens its tunnel through the proxy on the main host, to the relay in the
+    // agent, presenting a credential of its own: the one new door, and only that path.
+    [Fact]
+    public void TheTunnel_ReachesTheRelayOnTheMainHostAlone()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+
+        var route = hosts.Single(h => h.Name == MainHost).Routes.Single(r => r.Matcher == TunnelProtocol.Path);
+        route.Upstream.ShouldBe("agent:8080");
+        route.ForwardAuth.ShouldBeNull();
+        foreach (var host in hosts.Where(h => h.Name != MainHost))
+        {
+            RouteFor(host, TunnelProtocol.Path)?.Upstream.ShouldNotBe("agent:8080", host.Name);
+        }
+    }
+
+    // The route names the tunnel's path exactly, so nothing under it reaches the agent by it.
+    [Fact]
+    public void NothingUnderTheTunnelsPath_ReachesTheAgent()
+    {
+        var host = DeploymentFiles.Caddyfile().Host(MainHost);
+
+        RouteFor(host, $"{TunnelProtocol.Path}/anything")?.Upstream.ShouldNotBe("agent:8080");
+        RouteFor(host, $"{TunnelProtocol.Path}s")?.Upstream.ShouldNotBe("agent:8080");
+    }
+
     [Fact]
     public void OutpostRegistration_ReachesTheAgentThroughTheProxy()
     {

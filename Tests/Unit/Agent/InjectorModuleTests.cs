@@ -70,6 +70,35 @@ public class InjectorModuleTests
             .Message.ShouldContain("mcp-channel-signalr");
     }
 
+    // An endpoint is a server's URL or a household server's name. Anything else — a scheme no server
+    // answers on, a name that is no DNS label — would be skipped by the credential check above and
+    // fail far from here, in the first session that dialled it.
+    [Theory]
+    [InlineData("mcp-vault:8080/mcp")]
+    [InlineData("tunnel://vault")]
+    [InlineData("Vault Server")]
+    public void AddAgent_WhenAnEndpointIsNeitherAUrlNorAServersName_Refuses(string endpoint)
+    {
+        var settings = Settings(openRouterKey: "key") with
+        {
+            SubAgents = [new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = ["vault", endpoint] }]
+        };
+
+        Should.Throw<InvalidOperationException>(() => new ServiceCollection().AddLogging().AddAgent(settings))
+            .Message.ShouldContain(endpoint);
+    }
+
+    [Fact]
+    public void AddAgent_TakesAHouseholdServersName_WithNoCredential()
+    {
+        var settings = Settings(openRouterKey: "key") with
+        {
+            Agents = [new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["vault"] }]
+        };
+
+        Should.NotThrow(() => new ServiceCollection().AddLogging().AddAgent(settings));
+    }
+
     // One set of credentials for the host: the one startup checked is the one every agent, worker
     // and channel connection is built with.
     [Fact]

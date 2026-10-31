@@ -4,6 +4,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Judgments;
 using Domain.Monitor;
 using Domain.Outposts;
@@ -48,6 +49,20 @@ public static class InjectorModule
             // every unattributed message into an error, and the deployment should refuse to start
             // rather than discover it one message at a time.
             settings.AgentDefaults.Validate(settings.Agents.Select(a => a.Id));
+
+            // An endpoint is a server's URL or a household server's name (reached through its tunnel),
+            // and nothing else: anything else would slip past the credential check below and fail in
+            // the first session that dialled it.
+            var unreadable = settings.Agents.SelectMany(a => a.McpServerEndpoints)
+                .Concat(settings.SubAgents.SelectMany(a => a.McpServerEndpoints))
+                .Where(endpoint => ServerAddress.FromUrl(endpoint) is null && !TunnelCredentialProtocol.IsServerName(endpoint))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (unreadable.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"MCP endpoints that are neither an http(s) URL nor a household server's name: {string.Join(", ", unreadable)}.");
+            }
 
             // And for a server the deployment configured without its credential: dialled bare, its
             // gate would refuse every call, and the session that needed it would fail far from here.

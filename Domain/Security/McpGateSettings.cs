@@ -1,3 +1,4 @@
+using Domain.DTOs.Tunnel;
 using Domain.Security.Signing;
 
 namespace Domain.Security;
@@ -29,4 +30,11 @@ public sealed record McpGateSettings
 
     // Read from Domain's token-verification.json, which every host that verifies a token ships.
     public TokenVerificationSettings TokenVerification { get; init; } = new();
+
+    // A household's own server opens a tunnel to the deployment instead of being dialled: given a hub
+    // and a credential (MCP__TUNNEL__HUB, MCP__TUNNEL__CREDENTIAL, MCP__TUNNEL__SERVERNAME), its /mcp
+    // asks for the tunnel credential and its call tokens are checked against the audience and the
+    // keys the relay hands over the tunnel, never against Audience and AgentKeysUrl above. The timings
+    // come from Domain's tunnel.json, which the relay reads too.
+    public TunnelSettings Tunnel { get; init; } = new();
 }
