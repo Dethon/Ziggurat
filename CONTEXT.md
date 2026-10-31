@@ -819,6 +819,19 @@ fixed order from what its servers and definition declare. It is what the model
 knows before it decides what to do; it never changes shape mid-conversation.
 _Avoid_: system prompt, standing sections, static prompt, core prompt
 
+**Prompt document**:
+A section's words as a text file shipped in the repo: a small header carrying its
+declaration — purpose, band, budget, audience, conflicts, claims — over the words,
+and named parts for words the host adds or swaps in. The manifest is read from them.
+_Avoid_: prompt file, prompt template (a template is an agent's)
+
+**Placeholder**:
+A named hole, `{{name}}`, in a prompt document's words that the host fills with what
+only it knows — the date, the agent's name, the language, the satellites, the mounts.
+The document lists its placeholders and the host names what it fills, so neither can
+drop one without the other failing.
+_Avoid_: variable, slot, token
+
 **Skill**:
 A body of guidance loaded when a request calls for it — by the model, or ahead of
 it by a **preload** — offered by the tool server whose tools it explains and granted

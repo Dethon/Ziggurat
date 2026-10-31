@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Domain.DTOs.Tunnel;
 using Tests.E2E.Fixtures;
 using YamlDotNet.RepresentationModel;
@@ -65,6 +66,11 @@ public static class DeploymentFiles
 
     public static CaddyConfig Caddyfile() =>
         CaddyConfig.Parse(File.ReadAllText(Path.Combine(Directory, "caddy", "Caddyfile")));
+
+    // The repository's .dockerignore, which every image's build context is filtered through.
+    public static DockerIgnore DockerIgnore() =>
+        Deployment.DockerIgnore.Parse(
+            File.ReadAllText(Path.Combine(TestHelpers.FindSolutionRoot(), ".dockerignore")));
 
     // Every file a container is built from or configured by: the compose directory whole but for its
     // volumes, every Dockerfile, and each project's settings and the policy files beside its project
@@ -440,4 +446,36 @@ public sealed record CaddyConfig(IReadOnlyList<CaddyHost> Hosts)
             }
         }
     }
+}
+// A .dockerignore read the way the builder reads it: patterns in order, the last one matching a path
+// or any directory above it decides, and a `!` pattern puts back what an earlier one dropped.
+public sealed record DockerIgnore(IReadOnlyList<(bool Keeps, Regex Pattern)> Rules)
+{
+    public static DockerIgnore Parse(string text) => new([
+        .. text.Replace("\r\n", "\n").Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0 && !line.StartsWith('#'))
+            .Select(line => line.StartsWith('!') ? (Keeps: true, Glob: line[1..]) : (Keeps: false, Glob: line))
+            .Select(rule => (rule.Keeps, Compile(rule.Glob.Trim('/'))))
+    ]);
+
+    // Whether a path, relative to the repository root, is left out of the build context.
+    public bool Excludes(string path)
+    {
+        var segments = path.Split('/');
+        var candidates = Enumerable.Range(1, segments.Length).Select(n => string.Join('/', segments.Take(n))).ToList();
+
+        return Rules
+            .Where(rule => candidates.Any(candidate => rule.Pattern.IsMatch(candidate)))
+            .Select(rule => !rule.Keeps)
+            .LastOrDefault();
+    }
+
+    private static Regex Compile(string glob) =>
+        new("^" + Regex.Escape(glob)
+            .Replace(@"\*\*/", "(.*/)?")
+            .Replace(@"/\*\*", "(/.*)?")
+            .Replace(@"\*\*", ".*")
+            .Replace(@"\*", "[^/]*")
+            .Replace(@"\?", "[^/]") + "$");
 }

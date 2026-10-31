@@ -30,6 +30,8 @@ LICENSE
 README.md
 CLAUDE.md
 **/*.md
+# ...but not the prompt documents: every section's words, embedded into Domain at build.
+!Domain/Prompts/**/*.md
 
 # Test and config
 **/Tests

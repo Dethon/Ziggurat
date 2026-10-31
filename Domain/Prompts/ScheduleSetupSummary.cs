@@ -1,8 +1,8 @@
-using System.Text;
 using Domain.Contracts;
 
 namespace Domain.Prompts;
 
+// The agents a schedule can be written for, in the words of the scheduling document's 'setup' part.
 public class ScheduleSetupSummary(IAgentCatalog agents)
 {
     public string Get()
@@ -13,26 +13,14 @@ public class ScheduleSetupSummary(IAgentCatalog agents)
             return string.Empty;
         }
 
-        var sb = new StringBuilder();
-        sb.Append("## Current scheduling setup\n\n");
-        sb.Append("Mounted at `/schedules` — one directory per agent. Use the paths verbatim.\n\n");
+        var directories = string.Join("\n", ordered.Select(agent => $"/schedules/{agent.Id}"));
+        var described = string.Join("\n", ordered.Select(agent =>
+            string.IsNullOrWhiteSpace(agent.Description)
+                ? $"- `{agent.Id}` ({agent.Name})"
+                : $"- `{agent.Id}` ({agent.Name}) — {agent.Description}"));
 
-        foreach (var agent in ordered)
-        {
-            sb.Append("/schedules/").Append(agent.Id).Append('\n');
-        }
-
-        sb.Append("\n### Agent descriptions\n");
-        foreach (var agent in ordered)
-        {
-            sb.Append("- `").Append(agent.Id).Append("` (").Append(agent.Name).Append(')');
-            if (!string.IsNullOrWhiteSpace(agent.Description))
-            {
-                sb.Append(" — ").Append(agent.Description);
-            }
-            sb.Append('\n');
-        }
-
-        return sb.ToString();
+        // The summary has always ended in a newline, and so has the prompt served with it: kept, so
+        // the cached prefix of every conversation that reads it is the same bytes it was.
+        return SchedulingPrompt.Setup.Fill(("directories", directories), ("agents", described)) + "\n";
     }
 }
