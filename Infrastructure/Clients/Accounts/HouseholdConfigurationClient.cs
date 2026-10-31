@@ -67,11 +67,13 @@ public sealed class HouseholdConfigurationClient(
         KeptAsync(HouseholdConfigProtocol.TelegramBotsView, EveryHousehold, async () =>
             (await AskAsync<HouseholdTelegramBots>(HouseholdConfigProtocol.TelegramBotsView, new HouseholdConfigQuery(), ct)).Bots, ct);
 
+    // This client's handler alone: the multiplexer is the host's, and another listener on the channel
+    // is somebody else's to remove.
     public async ValueTask DisposeAsync()
     {
         if (_subscribed && redis is not null)
         {
-            await redis.GetSubscriber().UnsubscribeAsync(RedisChannel.Literal(HouseholdConfigProtocol.SavedChannel));
+            await redis.GetSubscriber().UnsubscribeAsync(RedisChannel.Literal(HouseholdConfigProtocol.SavedChannel), Heard);
         }
 
         _subscribing.Dispose();
@@ -167,7 +169,7 @@ public sealed class HouseholdConfigurationClient(
             }
 
             await redis.GetSubscriber().SubscribeAsync(
-                RedisChannel.Literal(HouseholdConfigProtocol.SavedChannel), (_, message) => Heard(message));
+                RedisChannel.Literal(HouseholdConfigProtocol.SavedChannel), Heard);
             _subscribed = true;
         }
         catch (Exception ex) when (ex is RedisException or TimeoutException)
@@ -181,7 +183,7 @@ public sealed class HouseholdConfigurationClient(
         }
     }
 
-    private void Heard(RedisValue message)
+    private void Heard(RedisChannel _, RedisValue message)
     {
         HouseholdConfigSaved? saved;
         try
