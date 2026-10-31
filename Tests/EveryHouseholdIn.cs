@@ -23,4 +23,7 @@ internal sealed class EveryHouseholdIn(TimeZoneInfo zone) : IHouseholdConfigurat
 
     public Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<HouseholdTelegramBot>>([]);
+
+    public Task<HouseholdAgentNames> AgentNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        throw new NotSupportedException("a shared server's stand-in lists no agents");
 }

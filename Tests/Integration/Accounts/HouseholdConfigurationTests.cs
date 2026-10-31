@@ -193,6 +193,8 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         { Telegram, HouseholdConfigProtocol.AgentView },
         { Telegram, HouseholdConfigProtocol.IdealistaView },
         { SignalR, HouseholdConfigProtocol.TelegramBotsView },
+        { SignalR, HouseholdConfigProtocol.AgentNamesView },
+        { Scheduling, HouseholdConfigProtocol.AgentNamesView },
         { Agent, HouseholdConfigProtocol.IdealistaView },
         { Agent, HouseholdConfigProtocol.TelegramBotsView }
     };
@@ -331,6 +333,41 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
             new HouseholdSpace { Slug = "default", Name = "Cocina", AccentColor = "#00aa00", DefaultAgent = "chef" }
         ]);
         (await RefusalAsync(telegrams, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+    }
+
+    // The shared Telegram bot lists and switches among a household's agents for a chat, so it reads
+    // their ids and names — and nothing else of their definitions — on the assertion of the person
+    // asking. A household that saved no agents lists the two templates it runs.
+    [Fact]
+    public async Task TheTelegramBot_ReadsTheNamesOfTheAgentsOfThePersonsHousehold()
+    {
+        await using var server = await StartAsync();
+        var named = await server.SeedHouseholdAsync("Casa");
+        var fresh = await server.SeedHouseholdAsync("Nueva");
+        await SetAsync(server, named, HouseholdSections.Agents, """
+            {
+              "defaultAgent": "chef",
+              "agents": [
+                { "id": "chef", "template": "jonas", "name": "Chef", "customInstructions": "Cook." },
+                { "id": "sweet", "template": "sugary", "name": "Dulce" }
+              ]
+            }
+            """);
+        var assertions = server.Service<Assertions>();
+
+        var agents = await AskAsync<HouseholdConfigAnswer<HouseholdAgentNames>>(server, Telegram, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(named, "telegram")));
+        var starting = await AskAsync<HouseholdConfigAnswer<HouseholdAgentNames>>(server, Telegram, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(fresh, "telegram")));
+        var raw = await RawAsync(server, Telegram, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(named, "telegram")));
+
+        agents.HouseholdId.ShouldBe(named);
+        agents.Section.DefaultAgent.ShouldBe("chef");
+        agents.Section.Agents.ShouldBe([new HouseholdAgentName("chef", "Chef"), new HouseholdAgentName("sweet", "Dulce")]);
+        raw.ShouldNotContain("Cook.");
+        starting.Section.DefaultAgent.ShouldBe("jonas");
+        starting.Section.Agents.Select(a => a.Id).ShouldBe(["jonas", "sugary"]);
     }
 
     // The agent signs every proof there is, so it names the household itself — for a turn, the
