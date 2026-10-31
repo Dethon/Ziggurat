@@ -125,7 +125,13 @@ public static class InjectorModule
                 // the bridge endpoint answers that command's file operations from it.
                 .AddSingleton<IVfsBridge>(sp => new VfsBridge(sp.GetRequiredService<TimeProvider>(), settings.VfsBridge))
                 .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
-                .AddSingleton<CustomAgentRegistry>()
+                // Before the channel connections start, so a restarted agent has its people's
+                // custom agents back by the first turn; a plain IHostedService singleton, so the
+                // one instance the provider reads is the one that loads.
+                .AddSingleton<ICustomAgentStore>(sp => new RedisCustomAgentStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>()))
+                .AddSingleton(sp => new CustomAgentRegistry(sp.GetRequiredService<ICustomAgentStore>()))
+                .AddSingleton<IHostedService>(sp => sp.GetRequiredService<CustomAgentRegistry>())
                 .AddSingleton<IAgentDefinitionProvider, AgentDefinitionProvider>()
                 .AddSingleton<IAgentFactory>(sp =>
                     new MultiAgentFactory(
