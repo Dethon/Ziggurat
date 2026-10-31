@@ -56,100 +56,12 @@ public static class PromptManifest
             .ThenBy(declaration => declaration.Name, StringComparer.Ordinal)
     ];
 
-    // Every skill a server in this deployment ships, declared beside the sections. A skill is read
-    // on demand, so its body's budget is what one load costs a conversation and its description's
-    // budget is what every turn pays to advertise it.
+    // Every skill a server in this deployment ships, declared beside the sections and read from its
+    // document (Domain/Prompts/Skills) the same way. A skill is read on demand, so its body's budget
+    // is what one load costs a conversation and its description's budget is what every turn pays to
+    // advertise it. By name: the order a model sees them in is its servers', not this table's.
     public static IReadOnlyList<SkillDeclaration> Skills { get; } =
-    [
-        new()
-        {
-            Name = HomeWatchesSkill.Name,
-            Description = HomeWatchesSkill.Description,
-            DescriptionBudget = 120,
-            BodyBudget = 2_200,
-            ServedBy = "mcp-homeassistant",
-            Claims = HomeWatchesSkill.Claims
-        },
-        new()
-        {
-            Name = HomeAssistantSkill.Name,
-            Description = HomeAssistantSkill.Description,
-            // The exclusions are what keep it off timer and watch turns; the first gate showed
-            // each one earning its words.
-            DescriptionBudget = 150,
-            BodyBudget = 3_600,
-            ServedBy = "mcp-homeassistant",
-            Claims = HomeAssistantSkill.Claims,
-            // The body's first instruction, made by the host when the host loads the skill.
-            PreloadReads = [HomeAssistantSkill.SetupIndexPath]
-        },
-        new()
-        {
-            Name = ObsidianVaultSkill.Name,
-            Description = ObsidianVaultSkill.Description,
-            DescriptionBudget = 120,
-            BodyBudget = 1_800,
-            ServedBy = "mcp-vault",
-            Claims = ObsidianVaultSkill.Claims
-        },
-        new()
-        {
-            Name = WebBrowsingSkill.Name,
-            Description = WebBrowsingSkill.Description,
-            DescriptionBudget = 130,
-            // Raised from 1,400 when the web tools' descriptions gave up the snippet rule, the
-            // browse options, the other action verbs and the force essay: ~700 tokens that every
-            // request of every conversation paid, now ~250 paid once by a conversation that browses.
-            // Raised again to 1,950 for browsing as the person: asMe, the login handoff, the logins
-            // page and the two turns that must report a login wall instead (~330 tokens, paid only
-            // on a load).
-            BodyBudget = 1_950,
-            ServedBy = "mcp-websearch",
-            Claims = WebBrowsingSkill.Claims
-        },
-        new()
-        {
-            Name = SchedulingSkill.Name,
-            Description = SchedulingSkill.Description,
-            DescriptionBudget = 130,
-            BodyBudget = 1_300,
-            ServedBy = "mcp-scheduling",
-            Claims = SchedulingSkill.Claims
-        },
-        new()
-        {
-            Name = SandboxSkill.Name,
-            Description = SandboxSkill.Description,
-            DescriptionBudget = 130,
-            // Raised from 1,200 for the other mounts inside a command.
-            BodyBudget = 1_350,
-            ServedBy = "mcp-sandbox",
-            Claims = SandboxSkill.Claims
-        },
-        new()
-        {
-            Name = SugarySkill.Name,
-            Description = SugarySkill.Description,
-            DescriptionBudget = 100,
-            // Raised from 500 for her insulin doses: where they are and how a meal's are found. Raised
-            // again to 700 for her periods and day notes, the tables a cycle question reads beside /ha,
-            // and to 750 for her exercise. Raised to 850 when a dose stopped being refused and started
-            // being worked out (2026-10-19): only from numbers she gave, missing ones asked for, the
-            // working shown — the rule here that guards her safety, and not one to cut thin.
-            BodyBudget = 850,
-            ServedBy = "mcp-sugary",
-            Claims = SugarySkill.Claims
-        },
-        new()
-        {
-            Name = CountdownTimersSkill.Name,
-            Description = CountdownTimersSkill.Description,
-            DescriptionBudget = 130,
-            BodyBudget = 900,
-            ServedBy = "mcp-timers",
-            Claims = CountdownTimersSkill.Claims
-        }
-    ];
+        [.. PromptDocuments.Skills.Select(document => document.AsSkill())];
 
     public const string CoreDirective = CoreDirectivePrompt.Name;
     public const string SkillsSection = "skills";

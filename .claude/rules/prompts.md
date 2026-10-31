@@ -90,8 +90,18 @@ touches its class.
   words are the code's, not a policy a host may override, and a container that edited its own
   prompt would make every snapshot a statement about another prompt. The repository's
   `.dockerignore` drops `**/*.md` and puts `Domain/Prompts/**/*.md` back
-  (`DeploymentConformanceTests` holds it), and `Domain.csproj` fails a build that embedded none.
-  Skills and agent templates join `Domain/Prompts/` as documents of their own kind, beside these.
+  (`DeploymentConformanceTests` holds it), and `Domain.csproj` fails a build that embedded no
+  section or no skill. Agent templates join `Domain/Prompts/` as documents of their own kind.
+- **A skill is a document too**, `Domain/Prompts/Skills/<name>.md`, in the same format and read by
+  `PromptDocument.AsSkill`. Its keys: `name` (= the file name), `description` (the advertisement,
+  verbatim — Jev and the model read it), `description-budget`, `body-budget`, `served-by` (required),
+  `preload-reads`, `placeholders` and `claims:`, the trigger claim first. It lives in Domain and not
+  beside its server, because the server ships the skill (ADR 0039) but the agent, the eval, Jev's
+  preload and every budget test read its declaration from the manifest, and none of them references
+  a server; each server references Domain, so the document is in its image already. The classes
+  beside them (`HomeAssistantSkill`, `SandboxSkill`, …) are handles: the `Name` constant, the
+  `Text` or `For(...)` the server's `AddSkills` takes, and the claim handles. The manifest lists
+  skills by name; the order a model sees them in is its servers' registration order.
 - **The changed tier reads the header.** `ChangeScope` parses a changed `.md` with the same parser,
   so an edit anywhere in a document — words, a part, a statement — selects every scenario testing a
   claim its header declares, and an id its words merely mention is not a declaration. Code still
@@ -160,9 +170,9 @@ parent turn's, written onto its request by the run tool from the `ConversationCo
   any choice.
 - **A skill is a manifest entry.** `PromptManifest.Skills` declares each one beside the sections:
   name, the description that is the advertisement, a description budget, a body budget, the server
-  that serves it and its claims. Its text lives in `Domain/Prompts` beside its name constant (a
-  section's has moved into its document; a skill's follows), and the server publishes it through
-  the hosting helper — never a hand-written resource.
+  that serves it and its claims — read from its document's header, its text from the same
+  document's words, and the server publishes it through the hosting helper — never a hand-written
+  resource.
 - **The ceiling ratchets.** `PromptManifest.StandingTokens` is the largest agent's declared sections
   rounded up to the hundred, and the budget tests refuse a figure left where it was. A move lowers
   it by editing that one number.

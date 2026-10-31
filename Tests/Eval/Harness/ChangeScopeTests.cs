@@ -157,6 +157,29 @@ public class ChangeScopeTests
             ignoreOrder: true);
     }
 
+    // The same for skills: a skill's claims — its trigger claim first — moved into its document, so
+    // an edit of a body's words alone has to select the family that body teaches.
+    public static TheoryData<string> SkillDocuments =>
+        [.. PromptDocuments.Skills.Where(d => d.Claims.Count > 0).Select(d => d.Name)];
+
+    [Theory]
+    [MemberData(nameof(SkillDocuments))]
+    public void AgainstTheRealSuite_EachSkillDocument_SelectsTheScenariosOfItsClaims(string name)
+    {
+        var path = $"Domain/Prompts/Skills/{name}.md";
+        var claims = PromptDocuments.Skill(name).Claims.Select(c => c.Id).ToHashSet();
+
+        var selected = ChangeScope.Select(
+            [path],
+            file => File.ReadAllText(Path.Combine(RepositoryRoot.Path, file)),
+            EvalSuite.All, PromptManifest.Claims);
+
+        selected.ShouldNotBeEmpty();
+        selected.Select(s => s.Name).ShouldBe(
+            EvalSuite.All.Where(s => Tested(s).Any(claims.Contains)).Select(s => s.Name),
+            ignoreOrder: true);
+    }
+
     private static IEnumerable<string> Tested(Scenario scenario) =>
         Cited(scenario).Concat(scenario.IfDelegated.SelectMany(condition =>
             condition.Claims.Concat(condition.Judged.Select(check => check.Claim))));
