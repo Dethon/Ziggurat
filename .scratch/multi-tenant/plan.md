@@ -181,9 +181,9 @@ Real users, with the tenant already in the model (only the home tenant exists ye
 - **Agents.** Prompt sections and skills become text documents shipped in the repo as defaults;
   ceilings, the skill index and snapshots run over them. Shipped templates are a barebones Jonas
   (owner names it) and Sugary only; jack, jonas, nabu and sugary become the home tenant's own agents,
-  seeded from today's definitions. A tenant forks templates and edits prompt sections, skills,
-  tools/servers and model in a plain editor with validation, a short revision history, reset to
-  shipped and a diff when the shipped template changed. No eval on tenant edits this phase.
+  seeded from today's definitions. For now an owner edits only an agent's **name and custom
+  instructions**; the conversion to documents still happens (for a later editor). Custom (household)
+  agents are outside the eval: the eval keeps its own copies of today's agents under the tests.
 - **Telegram.** One shared deployment bot serves every tenant (a linked person's messages go to
   their tenant's default agent; `/agent` switches); the home tenant keeps its jack and jonas bots as
   tenant-owned bots in its config.
