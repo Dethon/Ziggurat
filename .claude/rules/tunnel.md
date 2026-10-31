@@ -170,8 +170,8 @@ that: a stream it opens with one of `BackCallProtocol`'s tags, carrying HTTP/1.1
   `X-Ziggurat-Back-Call-Server`, from the tunnel's verified credential, after removing every header
   the server sent under that prefix. Hop-by-hop headers and `Host` are the forward's own; the body
   streams both ways (a spoken reply is read while Lemonade makes it), and Kestrel's body limit is off
-  because each target bounds its own. The agent's own routes are asked where the agent listens (its
-  `IServer` addresses, a wildcard read as `127.0.0.1`), so they need no setting.
+  because each target bounds its own. The agent's own routes are asked where the agent listens (the
+  port of its first `IServer` address, on `127.0.0.1`), so they need no setting.
 - **Each target believes what it already believed.** The bridge still trusts only its call token, which
   passes through in `Authorization`; topic minting still trusts only the accounts service's assertion.
   **The accounts back-call is shown the tunnel's own credential**: the relay replaces `Authorization`
