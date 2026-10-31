@@ -33,8 +33,8 @@ internal sealed class ThreadSession : IAsyncDisposable
     public IReadOnlyList<PromptSkill> Skills => _data.Skills;
     public IVirtualFileSystemRegistry? FileSystemRegistry => _data.FileSystemRegistry;
 
-    // What this build made of the filesystems it found. Read once, by the step that writes each
-    // outpost's verdict back onto its registration — the collision is only knowable here.
+    // What this build made of the filesystems it found: the ones mounted, and the ones shadowed by a
+    // mount already holding their mount point — a collision only knowable here.
     public IReadOnlyList<string> MountedNames => _data.MountedNames;
     public IReadOnlyList<string> ShadowedNames => _data.ShadowedNames;
 

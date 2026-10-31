@@ -1,12 +1,10 @@
 namespace Domain.DTOs.Metrics.Enums;
 
-// Expired and Deregistered are both the machine going away, and they are kept apart because the
-// difference is whether anybody meant it: one is a laptop that was switched off, the other is a
-// laptop that lost its network.
+// An outpost is there while its tunnel is open, so its life is the tunnel's: it opened, and it
+// closed — the reason saying whether the machine stopped, lost its network, reconnected over its own
+// old opening or had its credential revoked.
 public enum OutpostLifecycle
 {
-    Registered,
-    Refreshed,
-    Deregistered,
-    Expired
+    Opened,
+    Closed
 }

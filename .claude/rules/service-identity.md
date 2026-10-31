@@ -229,9 +229,9 @@ credential by, which the server binds as `MCP__AUDIENCE` (`CallTokenGate` takes 
   user — and a tool deciding who may do something (Telegram's `request_approval` among them) decides
   from the token's person or refuses. Only the household migration still reads that `UserId`, off
   persisted pre-account history, as evidence of who started a topic (`TopicOwners`).
-- **The outpost** answers `IMcpHostSettings.ChecksCallTokens` with false, explicitly: it receives the
-  token and is not required to check it, and `CallTurn` then names nobody. Every other server says
-  yes by saying nothing, and no setting can switch the check off.
+- **Every server checks**, the outpost included: it is a household's server on a tunnel, so it checks
+  against the audience and keys its tunnel delivered (`TunnelTrust`), as any tunnelled server does.
+  `IMcpHostSettings.ChecksCallTokens` is true for every server, and no setting can switch it off.
 - **Keys and wiring.** The agent opens its `SigningKeyStore` from `Signing` (`SIGNING__KEYDIRECTORY`
   = `/keys`, the `./volumes/agent-keys` volume `agent-volume` chowns, the agent running as PUID) and
   serves the JWKS at `/internal/jwks` (`AgentKeysApi`), which no Caddy route reaches. Each server binds

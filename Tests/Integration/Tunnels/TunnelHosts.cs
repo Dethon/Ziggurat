@@ -64,6 +64,10 @@ internal sealed class RelayHost : IAsyncDisposable
 
     public IOwnServers OwnServers => _app.Services.GetRequiredService<IOwnServers>();
 
+    // The relay's outposts, which the host runs as it runs the relay: recording each opening and
+    // closing on the host's metrics.
+    public TunnelledOutposts Outposts => _app.Services.GetRequiredService<TunnelledOutposts>();
+
     public IOwnChannelServers ChannelServers => _app.Services.GetRequiredService<IOwnChannelServers>();
 
     public static async Task<RelayHost> StartAsync(

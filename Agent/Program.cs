@@ -23,7 +23,6 @@ app.UseCors();
 app.UseWebSockets();
 
 app.MapAgents(settings.AgentApi.SharedSecret);
-app.MapOutposts(settings.Outposts.SharedSecret);
 app.MapVfsBridge();
 app.MapAgentKeys();
 app.MapTopicMinting();

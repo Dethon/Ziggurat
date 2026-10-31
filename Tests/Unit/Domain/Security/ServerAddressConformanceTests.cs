@@ -6,7 +6,7 @@ namespace Tests.Unit.Domain.Security;
 
 // Which server a call is for is read in one place, ServerAddress: the call token's audience, the
 // credential the agent presents, the tool qualifier, the prompt cache, the deployment's endpoint list
-// and the outpost verdicts all key on it. A server reached through a tunnel has no host of its own,
+// and which outposts a session dialled all key on it. A server reached through a tunnel has no host of its own,
 // so anything that took a dialled URL's host itself would key that server on nothing — and the only
 // thing that can tell such a read from one through the address is the source.
 //

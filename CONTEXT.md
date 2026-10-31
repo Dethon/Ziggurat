@@ -659,17 +659,18 @@ _Avoid_: default agent, base agent, preset
 ## Outposts
 
 **Outpost**:
-A filesystem on a real machine that announces itself to the hub, rather than being configured
-into it. It is the only mount whose existence is decided by the machine it lives on, so it can
-be absent for reasons that are nobody's fault, and the only one presented as a separate machine
-at `outpost:<NAME>` rather than as a branch of the agent's own tree.
+A filesystem on a real machine that opens its own tunnel to the deployment, rather than being
+configured into it: an own server of its household whose credential was minted for
+`outpost-<NAME>`. It is the only mount whose existence is decided by the machine it lives on, so
+it can be absent for reasons that are nobody's fault, and the only one presented as a separate
+machine at `outpost:<NAME>` rather than as a branch of the agent's own tree.
 _Avoid_: remote filesystem, host filesystem, satellite, node
 
-**Outpost registration**:
-The hub's record that one outpost is live, named by the outpost and expiring on its own. It is
-a claim with a lifetime rather than a piece of configuration: nothing deletes it when a machine
-dies, it simply stops being renewed.
-_Avoid_: registration entry, lease, session, connection
+**Open outpost**:
+An outpost whose tunnel is open: what used to be its registration. It is there while the tunnel
+lives and gone when it closes — switched off, out of network, replaced by its own reconnect or its
+credential revoked — and is offered only to its own household's agents.
+_Avoid_: outpost registration, registration entry, lease, session
 
 **Jailed outpost**:
 An outpost that refuses every path outside its working directory. It is still mounted at the
@@ -677,11 +678,12 @@ machine's root, so jailing changes what an operation will do and never what a pa
 _Avoid_: chrooted, restricted mount, sandboxed outpost
 
 **Shadowed outpost**:
-An outpost shadowed by another outpost: its name is already another machine's, and it is
-therefore not mounted at all. Outposts are addressed as `outpost:<NAME>`, apart from the tree
-every other mount shares, so a machine named like a mount sits beside it and only another
-machine can shadow one. The first mounted always wins, so a name collision costs the newcomer
-rather than quietly replacing what was there.
+An outpost whose mount point is already another's, and which is therefore not mounted at all.
+Outposts are addressed as `outpost:<NAME>`, apart from the tree every other mount shares, so a
+machine named like a mount sits beside it; and a household holds one tunnel per server name, so
+two of its machines cannot answer to one NAME — a second opening replaces the first. What is left
+is a binary publishing a NAME other than the one its credential was minted for: the first mounted
+always wins.
 _Avoid_: duplicate mount, conflicting outpost, rejected registration
 
 ## The shell over the mounts

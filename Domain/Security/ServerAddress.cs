@@ -4,8 +4,8 @@ namespace Domain.Security;
 
 // Which MCP server something is for. Everything that keys on a server reads this and nothing else:
 // the call token's audience and the credential the agent presents (Name), the tool qualifier
-// (Qualifier), the prompt cache (CacheKey), the deployment's endpoint list and the outpost verdicts
-// (the address itself). A server dialled at a URL takes all of it from that URL; one that has no URL
+// (Qualifier), the prompt cache (CacheKey), the deployment's endpoint list and which outposts a session
+// dialled (the address itself). A server dialled at a URL takes all of it from that URL; one that has no URL
 // of its own — a server's own name as it was told it, a household's server reached through its
 // tunnel — takes it from a factory here. Nothing else may read a URL's host to say which server it
 // is (ServerAddressConformanceTests).
