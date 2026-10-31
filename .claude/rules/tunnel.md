@@ -381,6 +381,18 @@ token carries the person's account), and the timers server knows it where a time
 cookie's `Path=/browse` must then become per household too, or one household's server would be sent
 another's view key.
 
+## Outposts are tunnels too
+
+An outpost (`.claude/rules/outpost.md`) is a server whose credential was minted for `outpost-<NAME>`
+(`Domain/Outposts/OutpostServerName.cs`): the prefix on the **verified** name is what tells it apart
+from a household's own server, never anything on the open, and it keeps an outpost from replacing an
+own server of the same NAME in the registry. `TunnelledOutposts` reads `Open` for a session's live
+outposts (each `McpServerEndpoint.RelayedOutpost`, dynamic) and consumes `WatchAsync` to record each
+opening and closing as an `OutpostEvent`. A consumer of `Open` or `WatchAsync` tells a machine apart with
+`OutpostServerName.NameOf`: a channel follows its tunnel by its own server name, so it never takes a
+machine for a channel, and the operator's listing (`TunnelListing`) shows a machine as `outpost-<NAME>`
+beside the household's servers, deliberately.
+
 ## Not yet (later tickets)
 
 - **11** must run web search under `HouseholdServerNames.WebSearch`: until it is tunnelled, the
@@ -390,7 +402,6 @@ another's view key.
   (`VOICEHUB__BASEURL`), so until voice is tunnelled a timer's create fails as the hub unreachable.
   The kit's voice keeps `Announce__Token` only for its own site's callers (Home Assistant's watch
   callback and resolve), never the deployment's value.
-- **10** moves outposts onto the tunnel (their `Address` and verdicts are still URL strings).
 - **11** switches the home's definitions to server names (and their whitelists to the bare names).
 - **11/12**: the server's `ClientWebSocket` trusts the system's roots only, so a kit pointed at a
   smoke stack served by Caddy's local CA needs that CA trusted in the kit's images or a seam for it.

@@ -11,8 +11,8 @@ namespace Mcp.Hosting;
 //
 // AddMcpHost is the five things every MCP server in the repo has, whatever else it does: its own
 // settings available to everything it registers, a server, an HTTP transport, the secret gate on
-// /mcp, and the call-token gate on every tool call (the outpost alone opts out, by saying so). AddToolServer is that plus the error rule, for a server that offers the agent things to
-// call.
+// /mcp, and the call-token gate on every tool call. AddToolServer is that plus the error rule, for a
+// server that offers the agent things to call.
 //
 // Being a tool server and being a channel server are independent facts about a server, which is why
 // these are separate calls rather than one call with a flag: a dual-role server asks for both, and

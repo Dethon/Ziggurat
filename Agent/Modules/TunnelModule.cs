@@ -57,6 +57,15 @@ public static class TunnelModule
                 .AddSingleton<IOwnChannelServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
                 .AddSingleton<TunnelListing>()
                 .AddHostedService<TunnelRevocations>()
+                // The household's outposts are its open tunnels minted as machines, so they need the
+                // registry and nothing of their own: no route, no store, no secret.
+                .AddSingleton(sp => new TunnelledOutposts(
+                    sp.GetRequiredService<TunnelRegistry>(),
+                    sp.GetRequiredService<IMetricsPublisher>(),
+                    TimeProvider.System,
+                    sp.GetRequiredService<ILogger<TunnelledOutposts>>()))
+                .AddSingleton<IOutposts>(sp => sp.GetRequiredService<TunnelledOutposts>())
+                .AddSingleton<IHostedService>(sp => sp.GetRequiredService<TunnelledOutposts>())
                 // Exchanges that arrive at the agent for a household's server and go on down its
                 // tunnel: the browse pages a person opens from a link, and a shared server's calls to
                 // a household's server, each caller checked against the credential the agent holds

@@ -10,8 +10,8 @@ namespace Agent.App;
 // The topic a voice conversation opens under, minted here because the agent owns topics: it writes
 // the one the chat client reads into its own store, so a voice server — a household's, at its own
 // site — holds no deployment database. Reached on the deployment's own network alone (and, for a
-// tunnelled server, as one of its back-calls): the proxy routes /api/agents* and /api/outposts*
-// here and nothing under /internal (DeploymentConformanceTests). No secret guards it, and none is
+// tunnelled server, as one of its back-calls): the proxy routes /api/agents* and /tunnel here and
+// nothing under /internal (DeploymentConformanceTests). No secret guards it, and none is
 // needed for what it decides: whose topic it mints is whoever the accounts service's assertion for
 // a voice turn names — the person, or the household's guest — checked as a turn's is, so a caller
 // can mint only for someone the service vouched for to it. The body says what the topic is called

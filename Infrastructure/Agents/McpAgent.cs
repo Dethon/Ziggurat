@@ -32,10 +32,9 @@ public sealed class McpAgent : DisposableAgent
     private readonly string _agentId;
     private readonly IReadOnlyList<McpServerEndpoint> _endpoints;
     private readonly bool _usesOutposts;
-    private readonly bool _recordsOutpostVerdicts;
     private readonly bool _noTools;
     private readonly IReadOnlySet<string> _withheldTools;
-    private readonly OutpostAccess? _outposts;
+    private readonly IOutposts? _outposts;
     private readonly IOwnServers? _ownServers;
     private readonly string? _tenantId;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
@@ -92,7 +91,7 @@ public sealed class McpAgent : DisposableAgent
         IReadOnlyList<PromptSection> domainPrompts,
         ILoggerFactory? loggerFactory = null,
         McpPromptCache? promptCache = null,
-        OutpostAccess? outposts = null,
+        IOutposts? outposts = null,
         ReadImageSupport? readImages = null,
         ISkillPreloader? skillPreloader = null,
         IVfsBridge? bridge = null,
@@ -103,7 +102,6 @@ public sealed class McpAgent : DisposableAgent
         _tenantId = spec.TenantId;
         _ownServers = ownServers;
         _usesOutposts = spec.UsesOutposts;
-        _recordsOutpostVerdicts = spec.RecordsOutpostVerdicts;
         _noTools = spec.NoTools;
         _withheldTools = spec.WithheldTools;
         _outposts = outposts;
@@ -592,10 +590,10 @@ public sealed class McpAgent : DisposableAgent
             }
 
             // Asked here rather than at construction: an agent outlives many sessions and an
-            // outpost outlives none, so a machine that appeared since the last session is picked
-            // up by the next one and nothing mutates a session already built.
-            var composed = await OutpostEndpoints.ComposeAsync(
-                ownServers.Endpoints, _outposts, _usesOutposts, _logger, ct);
+            // outpost's tunnel outlives none, so a machine that appeared since the last session is
+            // picked up by the next one and nothing mutates a session already built.
+            var composed = OutpostEndpoints.Compose(
+                ownServers.Endpoints, _outposts, _usesOutposts, _tenantId);
 
             var newSession = await ThreadSession
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,
@@ -603,19 +601,10 @@ public sealed class McpAgent : DisposableAgent
                              ct, _promptCache, _readImages, _bridge, _noTools, _withheldTools, _callTokens,
                              _timeProvider.LocalTimeZone);
 
-            // The one moment a shadowed outpost is knowable, and the machine serving it has no way
-            // to find out for itself — the next keepalive carries the answer home. Whether this
-            // build is one that answers is a field on the spec, like everything else that differs
-            // between an agent and a subagent.
             // Asked about by name later, when the model tries a path on a machine that is not here.
             OutpostEndpoints.DeclareUnreachable(
                 newSession.FileSystemRegistry, composed.Outposts,
-                newSession.ClientManager.DialledEndpoints);
-
-            await OutpostEndpoints.RecordVerdictsAsync(
-                _outposts, _recordsOutpostVerdicts, composed.Outposts,
-                newSession.MountedNames, newSession.ShadowedNames,
-                newSession.ClientManager.DialledEndpoints, _logger, ct);
+                newSession.ClientManager.DialledServers);
 
             var reconciled = new ReconciledSession(newSession, ownServers);
             _threadSessions[thread] = reconciled;

@@ -20,8 +20,7 @@ public static class CallTurn
 
     extension(RequestContext<CallToolRequestParams> call)
     {
-        // Null on a call no gate checked — the outpost, which takes the token and is not required to
-        // check it — and then the call acts for nobody.
+        // Null on a call no gate checked, and then the call acts for nobody.
         public IdentityClaims? Identity =>
             call.Items.TryGetValue(IdentityKey, out var identity) ? identity as IdentityClaims : null;
 

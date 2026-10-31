@@ -57,12 +57,28 @@ public class DeploymentConformanceTests
         RouteFor(host, $"{TunnelProtocol.Path}s")?.Upstream.ShouldNotBe("agent:8080");
     }
 
+    // An outpost opens its tunnel like any household server; the registration and keepalive routes
+    // it used to announce itself on are gone, and nothing else may answer for them at the agent.
     [Fact]
-    public void OutpostRegistration_ReachesTheAgentThroughTheProxy()
+    public void NoOutpostRegistrationRoute_ReachesTheAgent()
     {
         var host = DeploymentFiles.Caddyfile().Host(MainHost);
 
-        host.Routes.ShouldContain(r => r.Matcher == "/api/outposts*" && r.Upstream == "agent:8080");
+        RouteFor(host, "/api/outposts")?.Upstream.ShouldNotBe("agent:8080");
+        RouteFor(host, "/api/outposts/laptop")?.Upstream.ShouldNotBe("agent:8080");
+    }
+
+    // One leaked value no longer registers outposts for every household: an outpost holds a tunnel
+    // credential of its own, so the deployment holds no outpost secret at all.
+    [Fact]
+    public void TheOutpostsSharedSecret_IsGoneFromTheDeployment()
+    {
+        DeploymentFiles.Placeholders().Keys.ShouldNotContain("OUTPOSTS__SHAREDSECRET");
+        DeploymentFiles.Compose().Services.Values
+            .Where(s => s.Environment.Keys.Any(k => k.StartsWith("OUTPOSTS__", StringComparison.OrdinalIgnoreCase))
+                        || s.Environment.Values.Any(v => v.Contains("OUTPOSTS__", StringComparison.Ordinal)))
+            .Select(s => s.Name)
+            .ShouldBeEmpty();
     }
 
     [Fact]
@@ -151,7 +167,6 @@ public class DeploymentConformanceTests
     [InlineData("BOTS__1__BOTTOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("WEBPUSH__PRIVATEKEY", new[] { "mcp-channel-signalr", "mcp-sugary" })]
     [InlineData("AGENTAPI__SHAREDSECRET", new[] { "agent", "accounts" })]
-    [InlineData("OUTPOSTS__SHAREDSECRET", new[] { "agent" })]
     public void ASecret_ReachesOnlyTheServicesThatReadIt(string variable, string[] readers)
     {
         DeploymentFiles.Compose().Services.Values
@@ -495,11 +510,10 @@ public class DeploymentConformanceTests
 
     // Sign-in and enrollment are how a signed-out person gets a session at all; a login handoff's
     // live view and the logins page keep their own link-claimed cookies so a Telegram or voice
-    // person can open them; an outpost and SexyTime's server present secrets of their own.
+    // person can open them; SexyTime's server presents a secret of its own.
     [Theory]
     [InlineData(MainHost, "/accounts/*")]
     [InlineData(MainHost, "/browse/*")]
-    [InlineData(MainHost, "/api/outposts*")]
     [InlineData(MainHost, "/api/agents*")]
     [InlineData(SexyHost, "/accounts/*")]
     [InlineData(SexyHost, "/api/agents*")]
