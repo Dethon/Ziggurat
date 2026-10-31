@@ -4,7 +4,14 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Every skill is a document served by its server
-- [ ] Every committed skill snapshot and the skill index are unchanged
+- [x] Every skill is a document served by its server
+- [x] Every committed skill snapshot and the skill index are unchanged
+
+Notes: the documents are `Domain/Prompts/Skills/<name>.md`, read by `PromptDocument.AsSkill`, in
+Domain rather than beside their servers — the server still ships each skill (ADR 0039), but the
+agent, the eval, Jev's preload and the budget tests read the declaration from the manifest, and no
+server is referenced by them. The skill classes are handles (`Text`/`For(...)` unchanged, so no
+server's `ConfigModule` changed). The manifest lists skills by name; the prompt fixture takes each
+server's registration order, which is what the agent snapshots always showed.

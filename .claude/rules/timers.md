@@ -5,6 +5,7 @@ paths:
   - "Domain/Prompts/TimerPrompt.cs"
   - "Domain/Prompts/Sections/timers_prompt.md"
   - "Domain/Prompts/CountdownTimersSkill.cs"
+  - "Domain/Prompts/Skills/countdown-timers.md"
   - "Domain/Contracts/IInsistentAnnouncer.cs"
   - "Domain/Contracts/IAlertDismisser.cs"
   - "Domain/Contracts/ISatelliteCatalog.cs"

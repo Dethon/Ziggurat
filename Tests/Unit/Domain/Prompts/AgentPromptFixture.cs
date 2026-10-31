@@ -80,12 +80,15 @@ internal static class AgentPromptFixture
 
     // What each server ships as skills, bound to the manifest exactly as the client manager binds
     // what it reads off the wire: the served description and the served body, under the declaration.
+    // A server's own skills in the order its registration lists them (the home's watches first).
+    private static readonly IReadOnlyList<PromptSkill> _servedInOrder =
+    [
+        .. new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid"), SandboxSkill.For("/sandbox", "home/sandbox_user", servesMounts: true), CountdownTimersSkill.Text, SugarySkill.Text }
+            .Select(text => PromptManifest.BindSkill(text.Name, text.Description, text.Body))
+    ];
+
     public static IReadOnlyDictionary<string, PromptSkill> ServedSkills { get; } =
-        new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid"), SandboxSkill.For("/sandbox", "home/sandbox_user", servesMounts: true), CountdownTimersSkill.Text, SugarySkill.Text }
-            .ToDictionary(
-                text => text.Name,
-                text => PromptManifest.BindSkill(text.Name, text.Description, text.Body),
-                StringComparer.OrdinalIgnoreCase);
+        _servedInOrder.ToDictionary(skill => skill.Name, StringComparer.OrdinalIgnoreCase);
 
     // The feature prompts, keyed by the feature name that turns them on — the same key the manifest
     // declares them under.
@@ -184,12 +187,12 @@ internal static class AgentPromptFixture
             .SelectMany(service => PromptManifest.Declarations.Where(d => d.ServedBy == service))
             .Select(d => d.Bind(ServedText[d.Name]));
 
-    // The skills arrive with the servers, so an agent has exactly the skills of the services it dials.
+    // The skills arrive with the servers, so an agent has exactly the skills of the services it dials,
+    // in the order each server lists them in its index.
     public static IEnumerable<PromptSkill> SkillsOf(IEnumerable<string> endpoints) =>
         endpoints
             .Select(ServiceOf)
-            .SelectMany(service => PromptManifest.Skills.Where(s => s.ServedBy == service))
-            .Select(s => ServedSkills[s.Name]);
+            .SelectMany(service => _servedInOrder.Where(s => s.Declaration.ServedBy == service));
 
     // A household's server, named rather than addressed, is the server the deployment ran under the
     // compose name the manifest declares it by (vault -> mcp-vault), which is what serves its prompts.

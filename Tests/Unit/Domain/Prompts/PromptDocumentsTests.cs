@@ -12,6 +12,9 @@ public class PromptDocumentsTests
     private static readonly string _sourceDirectory =
         Path.Combine(McpServerRegistrations.RepoRoot, "Domain", "Prompts", "Sections");
 
+    private static readonly string _skillDirectory =
+        Path.Combine(McpServerRegistrations.RepoRoot, "Domain", "Prompts", "Skills");
+
     [Fact]
     public void Sections_AreWhatTheManifestDeclares()
     {
@@ -38,26 +41,61 @@ public class PromptDocumentsTests
         PromptDocuments.Sections.Select(d => d.Name).ShouldBe(files, ignoreOrder: true);
     }
 
+    [Fact]
+    public void Skills_AreWhatTheManifestDeclares()
+    {
+        PromptManifest.Skills.Select(s => s.Name)
+            .ShouldBe(PromptDocuments.Skills.Select(d => d.Name), ignoreOrder: true);
+
+        foreach (var document in PromptDocuments.Skills)
+        {
+            var declared = PromptManifest.FindSkill(document.Name).ShouldNotBeNull();
+            declared.ShouldBeEquivalentTo(document.AsSkill());
+        }
+    }
+
+    [Fact]
+    public void Skills_EveryDocumentInTheSourceTree_IsShipped_UnderItsOwnName()
+    {
+        var files = Directory.EnumerateFiles(_skillDirectory, "*.md")
+            .Select(Path.GetFileNameWithoutExtension)
+            .ToList();
+
+        files.ShouldNotBeEmpty();
+        PromptDocuments.Skills.Select(d => d.Name).ShouldBe(files, ignoreOrder: true);
+    }
+
+    [Fact]
+    public void Skill_ANameNoDocumentDeclares_IsRefused()
+    {
+        Should.Throw<InvalidOperationException>(() => PromptDocuments.Skill("no-such-skill"))
+            .Message.ShouldContain("no-such-skill");
+    }
+
     public static TheoryData<string, string> ShippedPlaceholders =>
-        PromptDocuments.Sections
-            .SelectMany(d => d.Placeholders.Order(StringComparer.Ordinal).Select(p => (d.Name, Placeholder: p)))
+        PromptDocuments.Sections.Select(d => (Folder: "Sections", Document: d))
+            .Concat(PromptDocuments.Skills.Select(d => (Folder: "Skills", Document: d)))
+            .SelectMany(row => row.Document.Placeholders.Order(StringComparer.Ordinal)
+                .Select(p => (File: $"{row.Folder}/{row.Document.Name}.md", Placeholder: p)))
             .Aggregate(new TheoryData<string, string>(), (data, row) =>
             {
-                data.Add(row.Name, row.Placeholder);
+                data.Add(row.File, row.Placeholder);
                 return data;
             });
 
     // The holes the host fills — the date, an agent's name, the language, the satellites, the
-    // formats, the mounts, the setup — cannot be edited out of a shipped document's words.
+    // formats, the mounts, the setup, a skill's time zone and sandbox paths — cannot be edited out
+    // of a shipped document's words.
     [Theory]
     [MemberData(nameof(ShippedPlaceholders))]
-    public void EveryShippedDocument_WithOneOfItsPlaceholdersDropped_FailsValidation(string name, string placeholder)
+    public void EveryShippedDocument_WithOneOfItsPlaceholdersDropped_FailsValidation(string file, string placeholder)
     {
-        var source = File.ReadAllText(Path.Combine(_sourceDirectory, $"{name}.md"));
+        var name = Path.GetFileName(file);
+        var source = File.ReadAllText(Path.Combine(McpServerRegistrations.RepoRoot, "Domain", "Prompts", file));
         var close = source.IndexOf("\n---\n", StringComparison.Ordinal);
         var dropped = source[..close] + source[close..].Replace($"{{{{{placeholder}}}}}", "");
 
-        Should.Throw<FormatException>(() => PromptDocument.Parse($"{name}.md", dropped))
+        Should.Throw<FormatException>(() => PromptDocument.Parse(name, dropped))
             .Message.ShouldContain($"{{{{{placeholder}}}}}");
     }
 
