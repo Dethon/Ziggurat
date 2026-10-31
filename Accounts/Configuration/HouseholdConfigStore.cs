@@ -47,6 +47,16 @@ public sealed class HouseholdConfigStore(
             .SingleOrDefaultAsync(ct);
     }
 
+    // Every household and the people in it, for the agent's walk across households.
+    public async Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var households = await db.Tenants.AsNoTracking().Select(t => t.Id).ToListAsync(ct);
+        var people = (await db.Users.AsNoTracking().Select(u => new { u.TenantId, u.Id }).ToListAsync(ct))
+            .ToLookup(u => u.TenantId, u => u.Id);
+        return [.. households.Select(household => new HouseholdMembers(household, [.. people[household]]))];
+    }
+
     // The households that have saved a section, for a view across households.
     public async Task<IReadOnlyList<string>> HouseholdsWithAsync(string section, CancellationToken ct)
     {

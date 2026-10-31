@@ -141,6 +141,31 @@ public class ChatMonitorAssertionTests
         run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
     }
 
+    // A household of its own that set no OpenRouter key pays for nothing: the person is told so on the
+    // channel, the way a failed turn ends, the errors feed says whose, and nothing is asked of its agent.
+    [Fact]
+    public async Task ATurnOfAHouseholdWithNoKey_IsRefusedReportedAndAnswered()
+    {
+        var run = new Run();
+        run.Factory.Refusal = new HouseholdWithoutKeyException(Household);
+        run.Channel.WriteMessage(Message() with
+        {
+            Principal = new Principal(ChatChannel, _fran.UserId, _fran),
+            Assertion = TestAssertions.Of(_fran, ChatChannel),
+            TurnKey = "turn-7"
+        });
+
+        await run.MonitorAsync();
+
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.HouseholdWithoutKeyErrorType);
+        refused.TenantId.ShouldBe(Household);
+        run.Channel.SentReplies.Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, ConversationGroup.WithoutKeyAnswer), (ReplyContentType.StreamComplete, "")]);
+        run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
+    }
+
     // The guest is somebody too, but only a satellite hears one: a guest's assertion on the channel it
     // was signed for and no other.
     [Fact]

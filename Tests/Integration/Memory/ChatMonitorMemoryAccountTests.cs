@@ -38,7 +38,7 @@ public class ChatMonitorMemoryAccountTests(MemorySearchFixture redisFixture)
     {
         _worker = new MemoryExtractionWorker(
             _queue, _extractor, Embedding, _store, Mock.Of<IThreadStateStore>(),
-            Mock.Of<IMetricsPublisher>(), Mock.Of<IAgentDefinitionProvider>(),
+            Mock.Of<IMetricsPublisher>(), FixedHouseholdAgents.Provider(),
             new MemoryJudge(StubJudge.Absent(AbsenceReason.Unconfigured), new MemoryJudgmentSettings(), TimeProvider.System),
             NullLogger<MemoryExtractionWorker>.Instance, new MemoryExtractionOptions());
         await _worker.StartAsync(CancellationToken.None);
@@ -199,7 +199,7 @@ public class ChatMonitorMemoryAccountTests(MemorySearchFixture redisFixture)
         public int Calls => Volatile.Read(ref _calls);
 
         public Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
-            IReadOnlyList<ChatMessage> contextWindow, string userId, CancellationToken ct)
+            IReadOnlyList<ChatMessage> contextWindow, string userId, ModelPayer payer, CancellationToken ct)
         {
             Interlocked.Increment(ref _calls);
             return Task.FromResult<IReadOnlyList<ExtractionCandidate>>(

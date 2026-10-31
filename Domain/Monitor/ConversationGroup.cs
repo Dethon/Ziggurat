@@ -43,6 +43,11 @@ internal sealed class ConversationGroup(
     // not believe, so it says no more than that; the reason is on the errors feed.
     internal const string RefusedTurnAnswer = "This message could not be verified as yours, so it was not answered.";
 
+    // What a person whose household set no OpenRouter key is told: nothing was asked of any model, and
+    // nothing will be until a key is added, which they cannot do from here.
+    internal const string WithoutKeyAnswer =
+        "Your household has no OpenRouter key set, so its assistant cannot answer yet. Ask whoever runs it to add one.";
+
     // The outer token: it ends with the monitor, not with a turn. The two establishing stages
     // that reach outside — minting the delivery targets and restoring the thread — run on it
     // rather than on the per-turn token, so a /cancel arriving mid-establish lets them finish
@@ -236,6 +241,15 @@ internal sealed class ConversationGroup(
                     // restoring the thread arrives as a TaskCanceledException. Without it that
                     // timeout would break out of here with the group never completed, leaving
                     // every later message queued into a channel nobody reads.
+                    await ObserveAbandonedWarmupAsync();
+                    break;
+                }
+                catch (HouseholdWithoutKeyException ex)
+                {
+                    // Refused before any model was asked. The group ends as a failed setup does, so the
+                    // next message is built afresh and runs once the household has set a key.
+                    await RefuseWithoutKeyAsync(x, ex.HouseholdId);
+                    CancelOwnContext();
                     await ObserveAbandonedWarmupAsync();
                     break;
                 }
@@ -447,13 +461,39 @@ internal sealed class ConversationGroup(
             Message = $"A turn on {channel.ChannelId} for conversation {message.ConversationId} was refused: {reason}"
         });
 
+        await AnswerRefusedAsync(channel, message, RefusedTurnAnswer);
+    }
+
+    // The same answer for a household that cannot pay, counted as that household's. A fire has nobody
+    // waiting on it, so the errors feed is where it is told.
+    private async Task RefuseWithoutKeyAsync(AdmittedTurn x, string householdId)
+    {
+        logger.LogWarning(
+            "Refused a turn on {ChannelId} for conversation {ConversationId}: household {Household} has set no OpenRouter key",
+            x.Channel.ChannelId, x.Message.ConversationId, householdId);
+        metricsPublisher.ForHousehold(householdId).Publish(new ErrorEvent
+        {
+            Service = "agent",
+            ErrorType = ChatMonitor.HouseholdWithoutKeyErrorType,
+            Message = $"A turn on {x.Channel.ChannelId} for conversation {x.Message.ConversationId} was refused: " +
+                      $"household {householdId} has set no OpenRouter key"
+        });
+
+        if (x.Message.Origin is null)
+        {
+            await AnswerRefusedAsync(x.Channel, x.Message, WithoutKeyAnswer);
+        }
+    }
+
+    private async Task AnswerRefusedAsync(IChannelConnection channel, ChannelMessage message, string answer)
+    {
         var turnKey = message.TurnKey ?? TurnKey.Mint();
         try
         {
             await channel.SendReplyAsync(new SendReplyParams
             {
                 ConversationId = message.ConversationId,
-                Content = RefusedTurnAnswer,
+                Content = answer,
                 ContentType = ReplyContentType.Error,
                 IsComplete = false,
                 TurnKey = turnKey
@@ -746,8 +786,12 @@ internal sealed class ConversationGroup(
         ChannelMessage message, IReadOnlyList<PromptSkill> skills, IReadOnlyList<ChatMessage> history, GroupState state) =>
         new(message.Content, skills, history)
         {
+            // Paid as the turn is: by the household the agent was built for, on its key.
             Caller = new JudgmentCaller(
-                message.ConfigPatch?.Model, message.Sender, message.AgentId, state.DeliveryKey.ConversationId),
+                message.ConfigPatch?.Model, message.Sender, message.AgentId, state.DeliveryKey.ConversationId)
+            {
+                Payer = state.Agent.Payer
+            },
             ChannelId = message.ChannelId,
             // The session's mounts, built by the warmup awaited above: the reads a preloaded
             // skill declares are made over them, the way the model's own would be.

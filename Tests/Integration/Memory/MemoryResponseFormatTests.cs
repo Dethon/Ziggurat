@@ -70,7 +70,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
                 [new ChatMessage(ChatRole.User,
                     "I'm a senior Python developer at Google. I prefer dark mode and use Vim keybindings. " +
                     "I'm currently learning Rust and working on a distributed cache project.")],
-                "test_user", ct)),
+                "test_user", ModelPayer.Deployment, ct)),
             candidates => candidates.Count > 0);
 
         result.ShouldNotBeEmpty(LlmAttempt.Explain(
@@ -95,7 +95,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
 
         var result = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User, "Hello, how are you?")],
-            "test_user", ct));
+            "test_user", ModelPayer.Deployment, ct));
 
         result.Count.ShouldBeLessThanOrEqualTo(1);
     }
@@ -170,7 +170,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         // "Count > 0", was accepted as usable, and then failed the source-id assertion outright
         // without ever retrying. A model that names no memory has not made a merge decision.
         var result = await LlmAttempt.UntilAsync(
-            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct => (await consolidator.ConsolidateAsync(memories, ct)).Decisions),
+            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct => (await consolidator.ConsolidateAsync(memories, ModelPayer.Deployment, ct)).Decisions),
             decisions => decisions.Count > 0
                          && decisions.All(d => d.SourceIds is { Count: > 0 }
                                                && d.SourceIds.All(id => memories.Any(m =>
@@ -215,7 +215,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         };
 
         var result = await LlmAttempt.WithinAsync(
-            LlmAttempt.Budget, async ct => (await consolidator.ConsolidateAsync(memories, ct)).Decisions);
+            LlmAttempt.Budget, async ct => (await consolidator.ConsolidateAsync(memories, ModelPayer.Deployment, ct)).Decisions);
 
         result.ShouldAllBe(d => d.Action != MergeAction.Merge,
             "Distinct, unrelated memories should not be merged");
@@ -291,7 +291,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
 
         var result = await LlmAttempt.UntilAsync(
             () => LlmAttempt.WithinAsync(
-                LlmAttempt.Budget, ct => consolidator.SynthesizeProfileAsync("test_user", memories, ct)),
+                LlmAttempt.Budget, ct => consolidator.SynthesizeProfileAsync("test_user", memories, ModelPayer.Deployment, ct)),
             // The preference is asked of the retry too: about one answer in three files "prefers
             // concise, direct answers" under avoidances and appreciated alone, leaving it empty.
             profile => !string.IsNullOrWhiteSpace(profile.Summary)

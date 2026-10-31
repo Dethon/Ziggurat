@@ -31,6 +31,10 @@ public interface IHouseholdConfiguration
 
     // Every household's bots: the Telegram server polls them from startup, before any call.
     Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct);
+
+    // Every household and its people, for the agent's work across households with no call behind it
+    // (dreaming). Asked afresh each time: nothing announces a person joining.
+    Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct);
 }
 
 // What a shared server holds that names a household: the agent's call token it was called with, the

@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Serialization;
 using JetBrains.Annotations;
 
@@ -30,6 +31,10 @@ public static class HouseholdConfigProtocol
     // The ids and names of a household's agents and which answers by default: what the shared Telegram
     // bot's /agent lists and switches a chat among, and nothing else of their definitions.
     public const string AgentNamesView = "agent-names";
+
+    // The agent's, for work no call is behind (dreaming): every household and the people in it, each
+    // then read on its own view for its key. Asked naming no household.
+    public const string PeopleView = "people";
 
     // Where a save is announced (a HouseholdConfigSaved, as JSON), so every reader drops what it
     // cached of that household. Pub/sub reaches only who is subscribed then: a reader's cache
@@ -68,7 +73,17 @@ public sealed record AgentHouseholdConfig(
     AgentsSection Agents,
     FeaturesSection Features,
     SpacesSection Spaces,
-    string? OpenRouterApiKey);
+    string? OpenRouterApiKey)
+{
+    // The key goes over the wire in clear, as the agent needs it; printed — a log line, an assertion's
+    // message, the HouseholdAgents built from it — it says only whether there is one.
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append($"HouseholdId = {HouseholdId}, IsHome = {IsHome}, Settings = {Settings}, Agents = {Agents}, ");
+        builder.Append($"Features = {Features}, Spaces = {Spaces}, OpenRouterApiKey = {(OpenRouterApiKey is null ? "none" : "[set]")}");
+        return true;
+    }
+}
 
 // A shared server's view of the household its proof named: which household that is, and its section.
 [PublicAPI]
@@ -88,6 +103,14 @@ public sealed record HouseholdAgentNames(string? DefaultAgent, IReadOnlyList<Hou
 
 [PublicAPI]
 public sealed record HouseholdAgentName(string Id, string Name);
+
+// The agent's view across households: each household, and the user ids of its people (none for a
+// household nobody has joined yet).
+[PublicAPI]
+public sealed record HouseholdPeople(IReadOnlyList<HouseholdMembers> Households);
+
+[PublicAPI]
+public sealed record HouseholdMembers(string HouseholdId, IReadOnlyList<string> People);
 
 // Why a question was not answered, with what the service could say about it.
 [PublicAPI]

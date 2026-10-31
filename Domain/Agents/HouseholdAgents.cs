@@ -42,6 +42,17 @@ public sealed record HouseholdAgents
     // pays). Null for agents no household's configuration gave.
     public AgentHouseholdConfig? Configuration { get; init; }
 
+    // Who pays for its model calls: the home household's, like those of agents no household's
+    // configuration gave, go out on the deployment's own key, and any other household's on its own.
+    // Null for a household of its own that set none: it pays for nothing, so its turns are refused —
+    // its agents are still listed, since naming them costs nothing.
+    public ModelPayer? Payer => Configuration switch
+    {
+        null or { IsHome: true } => new ModelPayer(HouseholdId, null),
+        { OpenRouterApiKey: { Length: > 0 } key } => new ModelPayer(HouseholdId, new ModelKey(key)),
+        _ => null
+    };
+
     // A new household's agents: one of each shipped template, under the template's own id and name.
     public static IReadOnlyList<HouseholdAgent> Starting { get; } =
     [

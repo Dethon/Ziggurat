@@ -20,3 +20,11 @@ public interface IAgentFactory
     DisposableAgent CreateSubAgent(
         SubAgentDefinition definition, IToolApprovalHandler approvalHandler, SpawnContext spawn);
 }
+
+// A household of its own that set no OpenRouter key pays for nothing, so its turns are refused before
+// any model is asked: the deployment's key is the home household's, never another's to fall back on.
+public sealed class HouseholdWithoutKeyException(string householdId)
+    : Exception($"Household {householdId} has set no OpenRouter key, so its turns are not run.")
+{
+    public string HouseholdId { get; } = householdId;
+}

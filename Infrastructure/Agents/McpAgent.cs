@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
@@ -38,6 +39,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IOutposts? _outposts;
     private readonly IOwnServers? _ownServers;
     private readonly string? _tenantId;
+    private readonly ModelPayer _payer;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger<McpAgent>? _logger;
@@ -102,6 +104,7 @@ public sealed class McpAgent : DisposableAgent
     {
         _endpoints = spec.McpServerEndpoints;
         _tenantId = spec.TenantId;
+        _payer = spec.Payer;
         _ownServers = ownServers;
         _usesOutposts = spec.UsesOutposts;
         _noTools = spec.NoTools;
@@ -133,7 +136,7 @@ public sealed class McpAgent : DisposableAgent
         _bridge = bridge;
         _callTokens = callTokens;
         _history = new RedisChatMessageStore(stateStore, metricsPublisher, spec.ConversationId);
-        _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided, RegistryOf);
+        _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided, RegistryOf, spec.Payer);
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = spec.DisplayName,
@@ -153,6 +156,8 @@ public sealed class McpAgent : DisposableAgent
         thread is not null ? GetFileSystemRegistry(thread) : null;
 
     public override IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) => SkillsOf(thread);
+
+    public override ModelPayer Payer => _payer;
 
     public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
         _history.ReadAsync(thread);
