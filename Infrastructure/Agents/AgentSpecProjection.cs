@@ -42,7 +42,7 @@ internal static class AgentSpecProjection
                 definition.ProviderRouting, openRouterConfig.ProviderRouting,
                 definition.Model, definition.Id, logger),
             // Every endpoint a definition names is dialled as configured, but only the ones the
-            // deployment's own settings name present a deployment credential, each its own host's.
+            // deployment's own settings name present a deployment credential, each its own server's.
             // A built-in agent's all do; a registered agent's are whatever the registration said,
             // and no credential may follow it to an address of its choosing. Dynamic endpoints — live outposts — are merged in downstream, where the
             // registry of them is reachable, each with its own secret.

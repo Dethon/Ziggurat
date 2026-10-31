@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Outposts;
+using Domain.Security;
 using Domain.Tools;
 using Microsoft.Extensions.Logging;
 
@@ -134,7 +135,7 @@ internal static class OutpostEndpoints
             return;
         }
 
-        foreach (var outpost in outposts.Where(o => !dialled.Contains(o.Endpoint, StringComparer.Ordinal)))
+        foreach (var outpost in outposts.Where(o => !WasDialled(o, dialled)))
         {
             registry.DeclareAbsence(
                 OutpostMountPoint.For(outpost.Name),
@@ -151,8 +152,13 @@ internal static class OutpostEndpoints
         IReadOnlyList<string> mounted,
         IReadOnlyList<string> shadowed,
         IReadOnlyList<string> dialled) =>
-        !dialled.Contains(outpost.Endpoint, StringComparer.Ordinal) ? null
+        !WasDialled(outpost, dialled) ? null
         : shadowed.Contains(outpost.Name, StringComparer.Ordinal) ? OutpostVerdict.Shadowed
         : mounted.Contains(outpost.Name, StringComparer.Ordinal) ? OutpostVerdict.Mounted
         : null;
+
+    // As servers, the way every other lookup keyed on a server compares them.
+    private static bool WasDialled(OutpostRegistration outpost, IReadOnlyList<string> dialled) =>
+        ServerAddress.FromUrl(outpost.Endpoint) is { } server
+        && dialled.Select(ServerAddress.FromUrl).Contains(server);
 }

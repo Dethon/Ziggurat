@@ -4,6 +4,7 @@ paths:
   - "McpServer*/**"
   - "McpChannel*/**"
   - "Tests/Integration/McpServers/**"
+  - "Domain/Security/ServerAddress.cs"
 ---
 
 # MCP Server Hosting
@@ -44,8 +45,8 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   server's settings carry `McpGateSettings Mcp`, bound from `MCP__SHAREDSECRET` — that server's own
   credential, fed from its own compose variable (`MCP_SECRET_<SERVER>`), so holding one (the
   sandbox's included) opens no other. The agent binds every server's under `Mcp:Secrets` keyed by the
-  host it dials (`MCP__SECRETS__<host>`, the same variable on both ends) and `McpCredentials` hands
-  each endpoint the deployment's own settings name its host's (`AgentSpecProjection`, agents and
+  name it answers to (`MCP__SECRETS__<host>`, the same variable on both ends) and `McpCredentials` hands
+  each endpoint the deployment's own settings name its server's (`AgentSpecProjection`, agents and
   workers alike; `DeploymentEndpoints` is the list) and each channel connection likewise; a host it
   is configured to dial without a credential stops the agent at startup. A registered agent's
   endpoints are whatever `POST /api/agents` said, so one the settings do not name is dialled bare —
@@ -58,6 +59,19 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   one transport; `McpSecretGateTests` pins all three verbs, `CallTokenGateTests` the token's refusals,
   and a test that boots a server through
   the hosting library presents `Tests/McpTestSecret`.
+- **A server is keyed by its `ServerAddress` and never by a URL's host** (`Domain/Security/ServerAddress.cs`).
+  `Name` is the name it answers to — the call token's audience (`TokenAudiences.CallTo`), the key
+  `McpCredentials` finds its credential by, what the server binds as `MCP__AUDIENCE`
+  (`CallTokenGate`, through `ServerAddress.Named`); `Qualifier` is what its tools are qualified with
+  (`mcp__<qualifier>__<tool>`) and its prompts and skills are cached under; the address itself, equal
+  as a server (scheme, host, port, path, user info), is what `DeploymentEndpoints` and the outpost
+  verdicts compare. A URL endpoint's comes from `ServerAddress.FromUrl` — `Name` the host,
+  `Qualifier` the host or `host-port` off the default port, so a server on `:8080` is
+  `mcp-vault` to its token and credential and `mcp-vault-8080` to its tools — and a server with no
+  URL of its own gets another factory there, which every one of those keys then follows.
+  `ServerAddressConformanceTests` fails on any other `Agent`, `Infrastructure`, `Domain` or
+  `Mcp.Hosting` file reading a `.Host`; a web page's site (the browser, logins, search, push) is not
+  a server and is left out of the scan by path.
 - **A server whose pages the proxy routes keeps them on a listener of their own.** One server does
   today: the browse server's login handoff and logins pages answer on its second listener (8081),
   `/mcp` on the first (8080), both named by its `Listeners` settings and bound in `Program.cs`
