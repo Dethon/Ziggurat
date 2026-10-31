@@ -45,7 +45,7 @@ internal sealed class CallTokenGate
 
     public CallTokenGate(McpGateSettings gate, IServiceProvider services)
     {
-        Audience = gate.Audience;
+        Audience = TokenAudiences.CallTo(ServerAddress.Named(gate.Audience));
         var clock = services.GetKeyedService<TimeProvider>(ClockKey) ?? TimeProvider.System;
         var http = services.GetRequiredService<IHttpClientFactory>();
         var url = gate.AgentKeysUrl;
@@ -61,7 +61,8 @@ internal sealed class CallTokenGate
         _verifier = new TokenVerifier(TokenIssuers.Agent, keys, clock, gate.TokenVerification);
     }
 
-    // This server's name as the agent dials it, which a token must be signed for.
+    // This server's name as the agent addresses it (ServerAddress.Name), which a token must be signed
+    // for.
     public string Audience { get; }
 
     internal static IMcpServerBuilder Install(IMcpServerBuilder builder, McpGateSettings gate)

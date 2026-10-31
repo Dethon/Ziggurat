@@ -21,7 +21,7 @@ public enum McpEndpointOrigin
 public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
 {
     // What this endpoint has to present to be allowed to talk. Every server asks: a deployment
-    // server for its own credential, found by the host it is dialled at, because a tool believes
+    // server for its own credential, found by the name it answers to (ServerAddress), because a tool believes
     // whatever conversation context a call claims and the network is not a boundary worth trusting
     // that to; an outpost for its own,
     // because it is a port on somebody's own computer offering their whole filesystem, fs_exec

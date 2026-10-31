@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Every host-keyed lookup goes through the one server address, and a check fails if code derives a server's identity from a URL's host itself
-- [ ] Every existing server, channel, eval and deployment test passes unchanged
+- [x] Every host-keyed lookup goes through the one server address, and a check fails if code derives a server's identity from a URL's host itself
+- [x] Every existing server, channel, eval and deployment test passes unchanged

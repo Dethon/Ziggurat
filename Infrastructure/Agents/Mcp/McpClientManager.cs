@@ -117,7 +117,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     //
     // The surviving clients keep the order they were given, which is what lets the caller put
     // configured endpoints first and have their mounts claim their names before any outpost does.
-    private static async Task<(McpClient Client, string ServerName, string Address)[]> CreateClientsWithRetry(
+    private static async Task<(McpClient Client, ServerAddress Server, string Address)[]> CreateClientsWithRetry(
         string name,
         string description,
         IReadOnlyList<McpServerEndpoint> endpoints,
@@ -142,7 +142,7 @@ internal sealed class McpClientManager : IAsyncDisposable
                     AdditionalHeaders = endpoint.Secret is { } secret
                         ? new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(secret) }
                         : null
-                }), endpoint.Address, callTokens),
+                }), ServerOf(endpoint), callTokens),
                 new McpClientOptions
                 {
                     ClientInfo = new Implementation { Name = name, Description = description, Version = "1.0.0" },
@@ -153,14 +153,14 @@ internal sealed class McpClientManager : IAsyncDisposable
 
             if (endpoint.Origin is McpEndpointOrigin.Configured)
             {
-                return ((McpClient Client, string ServerName, string Address)?)
-                    (await retryPolicy.ExecuteAsync(dial), ExtractServerName(endpoint.Address), endpoint.Address);
+                return ((McpClient Client, ServerAddress Server, string Address)?)
+                    (await retryPolicy.ExecuteAsync(dial), ServerOf(endpoint), endpoint.Address);
             }
 
             try
             {
-                return ((McpClient Client, string ServerName, string Address)?)
-                    (await dial(), ExtractServerName(endpoint.Address), endpoint.Address);
+                return ((McpClient Client, ServerAddress Server, string Address)?)
+                    (await dial(), ServerOf(endpoint), endpoint.Address);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -185,18 +185,21 @@ internal sealed class McpClientManager : IAsyncDisposable
     // an outpost is not required to check it, and the agent does not ask which servers will. A
     // manager built without tokens — a probe of what a server offers, which calls nothing — sends
     // none, and a gated server refuses its tool calls.
+    internal static IClientTransport Signed(IClientTransport transport, ServerAddress server, CallTokens? callTokens) =>
+        callTokens is null ? transport : new SigningClientTransport(transport, callTokens, TokenAudiences.CallTo(server));
+
     internal static IClientTransport Signed(IClientTransport transport, string address, CallTokens? callTokens) =>
         callTokens is null ? transport : new SigningClientTransport(transport, callTokens, TokenAudiences.CallTo(address));
 
     private static async Task<AITool[]> LoadTools(
-        IEnumerable<(McpClient Client, string ServerName, string Address)> clients,
+        IEnumerable<(McpClient Client, ServerAddress Server, string Address)> clients,
         IReadImageStore? readImageStore,
         CancellationToken ct)
     {
         var tasks = clients.Select(async c =>
         {
             var tools = await c.Client.ListToolsAsync(cancellationToken: ct);
-            return tools.Select(t => new QualifiedMcpTool(c.ServerName, t, readImageStore));
+            return tools.Select(t => new QualifiedMcpTool(c.Server.Qualifier, t, readImageStore));
         });
 
         var results = await Task.WhenAll(tasks);
@@ -206,14 +209,14 @@ internal sealed class McpClientManager : IAsyncDisposable
             .ToArray<AITool>();
     }
 
-    private static string ExtractServerName(string endpoint)
-    {
-        var uri = new Uri(endpoint);
-        return uri.IsDefaultPort ? uri.Host : $"{uri.Host}-{uri.Port}";
-    }
+    // Read only once the endpoint's URL has been taken apart for its dial, which is what refuses one
+    // that is not a URL.
+    private static ServerAddress ServerOf(McpServerEndpoint endpoint) =>
+        ServerAddress.FromUrl(endpoint.Address)
+        ?? throw new UriFormatException($"The MCP endpoint '{endpoint.Address}' is not an absolute URL");
 
     private static async Task<PromptSection[]> LoadPrompts(
-        IEnumerable<(McpClient Client, string ServerName, string Address)> clients,
+        IEnumerable<(McpClient Client, ServerAddress Server, string Address)> clients,
         string userId,
         McpPromptCache? promptCache,
         CancellationToken ct)
@@ -228,7 +231,7 @@ internal sealed class McpClientManager : IAsyncDisposable
             .Where(c => c.Client.ServerCapabilities.Prompts is not null)
             .Select(c => promptCache is null
                 ? FetchPromptsAsync(c.Client, ct)
-                : promptCache.GetOrFetchAsync(c.ServerName, ctk => FetchPromptsAsync(c.Client, ctk), ct)));
+                : promptCache.GetOrFetchAsync(c.Server.Qualifier, ctk => FetchPromptsAsync(c.Client, ctk), ct)));
 
         return perClient
             .SelectMany(p => p)
@@ -242,14 +245,14 @@ internal sealed class McpClientManager : IAsyncDisposable
     // budgets like their prompts do. In dial order, so the advertisement is byte-stable across
     // sessions of one deployment.
     private static async Task<PromptSkill[]> LoadSkills(
-        IEnumerable<(McpClient Client, string ServerName, string Address)> clients,
+        IEnumerable<(McpClient Client, ServerAddress Server, string Address)> clients,
         McpPromptCache? promptCache,
         ILogger? logger,
         CancellationToken ct)
     {
         var perClient = await Task.WhenAll(clients
             .Where(c => c.Client.ServerCapabilities.Resources is not null)
-            .Select(c => ReadSkillsAsync(c.Client, c.ServerName, promptCache, logger, ct)));
+            .Select(c => ReadSkillsAsync(c.Client, c.Server, promptCache, logger, ct)));
 
         return [.. perClient.SelectMany(s => s)];
     }
@@ -258,14 +261,14 @@ internal sealed class McpClientManager : IAsyncDisposable
     // ships none this session and the session still builds, but the failure reaches the cache
     // first, so nothing stores an empty list as though the server had answered with one.
     private static async Task<PromptSkill[]> ReadSkillsAsync(
-        McpClient client, string serverName, McpPromptCache? promptCache, ILogger? logger, CancellationToken ct)
+        McpClient client, ServerAddress server, McpPromptCache? promptCache, ILogger? logger, CancellationToken ct)
     {
         try
         {
             return promptCache is null
                 ? await McpSkillReader.ReadAsync(client, logger, ct)
                 : await promptCache.GetOrFetchAsync(
-                    serverName + ":skills", ctk => McpSkillReader.ReadAsync(client, logger, ctk), ct);
+                    server.Qualifier + ":skills", ctk => McpSkillReader.ReadAsync(client, logger, ctk), ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
