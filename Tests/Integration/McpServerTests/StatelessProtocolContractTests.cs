@@ -68,7 +68,7 @@ public class StatelessProtocolContractTests
             "idealista",
             services => services.ConfigureMcp(new IdealistaSettings.McpSettings
             {
-                Idealista = new IdealistaSettings.IdealistaConfiguration { ApiKey = "x", ApiSecret = "x" },
+                Idealista = new IdealistaSettings.IdealistaConfiguration(),
                 Mcp = McpTestSecret.Gate
             })
         },

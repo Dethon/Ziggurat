@@ -29,8 +29,8 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   `--jailed` somebody typed. `McpServerTableTests` names that exemption by file; nothing else may
   copy it. Nested sections bind through
   the plain call. A `required` member that bound to null fails startup naming it; **null only, never
-  empty** — five shipped servers carry required members that ship as `""` and are filled from secrets
-  (Telegram, WebSearch, HomeAssistant, Idealista, Library).
+  empty** — four shipped servers carry required members that ship as `""` and are filled from secrets
+  (Telegram, WebSearch, HomeAssistant, Library).
 - **`IServiceCollection.AddMcpHost(settings)`** is the five things every server has: the settings
   singleton, the server, the HTTP transport, the gate on `/mcp` and the call-token gate on every tool
   call (`CallTokenGate`; every server checks, the outpost too, against the keys its tunnel delivers). All

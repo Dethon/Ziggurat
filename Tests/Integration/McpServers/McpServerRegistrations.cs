@@ -161,7 +161,7 @@ public static class McpServerRegistrations
         Row("idealista", "McpServerIdealista", McpServerRole.Tool,
             new IdealistaSettings.McpSettings
             {
-                Idealista = new IdealistaSettings.IdealistaConfiguration { ApiKey = "x", ApiSecret = "x" },
+                Idealista = new IdealistaSettings.IdealistaConfiguration(),
                 Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureMcp(settings)),
