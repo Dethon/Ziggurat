@@ -12,6 +12,7 @@ paths:
   - "Infrastructure/Agents/Mcp/QualifiedMcpTool.cs"
   - "Agent/Commands/AgentCommand.cs"
   - "Infrastructure/Clients/Accounts/TunnelCredentialClient.cs"
+  - "Infrastructure/Metrics/HttpMetricSink.cs"
   - "Agent/App/TunnelApi.cs"
   - "Agent/Modules/TunnelModule.cs"
   - "Domain/DTOs/Tunnel/**"
@@ -42,8 +43,8 @@ over one WebSocket, and nothing more.**
   end **in order among the frames**, which is what lets a key arrive before the call signed with it.
 - **Either end opens streams.** The relay numbers its own odd, the server even. A stream the other
   end opened goes to that end's `accept`; with none, or with a tag it does not take, it is reset with
-  a reason. The relay takes none yet (back-calls are ticket 08), so every server-opened stream is
-  refused today.
+  a reason. The server-opened ones are its **back-calls** (below): the relay's accept hands them to
+  the back-call gateway once the tunnel is admitted, and resets one opened before.
 - **A close from either end ends a stream in both directions.** HTTP/1.1 and a WebSocket upgraded
   inside it never half-close. A reset, or the tunnel's own end, makes the next read throw
   `IOException` with the reason.
@@ -137,6 +138,60 @@ server name)**. Each `OpenTunnel` is one connection generation in ADR 0012's sen
   before the new one's `TunnelOpened`.
 - A server that reconnects while its old socket has not timed out **replaces** it: the old opening is
   closed `Replaced`. Nothing carries over between generations.
+
+## Back-calls
+
+What a household's server still needs of the deployment it asks for over its own tunnel, and only
+that: a stream it opens with one of `BackCallProtocol`'s tags, carrying HTTP/1.1.
+
+| Tag | Reaches | Paths (all POST) | For |
+|---|---|---|---|
+| `accounts` | the accounts service (`Accounts:BaseUrl`) | `/accounts/internal/resolve`, `/accounts/internal/guest` | voice's speakers and guest |
+| `topics` | the agent's own `TopicMinting.Path` | `/internal/topics` | voice's topics |
+| `lemonade` | the shared Lemonade (`backCalls:lemonadeUrl`) | `/v1/audio/transcriptions`, `/v1/audio/speech` | voice's STT and TTS |
+| `vfs-bridge` | the agent's own exec bridge | under `/api/vfs-bridge/` | the sandbox's FUSE daemon |
+| `metrics` | the relay itself | `BackCallProtocol.MetricsPath` (`/events`) | any server's metric events |
+
+- **The server's end is a loopback port per back-call.** `MCP__TUNNEL__BACKCALLS__<tag>=<port>`
+  (`TunnelSettings.BackCalls`): `BackCallForwarders` listens on `127.0.0.1:<port>` and turns every
+  connection into a stream of the admitted tunnel under that tag (`TunnelLink`, which `TunnelClient`
+  sets on admission and clears when the tunnel ends; with none, the connection is closed at once). So
+  a client changes nothing but its address — `ACCOUNTS__BASEURL`, `AGENT__BASEURL`,
+  `STT__OPENAI__BASEURL`/`TTS__OPENAI__BASEURL`, `METRICS__URL` (`http://127.0.0.1:<port>/events`),
+  the sandbox's `VFSBRIDGEURL` (`http://127.0.0.1:<port>/api/vfs-bridge`) — and the Rust daemon is
+  served as a .NET client is. A server names only the back-calls it makes: anything beside it, a
+  sandbox command included, can dial those ports, and what it reaches is then the allowlist and no more.
+- **The relay's end is a Kestrel of its own** (`BackCallGateway`, started with the relay). Its
+  transport is the back-call streams themselves (`BackCallTransport`: one stream, one connection),
+  so the HTTP inside is read by Kestrel, keep-alive and chunked bodies included, and never by a parser
+  of ours; the tunnel rides on every connection as the `BackCallOrigin` feature. It is not the agent's
+  Kestrel because a listener added in code replaces the agent's configured ones rather than joining
+  them. A stream with another tag is reset; a request that is not a POST to its tag's paths (a `..`
+  in a bridge path included) is answered 403; both are logged and reported (`ErrorEvent`, `Service`
+  `agent`, `ErrorType` `BackCallRefused`, naming the server and its household, never the credential).
+- **Every back-call it lets through says who asked**: `X-Ziggurat-Back-Call-Household` and
+  `X-Ziggurat-Back-Call-Server`, from the tunnel's verified credential, after removing every header
+  the server sent under that prefix. Hop-by-hop headers and `Host` are the forward's own; the body
+  streams both ways (a spoken reply is read while Lemonade makes it), and Kestrel's body limit is off
+  because each target bounds its own. The agent's own routes are asked where the agent listens (the
+  port of its first `IServer` address, on `127.0.0.1`), so they need no setting.
+- **Each target believes what it already believed.** The bridge still trusts only its call token, which
+  passes through in `Authorization`; topic minting still trusts only the accounts service's assertion.
+  **The accounts back-call is shown the tunnel's own credential**: the relay replaces `Authorization`
+  with the credential the tunnel was opened with, and the accounts service reads who asks off that
+  live credential itself (`InternalCallers.HouseholdServer`, accounts.md) — so a tunnelled voice holds
+  no deployment secret (its resolver presents an empty one, which is replaced), no header is believed
+  by a service every compose container can reach, and the household it may ask about is the
+  credential's. The relay's own `CALLERS__agent` is not lent out: SexyTime's server holds that too.
+- **Metrics are published by the relay.** A server given `METRICS__URL` posts each event
+  (`HttpMetricSink`, the feed's JSON) instead of publishing onto Redis (`AddMetricsPublishing(name,
+  feed)`), so voice opens no Redis connection at all; the relay reads the event (64 KiB at most, a
+  `MetricEvent` or 400) and publishes it through its own publisher with `Origin` set to the server's
+  synthetic address. Two households' servers of one service still share a heartbeat's `Service` on
+  the dashboard's roster; telling them apart there is 4b's.
+- **Tested at the round trip** (`BackCallGatewayTests`: each back-call through a real server's port and
+  a real relay, reading what the target saw; `SandboxOverTunnelE2ETests`: the sandbox image tunnelled,
+  a command's `cat` and `>` on another mount through its bridge back-call).
 
 ## Reaching a household's server from a turn
 
@@ -248,7 +303,6 @@ without a restart, a watch's delegated fire through the real Home Assistant serv
 ## Not yet (later tickets)
 
 - **06** adds the `pages` tag (`AddTunnelListener`) and routes `/browse/*` to the relay.
-- **08** gives the relay an `accept` for server-opened streams, with its allowlist.
 - **09** lets shared servers reach a household's server through the relay.
 - **10** moves outposts onto the tunnel (their `Address` and verdicts are still URL strings).
 - **11** switches the home's definitions to server names (and their whitelists to the bare names).

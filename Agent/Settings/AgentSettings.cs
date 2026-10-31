@@ -9,6 +9,7 @@ using Domain.Tools.FileSystem.Bridge;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Judgments;
+using Infrastructure.Tunnels;
 using JetBrains.Annotations;
 
 namespace Agent.Settings;
@@ -64,6 +65,9 @@ public record AgentSettings
     public SkillPreloadSettings SkillPreload { get; init; } = new();
     public ExecScreenSettings ExecScreen { get; init; } = new();
     public VfsBridgeSettings VfsBridge { get; init; } = new();
+
+    // Where a household server's back-calls reach beside the agent: the shared Lemonade.
+    public BackCallSettings BackCalls { get; init; } = new();
 }
 
 // The Lemonade chat host: somebody's own box on the local network, outside the compose stack, and

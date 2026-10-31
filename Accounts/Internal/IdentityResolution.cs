@@ -53,20 +53,25 @@ public static class IdentityResolution
                 return InternalCallers.NotYours;
             }
 
+            // A household's server finds its own household's people and no one else's: anyone else
+            // is nobody to it.
+            var household = InternalCallers.Household(http);
             await using var db = await contexts.CreateDbContextAsync(ct);
-            var people = _linkedIdentityChannels.Contains(query.Channel)
-                ? db.LinkedIdentities
-                    .Where(i => i.Channel == query.Channel && i.Identity == query.Identity)
-                    .Join(db.Users, i => i.UserId, u => u.Id, (_, u) => u)
-                : db.Users.Where(u => u.Id == query.Identity);
+            var people = (_linkedIdentityChannels.Contains(query.Channel)
+                    ? db.LinkedIdentities
+                        .Where(i => i.Channel == query.Channel && i.Identity == query.Identity)
+                        .Join(db.Users, i => i.UserId, u => u.Id, (_, u) => u)
+                    : db.Users.Where(u => u.Id == query.Identity))
+                .Where(u => household == null || u.TenantId == household);
 
             return await people.FirstOrDefaultAsync(ct) is { } user
                 ? Results.Ok(new ResolvedIdentity(user.TenantId, user.Id, user.DisplayName, assertions.Of(user, query.Channel)))
                 : Results.NotFound();
         });
 
-        // The home household's, while it is the only one; a satellite's own household is the
-        // Tenants phase's.
+        // The guest of the household whose satellite heard them: a household's server asks about its
+        // own, and a deployment voice server — the home's, until it moves into the tenant kit — the
+        // home household's.
         routes.MapPost(GuestPath, async (
             HttpContext http, GuestQuery query, IDbContextFactory<AccountsDbContext> contexts, Assertions assertions,
             CancellationToken ct) =>
@@ -81,9 +86,10 @@ public static class IdentityResolution
                 return InternalCallers.NotYours;
             }
 
+            var household = InternalCallers.Household(http);
             await using var db = await contexts.CreateDbContextAsync(ct);
-            var home = await db.Tenants.SingleAsync(t => t.IsHome, ct);
-            return Results.Ok(new HouseholdGuest(home.Id, assertions.OfGuest(home.Id, query.Channel)));
+            var tenant = await db.Tenants.SingleAsync(t => household == null ? t.IsHome : t.Id == household, ct);
+            return Results.Ok(new HouseholdGuest(tenant.Id, assertions.OfGuest(tenant.Id, query.Channel)));
         });
     }
 }
