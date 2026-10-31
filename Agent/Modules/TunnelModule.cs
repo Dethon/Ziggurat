@@ -40,6 +40,7 @@ public static class TunnelModule
                     sp.GetRequiredService<ILogger<TunnelRelay>>(),
                     sp.GetService<IHostApplicationLifetime>()))
                 .AddSingleton<IOwnServers>(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
+                .AddSingleton<TunnelListing>()
                 .AddHostedService<TunnelRevocations>();
         }
     }

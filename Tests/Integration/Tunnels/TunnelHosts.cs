@@ -38,6 +38,8 @@ internal sealed class RelayHost : IAsyncDisposable
 
     public string Hub => $"ws://localhost:{Port}{TunnelProtocol.Path}";
 
+    public string Address => $"http://localhost:{Port}";
+
     public TunnelRegistry Registry => _app.Services.GetRequiredService<TunnelRegistry>();
 
     public IOwnServers OwnServers => _app.Services.GetRequiredService<IOwnServers>();
@@ -60,6 +62,7 @@ internal sealed class RelayHost : IAsyncDisposable
         var app = builder.Build();
         app.UseWebSockets();
         app.MapTunnel();
+        app.MapConnectedServers(agentCredential);
         await app.StartAsync();
         return new RelayHost(app, listening);
     }
