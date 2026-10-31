@@ -18,6 +18,10 @@ public sealed record HouseholdConfigSeedRefused(string Error, IReadOnlyList<stri
 // definitions). A section the household already saved is left as it is, so a rerun changes nothing
 // and nothing an owner set since is put over. Like the import, only the migration's own credential
 // is admitted (CALLERS__household-migration), which the deployment leaves empty but for the run.
+//
+// The document is laid over the section as the household reads it now — its defaults — field by
+// top-level field, so what the migration does not know stays the household's: its settings' name is
+// the one its row carries, and a features document naming one feature leaves the rest as they were.
 public static class HouseholdConfigSeedApi
 {
     public const string Path = "/household-config-seed";
@@ -48,15 +52,26 @@ public static class HouseholdConfigSeedApi
                 return Results.Ok(new HouseholdConfigSeeded(Saved: false, AlreadySaved: true));
             }
 
+            JsonObject document;
+            try
+            {
+                document = Over(await store.ReadAsync(request.HouseholdId, schema, ct) ?? schema.Default,
+                    schema.Migrate((JsonObject)request.Document.DeepClone()));
+            }
+            catch (SectionShapeException ex)
+            {
+                return Results.BadRequest(new HouseholdConfigSeedRefused($"the {schema.Name} would not be saved", [ex.Message]));
+            }
+
             if (request.DryRun)
             {
-                var problems = Problems(schema, request.Document);
+                var problems = Problems(schema, document);
                 return problems.Count > 0
                     ? Results.BadRequest(new HouseholdConfigSeedRefused($"the {schema.Name} would not be saved", problems))
                     : Results.Ok(new HouseholdConfigSeeded(Saved: false, AlreadySaved: false));
             }
 
-            return await store.SaveAsync(request.HouseholdId, schema, request.Document, ct) switch
+            return await store.SaveAsync(request.HouseholdId, schema, document, ct) switch
             {
                 SectionSave.Saved => Results.Ok(new HouseholdConfigSeeded(Saved: true, AlreadySaved: false)),
                 SectionSave.Invalid invalid => Results.BadRequest(
@@ -64,6 +79,16 @@ public static class HouseholdConfigSeedApi
                 _ => Results.NotFound(new HouseholdConfigSeedRefused($"there is no household {request.HouseholdId}"))
             };
         });
+
+    private static JsonObject Over(JsonObject current, JsonObject seeded)
+    {
+        foreach (var (field, value) in seeded)
+        {
+            current[field] = value?.DeepClone();
+        }
+
+        return current;
+    }
 
     // What a save would refuse, without saving: a seeded document carries no secret marker to keep.
     private static IReadOnlyList<string> Problems(SectionSchema schema, JsonObject document)
