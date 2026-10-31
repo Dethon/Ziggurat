@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Agents;
@@ -8,26 +9,27 @@ public class AgentDefinitionProvider(
     IOptionsMonitor<AgentRegistryOptions> registryOptions,
     CustomAgentRegistry customAgentRegistry) : IAgentDefinitionProvider
 {
-    public AgentDefinition? GetById(string agentId)
+    public AgentDefinition? GetById(string agentId, Account? owner = null)
     {
         return registryOptions.CurrentValue.Agents
-            .FirstOrDefault(a => a.Id.Equals(agentId, StringComparison.OrdinalIgnoreCase))
-            ?? customAgentRegistry.FindById(agentId);
+                   .FirstOrDefault(a => a.Id.Equals(agentId, StringComparison.OrdinalIgnoreCase))
+               ?? (owner is null ? null : customAgentRegistry.Find(owner, agentId));
     }
 
-    public IReadOnlyList<AgentDefinition> GetAll(string? userId = null)
+    public IReadOnlyList<AgentDefinition> GetAll(Account? owner = null)
     {
         var builtIn = registryOptions.CurrentValue.Agents.ToList();
 
-        if (userId is not null)
+        if (owner is not null)
         {
-            builtIn.AddRange(customAgentRegistry.GetByUser(userId));
+            builtIn.AddRange(customAgentRegistry.GetByOwner(owner));
         }
 
         return builtIn;
     }
 
-    public AgentDefinition RegisterCustomAgent(string userId, CustomAgentRegistration registration)
+    public async Task<AgentDefinition> RegisterCustomAgentAsync(
+        Account owner, CustomAgentRegistration registration, CancellationToken ct = default)
     {
         var definition = new AgentDefinition
         {
@@ -42,13 +44,11 @@ public class AgentDefinitionProvider(
             ProviderRouting = registration.ProviderRouting
         };
 
-        customAgentRegistry.Add(userId, definition);
+        await customAgentRegistry.AddAsync(owner, definition, ct);
 
         return definition;
     }
 
-    public bool UnregisterCustomAgent(string userId, string agentId)
-    {
-        return customAgentRegistry.Remove(userId, agentId);
-    }
+    public Task<bool> UnregisterCustomAgentAsync(Account owner, string agentId, CancellationToken ct = default) =>
+        customAgentRegistry.RemoveAsync(owner, agentId, ct);
 }

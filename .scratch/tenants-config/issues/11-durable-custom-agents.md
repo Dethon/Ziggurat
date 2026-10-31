@@ -4,7 +4,9 @@
 
 **Blocked by:** None (can start immediately once 4a is merged)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A custom agent survives an agent restart
-- [ ] A custom agent id never resolves for another household or person
+- [x] A custom agent survives an agent restart
+- [x] A custom agent id never resolves for another household or person
+
+Kept as one Redis hash per owner, `agents:custom:{householdId}:{userId}` (field: agent id, value: the definition as JSON). No household-migration step: custom agents were only ever in memory, so there is nothing stored to re-key.
