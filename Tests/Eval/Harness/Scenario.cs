@@ -13,9 +13,10 @@ public sealed record Scenario
 {
     public required string Name { get; init; }
 
-    // The shipped agent this runs as, by the id in Agent/appsettings.json. Naming it here rather
-    // than building a spec is the point: a misconfigured model, provider routing, language or
-    // prompt section has to fail the suite rather than be bypassed by it.
+    // The agent this runs as, by its id in the eval's copies of today's definitions
+    // (Tests/TestAgents.json). Naming it here rather than building a spec is the point: a
+    // misconfigured model, provider routing, language or prompt section has to fail the suite
+    // rather than be bypassed by it.
     public required string AgentId { get; init; }
 
     public required EvalTurn Turn { get; init; }

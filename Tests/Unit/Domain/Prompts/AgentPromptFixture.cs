@@ -4,7 +4,6 @@ using Domain.Outposts;
 using Domain.Prompts;
 using Domain.Tools.Files;
 using Domain.Tools.FileSystem;
-using Microsoft.Extensions.Configuration;
 using Moq;
 using Tests.Integration.McpServers;
 
@@ -97,14 +96,13 @@ internal static class AgentPromptFixture
             [PromptManifest.Memory] = MemoryPrompts.FeatureSystemPrompt
         };
 
-    public static IReadOnlyList<AgentDefinition> Agents { get; } =
-        Config().GetSection("agents").Get<AgentDefinition[]>()!;
+    // The tests' own copies of the agents, not the agent's settings file: a snapshot holds today's
+    // definitions still, whatever a household is configured with.
+    public static IReadOnlyList<AgentDefinition> Agents => TestAgents.Repository.Agents;
 
-    public static IReadOnlyList<SubAgentDefinition> SubAgents { get; } =
-        Config().GetSection("subAgents").Get<SubAgentDefinition[]>()!;
+    public static IReadOnlyList<SubAgentDefinition> SubAgents => TestAgents.Repository.SubAgents;
 
-    public static AgentDefaults AgentDefaults { get; } =
-        Config().GetSection("agentDefaults").Get<AgentDefaults>() ?? new AgentDefaults();
+    public static AgentDefaults AgentDefaults => TestAgents.Repository.Defaults;
 
     // Every agent and worker a snapshot is kept for: the two people talk to, the worker the
     // delegating ones spawn, and the one her carb-counting app reaches.
@@ -125,7 +123,7 @@ internal static class AgentPromptFixture
                     worker.Id, worker.Name, worker.Description, worker.McpServerEndpoints,
                     worker.EnabledFeatures, worker.PromptSections, worker.CustomInstructions,
                     worker.Language, worker.UsesOutposts, noTools: false)
-                : throw new InvalidOperationException($"No agent or subagent '{id}' in appsettings.json");
+                : throw new InvalidOperationException($"No agent or subagent '{id}' in {TestAgents.Repository.Path}");
     }
 
     private static PromptAssembly Compose(
@@ -205,9 +203,4 @@ internal static class AgentPromptFixture
 
     public static string SnapshotPath(string id) =>
         Path.Combine(McpServerRegistrations.RepoRoot, "Tests", "Snapshots", $"prompt.{id}.txt");
-
-    private static IConfigurationRoot Config() =>
-        new ConfigurationBuilder()
-            .AddJsonFile(Path.Combine(McpServerRegistrations.RepoRoot, "Agent", "appsettings.json"))
-            .Build();
 }
