@@ -3,7 +3,8 @@
 A household's own servers, run at the household's own site: web search with its browser (Camoufox),
 the vault, the library with qBittorrent and Jackett, the sandbox, the printer, the Home Assistant
 server with Home Assistant and Music Assistant, and voice with speech extraction — the same images
-the deployment builds — plus the kit's own Redis.
+the deployment builds — plus the kit's own Redis and the household's LAN tools over its media, Plex
+and filebrowser.
 
 Each server opens **one outbound tunnel** to the deployment (`wss://<main host>/tunnel`, the proxy's
 one route for it) and is reached through it and nothing else: the agent's calls, a channel's
@@ -25,6 +26,9 @@ this file to it.
 | `mcp-printer` | `printer` | | |
 | `mcp-homeassistant` | `homeassistant` | | `homeassistant`, `music-assistant` |
 | `mcp-channel-voice` | `voice` | accounts, topics, lemonade, metrics | `tse-extractor` |
+
+Plex (on the host's network, with the render node) and filebrowser (`${LAN_BIND_ADDRESS}:8002`) are
+no servers: nothing reaches them through the deployment, only the household's own LAN.
 
 The agent's definitions name these servers by their tunnel names (`Agent/appsettings.json`), and the
 deployment finds two of them by name: `websearch` for the browse pages and `voice` for the timers'
@@ -58,7 +62,8 @@ it is offline; nothing fails.
    docker compose -f TenantKit/docker-compose.yml up -d --build
    ```
 
-   Add `-f TenantKit/docker-compose.override.no-dri.yml` on a host with no `/dev/dri`, or
+   Add `-f TenantKit/docker-compose.override.no-dri.yml` on a host with no `/dev/dri` (it strips the
+   sandbox's and Plex's render node), or
    `.rocm.yml` for ROCm in the sandbox. The sandbox needs the host's `ziggurat-sandbox` AppArmor
    profile installed first (`DockerCompose/apparmor/`), as on the deployment.
 
@@ -84,8 +89,8 @@ still match.
 
 The deployment used to run these servers itself. Moving them is one deploy, in this order. The
 moved services must be gone from the deployment before the kit starts: two voice servers would dial
-the same satellites, two Home Assistants would share one configuration, and the LAN tools and Music
-Assistant would fight over their ports.
+the same satellites, two Home Assistants would share one configuration, and the LAN tools, Plex and
+Music Assistant would fight over their ports.
 
 0. **The household migration first**, if the deploy that brought accounts has not run it
    (`.claude/skills/launch-stack/SKILL.md`, "Migrating into the home household"): it re-seals the
@@ -107,7 +112,7 @@ Assistant would fight over their ports.
    `--remove-orphans` removes the containers the new file no longer names (`mcp-websearch`,
    `mcp-vault`, `mcp-library`, `mcp-sandbox`, `mcp-printer`, `mcp-homeassistant`,
    `mcp-channel-voice`, `camoufox`, `qbittorrent`, `jackett`, `homeassistant`, `music-assistant`,
-   `tse-extractor`); their volumes stay. From here until the kit is up, turns go without the home's
+   `tse-extractor`, `plex`, `filebrowser`); their volumes stay. From here until the kit is up, turns go without the home's
    servers and say so.
 
 3. **Carry the volumes.** Bind mounts are folders: copy each from `DockerCompose/volumes/` to
@@ -121,7 +126,9 @@ Assistant would fight over their ports.
    | voice profiles, audit | `volumes/voices`, `volumes/tse-audit` | the same |
    | speech extraction's models | `volumes/tse-models` | `volumes/tse-models` |
    | library's tools | `volumes/qbittorrent_config`, `volumes/jackett_config`, `volumes/jackett_data` | the same |
-   | the media | `DATA_PATH` | `DATA_PATH`: **the same folder** — the deployment's Plex and filebrowser still read it |
+   | Plex | `volumes/plex_config` | `volumes/plex_config` |
+   | filebrowser | `volumes/filebrowser_database`, `volumes/filebrowser_config` | the same |
+   | the media | `DATA_PATH` | `DATA_PATH` (the deployment's `.env` no longer names it) |
    | vault | `VAULT_PATH` | `VAULT_PATH` |
    | sandbox home | `SANDBOX_HOME_PATH` | `SANDBOX_HOME_PATH` |
 

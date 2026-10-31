@@ -209,6 +209,41 @@ services:
       redis:
         condition: service_healthy
 
+  # The household's LAN tools over its media: Plex streams it to the household's players, on the
+  # host's network so they find it, with the render node for transcoding; filebrowser manages the
+  # files on the LAN address. Neither is reached through the deployment.
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    logging: *logging
+    network_mode: host
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      - ./volumes/plex_config:/config
+      - ${DATA_PATH:-./volumes/data}:/media
+    environment:
+      <<: *timezone
+      PUID: ${PUID:-1654}
+      PGID: ${PGID:-1654}
+      VERSION: docker
+    restart: unless-stopped
+
+  filebrowser:
+    image: filebrowser/filebrowser:v2
+    logging: *logging
+    user: ${PUID:-1654}:${PGID:-1654}
+    ports:
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:8002:80"
+    volumes:
+      - ${DATA_PATH:-./volumes/data}:/srv
+      - ./volumes/filebrowser_database:/database
+      - ./volumes/filebrowser_config:/config
+    environment:
+      <<: *timezone
+    restart: unless-stopped
+    networks:
+      - kit
+
   mcp-sandbox:
     image: mcp-sandbox:latest
     logging: *logging
