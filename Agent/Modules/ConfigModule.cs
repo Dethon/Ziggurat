@@ -1,5 +1,8 @@
 using System.CommandLine;
 using Agent.Settings;
+using Domain.Security.Signing;
+using Infrastructure.Clients.Accounts;
+using DeliverySettings = Domain.DTOs.DeliverySettings;
 using RetentionSettings = Domain.DTOs.RetentionSettings;
 
 namespace Agent.Modules;
@@ -10,6 +13,8 @@ public static class ConfigModule
     {
         var config = configBuilder
             .AddJsonFile(RetentionSettings.FileName, optional: true)
+            .AddJsonFile(DeliverySettings.FileName, optional: true)
+            .AddJsonFile(TokenVerificationSettings.FileName, optional: true)
             .AddEnvironmentVariables()
             .AddUserSecrets<Program>()
             .Build();
@@ -25,7 +30,9 @@ public static class ConfigModule
             .AddAgent(settings)
             .AddSubAgents(settings.SubAgents)
             .AddMemory(config)
-            .AddChatMonitoring(settings, cmdParams);
+            .AddChatMonitoring(settings, cmdParams)
+            // The registration API's person is the accounts service's assertion SexyTime forwards.
+            .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification);
     }
 
     public static CommandLineParams GetCommandLineParams(string[] args)

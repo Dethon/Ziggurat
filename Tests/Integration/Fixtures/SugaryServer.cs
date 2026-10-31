@@ -83,6 +83,8 @@ public sealed class SugaryServer : IAsyncDisposable
             collection =>
             {
                 collection.ConfigureSugary(settings);
+                // The accounts service's keys without the service: what As signs with verifies.
+                collection.AddSingleton(TestAssertions.Verifier());
                 if (turnClock is not null)
                 {
                     collection.AddSingleton(sp => ActivatorUtilities.CreateInstance<SugaryChannel>(sp, turnClock));
@@ -111,13 +113,24 @@ public sealed class SugaryServer : IAsyncDisposable
     }
 
     // A phone signed in as this person, as the proxy hands its requests on: the session check's
-    // three headers on every request, and nothing else that says who it is.
-    public HttpClient As(Account person, string roles = "member")
+    // four headers on every request — the assertion signed for Sugary with the accounts service's
+    // test key — and nothing else that says who it is.
+    public HttpClient As(Account person, string roles = "member") =>
+        Forwarded(person, TestAssertions.Of(person, SugaryChannel.ChannelId, roles.Split(',')), roles);
+
+    // The plain headers naming one person and whatever assertion a test chooses beside them, or
+    // none: what a container on the network past the proxy could send.
+    public HttpClient Forwarded(Account plain, string? assertion, string roles = "member")
     {
         var browser = Browser();
-        browser.DefaultRequestHeaders.Add(ForwardedAccount.UserHeader, person.UserId);
-        browser.DefaultRequestHeaders.Add(ForwardedAccount.TenantHeader, person.TenantId);
+        browser.DefaultRequestHeaders.Add(ForwardedAccount.UserHeader, plain.UserId);
+        browser.DefaultRequestHeaders.Add(ForwardedAccount.TenantHeader, plain.TenantId);
         browser.DefaultRequestHeaders.Add(ForwardedAccount.RolesHeader, roles);
+        if (assertion is not null)
+        {
+            browser.DefaultRequestHeaders.Add(ForwardedAccount.AssertionHeader, assertion);
+        }
+
         return browser;
     }
 
@@ -132,7 +145,7 @@ public sealed class SugaryServer : IAsyncDisposable
     // off here so the first thing a test receives is its own turn.
     public async Task<McpChannelConnection> AgentAsync()
     {
-        var agent = new McpChannelConnection("sugary", mcpSecret: McpTestSecret.Value);
+        var agent = new McpChannelConnection("sugary", mcpSecret: McpTestSecret.Value, callTokens: McpTestSecret.CallTokens);
         _agents.Add(agent);
         await agent.ConnectAsync(_server.Endpoint, CancellationToken.None);
 

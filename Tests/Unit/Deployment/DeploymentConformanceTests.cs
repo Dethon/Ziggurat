@@ -1,4 +1,9 @@
+using System.Globalization;
+using Accounts.Internal;
+using Agent.App;
+using Domain.DTOs.Channel;
 using Domain.Security;
+using McpServerSugary.Channel;
 using Shouldly;
 
 namespace Tests.Unit.Deployment;
@@ -278,6 +283,55 @@ public class DeploymentConformanceTests
         }
     }
 
+    // The keys assertions verify with are asked for without a credential, so it is the proxy alone
+    // that keeps them inside: on every host the route the path lands on is a refusal or an upstream
+    // that is not the accounts service, never the accounts route.
+    [Fact]
+    public void TheAccountsJwks_IsRefusedThroughTheProxyOnEveryHost()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+
+        hosts.ShouldNotBeEmpty();
+        foreach (var host in hosts)
+        {
+            var route = RouteFor(host, InternalApi.JwksPath);
+            route.ShouldNotBeNull(host.Name);
+            route.Upstream.ShouldNotBe("accounts:8080", host.Name);
+            if (host.Routes.Any(r => r.Upstream == "accounts:8080"))
+            {
+                route.Matcher.ShouldBe("/accounts/internal/*", host.Name);
+                route.Body.ShouldContain("respond 404", customMessage: host.Name);
+            }
+        }
+    }
+
+    // Every app behind the session check believes the person the signed assertion names, so each is
+    // told where the accounts service publishes the keys it verifies with — on the compose network,
+    // where the proxy's 404 above does not reach — and the default those apps would otherwise fall
+    // back on is the same address.
+    [Theory]
+    [InlineData("mcp-channel-signalr")]
+    [InlineData("mcp-sugary")]
+    [InlineData("observability")]
+    [InlineData("agent")]
+    public void TheAppsThatBelieveTheAssertion_FetchTheAccountsServicesKeys(string service)
+    {
+        var expected = $"http://accounts:8080{InternalApi.JwksPath}";
+
+        DeploymentFiles.Compose().Service(service).Environment.GetValueOrDefault("ACCOUNTS__JWKSURL")
+            .ShouldBe(expected, service);
+        AssertionVerifier.DefaultJwksUrl.ShouldBe(expected);
+    }
+
+    // The handle a request path lands on, as Caddy sorts handle blocks: the most specific path
+    // matcher that matches it, else the catch-all.
+    private static CaddyRoute? RouteFor(CaddyHost host, string path) =>
+        host.Routes
+            .Where(r => r.Matcher is { } m && (m.EndsWith('*') ? path.StartsWith(m.TrimEnd('*'), StringComparison.Ordinal) : path == m))
+            .OrderByDescending(r => r.Matcher!.Length)
+            .FirstOrDefault()
+        ?? host.Routes.SingleOrDefault(r => r.Matcher is null);
+
     // A server asks the accounts service with the credential it already holds for its own /mcp, so
     // each caller the service admits is fed exactly the variable that server's own gate reads.
     [Theory]
@@ -303,6 +357,21 @@ public class DeploymentConformanceTests
             .ShouldAllBe(caller => compose.Services.ContainsKey(caller));
     }
 
+    // The service confines each caller to its own channel by the name compose gives it
+    // (InternalCallers), so a channel server renamed on one side and not the other would be refused
+    // everything it asks.
+    [Fact]
+    public void EveryChannelCallerOfTheAccountsService_IsOneItKnowsTheChannelOf()
+    {
+        var compose = DeploymentFiles.Compose();
+
+        compose.Service("accounts").Environment.Keys
+            .Where(k => k.StartsWith("CALLERS__", StringComparison.Ordinal))
+            .Select(k => k["CALLERS__".Length..])
+            .Where(caller => caller != HouseholdImportApi.Caller)
+            .ShouldBe([InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Voice], ignoreOrder: true);
+    }
+
     // Memory text and usage per person are the operator's alone: every request to the dashboard is
     // checked for the operator's session first, and the identity the check answers is what the
     // dashboard is handed.
@@ -313,8 +382,8 @@ public class DeploymentConformanceTests
 
         host.ForwardAuth.ShouldNotBeNull();
         host.ForwardAuth.Upstream.ShouldBe("accounts:8080");
-        host.ForwardAuth.Uri.ShouldBe("/accounts/verify?role=operator");
-        host.ForwardAuth.CopiedHeaders.ShouldBe(["X-Ziggurat-User", "X-Ziggurat-Tenant", "X-Ziggurat-Roles"]);
+        host.ForwardAuth.Uri.ShouldBe($"/accounts/verify?role=operator&channel={AppChannels.Dashboard}");
+        host.ForwardAuth.CopiedHeaders.ShouldBe(ForwardedAccount.Headers, ignoreOrder: true);
         host.Routes.ShouldNotBeEmpty();
         host.Routes.ShouldAllBe(r => r.Upstream == "observability:8080");
     }
@@ -323,25 +392,42 @@ public class DeploymentConformanceTests
     // proxy hands them, so each asks the session check first and is given every header it answers.
     // SexyTime is behind the same sign-in: its server forwards the person it was handed to the
     // agent registration API, which is how a custom agent comes to be somebody's. So is Sugary, the
-    // app and its API alike: each person's log is found by the account the headers name.
+    // app and its API alike: each person's log is found by the account the headers name. Each check
+    // names the channel the route's turns come on, which the signed assertion then names; the agent
+    // refuses a turn whose assertion names another.
     [Theory]
-    [InlineData(MainHost, null)]
-    [InlineData(MainHost, "/hubs/*")]
-    [InlineData(MainHost, "/api/attachments*")]
-    [InlineData(MainHost, "/api/dictation*")]
-    [InlineData(SexyHost, null)]
-    [InlineData(SexyHost, "/hubs/*")]
-    [InlineData(SexyHost, "/api/attachments*")]
-    [InlineData(SexyHost, "/api/dictation*")]
-    [InlineData(SugaryHost, null)]
-    public void TheChatClientsRoutes_GoThroughTheSessionCheckAndCopyItsHeaders(string hostName, string? matcher)
+    [InlineData(MainHost, null, ChannelIds.SignalR)]
+    [InlineData(MainHost, "/hubs/*", ChannelIds.SignalR)]
+    [InlineData(MainHost, "/api/attachments*", ChannelIds.SignalR)]
+    [InlineData(MainHost, "/api/dictation*", ChannelIds.SignalR)]
+    [InlineData(SexyHost, null, AppChannels.SexyTime)]
+    [InlineData(SexyHost, "/hubs/*", ChannelIds.SignalR)]
+    [InlineData(SexyHost, "/api/attachments*", ChannelIds.SignalR)]
+    [InlineData(SexyHost, "/api/dictation*", ChannelIds.SignalR)]
+    [InlineData(SugaryHost, null, SugaryChannel.ChannelId)]
+    public void TheChatClientsRoutes_GoThroughTheSessionCheckAndCopyItsHeaders(string hostName, string? matcher, string channel)
     {
         var route = DeploymentFiles.Caddyfile().Host(hostName).Routes.Single(r => r.Matcher == matcher);
 
         var check = route.ForwardAuth.ShouldNotBeNull($"{hostName} {matcher ?? "(catch-all)"} is not checked");
         check.Upstream.ShouldBe("accounts:8080");
-        check.Uri.ShouldBe("/accounts/verify");
+        check.Uri.ShouldBe($"/accounts/verify?channel={channel}");
         check.CopiedHeaders.ShouldBe(ForwardedAccount.Headers, ignoreOrder: true);
+    }
+
+    // Whatever a forward_auth guards, it hands the app every header the check answers, the signed
+    // assertion among them, and names what it guards: the check refuses one that names nothing.
+    [Fact]
+    public void EverySessionCheck_NamesWhatItGuardsAndCopiesEveryHeader()
+    {
+        var checks = DeploymentFiles.Caddyfile().Hosts
+            .SelectMany(h => h.Routes.Select(r => r.ForwardAuth).Append(h.ForwardAuth).OfType<CaddyForwardAuth>()
+                .Select(check => (h.Name, Check: check)))
+            .ToList();
+
+        checks.ShouldNotBeEmpty();
+        checks.ShouldAllBe(c => c.Check.CopiedHeaders.Order().SequenceEqual(ForwardedAccount.Headers.Order()));
+        checks.ShouldAllBe(c => c.Check.Uri != null && c.Check.Uri.Contains("channel="));
     }
 
     // Sign-in and enrollment are how a signed-out person gets a session at all; a login handoff's
@@ -360,6 +446,36 @@ public class DeploymentConformanceTests
         var route = DeploymentFiles.Caddyfile().Host(hostName).Routes.Single(r => r.Matcher == matcher);
 
         route.ForwardAuth.ShouldBeNull();
+    }
+
+    // A login handoff's live view and the logins page answer on the browse server's second
+    // listener, which serves nothing else, so the route that reaches them cannot reach its /mcp.
+    [Fact]
+    public void TheBrowsePages_ReachTheBrowseServersPagesListener()
+    {
+        var route = DeploymentFiles.Caddyfile().Host(MainHost).Routes.Single(r => r.Matcher == "/browse/*");
+
+        route.Upstream.ShouldBe($"{BrowseServerListeners.Service}:{BrowseServerListeners.Pages}");
+        BrowseServerListeners.Pages.ShouldNotBe(BrowseServerListeners.Mcp);
+    }
+
+    // Any host, any route, nested or not: whatever the proxy hands the browse server lands on the
+    // pages listener, never on the one /mcp answers.
+    [Fact]
+    public void NothingTheProxyRoutes_ReachesTheBrowseServersMcpListener()
+    {
+        var upstreams = DeploymentFiles.Caddyfile().Hosts
+            .SelectMany(h => h.Body.Split('\n'))
+            .Select(l => l.Trim())
+            .Where(l => l.StartsWith("reverse_proxy ", StringComparison.Ordinal))
+            .SelectMany(l => l["reverse_proxy ".Length..].TrimEnd('{').Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            // http://mcp-websearch:8080 names the same listener as mcp-websearch:8080.
+            .Select(u => u.Contains("://", StringComparison.Ordinal) ? u[(u.IndexOf("://", StringComparison.Ordinal) + 3)..] : u)
+            .Where(u => u.Split(':')[0] == BrowseServerListeners.Service)
+            .ToList();
+
+        upstreams.ShouldNotBeEmpty();
+        upstreams.ShouldAllBe(u => u == $"{BrowseServerListeners.Service}:{BrowseServerListeners.Pages}");
     }
 
     // Sugary's /mcp is the deployment's, gated by the server's own credential, and a person's phone
@@ -401,6 +517,60 @@ public class DeploymentConformanceTests
         var volume = compose.Service("accounts-volume");
         volume.Volumes.ShouldBe(["./volumes/accounts:/data"]);
         accounts.DependsOn.ShouldContain("accounts-volume");
+    }
+
+    // The agent signs every call with a key it generates on first start and keeps across rebuilds, in
+    // a volume of its own; nothing else mounts it, and the one-shot step hands it to the agent's user.
+    [Fact]
+    public void TheAgent_KeepsItsSigningKeyInAVolumeOfItsOwnThatItsUserOwns()
+    {
+        var compose = DeploymentFiles.Compose();
+        var agent = compose.Service("agent");
+
+        agent.Volumes.ShouldContain("./volumes/agent-keys:/keys");
+        agent.Environment["SIGNING__KEYDIRECTORY"].ShouldBe("/keys");
+        agent.Environment.ShouldNotContainKey("SIGNING__PRIVATEKEY");
+        agent.User.ShouldBe("${PUID:-1654}:${PGID:-1654}");
+        compose.Services.Values.Where(s => s.Name != "agent" && s.Name != "agent-volume")
+            .ShouldNotContain(s => s.Volumes.Any(v => v.StartsWith("./volumes/agent-keys:", StringComparison.Ordinal)));
+        compose.Service("agent-volume").Volumes.ShouldBe(["./volumes/agent-keys:/keys"]);
+        agent.DependsOn.ShouldContain("agent-volume");
+    }
+
+    // Every server the agent dials checks each tool call's token: for itself, by the name the agent
+    // dials it at, against the keys the agent publishes on the compose network. A server told another
+    // name refuses every call as aimed elsewhere; one told no keys refuses every call as unverifiable.
+    [Fact]
+    public void EveryServer_ChecksCallTokensForItsOwnNameAgainstTheAgentsKeys()
+    {
+        var compose = DeploymentFiles.Compose();
+        var dialled = compose.Service("agent").Environment.Keys
+            .Where(key => key.StartsWith("MCP__SECRETS__", StringComparison.Ordinal))
+            .Select(key => key["MCP__SECRETS__".Length..])
+            .ToList();
+
+        dialled.ShouldNotBeEmpty();
+        foreach (var server in dialled)
+        {
+            var environment = compose.Service(server).Environment;
+            environment.GetValueOrDefault("MCP__AUDIENCE").ShouldBe(server, server);
+            environment.GetValueOrDefault("MCP__AGENTKEYSURL").ShouldBe($"http://agent:8080{AgentKeysApi.Path}", server);
+        }
+    }
+
+    // The agent's keys are fetched without a credential, so the proxy alone keeps them inside: on every
+    // host the path lands on a route that is not the agent's.
+    [Fact]
+    public void TheAgentsKeys_AreNeverRoutedThroughTheProxy()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+
+        hosts.ShouldNotBeEmpty();
+        hosts.ShouldContain(h => h.Routes.Any(r => r.Upstream == "agent:8080"), "a host routes the agent's API");
+        foreach (var host in hosts)
+        {
+            RouteFor(host, AgentKeysApi.Path)?.Upstream.ShouldNotBe("agent:8080", host.Name);
+        }
     }
 
     // A passkey is bound to the relying party, the cookie to its domain and a sign-in's return to the
@@ -479,5 +649,51 @@ public class DeploymentConformanceTests
 
         ports.ShouldNotBeEmpty();
         ports.ShouldAllBe(p => p.BindAddress == "127.0.0.1");
+    }
+
+    // The Telegram bot carries the assertion of the answer it admitted a sender on, which it keeps for
+    // LinkCache:Linked. An assertion lives AssertionLifetime from when the accounts service
+    // signed it and the agent refuses a turn whose assertion has run out, so a kept answer must leave
+    // its assertion most of its life for the hop to the agent: at most half of it spent in the cache.
+    [Fact]
+    public void TheTelegramBotsKeptAnswer_LeavesItsAssertionHalfItsLifetime()
+    {
+        var linked = TimeSpan.Parse(
+            ShippedSetting("McpChannelTelegram", "LinkCache", "Linked").GetString()!, CultureInfo.InvariantCulture);
+        var lifetime = TimeSpan.Parse(
+            ShippedSetting("Accounts", "AssertionLifetime").GetString()!, CultureInfo.InvariantCulture);
+
+        linked.ShouldBeLessThanOrEqualTo(lifetime / 2);
+    }
+
+    private static System.Text.Json.JsonElement ShippedSetting(string project, params string[] path)
+    {
+        var file = Path.Combine(Tests.E2E.Fixtures.TestHelpers.FindSolutionRoot(), project, "appsettings.json");
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(file),
+            new System.Text.Json.JsonDocumentOptions
+            {
+                CommentHandling = System.Text.Json.JsonCommentHandling.Skip, AllowTrailingCommas = true
+            });
+        return path.Aggregate(document.RootElement, (element, name) => element.GetProperty(name)).Clone();
+    }
+
+    // The fixed keys the test and eval stacks sign with are private keys anyone with the repository
+    // can read, so a deployment handed one would believe tokens anyone could mint. A deployment's
+    // issuers generate their own, in their own volumes. Looked for by the key and by the id it is
+    // published under, through line breaks, so a key pasted as wrapped PEM is found as well.
+    [Fact]
+    public void TheTestSigningKeys_AreNeverShipped()
+    {
+        var needles = TestSigningKeys.All
+            .SelectMany(key => new[] { key, TestSigningKeys.Store(key).CurrentKeyId })
+            .ToList();
+
+        DeploymentFiles.Shipped()
+            .Where(file =>
+            {
+                var text = string.Concat(File.ReadAllText(file).Replace("\\n", "").Where(c => !char.IsWhiteSpace(c)));
+                return needles.Any(needle => text.Contains(needle, StringComparison.Ordinal));
+            })
+            .ShouldBeEmpty("a test signing key in a shipped file is a key every reader of the repository holds");
     }
 }

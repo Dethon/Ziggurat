@@ -6,12 +6,15 @@ using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Judgments;
 using Domain.Metrics;
 using Domain.Prompts;
+using Domain.Security;
+using Domain.Security.Signing;
 using Domain.Skills;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -32,8 +35,14 @@ internal sealed class ConversationGroup(
     IMetricsPublisher metricsPublisher,
     IMemoryRecallHook? memoryRecallHook,
     ISkillPreloader? skillPreloader,
+    AssertionVerifier assertions,
+    DelegationVerifier? delegations,
     ILogger logger) : IAsyncDisposable
 {
+    // What a person whose turn was refused is told. Who they are is the one thing the agent could
+    // not believe, so it says no more than that; the reason is on the errors feed.
+    internal const string RefusedTurnAnswer = "This message could not be verified as yours, so it was not answered.";
+
     // The outer token: it ends with the monitor, not with a turn. The two establishing stages
     // that reach outside — minting the delivery targets and restoring the thread — run on it
     // rather than on the per-turn token, so a /cancel arriving mid-establish lets them finish
@@ -60,6 +69,11 @@ internal sealed class ConversationGroup(
     // Held from the moment it is created, not from the moment the group is established, so a
     // failure between the two still disposes it.
     private DisposableAgent? _agent;
+
+    // A turn the group has taken: the message as the agent believes it — its principal's account the
+    // one its assertion or its delegation verified — and the identity that verified, which the turn
+    // acts for to its end. Null for a fire no delegation stands behind, which acts for nobody.
+    private sealed record AdmittedTurn(IChannelConnection Channel, ChannelMessage Message, IdentityClaims? Identity);
 
     private sealed record GroupState(
         ChannelMessage AnchorMessage,
@@ -156,7 +170,7 @@ internal sealed class ConversationGroup(
     private async IAsyncEnumerable<TurnUpdate> RunTurnsSequentiallyAsync(
         IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)> messages)
     {
-        var pending = Channel.CreateUnbounded<(IChannelConnection Channel, ChannelMessage Message)>();
+        var pending = Channel.CreateUnbounded<AdmittedTurn>();
         // The message pump is stopped on the way out. Without that, a turn that throws would
         // wait here for a message stream that has no reason to end, and the error would never
         // reach the monitor.
@@ -308,7 +322,7 @@ internal sealed class ConversationGroup(
 
     private async Task DispatchCommandsAndQueueTurnsAsync(
         IAsyncEnumerable<(IChannelConnection Channel, ChannelMessage Message)> messages,
-        ChannelWriter<(IChannelConnection Channel, ChannelMessage Message)> writer,
+        ChannelWriter<AdmittedTurn> writer,
         CancellationToken pumpCt)
     {
         try
@@ -328,7 +342,11 @@ internal sealed class ConversationGroup(
                         // channel it always lands, so a message read just as teardown
                         // cancels the pump still reaches the pending queue, where the
                         // teardown drain names it instead of losing it to a cancelled write.
-                        writer.TryWrite(x);
+                        if (await AdmitAsync(x) is { } admitted)
+                        {
+                            writer.TryWrite(admitted);
+                        }
+
                         break;
                 }
             }
@@ -342,6 +360,113 @@ internal sealed class ConversationGroup(
         catch (Exception ex)
         {
             writer.TryComplete(ex);
+        }
+    }
+
+    // Who a person's turn acts for is the accounts service's word, never the channel server's: the
+    // assertion it arrived with must verify — signed by the accounts service, in date, for the channel
+    // it came on, a person or the household's guest — and the principal's account is then the one it
+    // named, whatever the channel put there (the channel's own name for the person stays). Checked
+    // here, as the message arrives, and never again: a turn queued behind a long one must not be
+    // refused for the minutes it waited, and once believed it acts for its person to its end.
+    //
+    // A fire, a login wake and a watch carry no assertion — nobody sent them at that moment. They act
+    // for the person a delegation the agent signed names, when it holds for this very fire, and for
+    // nobody otherwise; either way the fire runs, since nobody is waiting on it to be refused.
+    //
+    // On the group token, not the pump's: a /cancel arriving behind this message must not drop it
+    // half-checked rather than through the teardown drain that names it.
+    private async Task<AdmittedTurn?> AdmitAsync((IChannelConnection Channel, ChannelMessage Message) x)
+    {
+        if (x.Message.Origin is not null)
+        {
+            return await AdmitFireAsync(x.Channel, x.Message);
+        }
+
+        switch (await assertions.VerifyTurnAsync(x.Message.Assertion, x.Channel.ChannelId, _groupCt))
+        {
+            case TurnAdmission.Admitted { Identity: var identity }:
+                var named = x.Message.Principal ?? new Principal(x.Message.ChannelId, x.Message.Sender);
+                return new AdmittedTurn(
+                    x.Channel, x.Message with { Principal = named with { Account = identity.Account } }, identity);
+            case TurnAdmission.Refused { Reason: var reason }:
+                await RefuseAsync(x.Channel, x.Message, reason);
+                return null;
+            default:
+                throw new InvalidOperationException("An assertion was neither admitted nor refused.");
+        }
+    }
+
+    // Nothing the fire's server stamped on it is believed: the principal is the delegation's person,
+    // channel, account and all, or there is none, and the turn acts for nobody. What it asks is checked
+    // as it came, and only then framed with what its server reported beside it (FireReports).
+    private async Task<AdmittedTurn> AdmitFireAsync(IChannelConnection channel, ChannelMessage fire)
+    {
+        var admission = delegations is null
+            ? new FireAdmission.Undelegated(null)
+            : await delegations.VerifyFireAsync(fire, _groupCt);
+        var framed = fire with { Content = FireReports.Frame(fire.Content, fire.FireReport), FireReport = null };
+        switch (admission)
+        {
+            case FireAdmission.Delegated { Identity: var identity }:
+                return new AdmittedTurn(channel,
+                    framed with { Principal = new Principal(identity.ChannelId, identity.Subject, identity.Account) },
+                    identity);
+            case FireAdmission.Undelegated { Refusal: { } reason }:
+                logger.LogWarning(
+                    "A {Kind} fire on {ChannelId} for conversation {ConversationId} runs as nobody: its delegation was not believed ({Reason})",
+                    fire.Origin!.Kind, channel.ChannelId, fire.ConversationId, reason);
+                metricsPublisher.Publish(new ErrorEvent
+                {
+                    Service = "agent",
+                    ErrorType = ChatMonitor.DelegationRefusedErrorType,
+                    Message = $"A {fire.Origin.Kind} fire on {channel.ChannelId} for conversation {fire.ConversationId} runs as nobody: {reason}"
+                });
+                break;
+        }
+
+        return new AdmittedTurn(channel, framed with { Principal = null }, null);
+    }
+
+    // Reported where an operator looks, and answered on the channel the way a failed turn ends —
+    // an error, then the end of the stream — so a browser, a satellite or a waiting app request is
+    // not left waiting on a turn that will never run. Built here rather than by the reply dispatcher
+    // because there is no turn: nothing ran, so nothing was timed or delivered anywhere else.
+    private async Task RefuseAsync(IChannelConnection channel, ChannelMessage message, string reason)
+    {
+        logger.LogWarning(
+            "Refused a turn on {ChannelId} for conversation {ConversationId}: its assertion was not believed ({Reason})",
+            channel.ChannelId, message.ConversationId, reason);
+        metricsPublisher.Publish(new ErrorEvent
+        {
+            Service = "agent",
+            ErrorType = ChatMonitor.AssertionRefusedErrorType,
+            Message = $"A turn on {channel.ChannelId} for conversation {message.ConversationId} was refused: {reason}"
+        });
+
+        var turnKey = message.TurnKey ?? TurnKey.Mint();
+        try
+        {
+            await channel.SendReplyAsync(new SendReplyParams
+            {
+                ConversationId = message.ConversationId,
+                Content = RefusedTurnAnswer,
+                ContentType = ReplyContentType.Error,
+                IsComplete = false,
+                TurnKey = turnKey
+            }, _groupCt);
+            await channel.SendReplyAsync(new SendReplyParams
+            {
+                ConversationId = message.ConversationId,
+                Content = string.Empty,
+                ContentType = ReplyContentType.StreamComplete,
+                IsComplete = true,
+                TurnKey = turnKey
+            }, _groupCt);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Telling {ChannelId} its turn was refused failed", channel.ChannelId);
         }
     }
 
@@ -396,8 +521,7 @@ internal sealed class ConversationGroup(
     // and never answered, so a group whose messages are all commands — a /clear on a
     // conversation with no live group, routine after a restart — resolves no target, mints no
     // conversation, builds no agent, reads no thread and opens no MCP connection.
-    private async Task<GroupState> EnsureEstablishedAsync(
-        (IChannelConnection Channel, ChannelMessage Message) x)
+    private async Task<GroupState> EnsureEstablishedAsync(AdmittedTurn x)
     {
         if (_state is not null)
         {
@@ -423,8 +547,7 @@ internal sealed class ConversationGroup(
         return _state = new GroupState(x.Message, targets, deliveryKey, agent, thread, warmup);
     }
 
-    private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(
-        (IChannelConnection Channel, ChannelMessage Message) x)
+    private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(AdmittedTurn x)
     {
         var state = await EnsureEstablishedAsync(x);
         var targets = await ResolveTurnTargetsAsync(x, state);
@@ -444,7 +567,7 @@ internal sealed class ConversationGroup(
         // (voice does). Everything else arrives without one, and gets one here, so from this point
         // on every turn has a key whichever channel the message came from.
         var turn = new Turn(
-            x.Message, targets, firstReply, x.Message.TurnKey ?? TurnKey.Mint());
+            x.Message, targets, firstReply, x.Message.TurnKey ?? TurnKey.Mint(), x.Identity);
         // Agent-initiated turns (downloads, schedules) land in conversations with no live
         // stream on the receiving channel; announce the turn so the channel can set one up
         // before reply chunks arrive.
@@ -500,8 +623,7 @@ internal sealed class ConversationGroup(
     // The group anchors cover the initiating message and any ReplyTo fan-out (re-resolving
     // the latter would re-mint conversations); a subsequent plain interactive message is
     // routed back to its own origin instead of the opening channel.
-    private async Task<IReadOnlyList<DeliveryTarget>> ResolveTurnTargetsAsync(
-        (IChannelConnection Channel, ChannelMessage Message) x, GroupState state)
+    private async Task<IReadOnlyList<DeliveryTarget>> ResolveTurnTargetsAsync(AdmittedTurn x, GroupState state)
     {
         // The anchors belong to the turn they were resolved from — the group's first — and
         // that is answered by identity, not by counting messages.
@@ -535,8 +657,10 @@ internal sealed class ConversationGroup(
         userMessage.SetAttachmentChannelId(
             message.Attachments is { Count: > 0 } ? message.ChannelId : null);
         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
+        // Who the turn acts for rides on its context, which every call the turn makes carries: the
+        // agent signs each one as this identity, a worker's included, for as long as the turn runs.
         userMessage.SetConversationContext(
-            DeliveryTargetResolver.BuildConversationContext(message, turn.Targets));
+            DeliveryTargetResolver.BuildConversationContext(message, turn.Targets) with { Identity = turn.Identity });
         if (skillPreloader is not null)
         {
             // Started here and awaited by nobody here: the judgment runs while recall makes its

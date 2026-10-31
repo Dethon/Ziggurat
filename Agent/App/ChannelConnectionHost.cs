@@ -11,12 +11,26 @@ public class ChannelConnectionHost(
     ChannelEndpoint[] endpoints,
     IReadOnlyList<IMcpChannelConnection> connections,
     Func<IReadOnlyList<AgentCatalogEntry>> agentCatalog,
-    ILogger<ChannelConnectionHost> logger) : BackgroundService
+    ILogger<ChannelConnectionHost> logger,
+    // Trips once the agent's own HTTP host is listening (the host's ApplicationStarted). A channel
+    // server checks the first tool call it takes against the keys the agent publishes there, and a
+    // fetch that finds nobody home leaves the server refusing until it may fetch again — so nothing
+    // is dialled before. A token that can never trip waits for nothing.
+    CancellationToken listening = default) : BackgroundService
 {
     private readonly Dictionary<string, string> _endpointMap = BuildEndpointMap(endpoints);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (listening.CanBeCanceled && !listening.IsCancellationRequested)
+        {
+            var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using (listening.Register(() => started.TrySetResult()))
+            {
+                await started.Task.WaitAsync(stoppingToken);
+            }
+        }
+
         var endpointMap = _endpointMap;
 
         var connectionIds = connections.Select(c => c.ChannelId).ToHashSet();

@@ -77,7 +77,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
             .AddSingleton<ApprovalService>()
             .AddSingleton(new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast))
-            .AddSingleton<IAccountResolver>(new NamedAccounts())
+            .AddSingleton<ISessionAccounts>(new NamedAccounts())
             .AddSingleton(catalog.Object)
             .AddSingleton<IThreadStateStore>(_store)
             .AddSingleton<IConversationFactory>(new ConversationFactory(_store, TimeProvider.System))
@@ -89,7 +89,8 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
                 new AttachmentStore(attachmentSettings, new RetentionSettings(), new FakeConversationLiveness(), time, NullLogger<AttachmentStore>.Instance),
                 NullLogger<AttachmentService>.Instance))
             .AddSingleton(new RetentionSettings())
-            .AddSingleton(new DictationSettings());
+            .AddSingleton(new DictationSettings())
+            .AddSingleton(TestAssertions.Verifier());
 
         _app = builder.Build();
         _app.MapHub<ChatHub>("/hubs/chat");
@@ -742,6 +743,8 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
                 options.Headers[ForwardedAccount.UserHeader] = userId;
                 options.Headers[ForwardedAccount.TenantHeader] = Home;
                 options.Headers[ForwardedAccount.RolesHeader] = string.Join(',', ["member", .. roles]);
+                options.Headers[ForwardedAccount.AssertionHeader] =
+                    TestAssertions.Of(new Account(Home, userId), ChannelIds.SignalR, ["member", .. roles], sessionId: $"session-{userId}");
             })
             .Build();
         _connections.Add(connection);
@@ -757,11 +760,13 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         await stream.ToListAsync(timeout.Token);
     }
 
-    // Each person goes by their id with its first letter raised.
-    private sealed class NamedAccounts : IAccountResolver
+    // Each person goes by their id with its first letter raised, their every session live and vouched
+    // for as the service would.
+    private sealed class NamedAccounts : ISessionAccounts
     {
-        public Task<ResolvedAccount?> ResolveAsync(string channel, string identity, CancellationToken ct) =>
-            Task.FromResult<ResolvedAccount?>(
-                new ResolvedAccount(new Account(Home, identity), char.ToUpperInvariant(identity[0]) + identity[1..]));
+        public Task<ResolvedAccount?> SessionAsync(string userId, string sessionId, CancellationToken ct) =>
+            Task.FromResult<ResolvedAccount?>(new ResolvedAccount(
+                new Account(Home, userId), char.ToUpperInvariant(userId[0]) + userId[1..],
+                TestAssertions.Of(new Account(Home, userId), ChannelIds.SignalR, sessionId: sessionId)));
     }
 }

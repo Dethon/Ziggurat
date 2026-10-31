@@ -1,9 +1,9 @@
 using System.ComponentModel;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.Tools;
 using Domain.Tools.Files;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -21,7 +21,7 @@ public class McpFileSearchTool(
         string[] searchStrings,
         CancellationToken cancellationToken)
     {
-        if (!ConversationScope.TryResolve(context.Params?.Meta, out var sessionId))
+        if (!context.TryScope(out var sessionId))
         {
             return ToolResponse.Create(ToolError.Create(
                 ToolError.Codes.InvalidArgument,

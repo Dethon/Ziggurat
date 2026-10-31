@@ -2,6 +2,7 @@ using System.Net;
 using Accounts.Members;
 using Accounts.Sessions;
 using Domain.Security;
+using Domain.Security.Signing;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -25,6 +26,72 @@ public class SessionCheckTests
         response.Headers.GetValues("X-Ziggurat-User").ShouldBe([fran.UserId]);
         response.Headers.GetValues("X-Ziggurat-Tenant").ShouldBe([fran.TenantId]);
         response.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["owner,operator"]);
+    }
+
+    // The fourth header vouches for the other three: signed by this service, it names the person,
+    // their household and roles, and the channel the proxy asked for, which is the channel the turn
+    // it starts must come on.
+    [Theory]
+    [InlineData("signalr")]
+    [InlineData("sugary")]
+    public async Task ASession_IsAnsweredWithAnAssertionOfItsPersonOnTheChannelAsked(string channel)
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+
+        var response = await server.VerifyAsync(await server.MintSessionAsync(fran.UserId), channel: channel);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var assertion = await server.VerifyAssertionAsync(response.Headers.GetValues(ForwardedAccount.AssertionHeader).Single());
+        assertion.IsVerified.ShouldBeTrue(assertion.Refusal.ToString());
+        assertion.Claims.Subject.ShouldBe(fran.UserId);
+        assertion.Claims.TenantId.ShouldBe(fran.TenantId);
+        assertion.Claims.ChannelId.ShouldBe(channel);
+        assertion.Claims.Roles.ShouldBe(["owner", "operator"]);
+        assertion.Claims.IsGuest.ShouldBeFalse();
+    }
+
+    // The assertion also names the session it was checked for, which is what the chat hub refreshes
+    // a connection's person by: while that session lives, and not after it is revoked.
+    [Fact]
+    public async Task ASessionsAssertion_NamesTheSessionItWasCheckedFor()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var phone = (await server.Service<SessionStore>().IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
+
+        var response = await server.VerifyAsync(phone.Token);
+
+        var assertion = await server.VerifyAssertionAsync(response.Headers.GetValues(ForwardedAccount.AssertionHeader).Single());
+        assertion.Claims.ShouldNotBeNull().SessionId.ShouldBe(phone.Id);
+    }
+
+    [Fact]
+    public async Task AnAssertion_LivesTenMinutes()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var response = await server.VerifyAsync(await server.MintSessionAsync(fran.UserId));
+        var assertion = response.Headers.GetValues(ForwardedAccount.AssertionHeader).Single();
+
+        server.Clock.Advance(TimeSpan.FromMinutes(9));
+        (await server.VerifyAssertionAsync(assertion)).IsVerified.ShouldBeTrue();
+        server.Clock.Advance(TimeSpan.FromMinutes(2));
+        (await server.VerifyAssertionAsync(assertion)).Refusal.ShouldBe(TokenRefusal.Expired);
+    }
+
+    // Every forward_auth names the channel or app it guards, so no route can be handed an assertion
+    // naming no channel: a block that forgets is refused outright rather than half working.
+    [Fact]
+    public async Task ACheckNamingNoChannel_Is400()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+
+        var response = await server.VerifyAsync(await server.MintSessionAsync(fran.UserId), channel: null);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        response.Headers.Contains(ForwardedAccount.AssertionHeader).ShouldBeFalse();
     }
 
     [Fact]
@@ -96,6 +163,7 @@ public class SessionCheckTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         response.Headers.Contains("X-Ziggurat-User").ShouldBeFalse();
+        response.Headers.Contains(ForwardedAccount.AssertionHeader).ShouldBeFalse();
     }
 
     [Fact]

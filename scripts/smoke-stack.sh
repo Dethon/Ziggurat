@@ -32,7 +32,7 @@ DC=(docker compose -f DockerCompose/docker-compose.yml -f "$OS_OVERRIDE"
 # Every server an agent dials is here, since a session whose configured server does not answer fails
 # to build. The library and Home Assistant servers reach only qBittorrent, Jackett and Home
 # Assistant by their compose names, none of which is started, so they answer and touch nothing.
-SERVICES=(redis accounts-volume mcp-sugary-volume accounts camoufox mcp-vault mcp-sandbox
+SERVICES=(redis accounts-volume agent-volume mcp-sugary-volume accounts camoufox mcp-vault mcp-sandbox
           mcp-websearch mcp-idealista mcp-library mcp-homeassistant mcp-channel-signalr
           mcp-scheduling mcp-printer mcp-timers mcp-sugary agent webui observability caddy)
 
@@ -47,7 +47,7 @@ export Announce__Token="${Announce__Token:-local-announce-token}"
 
 case "${1:-}" in
   up)
-    mkdir -p DockerCompose/volumes/smoke/{redis,accounts,sugary,sandbox,vault,media,caddy_data,caddy_config}
+    mkdir -p DockerCompose/volumes/smoke/{redis,accounts,agent-keys,sugary,sandbox,vault,media,caddy_data,caddy_config}
     "${DC[@]}" build base-sdk
     "${DC[@]}" build "${SERVICES[@]}"
     "${DC[@]}" up -d --no-deps "${SERVICES[@]}"
@@ -64,8 +64,12 @@ case "${1:-}" in
     ;;
   down)
     "${DC[@]}" down --volumes --remove-orphans
-    # The containers wrote as their own users; a throwaway container removes what they wrote.
-    docker run --rm -v "$ROOT/DockerCompose/volumes:/v" alpine rm -rf /v/smoke
+    # The containers wrote as their own users; a throwaway container removes what they wrote. Only
+    # where there is something: bind-mounting a missing ./volumes makes Docker create it as root,
+    # and the next up could then not make its directories.
+    if [[ -d DockerCompose/volumes/smoke ]]; then
+      docker run --rm -v "$ROOT/DockerCompose/volumes:/v" alpine rm -rf /v/smoke
+    fi
     ;;
   *)
     echo "usage: $0 up|test|migrate|down" >&2

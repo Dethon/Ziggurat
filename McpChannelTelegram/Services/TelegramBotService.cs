@@ -174,11 +174,11 @@ public sealed class TelegramBotService : BackgroundService
             return;
         }
 
-        // The turn's sender stays the username, which the approval router is keyed by.
-        // A person with no username has nothing else stable to go by, so their id stands in.
+        // The turn's sender stays the username, the name the agent shows the model; a person with
+        // no username has nothing else to go by, so their id stands in. Who the turn is, approvals
+        // included, is the account the assertion names.
         var from = first.From!;
         var sender = from.Username ?? $"{from.Id}";
-        _approvalCallbackRouter.RecordSender(sender, from.Id);
 
         _botRegistry.RegisterChatAgent(chatId, agentId);
 
@@ -230,6 +230,9 @@ public sealed class TelegramBotService : BackgroundService
                 // The turn acts for the account; its user id stays the sender, the name the approval
                 // router still knows the person by.
                 Principal = new Principal(ChannelIds.Telegram, sender, person.Account),
+                // What the agent believes about who this is: the accounts service's word from the
+                // answer that admitted the sender (TelegramAccess keeps it no longer than LinkCache).
+                Assertion = person.Assertion,
                 Attachments = intake.Attachments.Count > 0 ? intake.Attachments : null,
                 ReviewCopy = ReviewOf(first.Chat, person),
                 Timestamp = DateTimeOffset.UtcNow

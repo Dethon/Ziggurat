@@ -7,15 +7,20 @@ using Domain.Security;
 namespace Infrastructure.Clients.Accounts;
 
 // The accounts service's internal API, asked with the caller's own MCP credential: whose an identity
-// is, and for the Telegram bot the ways in it redeems. The service spells its requests and answers
+// is, signed (the assertion a channel carries on the person's turn), the household's guest for a
+// satellite, the chat hub's person by the session its connection signed in with, and for the Telegram
+// bot the ways in it redeems. The service spells its requests and answers
 // for itself (it references no project here), so the wire shape is the records below and the
 // camelCase the web defaults give both ends. A refusal the service means is a status this maps to an
 // outcome; any other is a failure, thrown, so a caller never mistakes an outage for a stranger.
-public sealed class AccountsResolverClient(HttpClient http, string credential) : IAccountResolver, ITelegramAccounts
+public sealed class AccountsResolverClient(HttpClient http, string credential)
+    : IAccountResolver, ITelegramAccounts, ISessionAccounts
 {
     public const string ClientName = "accounts";
 
     private const string ResolvePath = "accounts/internal/resolve";
+    private const string GuestPath = "accounts/internal/guest";
+    private const string SessionPath = "accounts/internal/session";
     private const string TelegramPath = "accounts/internal/telegram/";
 
     public async Task<ResolvedAccount?> ResolveAsync(string channel, string identity, CancellationToken ct)
@@ -27,7 +32,26 @@ public sealed class AccountsResolverClient(HttpClient http, string credential) :
         }
 
         var answer = await ReadAsync<Answer>(response, ct);
-        return new ResolvedAccount(new Account(answer.TenantId, answer.UserId), answer.DisplayName);
+        return new ResolvedAccount(new Account(answer.TenantId, answer.UserId), answer.DisplayName, answer.Assertion);
+    }
+
+    public async Task<ResolvedAccount?> SessionAsync(string userId, string sessionId, CancellationToken ct)
+    {
+        using var response = await PostAsync(SessionPath, new SessionQuery(userId, sessionId), ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        var answer = await ReadAsync<Answer>(response, ct);
+        return new ResolvedAccount(new Account(answer.TenantId, answer.UserId), answer.DisplayName, answer.Assertion);
+    }
+
+    public async Task<ResolvedGuest> GuestAsync(string channel, CancellationToken ct)
+    {
+        using var response = await PostAsync(GuestPath, new GuestQuery(channel), ct);
+        var guest = await ReadAsync<Guest>(response, ct);
+        return new ResolvedGuest(guest.TenantId, guest.Assertion);
     }
 
     public async Task<TelegramStart> RedeemStartAsync(long telegramId, string code, CancellationToken ct)
@@ -44,7 +68,7 @@ public sealed class AccountsResolverClient(HttpClient http, string credential) :
         var started = await ReadAsync<Started>(response, ct);
         return new TelegramStart(
             started.Outcome == "invited" ? TelegramStartOutcome.Invited : TelegramStartOutcome.Linked,
-            new ResolvedAccount(new Account(started.TenantId, started.UserId), started.DisplayName));
+            new ResolvedAccount(new Account(started.TenantId, started.UserId), started.DisplayName, started.Assertion));
     }
 
     public async Task<TelegramWebLink> MintWebLinkAsync(long telegramId, CancellationToken ct)
@@ -108,11 +132,17 @@ public sealed class AccountsResolverClient(HttpClient http, string credential) :
 
     private sealed record Query(string Channel, string Identity);
 
-    private sealed record Answer(string TenantId, string UserId, string DisplayName);
+    private sealed record SessionQuery(string UserId, string SessionId);
+
+    private sealed record Answer(string TenantId, string UserId, string DisplayName, string Assertion);
+
+    private sealed record GuestQuery(string Channel);
+
+    private sealed record Guest(string TenantId, string Assertion);
 
     private sealed record StartQuery(long TelegramId, string Code);
 
-    private sealed record Started(string Outcome, string TenantId, string UserId, string DisplayName);
+    private sealed record Started(string Outcome, string TenantId, string UserId, string DisplayName, string Assertion);
 
     private sealed record PersonQuery(long TelegramId);
 

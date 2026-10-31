@@ -1,3 +1,4 @@
+using Domain.Security.Signing;
 using JetBrains.Annotations;
 
 namespace Domain.DTOs.Channel;
@@ -14,6 +15,13 @@ namespace Domain.DTOs.Channel;
 // Principal is who the turn acts for, as the channel that vouched for them. UserId alone cannot
 // say that on a fire: a schedule's userId is whatever its JSON said and its origin is where it
 // delivers, so a server that acts as a person reads the principal and nothing else.
+//
+// Identity is who the turn acts for as the agent verified it when the turn arrived — the person or
+// the household's guest its assertion named, or the person a fire's delegation named, out of the
+// token's envelope — and what the agent signs every one of the turn's calls as, however long the turn
+// runs. Null on a turn nothing verified (a fire no delegation stands behind, a download), which acts
+// for nobody. It rides the _meta beside the rest, and a server never believes it there: CallTurn
+// answers the call token's in its place.
 [PublicAPI]
 public record ConversationContext(
     string AgentId,
@@ -22,7 +30,8 @@ public record ConversationContext(
     ReplyTarget Origin,
     string? ConfigPatchModel = null,
     MessageOriginKind? OriginKind = null,
-    Principal? Principal = null)
+    Principal? Principal = null,
+    IdentityClaims? Identity = null)
 {
     // Where the approval client puts the conversation a call serves on that call's own arguments,
     // beside ToolPermission's: a tool acting outside the turn reads who it acts for from there.

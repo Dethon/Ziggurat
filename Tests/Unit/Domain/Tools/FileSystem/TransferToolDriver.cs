@@ -16,14 +16,14 @@ internal static class TransferToolDriver
         string srcVirtual, string dstVirtual,
         bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
         new VfsCopyTool(Registry(src, dst, srcVirtual, dstVirtual))
-            .RunAsync(srcVirtual, dstVirtual, overwrite, createDirectories, ct);
+            .RunAsync(srcVirtual, dstVirtual, overwrite, createDirectories, cancellationToken: ct);
 
     public static Task<JsonNode> MoveAsync(
         FileSystemResolution src, FileSystemResolution dst,
         string srcVirtual, string dstVirtual,
         bool overwrite = false, bool createDirectories = true, CancellationToken ct = default) =>
         new VfsMoveTool(Registry(src, dst, srcVirtual, dstVirtual))
-            .RunAsync(srcVirtual, dstVirtual, overwrite, createDirectories, ct);
+            .RunAsync(srcVirtual, dstVirtual, overwrite, createDirectories, cancellationToken: ct);
 
     private static IVirtualFileSystemRegistry Registry(
         FileSystemResolution src, FileSystemResolution dst, string srcVirtual, string dstVirtual)

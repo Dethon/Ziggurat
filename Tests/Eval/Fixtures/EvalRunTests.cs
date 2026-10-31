@@ -1,4 +1,7 @@
+using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Domain.Security;
 using Microsoft.Extensions.AI;
 using Shouldly;
 using Tests.Eval.Harness;
@@ -104,6 +107,67 @@ public class EvalRunChannelTurnTests
         {
             File.Delete(photo);
         }
+    }
+
+    // No monitor stands between an eval and its agent, so the run stamps who the turn acts for
+    // itself: exactly what the agent's turn-start check answers for the eval account's assertion,
+    // signed with the accounts test key for the turn's channel.
+    [Fact]
+    public async Task ATurn_ActsForWhatTheAgentWouldHaveVerified()
+    {
+        var turn = EvalRun.Turn(Formatted(), "eval:test").GetConversationContext().ShouldNotBeNull();
+        var channel = turn.Origin.ChannelId;
+
+        var verified = (await TestAssertions.Verifier().VerifyTurnAsync(
+                TestAssertions.Of(EvalRun.Account, channel, EvalRun.Roles), channel, CancellationToken.None))
+            .ShouldBeOfType<TurnAdmission.Admitted>().Identity;
+
+        var identity = turn.Identity.ShouldNotBeNull();
+        identity.Subject.ShouldBe(verified.Subject);
+        identity.TenantId.ShouldBe(verified.TenantId);
+        identity.ChannelId.ShouldBe(verified.ChannelId);
+        identity.Roles.ShouldBe(verified.Roles);
+        identity.ShouldBe(verified with { Roles = identity.Roles });
+    }
+
+    // A fire carries no assertion in the deployment either — nobody sent it at that moment — and acts
+    // for the person whose write the agent signed its delegation on: an eval's fire stands in for one
+    // the eval account wrote from the fire's channel.
+    [Fact]
+    public async Task AFire_ActsForWhatItsDelegationWouldHaveVerified()
+    {
+        var fire = Formatted() with { Turn = Formatted().Turn with { Origin = MessageOriginKind.Schedule } };
+        var turn = EvalRun.Turn(fire, "eval:test").GetConversationContext().ShouldNotBeNull();
+        var channel = turn.Origin.ChannelId;
+        var schedule = new Schedule { Id = "s-1", AgentId = "jonas", Prompt = "summarize", CronExpression = "0 8 * * *" };
+
+        var verified = (await TestDelegations.Verifier().VerifyFireAsync(new ChannelMessage
+        {
+            ConversationId = "sched-s-1-1",
+            Content = schedule.Prompt,
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = schedule.AgentId,
+            ReplyTo = [new ReplyTarget(ChannelIds.SignalR, null)],
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, schedule.Id),
+            Delegation = TestDelegations.OfSchedule(EvalRun.Account, channel, schedule)
+        }, CancellationToken.None))
+            .ShouldBeOfType<FireAdmission.Delegated>().Identity;
+
+        var identity = turn.Identity.ShouldNotBeNull();
+        identity.Subject.ShouldBe(verified.Subject);
+        identity.TenantId.ShouldBe(verified.TenantId);
+        identity.ChannelId.ShouldBe(verified.ChannelId);
+        identity.Roles.ShouldBe(verified.Roles);
+    }
+
+    // A finished download reports back without acting as anybody, in the deployment and here.
+    [Fact]
+    public void ADownloadsFire_CarriesNoIdentity()
+    {
+        var fire = Formatted() with { Turn = Formatted().Turn with { Origin = MessageOriginKind.Download } };
+
+        EvalRun.Turn(fire, "eval:test").GetConversationContext().ShouldNotBeNull().Identity.ShouldBeNull();
     }
 
     [Fact]

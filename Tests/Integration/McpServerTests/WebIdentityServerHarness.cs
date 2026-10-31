@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security.Signing;
 using McpServerWebSearch.Handoff;
 using McpServerWebSearch.Modules;
 using McpServerWebSearch.Settings;
@@ -36,13 +37,19 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
 
     public RecordingBrowser Browser { get; }
 
-    public string BaseAddress { get; }
+    // The listener the agent dials, and the one the proxy routes /browse/* to: a person's browser
+    // only ever reaches the second.
+    public string McpAddress { get; }
 
-    private WebIdentityServerHarness(WebApplication app, string baseAddress, RecordingBrowser browser)
+    public string PagesAddress { get; }
+
+    private WebIdentityServerHarness(
+        WebApplication app, string mcpAddress, string pagesAddress, RecordingBrowser browser)
     {
         _app = app;
-        BaseAddress = baseAddress;
-        _endpoint = $"{baseAddress}/mcp";
+        McpAddress = mcpAddress;
+        PagesAddress = pagesAddress;
+        _endpoint = $"{mcpAddress}/mcp";
         Browser = browser;
     }
 
@@ -54,18 +61,22 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
         bool loggedIn = true)
     {
         var browser = new RecordingBrowser();
-        var port = TestPort.GetAvailable();
-        var baseAddress = $"http://localhost:{port}";
+        var listeners = new ListenerConfiguration { Mcp = TestPort.GetAvailable(), Pages = TestPort.GetAvailable() };
 
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.WebHost.UseKestrel(options =>
+        {
+            options.Listen(IPAddress.Loopback, listeners.Mcp);
+            options.Listen(IPAddress.Loopback, listeners.Pages);
+        });
         var configured = new McpSettings
         {
             BraveSearch = new BraveSearchConfiguration { ApiKey = "test" },
             Camoufox = null,
             CapSolver = null,
             RedisConnectionString = McpServerRegistrations.UnreachableRedis,
-            Mcp = McpTestSecret.Gate
+            Mcp = McpTestSecret.Gate,
+            Listeners = listeners
         };
         builder.Services.ConfigureMcp(settings?.Invoke(configured) ?? configured);
         builder.Services.RemoveAll<IWebBrowser>();
@@ -82,7 +93,8 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
         app.MapMcp("/mcp");
         app.MapHandoff();
         await app.StartAsync();
-        return new WebIdentityServerHarness(app, baseAddress, browser);
+        return new WebIdentityServerHarness(
+            app, $"http://localhost:{listeners.Mcp}", $"http://localhost:{listeners.Pages}", browser);
     }
 
     public async Task<CallToolResult> CallAsync(
@@ -120,9 +132,14 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
     public static ConversationContext FromVoice(Account account, string conversationId = "voice-9", string address = "kitchen-01") =>
         Context(account.UserId, account, conversationId, channelId: "voice", address: address);
 
-    // The satellite heard nobody it knows: the voice channel's guest, with no account.
+    // The satellite heard nobody it knows: the voice channel's guest, with no account — signed as the
+    // household's guest, which is what the agent's call names for a turn the accounts service vouched
+    // for as the guest.
     public static ConversationContext FromVoiceGuest(string conversationId = "voice-9") =>
-        Context("household", null, conversationId, channelId: "voice", address: "kitchen-01");
+        Context(IdentityClaims.GuestSubject, null, conversationId, channelId: "voice", address: "kitchen-01") with
+        {
+            Identity = IdentityClaims.Guest("home", "voice")
+        };
 
     public static JsonObject MetaFor(ConversationContext context) => new()
     {

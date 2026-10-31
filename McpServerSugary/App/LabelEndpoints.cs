@@ -59,7 +59,7 @@ public static class LabelEndpoints
         var conversation = ConversationIdGenerator.CreateFor(ConversationIdGenerator.NewTopicId()).ConversationId;
         var attachments = await PhotoUpload.StoreAsync(conversation, photos, uploads, ct);
         var reply = await channel.AskAsync(
-            person.Account, conversation, LabelTurn.Text(form["language"].ToString()), NutritionLabelSchema.Format,
+            person.Account, person.Assertion, conversation, LabelTurn.Text(form["language"].ToString()), NutritionLabelSchema.Format,
             attachments,
             new AgentConfigPatch { Model = settings.LabelModel },
             new ReviewCopy { Title = ReviewTitle }, ct);

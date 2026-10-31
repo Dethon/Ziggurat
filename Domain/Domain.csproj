@@ -17,6 +17,7 @@
            per host, and what puts it in each container image without a Dockerfile knowing. -->
       <Content Include="retention.json" CopyToOutputDirectory="PreserveNewest" />
       <Content Include="delivery.json" CopyToOutputDirectory="PreserveNewest" />
+      <Content Include="token-verification.json" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>

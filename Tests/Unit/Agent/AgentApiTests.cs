@@ -26,6 +26,9 @@ namespace Tests.Unit.Agent;
 public class AgentApiTests
 {
     private const string Secret = "s3cret";
+    private const string Home = "home";
+    private const string UnsetAssertion = "(signed for the user)";
+    private static readonly Account Alice = new(Home, "alice");
 
     private static readonly CustomAgentRegistration _registration = new()
     {
@@ -140,22 +143,52 @@ public class AgentApiTests
         (await ListAsync(client, "alice")).ShouldBe([agent]);
     }
 
-    // A custom agent belongs to somebody: a call naming nobody is refused before the catalogue is
-    // read or written, rather than filed under the query's user or none.
+    // A custom agent belongs to somebody, and the secret alone names nobody: whoever holds it could
+    // write any X-Ziggurat-User it liked. Without an assertion the accounts service signed for
+    // SexyTime — none at all beside a plain header naming alice, one signed by a key the service
+    // does not publish, one signed for another app's route, or the household's guest — the call is
+    // signed out, refused before the catalogue is read or written.
+    public static TheoryData<string, string, string?> Unbelieved =>
+        new[] { "GET", "POST", "DELETE" }.Aggregate(
+            new TheoryData<string, string, string?>(), (data, verb) =>
+            {
+                data.Add(verb, "none", null);
+                data.Add(verb, "forged", TestAssertions.Forged(Alice, AppChannels.SexyTime));
+                data.Add(verb, "for the chat hub", TestAssertions.Of(Alice, ChannelIds.SignalR));
+                data.Add(verb, "the guest", TestAssertions.OfGuest(Alice.TenantId, AppChannels.SexyTime));
+                return data;
+            });
+
     [Theory]
-    [InlineData("GET")]
-    [InlineData("POST")]
-    [InlineData("DELETE")]
-    public async Task AVerbWithTheSecretButNoForwardedPerson_IsABadRequestAndTouchesNothing(string verb)
+    [MemberData(nameof(Unbelieved))]
+    public async Task AVerbWithTheSecretButNoBelievableAssertion_IsUnauthorizedAndTouchesNothing(
+        string verb, string _, string? assertion)
     {
         var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
         await using var app = await StartAsync(provider.Object, Secret);
         using var client = app.GetTestClient();
 
-        using var response = await client.SendAsync(Request(verb, "Bearer " + Secret));
+        using var response = await client.SendAsync(Request(verb, "Bearer " + Secret, user: "alice", assertion: assertion));
 
-        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         provider.VerifyNoOtherCalls();
+    }
+
+    // Whose catalogue it is was signed; a plain header naming somebody else changes nothing.
+    [Fact]
+    public async Task AnAssertionNamingAlice_UnderAHeaderNamingMallory_ListsAlicesCatalogue()
+    {
+        var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
+        provider.Setup(p => p.GetAll("alice")).Returns([_registered]);
+        await using var app = await StartAsync(provider.Object, Secret);
+        using var client = app.GetTestClient();
+
+        using var response = await client.SendAsync(Request(
+            "GET", "Bearer " + Secret, user: "mallory", assertion: TestAssertions.Of(Alice, AppChannels.SexyTime)));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<AgentCatalogEntry[]>())
+            .ShouldBe([new AgentCatalogEntry("custom-1", "Helper", "Helps")]);
     }
 
     // A page reaches the API with a visitor's credentials, so only an origin the agent's own
@@ -187,6 +220,7 @@ public class AgentApiTests
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton(provider);
+        builder.Services.AddSingleton(TestAssertions.Verifier());
         builder.Services.AddDeploymentCors(cors ?? new CorsSettings());
 
         var app = builder.Build();
@@ -211,9 +245,12 @@ public class AgentApiTests
         return (await response.Content.ReadFromJsonAsync<AgentCatalogEntry[]>())!;
     }
 
-    // Every request also names somebody else in the query, the parameter the API once read.
+    // Every request also names somebody else in the query, the parameter the API once read. A user
+    // is sent as SexyTime's server forwards them: the plain header and, unless a test chooses its
+    // own, the assertion the session check signed for SexyTime.
     private static HttpRequestMessage Request(
-        string verb, string? authorization, string? user = null, string agentId = "custom-1")
+        string verb, string? authorization, string? user = null, string agentId = "custom-1",
+        string? assertion = UnsetAssertion)
     {
         var request = verb switch
         {
@@ -234,6 +271,14 @@ public class AgentApiTests
         if (user is not null)
         {
             request.Headers.Add(ForwardedAccount.UserHeader, user);
+        }
+
+        assertion = assertion == UnsetAssertion
+            ? user is null ? null : TestAssertions.Of(new Account(Home, user), AppChannels.SexyTime)
+            : assertion;
+        if (assertion is not null)
+        {
+            request.Headers.Add(ForwardedAccount.AssertionHeader, assertion);
         }
 
         return request;

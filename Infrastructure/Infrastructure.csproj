@@ -40,8 +40,12 @@
     <PackageReference Include="Terminal.Gui" Version="2.5.0" />
     </ItemGroup>
 
+    <!-- Mcp.Hosting for the one accessor a server reads who a call acts for through (CallTurn):
+         the fs_* registrar here is server-side code, and a second reading of the call's _meta
+         would be the one a later check could not reach. The reverse reference stays forbidden. -->
     <ItemGroup>
       <ProjectReference Include="..\Domain\Domain.csproj" />
+      <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
     </ItemGroup>
 
 

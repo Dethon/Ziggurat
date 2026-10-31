@@ -17,10 +17,11 @@ public sealed class ScheduleFileSystem(
 {
     public const string Name = "schedules";
 
-    // Who is writing: a schedule runs as the turn that last wrote it, so every write records that
-    // turn's principal. The server's one instance has no caller, and the registrar asks for a view
-    // per call.
+    // Who is writing: every write records that turn's principal, and keeps the delegation the agent
+    // signed for it — or none, when the write carried none — which is what the schedule's fire acts
+    // as. The server's one instance has no caller, and the registrar asks for a view per call.
     private ConversationContext? _caller;
+    private string? _delegation;
 
     // A shallow copy with the caller swapped, as HaFileSystem does: the copy carries every
     // dependency this mount was built with, and the store is shared by reference.
@@ -28,6 +29,7 @@ public sealed class ScheduleFileSystem(
     {
         var view = (ScheduleFileSystem)MemberwiseClone();
         view._caller = caller.Conversation;
+        view._delegation = caller.Delegation;
         return view;
     }
 
@@ -303,6 +305,7 @@ public sealed class ScheduleFileSystem(
             RunAt = spec.RunAt,
             UserId = spec.UserId,
             CreatedBy = Principal.Of(_caller),
+            Delegation = _delegation,
             DeliverTo = spec.DeliverTo,
             CreatedAt = timeProvider.GetUtcNow().UtcDateTime,
             NextRunAt = ComputeNextRunAt(spec)
@@ -357,6 +360,7 @@ public sealed class ScheduleFileSystem(
             RunAt = spec.RunAt,
             UserId = spec.UserId,
             CreatedBy = Principal.Of(_caller),
+            Delegation = _delegation,
             DeliverTo = spec.DeliverTo,
             NextRunAt = timingChanged ? ComputeNextRunAt(spec) : existing.NextRunAt
         };
@@ -401,7 +405,13 @@ public sealed class ScheduleFileSystem(
         }
 
         await store.CreateAsync(
-            existing with { Id = dst.ScheduleId!, AgentId = dst.AgentId!, CreatedBy = Principal.Of(_caller) }, ct);
+            existing with
+            {
+                Id = dst.ScheduleId!,
+                AgentId = dst.AgentId!,
+                CreatedBy = Principal.Of(_caller),
+                Delegation = _delegation
+            }, ct);
         return new FsResult<FsMoveResult>.Ok(new FsMoveResult
         {
             Status = "moved", Message = "reassigned", Source = sourcePath, Destination = destinationPath
@@ -468,7 +478,7 @@ public sealed class ScheduleFileSystem(
             Truncated = false, TimedOut = false, DurationMs = 0, Cwd = cwd
         });
 
-    private sealed record SpecDto
+    internal sealed record SpecDto
     {
         public string? Prompt { get; init; }
         public string? Cron { get; init; }
@@ -477,7 +487,7 @@ public sealed class ScheduleFileSystem(
         public IReadOnlyList<string>? DeliverTo { get; init; }
     }
 
-    private static SpecDto? ParseSpec(string content, out ToolErrorResult? error)
+    internal static SpecDto? ParseSpec(string content, out ToolErrorResult? error)
     {
         error = null;
         try
@@ -537,9 +547,11 @@ public sealed class ScheduleFileSystem(
     }
 
     // A bare (zoneless) runAt is wall-clock time in the operating zone; an offset/Z runAt is honored.
-    private DateTime ToUtc(DateTime runAt) =>
+    private DateTime ToUtc(DateTime runAt) => ToUtc(runAt, timeProvider.LocalTimeZone);
+
+    internal static DateTime ToUtc(DateTime runAt, TimeZoneInfo zone) =>
         runAt.Kind == DateTimeKind.Unspecified
-            ? TimeZoneInfo.ConvertTimeToUtc(runAt, timeProvider.LocalTimeZone)
+            ? TimeZoneInfo.ConvertTimeToUtc(runAt, zone)
             : runAt.ToUniversalTime();
 
     // Stored times are UTC; render them in the operating zone so the LLM reads local wall-clock.

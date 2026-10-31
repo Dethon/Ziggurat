@@ -58,7 +58,8 @@ public class ChatMonitorDeliveryIdentityTests
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher(published),
             recallHook,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -98,7 +99,8 @@ public class ChatMonitorDeliveryIdentityTests
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher(published),
             recallHook,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -149,7 +151,8 @@ public class ChatMonitorDeliveryIdentityTests
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher(published),
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -260,7 +263,8 @@ public class ChatMonitorDeliveryIdentityTests
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher([]),
             null,
-            new Mock<ILogger<ChatMonitor>>().Object)
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier())
             .Monitor(CancellationToken.None);
 
     private sealed class RecordingRecallHook : IMemoryRecallHook

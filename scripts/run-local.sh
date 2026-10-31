@@ -30,6 +30,8 @@ ENV_FILE="$ROOT/DockerCompose/.env"
 MCP_SECRET="${MCP__SHAREDSECRET:-local-mcp-secret}"
 
 # name|project directory|port|set ASPNETCORE_ENVIRONMENT|load DockerCompose/.env|extra env (; separated)|program args (space separated)
+# websearch names its own two listeners (/mcp on 6003, its /browse pages on 6007, in its
+# appsettings.Local.json), so it is handed no URL to override.
 SERVICES=(
   "agent|Agent|5000|yes|no||--chat Web --reasoning"
   "webui|WebChat|5001|yes|no||"
@@ -37,7 +39,7 @@ SERVICES=(
   "accounts|Accounts|5004|yes|no||"
   "library|McpServerLibrary|6001|no|no||"
   "vault|McpServerVault|6002|no|no||"
-  "websearch|McpServerWebSearch|6003|no|no||"
+  "websearch|McpServerWebSearch|6003|no|no|ASPNETCORE_URLS=|"
   "sandbox|McpServerSandbox|6004|no|no||"
   "idealista|McpServerIdealista|6005|no|no||"
   "homeassistant|McpServerHomeAssistant|6006|no|no||"
@@ -105,6 +107,10 @@ start_service() {
       "ASPNETCORE_URLS=http://localhost:$port"
       "MCP__SHAREDSECRET=$MCP_SECRET"
       "MCP__SECRETS__localhost=$MCP_SECRET"
+      # Every server checks a tool call's token for the name the agent dials it at, against the
+      # keys the agent (on 5000) publishes.
+      "MCP__AUDIENCE=localhost"
+      "MCP__AGENTKEYSURL=http://localhost:5000/internal/jwks"
     )
     [[ $aspnet_env == yes ]] && envs+=("ASPNETCORE_ENVIRONMENT=Local")
 

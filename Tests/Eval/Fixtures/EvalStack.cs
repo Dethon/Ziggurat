@@ -465,19 +465,23 @@ public sealed class EvalStack : IAsyncDisposable
         return $"http://localhost:{port}/mcp";
     }
 
-    // The shipped configuration, with four edits and no fifth: the secrets come from user
+    // The shipped configuration, with five edits and no sixth: the secrets come from user
     // secrets rather than from the environment the container would have had, nothing dials a
     // channel — the boundary of an eval is the agent, and what a channel does with a reply
     // afterwards is covered by the channel and end-to-end suites — the model is whatever
-    // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file, and
-    // the deployment secret is the one every server this stack hosts is gated behind.
+    // ZIGGURAT_EVAL_MODEL asks for, so a pass against another model needs no edit to the file, the
+    // deployment secret is the one every server this stack hosts is gated behind, and the agent
+    // signs with the suite's key.
     // Bound once per process, so an edit to the file mid-pass reaches no stack of it.
     private static AgentSettings ShippedSettings(string redisConnectionString) =>
         EvalModel.FromEnvironment(ShippedDefinition.Repository.Settings) with
         {
             Redis = new RedisConfiguration { ConnectionString = redisConnectionString },
             ChannelEndpoints = [],
-            Mcp = McpTestSecret.Gate
+            Mcp = McpTestSecret.Gate,
+            // The suite's fixed agent key, which every server this stack hosts checks a call token
+            // against (TestJwks), instead of one generated into a directory.
+            Signing = TestSigningKeys.Settings(TestSigningKeys.Agent)
         };
 
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,

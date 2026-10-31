@@ -96,8 +96,9 @@ public sealed class TranscriptDispatcher(
 
         // AgentId is required by CreateConversationParams; the dispatch path always supplies one in
         // production, so the null-coalesce is only a defensive fallback (not expected at runtime).
-        var conversationId = await manager.GetOrCreateAsync(session, agentId ?? string.Empty, transcript.Text, ct, speaker);
-        var (principal, sender) = await speaker;
+        var conversationId = await manager.GetOrCreateAsync(
+            session, agentId ?? string.Empty, transcript.Text, ct, WhoSpokeAsync(speaker));
+        var (principal, sender, assertion) = await speaker;
 
         var dismissedAlert = session.TryConsumeDismissedAlert(timeProvider.GetUtcNow());
 
@@ -122,6 +123,7 @@ public sealed class TranscriptDispatcher(
                 ConversationId = conversationId,
                 Sender = sender,
                 Principal = principal,
+                Assertion = assertion,
                 Content = transcript.Text,
                 AgentId = agentId,
                 Location = session.Config.DisplayLocation,
@@ -142,35 +144,64 @@ public sealed class TranscriptDispatcher(
     // under the satellite's name: a doubtful match, a profile no account holds, and an accounts
     // service that could not answer, since an outage must never become an identity. Telemetry keeps
     // the satellite's identity whoever spoke.
-    private async Task<(Principal Principal, string Sender)> SpeakerOfAsync(
+    //
+    // Either way the turn carries the accounts service's assertion of who it is for, which is what
+    // the agent believes: the person's, from the same answer, or the household guest's, asked for.
+    // One the service could not sign at all leaves the turn with none, and the agent refuses it.
+    private async Task<Speaker> SpeakerOfAsync(
         SatelliteSession session, string? identifiedSpeaker, CancellationToken ct)
     {
-        var guest = (Guest, session.Config.Identity);
         if (identifiedSpeaker is null)
         {
-            return guest;
+            return await AsGuestAsync(session, ct);
         }
 
         try
         {
             if (await accounts.ResolveAsync(ChannelIds.Voice, identifiedSpeaker, ct) is { } resolved)
             {
-                return (new Principal(ChannelIds.Voice, resolved.Account.UserId, resolved.Account), resolved.DisplayName);
+                return new Speaker(new Principal(ChannelIds.Voice, resolved.Account.UserId, resolved.Account),
+                    resolved.DisplayName, resolved.Assertion);
             }
 
             logger.LogWarning(
                 "Speaker profile {Profile} on {Satellite} is no account's; the turn goes out as the guest",
                 identifiedSpeaker, session.SatelliteId);
-            return guest;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex,
                 "Could not resolve speaker profile {Profile} on {Satellite}; the turn goes out as the guest",
                 identifiedSpeaker, session.SatelliteId);
-            return guest;
+        }
+
+        return await AsGuestAsync(session, ct);
+    }
+
+    private async Task<Speaker> AsGuestAsync(SatelliteSession session, CancellationToken ct)
+    {
+        try
+        {
+            return new Speaker(Guest, session.Config.Identity, (await accounts.GuestAsync(ChannelIds.Voice, ct)).Assertion);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex,
+                "Could not have the guest on {Satellite} vouched for; the agent will refuse the turn", session.SatelliteId);
+            return new Speaker(Guest, session.Config.Identity, null);
         }
     }
+
+    // Whose a new conversation's topic is needs who spoke, not what vouched for them.
+    private static async Task<(Principal Principal, string Sender)> WhoSpokeAsync(Task<Speaker> speaker)
+    {
+        var (principal, sender, _) = await speaker;
+        return (principal, sender);
+    }
+
+    // Who a turn is for, the name it goes out under, and the accounts service's word for it — none when
+    // the service could not sign one, which the agent refuses.
+    private sealed record Speaker(Principal Principal, string Sender, string? Assertion);
 
     // Every UtteranceTranscribed publish shares this shape; only the outcome label and the
     // conversation id (active vs. newly created vs. none) differ per call site.

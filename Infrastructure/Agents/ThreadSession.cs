@@ -56,11 +56,13 @@ internal sealed class ThreadSession : IAsyncDisposable
         ReadImageSupport? readImages = null,
         IVfsBridge? bridge = null,
         bool noTools = false,
-        IReadOnlySet<string>? withheldTools = null)
+        IReadOnlySet<string>? withheldTools = null,
+        CallTokens? callTokens = null,
+        TimeZoneInfo? localZone = null)
     {
         var builder = new ThreadSessionBuilder(endpoints, name, description,
             userId, domainTools, filesystemEnabledTools, loggerFactory, promptCache, readImages, bridge, noTools,
-            withheldTools);
+            withheldTools, callTokens, localZone);
         var data = await builder.BuildAsync(ct);
         return new ThreadSession(data);
     }
@@ -88,7 +90,9 @@ internal sealed class ThreadSessionBuilder(
     ReadImageSupport? readImages = null,
     IVfsBridge? bridge = null,
     bool noTools = false,
-    IReadOnlySet<string>? withheldTools = null)
+    IReadOnlySet<string>? withheldTools = null,
+    CallTokens? callTokens = null,
+    TimeZoneInfo? localZone = null)
 {
     private static readonly HashSet<string> _fileSystemMcpToolNames = [.. FileSystemOperations.ToolNames];
 
@@ -105,7 +109,10 @@ internal sealed class ThreadSessionBuilder(
         ChannelProtocol.RegisterAgentsTool,
         ChannelProtocol.ReceiveTool,
         ChannelProtocol.FetchAttachmentTool,
-        ChannelProtocol.StoreAttachmentTool
+        ChannelProtocol.StoreAttachmentTool,
+        // Not the channel's, but the operator commands' on the same /mcp, and as far from a model.
+        ChannelProtocol.ListDelegationsTool,
+        ChannelProtocol.ReplaceDelegationTool
     ];
 
     public async Task<ThreadSessionData> BuildAsync(CancellationToken ct)
@@ -115,7 +122,7 @@ internal sealed class ThreadSessionBuilder(
         // hydration through the bridge without knowing either exists.
         var clientManager = await McpClientManager.CreateAsync(
             name, userId, description, endpoints, new McpClientHandlers(), promptCache, dialLogger,
-            readImages?.Store, ct);
+            readImages?.Store, callTokens, ct);
 
         // Dialled for its prompts alone: the servers still say how this agent works, but nothing
         // they offer to call or to load reaches it, and no mount is made that no tool could read.
@@ -132,7 +139,7 @@ internal sealed class ThreadSessionBuilder(
             ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
         var fsRegistry = new VirtualFileSystemRegistry();
         var shadowed = await McpFileSystemDiscovery.DiscoverAndMountAsync(
-            clientManager.Clients, clientManager.DynamicClients, fsRegistry, fsLogger, ct);
+            clientManager.Clients, clientManager.DynamicClients, fsRegistry, fsLogger, ct, localZone);
 
         if (fsRegistry.GetMounts().Count > 0)
         {

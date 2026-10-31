@@ -30,8 +30,11 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   the plain call. A `required` member that bound to null fails startup naming it; **null only, never
   empty** — five shipped servers carry required members that ship as `""` and are filled from secrets
   (Telegram, WebSearch, HomeAssistant, Idealista, Library).
-- **`IServiceCollection.AddMcpHost(settings)`** is the four things every server has: the settings
-  singleton, the server, the HTTP transport and the gate on `/mcp`. All fourteen use it.
+- **`IServiceCollection.AddMcpHost(settings)`** is the five things every server has: the settings
+  singleton, the server, the HTTP transport, the gate on `/mcp` and the call-token gate on every tool
+  call (`CallTokenGate`; the outpost alone opts out, through `IMcpHostSettings.ChecksCallTokens`). All
+  fourteen use it. The credential lets a caller talk to a server; only the agent's call token says
+  who a tool call acts for (`.claude/rules/service-identity.md`, "Call tokens").
 - **Every `/mcp` asks for a secret, and the host installs the gate, not the server.** A tool
   believes whatever `ConversationContext` a call's `_meta` claims, so a call must present
   `Authorization: Bearer <secret>` first. `AddMcpHost` constrains its settings to
@@ -52,15 +55,33 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   Assistant and satellites, and the ones that need a gate carry their own token, so every server
   must map its endpoint at exactly `"/mcp"` (`McpServerTableTests` reads it off the source). An
   unset secret refuses every call. The SDK's legacy SSE endpoints are off, so streamable HTTP is the
-  one transport; `McpSecretGateTests` pins all three verbs, and a test that boots a server through
+  one transport; `McpSecretGateTests` pins all three verbs, `CallTokenGateTests` the token's refusals,
+  and a test that boots a server through
   the hosting library presents `Tests/McpTestSecret`.
+- **A server whose pages the proxy routes keeps them on a listener of their own.** One server does
+  today: the browse server's login handoff and logins pages answer on its second listener (8081),
+  `/mcp` on the first (8080), both named by its `Listeners` settings and bound in `Program.cs`
+  (`ListenAnyIP`, so its image clears `ASPNETCORE_HTTP_PORTS` rather than have Kestrel warn it
+  overrode it). `PagesListener` keys on the socket a request arrived on — never `RequireHost`, which
+  reads the Host header the proxy passes on as the browser sent it — and answers 404 for anything
+  outside `/browse` on the pages listener and for `/browse` on the other. It is a startup filter
+  inserted first, ahead of the gate, so `/mcp` on the pages listener is absent rather than asking
+  for a credential. The Caddyfile names the pages port alone (`DeploymentConformanceTests` reads
+  it off the server's `appsettings.json`), and `WebIdentityServerHarness` opens both listeners, so
+  the handoff tests reach the pages the way the proxy does.
 - **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for the
   nine servers that offer the agent things to call. Being a tool server and being a channel server
   are independent, so a dual-role server calls `AddToolServer` and then `AddChannelServer`.
 - **The error filter is one shared registration, installed at most once.** A cancelled call
   propagates as the abort it is; anything else is logged and becomes the caller's error result.
   **Who is calling travels as data, never as an ambient**: a tool reads the call's
-  `ConversationContext` off its `_meta` (`ConversationScope.Parse`) and hands on what it needs, and
+  `ConversationContext` through the one accessor over the call, `Mcp.Hosting/CallTurn.cs`
+  (`call.Turn`, and `call.TryScope` for a per-turn cache), and hands on what it needs. Its principal
+  is the identity the call token verified as (`call.Identity`, left on the call's `Items` by the gate),
+  never the one the `_meta` claims. No server parses the raw `_meta` for the turn or the token
+  (`CallTurnConformanceTests` reads the sources; the token is read in `CallTokenGate.cs` alone), so no
+  tool reads around the check; the fs_* registrar in `Infrastructure` references `Mcp.Hosting` for
+  that alone. And
   a filesystem backend — whose operations never see the request — is asked by the registrar for
   itself as that caller sees it (`FileSystemBackendBase.For(FileSystemCaller)`, per call: the
   conversation context and, on an exec the agent minted one for, the exec bridge's call token —
@@ -75,7 +96,7 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   does, so Jev's cost lands on the dashboard's token totals with every other model's. No use
   publishes a usage event of its own; a use's own event (`SkillPreloadEvent`, `ExecScreenEvent`)
   may keep a copy of the cost for its dashboard family, and the eval's spend ignores that copy. The value is passed down as plain data, never read from an ambient: a
-  server's tool parses it from the call's `_meta` (`JudgmentCaller.For(ConversationScope.Parse(…))`)
+  server's tool takes it from the call (`JudgmentCaller.For(context.Turn)`)
   and hands it on as a parameter, the agent host takes it from the message, and a question with no
   turn behind it (memory) names the user with a null turn model. Two
   filters nested around each other would let the outer one convert the very cancellation the inner
