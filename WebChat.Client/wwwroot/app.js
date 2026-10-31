@@ -633,3 +633,53 @@ window.getBoundingClientRect = function (element) {
     }, true);
 })();
 
+// ===================================
+// Alert tone
+// ===================================
+
+// A ringing timer sounds until it ends: two short beeps every second and a half, and a buzz on a
+// phone that has one. Drawn with the Web Audio API so there is no sound file to ship. A page the
+// person has not touched yet may not be allowed to play; the alert still shows, and the push that
+// brought the person here is what reached them.
+window.alertTone = {
+    _context: null,
+    _timer: null,
+
+    start: function () {
+        if (this._timer) return;
+        try {
+            this._context ??= new (window.AudioContext || window.webkitAudioContext)();
+            this._context.resume?.();
+        } catch {
+            this._context = null;
+        }
+        const ring = () => {
+            this._beep(0);
+            this._beep(0.25);
+            navigator.vibrate?.([200, 100, 200]);
+        };
+        ring();
+        this._timer = setInterval(ring, 1500);
+    },
+
+    stop: function () {
+        if (this._timer) clearInterval(this._timer);
+        this._timer = null;
+        navigator.vibrate?.(0);
+    },
+
+    _beep: function (at) {
+        const ctx = this._context;
+        if (!ctx) return;
+        const start = ctx.currentTime + at;
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.3, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.18);
+        oscillator.connect(gain).connect(ctx.destination);
+        oscillator.start(start);
+        oscillator.stop(start + 0.2);
+    }
+};
