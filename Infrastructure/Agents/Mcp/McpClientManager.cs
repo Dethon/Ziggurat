@@ -13,6 +13,10 @@ namespace Infrastructure.Agents.Mcp;
 
 internal sealed class McpClientManager : IAsyncDisposable
 {
+    // A dial that produced a client: the server it reached, the address it was dialled at, and what
+    // says that server went offline (McpServerEndpoint.Offline).
+    private sealed record Dialled(McpClient Client, ServerAddress Server, string Address, CancellationToken Offline);
+
     // A tool server is dialled on the way into a session, so a server that is down is paid for by
     // the turn waiting behind it. The SDK's default is a minute; the retry below cannot shorten
     // that, because a handshake that times out is not the HttpRequestException it handles. The
@@ -109,7 +113,9 @@ internal sealed class McpClientManager : IAsyncDisposable
     // normal — it is dialled once, logged and dropped, and its mount is simply absent for this
     // session. The temptation to unify these will recur; they are one implementation of two
     // different meanings of "not reachable", and the reasoning is recorded in
-    // docs/adr/0027-static-endpoints-fail-dynamic-ones-are-dropped.md.
+    // docs/adr/0027-static-endpoints-fail-dynamic-ones-are-dropped.md. A household server on its
+    // tunnel is the one exception, recorded in .claude/rules/tunnel.md: it is left out when its tunnel
+    // is gone, because a machine at home being off is not the deployment being broken.
     //
     // A dynamic endpoint is dialled once rather than retried because the retry sleeps two, four and
     // eight seconds before giving up, and a laptop with its lid shut would charge that to every
@@ -117,7 +123,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     //
     // The surviving clients keep the order they were given, which is what lets the caller put
     // configured endpoints first and have their mounts claim their names before any outpost does.
-    private static async Task<(McpClient Client, ServerAddress Server, string Address)[]> CreateClientsWithRetry(
+    private static async Task<Dialled[]> CreateClientsWithRetry(
         string name,
         string description,
         IReadOnlyList<McpServerEndpoint> endpoints,
@@ -142,16 +148,35 @@ internal sealed class McpClientManager : IAsyncDisposable
                 },
                 cancellationToken: ct);
 
+            Dialled dialled(McpClient client) => new(client, ServerOf(endpoint), endpoint.Address, endpoint.Offline);
+
+            // A household server's tunnel is dialled once: an opening that failed its handshake is a
+            // generation that is going, and waiting out the retry would not bring it back. Gone by the
+            // time it answered, it is left out like a server found offline; failing any other way, it
+            // is still a configured endpoint that will not answer.
+            if (endpoint.Through is not null)
+            {
+                try
+                {
+                    return dialled(await dial());
+                }
+                catch (Exception ex) when (endpoint.Offline.IsCancellationRequested && !ct.IsCancellationRequested)
+                {
+                    logger?.LogWarning(ex,
+                        "The household server {Endpoint} went offline while its session was being built, so its "
+                        + "tools are absent this turn", endpoint.Address);
+                    return null;
+                }
+            }
+
             if (endpoint.Origin is McpEndpointOrigin.Configured)
             {
-                return ((McpClient Client, ServerAddress Server, string Address)?)
-                    (await retryPolicy.ExecuteAsync(dial), ServerOf(endpoint), endpoint.Address);
+                return dialled(await retryPolicy.ExecuteAsync(dial));
             }
 
             try
             {
-                return ((McpClient Client, ServerAddress Server, string Address)?)
-                    (await dial(), ServerOf(endpoint), endpoint.Address);
+                return dialled(await dial());
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -169,7 +194,7 @@ internal sealed class McpClientManager : IAsyncDisposable
             }
         }));
 
-        return [.. clients.Where(c => c is not null).Select(c => c!.Value)];
+        return [.. clients.OfType<Dialled>()];
     }
 
     // Every server the agent dials is handed its call token on every tool call, outposts included:
@@ -183,14 +208,14 @@ internal sealed class McpClientManager : IAsyncDisposable
         callTokens is null ? transport : new SigningClientTransport(transport, callTokens, TokenAudiences.CallTo(address));
 
     private static async Task<AITool[]> LoadTools(
-        IEnumerable<(McpClient Client, ServerAddress Server, string Address)> clients,
+        IEnumerable<Dialled> clients,
         IReadImageStore? readImageStore,
         CancellationToken ct)
     {
         var tasks = clients.Select(async c =>
         {
             var tools = await c.Client.ListToolsAsync(cancellationToken: ct);
-            return tools.Select(t => new QualifiedMcpTool(c.Server.Qualifier, t, readImageStore));
+            return tools.Select(t => new QualifiedMcpTool(c.Server.Qualifier, t, readImageStore, c.Offline));
         });
 
         var results = await Task.WhenAll(tasks);
@@ -202,7 +227,7 @@ internal sealed class McpClientManager : IAsyncDisposable
 
     // A household's server reached through its tunnel is sent over the tunnel's own client, which
     // presents the tunnel's credential; everything else is dialled at its URL.
-    private static HttpClientTransport TransportOf(McpServerEndpoint endpoint)
+    internal static HttpClientTransport TransportOf(McpServerEndpoint endpoint)
     {
         var options = new HttpClientTransportOptions
         {
@@ -228,7 +253,7 @@ internal sealed class McpClientManager : IAsyncDisposable
             : $"The MCP endpoint '{endpoint.Address}' is not an absolute URL");
 
     private static async Task<PromptSection[]> LoadPrompts(
-        IEnumerable<(McpClient Client, ServerAddress Server, string Address)> clients,
+        IEnumerable<Dialled> clients,
         string userId,
         McpPromptCache? promptCache,
         CancellationToken ct)
@@ -257,7 +282,7 @@ internal sealed class McpClientManager : IAsyncDisposable
     // budgets like their prompts do. In dial order, so the advertisement is byte-stable across
     // sessions of one deployment.
     private static async Task<PromptSkill[]> LoadSkills(
-        IEnumerable<(McpClient Client, ServerAddress Server, string Address)> clients,
+        IEnumerable<Dialled> clients,
         McpPromptCache? promptCache,
         ILogger? logger,
         CancellationToken ct)

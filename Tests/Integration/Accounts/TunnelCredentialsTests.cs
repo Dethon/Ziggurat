@@ -36,7 +36,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
         });
 
     [Fact]
-    public async Task AMintedCredential_VerifiesToItsHouseholdAndServerName()
+    public async Task AMintedCredential_VerifiesToItsHouseholdAndServerName_AndSaysTheHomeIsTheHome()
     {
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
@@ -46,7 +46,7 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var verified = (await response.Content.ReadFromJsonAsync<TunnelCredentialVerified>())!;
-        verified.ShouldBe(new TunnelCredentialVerified(minted.Id, fran.TenantId, "vault"));
+        verified.ShouldBe(new TunnelCredentialVerified(minted.Id, fran.TenantId, "vault", Home: true));
     }
 
     [Fact]

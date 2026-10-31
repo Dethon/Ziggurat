@@ -39,7 +39,10 @@ public static class TunnelModule
                     TimeProvider.System,
                     sp.GetRequiredService<ILogger<TunnelRelay>>(),
                     sp.GetService<IHostApplicationLifetime>()))
-                .AddSingleton<IOwnServers>(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
+                .AddSingleton(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
+                .AddSingleton<IOwnServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
+                .AddSingleton<IOwnChannelServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
+                .AddSingleton<TunnelListing>()
                 .AddHostedService<TunnelRevocations>()
                 // Exchanges that arrive at the agent for a household's server and go on down its
                 // tunnel: the browse pages a person opens from a link, and a shared server's calls to

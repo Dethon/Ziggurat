@@ -152,6 +152,17 @@ public sealed partial class AccountsServer : IAsyncDisposable
         return member.Id;
     }
 
+    // A household besides the home one, which nothing but the tenants admin will make: written straight
+    // into the store, its id handed back.
+    public async Task<string> SeedHouseholdAsync(string name)
+    {
+        await using var db = await Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        var household = new Tenant { Id = Tokens.NewId(), Name = name, CreatedAt = Clock.GetUtcNow() };
+        db.Tenants.Add(household);
+        await db.SaveChangesAsync();
+        return household.Id;
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _app.StopAsync();

@@ -146,12 +146,27 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
         voice.Alerts.Acknowledge("kitchen-01").ShouldHaveSingleItem();
     }
 
-    private async Task<TunnelledVoiceHub> StartVoiceAsync()
+    // A timer names no household: it rings on the home household's voice server, and another
+    // household's server of the same name is never the one it reaches.
+    [Fact]
+    public async Task ATimerWithOnlyAnotherHouseholdsVoiceConnected_FailsSayingTheHubIsUnreachable()
     {
-        var credential = await _accounts.MintTunnelCredentialAsync(_household, HouseholdServerNames.Voice);
+        await using var elsewhere = await StartVoiceAsync(await _accounts.SeedHouseholdAsync("Neighbours"));
+        await using var timers = TimersServer();
+
+        var created = await timers.GetRequiredService<TimerFileSystem>().CreateAsync("/pasta/timer.json",
+            """{"durationSeconds": 2, "target": {"room": "Kitchen"}}""", false, true, CancellationToken.None);
+
+        created.ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
+    }
+
+    private async Task<TunnelledVoiceHub> StartVoiceAsync(string? household = null)
+    {
+        household ??= _household;
+        var credential = await _accounts.MintTunnelCredentialAsync(household, HouseholdServerNames.Voice);
         var voice = await TunnelledVoiceHub.StartAsync(_relay.Hub, credential.Credential, HouseholdServerNames.Voice);
         await Eventually.Until(
-            () => _relay.Registry.Find(_household, HouseholdServerNames.Voice) is not null, "voice's tunnel opens");
+            () => _relay.Registry.Find(household, HouseholdServerNames.Voice) is not null, "voice's tunnel opens");
         return voice;
     }
 

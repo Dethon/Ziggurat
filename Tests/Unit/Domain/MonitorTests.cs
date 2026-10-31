@@ -214,6 +214,8 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public bool HostsReviewCopies { get; init; }
 
+    public bool IsConnected { get; init; } = true;
+
     public string? ConversationIdToReturn { get; init; }
 
     public Func<Task>? ReplyGate { get; init; }

@@ -155,7 +155,7 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
             {
                 Mcp = new McpGateSettings
                 {
-                    Tunnel = TunnelledServer.Tunnel(_relay.Hub, credential.Credential, HouseholdServerNames.WebSearch)
+                    Tunnel = TunnelledServer.Quick(_relay.Hub, credential.Credential, HouseholdServerNames.WebSearch)
                 },
                 RedisConnectionString = redis.ConnectionString,
                 Handoff = s.Handoff with { PublicBaseUrl = _relay.Address },

@@ -10,14 +10,14 @@ namespace Infrastructure.Tunnels;
 // check on the live view's socket — are the server's and unchanged. With the server offline, the
 // person is told so on a page of the relay's own.
 //
-// Which household's web search a link is for: SoleHousehold's, in this phase.
+// Which household's web search a link is for: the home household's, in this phase (HomeHousehold).
 public sealed class BrowsePages(TunnelRegistry registry, TunnelForwarder forwarder)
 {
     public const string Path = "/browse";
 
     public async Task ForwardAsync(HttpContext context)
     {
-        switch (SoleHousehold.Find(registry, HouseholdServerNames.WebSearch))
+        switch (HomeHousehold.Find(registry, HouseholdServerNames.WebSearch))
         {
             case HouseholdServer.Open { Tunnel: var tunnel }:
                 if (!await forwarder.ForwardAsync(context, tunnel, TunnelProtocol.PagesTag, context.Request.Path, [])

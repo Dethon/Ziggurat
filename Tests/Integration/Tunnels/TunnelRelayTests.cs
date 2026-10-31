@@ -8,6 +8,7 @@ using Domain.DTOs.Tunnel;
 using Domain.Prompts;
 using Domain.Security;
 using Domain.Security.Signing;
+using Domain.Tools;
 using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Tunnels;
@@ -120,6 +121,116 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         await agent.WarmupSessionAsync(session);
     }
 
+    // The household's machine goes away while the agent waits on one of its tools: the call ends,
+    // and says the server went offline rather than leaving the turn to wait or to guess at a socket
+    // error.
+    [Fact]
+    public async Task ACallInFlightWhenTheTunnelDrops_FailsSayingTheServerWentOffline()
+    {
+        var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+        await using var server = await TunnelledServer.StartAsync(_relay.Hub, credential.Credential, "vault");
+        await using var agent = await DialAsync(_relay, "vault");
+        var call = Guid.NewGuid().ToString("N");
+        var wait = agent.Tools.OfType<AIFunction>().Single(t => t.Name == "mcp__vault__wait");
+
+        var answer = wait.InvokeAsync(new AIFunctionArguments { ["call"] = call }).AsTask();
+        await Eventually.Until(() => TunnelledServer.WaitTools.IsWaiting(call), "the call reaches the server");
+        await _relay.Registry.Find(_household, "vault")!.CloseAsync(
+            System.Net.WebSockets.WebSocketCloseStatus.EndpointUnavailable, "gone");
+
+        var error = ToolErrorResult.FromEnvelope(JsonNode.Parse((await answer.WaitAsync(TimeSpan.FromSeconds(10)))!.ToString()));
+        error.ShouldNotBeNull().ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
+        error.Message.ShouldContain("vault went offline");
+    }
+
+    // The server's tunnel drops between two turns and the server opens a new one: the second turn is
+    // a new generation's, so it is built again and reaches the server through the tunnel open now,
+    // never through the closed one its first turn used.
+    [Fact]
+    public async Task AServerThatReconnectsBetweenTurns_IsReachedThroughItsNewTunnelOnTheNextTurn()
+    {
+        var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+        await using var server = await TunnelledServer.StartAsync(_relay.Hub, credential.Credential, "vault");
+        await ConnectedAsync(_relay, "vault");
+        var first = _relay.Registry.Find(_household, "vault")!;
+        var offered = new List<IList<AITool>>();
+        await using var agent = TurnTakingAgent(offered);
+        var session = await agent.CreateSessionAsync();
+        await TakeTurnAsync(agent, session);
+
+        await first.CloseAsync(System.Net.WebSockets.WebSocketCloseStatus.EndpointUnavailable, "gone");
+        await Eventually.Until(
+            () => _relay.Registry.Find(_household, "vault") is { IsOpen: true } again && again.Generation > first.Generation,
+            "the server opens its tunnel again");
+        await TakeTurnAsync(agent, session);
+
+        var who = offered[1].OfType<AIFunction>().Single(t => t.Name == "mcp__vault__who");
+        var answer = (await who.InvokeAsync(new AIFunctionArguments()))!.ToString()!;
+        ToolErrorResult.FromEnvelope(JsonNode.Parse(answer)).ShouldBeNull(answer);
+    }
+
+    // The operator asks the running agent which of a household's servers are connected: each one
+    // open, since when, and the tools it offers through its tunnel now — and nothing of another
+    // household's.
+    [Fact]
+    public async Task TheListHouseholdServersCommand_ListsEachConnectedServerSinceWhenAndItsTools()
+    {
+        var vault = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+        await using var server = await TunnelledServer.StartAsync(_relay.Hub, vault.Credential, "vault");
+        var other = await _accounts.SeedHouseholdAsync("Ana");
+        var library = await _accounts.MintTunnelCredentialAsync(other, "library");
+        await using var elsewhere = await TunnelledServer.StartAsync(_relay.Hub, library.Credential, "library");
+        await ConnectedAsync(_relay, "vault");
+        await Eventually.Until(() => _relay.Registry.Find(other, "library") is not null, "library's tunnel opens");
+        var opened = _relay.Registry.Find(_household, "vault")!.OpenedAt;
+        var output = new StringWriter();
+
+        var exit = await global::Agent.Commands.AgentCommand.RunAsync(
+            [global::Agent.Commands.AgentCommand.ListHouseholdServers, "--household", _household, "--agent", _relay.Address],
+            AgentSettings(), TimeProvider.System, TextReader.Null, output, CancellationToken.None);
+
+        exit.ShouldBe(0, output.ToString());
+        output.ToString().ShouldContain($"vault  connected since {opened:u}");
+        output.ToString().ShouldContain("tools: wait, who");
+        output.ToString().ShouldNotContain("library");
+    }
+
+    [Fact]
+    public async Task TheListHouseholdServersCommand_SaysSoWhenNoneIsConnected()
+    {
+        var output = new StringWriter();
+
+        var exit = await global::Agent.Commands.AgentCommand.RunAsync(
+            [global::Agent.Commands.AgentCommand.ListHouseholdServers, "--household", _household, "--agent", _relay.Address],
+            AgentSettings(), TimeProvider.System, TextReader.Null, output, CancellationToken.None);
+
+        exit.ShouldBe(0, output.ToString());
+        output.ToString().ShouldContain($"No server of household {_household} is connected.");
+    }
+
+    // The listing is the agent's own: asked without the agent API's secret, it says nothing.
+    [Fact]
+    public async Task TheListHouseholdServersCommand_WithoutTheAgentsSecret_IsRefused()
+    {
+        var output = new StringWriter();
+
+        var exit = await global::Agent.Commands.AgentCommand.RunAsync(
+            [global::Agent.Commands.AgentCommand.ListHouseholdServers, "--household", _household, "--agent", _relay.Address],
+            AgentSettings() with { AgentApi = new global::Agent.Settings.AgentApiConfiguration { SharedSecret = "wrong" } },
+            TimeProvider.System, TextReader.Null, output, CancellationToken.None);
+
+        exit.ShouldBe(1, output.ToString());
+        output.ToString().ShouldContain("refused");
+    }
+
+    private static global::Agent.Settings.AgentSettings AgentSettings() => new()
+    {
+        OpenRouter = new global::Agent.Settings.OpenRouterConfiguration { ApiUrl = "http://test", ApiKey = "test" },
+        Redis = new global::Agent.Settings.RedisConfiguration { ConnectionString = "localhost" },
+        Agents = [],
+        AgentApi = new global::Agent.Settings.AgentApiConfiguration { SharedSecret = AgentCredential }
+    };
+
     public static TheoryData<string, TunnelCredentialRefusal> Refusals => new()
     {
         { "unknown", TunnelCredentialRefusal.Unknown },
@@ -225,6 +336,35 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
 
         throw new InvalidOperationException("the watch ended before any tunnel closed");
     }
+
+    // An agent of Fran's household naming its vault, whose model answers every turn at once and
+    // records the tools each turn was offered.
+    private McpAgent TurnTakingAgent(List<IList<AITool>> offered)
+    {
+        var model = new Mock<IChatClient>();
+        model
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions?>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>(
+                (_, options, _) => offered.Add(options?.Tools ?? []))
+            .Returns(() => new List<ChatResponseUpdate>
+            {
+                new() { Role = ChatRole.Assistant, Contents = [new TextContent("ok")] }
+            }.ToAsyncEnumerable());
+        return new McpAgent(
+            TestAgentSpec.Default with { TenantId = _household, McpServerEndpoints = [McpServerEndpoint.OwnServer("vault")] },
+            model.Object,
+            Mock.Of<IThreadStateStore>(),
+            _metrics,
+            TimeProvider.System,
+            [],
+            [],
+            callTokens: new CallTokens(_keys, TimeProvider.System),
+            ownServers: _relay.OwnServers);
+    }
+
+    private static Task TakeTurnAsync(McpAgent agent, Microsoft.Agents.AI.AgentSession session) =>
+        agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "what is in my vault?")], session).ToListAsync().AsTask();
 
     private Task<RelayHost> StartRelayAsync(int? port = null) =>
         RelayHost.StartAsync(_accounts, AgentCredential, redis.ConnectionString, _keys, _metrics, port);

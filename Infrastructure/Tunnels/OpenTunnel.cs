@@ -39,6 +39,7 @@ public sealed class OpenTunnel : IAsyncDisposable
         TenantId = credential.TenantId;
         ServerName = credential.ServerName;
         CredentialId = credential.CredentialId;
+        Home = credential.Home;
         Address = ServerAddress.Tunnelled(credential.TenantId, credential.ServerName);
         Generation = generation;
         OpenedAt = openedAt;
@@ -46,6 +47,7 @@ public sealed class OpenTunnel : IAsyncDisposable
         _mux = mux;
         _keys = keys;
         _closed = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token, mux.Closed);
+        Closed = _closed.Token;
         _sentKeys = keys.PublishedKeys.ToJson();
         _connections = new SocketsHttpHandler
         {
@@ -66,6 +68,10 @@ public sealed class OpenTunnel : IAsyncDisposable
 
     public string CredentialId { get; }
 
+    // The operator's own household, as the accounts service said when it verified the credential: the
+    // one whose servers the deployment's channel endpoints name.
+    public bool Home { get; }
+
     // What the agent's call tokens for this server are signed for, its tools qualified with and its
     // prompts cached under.
     public ServerAddress Address { get; }
@@ -79,8 +85,9 @@ public sealed class OpenTunnel : IAsyncDisposable
 
     public bool IsOpen => !_closing.IsCancellationRequested && !_mux.IsClosed;
 
-    // Cancelled once the tunnel is closing or closed, by either end.
-    public CancellationToken Closed => _closed.Token;
+    // Cancelled once the tunnel is closing or closed, by either end. Taken once, so a consumer that
+    // reads it after the tunnel is gone and disposed still gets a token that says so.
+    public CancellationToken Closed { get; }
 
     // The credential the tunnel was opened with, which its server's /mcp asks for. Held only while the
     // tunnel is open and never written anywhere.
