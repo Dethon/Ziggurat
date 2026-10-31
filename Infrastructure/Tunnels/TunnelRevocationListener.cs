@@ -13,10 +13,10 @@ namespace Infrastructure.Tunnels;
 //
 // Subscribed before the host counts as started, so no tunnel can be admitted while a revocation
 // would go unheard: pub/sub reaches only who is listening at that moment.
-public sealed class TunnelRevocations(
+public sealed class TunnelRevocationListener(
     IConnectionMultiplexer redis,
     TunnelRegistry registry,
-    ILogger<TunnelRevocations> logger) : IHostedService
+    ILogger<TunnelRevocationListener> logger) : IHostedService
 {
     private static readonly RedisChannel _channel = RedisChannel.Literal(TunnelCredentialProtocol.RevokedChannel);
 

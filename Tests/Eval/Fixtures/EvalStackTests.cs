@@ -13,6 +13,7 @@ public class EvalStackTests
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = "https://openrouter.ai/api/v1/", ApiKey = "" },
         Redis = new RedisConfiguration { ConnectionString = "localhost" },
+        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
         Agents =
         [
             new AgentDefinition
@@ -113,6 +114,7 @@ public class EvalStackDialledTests
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = "https://openrouter.ai/api/v1/", ApiKey = "" },
         Redis = new RedisConfiguration { ConnectionString = "localhost" },
+        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
         Agents =
         [
             new AgentDefinition

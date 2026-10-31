@@ -21,9 +21,8 @@ namespace Infrastructure.Tunnels;
 // The request goes on without the caller's credential, its name or the deployment's announce
 // secret, presenting the household's server the credential of its own tunnel instead (the mcp tag's
 // pool, RelayHandler), so nothing of the deployment's reaches a household. Which household:
-// the home household's, in this phase (HomeHousehold).
+// the home household's, in this phase (TunnelRegistry.FindHome).
 public sealed class RelayedCalls(
-    TunnelRegistry registry,
     TunnelForwarder forwarder,
     McpCredentials credentials,
     IMetricsPublisher metrics,
@@ -62,20 +61,7 @@ public sealed class RelayedCalls(
             return;
         }
 
-        switch (HomeHousehold.Find(registry, server))
-        {
-            case HouseholdServer.Open { Tunnel: var tunnel }:
-                if (!await forwarder.ForwardAsync(context, tunnel, TunnelProtocol.McpTag, rest, _withheld)
-                    && !context.Response.HasStarted)
-                {
-                    await UnreachableAsync(context, $"{server} went offline: its tunnel closed");
-                }
-
-                break;
-            case HouseholdServer.Unreachable { Reason: var reason }:
-                await UnreachableAsync(context, reason);
-                break;
-        }
+        await forwarder.ForwardHomeAsync(context, server, TunnelProtocol.McpTag, rest, _withheld, UnreachableAsync);
     }
 
     private bool Presents(HttpRequest request, string caller) =>

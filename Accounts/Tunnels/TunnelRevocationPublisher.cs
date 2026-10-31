@@ -12,7 +12,7 @@ namespace Accounts.Tunnels;
 //
 // Opened when first told rather than at start, so a service or a command that revokes nothing never
 // connects; with no connection string configured nobody is told, and the answer says so.
-public sealed class TunnelRevocations(AccountsSettings settings) : IAsyncDisposable
+public sealed class TunnelRevocationPublisher(AccountsSettings settings) : IAsyncDisposable
 {
     private readonly SemaphoreSlim _opening = new(1, 1);
     private ConnectionMultiplexer? _redis;
