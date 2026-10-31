@@ -1,0 +1,52 @@
+# The tenant kit beside a smoke stack on this same machine (scripts/smoke-stack.sh), run as project
+# tenant-kit-smoke so a real kit here is never touched. Its servers tunnel to the smoke stack's relay
+# as they would to the deployment's: by the deployment's main host, which here is this machine's own
+# Caddy (host-gateway, where its 443 is published), trusting Caddy's local CA, whose root the script
+# copies out beside the smoke state before the kit starts. Every piece of the kit's state starts empty
+# under the smoke stack's ./volumes/smoke, which the script's down removes. The script starts web
+# search with its browser, the vault, the library, the sandbox and the printer, and the kit's Redis:
+# never voice, Home Assistant's server, Home Assistant or Music Assistant, which reach satellites, the
+# home and the LAN, nor qBittorrent and Jackett.
+x-hub-here: &hub-here
+  extra_hosts:
+    - "${DEPLOYMENT_HOST}:host-gateway"
+
+x-hub-ca: &hub-ca ../DockerCompose/volumes/smoke/kit/hub-ca.crt:/smoke/hub-ca.crt:ro
+
+x-hub-ca-env: &hub-ca-env
+  MCP__TUNNEL__HUBCERTIFICATEAUTHORITY: /smoke/hub-ca.crt
+
+services:
+  redis:
+    volumes: ["../DockerCompose/volumes/smoke/kit/redis:/data"]
+
+  mcp-websearch:
+    <<: *hub-here
+    volumes: [*hub-ca]
+    environment: *hub-ca-env
+
+  mcp-vault:
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/vault:/vault"
+    environment: *hub-ca-env
+
+  mcp-library:
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/media:/media"
+    environment: *hub-ca-env
+
+  mcp-sandbox:
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/sandbox:/home/sandbox_user"
+    environment: *hub-ca-env
+
+  mcp-printer:
+    <<: *hub-here
+    volumes: [*hub-ca]
+    environment: *hub-ca-env

@@ -118,10 +118,13 @@ writes tunnel code.** Tunnelled, the host:
 hub's name. A deployment served by a certificate authority of its own — a smoke stack on Caddy's local
 CA — is trusted by a server told that CA: `MCP__TUNNEL__HUBCERTIFICATEAUTHORITY` names a PEM file, read
 once at start (a file that is not a certificate fails the start), and a certificate the roots refuse
-for its chain alone is accepted if it chains to that one (`X509ChainTrustMode.CustomRootTrust`). A
-name that does not match, or no certificate, is refused either way. Tested at the round trip
-(`TunnelRelayTests`: a relay on a test authority's certificate is never joined, joined once told,
-and never joined under another name).
+for its chain alone is accepted if it chains to that one (`X509ChainTrustMode.CustomRootTrust`). The
+CA named is a root, and Caddy issues under an intermediate it serves beside the certificate: the
+intermediates the hub sent are offered to the chain's build (`ExtraStore`), never trusted by
+themselves. A name that does not match, or no certificate, is refused either way. Tested at the round
+trip (`TunnelRelayTests`, on a test authority shaped like Caddy's — root, intermediate, leaf: a relay
+on its certificate is never joined, joined once told, and never joined under another name) and on the
+smoke stack, whose kit servers trust Caddy's local root this way.
 
 Liveness is the WebSocket's own keep-alive on both ends (`KeepAlive`, `KeepAliveTimeout`). The four
 timings are one shared policy file, `Domain/tunnel.json` (`mcp.tunnel`), read by `BindSettings` and

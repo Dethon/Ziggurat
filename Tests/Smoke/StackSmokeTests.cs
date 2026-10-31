@@ -1,22 +1,27 @@
 using System.Net;
+using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Security;
 using Domain.Security.Signing;
 using McpServerSugary.Channel;
 using Microsoft.Playwright;
 using Shouldly;
+using Tests.E2E.Fixtures;
 using Tests.E2E.WebChat;
 using Tests.Unit.Deployment;
 
 namespace Tests.Smoke;
 
-// What the deployment's compose file and Caddyfile promise, checked against a stack running them
-// (scripts/smoke-stack.sh up, then test): who gets past the proxy, what the sandbox can reach, what is
-// published, that what the issuers sign is what every server and app believes and nothing else is,
-// and one signed-in conversation with the real agent. The conformance tests read the files; these ask
-// the running thing. Off unless ZIGGURAT_SMOKE=1, since they need that stack.
+// What the deployment's compose file, its Caddyfile and the tenant kit promise, checked against a
+// stack running them (scripts/smoke-stack.sh up, then test): who gets past the proxy, what the sandbox
+// can reach, what is published, that what the issuers sign is what every server and app believes and
+// nothing else is, that the home's servers are reached through their tunnels and nothing else and a
+// tunnel opens for its own credential alone, and two signed-in conversations with the real agent, one
+// through a tunnel. The conformance tests read the files; these ask the running thing. Off unless
+// ZIGGURAT_SMOKE=1, since they need that stack.
 [Trait("Category", "Smoke")]
 public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack>
 {
@@ -97,19 +102,47 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         (await SendAsync(HttpMethod.Get, stack.SugaryHost, "/mcp")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
-    // The sandbox runs what the model writes: it reaches the agent's bridge and the internet, and
-    // nothing that believes the proxy's identity headers.
+    // The sandbox runs what the model writes. It is the kit's, on a network of its own: no name of
+    // the deployment's resolves from it — the agent, and everything that believes the proxy's
+    // identity headers — nor any of the kit's servers beside it. What it reaches of the agent is the
+    // exec bridge, over its own tunnel from its back-call port, which answers an unsigned call 401.
     [SkippableFact]
-    public async Task TheSandbox_ReachesTheAgent_AndNothingThatTrustsTheIdentityHeaders()
+    public async Task TheSandbox_ReachesTheAgentsBridgeThroughItsTunnel_AndNothingBesideIt()
     {
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
-        (await SmokeStack.TryDockerAsync("exec", "mcp-sandbox", "getent", "hosts", "agent")).ExitCode.ShouldBe(0);
-        string[] trusting = ["mcp-sugary", "mcp-channel-signalr", "accounts", "webui", "observability", "redis"];
-        var reached = await Task.WhenAll(trusting.Select(async name =>
-            (name, (await SmokeStack.TryDockerAsync("exec", "mcp-sandbox", "getent", "hosts", name)).ExitCode)));
+        var sandbox = await SmokeStack.KitContainerAsync("mcp-sandbox");
+        string[] beside =
+        [
+            "agent", "accounts", "redis", "caddy", "mcp-sugary", "mcp-channel-signalr", "webui", "observability",
+            "camoufox", "mcp-websearch", "mcp-vault", "mcp-library", "mcp-printer"
+        ];
+        var reached = await Task.WhenAll(beside.Select(async name =>
+            (name, (await SmokeStack.TryDockerAsync("exec", sandbox, "getent", "hosts", name)).ExitCode)));
+        var bridge = DeploymentFiles.KitCompose().Service("mcp-sandbox").Environment["VFSBRIDGEURL"];
 
         reached.Where(r => r.ExitCode == 0).Select(r => r.name).ShouldBeEmpty();
+        (await SmokeStack.DockerAsync("exec", sandbox, "curl", "-sS", "-o", "/dev/null", "-w", "%{http_code}",
+            "-X", "POST", $"{bridge}/attr?path=/")).ShouldBe("401");
+    }
+
+    // The home's servers are the kit's: each is connected through its tunnel, as the agent lists it,
+    // and none is on the deployment's network, where nothing resolves their names.
+    [SkippableFact]
+    public async Task TheKitsServers_AreConnectedThroughTheirTunnels_AndNotOnTheDeploymentsNetwork()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        await KitConnectedAsync();
+        var services = DeploymentFiles.KitCompose().Services.Values
+            .Where(s => s.Environment.ContainsKey("MCP__TUNNEL__SERVERNAME"))
+            .Select(s => s.Name);
+        var resolved = await Task.WhenAll(services.Select(async name =>
+            (name, (await SmokeStack.TryDockerAsync("exec", SmokeStack.Inside, "curl", "-sS", "--max-time", "5",
+                $"http://{name}:8080/mcp")).Output)));
+
+        resolved.Where(r => !r.Output.Contains("Could not resolve host", StringComparison.Ordinal))
+            .Select(r => r.name).ShouldBeEmpty();
     }
 
     [SkippableFact]
@@ -117,10 +150,12 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     {
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
-        var ports = await SmokeStack.DockerAsync("ps", "--filter", "label=com.docker.compose.project=jackbot-smoke",
-            "--format", "{{.Names}} {{.Ports}}");
+        // The kit's too: a tunnelled server needs no port, and the kit's Redis is on loopback.
+        var ports = await Task.WhenAll(new[] { "jackbot-smoke", SmokeStack.KitProject }.Select(project =>
+            SmokeStack.DockerAsync("ps", "--filter", $"label=com.docker.compose.project={project}",
+                "--format", "{{.Names}} {{.Ports}}")));
 
-        ports.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+        ports.SelectMany(p => p.Split('\n', StringSplitOptions.RemoveEmptyEntries))
             .Where(line => line.Contains("0.0.0.0:", StringComparison.Ordinal) && !line.StartsWith("caddy ", StringComparison.Ordinal))
             .ShouldBeEmpty();
     }
@@ -145,38 +180,63 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     {
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
-        using var playwright = await Playwright.CreateAsync();
-        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        await InChatAsync(agent: null, async page =>
         {
-            Headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false",
-            Args = [$"--host-resolver-rules={string.Join(',', stack.Hosts.Select(h => $"MAP {h} 127.0.0.1"))}"]
+            await SayAsync(page, $"Smoke {Guid.NewGuid().ToString("N")[..4]}: reply with one short sentence.");
+
+            // Whatever comes back first, then that it is no error: a turn the agent refuses — its
+            // assertion did not verify, a server refused its call token — is answered too, as an error
+            // message with text in it.
+            await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
+                .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 180_000 });
+            await Assertions.Expect(page.Locator(".chat-message.error")).ToHaveCountAsync(0);
+            await Assertions.Expect(page.Locator(".chat-message.assistant:not(.error) .message-content").First)
+                .Not.ToBeEmptyAsync();
         });
-        var context = await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true });
-        await context.AddCookiesAsync(
-        [
-            new Microsoft.Playwright.Cookie
-            {
-                Name = "ziggurat_session", Value = stack.MemberSession, Domain = stack.MainHost, Path = "/",
-                Secure = true, HttpOnly = true
-            }
-        ]);
-        var page = await context.NewPageAsync();
+    }
+
+    // The same conversation through a household's own server: the agent reads a note from the kit's
+    // vault, which it reaches through the vault's tunnel alone, and the word the note holds — written
+    // here, so the model cannot know it otherwise — comes back in the reply. The call is signed for
+    // the vault's synthetic address and checked against the keys the relay handed over that tunnel.
+    [SkippableFact]
+    public async Task ASignedInPerson_GetsAReplyThatReadsTheVaultThroughItsTunnel()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        await KitConnectedAsync();
         var tag = Guid.NewGuid().ToString("N")[..4];
+        var word = $"smoke{Guid.NewGuid():N}"[..17];
+        var note = $"smoke-{tag}.md";
+        await File.WriteAllTextAsync(Path.Combine(KitVault, note), $"{word}\n");
 
-        await WebChatE2ETests.GotoWebChatAsync(page, $"https://{stack.MainHost}/");
-        await WebChatE2ETests.SelectAgentAsync(page);
-        var input = page.Locator("textarea.chat-input");
-        await input.FillAsync($"Smoke {tag}: reply with one short sentence.");
-        await input.PressAsync("Enter");
+        await InChatAsync(agent: "Jonas", async page =>
+        {
+            await SayAsync(page, $"Smoke {tag}: read the note {note} in the vault and reply with the one word written in it, nothing else.");
 
-        // Whatever comes back first, then that it is no error: a turn the agent refuses — its
-        // assertion did not verify, a server refused its call token — is answered too, as an error
-        // message with text in it.
-        await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
-            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 180_000 });
-        await Assertions.Expect(page.Locator(".chat-message.error")).ToHaveCountAsync(0);
-        await Assertions.Expect(page.Locator(".chat-message.assistant:not(.error) .message-content").First)
-            .Not.ToBeEmptyAsync();
+            await Assertions.Expect(page.Locator(".chat-message.assistant:not(.error) .message-content", new PageLocatorOptions { HasText = word }).First)
+                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 180_000 });
+            await Assertions.Expect(page.Locator(".chat-message.error")).ToHaveCountAsync(0);
+        });
+    }
+
+    // A tunnel is opened with the credential minted for that server and no other: a forged one, and
+    // the vault's own presented as the printer's, are let through the proxy's route and refused by the
+    // relay with the reason as the close — and the vault's own tunnel stands.
+    [SkippableFact]
+    public async Task AForgedTunnelCredential_IsRefusedAtTheTunnelRoute()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        await KitConnectedAsync();
+        var vault = (await SmokeStack.DockerAsync("exec", await SmokeStack.KitContainerAsync("mcp-vault"),
+            "printenv", "MCP__TUNNEL__CREDENTIAL")).Trim();
+
+        (await TunnelClosedAsync("vault", "not-a-credential")).ShouldBe(
+            (WebSocketCloseStatus.PolicyViolation, nameof(TunnelCredentialRefusal.Unknown)));
+        (await TunnelClosedAsync("printer", vault)).ShouldBe(
+            (WebSocketCloseStatus.PolicyViolation, nameof(TunnelCredentialRefusal.AnotherServer)));
+        (await stack.ConnectedKitServersAsync()).ShouldContain("vault");
     }
 
     // Holding a server's credential lets a container talk to it; only the agent's signature says who a
@@ -190,29 +250,46 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
         var servers = await GatedServersAsync();
-        // Every server the agent dials that this stack starts (all but the sandbox, on its own network),
-        // so a reader regression cannot shrink "every" to one.
-        servers.ShouldBe(["mcp-library", "mcp-vault", "mcp-websearch", "mcp-idealista", "mcp-homeassistant",
-            "mcp-channel-signalr", "mcp-scheduling", "mcp-printer", "mcp-timers", "mcp-sugary"], ignoreOrder: true);
-        var foreign = new TokenSigner(TestSigningKeys.Store(TestSigningKeys.Agent));
+        // Every server the agent dials on the deployment's network that this stack starts, so a reader
+        // regression cannot shrink "every" to one. The home's servers are the kit's (below).
+        servers.ShouldBe(["mcp-idealista", "mcp-channel-signalr", "mcp-scheduling", "mcp-timers", "mcp-sugary"],
+            ignoreOrder: true);
+
+        var refusals = await Task.WhenAll(servers.Select(async server => await ForgedCallsAsync(
+            server, (await SmokeStack.DockerAsync("exec", server, "printenv", "MCP__SHAREDSECRET")).Trim(),
+            audience: server, SmokeStack.FromInsideAsync, $"http://{server}:8080/mcp")));
+
+        ShouldAllBeRefused(refusals);
+    }
+
+    // The same forgeries at the kit's servers, from inside the kit's own network, presenting each
+    // server's own tunnel credential and signed for its synthetic address: refused alike — and the
+    // foreign key as unknown, not as no keys at all, which is what says the agent's keys reached each
+    // server over its tunnel.
+    [SkippableFact]
+    public async Task AForgedCallFromInsideTheKitsNetwork_IsRefusedByEveryKitServer()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        await KitConnectedAsync();
+        // The sandbox is on a network of its own, which no other container of the kit's is on.
+        var servers = DeploymentFiles.KitCompose().Services.Values
+            .Where(s => s.Environment.ContainsKey("MCP__TUNNEL__SERVERNAME") && s.Networks.Contains("kit"))
+            .Select(s => (Service: s.Name, Name: s.Environment["MCP__TUNNEL__SERVERNAME"]))
+            .Where(s => SmokeStack.KitServers.Contains(s.Name))
+            .ToList();
+        servers.Select(s => s.Name).ShouldBe(["websearch", "vault", "library", "printer"], ignoreOrder: true);
 
         var refusals = await Task.WhenAll(servers.Select(async server =>
         {
-            var credential = (await SmokeStack.DockerAsync("exec", server, "printenv", "MCP__SHAREDSECRET")).Trim();
-            var signed = foreign.Sign(IdentityClaims.Person(SomebodyElse, SomebodyElse, ChannelIds.SignalR, ["owner"])
-                .Stamped(TokenIssuers.Agent, server, DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2)));
-            return (server,
-                missing: await ForgedCallAsync(server, credential, token: null),
-                garbage: await ForgedCallAsync(server, credential, token: "not.a-token"),
-                foreignKey: await ForgedCallAsync(server, credential, signed));
+            var container = await SmokeStack.KitContainerAsync(server.Service);
+            var credential = (await SmokeStack.DockerAsync("exec", container, "printenv", "MCP__TUNNEL__CREDENTIAL")).Trim();
+            var port = server.Service == BrowseServerListeners.Service ? BrowseServerListeners.Mcp : 8080;
+            return await ForgedCallsAsync(server.Service, credential, ServerAddress.Tunnelled(stack.Home, server.Name).Name,
+                SmokeStack.FromInsideTheKitAsync, $"http://{server.Service}:{port}/mcp");
         }));
 
-        refusals.ShouldSatisfyAllConditions(refusals.SelectMany(r => new Action[]
-        {
-            () => r.missing.ShouldContain("Refused (Missing)", customMessage: r.server),
-            () => r.garbage.ShouldContain("Refused (Malformed)", customMessage: r.server),
-            () => r.foreignKey.ShouldContain("Refused (UnknownKey)", customMessage: r.server)
-        }).ToArray());
+        ShouldAllBeRefused(refusals);
     }
 
     // Caddy overwrites the identity headers a browser sends, but anything on the compose network can
@@ -283,20 +360,23 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         (await AsAsync("http://agent:8080/api/agents", forSugary, agentSecret)).ShouldBe(HttpStatusCode.Unauthorized);
     }
 
-    // A login handoff's page is on the browse server's pages listener, which Caddy reaches; its /mcp
-    // is on the other listener, which nothing routed reaches, and neither listener answers the other's.
+    // A login handoff's page is on the household's web search, at its own site: Caddy routes it to the
+    // relay, which forwards it down web search's tunnel to its pages listener, and the server's own
+    // answer comes back — a link nobody minted is gone, not the relay's offline page. Its /mcp is on
+    // the other listener, which the pages tag never reaches, and neither listener answers the other's.
     [SkippableFact]
-    public async Task TheBrowsePages_AreReachedThroughTheProxy_AndTheBrowseServersMcpIsNot()
+    public async Task TheBrowsePages_AnswerThroughTheTunnel_AndTheBrowseServersMcpIsNotOnTheirListener()
     {
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
+        await KitConnectedAsync();
         var page = await SendAsync(HttpMethod.Get, stack.MainHost, $"/browse/handoff/{Guid.NewGuid():N}", accept: "text/html");
 
         page.StatusCode.ShouldBe(HttpStatusCode.Gone);
         (await page.Content.ReadAsStringAsync()).ShouldContain("This link has been used or has run out");
-        (await SmokeStack.FromInsideAsync(HttpMethod.Get, $"http://{BrowseServerListeners.Service}:{BrowseServerListeners.Mcp}/browse/handoff/x"))
+        (await SmokeStack.FromInsideTheKitAsync(HttpMethod.Get, $"http://{BrowseServerListeners.Service}:{BrowseServerListeners.Mcp}/browse/handoff/x"))
             .Status.ShouldBe(HttpStatusCode.NotFound);
-        (await SmokeStack.FromInsideAsync(HttpMethod.Post, $"http://{BrowseServerListeners.Service}:{BrowseServerListeners.Pages}/mcp"))
+        (await SmokeStack.FromInsideTheKitAsync(HttpMethod.Post, $"http://{BrowseServerListeners.Service}:{BrowseServerListeners.Pages}/mcp"))
             .Status.ShouldBe(HttpStatusCode.NotFound);
     }
 
@@ -329,10 +409,108 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             .ToList();
     }
 
+    // A call with no token, a garbage one, and one signed for the server by a key the running agent
+    // does not publish.
+    private static async Task<(string Server, string Missing, string Garbage, string ForeignKey)> ForgedCallsAsync(
+        string server, string credential, string audience, Inside from, string url)
+    {
+        var signed = new TokenSigner(TestSigningKeys.Store(TestSigningKeys.Agent)).Sign(
+            IdentityClaims.Person(SomebodyElse, SomebodyElse, ChannelIds.SignalR, ["owner"])
+                .Stamped(TokenIssuers.Agent, audience, DateTimeOffset.UtcNow, TimeSpan.FromMinutes(2)));
+        return (server,
+            await ForgedCallAsync(from, url, credential, token: null),
+            await ForgedCallAsync(from, url, credential, token: "not.a-token"),
+            await ForgedCallAsync(from, url, credential, signed));
+    }
+
+    private static void ShouldAllBeRefused(IEnumerable<(string Server, string Missing, string Garbage, string ForeignKey)> refusals) =>
+        refusals.ShouldSatisfyAllConditions(refusals.SelectMany(r => new Action[]
+        {
+            () => r.Missing.ShouldContain("Refused (Missing)", customMessage: r.Server),
+            () => r.Garbage.ShouldContain("Refused (Malformed)", customMessage: r.Server),
+            () => r.ForeignKey.ShouldContain("Refused (UnknownKey)", customMessage: r.Server)
+        }).ToArray());
+
+    // Every kit server the script starts is connected through its tunnel. The script started them
+    // before the tests were built, so this is a check that they came up, not a wait for them to.
+    private async Task KitConnectedAsync() =>
+        await Eventually.Until(async () => SmokeStack.KitServers.All((await stack.ConnectedKitServersAsync()).Contains),
+            $"the kit's {string.Join(", ", SmokeStack.KitServers)} connected through their tunnels");
+
+    // The kit's vault on this machine (TenantKit/docker-compose.override.smoke.yml).
+    private static string KitVault =>
+        Path.Combine(TestHelpers.FindSolutionRoot(), "DockerCompose", "volumes", "smoke", "kit", "vault");
+
+    // Opens the tunnel route through Caddy as a household's server would, and says how the relay
+    // closed it.
+    private async Task<(WebSocketCloseStatus? Status, string? Reason)> TunnelClosedAsync(string server, string credential)
+    {
+        using var socket = new ClientWebSocket();
+        socket.Options.SetRequestHeader("Authorization", $"Bearer {credential}");
+        socket.Options.SetRequestHeader(TunnelProtocol.ServerHeader, server);
+        using var invoker = new HttpMessageInvoker(SmokeStack.Handler());
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await socket.ConnectAsync(new Uri($"wss://{stack.MainHost}{TunnelProtocol.Path}"), invoker, timeout.Token);
+
+        var buffer = new byte[4096];
+        WebSocketReceiveResult received;
+        do
+        {
+            received = await socket.ReceiveAsync(buffer, timeout.Token);
+        }
+        while (received.MessageType != WebSocketMessageType.Close);
+
+        return (socket.CloseStatus, socket.CloseStatusDescription);
+    }
+
+    // A signed-in browser through Caddy to the chat client, on a fresh topic of the agent named (or
+    // whichever the client selects).
+    private async Task InChatAsync(string? agent, Func<IPage, Task> converse)
+    {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false",
+            Args = [$"--host-resolver-rules={string.Join(',', stack.Hosts.Select(h => $"MAP {h} 127.0.0.1"))}"]
+        });
+        var context = await browser.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true });
+        await context.AddCookiesAsync(
+        [
+            new Microsoft.Playwright.Cookie
+            {
+                Name = "ziggurat_session", Value = stack.MemberSession, Domain = stack.MainHost, Path = "/",
+                Secure = true, HttpOnly = true
+            }
+        ]);
+        var page = await context.NewPageAsync();
+
+        await WebChatE2ETests.GotoWebChatAsync(page, $"https://{stack.MainHost}/");
+        await WebChatE2ETests.SelectAgentAsync(page);
+        if (agent is not null)
+        {
+            await WebChatE2ETests.ClickThroughApprovalsAsync(
+                page, page.Locator(".agent-seg", new PageLocatorOptions { HasText = agent }));
+            await Assertions.Expect(page.Locator(".agent-seg.on", new PageLocatorOptions { HasText = agent }))
+                .ToBeVisibleAsync();
+        }
+
+        await converse(page);
+    }
+
+    private static async Task SayAsync(IPage page, string message)
+    {
+        var input = page.Locator("textarea.chat-input");
+        await input.FillAsync(message);
+        await input.PressAsync("Enter");
+    }
+
+    private delegate Task<InsideAnswer> Inside(
+        HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers, string? body);
+
     // A tools/call as the agent would send it — the server's credential, the 2026-07-28 stateless
     // protocol's per-request metadata, and a conversation context naming a person's account — but
     // signed by nobody the server trusts. What comes back is the protocol's answer, refusal and all.
-    private static async Task<string> ForgedCallAsync(string server, string credential, string? token)
+    private static async Task<string> ForgedCallAsync(Inside from, string url, string credential, string? token)
     {
         var context = new ConversationContext("jonas", "smoke-forged", SomebodyElse, new ReplyTarget(ChannelIds.SignalR, "smoke-forged"),
             Principal: new Principal(ChannelIds.SignalR, SomebodyElse, new Account(SomebodyElse, SomebodyElse)));
@@ -355,7 +533,7 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             ["method"] = "tools/call",
             ["params"] = new JsonObject { ["name"] = "fs_info", ["arguments"] = new JsonObject(), ["_meta"] = meta }
         };
-        var answer = await SmokeStack.FromInsideAsync(HttpMethod.Post, $"http://{server}:8080/mcp", new Dictionary<string, string>
+        var answer = await from(HttpMethod.Post, url, new Dictionary<string, string>
         {
             ["Authorization"] = $"Bearer {credential}",
             ["Content-Type"] = "application/json",
