@@ -122,8 +122,8 @@ public static class SettingsBinder
             return MissingRequiredMembers(value, section.GetSection(property.Name), memberPath);
         }
 
-        // Collection elements are read at startup too: Telegram materialises BotRegistry(settings.Bots)
-        // and voice SatelliteRegistry(settings.Satellites) at registration time, so a required member
+        // Collection elements are read at startup too: voice materialises
+        // SatelliteRegistry(settings.Satellites) at registration time, so a required member
         // missing from one element must fail startup by its indexed name instead of surfacing as a
         // null deep inside the server.
         return Elements(value)

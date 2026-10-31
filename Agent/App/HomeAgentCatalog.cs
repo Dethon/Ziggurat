@@ -7,8 +7,9 @@ namespace Agent.App;
 // once the agent is listening and again as often as the configuration is kept, so an agent renamed
 // there reaches the channels through the registration they already have — a connection re-registers a
 // catalog that no longer matches the one it last sent. The channels' catalogue is one list for every
-// household until each channel asks per household (the shared Telegram bot's /agent, the chat
-// client's spaces); a turn is built from its own household's agents whatever the list says.
+// household until each channel asks per household, as the shared Telegram bot's /agent does (the
+// accounts service's agent-names view) and the chat client's picker does not yet; a turn is built from
+// its own household's agents whatever the list says.
 //
 // Not before the agent listens (`listening`, the host's ApplicationStarted): the accounts service
 // checks the agent's token for its view against the keys the agent publishes, and a fetch that finds

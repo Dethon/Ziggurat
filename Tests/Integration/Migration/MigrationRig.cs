@@ -75,13 +75,17 @@ public sealed class MigrationRig : IAsyncDisposable
     }
 
     // The run as the operator types it: the people's file, then the arguments.
-    public async Task<(int Exit, string Output)> RunAsync(object people, params string[] args)
+    public Task<(int Exit, string Output)> RunAsync(object people, params string[] args) => RunAsync(people, null, args);
+
+    // The same, with what the operator pipes into it on its input.
+    public async Task<(int Exit, string Output)> RunAsync(object people, string? input, params string[] args)
     {
         var file = Path.Combine(Directory, $"people-{Guid.NewGuid():N}.json");
         await File.WriteAllTextAsync(file, JsonSerializer.Serialize(new { people }));
         await using var output = new StringWriter();
+        using var piped = new StringReader(input ?? "");
         var exit = await HouseholdMigrationCommand.RunAsync(
-            ["--people", file, .. args], Settings, output, CancellationToken.None);
+            ["--people", file, .. args], Settings, output, CancellationToken.None, piped);
         return (exit, output.ToString());
     }
 

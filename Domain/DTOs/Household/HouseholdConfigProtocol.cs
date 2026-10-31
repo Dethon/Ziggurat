@@ -27,6 +27,10 @@ public static class HouseholdConfigProtocol
     // before any call names a household.
     public const string TelegramBotsView = "telegram-bots";
 
+    // The ids and names of a household's agents and which answers by default: what the shared Telegram
+    // bot's /agent lists and switches a chat among, and nothing else of their definitions.
+    public const string AgentNamesView = "agent-names";
+
     // Where a save is announced (a HouseholdConfigSaved, as JSON), so every reader drops what it
     // cached of that household. Pub/sub reaches only who is subscribed then: a reader's cache
     // lifetime is what bounds a missed one.
@@ -76,6 +80,14 @@ public sealed record HouseholdTelegramBots(IReadOnlyList<HouseholdTelegramBot> B
 
 [PublicAPI]
 public sealed record HouseholdTelegramBot(string HouseholdId, string AgentId, string Token);
+
+// A household's agents as a person picks among them: each one's id and name, in the section's order,
+// and the one answering where nobody picked (none: the agent's own default decides).
+[PublicAPI]
+public sealed record HouseholdAgentNames(string? DefaultAgent, IReadOnlyList<HouseholdAgentName> Agents);
+
+[PublicAPI]
+public sealed record HouseholdAgentName(string Id, string Name);
 
 // Why a question was not answered, with what the service could say about it.
 [PublicAPI]

@@ -1,4 +1,5 @@
 using Accounts.Configuration;
+using Domain.Agents;
 using Domain.DTOs.Household;
 
 namespace Accounts.Internal;
@@ -47,6 +48,8 @@ public static class HouseholdConfiguration
             SectionAsync(store, household, HouseholdSections.SpacesSchema, ct));
         MapShared(routes, HouseholdConfigProtocol.IdealistaView, async (store, household, ct) =>
             (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).Idealista);
+        MapShared(routes, HouseholdConfigProtocol.AgentNamesView, async (store, household, ct) =>
+            HouseholdAgents.Names(await SectionAsync(store, household, HouseholdSections.AgentsSchema, ct)));
 
         // Every household's bots, asked with no household: the Telegram server polls them from its
         // start, before any call could prove one. A household whose secrets do not open is left out

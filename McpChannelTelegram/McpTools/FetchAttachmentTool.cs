@@ -7,7 +7,7 @@ using Telegram.Bot;
 namespace McpChannelTelegram.McpTools;
 
 // Telegram is the store, so this is the whole of it: no upload store, no volume, no sweeper and
-// no retention on this channel (ADR 0022). A reference names the agent and the file id
+// no retention on this channel (ADR 0022). A reference names the bot and the file id
 // (TelegramReference), and the bytes are asked of Telegram at the moment the agent wants them.
 //
 // Hidden from the model like every other channel-protocol tool.
@@ -23,17 +23,17 @@ public sealed class FetchAttachmentTool
     {
         var logger = services.GetRequiredService<ILogger<FetchAttachmentTool>>();
 
-        if (TelegramReference.Parse(attachmentId) is not var (agentId, fileId))
+        if (TelegramReference.Parse(attachmentId) is not var (bot, fileId))
         {
-            logger.LogWarning("Attachment reference {AttachmentId} does not name an agent and a file", attachmentId);
+            logger.LogWarning("Attachment reference {AttachmentId} does not name a bot and a file", attachmentId);
             return string.Empty;
         }
 
-        var botClient = services.GetRequiredService<BotRegistry>().FindBotForAgent(agentId);
+        var botClient = services.GetRequiredService<BotRegistry>().ForReference(bot)?.Client;
         if (botClient is null)
         {
-            logger.LogWarning("Attachment {AttachmentId} names agent {AgentId}, which has no bot here",
-                attachmentId, agentId);
+            logger.LogWarning("Attachment {AttachmentId} names the bot {Bot}, which this server does not poll",
+                attachmentId, bot);
             return string.Empty;
         }
 

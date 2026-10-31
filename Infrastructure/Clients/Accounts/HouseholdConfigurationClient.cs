@@ -68,6 +68,9 @@ public sealed class HouseholdConfigurationClient(
     public Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         SectionAsync<SpacesSection>(HouseholdConfigProtocol.SpacesView, householdId, proof, ct);
 
+    public Task<HouseholdAgentNames> AgentNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        SectionAsync<HouseholdAgentNames>(HouseholdConfigProtocol.AgentNamesView, householdId, proof, ct);
+
     public Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct) =>
         KeptAsync(HouseholdConfigProtocol.TelegramBotsView, EveryHousehold, async () =>
             (await AskAsync<HouseholdTelegramBots>(HouseholdConfigProtocol.TelegramBotsView, new HouseholdConfigQuery(), ct)).Bots, ct);

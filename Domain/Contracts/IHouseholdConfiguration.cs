@@ -26,6 +26,9 @@ public interface IHouseholdConfiguration
 
     Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct);
 
+    // The household's agents by id and name, and its default: what a person picks among on a channel.
+    Task<HouseholdAgentNames> AgentNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct);
+
     // Every household's bots: the Telegram server polls them from startup, before any call.
     Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct);
 }

@@ -32,7 +32,7 @@ public sealed class OfferAlertTool
         var access = services.GetRequiredService<TelegramAccess>();
         var (alertId, dismissed) = router.RegisterAlert(access.AnswersFor(p.Owner), p.AlertId, p.Text, cancellationToken);
 
-        if (!await ShowAsync(router, access, services.GetRequiredService<BotRegistry>().BotsPreferring(p.AgentId), alertId, p, cancellationToken))
+        if (!await ShowAsync(router, access, services.GetRequiredService<BotRegistry>().BotsPreferring(p.Owner.TenantId, p.AgentId), alertId, p, cancellationToken))
         {
             // An alert that reached nobody is withdrawn as one that ended elsewhere would be.
             await router.SettleAlertAsync(alertId, dismissed: false, CancellationToken.None);
@@ -42,8 +42,9 @@ public sealed class OfferAlertTool
         return await dismissed == ChannelProtocol.AlertDismissed ? ChannelProtocol.AlertDismissed : ChannelProtocol.NoAnswer;
     }
 
-    // By the bot of the agent that set it, which is the chat the person talks in, else by the first
-    // other bot they opened a chat with: a bot cannot write first to someone who never did. A person
+    // By their household's bot of the agent that set it, which is the chat the person talks in, else by
+    // the first other bot of their household's, or the shared bot, they opened a chat with: a bot cannot
+    // write first to someone who never did. A person
     // with no Telegram linked, or an accounts service that cannot say which chat is theirs, is shown
     // nothing by any bot.
     private static async Task<bool> ShowAsync(
