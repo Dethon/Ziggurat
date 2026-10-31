@@ -51,19 +51,22 @@ internal sealed class RelayHost : IAsyncDisposable
 
     public string Hub => $"ws://localhost:{Port}{TunnelProtocol.Path}";
 
+    // The same, for a server in a container the suite started, listening on every address.
+    public string HubFromContainers => $"ws://host.docker.internal:{Port}{TunnelProtocol.Path}";
+
     public TunnelRegistry Registry => _app.Services.GetRequiredService<TunnelRegistry>();
 
     public IOwnServers OwnServers => _app.Services.GetRequiredService<IOwnServers>();
 
     public static async Task<RelayHost> StartAsync(
         AccountsServer accounts, string agentCredential, string redis, SigningKeyStore keys,
-        IMetricsPublisher metrics, int? port = null)
+        IMetricsPublisher metrics, int? port = null, IPAddress? on = null)
     {
         var listening = port ?? TestPort.GetAvailable();
         var bridge = new VfsBridge(TimeProvider.System, new VfsBridgeSettings());
         var reached = new ConcurrentQueue<ReachedTarget>();
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, listening));
+        builder.WebHost.UseKestrel(options => options.Listen(on ?? IPAddress.Loopback, listening));
         builder.Services
             .AddSingleton(keys)
             .AddSingleton(metrics)
