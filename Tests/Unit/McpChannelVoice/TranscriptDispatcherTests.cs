@@ -42,22 +42,11 @@ public class TranscriptDispatcherTests
         CommandSettings? commands = null, IMetricsPublisher? publisher = null,
         double shortSpeechAvgLogProbThreshold = -1.4, int fullThresholdSpeechMs = 2000,
         ReplyTextAccumulator? accumulator = null, FakeAccountResolver? accounts = null,
-        List<CreateConversationParams>? opened = null)
+        FakeTopicMinter? topics = null)
     {
         accumulator ??= new ReplyTextAccumulator();
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .Callback((CreateConversationParams p, CancellationToken _) => opened?.Add(p))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-x");
-                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
-
         var manager = new VoiceConversationManager(
-            factory.Object, accumulator, new FakeTimeProvider(DateTimeOffset.UtcNow),
+            topics ?? new FakeTopicMinter(), accumulator, new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
 
         var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
@@ -176,33 +165,54 @@ public class TranscriptDispatcherTests
     }
 
     // Whose the conversation's topic is comes from who opened it, so the speaker is asked before the
-    // conversation is minted: a recognised speaker's is theirs, private like their other topics.
+    // conversation is minted, and the agent mints it from the accounts service's word for them: a
+    // recognised speaker's is theirs, private like their other topics.
     [Fact]
-    public async Task DispatchAsync_MatchedSpeakerOpeningAConversation_MintsItForTheirAccount()
+    public async Task DispatchAsync_MatchedSpeakerOpeningAConversation_MintsItOnTheirAssertion()
     {
-        var opened = new List<CreateConversationParams>();
-        var (sut, _, _) = Build(accounts: new FakeAccountResolver().Holding("u-fran", "t-home", "Fran"), opened: opened);
+        var topics = new FakeTopicMinter();
+        var (sut, _, _) = Build(accounts: new FakeAccountResolver().Holding("u-fran", "t-home", "Fran"), topics: topics);
 
         await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.8, "u-fran", default);
 
-        var minted = opened.ShouldHaveSingleItem();
-        minted.Principal.ShouldBe(new Principal("voice", "u-fran", new Account("t-home", "u-fran")));
-        minted.Sender.ShouldBe("Fran");
+        var (request, assertion) = topics.Minted.ShouldHaveSingleItem();
+        request.Sender.ShouldBe("Fran");
+        (await VouchedForAsync(assertion))?.Account.ShouldBe(new Account("t-home", "u-fran"));
     }
 
-    // The guest acts for no account, so the conversation it opens is the household's.
+    // The guest acts for no account, so the conversation it opens is minted on the household
+    // guest's assertion, which gives the household's topic.
     [Fact]
-    public async Task DispatchAsync_GuestOpeningAConversation_MintsItForNoAccount()
+    public async Task DispatchAsync_GuestOpeningAConversation_MintsItOnTheGuestsAssertion()
     {
-        var opened = new List<CreateConversationParams>();
-        var (sut, _, _) = Build(accounts: new FakeAccountResolver(), opened: opened);
+        var topics = new FakeTopicMinter();
+        var (sut, _, _) = Build(accounts: new FakeAccountResolver(), topics: topics);
 
         await sut.DispatchAsync(
             Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.5, null, default);
 
-        opened.ShouldHaveSingleItem().Principal.ShouldBe(new Principal("voice", "household"));
+        var guest = (await VouchedForAsync(topics.Minted.ShouldHaveSingleItem().Assertion)).ShouldNotBeNull();
+        (guest.IsGuest, guest.TenantId).ShouldBe((true, FakeAccountResolver.Household));
     }
+
+    // An agent that will not mint the topic opens no conversation, so nothing is sent for it.
+    [Fact]
+    public async Task DispatchAsync_TheAgentCannotMintTheTopic_ThrowsAndEmitsNothing()
+    {
+        var (sut, manager, emitter) = Build(topics: new FakeTopicMinter().Down());
+
+        await Should.ThrowAsync<HttpRequestException>(() => sut.DispatchAsync(
+            Session(), new TranscriptionResult { Text = "hola", Confidence = 0.9 }, "agent-1", null, 0.5, null, default));
+
+        emitter.Received().ShouldBeEmpty();
+        manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
+    }
+
+    private static async Task<IdentityClaims?> VouchedForAsync(string? assertion) =>
+        await TestAssertions.Verifier().VerifyTurnAsync(assertion, "voice", default) is TurnAdmission.Admitted(var identity)
+            ? identity
+            : null;
 
     // Nobody matched is the guest: somebody in the house, acting as no person. The satellite's
     // identity is only the name the turn goes by.
@@ -420,9 +430,9 @@ public class TranscriptDispatcherTests
     [Fact]
     public async Task DispatchAsync_EmptyText_DropsAndPublishesDroppedMetric()
     {
-        var factory = new Mock<IConversationFactory>();
+        var factory = new FakeTopicMinter();
         var manager = new VoiceConversationManager(
-            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            factory, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var published = new List<MetricEvent>();
@@ -440,9 +450,7 @@ public class TranscriptDispatcherTests
         ok.ShouldBeFalse();
         emitter.Received().ShouldBeEmpty();
         manager.GetActiveConversationId("kitchen-01").ShouldBeNull();
-        factory.Verify(
-            f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()),
-            Times.Never);
+        factory.Minted.ShouldBeEmpty();
         published.OfType<VoiceEvent>()
             .ShouldContain(e => e.Metric == VoiceMetric.UtteranceTranscribed && e.Outcome == "dropped");
     }
@@ -467,17 +475,9 @@ public class TranscriptDispatcherTests
     [Fact]
     public async Task DispatchAsync_Dispatched_PublishesCaptureAndWhisperStats()
     {
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-x");
-                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
+        var factory = new FakeTopicMinter();
         var manager = new VoiceConversationManager(
-            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            factory, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var published = new List<MetricEvent>();
         var publisher = new Mock<IMetricsPublisher>();
@@ -524,7 +524,7 @@ public class TranscriptDispatcherTests
     public async Task DispatchAsync_Dropped_PublishesCaptureAndWhisperStats()
     {
         var manager = new VoiceConversationManager(
-            new Mock<IConversationFactory>().Object, new ReplyTextAccumulator(),
+            new FakeTopicMinter(), new ReplyTextAccumulator(),
             new FakeTimeProvider(DateTimeOffset.UtcNow), TimeSpan.FromMinutes(5),
             NullLogger<VoiceConversationManager>.Instance);
         var published = new List<MetricEvent>();

@@ -12,6 +12,7 @@ using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 using Tests.Integration.McpServers;
+using Tests.Unit.McpChannelVoice;
 using SignalRCreateConversation = McpChannelSignalR.McpTools.CreateConversationTool;
 using VoiceCreateConversation = McpChannelVoice.McpTools.CreateConversationTool;
 
@@ -97,17 +98,21 @@ public sealed class McpChannelConnectionCreateConversationTests
             .ShouldBe(((string?)null, "t-home", true, (string?)null));
     }
 
-    // Voice mints a topic for a fire only it delivers, and it is the fire's person's like any other.
+    // Voice keeps no topics: a fire only it delivers attaches to the topic the agent minted for it,
+    // whoever the principal beside it names, and one handed no conversation is refused.
     [Fact]
-    public async Task AVoiceOnlyDelivery_IsMintedAsItsPersonsTopic()
+    public async Task AVoiceDelivery_AttachesToTheConversationItIsHanded_AndMintsNoTopic()
     {
         await using var server = await StartVoiceAsync();
         await using var connection = await ConnectAsync(server.Endpoint);
 
-        await connection.CreateConversationAsync(
+        var attached = await connection.CreateConversationAsync(
+            "nabu", "Scheduled task", "scheduler", "the bins go out tonight", null, "11:22", Fran, group: false, CancellationToken.None);
+        var unanchored = await connection.CreateConversationAsync(
             "nabu", "Scheduled task", "scheduler", "the bins go out tonight", null, null, Fran, group: false, CancellationToken.None);
 
-        _saved.ShouldHaveSingleItem().OwnerId.ShouldBe("u-fran");
+        (attached, unanchored).ShouldBe(("11:22", (string?)null));
+        _saved.ShouldBeEmpty();
     }
 
     private static async Task<McpChannelConnection> ConnectAsync(string endpoint)
@@ -132,10 +137,9 @@ public sealed class McpChannelConnectionCreateConversationTests
             .WithTools<SignalRCreateConversation>());
     }
 
-    private Task<RunningServer> StartVoiceAsync()
+    private static Task<RunningServer> StartVoiceAsync()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
-        var factory = new ConversationFactory(_store, TimeProvider.System);
         return InMemoryMcpServer.StartAsync(services => services
             .AddSingleton(new SatelliteRegistry(new Dictionary<string, SatelliteConfig>
             {
@@ -144,10 +148,9 @@ public sealed class McpChannelConnectionCreateConversationTests
             .AddSingleton(new VoiceDeliveryRegistry(
                 time, TimeSpan.FromMinutes(5), new ReplyTextAccumulator(), NullLogger<VoiceDeliveryRegistry>.Instance))
             .AddSingleton(new VoiceConversationManager(
-                factory, new ReplyTextAccumulator(), time, TimeSpan.FromMinutes(5),
+                new FakeTopicMinter(), new ReplyTextAccumulator(), time, TimeSpan.FromMinutes(5),
                 NullLogger<VoiceConversationManager>.Instance))
             .AddSingleton(new SatelliteSessionRegistry())
-            .AddSingleton<IConversationFactory>(factory)
             .AddMcpServer()
             .WithHttpTransport()
             .WithTools<VoiceCreateConversation>());

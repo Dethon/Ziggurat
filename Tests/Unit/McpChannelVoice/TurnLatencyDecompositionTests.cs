@@ -57,20 +57,12 @@ public class TurnLatencyDecompositionTests
             new SatelliteConfig { Identity = "household", Room = "Kitchen" });
         _sessions.Register(_session);
 
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-kitchen");
-                var topic = new TopicMetadata("topic-kitchen", identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
+        var factory = new FakeTopicMinter();
 
         var manager = new VoiceConversationManager(
-            factory.Object, _accumulator, _clock, TimeSpan.FromMinutes(5),
+            factory, _accumulator, _clock, TimeSpan.FromMinutes(5),
             NullLogger<VoiceConversationManager>.Instance);
-        _conversationId = manager.GetOrCreateAsync(_session, "agent-1", "hello", default).GetAwaiter().GetResult();
+        _conversationId = manager.GetOrCreateAsync(_session, "agent-1", default).GetAwaiter().GetResult();
 
         // Synthesis is lazy and pulled inside the playback loop, so this is where TTS time-to-first
         // -audio happens — the same place the loop measures it.
