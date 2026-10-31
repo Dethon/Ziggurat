@@ -52,7 +52,9 @@ public record TopicRemoved(string TopicId) : IAction;
 
 public record SetAgents(IReadOnlyList<AgentCatalogEntry> Agents) : IAction;
 
-public record SelectAgent(string AgentId) : IAction;
+// Picked is false when the client chose for the person (a space opening on its own agent), which is
+// then not remembered as their pick.
+public record SelectAgent(string AgentId, bool Picked = true) : IAction;
 
 public record TopicsError(string Message) : IAction;
 
