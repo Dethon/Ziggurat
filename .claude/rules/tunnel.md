@@ -249,7 +249,11 @@ broken. Shared servers' URL endpoints keep ADR 0027's rule: retried, then fatal.
   `OwnServerState(name, online, generation)` per named server. `McpAgent` keeps it beside the session
   and compares it with the next turn's (`ReachesTheSameServersAs`): equal, the session is reused;
   different — a server came online, went offline, or **reconnected as a new tunnel generation** — the
-  old session is disposed and a new one built, outposts and shared servers redialled with it. That is
+  old session is disposed and a new one built, outposts and shared servers redialled with it. An
+  agent that uses outposts (its own `usesOutposts`, a worker's ANDed with its parent's, ADR 0028)
+  compares its machines the same way (`ComposedEndpoints.ReachesTheSameMachinesAs`: each live
+  outpost's name and tunnel generation), so a machine that opens, closes or reopens joins or leaves
+  at the next turn too; an agent that does not never asks. That is
   how a new generation's tools enter (ADR 0012): only at a turn's start, never under a running turn.
   Turns of one conversation group run one at a time, so the session replaced has no call in flight.
   A stack hosting servers in process has no generations (`InProcessOwnServers` answers null), so there
