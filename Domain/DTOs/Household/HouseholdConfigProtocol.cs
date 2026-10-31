@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Serialization;
 using JetBrains.Annotations;
 
@@ -68,7 +69,17 @@ public sealed record AgentHouseholdConfig(
     AgentsSection Agents,
     FeaturesSection Features,
     SpacesSection Spaces,
-    string? OpenRouterApiKey);
+    string? OpenRouterApiKey)
+{
+    // The key goes over the wire in clear, as the agent needs it; printed — a log line, an assertion's
+    // message, the HouseholdAgents built from it — it says only whether there is one.
+    private bool PrintMembers(StringBuilder builder)
+    {
+        builder.Append($"HouseholdId = {HouseholdId}, IsHome = {IsHome}, Settings = {Settings}, Agents = {Agents}, ");
+        builder.Append($"Features = {Features}, Spaces = {Spaces}, OpenRouterApiKey = {(OpenRouterApiKey is null ? "none" : "[set]")}");
+        return true;
+    }
+}
 
 // A shared server's view of the household its proof named: which household that is, and its section.
 [PublicAPI]

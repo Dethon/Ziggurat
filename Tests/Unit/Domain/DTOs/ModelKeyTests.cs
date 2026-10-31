@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Agents;
 using Domain.DTOs;
+using Domain.DTOs.Household;
 using Domain.Judgments;
 using Shouldly;
 
@@ -20,6 +21,20 @@ public class ModelKeyTests
 
         spawn.ToString().ShouldNotContain(Secret);
         caller.ToString().ShouldNotContain(Secret);
+    }
+
+    // The agent's view of a household carries the key in clear, as the wire must; printed, it does not.
+    [Fact]
+    public void TheAgentsViewOfAHousehold_PrintsWithoutItsKey()
+    {
+        var view = new AgentHouseholdConfig(
+            "household", false, new HouseholdSettings { Name = "Casa", TimeZone = "UTC" }, new AgentsSection(),
+            new FeaturesSection(), new SpacesSection(), Secret);
+        var agents = new HouseholdAgents { HouseholdId = "household", Agents = [], Configuration = view };
+
+        view.ToString().ShouldNotContain(Secret);
+        agents.ToString().ShouldNotContain(Secret);
+        view.ToString().ShouldContain("household");
     }
 
     [Fact]
