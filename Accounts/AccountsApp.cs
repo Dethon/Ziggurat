@@ -1,3 +1,5 @@
+using Accounts.Announcements;
+using Accounts.Configuration;
 using Accounts.Internal;
 using Accounts.Links;
 using Accounts.Members;
@@ -67,12 +69,19 @@ public static class AccountsApp
             .AddSingleton<MemberStore>()
             .AddSingleton<PersonStore>()
             .AddSingleton<HouseholdImporter>()
+            .AddSingleton<RedisAnnouncer>()
             .AddSingleton<TunnelRevocationPublisher>()
             .AddSingleton<TunnelCredentialStore>()
             // Opened when first asked rather than here, so a command that signs nothing never
             // writes a key; the server's first assertion or JWKS request generates it.
             .AddSingleton(_ => SigningKeyStore.Open(settings.SigningKeys))
-            .AddSingleton<Assertions>();
+            .AddSingleton<Assertions>()
+            // Built here rather than when first asked, so a malformed master key stops the service and
+            // every command before anything is read.
+            .AddSingleton(new HouseholdDataKeys(settings))
+            .AddSingleton<HouseholdConfigStore>()
+            .AddSingleton<HouseholdProofs>()
+            .AddHttpClient();
 
     public static WebApplication MapAccounts(this WebApplication app)
     {

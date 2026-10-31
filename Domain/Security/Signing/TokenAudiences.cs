@@ -12,6 +12,11 @@ public static class TokenAudiences
     // binds one to one use is the object it names and the kind of fire that object raises.
     public const string Delegation = "ziggurat-delegation";
 
+    // The token the agent presents for its own view of a household's configuration: the accounts
+    // service is its only reader. It proves the asker is the agent — whose credential for the service
+    // is a secret SexyTime's server holds too — and acts for nobody; the household is named beside it.
+    public const string HouseholdConfiguration = "ziggurat-household-config";
+
     // A call token's: the one server it is for, by the name it answers to (ServerAddress.Name) — the
     // name the agent keys that server's credential by (McpCredentials) and the one the server binds as
     // its own (MCP__AUDIENCE).

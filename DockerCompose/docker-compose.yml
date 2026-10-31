@@ -563,8 +563,16 @@ services:
       # server holds that one too, which lets it ask about a tunnel credential only if it already
       # has one — and a credential opens a tunnel by itself.
       CALLERS__agent: ${AGENTAPI__SHAREDSECRET}
-      # Where a revoked tunnel credential is announced, so the relay closes its tunnel at once.
+      # Where a revoked tunnel credential is announced, so the relay closes its tunnel at once, and a
+      # saved household configuration, so every reader drops what it kept of that household.
       REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      # The master key every household's data key is wrapped with, which seals that household's
+      # secrets (its OpenRouter key, Idealista's keys, its Telegram bots). This service's alone.
+      HOUSEHOLDCONFIG__MASTERKEY: ${HOUSEHOLD_CONFIG_MASTER_KEY}
+      # Where the agent publishes the keys its call tokens verify with: a shared server proves which
+      # household it asks about with the call token it was handed, and the agent proves it is the
+      # agent with one of its own.
+      AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:

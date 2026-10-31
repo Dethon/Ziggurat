@@ -81,7 +81,10 @@ internal sealed class ConversationGroup(
         AgentKey DeliveryKey,
         DisposableAgent Agent,
         AgentSession Thread,
-        Task Warmup);
+        Task Warmup,
+        // The group's publisher, naming the household its agent was built for: what its turns cost
+        // in time and runs is that household's.
+        IMetricsPublisher Metrics);
 
     public async IAsyncEnumerable<TurnUpdate> RunAsync(
         IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)> messages,
@@ -536,9 +539,9 @@ internal sealed class ConversationGroup(
         var approvals = new ApprovalRelay(approvalChannel, channels, logger, TimeProvider.System);
         // The household the verified identity names — the guest's too, who has no account — is the
         // one whose own servers the agent reaches.
+        var tenantId = x.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null;
         var agent = _agent = agentFactory.Create(
-            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account,
-            x.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null);
+            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account, tenantId);
         var thread = await GetOrRestoreThread(agent, deliveryKey);
 
         // Start session warmup (MCP connections + tool discovery) without awaiting it yet, so
@@ -547,7 +550,8 @@ internal sealed class ConversationGroup(
         // of operations is well-defined.
         var warmup = agent.WarmupSessionAsync(thread, _turnCt);
 
-        return _state = new GroupState(x.Message, targets, deliveryKey, agent, thread, warmup);
+        return _state = new GroupState(
+            x.Message, targets, deliveryKey, agent, thread, warmup, metricsPublisher.ForHousehold(tenantId));
     }
 
     private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(AdmittedTurn x)
@@ -563,7 +567,7 @@ internal sealed class ConversationGroup(
         // the window rather than sitting inside it, so the scope can carry the turn's own
         // anchor: the conversation this turn's reply actually lands in, which for a later
         // interactive turn is its own origin rather than the group's delivery key.
-        var firstReply = metricsPublisher.MeasureLatency(
+        var firstReply = state.Metrics.MeasureLatency(
             LatencyStage.FirstReply,
             targets.Count > 0 ? targets[0].ConversationId : agentKey.ConversationId);
         // A channel that has to recognise its own answer mints the key itself, before it dispatches
@@ -733,7 +737,7 @@ internal sealed class ConversationGroup(
         {
             logger.LogWarning(ex, "Skill preload failed for conversation {ConversationId}", message.ConversationId);
             var failed = new SkillPreload(SkillPreloadOutcome.Error, []);
-            metricsPublisher.Publish(SkillPreloader.ToEvent(Request(message, [], [], state), failed));
+            state.Metrics.Publish(SkillPreloader.ToEvent(Request(message, [], [], state), failed));
             return failed;
         }
     }
@@ -769,7 +773,7 @@ internal sealed class ConversationGroup(
                         turn.Message, stopwatch.ElapsedMilliseconds, !faulted, error);
                     if (evt is not null)
                     {
-                        metricsPublisher.Publish(evt);
+                        state.Metrics.Publish(evt);
                     }
 
                     return ValueTask.CompletedTask;

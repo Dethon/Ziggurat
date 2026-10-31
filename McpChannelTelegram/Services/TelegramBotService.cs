@@ -195,7 +195,7 @@ public sealed class TelegramBotService : BackgroundService
         // the caption, a newline, then the transcript.
         if (voice is not null)
         {
-            switch (await _dictation.ReadAsync(botClient, voice, cancellationToken))
+            switch (await _dictation.ReadAsync(botClient, voice, person.Account.TenantId, cancellationToken))
             {
                 // No turn, even with a caption: an answer to half of what someone said is worse
                 // than saying the other half could not be made out.

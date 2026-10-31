@@ -91,11 +91,11 @@ public sealed class ScheduleDispatcherService(
 
             if (plan.DeleteAfterFire)
             {
-                await store.DeleteAsync(schedule.Id, ct);
+                await store.DeleteAsync(schedule.TenantId, schedule.Id, ct);
             }
             else
             {
-                await store.UpdateLastRunAsync(schedule.Id, now.UtcDateTime, plan.NextRunAt, ct);
+                await store.UpdateLastRunAsync(schedule.TenantId, schedule.Id, now.UtcDateTime, plan.NextRunAt, ct);
             }
 
             logger.LogInformation("Fired schedule {ScheduleId} for agent {AgentId}", schedule.Id, schedule.AgentId);

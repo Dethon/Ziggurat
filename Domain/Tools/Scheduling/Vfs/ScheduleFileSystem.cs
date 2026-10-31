@@ -23,6 +23,11 @@ public sealed class ScheduleFileSystem(
     private ConversationContext? _caller;
     private string? _delegation;
 
+    // The household the call's verified identity names (the call token's, CallTurn): the only
+    // household whose schedules this view lists, reads and writes. A call acting for nobody names
+    // none, and sees no schedule and may write none.
+    private string? _household;
+
     // A shallow copy with the caller swapped, as HaFileSystem does: the copy carries every
     // dependency this mount was built with, and the store is shared by reference.
     public override FileSystemBackendBase For(FileSystemCaller caller)
@@ -30,6 +35,7 @@ public sealed class ScheduleFileSystem(
         var view = (ScheduleFileSystem)MemberwiseClone();
         view._caller = caller.Conversation;
         view._delegation = caller.Delegation;
+        view._household = caller.Conversation?.Identity?.TenantId is { Length: > 0 } household ? household : null;
         return view;
     }
 
@@ -94,7 +100,7 @@ public sealed class ScheduleFileSystem(
         }
 
         var (dirsOnly, matches) = scope;
-        var all = await store.ListAsync(ct);
+        var all = await HouseholdSchedulesAsync(ct);
 
         var dirs = ScheduleTree.Directories(agents, all).Where(matches).Select(p => $"/{p}/");
         if (dirsOnly)
@@ -194,7 +200,7 @@ public sealed class ScheduleFileSystem(
     // agent's schedules (agent dir), or everything (root / null). An unknown path scopes to nothing.
     private async Task<IReadOnlyList<Schedule>> ScopeSchedulesAsync(string? scope, CancellationToken ct)
     {
-        var all = await store.ListAsync(ct);
+        var all = await HouseholdSchedulesAsync(ct);
         if (string.IsNullOrWhiteSpace(scope))
         {
             return all;
@@ -236,9 +242,15 @@ public sealed class ScheduleFileSystem(
             return null;
         }
 
-        var s = await store.GetAsync(node.ScheduleId, ct);
+        var s = await FindAsync(node.ScheduleId, ct);
         return s is not null && s.AgentId == node.AgentId ? s : null;
     }
+
+    private Task<IReadOnlyList<Schedule>> HouseholdSchedulesAsync(CancellationToken ct) =>
+        _household is { } household ? store.ListAsync(household, ct) : Task.FromResult<IReadOnlyList<Schedule>>([]);
+
+    private Task<Schedule?> FindAsync(string id, CancellationToken ct) =>
+        _household is { } household ? store.GetAsync(household, id, ct) : Task.FromResult<Schedule?>(null);
 
     private async Task<bool> NodeExistsAsync(ScheduleNode node, CancellationToken ct) => node.Kind switch
     {
@@ -276,8 +288,14 @@ public sealed class ScheduleFileSystem(
             return new FsResult<FsCreateResult>.Err(Error(ToolError.Codes.NotFound, $"Unknown agent '{node.AgentId}'"));
         }
 
+        if (_household is not { } household)
+        {
+            return new FsResult<FsCreateResult>.Err(Error(
+                ToolError.Codes.PermissionDenied, "A schedule is kept for a household, and this call acts for none"));
+        }
+
         // Schedules use a unique-id model: create always rejects an existing id regardless of `overwrite`. Use fs_edit to modify an existing schedule.
-        if (await store.GetAsync(node.ScheduleId, ct) is not null)
+        if (await store.GetAsync(household, node.ScheduleId, ct) is not null)
         {
             return new FsResult<FsCreateResult>.Err(Error(ToolError.Codes.AlreadyExists, $"Schedule '{node.ScheduleId}' already exists"));
         }
@@ -299,6 +317,7 @@ public sealed class ScheduleFileSystem(
         var schedule = new Schedule
         {
             Id = node.ScheduleId,
+            TenantId = household,
             AgentId = node.AgentId,
             Prompt = spec!.Prompt!,
             CronExpression = spec.Cron,
@@ -394,14 +413,14 @@ public sealed class ScheduleFileSystem(
             return new FsResult<FsMoveResult>.Err(Error(ToolError.Codes.NotFound, $"Unknown agent '{dst.AgentId}'"));
         }
 
-        if (dst.ScheduleId != src.ScheduleId && await store.GetAsync(dst.ScheduleId!, ct) is not null)
+        if (dst.ScheduleId != src.ScheduleId && await store.GetAsync(existing.TenantId, dst.ScheduleId!, ct) is not null)
         {
             return new FsResult<FsMoveResult>.Err(Error(ToolError.Codes.AlreadyExists, $"Schedule '{dst.ScheduleId}' already exists"));
         }
 
         if (dst.ScheduleId != src.ScheduleId)
         {
-            await store.DeleteAsync(src.ScheduleId!, ct);
+            await store.DeleteAsync(existing.TenantId, src.ScheduleId!, ct);
         }
 
         await store.CreateAsync(
@@ -426,12 +445,12 @@ public sealed class ScheduleFileSystem(
             return await RejectWriteAsync<FsRemoveResult>(node, path, ct);
         }
 
-        if (await GetScheduleAsync(node, ct) is null)
+        if (await GetScheduleAsync(node, ct) is not { } existing)
         {
             return NotFound<FsRemoveResult>(path);
         }
 
-        await store.DeleteAsync(node.ScheduleId!, ct);
+        await store.DeleteAsync(existing.TenantId, existing.Id, ct);
         return new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
         {
             Status = "deleted", Message = "removed", OriginalPath = path, TrashPath = ""
@@ -467,7 +486,7 @@ public sealed class ScheduleFileSystem(
 
         // Queue the schedule for the dispatcher's next tick by setting NextRunAt=now. LastRunAt is left
         // untouched (null = don't change it); the dispatcher stamps the real fire-time when it actually runs.
-        await store.UpdateLastRunAsync(schedule.Id, null, timeProvider.GetUtcNow().UtcDateTime, ct);
+        await store.UpdateLastRunAsync(schedule.TenantId, schedule.Id, null, timeProvider.GetUtcNow().UtcDateTime, ct);
         return Exec($"queued '{schedule.Id}' to run now\n", "", 0, path);
     }
 

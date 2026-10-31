@@ -15,7 +15,7 @@ if (settings.Missing() is { Count: > 0 } missing)
 var clock = new AccountsClock(TimeProvider.System);
 if (command)
 {
-    return await AccountsCommand.RunAsync(args, settings, clock, Console.Out, CancellationToken.None);
+    return await AccountsCommand.RunAsync(args, settings, clock, Console.In, Console.Out, CancellationToken.None);
 }
 
 builder.Services.AddAccounts(settings, clock);
