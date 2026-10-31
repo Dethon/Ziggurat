@@ -20,13 +20,22 @@ public static class InternalCallers
     public const string Telegram = "mcp-channel-telegram";
     public const string Voice = "mcp-channel-voice";
 
+    // The agent, whose relay verifies the credential every tunnel opens with. It asks about no
+    // person's channel: tunnel credentials are what it may ask about, and nothing else may.
+    public const string Agent = "agent";
+
+    // Not a channel: what the relay asks about, kept in the same table so a channel server's
+    // credential is refused it as it is refused another channel.
+    public const string Tunnels = "tunnels";
+
     private const string ItemKey = "accounts.internal.callers";
 
     private static readonly Dictionary<string, string[]> _channels = new(StringComparer.Ordinal)
     {
         [SignalR] = [ChannelIds.SignalR],
         [Telegram] = [TelegramLinks.Channel],
-        [Voice] = [ChannelIds.Voice]
+        [Voice] = [ChannelIds.Voice],
+        [Agent] = [Tunnels]
     };
 
     // The entries whose credential this request presented; none is a caller this service does not know.

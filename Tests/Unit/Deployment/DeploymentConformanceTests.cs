@@ -2,6 +2,7 @@ using System.Globalization;
 using Accounts.Internal;
 using Agent.App;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Security;
 using McpServerSugary.Channel;
 using Shouldly;
@@ -122,7 +123,7 @@ public class DeploymentConformanceTests
     [InlineData("BOTS__0__BOTTOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("BOTS__1__BOTTOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("WEBPUSH__PRIVATEKEY", new[] { "mcp-channel-signalr", "mcp-sugary" })]
-    [InlineData("AGENTAPI__SHAREDSECRET", new[] { "agent" })]
+    [InlineData("AGENTAPI__SHAREDSECRET", new[] { "agent", "accounts" })]
     [InlineData("OUTPOSTS__SHAREDSECRET", new[] { "agent" })]
     public void ASecret_ReachesOnlyTheServicesThatReadIt(string variable, string[] readers)
     {
@@ -287,14 +288,23 @@ public class DeploymentConformanceTests
     // that keeps them inside: on every host the route the path lands on is a refusal or an upstream
     // that is not the accounts service, never the accounts route.
     [Fact]
-    public void TheAccountsJwks_IsRefusedThroughTheProxyOnEveryHost()
+    public void TheAccountsJwks_IsRefusedThroughTheProxyOnEveryHost() =>
+        ShouldBeRefusedThroughTheProxyOnEveryHost(InternalApi.JwksPath);
+
+    // A tunnel's credential is verified by the relay alone; from outside, the check would be an
+    // oracle for whether a credential guessed or stolen still works.
+    [Fact]
+    public void TheTunnelCredentialCheck_IsRefusedThroughTheProxyOnEveryHost() =>
+        ShouldBeRefusedThroughTheProxyOnEveryHost(TunnelCredentialProtocol.VerifyPath);
+
+    private static void ShouldBeRefusedThroughTheProxyOnEveryHost(string path)
     {
         var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
 
         hosts.ShouldNotBeEmpty();
         foreach (var host in hosts)
         {
-            var route = RouteFor(host, InternalApi.JwksPath);
+            var route = RouteFor(host, path);
             route.ShouldNotBeNull(host.Name);
             route.Upstream.ShouldNotBe("accounts:8080", host.Name);
             if (host.Routes.Any(r => r.Upstream == "accounts:8080"))
@@ -357,9 +367,9 @@ public class DeploymentConformanceTests
             .ShouldAllBe(caller => compose.Services.ContainsKey(caller));
     }
 
-    // The service confines each caller to its own channel by the name compose gives it
-    // (InternalCallers), so a channel server renamed on one side and not the other would be refused
-    // everything it asks.
+    // The service confines each caller to its own channel — the agent to tunnel credentials — by the
+    // name compose gives it (InternalCallers), so a caller renamed on one side and not the other
+    // would be refused everything it asks.
     [Fact]
     public void EveryChannelCallerOfTheAccountsService_IsOneItKnowsTheChannelOf()
     {
@@ -369,7 +379,33 @@ public class DeploymentConformanceTests
             .Where(k => k.StartsWith("CALLERS__", StringComparison.Ordinal))
             .Select(k => k["CALLERS__".Length..])
             .Where(caller => caller != HouseholdImportApi.Caller)
-            .ShouldBe([InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Voice], ignoreOrder: true);
+            .ShouldBe(
+                [InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Voice, InternalCallers.Agent],
+                ignoreOrder: true);
+    }
+
+    // The agent has no /mcp; its relay asks with the credential the agent already holds for its own
+    // API, so no secret exists for this alone.
+    [Fact]
+    public void TheRelay_AsksTheAccountsServiceWithTheAgentApisCredential()
+    {
+        var compose = DeploymentFiles.Compose();
+
+        compose.Service("accounts").Environment.GetValueOrDefault($"CALLERS__{InternalCallers.Agent}")
+            .ShouldBe(compose.Service("agent").Environment["AGENTAPI__SHAREDSECRET"]);
+    }
+
+    // A revoked tunnel credential is announced on Redis for the relay to close its tunnel, so the
+    // accounts service announces it on the Redis the agent listens on.
+    [Fact]
+    public void TheAccountsService_AnnouncesRevocationsOnTheAgentsRedis()
+    {
+        var compose = DeploymentFiles.Compose();
+        var accounts = compose.Service("accounts");
+
+        accounts.Environment.GetValueOrDefault("REDIS__CONNECTIONSTRING")
+            .ShouldBe(compose.Service("agent").Environment["REDIS__CONNECTIONSTRING"]);
+        accounts.DependsOn.ShouldContain("redis");
     }
 
     // Memory text and usage per person are the operator's alone: every request to the dashboard is

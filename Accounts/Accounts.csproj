@@ -21,6 +21,8 @@
          model and its migrations say nothing SQLite-specific, so a hosted database is a provider
          swap (.claude/rules/accounts.md). -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.13" />
+    <!-- Revoked tunnel credentials are announced on the deployment's Redis, for the relay. -->
+    <PackageReference Include="StackExchange.Redis" Version="3.4.5" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.13">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

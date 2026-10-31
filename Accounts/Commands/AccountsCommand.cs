@@ -3,6 +3,7 @@ using Accounts.People;
 using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
+using Accounts.Tunnels;
 using Domain.Security.Signing;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,6 +17,9 @@ namespace Accounts.Commands;
 //   docker exec accounts dotnet Accounts.dll create-user --name "<display name>" [--role owner|member]
 //   docker exec accounts dotnet Accounts.dll rotate-signing-key
 //   docker exec accounts dotnet Accounts.dll retire-signing-keys
+//   docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household <id> --server <name>
+//   docker exec accounts dotnet Accounts.dll list-tunnel-credentials
+//   docker exec accounts dotnet Accounts.dll revoke-tunnel-credential --id <id>
 //
 // The first is the operator's way in before anyone can sign in, and back in after losing every
 // passkey; the second is a recovery link for anyone; the third prints a session cookie's value for
@@ -24,7 +28,10 @@ namespace Accounts.Commands;
 // someone before the members page exists, and the test stack's way to seed its people. The last two
 // change the key assertions are signed with, beside the running service, which notices on its next
 // signature: a rotation makes a new key the signing one and keeps the previous published, and a
-// retirement, once nothing the previous key signed can still be in date, unpublishes it.
+// retirement, once nothing the previous key signed can still be in date, unpublishes it. The tunnel
+// verbs are the operator's for a household's own servers until the owner's admin area exists: a
+// credential for one of a household's servers by name, printed once; every credential with no
+// secret; and a revocation, which the relay is told of so it closes that credential's tunnel.
 public static class AccountsCommand
 {
     public const string MintLink = "mint-link";
@@ -32,13 +39,19 @@ public static class AccountsCommand
     public const string CreateUser = "create-user";
     public const string RotateSigningKey = "rotate-signing-key";
     public const string RetireSigningKeys = "retire-signing-keys";
+    public const string MintTunnelCredential = "mint-tunnel-credential";
+    public const string ListTunnelCredentials = "list-tunnel-credentials";
+    public const string RevokeTunnelCredential = "revoke-tunnel-credential";
 
     private const string Usage =
         $"usage: {MintLink} --operator [--name <display name>] | {MintLink} --user <id> | {MintSession} --user <id>"
-        + $" | {CreateUser} --name <display name> [--role owner|member] | {RotateSigningKey} | {RetireSigningKeys}";
+        + $" | {CreateUser} --name <display name> [--role owner|member] | {RotateSigningKey} | {RetireSigningKeys}"
+        + $" | {MintTunnelCredential} --household <id> --server <name> | {ListTunnelCredentials}"
+        + $" | {RevokeTunnelCredential} --id <id>";
 
     public static bool IsCommand(IReadOnlyList<string> args) =>
-        args is [MintLink or MintSession or CreateUser or RotateSigningKey or RetireSigningKeys, ..];
+        args is [MintLink or MintSession or CreateUser or RotateSigningKey or RetireSigningKeys
+            or MintTunnelCredential or ListTunnelCredentials or RevokeTunnelCredential, ..];
 
     public static async Task<int> RunAsync(
         IReadOnlyList<string> args, AccountsSettings settings, AccountsClock clock, TextWriter output,
@@ -74,6 +87,12 @@ public static class AccountsCommand
                 return await PersonAsync(services.GetRequiredService<PersonStore>(), name, Role.Member, output, ct);
             case [CreateUser, "--name", var name, "--role", var role] when RoleNamed(role) is { } named:
                 return await PersonAsync(services.GetRequiredService<PersonStore>(), name, named, output, ct);
+            case [MintTunnelCredential, "--household", var tenantId, "--server", var serverName]:
+                return await MintTunnelAsync(services.GetRequiredService<TunnelCredentialStore>(), tenantId, serverName, output, ct);
+            case [ListTunnelCredentials]:
+                return await ListTunnelsAsync(services.GetRequiredService<TunnelCredentialStore>(), output, ct);
+            case [RevokeTunnelCredential, "--id", var id]:
+                return await RevokeTunnelAsync(services.GetRequiredService<TunnelCredentialStore>(), id, output, ct);
             default:
                 await output.WriteLineAsync(Usage);
                 return 2;
@@ -171,6 +190,74 @@ public static class AccountsCommand
               + $"Run {RetireSigningKeys} once the last assertion they signed has run out, {retiredAfter.TotalMinutes:0.#} minutes from now."
             : $"Published now: {store.CurrentKeyId} alone. Retired: "
               + $"{string.Join(", ", before.Where(id => id != store.CurrentKeyId).DefaultIfEmpty("none"))}.");
+        return 0;
+    }
+
+    private static async Task<int> MintTunnelAsync(
+        TunnelCredentialStore credentials, string tenantId, string serverName, TextWriter output, CancellationToken ct)
+    {
+        try
+        {
+            if (await credentials.MintAsync(tenantId, serverName, ct) is not { } minted)
+            {
+                await output.WriteLineAsync($"no credential was minted: there is no household {tenantId}.");
+                return 1;
+            }
+
+            // The credential last and alone on its line, so a script can read it straight into the
+            // server's environment; it is never shown again.
+            await output.WriteLineAsync(
+                $"A tunnel credential for server {minted.ServerName} of household {minted.TenantId} "
+                + $"(credential {minted.Id}), shown this once:");
+            await output.WriteLineAsync(minted.Credential);
+            return 0;
+        }
+        catch (ArgumentException ex)
+        {
+            await output.WriteLineAsync($"no credential was minted: {ex.Message}. {Usage}");
+            return 2;
+        }
+    }
+
+    private static async Task<int> ListTunnelsAsync(TunnelCredentialStore credentials, TextWriter output, CancellationToken ct)
+    {
+        var listed = await credentials.ListAsync(ct);
+        if (listed.Count == 0)
+        {
+            await output.WriteLineAsync("No tunnel credential has been minted.");
+            return 0;
+        }
+
+        await output.WriteLineAsync(string.Join(Environment.NewLine, listed.Select(c =>
+            $"credential {c.Id}, server {c.ServerName} of household {c.TenantId}, minted {c.CreatedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC, "
+            + (c.RevokedAt is { } revoked ? $"revoked {revoked.UtcDateTime:yyyy-MM-dd HH:mm} UTC" : "live"))));
+        return 0;
+    }
+
+    // Not telling the listeners is a failure even though the revocation stands: the operator asked
+    // for the tunnel closed now, and it will close only when it next opens.
+    private static async Task<int> RevokeTunnelAsync(
+        TunnelCredentialStore credentials, string id, TextWriter output, CancellationToken ct)
+    {
+        if (await credentials.RevokeAsync(id, ct) is not { } revoked)
+        {
+            await output.WriteLineAsync($"nothing was revoked: there is no tunnel credential {id}.");
+            return 1;
+        }
+
+        var what = $"tunnel credential {revoked.Id} (server {revoked.ServerName} of household {revoked.TenantId})";
+        await output.WriteLineAsync(revoked.AlreadyRevoked
+            ? $"The {what} was revoked already, on {revoked.RevokedAt.UtcDateTime:yyyy-MM-dd HH:mm} UTC."
+            : $"Revoked the {what}.");
+        if (revoked.NotTold is { } why)
+        {
+            await output.WriteLineAsync(
+                $"The relay was not told: {why}. A tunnel it opened stays open until it next opens, which "
+                + $"is refused; run {RevokeTunnelCredential} again to tell it.");
+            return 1;
+        }
+
+        await output.WriteLineAsync("The relay was told, and closes a tunnel it opened.");
         return 0;
     }
 
