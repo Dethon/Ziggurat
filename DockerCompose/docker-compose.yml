@@ -47,52 +47,13 @@ services:
     networks:
       - jackbot
 
-  filebrowser:
-    image: filebrowser/filebrowser:v2
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: filebrowser
-    user: ${PUID:-1654}:${PGID:-1654}
-    ports:
-      - "${LAN_BIND_ADDRESS:-127.0.0.1}:8002:80"
-    volumes:
-      - ${DATA_PATH:-./volumes/data}:/srv
-      - ./volumes/filebrowser_database:/database
-      - ./volumes/filebrowser_config:/config
-    environment:
-      <<: *timezone
-    restart: unless-stopped
-    networks:
-      - jackbot
-
   # A household's own servers — web search with its browser, the vault, the library with qBittorrent
   # and Jackett, the sandbox, the printer, Home Assistant with Music Assistant, and voice with speech
-  # extraction — are not here: they run in the tenant kit (TenantKit/) at the household's site and
-  # reach this deployment through their tunnels to the relay in the agent, so this file carries none
-  # of their mounts, devices, satellites or secrets. Plex and filebrowser stay: they are the
-  # operator's LAN tools over the media, not servers the agent reaches.
-  plex:
-    image: lscr.io/linuxserver/plex:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: plex
-    network_mode: host
-    devices:
-      - /dev/dri:/dev/dri
-    volumes:
-      - ./volumes/plex_config:/config
-      - ${DATA_PATH:-./volumes/data}:/media
-    environment:
-      <<: *timezone
-      PUID: ${PUID:-1654}
-      PGID: ${PGID:-1654}
-      VERSION: docker
-    restart: unless-stopped
-
+  # extraction — are not here, nor the household's LAN tools over its media (Plex, filebrowser): they
+  # run in the tenant kit (TenantKit/) at the household's site, the servers reaching this deployment
+  # through their tunnels to the relay in the agent, so this file carries none of their mounts,
+  # devices, satellites or secrets. Lemonade below is the shared box, and the one service handed a
+  # device.
   base-sdk:
     image: base-sdk:latest
     build:

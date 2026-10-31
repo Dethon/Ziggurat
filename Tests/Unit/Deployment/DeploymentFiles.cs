@@ -236,6 +236,9 @@ public sealed record ComposeService(
 
     public string? Image { get; init; }
 
+    // The host devices it is handed, each `host:container` as written.
+    public IReadOnlyList<string> Devices { get; init; } = [];
+
     public static ComposeService From(string name, YamlMappingNode node) => new(
         name,
         [.. Sequence(node, "ports").Select(PublishedPort.Parse)],
@@ -263,7 +266,8 @@ public sealed record ComposeService(
         Dockerfile = Child(node, "build") is YamlMappingNode built && Child(built, "dockerfile") is YamlScalarNode file
             ? file.Value
             : Child(node, "build") is not null ? "Dockerfile" : null,
-        Image = Child(node, "image") is YamlScalarNode image ? image.Value : null
+        Image = Child(node, "image") is YamlScalarNode image ? image.Value : null,
+        Devices = Sequence(node, "devices")
     };
 
     // A list of names or a map of them to their settings; none at all is compose's default network,
