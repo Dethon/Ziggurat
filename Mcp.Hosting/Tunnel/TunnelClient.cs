@@ -78,8 +78,11 @@ internal sealed class TunnelClient(
     }
 
     // The system's roots vouched for it, or the authority this server was told of did. Only the chain
-    // is ever taken on the authority's word: a certificate for another name, or none, is refused.
-    private static bool IssuedForTheHub(X509Certificate? presented, SslPolicyErrors errors, X509Certificate2 authority)
+    // is ever taken on the authority's word: a certificate for another name, or none, is refused. The
+    // authority is a root, and the hub's certificate is issued under an intermediate it serves beside
+    // it (Caddy's local CA does): what the hub sent is offered to the chain, never trusted by itself.
+    private static bool IssuedForTheHub(
+        X509Certificate? presented, X509Chain? sent, SslPolicyErrors errors, X509Certificate2 authority)
     {
         if (errors == SslPolicyErrors.None)
         {
@@ -95,6 +98,8 @@ internal sealed class TunnelClient(
         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
         chain.ChainPolicy.CustomTrustStore.Add(authority);
         chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        chain.ChainPolicy.ExtraStore.AddRange(
+            sent?.ChainElements.Skip(1).Select(e => e.Certificate).ToArray() ?? []);
         using var certificate = new X509Certificate2(presented);
         return chain.Build(certificate);
     }
@@ -111,8 +116,8 @@ internal sealed class TunnelClient(
         socket.Options.KeepAliveTimeout = settings.KeepAliveTimeout;
         if (_hubAuthority is not null)
         {
-            socket.Options.RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
-                IssuedForTheHub(certificate, errors, _hubAuthority);
+            socket.Options.RemoteCertificateValidationCallback = (_, certificate, sent, errors) =>
+                IssuedForTheHub(certificate, sent, errors, _hubAuthority);
         }
 
         try
