@@ -545,6 +545,24 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         output.ShouldContain("no household");
     }
 
+    // A stack being set up — the smoke stack, a test stack — knows its home only as the home, and the
+    // operator need not look its id up to configure their own household.
+    [Fact]
+    public async Task SetAndGet_TheHouseholdCalledHome_IsTheHomeHousehold()
+    {
+        await using var server = await StartAsync();
+        var home = (await server.MintOperatorAsync("Fran")).TenantId;
+
+        var (exit, output) = await SetAsync(server, "home", HouseholdSections.Features, """{ "idealista": true }""");
+        var (_, printed) = await server.RunAsync(server.Settings, "",
+            AccountsCommand.GetHouseholdConfig, "--household", "home", "--section", HouseholdSections.Features);
+
+        exit.ShouldBe(0, output);
+        output.ShouldContain(home);
+        (await AgentViewAsync(server, home)).Features.Idealista.ShouldBeTrue();
+        printed.ShouldContain("\"idealista\": true");
+    }
+
     // Rotation rewraps each household's data key and touches no sealed field: the stored sections are
     // byte for byte what they were, and open under the new master alone.
     [Fact]

@@ -21,8 +21,8 @@ namespace Accounts.Commands;
 //   docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household <id> --server <name>
 //   docker exec accounts dotnet Accounts.dll list-tunnel-credentials
 //   docker exec accounts dotnet Accounts.dll revoke-tunnel-credential --id <id>
-//   docker exec accounts dotnet Accounts.dll get-household-config --household <id> --section <name>
-//   docker exec -i accounts dotnet Accounts.dll set-household-config --household <id> --section <name> --file - < section.json
+//   docker exec accounts dotnet Accounts.dll get-household-config --household <id|home> --section <name>
+//   docker exec -i accounts dotnet Accounts.dll set-household-config --household <id|home> --section <name> --file - < section.json
 //   docker exec -i accounts dotnet Accounts.dll rewrap-household-keys < previous-master.key
 //
 // The first is the operator's way in before anyone can sign in, and back in after losing every
@@ -58,7 +58,7 @@ public static class AccountsCommand
         + $" | {CreateUser} --name <display name> [--role owner|member] | {RotateSigningKey} | {RetireSigningKeys}"
         + $" | {MintTunnelCredential} --household <id> --server <name> | {ListTunnelCredentials}"
         + $" | {RevokeTunnelCredential} --id <id>"
-        + $" | {GetHouseholdConfig} --household <id> --section <name> | {SetHouseholdConfig} --household <id> --section <name> --file <path|->"
+        + $" | {GetHouseholdConfig} --household <id|home> --section <name> | {SetHouseholdConfig} --household <id|home> --section <name> --file <path|->"
         + $" | {RewrapHouseholdKeys} (the previous master key on the input)";
 
     public static bool IsCommand(IReadOnlyList<string> args) =>
