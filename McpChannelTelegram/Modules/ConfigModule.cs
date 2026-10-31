@@ -20,7 +20,8 @@ public static class ConfigModule
             .AddSingleton<IConnectionMultiplexer>(
                 _ => ConnectionMultiplexer.Connect(settings.RedisConnectionString))
             .AddMetricsPublishing("mcp-channel-telegram")
-            .AddSingleton(new BotRegistry(settings.Bots))
+            .AddSingleton(settings.Bots)
+            .AddSingleton<BotRegistry>()
             .AddSingleton(settings.Dictation)
             .AddLemonadeTranscription(settings.Dictation.Transcription)
             .AddSingleton<VoiceNoteDictation>()
@@ -32,6 +33,11 @@ public static class ConfigModule
             .AddSingleton(settings.LinkCache)
             .AddSingleton<TelegramAccess>()
             .AddSingleton<TelegramGate>()
+            // Every household's bots, and the names of a person's household's agents for /agent, asked
+            // of the accounts service with this server's own credential (.claude/rules/household-config.md).
+            .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret)
+            .AddSingleton<IChatAgentChoices, RedisChatAgentChoices>()
+            .AddSingleton<ChatAgents>()
             // The catalogue exists so the attachment capability resolution has something to ask.
             // Nothing else on this channel consumes it.
             .AddSingleton<MutableAgentCatalog>()

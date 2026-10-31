@@ -19,7 +19,7 @@ public class RequestApprovalToolTests : IDisposable
 
     public RequestApprovalToolTests()
     {
-        _harness.BotRegistry.RegisterChatAgent(100, TelegramPollingHarness.AgentId);
+        _harness.BotRegistry.RegisterChat(100, _harness.Bot);
 
         _services = new ServiceCollection()
             .AddSingleton(_harness.BotRegistry)
@@ -96,7 +96,7 @@ public class RequestApprovalToolTests : IDisposable
     [Fact]
     public async Task McpRun_RequestModeForAFireInABoundGroup_AnyLinkedMemberAnswers()
     {
-        _harness.BotRegistry.RegisterChatAgent(TelegramPollingHarness.FamilyGroup, TelegramPollingHarness.AgentId);
+        _harness.BotRegistry.RegisterChat(TelegramPollingHarness.FamilyGroup, _harness.Bot);
         _harness.Accounts.Bind(TelegramPollingHarness.FamilyGroup);
         var conversation = $"{TelegramPollingHarness.FamilyGroup}:{TelegramPollingHarness.FamilyGroup}";
         var turn = new ConversationContext(TelegramPollingHarness.AgentId, conversation, "alice",

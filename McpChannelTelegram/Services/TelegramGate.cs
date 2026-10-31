@@ -9,7 +9,9 @@ using Telegram.Bot.Types.Enums;
 namespace McpChannelTelegram.Services;
 
 // Who gets a turn. A message from a Telegram linked to an account is that account's turn, in a
-// private chat or in a group bound to the same household; anybody else is answered and gets none.
+// private chat or in a group bound to the same household — on the shared bot, whatever their
+// household; on a household's own bot, only if it is theirs — and anybody else is answered and gets
+// none.
 // The ways in are answered here before anybody is looked up, since a stranger must be able to use
 // them: a start parameter (an invite, or the account page's code), /web for a link that adds a
 // passkey, and /bind with an owner's code in the group it binds.
@@ -25,28 +27,30 @@ public sealed partial class TelegramGate(TelegramAccess access, ITelegramAccount
     // The account of the message's sender, or null when the message is not a turn: the gate has
     // answered it already, whether it was a way in, a refusal, or the accounts service not answering.
     public async Task<ResolvedAccount?> AdmitAsync(
-        ITelegramBotClient bot, Message message, string content, CancellationToken ct)
+        TelegramBot bot, Message message, string content, CancellationToken ct)
     {
         try
         {
             var answer = message.From is { } from
-                ? await AnswerCommandAsync(message, from, CommandOf(content), ct)
+                ? await AnswerCommandAsync(message, from, TelegramCommand.Of(content), ct)
                 : Unlinked;
             if (answer is not null)
             {
-                await ReplyAsync(bot, message, answer, ct);
+                await ReplyAsync(bot.Client, message, answer, ct);
                 return null;
             }
 
             var person = await access.PersonAsync(message.From!.Id, ct);
             var refusal = person is null
                 ? Unlinked
-                : message.Chat.Type == ChatType.Private
-                    ? null
-                    : await GroupRefusalAsync(message.Chat.Id, person, ct);
+                : bot.HouseholdId is { } own && own != person.Account.TenantId
+                    ? "This bot belongs to another household than yours."
+                    : message.Chat.Type == ChatType.Private
+                        ? null
+                        : await GroupRefusalAsync(message.Chat.Id, person, ct);
             if (refusal is not null)
             {
-                await ReplyAsync(bot, message, refusal, ct);
+                await ReplyAsync(bot.Client, message, refusal, ct);
                 return null;
             }
 
@@ -57,7 +61,7 @@ public sealed partial class TelegramGate(TelegramAccess access, ITelegramAccount
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "The accounts service did not answer for Telegram chat {ChatId}", message.Chat.Id);
-            await ReplyAsync(bot, message, "I can't check who you are right now. Try again in a moment.", ct);
+            await ReplyAsync(bot.Client, message, "I can't check who you are right now. Try again in a moment.", ct);
             return null;
         }
     }
@@ -141,20 +145,6 @@ public sealed partial class TelegramGate(TelegramAccess access, ITelegramAccount
 
     private static Task ReplyAsync(ITelegramBotClient bot, Message message, string text, CancellationToken ct) =>
         bot.SendMessage(message.Chat.Id, text, replyParameters: message.MessageId, cancellationToken: ct);
-
-    // "/start@ziggurat_bot CODE" is how a group sends a command picked from the bot's menu.
-    private static (string Name, string Argument)? CommandOf(string content)
-    {
-        if (!content.StartsWith('/'))
-        {
-            return null;
-        }
-
-        var parts = content.Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return parts.Length == 0
-            ? null
-            : (parts[0][1..].Split('@')[0].ToLowerInvariant(), parts.Length > 1 ? parts[1] : "");
-    }
 
     // What Telegram passes on as a start parameter: up to 64 of these, and nothing else.
     [GeneratedRegex("^[A-Za-z0-9_-]{1,64}$")]

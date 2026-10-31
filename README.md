@@ -373,9 +373,8 @@ CHANNELENDPOINTS__3__ATTACHONLY=true
 CHANNELENDPOINTS__4__CHANNELID=library
 CHANNELENDPOINTS__4__ENDPOINT=http://mcp-library:8080/mcp
 
-# Telegram channel (one bot per agent)
-BOTS__0__AGENTID=jack
-BOTS__0__BOTTOKEN=your_telegram_bot_token_for_jack
+# Telegram channel: the shared bot every household talks to (a household's own bots are its keys)
+BOTS__SHAREDTOKEN=your_shared_telegram_bot_token
 
 # SignalR channel
 AGENTS__0__ID=jack
@@ -461,14 +460,7 @@ Data flows via Redis Pub/Sub: all services emit metric events through `IMetricsP
 
 ### Telegram Interface
 
-Each agent gets its own Telegram bot. Configure bot tokens in the Telegram channel's environment:
-
-```env
-BOTS__0__AGENTID=jack
-BOTS__0__BOTTOKEN=your_jack_bot_token
-BOTS__1__AGENTID=jonas
-BOTS__1__BOTTOKEN=your_jonas_bot_token
-```
+One shared bot serves every household. Its token is the deployment's (`TELEGRAM_SHARED_BOT_TOKEN` in `.env`, `BOTS__SHAREDTOKEN` in the Telegram channel's environment). A linked person's message there goes to their household's default agent; `/agent` lists the household's agents and `/agent <id>` switches the chat to one, kept per chat. A household may also have bots of its own, each bound to one of its agents — the home household's jack and jonas — as tokens in its configuration's `keys` section (`telegramBots: { <agent id>: { token } }`, set with the accounts service's `set-household-config`); the channel starts and stops them as that section is saved, with no restart, and each answers its own household's people alone.
 
 The bots answer only people whose numeric Telegram id is linked to an account. An owner's invite opened in Telegram (`t.me/<bot>?start=<invite>`) creates the account and links it; somebody who already has one links it with the code on their account page. In a private chat, `/web` answers a linked person a one-time link that adds a passkey. A group is answered only once an owner binds it with `/bind <code>`, the code from the members page. Set the accounts service's `TELEGRAM__BOTUSERNAME` to show codes as the bot's deep link.
 

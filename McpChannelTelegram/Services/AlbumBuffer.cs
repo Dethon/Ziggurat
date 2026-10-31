@@ -1,9 +1,8 @@
-using Telegram.Bot;
 using Telegram.Bot.Types;
 
 namespace McpChannelTelegram.Services;
 
-internal sealed record Album(string AgentId, ITelegramBotClient Client, IReadOnlyList<Message> Messages);
+internal sealed record Album(TelegramBot Bot, IReadOnlyList<Message> Messages);
 
 // Telegram delivers an album as separate updates sharing a media-group id, arriving as each file
 // finishes uploading. This holds a group until it goes quiet and hands it over as one thing, so an
@@ -27,12 +26,12 @@ internal sealed class AlbumBuffer(TimeProvider time, Func<Album, Task> release) 
 
     // Keyed by chat as well as by group: Telegram's media-group id is only unique within a chat,
     // and two albums landing in different chats are two albums. A tuple rather than a joined
-    // string, so nothing turns on a separator character an agent id might contain.
-    private readonly record struct AlbumKey(string AgentId, long ChatId, string MediaGroupId);
+    // string, so nothing turns on a separator character a bot's key might contain.
+    private readonly record struct AlbumKey(string Bot, long ChatId, string MediaGroupId);
 
-    public void Add(string agentId, ITelegramBotClient client, Message message)
+    public void Add(TelegramBot bot, Message message)
     {
-        var key = new AlbumKey(agentId, message.Chat.Id, message.MediaGroupId!);
+        var key = new AlbumKey(bot.Key, message.Chat.Id, message.MediaGroupId!);
 
         lock (_gate)
         {
@@ -44,7 +43,7 @@ internal sealed class AlbumBuffer(TimeProvider time, Func<Album, Task> release) 
                 return;
             }
 
-            pending = new Pending(agentId, client) { LastArrival = time.GetUtcNow() };
+            pending = new Pending(bot) { LastArrival = time.GetUtcNow() };
             pending.Messages.Add(message);
             _pending[key] = pending;
             pending.Timer = time.CreateTimer(_ => Release(key), null, Debounce, Timeout.InfiniteTimeSpan);
@@ -75,7 +74,7 @@ internal sealed class AlbumBuffer(TimeProvider time, Func<Album, Task> release) 
         pending.Timer.Dispose();
 
         // The release delegate owns its own failures; nothing here can tell a sender to try again.
-        _ = release(new Album(pending.AgentId, pending.Client, pending.Messages));
+        _ = release(new Album(pending.Bot, pending.Messages));
     }
 
     public void Dispose()
@@ -87,10 +86,9 @@ internal sealed class AlbumBuffer(TimeProvider time, Func<Album, Task> release) 
         }
     }
 
-    private sealed class Pending(string agentId, ITelegramBotClient client)
+    private sealed class Pending(TelegramBot bot)
     {
-        public string AgentId { get; } = agentId;
-        public ITelegramBotClient Client { get; } = client;
+        public TelegramBot Bot { get; } = bot;
         public List<Message> Messages { get; } = [];
         public DateTimeOffset LastArrival { get; set; }
         public ITimer Timer { get; set; } = null!;

@@ -27,7 +27,7 @@ public class TelegramBotServiceAttachmentTests : IDisposable
         var notification = batch.ShouldHaveSingleItem().Message.ShouldNotBeNull();
         notification.Content.ShouldBe("/ask what is this");
         var attachment = notification.Attachments.ShouldNotBeNull().ShouldHaveSingleItem();
-        attachment.Id.ShouldBe("100-100/jack.AgACphoto");
+        attachment.Id.ShouldBe("100-100/household-home.jack.AgACphoto");
         attachment.MediaType.ShouldBe("image/jpeg");
         attachment.FileName.ShouldBe("attachment-10.jpg");
         attachment.SizeBytes.ShouldBe(2048);
@@ -45,7 +45,7 @@ public class TelegramBotServiceAttachmentTests : IDisposable
 
         var batch = await _harness.ReceiveAsync();
         var attachment = batch.ShouldHaveSingleItem().Message!.Attachments.ShouldNotBeNull().ShouldHaveSingleItem();
-        attachment.Id.ShouldBe("100-100/jack.BQACdoc");
+        attachment.Id.ShouldBe("100-100/household-home.jack.BQACdoc");
         attachment.FileName.ShouldBe("quarterly-report.pdf");
         attachment.MediaType.ShouldBe("application/pdf");
     }
