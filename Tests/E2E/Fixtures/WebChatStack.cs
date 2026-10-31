@@ -3,7 +3,6 @@ using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Agent.App;
 using Domain.DTOs.Channel;
@@ -453,7 +452,7 @@ internal sealed partial class WebChatStack
         // Raise with E2E_AGENT_LOG_LEVEL=Debug when a failing run needs the agent's own account
         // of a turn rather than the browser's.
         var agentLogLevel = Environment.GetEnvironmentVariable("E2E_AGENT_LOG_LEVEL") ?? "Information";
-        var sugaryAgent = ShippedAgent("sugary");
+        var sugaryAgent = TestAgents.Repository.Json("sugary");
         // Without this, the default appsettings.json baked into the image also registers
         // channels for telegram and extra MCP endpoints that don't exist here.
         var e2EAppSettings = Encoding.UTF8.GetBytes($$"""
@@ -492,8 +491,8 @@ internal sealed partial class WebChatStack
                   "whitelistPatterns": ["__none__"]
                 },
                 // Her carb-counting agent as the deployment defines it — model, effort, prompt
-                // server, features — read from Agent/appsettings.json rather than restated, so the
-                // Sugary E2E estimates with the agent she uses.
+                // server, features — read from the tests' copies of the agents (TestAgents) rather
+                // than restated, so the Sugary E2E estimates with the agent she uses.
                 {{sugaryAgent}}
               ],
               // The app's messages name no agent; the deployment routes the channel to sugary.
@@ -635,23 +634,6 @@ internal sealed partial class WebChatStack
         SugaryUrl = $"http://{_mcpSugary.Hostname}:{_mcpSugary.GetMappedPublicPort(8080)}";
         SugaryMcpEndpoint = $"{SugaryUrl}/mcp";
         WebChatUrl = $"{baseUrl}/";
-    }
-
-    // An agent's definition as Agent/appsettings.json ships it, as JSON to splice into the agent's
-    // settings. Every WebChat collection's stack starts through this, so a shape it cannot read
-    // fails them all (WebChatStackTests pins it).
-    internal static string ShippedAgent(string id)
-    {
-        var path = Path.Combine(TestHelpers.FindSolutionRoot(), "Agent", "appsettings.json");
-        var shipped = JsonNode.Parse(
-            File.ReadAllText(path),
-            documentOptions: new JsonDocumentOptions
-            {
-                CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true
-            })!;
-        return shipped["agents"]!.AsArray()
-            .Single(agent => agent!["id"]!.GetValue<string>() == id)!
-            .ToJsonString();
     }
 
     // whisper-server's own route, answered in process. The channel container reaches it through

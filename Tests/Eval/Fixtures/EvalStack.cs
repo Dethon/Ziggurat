@@ -48,10 +48,10 @@ using WebSearchSettings = McpServerWebSearch.Settings.McpSettings;
 namespace Tests.Eval.Fixtures;
 
 // Everything one scenario runs against: the real MCP servers in process, the outermost externals
-// faked, and the agent built by the real factory from the shipped definition in
-// Agent/appsettings.json. Only the configured endpoint urls are rewritten — reconstructing the
-// wiring here would test a composition no deployment uses, which is the failure ADR-0030 exists
-// to prevent.
+// faked, and the agent built by the real factory from the shipped settings in
+// Agent/appsettings.json, driving the eval's own copies of today's agents (TestAgents). Only the
+// configured endpoint urls are rewritten — reconstructing the wiring here would test a composition
+// no deployment uses, which is the failure ADR-0030 exists to prevent.
 public sealed class EvalStack : IAsyncDisposable
 {
     // The satellites a scenario's voice turn can come from and ring on. Two rooms, because a
