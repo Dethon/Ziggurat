@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Net;
 using Agent.App;
 using Agent.Modules;
@@ -39,9 +40,15 @@ internal sealed class RelayHost : IAsyncDisposable
 
     public string Hub => $"ws://localhost:{Port}{TunnelProtocol.Path}";
 
+    public string Address => $"http://localhost:{Port}";
+
     public TunnelRegistry Registry => _app.Services.GetRequiredService<TunnelRegistry>();
 
     public IOwnServers OwnServers => _app.Services.GetRequiredService<IOwnServers>();
+
+    // The relay's outposts, which the host runs as it runs the relay: recording each opening and
+    // closing on the host's metrics.
+    public TunnelledOutposts Outposts => _app.Services.GetRequiredService<TunnelledOutposts>();
 
     public IOwnChannelServers ChannelServers => _app.Services.GetRequiredService<IOwnChannelServers>();
 
@@ -63,6 +70,7 @@ internal sealed class RelayHost : IAsyncDisposable
         var app = builder.Build();
         app.UseWebSockets();
         app.MapTunnel();
+        app.MapConnectedServers(agentCredential);
         await app.StartAsync();
         return new RelayHost(app, listening);
     }
@@ -94,7 +102,8 @@ internal sealed class TunnelledServer : IAsyncDisposable
             {
                 Tunnel = Quick(hub, credential, serverName)
             }))
-            .WithTools<CallTokenGateTests.WhoTools>();
+            .WithTools<CallTokenGateTests.WhoTools>()
+            .WithTools<WaitTools>();
         var app = builder.Build();
         app.MapMcp("/mcp");
         await app.StartAsync();
@@ -115,6 +124,25 @@ internal sealed class TunnelledServer : IAsyncDisposable
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
+    }
+
+    // A call that stays in flight until its caller gives up, so a test can drop the tunnel under it.
+    // Each call names itself, so a test knows its own call has reached the server.
+    [McpServerToolType]
+    public sealed class WaitTools
+    {
+        private static readonly ConcurrentDictionary<string, bool> _waiting = new();
+
+        public static bool IsWaiting(string call) => _waiting.ContainsKey(call);
+
+        [McpServerTool(Name = "wait")]
+        [Description("Waits until the call is cancelled.")]
+        public static async Task<string> Wait(string call, CancellationToken ct)
+        {
+            _waiting[call] = true;
+            await Task.Delay(Timeout.Infinite, ct);
+            return call;
+        }
     }
 }
 

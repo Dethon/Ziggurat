@@ -104,6 +104,8 @@ public sealed class McpChannelConnection(
 
     public bool HostsReviewCopies { get; init; }
 
+    public bool IsConnected => _client is not null;
+
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
 
     // A URL dialled with this connection's own credential.

@@ -52,6 +52,15 @@ public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
     // server's tunnel, whose client presents the tunnel's own credential.
     public HttpClient? Through { get; private init; }
 
+    // Which opening of a household server's tunnel this endpoint is bound to (ADR 0012: a server's
+    // tool set is fixed for a connection generation). A turn compares it with the session's to know
+    // whether the server it reached is still the one there; null for everything not on a tunnel.
+    public long? Generation { get; private init; }
+
+    // Cancelled once that tunnel has closed, which is the one thing that says a call failing on it
+    // failed because the server went offline. Never cancelled for an endpoint not on a tunnel.
+    public CancellationToken Offline { get; private init; }
+
     public static McpServerEndpoint Configured(string address, string? secret = null) =>
         new(address, McpEndpointOrigin.Configured) { Secret = secret };
 
@@ -65,12 +74,17 @@ public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
 
     // A household's server through its open tunnel. Its address is a URL on the synthetic name, which
     // the client never resolves: every connection it makes is a stream of the tunnel.
-    public static McpServerEndpoint Relayed(ServerAddress server, HttpClient through) =>
-        new($"http://{server.Name}/mcp", McpEndpointOrigin.Configured) { Server = server, Through = through };
+    public static McpServerEndpoint Relayed(
+        ServerAddress server, HttpClient through, long? generation = null, CancellationToken offline = default) =>
+        new($"http://{server.Name}/mcp", McpEndpointOrigin.Configured)
+        {
+            Server = server, Through = through, Generation = generation, Offline = offline
+        };
 
     // An outpost through its open tunnel: reached the same way, but dynamic — the machine decides
     // whether it is there, and a tunnel that closes between the session's compose and its dial costs
     // the session that mount and nothing else (ADR 0027).
-    public static McpServerEndpoint RelayedOutpost(ServerAddress server, HttpClient through) =>
-        Relayed(server, through) with { Origin = McpEndpointOrigin.Dynamic };
+    public static McpServerEndpoint RelayedOutpost(
+        ServerAddress server, HttpClient through, long? generation = null, CancellationToken offline = default) =>
+        Relayed(server, through, generation, offline) with { Origin = McpEndpointOrigin.Dynamic };
 }

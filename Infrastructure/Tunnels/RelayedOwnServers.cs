@@ -11,7 +11,7 @@ public sealed class RelayedOwnServers(TunnelRegistry registry) : IOwnServers, IO
     public McpServerEndpoint? Resolve(string? tenantId, string serverName) =>
         tenantId is null || registry.Find(tenantId, serverName) is not { IsOpen: true } tunnel
             ? null
-            : McpServerEndpoint.Relayed(tunnel.Address, tunnel.Client);
+            : McpServerEndpoint.Relayed(tunnel.Address, tunnel.Client, tunnel.Generation, tunnel.Closed);
 
     // A replacement's TunnelClosed arrives before its TunnelOpened, and each opening's own token says
     // when it goes, so the openings alone are what a follower needs.

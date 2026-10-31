@@ -10,4 +10,13 @@ public static class TunnelApi
 {
     public static void MapTunnel(this IEndpointRouteBuilder app) =>
         app.Map(TunnelProtocol.Path, (HttpContext http, TunnelRelay relay) => relay.AcceptAsync(http));
+
+    // A household's connected servers, for the operator command run beside the agent. Under /internal,
+    // which the proxy never routes, and behind the agent API's secret, which the command reads from the
+    // same environment: what tools a household's machines offer is nobody else's to list.
+    public static void MapConnectedServers(this IEndpointRouteBuilder app, string sharedSecret) =>
+        app.MapGroup(ConnectedServers.Path)
+            .RequireSharedSecret(sharedSecret)
+            .MapGet("/{tenantId}", (string tenantId, TunnelListing listing, HttpContext http) =>
+                listing.ListAsync(tenantId, http.RequestAborted));
 }
