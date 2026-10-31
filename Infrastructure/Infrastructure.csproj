@@ -38,6 +38,7 @@
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
     <PackageReference Include="StackExchange.Redis" Version="3.4.5" />
     <PackageReference Include="Terminal.Gui" Version="2.5.0" />
+    <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
     </ItemGroup>
 
     <!-- Mcp.Hosting for the one accessor a server reads who a call acts for through (CallTurn):

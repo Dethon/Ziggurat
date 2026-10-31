@@ -19,6 +19,7 @@ public static class TunnelHostExtensions
             services
                 .AddSingleton<TunnelTrust>()
                 .AddSingleton<TunnelLink>()
+                .AddSingleton(new RelayCredential(tunnel.Credential))
                 .AddSingleton<IHostedService>(sp => new TunnelClient(
                     tunnel,
                     sp.GetRequiredService<TunnelTrust>(),

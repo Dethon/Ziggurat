@@ -29,6 +29,8 @@ app.MapAgentKeys();
 app.MapTopicMinting();
 app.MapTunnel();
 app.MapConnectedServers(settings.AgentApi.SharedSecret);
+app.MapBrowsePages();
+app.MapRelayedCalls();
 
 await app.RunAsync();
 return 0;

@@ -21,6 +21,10 @@ public static class TunnelProtocol
     // one of the server's own listeners, so its gates see what they always saw.
     public const string McpTag = "mcp";
 
+    // The web search server's pages listener, which the proxy's /browse/* reaches through the relay:
+    // a login handoff's live view and a person's logins page.
+    public const string PagesTag = "pages";
+
     // How a tunnel ends, as the WebSocket close's description. A refusal is a credential's reason
     // (TunnelCredentialRefusal); the rest are the relay's own.
     public const string Unverified = "Unverified";

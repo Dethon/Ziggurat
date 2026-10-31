@@ -14,6 +14,10 @@ paths:
   - "Infrastructure/Clients/Accounts/TunnelCredentialClient.cs"
   - "Infrastructure/Metrics/HttpMetricSink.cs"
   - "Agent/App/TunnelApi.cs"
+  - "Agent/App/BrowsePagesApi.cs"
+  - "Agent/App/RelayedCallsApi.cs"
+  - "Infrastructure/Clients/Relay/**"
+  - "Infrastructure/Clients/Voice/VoiceHubHttp.cs"
   - "Agent/Modules/TunnelModule.cs"
   - "Domain/DTOs/Tunnel/**"
   - "Domain/tunnel.json"
@@ -300,10 +304,92 @@ Tested at the round trip (`TunnelledChannelTests`: a notification and its reply,
 without a restart, a watch's delegated fire through the real Home Assistant server) and in
 `ChannelConnectionHostTests` (one run per opening, never two at once).
 
+## Exchanges the relay forwards to a household's server
+
+Some requests arrive at the agent for a household's server rather than from a turn: a browse page a
+person opens from a link, a shared server's call. **`TunnelForwarder`** (Infrastructure/Tunnels) forwards one such HTTP
+exchange down the server's tunnel to the listener a tag names, and its answer back — a WebSocket
+upgraded inside it included, whose bytes then run both ways until either end closes.
+
+- It is **YARP's `IHttpForwarder`** (`Yarp.ReverseProxy`, `AddHttpForwarder()` in `AddTunnelRelay`)
+  over `OpenTunnel.Forwarding(tag)`: an `HttpMessageInvoker` whose `ConnectCallback` opens a stream
+  with that tag, one pool per tag per opening, set as a reverse proxy's must be — `UseCookies = false`
+  above all, or the pool would keep the cookie one person's claim set and send it with the next
+  person's request. A raw pipe of our own was the alternative; forwarding HTTP/1.1 well (hop-by-hop
+  headers, streamed bodies, a client gone mid-response, a 101 handed to an opaque duplex stream) is
+  what the library is, and the live view needs every part of it.
+- The request goes on **as it came**: the base `HttpTransformer` (not `HttpTransformer.Default`,
+  which adds X-Forwarded-* of its own and drops Host) copies Host and the proxy's `X-Forwarded-Proto`.
+  The handoff page needs both — its live view's origin check compares `Origin` with the Host the
+  browser asked for, and its cookie is `Secure` by `X-Forwarded-Proto`. Only the path is the caller's
+  to choose, and the headers it withholds.
+- The `mcp` tag's pool presents the tunnel credential and sends rotated keys first (`RelayHandler`),
+  like `Client`; any other tag's presents nothing — a browser's request is not the agent's to vouch for.
+- `ActivityTimeout` is 30 minutes, the longest a live view lasts: a view whose page stands still
+  sends nothing and is not dead. The tunnel's end, or the browser's, still ends it at once.
+- A forward that fails before anything was sent (the tunnel closed under it) is answered by the
+  caller, as the server being offline.
+
+### Browse pages
+
+The proxy routes `/browse/*` on the main host to the agent (`BrowsePagesApi`, `BrowsePages.Path`),
+never to the web search container (`DeploymentConformanceTests`: no route names it). `BrowsePages`
+forwards the exchange **unchanged, path included,** to the household's web search under the
+`pages` tag (`TunnelProtocol.PagesTag`), which web search registers for its pages listener
+(`AddTunnelListener`); the stream lands on that listener's port, so `PagesListener`'s split holds as
+before. The link, its claim, the cookie and the live view are the server's, unchanged. With no
+tunnel open it answers **502 with a page of its own** saying the household's browser is offline.
+
+### A shared server's calls to a household's server
+
+A shared deployment server reaches a household's own server through the relay's internal endpoint,
+`/internal/relay/<server name>/<the server's own path>` (`RelayedCallProtocol`, `RelayedCallsApi`,
+`RelayedCalls`), **never the network** — and the proxy routes nothing under `/internal`
+(`DeploymentConformanceTests`). Today one caller does: the timers server rings, dismisses and
+validates satellites on the household's voice server (`.claude/rules/timers.md`).
+
+- **The caller is checked against what the agent already holds**: it names itself
+  (`X-Ziggurat-Caller`, its own `Mcp:Audience` — the name the agent dials it at) and presents the
+  credential its own `/mcp` asks for, which is exactly the agent's `MCP__SECRETS__<name>` for it
+  (`McpCredentials`). So no secret exists for this endpoint, the same rule the accounts service's
+  callers follow, and one server's credential opens only what that server may reach. The client end
+  is `RelayedCallCredential`, which a shared server adds when its base address is under the relay's
+  path (`RelayedCallProtocol.IsRelayed`); a server dialled directly is presented neither.
+- **What it may reach is a list in `RelayedCalls`**, by caller, household server and path prefix
+  (`mcp-timers` → `voice` under `/api/voice`), checked on the path Kestrel normalised. A missing or
+  wrong credential is 401, anything off the list 403; both are logged and published as an
+  `ErrorEvent` (`RelayedCallRefused`), and neither forwards a byte.
+- **Forwarded on the `mcp` tag**, whose pool presents the household server's tunnel credential
+  (`RelayHandler`), with the caller's name and the deployment's `X-Announce-Token` withheld: nothing
+  of the deployment's reaches a household. A tunnelled server's endpoints beside `/mcp` recognise the
+  relay by `RelayCredential` (registered by `AddTunnel` while tunnelled): voice's `VoiceHubAuth` lets
+  it through, so the kit's voice never holds the deployment's announce token.
+- **Offline is a gateway's answer**: the home household's tunnel not open, or closing under the call,
+  is **502 with the reason** in the body. `VoiceHubHttp` reads 502/504 as the hub being unreachable
+  (`VoiceHubUnavailableException`), so a timer's create fails with `TransientDependency`, "the voice
+  hub is unreachable, so the timer was not armed", and its fire is logged as not rung.
+
+### Which household: the home one, in this phase
+
+Nothing in a browse link — nor in a timer's ring — names a household. In this phase only the home
+household runs servers, so **a request that names none is for the home household's server of that
+name** (`HomeHousehold.Find`, by `HouseholdServerNames` and `OpenTunnel.Home`, as a channel endpoint
+named by server name is); none open is answered as unreachable with the reason, and another
+household's server of that name is never a fallback. Once a second household runs servers (4b) the
+request must name its household: web search knows it where the link is minted (`web_login`'s call
+token carries the person's account), and the timers server knows it where a timer is created. The
+cookie's `Path=/browse` must then become per household too, or one household's server would be sent
+another's view key.
+
 ## Not yet (later tickets)
 
-- **06** adds the `pages` tag (`AddTunnelListener`) and routes `/browse/*` to the relay.
-- **09** lets shared servers reach a household's server through the relay.
+- **11** must run web search under `HouseholdServerNames.WebSearch`: until it is tunnelled, the
+  deployment's (and the smoke stack's) `/browse/*` answers the offline page, and
+  `StackSmokeTests.TheBrowsePages_AreReachedThroughTheProxy…` with it. Likewise voice under
+  `HouseholdServerNames.Voice`: the deployment's timers server already rings through the relay
+  (`VOICEHUB__BASEURL`), so until voice is tunnelled a timer's create fails as the hub unreachable.
+  The kit's voice keeps `Announce__Token` only for its own site's callers (Home Assistant's watch
+  callback and resolve), never the deployment's value.
 - **10** moves outposts onto the tunnel (their `Address` and verdicts are still URL strings).
 - **11** switches the home's definitions to server names (and their whitelists to the bare names).
 - **11/12**: the server's `ClientWebSocket` trusts the system's roots only, so a kit pointed at a
