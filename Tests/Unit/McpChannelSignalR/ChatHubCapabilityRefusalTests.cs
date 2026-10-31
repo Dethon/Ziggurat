@@ -66,6 +66,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
             new RetentionSettings(),
             new DictationSettings(),
             new VouchingAccounts(),
+            new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller()

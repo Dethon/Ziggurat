@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using Domain.Security;
@@ -29,6 +30,7 @@ public sealed class ChatHub(
     RetentionSettings retention,
     DictationSettings dictationSettings,
     ISessionAccounts sessions,
+    IHouseholdConfiguration households,
     ILogger<ChatHub> logger) : Hub
 {
     // What the browser is told when the emit reached nobody. The message may still be sitting in a
@@ -44,6 +46,10 @@ public sealed class ChatHub(
     // page, or a connection that came with no session to ask about: nothing is sent until it signs in
     // again, and sending again will not help.
     internal const string SignedOutError = "This device was signed out, so this message has not been answered. Sign in again to keep chatting.";
+
+    // What the browser is told when its household's spaces could not be asked for its person: signed
+    // out since, or the accounts service unreachable just now.
+    private const string UnvouchedSpacesError = "This household's spaces could not be read right now.";
 
     // Where the connection keeps the person the proxy's session check named as it arrived, which is
     // also what says it may call anything (SignedInConnectionFilter).
@@ -63,6 +69,9 @@ public sealed class ChatHub(
 
     // Continuing a shared topic is not deciding it: its name and whether it exists stay its owner's.
     private const string OwnersConversation = "Only the person whose conversation this is can rename or delete it.";
+
+    // Another household's space is answered as one that does not exist, so naming it tells nothing.
+    private const string NoSuchSpace = "No such space.";
 
     private string? CurrentSpaceSlug =>
         Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
@@ -156,6 +165,11 @@ public sealed class ChatHub(
         return session;
     }
 
+    // The household's spaces in the order its configuration puts them, which is the order a person
+    // is shown them in.
+    public async Task<IReadOnlyList<HouseholdSpace>> GetSpaces() =>
+        [.. (await HouseholdSpacesAsync(Context.ConnectionAborted)).OrderBy(s => s.Order).ThenBy(s => s.Slug, StringComparer.Ordinal)];
+
     public async Task JoinSpace(string spaceSlug)
     {
         if (!SpaceConfig.IsValidSlug(spaceSlug))
@@ -163,7 +177,33 @@ public sealed class ChatHub(
             throw new HubException("Invalid space slug");
         }
 
+        if ((await HouseholdSpacesAsync(Context.ConnectionAborted)).All(s => s.Slug != spaceSlug))
+        {
+            throw new HubException(NoSuchSpace);
+        }
+
         await SwitchSpaceGroupAsync(spaceSlug);
+    }
+
+    // Asked with the accounts service's fresh word for the connection's person rather than the
+    // assertion it arrived with, which lives ten minutes while a chat client stays connected for
+    // hours: the household is the one that word names, never one the browser says.
+    private async Task<IReadOnlyList<HouseholdSpace>> HouseholdSpacesAsync(CancellationToken ct)
+    {
+        if ((await VouchedAsync(ct)).Account is not { } vouched)
+        {
+            throw new HubException(UnvouchedSpacesError);
+        }
+
+        try
+        {
+            return (await households.SpacesAsync(SignedIn.TenantId, HouseholdProof.OfAssertion(vouched.Assertion), ct)).Spaces;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException)
+        {
+            logger.LogWarning(ex, "Could not read the spaces of household {TenantId}", SignedIn.TenantId);
+            throw new HubException(UnvouchedSpacesError);
+        }
     }
 
     // A connection hears its space's news, and a private topic's only as its owner or as someone who
