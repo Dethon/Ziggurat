@@ -1,11 +1,14 @@
 using System.Globalization;
 using Accounts.Internal;
 using Agent.App;
+using Agent.Modules;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Tunnel;
 using Domain.Security;
 using Infrastructure.Tunnels;
 using McpServerSugary.Channel;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
 
 namespace Tests.Unit.Deployment;
@@ -304,6 +307,26 @@ public class DeploymentConformanceTests
             .ToList();
 
         mismatched.ShouldBeEmpty();
+    }
+
+    // The agent refuses to start without a credential for a server it dials. With the home's servers
+    // gone from this file, the shipped definitions name them by their tunnels' names, which need
+    // none: the agent as compose configures it — its shipped settings under the environment compose
+    // hands it — starts with the shared servers' credentials alone.
+    [Fact]
+    public void TheShippedAgent_StartsWithTheCredentialsTheDeploymentHandsIt()
+    {
+        var environment = DeploymentFiles.Compose().Service("agent").Environment
+            .ToDictionary(
+                e => e.Key.Replace("__", ":", StringComparison.Ordinal),
+                e => (string?)System.Text.RegularExpressions.Regex.Replace(e.Value, @"\$\{[^}]*\}", "local"));
+        var settings = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(Tests.E2E.Fixtures.TestHelpers.FindSolutionRoot(), "Agent", "appsettings.json"))
+            .AddInMemoryCollection(environment)
+            .Build()
+            .Get<global::Agent.Settings.AgentSettings>()!;
+
+        Should.NotThrow(() => new ServiceCollection().AddLogging().AddAgent(settings));
     }
 
     // Sign-in, enrollment and the session check live under /accounts on the main host; Caddy's
