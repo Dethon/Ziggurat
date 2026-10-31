@@ -10,10 +10,28 @@ using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
 
+// A topic is its household's, and every key that holds one says whose: the record
+// `topic@{tenantId}:{agentId}:{chatId}:{topicId}`, the space's ordering `topics@{tenantId}:{agentId}:{slug}`
+// and the search document (TopicSearchDocuments). A page, a search and a read by id all name the
+// household, so the store can never answer one household with another's topic. The '@' keeps the shape
+// apart from the one before households (`topic:{agentId}:...`, `topics:{agentId}:{slug}`), so the
+// household migration's pattern for what is still unmoved can never match a household's.
+//
+// The conversation's pointer to its topic (`topic-of:{agentId}:{chatId}:{threadId}`) is the one key
+// with no household in it, deliberately: a conversation's id is the same whichever household holds it,
+// and the agent appending to a history knows only that id. Its value names the household beside the
+// topic (`{tenantId}:{topicId}`), so the topic a conversation leads to says whose it is, and whoever
+// asks by conversation still applies TopicViewer to it. Histories are keyed by conversation too.
+//
+// A topic recording no household — one a turn acting for nobody opened — is kept under NoHousehold,
+// which no viewer is of, so nobody lists or searches it.
 public sealed class RedisThreadStateStore(
     IConnectionMultiplexer redis, RetentionSettings retention, TimeProvider time)
     : IThreadStateStore
 {
+    // Not a household id (those are hex), so no viewer is ever of it.
+    public const string NoHousehold = "none";
+
     private readonly IDatabase _db = redis.GetDatabase();
 
     // Every key a topic owns carries the same expiry, refreshed on every write, so a purge takes
@@ -131,15 +149,14 @@ public sealed class RedisThreadStateStore(
 
         var (agentId, chatId, threadId) = key;
 
-        var topicId = await _db.StringGetAsync(ConversationKey(agentId, chatId, threadId));
-        if (topicId.IsNullOrEmpty)
+        if (await HolderAsync(agentId, chatId, threadId) is not (var household, var topicId))
         {
             return;
         }
 
         var result = await _db.ScriptEvaluateAsync(
             _stampScript,
-            [TopicKey(agentId, chatId, topicId.ToString())],
+            [TopicKey(household, agentId, chatId, topicId)],
             [
                 time.GetUtcNow().ToString("O"),
                 Snippet(appended) ?? "",
@@ -187,9 +204,9 @@ public sealed class RedisThreadStateStore(
     // as unread on the conversation the person is looking at. The read position is set from the
     // count inside the script, so a stamp landing between a read and this write loses nothing.
     // The record is all it touches: the index score is the last write, which reading is not.
-    public async Task MarkTopicReadAsync(string agentId, long chatId, string topicId)
+    public async Task MarkTopicReadAsync(string tenantId, string agentId, long chatId, string topicId)
     {
-        await _db.ScriptEvaluateAsync(_markReadScript, [TopicKey(agentId, chatId, topicId)]);
+        await _db.ScriptEvaluateAsync(_markReadScript, [TopicKey(tenantId, agentId, chatId, topicId)]);
     }
 
     // The last thing said that had anything to say. A message carrying only files leaves the
@@ -211,12 +228,12 @@ public sealed class RedisThreadStateStore(
     public async Task<TopicPage> GetTopicPageAsync(
         string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false)
     {
-        await TrimPurgedAsync(agentId, spaceSlug);
+        await TrimPurgedAsync(viewer.TenantId, agentId, spaceSlug);
 
         return await FillPageAsync(
             viewer, cursor, pageSize,
-            from => ReadIndexRangeAsync(agentId, spaceSlug, from, pageSize, archived),
-            member => ReadIndexedTopicAsync(agentId, member.Element.ToString()),
+            from => ReadIndexRangeAsync(viewer.TenantId, agentId, spaceSlug, from, pageSize, archived),
+            member => ReadIndexedTopicAsync(viewer.TenantId, agentId, member.Element.ToString()),
             Cursor);
     }
 
@@ -286,10 +303,10 @@ public sealed class RedisThreadStateStore(
     // from the current time here, so changing the horizon takes effect on the next read with no
     // migration and no backfill, and the two ranges partition the index exactly.
     private async Task<IReadOnlyList<SortedSetEntry>> ReadIndexRangeAsync(
-        string agentId, string spaceSlug, string? cursor, int take, bool archived)
+        string household, string agentId, string spaceSlug, string? cursor, int take, bool archived)
     {
         var cutoff = (time.GetUtcNow() - retention.ArchiveHorizon).ToUnixTimeMilliseconds();
-        var key = IndexKey(agentId, spaceSlug);
+        var key = IndexKey(household, agentId, spaceSlug);
         var from = ParseCursor(cursor);
 
         // The cursor's own score is read again inclusively — it may still hold tied rows the page
@@ -337,26 +354,27 @@ public sealed class RedisThreadStateStore(
             : null;
     }
 
-    private Task<TopicMetadata?> ReadIndexedTopicAsync(string agentId, string member)
+    private Task<TopicMetadata?> ReadIndexedTopicAsync(string household, string agentId, string member)
     {
         var separator = member.IndexOf(':');
         return separator > 0 && long.TryParse(member[..separator], out var chatId)
-            ? ReadTopicAsync(TopicKey(agentId, chatId, member[(separator + 1)..]))
+            ? ReadTopicAsync(TopicKey(household, agentId, chatId, member[(separator + 1)..]))
             : Task.FromResult<TopicMetadata?>(null);
     }
 
     public async Task SaveTopicAsync(TopicMetadata topic, bool keepTtl = false)
     {
         var json = JsonSerializer.Serialize(topic);
+        var household = HouseholdOf(topic);
         await _db.StringSetAsync(
-            TopicKey(topic.AgentId, topic.ChatId, topic.TopicId), json,
+            TopicKey(household, topic.AgentId, topic.ChatId, topic.TopicId), json,
             expiry: keepTtl ? null : _expiration, keepTtl: keepTtl);
 
         // The conversation a history key names, pointing at the topic that owns it. Without it
         // the only way from a conversation back to its topic is a scan of every key in the
         // database, which is the cost this whole area exists to remove.
         await _db.StringSetAsync(
-            ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), topic.TopicId,
+            ConversationKey(topic.AgentId, topic.ChatId, topic.ThreadId), Holder(household, topic.TopicId),
             expiry: keepTtl ? null : _expiration, keepTtl: keepTtl);
 
         await IndexAsync(topic);
@@ -367,25 +385,31 @@ public sealed class RedisThreadStateStore(
     // sit below the archive horizon where nothing reads, so nothing would ever notice them. The
     // score is last write, which makes everything below the purge cutoff expired by definition:
     // one range removal, no scan, and no job to run it.
-    private Task TrimPurgedAsync(string agentId, string spaceSlug) =>
+    private Task TrimPurgedAsync(string household, string agentId, string spaceSlug) =>
         _db.SortedSetRemoveRangeByScoreAsync(
-            IndexKey(agentId, spaceSlug),
+            IndexKey(household, agentId, spaceSlug),
             double.NegativeInfinity,
             (time.GetUtcNow() - retention.PurgeHorizon).ToUnixTimeMilliseconds());
 
     private Task IndexAsync(TopicMetadata topic) =>
         _db.SortedSetAddAsync(
-            IndexKey(topic.AgentId, topic.SpaceSlug), IndexMember(topic), LastWriteScore(topic));
+            IndexKey(HouseholdOf(topic), topic.AgentId, topic.SpaceSlug), IndexMember(topic), LastWriteScore(topic));
 
-    public async Task DeleteTopicAsync(string agentId, long chatId, string topicId)
+    public async Task DeleteTopicAsync(string tenantId, string agentId, long chatId, string topicId)
     {
-        var topic = await ReadTopicAsync(TopicKey(agentId, chatId, topicId));
-        await _db.KeyDeleteAsync(TopicKey(agentId, chatId, topicId));
+        var topic = await ReadTopicAsync(TopicKey(tenantId, agentId, chatId, topicId));
+        await _db.KeyDeleteAsync(TopicKey(tenantId, agentId, chatId, topicId));
 
         if (topic is not null)
         {
-            await _db.KeyDeleteAsync(ConversationKey(agentId, chatId, topic.ThreadId));
-            await _db.SortedSetRemoveAsync(IndexKey(agentId, topic.SpaceSlug), IndexMember(topic));
+            // The pointer goes only while it still leads here: a conversation is one household's
+            // topic, and deleting a record of another's is no reason to cut that one off.
+            if (await HolderAsync(agentId, chatId, topic.ThreadId) == (tenantId, topicId))
+            {
+                await _db.KeyDeleteAsync(ConversationKey(agentId, chatId, topic.ThreadId));
+            }
+
+            await _db.SortedSetRemoveAsync(IndexKey(tenantId, agentId, topic.SpaceSlug), IndexMember(topic));
             await _searchDocuments.DeleteAsync(topic);
         }
     }
@@ -396,9 +420,13 @@ public sealed class RedisThreadStateStore(
         string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize) =>
         FillPageAsync(
             viewer, cursor, pageSize,
-            from => _searchDocuments.SearchAsync(agentId, spaceSlug, query, from, pageSize),
-            hit => ReadTopicAsync(TopicKey(agentId, hit.ChatId, hit.TopicId)),
+            from => _searchDocuments.SearchAsync(viewer.TenantId, agentId, spaceSlug, query, from, pageSize),
+            hit => ReadTopicAsync(TopicKey(viewer.TenantId, agentId, hit.ChatId, hit.TopicId)),
             TopicSearchDocuments.CursorFor);
+
+    // Whether topics can be searched, the index made if it is missing: the household migration's,
+    // once it has moved the documents under their households.
+    public Task<bool> EnsureSearchIndexAsync() => _searchDocuments.EnsureIndexAsync();
 
     private async Task<TopicMetadata?> ReadTopicAsync(string topicKey)
     {
@@ -430,32 +458,49 @@ public sealed class RedisThreadStateStore(
                 .ToList();
     }
 
-    public Task<TopicMetadata?> GetTopicAsync(string agentId, long chatId, string topicId) =>
-        ReadTopicAsync(TopicKey(agentId, chatId, topicId));
+    public Task<TopicMetadata?> GetTopicAsync(string tenantId, string agentId, long chatId, string topicId) =>
+        ReadTopicAsync(TopicKey(tenantId, agentId, chatId, topicId));
 
     public async Task<TopicMetadata?> GetTopicByChatIdAndThreadIdAsync(
         string agentId, long chatId, long threadId, CancellationToken ct = default)
     {
-        var topicId = await _db.StringGetAsync(ConversationKey(agentId, chatId, threadId));
-        return topicId.IsNullOrEmpty
-            ? null
-            : await ReadTopicAsync(TopicKey(agentId, chatId, topicId.ToString()));
+        return await HolderAsync(agentId, chatId, threadId) is (var household, var topicId)
+            ? await ReadTopicAsync(TopicKey(household, agentId, chatId, topicId))
+            : null;
     }
 
-    private static string TopicKey(string agentId, long chatId, string topicId)
+    // Who holds a conversation, as its pointer says. A pointer from before households held the topic
+    // id alone, which leads nowhere now: the household migration rewrites it.
+    private async Task<(string Household, string TopicId)?> HolderAsync(string agentId, long chatId, long threadId)
     {
-        return $"topic:{agentId}:{chatId}:{topicId}";
+        var value = (await _db.StringGetAsync(ConversationKey(agentId, chatId, threadId))).ToString();
+        var separator = value.IndexOf(':');
+        return separator > 0 ? (value[..separator], value[(separator + 1)..]) : null;
     }
 
-    private static string ConversationKey(string agentId, long chatId, long threadId)
+    public static string HouseholdOf(TopicMetadata topic) => topic.TenantId ?? NoHousehold;
+
+    public static string Holder(string household, string topicId) => $"{household}:{topicId}";
+
+    public static string TopicKey(string household, string agentId, long chatId, string topicId)
+    {
+        return $"topic@{household}:{agentId}:{chatId}:{topicId}";
+    }
+
+    public static string ConversationKey(string agentId, long chatId, long threadId)
     {
         return $"topic-of:{agentId}:{chatId}:{threadId}";
     }
 
-    private static string IndexKey(string agentId, string spaceSlug)
+    public static string IndexKey(string household, string agentId, string spaceSlug)
     {
-        return $"topics:{agentId}:{spaceSlug}";
+        return $"topics@{household}:{agentId}:{spaceSlug}";
     }
+
+    public static string SearchDocumentKey(string household, string agentId, long chatId, string topicId) =>
+        TopicSearchDocuments.DocumentKey(household, agentId, chatId, topicId);
+
+    public const string SearchIndexName = TopicSearchDocuments.IndexName;
 
     private static string IndexMember(TopicMetadata topic)
     {

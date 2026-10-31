@@ -47,7 +47,8 @@ public static class TopicMintingApi
                 AgentId = request.AgentId,
                 TopicName = request.TopicName,
                 Sender = request.Sender,
-                Principal = PrincipalOf(identity)
+                Principal = PrincipalOf(identity),
+                GuestTenantId = identity.IsGuest ? identity.TenantId : null
             }, http.RequestAborted);
             return Results.Json(new TopicMinted(creation.Topic.TopicId, creation.Identity.ConversationId));
         });
