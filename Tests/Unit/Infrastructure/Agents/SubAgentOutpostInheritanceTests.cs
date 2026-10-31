@@ -17,10 +17,13 @@ namespace Tests.Unit.Infrastructure.Agents;
 // leave the projection deciding the same rule against a value nobody supplied.
 //
 // Driven the whole way: an agent is created, the spawn delegate it was given runs, and the
-// subagent that comes back warms up a session. Asking the registry at all is what a session build
-// does only when its spec is opted in, so a registry that was never asked is the observable.
+// subagent that comes back warms up a session. Asking for the household's outposts at all is what a
+// session build does only when its spec is opted in, so outposts never asked for are the observable —
+// and a worker asks for its parent's household's, never anybody else's.
 public sealed class SubAgentOutpostInheritanceTests
 {
+    private const string Household = "household-1";
+
     private static readonly SubAgentDefinition _worker = new()
     {
         Id = "worker",
@@ -32,22 +35,23 @@ public sealed class SubAgentOutpostInheritanceTests
     [Theory]
     [InlineData(true, 1)]
     [InlineData(false, 0)]
-    public async Task ASpawnedSubAgent_AsksTheRegistryOnlyWhereItsParentIsOptedIn(
+    public async Task ASpawnedSubAgent_AsksForItsParentsHouseholdsOutpostsOnlyWhereItsParentIsOptedIn(
         bool parentUsesOutposts, int expectedLookups)
     {
-        var registry = new CountingRegistry();
+        var outposts = new CountingOutposts();
 
-        await using var subAgent = await SpawnAsync(parentUsesOutposts, registry);
+        await using var subAgent = await SpawnAsync(parentUsesOutposts, outposts);
         var session = await subAgent.CreateSessionAsync();
         await subAgent.WarmupSessionAsync(session);
 
-        registry.Asked.ShouldBe(expectedLookups);
+        outposts.AskedFor.Count.ShouldBe(expectedLookups);
+        outposts.AskedFor.ShouldAllBe(tenant => tenant == Household);
     }
 
     // The parent's own build, run for its side effect: the feature config it is handed carries the
     // spawn delegate, and running that delegate is the only way the parent's contribution reaches
     // the projection.
-    private static async Task<DisposableAgent> SpawnAsync(bool parentUsesOutposts, IOutpostRegistry registry)
+    private static async Task<DisposableAgent> SpawnAsync(bool parentUsesOutposts, IOutposts outposts)
     {
         var captured = new List<FeatureConfig>();
         var toolRegistry = new Mock<IDomainToolRegistry>();
@@ -71,7 +75,7 @@ public sealed class SubAgentOutpostInheritanceTests
         options.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions { Agents = [parent] });
 
         var services = new ServiceCollection()
-            .AddSingleton(new OutpostAccess(registry, "s3cret"))
+            .AddSingleton(outposts)
             .AddSingleton(new Mock<IThreadStateStore>().Object)
             .BuildServiceProvider();
 
@@ -82,32 +86,20 @@ public sealed class SubAgentOutpostInheritanceTests
             toolRegistry.Object);
 
         await using var agent = factory.Create(
-            new AgentKey("conv-1", "jack"), "fran", "jack", new Mock<IToolApprovalHandler>().Object);
+            new AgentKey("conv-1", "jack"), "fran", "jack", new Mock<IToolApprovalHandler>().Object, tenantId: Household);
 
         var spawn = captured.ShouldHaveSingleItem().SubAgentFactory.ShouldNotBeNull();
         return await Task.FromResult(spawn(_worker));
     }
 
-    private sealed class CountingRegistry : IOutpostRegistry
+    private sealed class CountingOutposts : IOutposts
     {
-        public int Asked { get; private set; }
+        public List<string?> AskedFor { get; } = [];
 
-        public Task<IReadOnlyList<OutpostRegistration>> ListAsync(CancellationToken ct = default)
+        public IReadOnlyList<LiveOutpost> Live(string? tenantId)
         {
-            Asked++;
-            return Task.FromResult<IReadOnlyList<OutpostRegistration>>([]);
+            AskedFor.Add(tenantId);
+            return [];
         }
-
-        public Task RegisterAsync(OutpostRegistration registration, CancellationToken ct = default) =>
-            Task.CompletedTask;
-
-        public Task<OutpostVerdict?> KeepAliveAsync(string name, CancellationToken ct = default) =>
-            Task.FromResult<OutpostVerdict?>(OutpostVerdict.Unknown);
-
-        public Task RecordVerdictAsync(string name, OutpostVerdict verdict, CancellationToken ct = default) =>
-            Task.CompletedTask;
-
-        public Task<bool> DeregisterAsync(string name, CancellationToken ct = default) =>
-            Task.FromResult(true);
     }
 }

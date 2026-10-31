@@ -167,10 +167,9 @@ public sealed class MultiAgentFactory(
             domainPrompts,
             loggerFactory,
             _promptCache,
-            // Optional: a host with no outpost access — every test host, and any deployment that
-            // never turned them on — simply has no outposts to offer, which is the same answer as
-            // an agent that did not opt in.
-            serviceProvider?.GetService<OutpostAccess>(),
+            // Optional: a host with no outposts — every test host but the outposts' own — simply
+            // has none to offer, which is the same answer as an agent that did not opt in.
+            serviceProvider?.GetService<IOutposts>(),
             BuildReadImageSupport(spec),
             // Optional for the same reason: a host with no judge preloads nothing and the model
             // loads for itself. A worker gets it by this same line, judged on its delegation

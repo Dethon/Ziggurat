@@ -3,6 +3,7 @@ using Domain.DTOs.Channel;
 using Domain.Prompts;
 using Infrastructure.Utils;
 using Mcp.Hosting;
+using Mcp.Hosting.Tunnel;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -75,15 +76,16 @@ public class McpServerContractTests
 
         gates.Count.ShouldBe(1, $"{id} must have exactly one /mcp gate");
         gates[0].Secret.ShouldNotBeNullOrEmpty($"{id}'s row must configure a secret for this to mean anything");
-        gates[0].Secret.ShouldBe(((IMcpHostSettings)row.Settings).Mcp.SharedSecret,
+        // A tunnelled server's secret is its tunnel credential, which the relay presents.
+        var gate = ((IMcpHostSettings)row.Settings).Mcp;
+        gates[0].Secret.ShouldBe(gate.Tunnel.IsConfigured ? gate.Tunnel.Credential : gate.SharedSecret,
             $"{id} must gate /mcp with the secret its settings carry");
     }
 
-    // Every deployment server shares one secret; the outpost is not part of the deployment, and the
-    // secret its /mcp asks for is the one it registers with — never the deployment's, which a
-    // machine on somebody's desk does not have.
+    // The outpost is not part of the deployment: its /mcp asks for the tunnel credential the relay
+    // presents — never the deployment's secret, which a machine on somebody's desk does not have.
     [Fact]
-    public void TheOutpost_GatesItsMcpEndpointBehindItsOwnSecret()
+    public void TheOutpost_GatesItsMcpEndpointBehindItsTunnelCredential()
     {
         using var server = new ConfiguredServer(McpServerRegistrations.Get("outpost"));
 
@@ -91,7 +93,7 @@ public class McpServerContractTests
             .Select(descriptor => descriptor.ImplementationInstance)
             .OfType<McpSecretGate>()
             .Single().Secret
-            .ShouldBe(McpServerRegistrations.OutpostSecret);
+            .ShouldBe(McpServerRegistrations.OutpostCredential);
     }
 
     // Holding a server's credential is not enough to act through it: every deployment server checks a
@@ -112,14 +114,15 @@ public class McpServerContractTests
             $"{id} must check tokens for the name its settings carry");
     }
 
-    // The outpost receives the token and is not required to check it: a machine on somebody's desk
-    // knows nothing of the deployment's keys.
+    // The outpost checks a tool call's token like every server, with the keys its tunnel delivers
+    // rather than any it could be pointed at.
     [Fact]
-    public void TheOutpost_DoesNotCheckCallTokens()
+    public void TheOutpost_ChecksCallTokensAgainstWhatItsTunnelDelivers()
     {
         using var server = new ConfiguredServer(McpServerRegistrations.Get("outpost"));
 
-        server.Provider.GetService<CallTokenGate>().ShouldBeNull();
+        server.Provider.GetService<CallTokenGate>().ShouldNotBeNull("the outpost must check every tool call's token");
+        server.Provider.GetService<TunnelTrust>().ShouldNotBeNull("the outpost checks tokens against its tunnel's keys");
     }
 
     public static TheoryData<string> DeploymentServers => McpServerRegistrations.Ids(

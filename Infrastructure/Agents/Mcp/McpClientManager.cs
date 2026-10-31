@@ -23,14 +23,15 @@ internal sealed class McpClientManager : IAsyncDisposable
 
     public IReadOnlyList<McpClient> Clients { get; }
 
-    // The clients whose endpoint a machine registered at runtime. Discovery reads this: what such a
-    // server says about itself is its own word, and who registered it is the hub's own knowledge.
+    // The clients whose endpoint is a machine's (an outpost's tunnel). Discovery reads this: what such
+    // a server says about itself is its own word, and which endpoints are machines is the agent's own
+    // knowledge.
     public IReadOnlySet<McpClient> DynamicClients { get; }
 
-    // The addresses whose dial produced a client. The verdict writer reads this: an outpost whose
-    // dial was dropped must not be judged by its name, which a configured mount can coincidentally
-    // hold — the address is the one thing that is the machine's own.
-    public IReadOnlyList<string> DialledEndpoints { get; }
+    // The servers whose dial produced a client. An outpost whose dial was dropped is named absent by
+    // these, never by its mount name, which a configured mount can coincidentally hold — the server
+    // its tunnel was admitted as is the one thing that is the machine's own.
+    public IReadOnlyList<ServerAddress> DialledServers { get; }
 
     public IReadOnlyList<AITool> Tools { get; }
     public IReadOnlyList<PromptSection> Prompts { get; }
@@ -44,14 +45,14 @@ internal sealed class McpClientManager : IAsyncDisposable
     private McpClientManager(
         IReadOnlyList<McpClient> clients,
         IReadOnlySet<McpClient> dynamicClients,
-        IReadOnlyList<string> dialledEndpoints,
+        IReadOnlyList<ServerAddress> dialledServers,
         IReadOnlyList<AITool> tools,
         IReadOnlyList<PromptSection> prompts,
         IReadOnlyList<PromptSkill> skills)
     {
         Clients = clients;
         DynamicClients = dynamicClients;
-        DialledEndpoints = dialledEndpoints;
+        DialledServers = dialledServers;
         Tools = tools;
         Prompts = prompts;
         Skills = skills;
@@ -76,13 +77,14 @@ internal sealed class McpClientManager : IAsyncDisposable
         var skillsTask = LoadSkills(clientsWithEndpoints, promptCache, logger, ct);
         await Task.WhenAll(toolsTask, promptsTask, skillsTask);
         var clients = clientsWithEndpoints.Select(c => c.Client).ToArray();
-        var dialled = clientsWithEndpoints.Select(c => c.Address).ToArray();
-        var dynamicAddresses = endpoints
+        var dialled = clientsWithEndpoints.Select(c => c.Server).ToArray();
+        var dynamicServers = endpoints
             .Where(e => e.Origin is McpEndpointOrigin.Dynamic)
-            .Select(e => e.Address)
-            .ToHashSet(StringComparer.Ordinal);
+            .Select(e => e.Server)
+            .OfType<ServerAddress>()
+            .ToHashSet();
         var dynamicClients = clientsWithEndpoints
-            .Where(c => dynamicAddresses.Contains(c.Address))
+            .Where(c => dynamicServers.Contains(c.Server))
             .Select(c => c.Client)
             .ToHashSet();
         return new McpClientManager(
@@ -105,8 +107,8 @@ internal sealed class McpClientManager : IAsyncDisposable
 
     // Two rules, decided by the endpoint's origin and by nothing else. A configured endpoint is a
     // container in the deployment: it is retried and then, if it will not answer, it fails the
-    // session. A dynamic one is a machine that registered itself, and its being unreachable is
-    // normal — it is dialled once, logged and dropped, and its mount is simply absent for this
+    // session. A dynamic one is an outpost — a machine whose tunnel is open — and its being
+    // unreachable is normal — it is dialled once, logged and dropped, and its mount is simply absent for this
     // session. The temptation to unify these will recur; they are one implementation of two
     // different meanings of "not reachable", and the reasoning is recorded in
     // docs/adr/0027-static-endpoints-fail-dynamic-ones-are-dropped.md.
@@ -159,11 +161,11 @@ internal sealed class McpClientManager : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                // The address is what names the machine: it is what the outpost registered and
-                // the only thing here that identifies which one went away.
+                // The address is what names the machine: the server its tunnel was admitted as,
+                // and the only thing here that identifies which one went away.
                 logger?.LogWarning(ex,
-                    "The dynamically registered MCP endpoint {Endpoint} could not be dialled, so its "
-                    + "mount is absent for this session; the next session build asks the registry again",
+                    "The outpost at {Endpoint} could not be dialled, so its mount is absent for this "
+                    + "session; the next session build asks for the household's outposts again",
                     endpoint.Address);
                 return null;
             }
@@ -172,8 +174,8 @@ internal sealed class McpClientManager : IAsyncDisposable
         return [.. clients.Where(c => c is not null).Select(c => c!.Value)];
     }
 
-    // Every server the agent dials is handed its call token on every tool call, outposts included:
-    // an outpost is not required to check it, and the agent does not ask which servers will. A
+    // Every server the agent dials is handed its call token on every tool call, outposts included,
+    // and every one checks it — an outpost against the keys its tunnel delivered. A
     // manager built without tokens — a probe of what a server offers, which calls nothing — sends
     // none, and a gated server refuses its tool calls.
     internal static IClientTransport Signed(IClientTransport transport, ServerAddress server, CallTokens? callTokens) =>
@@ -207,9 +209,8 @@ internal sealed class McpClientManager : IAsyncDisposable
         var options = new HttpClientTransportOptions
         {
             Endpoint = new Uri(endpoint.Address),
-            // Presented on every request to a server that asked for one. Both directions
-            // present the same shared secret: the machine when it registers, and this when
-            // it dials the machine back.
+            // Presented on every request to a dialled server: its own credential. A server
+            // reached through its tunnel is presented the tunnel's by the tunnel's client.
             AdditionalHeaders = endpoint.Secret is { } secret
                 ? new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(secret) }
                 : null

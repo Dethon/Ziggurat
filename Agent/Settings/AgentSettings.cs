@@ -28,7 +28,6 @@ public record AgentSettings
     public AttachmentConfiguration Attachments { get; init; } = new();
     public ReadImageConfiguration ReadImages { get; init; } = new();
     public RetentionSettings Retention { get; init; } = new();
-    public OutpostConfiguration Outposts { get; init; } = new();
     public AgentApiConfiguration AgentApi { get; init; } = new();
 
     // Where the accounts service publishes the keys its assertions verify with (ACCOUNTS__JWKSURL):
@@ -73,15 +72,6 @@ public record LemonadeChatConfiguration
 {
     public string ApiUrl { get; [UsedImplicitly] init; } = "";
     public string? ApiKey { get; [UsedImplicitly] init; }
-}
-
-public record OutpostConfiguration
-{
-    // The one value on either side of an outpost's life that is a secret, so the only one that
-    // arrives as an environment variable rather than as configuration or a flag. Empty means no
-    // machine may attach: an unset secret refuses every registration rather than accepting any,
-    // because a deployment that forgot to set it must not be one anyone on the network can join.
-    public string SharedSecret { get; [UsedImplicitly] init; } = "";
 }
 
 // The custom-agent registration API's gate. A secret, so it arrives as an environment variable

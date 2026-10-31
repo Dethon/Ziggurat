@@ -162,6 +162,16 @@ the server's name alone, so its tools are `mcp__vault__…` for every household 
 same everywhere; `CacheKey` = the full name, so the prompt cache (one per process) never serves one
 household's server prompts to another. A URL's `CacheKey` is its qualifier, as before.
 
+## Outposts are tunnels too
+
+An outpost (`.claude/rules/outpost.md`) is a server whose credential was minted for `outpost-<NAME>`
+(`Domain/Outposts/OutpostServerName.cs`): the prefix on the **verified** name is what tells it apart
+from a household's own server, never anything on the open, and it keeps an outpost from replacing an
+own server of the same NAME in the registry. `TunnelledOutposts` reads `Open` for a session's live
+outposts (each `McpServerEndpoint.RelayedOutpost`, dynamic) and consumes `WatchAsync` to record each
+opening and closing as an `OutpostEvent`. A consumer that follows `WatchAsync` for own servers (a
+channel connected while its tunnel is open) should skip `outpost-*` names: a machine is no channel.
+
 ## Not yet (later tickets)
 
 - **04** connects a tunnelled channel server when its tunnel opens and drops it when it closes:
@@ -174,7 +184,6 @@ household's server prompts to another. A URL's `CacheKey` is its qualifier, as b
 - **06** adds the `pages` tag (`AddTunnelListener`) and routes `/browse/*` to the relay.
 - **08** gives the relay an `accept` for server-opened streams, with its allowlist.
 - **09** lets shared servers reach a household's server through the relay.
-- **10** moves outposts onto the tunnel (their `Address` and verdicts are still URL strings).
 - **11** switches the home's definitions to server names (and their whitelists to the bare names).
 - **11/12**: the server's `ClientWebSocket` trusts the system's roots only, so a kit pointed at a
   smoke stack served by Caddy's local CA needs that CA trusted in the kit's images or a seam for it.

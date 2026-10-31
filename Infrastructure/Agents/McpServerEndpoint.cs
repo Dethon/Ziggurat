@@ -4,14 +4,14 @@ namespace Infrastructure.Agents;
 
 // Where an endpoint came from. It is the only thing that says whether the endpoint being
 // unreachable is a fault: a container named in the compose file being down is a bug, and a
-// laptop that registered itself being asleep is Tuesday. The dial policy reads this and nothing
+// laptop whose tunnel is open being asleep is Tuesday. The dial policy reads this and nothing
 // else. See docs/adr/0027-static-endpoints-fail-dynamic-ones-are-dropped.md.
 public enum McpEndpointOrigin
 {
     // Named in the deployment's own settings, and part of it.
     Configured,
 
-    // Registered at runtime by the machine it serves, and gone when that machine is.
+    // An outpost: there while the machine's tunnel is open, and gone when it closes.
     Dynamic
 }
 
@@ -23,12 +23,11 @@ public enum McpEndpointOrigin
 // merges live outposts in as dynamic ones.
 public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
 {
-    // What this endpoint has to present to be allowed to talk. Every server asks: a deployment
-    // server for its own credential, found by the name it answers to (ServerAddress), because a tool believes
-    // whatever conversation context a call claims and the network is not a boundary worth trusting
-    // that to; an outpost for its own,
-    // because it is a port on somebody's own computer offering their whole filesystem, fs_exec
-    // included. Null presents nothing, which a gated server refuses — and a secret set to nothing is
+    // What this endpoint has to present to be allowed to talk. Every dialled server asks for its own
+    // credential, found by the name it answers to (ServerAddress), because a tool believes whatever
+    // conversation context a call claims and the network is not a boundary worth trusting that to. A
+    // server reached through its tunnel — a household's, an outpost — presents nothing here: the
+    // tunnel's client presents the tunnel's credential. Null presents nothing, which a gated server refuses — and a secret set to nothing is
     // null here, so no dial sends a bearer header with nothing behind it.
     public string? Secret
     {
@@ -68,4 +67,10 @@ public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
     // the client never resolves: every connection it makes is a stream of the tunnel.
     public static McpServerEndpoint Relayed(ServerAddress server, HttpClient through) =>
         new($"http://{server.Name}/mcp", McpEndpointOrigin.Configured) { Server = server, Through = through };
+
+    // An outpost through its open tunnel: reached the same way, but dynamic — the machine decides
+    // whether it is there, and a tunnel that closes between the session's compose and its dial costs
+    // the session that mount and nothing else (ADR 0027).
+    public static McpServerEndpoint RelayedOutpost(ServerAddress server, HttpClient through) =>
+        Relayed(server, through) with { Origin = McpEndpointOrigin.Dynamic };
 }

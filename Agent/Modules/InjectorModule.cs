@@ -7,7 +7,6 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Tunnel;
 using Domain.Judgments;
 using Domain.Monitor;
-using Domain.Outposts;
 using Domain.Prompts;
 using Domain.Security;
 using Domain.Security.Signing;
@@ -161,8 +160,7 @@ public static class InjectorModule
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
                 .AddHostedService<ModelCapabilityRefresher>()
                 .AddLemonadeChatHost(lemonadeChatHost)
-                .AddTypeSafe(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey), settings.SkillPreload, settings.ExecScreen)
-                .AddOutposts(settings.Outposts);
+                .AddTypeSafe(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey), settings.SkillPreload, settings.ExecScreen);
         }
 
         // The judge is registered as every Jev host registers it; the preloader and the exec screen
@@ -246,12 +244,6 @@ public static class InjectorModule
                         sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default));
         }
 
-        private IServiceCollection AddOutposts(OutpostConfiguration outposts) =>
-            // The registry and the secret travel together, because neither is any use without the
-            // other: a registration nobody may dial is a mount that cannot be reached.
-            services.AddSingleton(sp => new OutpostAccess(
-                sp.GetRequiredService<IOutpostRegistry>(), outposts.SharedSecret));
-
         private IServiceCollection AddRedis(RedisConfiguration config, RetentionSettings retention)
         {
             return services
@@ -267,19 +259,10 @@ public static class InjectorModule
                     sp.GetRequiredService<IThreadStateStore>(), sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
                     sp.GetRequiredService<IConnectionMultiplexer>()))
-                // Outside this process for the same reason an outpost registration is: recycling the
-                // agent must not blind it to a picture that is still in view.
+                // Outside this process: recycling the agent must not blind it to a picture that is
+                // still in view.
                 .AddSingleton<IReadImageStore>(sp => new RedisReadImageStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>()))
-                // An outpost registration survives the agent recycling because it lives here
-                // rather than in this process: a container restart must not silently drop every
-                // machine that had announced itself.
-                .AddSingleton<IOutpostStore>(sp => new RedisOutpostStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>()))
-                .AddSingleton<IOutpostRegistry>(sp => new OutpostRegistry(
-                    sp.GetRequiredService<IOutpostStore>(),
-                    sp.GetRequiredService<IMetricsPublisher>(),
-                    sp.GetRequiredService<TimeProvider>()));
+                    sp.GetRequiredService<IConnectionMultiplexer>()));
         }
     }
 }

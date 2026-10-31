@@ -49,17 +49,11 @@ assistants.herfluffness.com {
         reverse_proxy agent:8080
     }
 
-    # An outpost registers and keeps alive here, over TLS, so its secret never crosses the LAN in
-    # the clear and the agent's own port stays unpublished. The agent's dial-back to the machine
-    # is direct. The exec bridge beside it is never routed.
-    handle /api/outposts* {
-        reverse_proxy agent:8080
-    }
-
     # A household's own server opens its one tunnel here: a WebSocket to the relay in the agent,
     # presenting the credential the operator minted for it, which the relay has the accounts service
     # verify on every open. The path exactly, and never behind the session check — a server is
-    # nobody's browser. Everything the agent says to that server travels inside it.
+    # nobody's browser. Everything the agent says to that server travels inside it. An outpost is
+    # one such server, its credential minted for outpost-<name>; the exec bridge is never routed.
     handle /tunnel {
         reverse_proxy agent:8080
     }

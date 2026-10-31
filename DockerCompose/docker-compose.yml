@@ -874,7 +874,6 @@ services:
       OPENROUTER__APIKEY: ${OPENROUTER__APIKEY}
       LemonadeChat__ApiUrl: ${LemonadeChat__ApiUrl}
       LemonadeChat__ApiKey: ${LemonadeChat__ApiKey}
-      OUTPOSTS__SHAREDSECRET: ${OUTPOSTS__SHAREDSECRET}
       <<: [ *timezone, *cors-origins ]
       REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       # Each server's credential by the host the agent dials, the same variable the server
