@@ -21,7 +21,7 @@ Optional publisher parameters coalesce once to `NoOpMetricsPublisher.Instance` w
 
 ## Collection
 
-Published events reach the Redis Pub/Sub channel `metrics:events`. `MetricsCollectorService` subscribes, aggregates into Redis (sorted sets for time-series, hashes for totals, TTL keys for health), and forwards live events to the SignalR hub (`/hubs/metrics`); `MetricsQueryService` serves grouped aggregations by dimension/metric enum. The dashboard is hybrid: REST for history on page load, SignalR for live updates, `LocalStorageService` for UI state.
+Published events reach the Redis Pub/Sub channel `metrics:events`. A household's own server reaches no deployment Redis: given `METRICS__URL` (`MetricsFeedConfig`, `AddMetricsPublishing(name, feed)`) it posts each event to its metrics back-call (`HttpMetricSink`) and the relay publishes it, with `MetricEvent.Origin` set to that server's synthetic address (`.claude/rules/tunnel.md`, "Back-calls"); a deployment service's own events carry no `Origin`. `MetricsCollectorService` subscribes, aggregates into Redis (sorted sets for time-series, hashes for totals, TTL keys for health), and forwards live events to the SignalR hub (`/hubs/metrics`); `MetricsQueryService` serves grouped aggregations by dimension/metric enum. The dashboard is hybrid: REST for history on page load, SignalR for live updates, `LocalStorageService` for UI state.
 
 ## Who reaches the dashboard
 
