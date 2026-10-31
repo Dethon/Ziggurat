@@ -1,4 +1,5 @@
 using Domain.DTOs.Tunnel;
+using Domain.Outposts;
 
 namespace Infrastructure.Tunnels;
 
@@ -11,21 +12,27 @@ public sealed record BackCallSettings
     public string LemonadeUrl { get; init; } = "http://lemonade:13305";
 }
 
-// The relay's allowlist: for each back-call, the deployment service it reaches and the only paths it
-// may ask there, every one a POST. Nothing else a household's server sends is let through — not
-// another accounts route (a tunnel credential's verify, the Telegram bot's, the chat hub's sessions),
-// not Lemonade's model management, not any agent route but the bridge's and topic minting.
+// The relay's allowlist: for each back-call, the servers that may make it, the deployment service it
+// reaches and the only paths it may ask there, every one a POST. Nothing else a household's server
+// sends is let through — not another accounts route (a tunnel credential's verify, the Telegram bot's,
+// the chat hub's sessions), not Lemonade's model management, not any agent route but the bridge's and
+// topic minting — and no back-call from a server it is not for: the accounts back-call mints voice
+// assertions for anybody in the household, so a printer's or an outpost's credential must not reach it.
 public sealed class BackCallTargets(Uri accounts, Uri lemonade)
 {
     private const string AccountsInternal = "/accounts/internal";
 
     private static readonly Dictionary<string, Allowed> _allowed = new(StringComparer.Ordinal)
     {
-        [BackCallProtocol.Accounts] = new(Target.Accounts, [AccountsInternal + "/resolve", AccountsInternal + "/guest"], []),
-        [BackCallProtocol.Lemonade] = new(Target.Lemonade, ["/v1/audio/transcriptions", "/v1/audio/speech"], []),
-        [BackCallProtocol.VfsBridge] = new(Target.Agent, [], [BridgeRoute + "/"]),
-        [BackCallProtocol.Topics] = new(Target.Agent, [Domain.DTOs.Channel.TopicMinting.Path], []),
-        [BackCallProtocol.Metrics] = new(Target.Relay, [BackCallProtocol.MetricsPath], [])
+        [BackCallProtocol.Accounts] = new(
+            IsVoice, Target.Accounts, [AccountsInternal + "/resolve", AccountsInternal + "/guest"], []),
+        [BackCallProtocol.Lemonade] = new(IsVoice, Target.Lemonade, ["/v1/audio/transcriptions", "/v1/audio/speech"], []),
+        [BackCallProtocol.VfsBridge] = new(
+            server => server == HouseholdServerNames.Sandbox, Target.Agent, [], [BridgeRoute + "/"]),
+        [BackCallProtocol.Topics] = new(IsVoice, Target.Agent, [Domain.DTOs.Channel.TopicMinting.Path], []),
+        // Every household's server may report on itself; an outpost publishes nothing.
+        [BackCallProtocol.Metrics] = new(
+            server => OutpostServerName.NameOf(server) is null, Target.Relay, [BackCallProtocol.MetricsPath], [])
     };
 
     // Agent/App/VfsBridgeApi.Route, which Infrastructure cannot see; BackCallGatewayTests asks the
@@ -37,8 +44,9 @@ public sealed class BackCallTargets(Uri accounts, Uri lemonade)
 
     public bool Knows(string tag) => _allowed.ContainsKey(tag);
 
-    public bool Allows(string tag, string path) =>
+    public bool Allows(string tag, string serverName, string path) =>
         _allowed.TryGetValue(tag, out var allowed)
+        && allowed.From(serverName)
         && (allowed.Paths.Contains(path, StringComparer.Ordinal)
             || allowed.Prefixes.Any(prefix => path.StartsWith(prefix, StringComparison.Ordinal) && !path.Contains("..")));
 
@@ -53,6 +61,8 @@ public sealed class BackCallTargets(Uri accounts, Uri lemonade)
         _ => throw new InvalidOperationException($"The '{tag}' back-call is answered by the relay itself.")
     };
 
+    private static bool IsVoice(string serverName) => serverName == HouseholdServerNames.Voice;
+
     private enum Target
     {
         Accounts,
@@ -61,5 +71,5 @@ public sealed class BackCallTargets(Uri accounts, Uri lemonade)
         Relay
     }
 
-    private sealed record Allowed(Target Target, string[] Paths, string[] Prefixes);
+    private sealed record Allowed(Func<string, bool> From, Target Target, string[] Paths, string[] Prefixes);
 }
