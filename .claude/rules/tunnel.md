@@ -176,3 +176,5 @@ household's server prompts to another. A URL's `CacheKey` is its qualifier, as b
 - **09** lets shared servers reach a household's server through the relay.
 - **10** moves outposts onto the tunnel (their `Address` and verdicts are still URL strings).
 - **11** switches the home's definitions to server names (and their whitelists to the bare names).
+- **11/12**: the server's `ClientWebSocket` trusts the system's roots only, so a kit pointed at a
+  smoke stack served by Caddy's local CA needs that CA trusted in the kit's images or a seam for it.

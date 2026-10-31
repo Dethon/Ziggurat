@@ -8,6 +8,8 @@ using Domain.Judgments;
 using Domain.Security;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Tunnels;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -97,6 +99,24 @@ public class InjectorModuleTests
         };
 
         Should.NotThrow(() => new ServiceCollection().AddLogging().AddAgent(settings));
+    }
+
+    // The deployment's own composition: the relay a household's server opens its tunnel to, the
+    // revocations that close one, and the agent reaching household servers through it rather than
+    // through whatever a test stack hosts.
+    [Fact]
+    public void ConfigureAgents_ComposesTheRelay_AndReachesHouseholdServersThroughIt()
+    {
+        var settings = Settings(openRouterKey: "key") with { Signing = TestSigningKeys.Settings(TestSigningKeys.Agent) };
+        var services = new ServiceCollection().AddLogging();
+        services.ConfigureAgents(settings, new CommandLineParams(), new ConfigurationBuilder().Build());
+        services.RemoveAll<IMetricsPublisher>();
+        services.AddSingleton<IMetricsPublisher>(new RecordingMetricsPublisher());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<TunnelRelay>().ShouldNotBeNull();
+        provider.GetRequiredService<IOwnServers>().ShouldBeOfType<RelayedOwnServers>();
+        services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(TunnelRevocations));
     }
 
     // One set of credentials for the host: the one startup checked is the one every agent, worker
