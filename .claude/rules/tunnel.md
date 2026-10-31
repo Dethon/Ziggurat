@@ -252,8 +252,10 @@ An outpost (`.claude/rules/outpost.md`) is a server whose credential was minted 
 from a household's own server, never anything on the open, and it keeps an outpost from replacing an
 own server of the same NAME in the registry. `TunnelledOutposts` reads `Open` for a session's live
 outposts (each `McpServerEndpoint.RelayedOutpost`, dynamic) and consumes `WatchAsync` to record each
-opening and closing as an `OutpostEvent`. A channel follows its tunnel by its own server name, so a
-machine's tunnel is never taken for a channel.
+opening and closing as an `OutpostEvent`. A consumer of `Open` or `WatchAsync` tells a machine apart with
+`OutpostServerName.NameOf`: a channel follows its tunnel by its own server name, so it never takes a
+machine for a channel, and the operator's listing (`TunnelListing`) shows a machine as `outpost-<NAME>`
+beside the household's servers, deliberately.
 
 ## Not yet (later tickets)
 
