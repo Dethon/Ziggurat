@@ -37,6 +37,18 @@ public static class ChannelProtocol
     public const string OfferApprovalTool = "offer_approval";
     public const string SettleApprovalTool = "settle_approval";
 
+    // An insistent alert for one person — a timer with no satellite to ring on — rung on every
+    // channel that can show one (AlertRelay): offered there, and settled everywhere on the first
+    // dismissal. offer_alert is advertised only by a channel with a person to reach (the chat
+    // client, Telegram); settle_alert also by the server that raised the alert, so it stops holding
+    // it as ringing. Hidden from the model like every other channel-protocol tool.
+    public const string OfferAlertTool = "offer_alert";
+    public const string SettleAlertTool = "settle_alert";
+
+    // What a channel answers an offered alert with when the person dismissed it there. Anything else
+    // — no_answer above, a refusal of the call — is not a dismissal and ends nothing.
+    public const string AlertDismissed = "dismissed";
+
     // What a channel answers an approval with when nobody answered it there: the question could not
     // be shown (no live session, no satellite), the person could not be reached, or it was answered
     // somewhere else first. It is not a refusal — a refusal is the person's, or the asking channel's
