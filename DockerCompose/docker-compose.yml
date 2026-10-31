@@ -585,7 +585,8 @@ services:
 
   # One-shot, by hand, on the deploy that brings accounts: carries the retired identity map's people
   # into the home household as accounts, and what was filed under their names — memories, remembered
-  # logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids.
+  # logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids,
+  # and the chat client's spaces into the household's configuration.
   # Under a profile, so `up` never starts it. Put the people in ./volumes/household-migration/people.json
   # and HOUSEHOLD_MIGRATION_SECRET in .env (then `docker compose up -d accounts`), and run
   #   docker compose --profile migrate run --rm household-migration \

@@ -184,7 +184,17 @@ exist, secrets with no master, or readers not told. Saving `settings` also renam
   Redis yet. A schedule fires with no call: its stored delegation (agent-signed, `tid`) is the
   natural proof, which is a new proof kind here (`TokenAudiences.Delegation`, kind `schedule`) —
   add it to `HouseholdProofs` for `mcp-scheduling` rather than an all-households view.
-- **12**: the hub proves with its connection's (or the session refresh's) assertion on `signalr`.
+- **12** (done): the hub (`ChatHub.GetSpaces`, `JoinSpace`) proves with the **session refresh's**
+  assertion (`ISessionAccounts.SessionAsync`, as every turn does), not the one the connection arrived
+  with, which lives ten minutes while a chat client stays connected for hours. The chat client's host
+  keeps no list and reads no header; see `.claude/rules/channels.md`, "Spaces".
+- **Seeding a section the household never saved** is `POST /accounts/internal/household-config-seed`
+  (`HouseholdConfigSeedApi`, `{ householdId, section, document, dryRun }` → `{ saved, alreadySaved }`,
+  400 with the problems), admitted for `CALLERS__household-migration` alone like the import. A section
+  the household already saved is left as it is, so a rerun changes nothing and an owner's own edits
+  are never put over; a dry run checks the document and writes nothing. Any section: 06 seeds the
+  agents through it as 12 seeds the spaces (`HouseholdMigration/Steps/HouseholdSpaces`). It tells
+  readers as any save does but ignores a failure to, since nothing has read a section before it exists.
 - **13**: `TelegramBotsAsync` at startup and again when it changes; `/agent` needs a household's
   agent list on `telegram`, a new view.
 
