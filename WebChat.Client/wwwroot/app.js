@@ -308,6 +308,27 @@ window.faviconHelper = {
 };
 
 // ===================================
+// Per-space manifest
+// ===================================
+
+// The page's host serves the manifest from what it is asked with, since it knows no household: the
+// page names its space's slug, name and colour once the hub has told it them.
+window.manifestHelper = {
+    setSpace: function (slug, name, color) {
+        const link = document.querySelector('link[rel="manifest"]');
+        if (!link) return;
+        const query = new URLSearchParams();
+        if (slug && slug !== 'default') query.set('slug', slug);
+        if (name) query.set('name', name);
+        if (color) query.set('color', color);
+        const href = '/manifest.webmanifest' + (query.toString() ? '?' + query.toString() : '');
+        if (link.getAttribute('href') !== href) {
+            link.setAttribute('href', href);
+        }
+    }
+};
+
+// ===================================
 // Per-space accent (CSS custom property)
 // ===================================
 

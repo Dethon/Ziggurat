@@ -2,7 +2,7 @@ namespace WebChat.Client.State.Space;
 
 public record SelectSpace(string Slug) : IAction;
 
-public record SpaceValidated(string Slug, string Name, string AccentColor) : IAction;
+public record SpaceValidated(string Slug, string Name, string AccentColor, string? DefaultAgent = null) : IAction;
 
 public record InvalidSpace : IAction;
 
@@ -26,7 +26,10 @@ public sealed class SpaceStore : IDisposable
     private static SpaceState Reduce(SpaceState state, IAction action) => action switch
     {
         SelectSpace a => state with { CurrentSlug = a.Slug },
-        SpaceValidated a => new SpaceState { CurrentSlug = a.Slug, SpaceName = a.Name, AccentColor = a.AccentColor },
+        SpaceValidated a => new SpaceState
+        {
+            CurrentSlug = a.Slug, SpaceName = a.Name, AccentColor = a.AccentColor, DefaultAgent = a.DefaultAgent
+        },
         InvalidSpace => SpaceState.Initial,
         _ => state
     };

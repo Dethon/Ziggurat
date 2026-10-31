@@ -290,7 +290,6 @@ public sealed class NotLiveUserActionTests
     {
         await using var client = new ScriptedChatClient();
         await client.ConnectAsync();
-        client.ConfigService.WithSpace("hearth");
         SeedTopic(client);
 
         client.GoNotLive();
