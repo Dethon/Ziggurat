@@ -20,6 +20,7 @@ paths:
   - "Agent/App/HomeAgentCatalog.cs"
   - "HouseholdMigration/Home/**"
   - "HouseholdMigration/Steps/HomeConfiguration.cs"
+  - "HouseholdMigration/Steps/HomeTelegramBots.cs"
 ---
 
 # Household configuration
@@ -106,6 +107,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 | `idealista` | `mcp-idealista` | `HouseholdConfigAnswer<IdealistaKeys?>` | Idealista's two |
 | `spaces` | `mcp-channel-signalr` | `HouseholdConfigAnswer<SpacesSection>` | none |
 | `telegram-bots` | `mcp-channel-telegram` | `HouseholdTelegramBots`: every household's bots | the bots' tokens |
+| `agent-names` | `mcp-channel-telegram` | `HouseholdConfigAnswer<HouseholdAgentNames>`: each agent's id and name and the default (`HouseholdAgents.Names`, the entries its turns are built from: the two templates for a household that saved none, an unshipped template left out), proven by the person's assertion on `telegram` | none |
 
 A secret is unsealed into its own server's view and **left out** of every other, never sent sealed.
 A new view, or a server that comes to need one, is a line in that table, a route, and a row here.
@@ -199,7 +201,7 @@ exits 1.
 a shared server its own `MCP__SHAREDSECRET` and nothing else.
 
 - `ForAgentAsync(householdId)`, `SettingsAsync(householdId, proof)`, `IdealistaKeysAsync(householdId,
-  proof)` (null: none set), `SpacesAsync(householdId, proof)`, `TelegramBotsAsync()`. `HouseholdProof.OfCallToken`
+  proof)` (null: none set), `SpacesAsync(householdId, proof)`, `AgentNamesAsync(householdId, proof)`, `TelegramBotsAsync()`. `HouseholdProof.OfCallToken`
   / `.OfAssertion` / `.OfDelegation`. The `householdId` a shared server passes is the one **it** already verified (the
   call's `tid`); it is the cache key, and an answer for any other household is refused, not kept.
 - Kept per (view, household) for `Accounts:ConfigurationLifetime` (1 minute) and dropped the moment a
@@ -277,14 +279,22 @@ exist, secrets with no master, or readers not told. Saving `settings` also renam
   household's (the settings' name its row carries, the features it does not name). Any section: 06 seeds the
   agents through it as 12 seeds the spaces (`HouseholdMigration/Steps/HouseholdSpaces`). It tells
   readers as any save does but ignores a failure to, since nothing has read a section before it exists.
+  A document carrying a secret on a service with no master key is 503, dry run or not, with the reason
+  (the smoke stack runs so: a migration given no bots seeds no keys and needs none).
 - **06**, from 08 (done): a session reads a write's bare `runAt` in the household's zone (`McpAgent.Zone`
   into `ThreadSession`'s `localZone`), as the scheduling server does.
 - **07**: `HouseholdAgents.Configuration` carries the view a turn's agents were built from — `IsHome`,
   `OpenRouterApiKey` — beside the spec; `MultiAgentFactory.CreateAsync` has it in hand where the chat
   client is made. Memory extraction's request names its household (`TenantId`), which the worker
   already reads its agent by.
-- **13**: `TelegramBotsAsync` at startup and again when it changes; `/agent` needs a household's
-  agent list on `telegram`, a new view.
+- **13** (done): the Telegram server reads `telegram-bots` at its start and every `Bots:Refresh` (five
+  seconds; the reader's cache makes that free, and a `keys` save drops it), starting and stopping each
+  household's bots as the answer changes, and `agent-names` for `/agent` on the asking person's
+  assertion (`.claude/rules/channels.md`, Telegram). The household migration's `HomeTelegramBots` seeds
+  the home's jack and jonas bots into its `keys` through the seed route, from tokens piped into the run
+  (`--telegram-bots -`). Because the seed route leaves a saved section alone, the deploy runs the
+  migration with the bots **before** any `keys` save (08's Idealista key included), or adds the bots to
+  the saved section with `set-household-config`.
 
 ## Tests
 

@@ -104,7 +104,7 @@ public static class McpServerRegistrations
             DeliveryPolicy.Broadcast),
 
         Row("telegram", "McpChannelTelegram", McpServerRole.Channel,
-            new TelegramSettings.ChannelSettings { Bots = [], Mcp = DeploymentGate },
+            new TelegramSettings.ChannelSettings { Mcp = DeploymentGate },
             (services, settings) => services.ConfigureChannel(settings),
             DeliveryPolicy.BufferAlways),
 

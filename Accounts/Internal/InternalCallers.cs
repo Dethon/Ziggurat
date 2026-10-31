@@ -69,7 +69,7 @@ public static class InternalCallers
         [Scheduling] = [HouseholdConfigProtocol.SettingsView],
         [Sugary] = [HouseholdConfigProtocol.SettingsView],
         [SignalR] = [HouseholdConfigProtocol.SpacesView],
-        [Telegram] = [HouseholdConfigProtocol.TelegramBotsView]
+        [Telegram] = [HouseholdConfigProtocol.TelegramBotsView, HouseholdConfigProtocol.AgentNamesView]
     };
 
     // The channel an assertion a caller forwards as its proof of a household must name: the one it

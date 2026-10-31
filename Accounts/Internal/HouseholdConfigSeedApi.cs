@@ -28,8 +28,8 @@ public static class HouseholdConfigSeedApi
 
     public static void Map(IEndpointRouteBuilder routes) =>
         routes.MapPost(Path, async (
-            HttpContext http, HouseholdConfigSeedRequest request, HouseholdConfigStore store, AccountsSettings settings,
-            CancellationToken ct) =>
+            HttpContext http, HouseholdConfigSeedRequest request, HouseholdConfigStore store, HouseholdDataKeys dataKeys,
+            AccountsSettings settings, CancellationToken ct) =>
         {
             if (!settings.Callers.TryGetValue(HouseholdImportApi.Caller, out var credential)
                 || !CallerCredential.Matches(http.Request.Headers.Authorization.ToString(), credential))
@@ -63,6 +63,12 @@ public static class HouseholdConfigSeedApi
                 return Results.BadRequest(new HouseholdConfigSeedRefused($"the {schema.Name} would not be saved", [ex.Message]));
             }
 
+            // A stack with no master key seals nothing, so a seeded secret is refused as the real run would be.
+            if (dataKeys.MasterKeyId is null && SealedFields.HasSecret(document, schema.SecretPaths))
+            {
+                return SecretsUnavailable(schema, "no master key is configured, so no household secret can be sealed");
+            }
+
             if (request.DryRun)
             {
                 var problems = Problems(schema, document);
@@ -71,7 +77,17 @@ public static class HouseholdConfigSeedApi
                     : Results.Ok(new HouseholdConfigSeeded(Saved: false, AlreadySaved: false));
             }
 
-            return await store.SaveAsync(request.HouseholdId, schema, document, ct) switch
+            SectionSave saved;
+            try
+            {
+                saved = await store.SaveAsync(request.HouseholdId, schema, document, ct);
+            }
+            catch (HouseholdSecretsUnavailableException ex)
+            {
+                return SecretsUnavailable(schema, ex.Message);
+            }
+
+            return saved switch
             {
                 SectionSave.Saved => Results.Ok(new HouseholdConfigSeeded(Saved: true, AlreadySaved: false)),
                 SectionSave.Invalid invalid => Results.BadRequest(
@@ -79,6 +95,10 @@ public static class HouseholdConfigSeedApi
                 _ => Results.NotFound(new HouseholdConfigSeedRefused($"there is no household {request.HouseholdId}"))
             };
         });
+
+    private static IResult SecretsUnavailable(SectionSchema schema, string why) =>
+        Results.Json(new HouseholdConfigSeedRefused($"the {schema.Name} would not be saved", [why]),
+            statusCode: StatusCodes.Status503ServiceUnavailable);
 
     private static JsonObject Over(JsonObject current, JsonObject seeded)
     {

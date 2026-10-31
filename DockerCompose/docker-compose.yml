@@ -142,9 +142,10 @@ services:
     environment:
       # The secrets this service reads, by name: it is never handed the whole .env. Who may use the
       # bots is nobody's list here: a sender is admitted by the account the accounts service has
-      # their numeric Telegram id linked to, asked with this server's own MCP credential.
-      BOTS__0__BOTTOKEN: ${BOTS__0__BOTTOKEN}
-      BOTS__1__BOTTOKEN: ${BOTS__1__BOTTOKEN}
+      # their numeric Telegram id linked to, asked with this server's own MCP credential. The shared
+      # bot serves every household; a household's own bots (the home's jack and jonas) are its
+      # configuration's keys, read from the accounts service with the same credential.
+      BOTS__SHAREDTOKEN: ${TELEGRAM_SHARED_BOT_TOKEN}
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_TELEGRAM}
@@ -543,8 +544,8 @@ services:
       ALLOWEDORIGINS__3: https://assistants-dashboard.herfluffness.com
       SESSIONCOOKIE__DOMAIN: .herfluffness.com
       PUBLICBASEURL: https://assistants.herfluffness.com
-      # The bot people link their Telegram through, without the @: the account page's link code
-      # and an invite are shown as its t.me deep link. Left empty they are shown as a bare code to
+      # The bot people link their Telegram through, the shared bot, without the @: the account page's
+      # link code and an invite are shown as its t.me deep link. Left empty they are shown as a bare code to
       # send the bot as /start <code>, which is safe; a wrong name would send codes to a stranger's bot.
       TELEGRAM__BOTUSERNAME: ""
       # The servers that may ask whose account an identity is, each by the credential it already
@@ -594,8 +595,11 @@ services:
   # and the chat client's spaces into the household's configuration.
   # Under a profile, so `up` never starts it. Put the people in ./volumes/household-migration/people.json
   # and HOUSEHOLD_MIGRATION_SECRET in .env (then `docker compose up -d accounts`), and run
-  #   docker compose --profile migrate run --rm household-migration \
-  #     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run]
+  #   docker compose --profile migrate run --rm -T household-migration \
+  #     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run] \
+  #     --telegram-bots - < home-bots.json
+  # where home-bots.json, kept outside the volume, is { "jack": { "token": "..." }, "jonas": { ... } },
+  # the two bot tokens .env held before the shared bot, which go into the home's keys section.
   # Running it again changes nothing. The steps are .scratch/accounts/spec.md's Further Notes.
   household-migration:
     image: household-migration:latest
