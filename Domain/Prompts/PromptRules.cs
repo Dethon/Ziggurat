@@ -23,4 +23,9 @@ public static class PromptRules
 
     // What may be said about what is remembered.
     public const string Memory = "memory";
+
+    // A section's header names its rules as words, so the words it may use are listed once here
+    // and a typo fails the document instead of becoming a rule nobody else claims.
+    public static readonly IReadOnlySet<string> All =
+        new HashSet<string>([Formatting, Verbosity, Language, ToolUse, Refusals, Memory], StringComparer.Ordinal);
 }
