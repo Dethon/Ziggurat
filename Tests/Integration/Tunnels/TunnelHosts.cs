@@ -54,6 +54,7 @@ internal sealed class RelayHost : IAsyncDisposable
 
     public string Hub => $"ws://localhost:{Port}{TunnelProtocol.Path}";
 
+    // Where the proxy sends what it routes to the agent.
     public string Address => $"http://localhost:{Port}";
 
     // The same, for a server in a container the suite started, listening on every address.
@@ -67,8 +68,11 @@ internal sealed class RelayHost : IAsyncDisposable
 
     public static async Task<RelayHost> StartAsync(
         AccountsServer accounts, string agentCredential, string redis, SigningKeyStore keys,
-        IMetricsPublisher metrics, int? port = null, IPAddress? on = null)
+        IMetricsPublisher metrics, int? port = null, IPAddress? on = null,
+        IReadOnlyDictionary<string, string>? sharedServers = null)
     {
+        // Picked ahead rather than bound on port 0: the shared Lemonade's stand-in is this host itself,
+        // named in the back-call settings before it listens.
         var listening = port ?? TestPort.GetAvailable();
         var bridge = new VfsBridge(TimeProvider.System, new VfsBridgeSettings());
         var reached = new ConcurrentQueue<ReachedTarget>();
@@ -78,6 +82,9 @@ internal sealed class RelayHost : IAsyncDisposable
             .AddSingleton(keys)
             .AddSingleton(metrics)
             .AddSingleton<IVfsBridge>(bridge)
+            // The deployment's own servers' credentials, as the agent holds them to dial each: the ones
+            // a shared server presents to the relay's endpoint.
+            .AddSingleton(new McpCredentials(sharedServers ?? new Dictionary<string, string>()))
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis))
             .AddTunnelRelay(
                 new TunnelSettings(),
@@ -88,6 +95,8 @@ internal sealed class RelayHost : IAsyncDisposable
         app.UseWebSockets();
         app.MapTunnel();
         app.MapConnectedServers(agentCredential);
+        app.MapBrowsePages();
+        app.MapRelayedCalls();
         app.MapVfsBridge();
         app.MapPost(TopicMinting.Path, (HttpContext http) =>
         {
@@ -122,7 +131,7 @@ internal sealed class TunnelledServer : IAsyncDisposable
     // Whether the relay has admitted its tunnel as far as the server knows: its back-calls go out.
     public bool IsAdmitted => _app.Services.GetRequiredService<Mcp.Hosting.Tunnel.TunnelLink>().IsAdmitted;
 
-    private sealed record Settings(McpGateSettings Mcp) : IMcpHostSettings;
+    internal sealed record Settings(McpGateSettings Mcp) : IMcpHostSettings;
 
     // `backCalls` are the back-calls the server makes, each at the loopback port given.
     public static async Task<TunnelledServer> StartAsync(
