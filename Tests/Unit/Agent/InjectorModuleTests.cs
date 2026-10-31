@@ -8,6 +8,8 @@ using Domain.Judgments;
 using Domain.Security;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Tunnels;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -68,6 +70,53 @@ public class InjectorModuleTests
 
         Should.Throw<InvalidOperationException>(() => new ServiceCollection().AddLogging().AddAgent(settings))
             .Message.ShouldContain("mcp-channel-signalr");
+    }
+
+    // An endpoint is a server's URL or a household server's name. Anything else — a scheme no server
+    // answers on, a name that is no DNS label — would be skipped by the credential check above and
+    // fail far from here, in the first session that dialled it.
+    [Theory]
+    [InlineData("mcp-vault:8080/mcp")]
+    [InlineData("tunnel://vault")]
+    [InlineData("Vault Server")]
+    public void AddAgent_WhenAnEndpointIsNeitherAUrlNorAServersName_Refuses(string endpoint)
+    {
+        var settings = Settings(openRouterKey: "key") with
+        {
+            SubAgents = [new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = ["vault", endpoint] }]
+        };
+
+        Should.Throw<InvalidOperationException>(() => new ServiceCollection().AddLogging().AddAgent(settings))
+            .Message.ShouldContain(endpoint);
+    }
+
+    [Fact]
+    public void AddAgent_TakesAHouseholdServersName_WithNoCredential()
+    {
+        var settings = Settings(openRouterKey: "key") with
+        {
+            Agents = [new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["vault"] }]
+        };
+
+        Should.NotThrow(() => new ServiceCollection().AddLogging().AddAgent(settings));
+    }
+
+    // The deployment's own composition: the relay a household's server opens its tunnel to, the
+    // revocations that close one, and the agent reaching household servers through it rather than
+    // through whatever a test stack hosts.
+    [Fact]
+    public void ConfigureAgents_ComposesTheRelay_AndReachesHouseholdServersThroughIt()
+    {
+        var settings = Settings(openRouterKey: "key") with { Signing = TestSigningKeys.Settings(TestSigningKeys.Agent) };
+        var services = new ServiceCollection().AddLogging();
+        services.ConfigureAgents(settings, new CommandLineParams(), new ConfigurationBuilder().Build());
+        services.RemoveAll<IMetricsPublisher>();
+        services.AddSingleton<IMetricsPublisher>(new RecordingMetricsPublisher());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<TunnelRelay>().ShouldNotBeNull();
+        provider.GetRequiredService<IOwnServers>().ShouldBeOfType<RelayedOwnServers>();
+        services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(TunnelRevocations));
     }
 
     // One set of credentials for the host: the one startup checked is the one every agent, worker

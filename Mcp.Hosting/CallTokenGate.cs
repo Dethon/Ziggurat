@@ -4,6 +4,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Security;
 using Domain.Security.Signing;
+using Mcp.Hosting.Tunnel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
@@ -42,28 +43,38 @@ internal sealed class CallTokenGate
 
     private readonly TokenVerifier _verifier;
     private readonly ILogger<CallTokenGate>? _logger;
+    private readonly string _audience;
+    private readonly TunnelTrust? _tunnel;
 
     public CallTokenGate(McpGateSettings gate, IServiceProvider services)
     {
-        Audience = TokenAudiences.CallTo(ServerAddress.Named(gate.Audience));
+        _audience = TokenAudiences.CallTo(ServerAddress.Named(gate.Audience));
         var clock = services.GetKeyedService<TimeProvider>(ClockKey) ?? TimeProvider.System;
+        _logger = services.GetService<ILogger<CallTokenGate>>();
+        // A tunnelled server is told its name and the agent's keys over its tunnel, and believes
+        // nothing else: no URL it could be pointed at, no fetch something on its network could answer.
+        _tunnel = services.GetService<TunnelTrust>();
+        _verifier = new TokenVerifier(
+            TokenIssuers.Agent, (IVerificationKeys?)_tunnel ?? FetchedKeys(gate, clock, services), clock, gate.TokenVerification);
+    }
+
+    // This server's name as the agent addresses it (ServerAddress.Name), which a token must be signed
+    // for: its settings' for a dialled server, the one its tunnel was admitted with for a tunnelled one.
+    public string Audience => _tunnel is { } tunnel ? TokenAudiences.CallTo(ServerAddress.Named(tunnel.Audience)) : _audience;
+
+    // A client per fetch from the factory, so a singleton never pins one past its handler's life.
+    private static JwksCache FetchedKeys(McpGateSettings gate, TimeProvider clock, IServiceProvider services)
+    {
         var http = services.GetRequiredService<IHttpClientFactory>();
         var url = gate.AgentKeysUrl;
-        _logger = services.GetService<ILogger<CallTokenGate>>();
-        // A client per fetch from the factory, so a singleton never pins one past its handler's life.
-        var keys = new JwksCache(
+        return new JwksCache(
             ct => url.Length == 0
                 ? throw new InvalidOperationException("MCP__AGENTKEYSURL is not set, so the agent's keys cannot be fetched")
                 : http.CreateClient(nameof(CallTokenGate)).GetStringAsync(url, ct),
             clock,
             gate.TokenVerification,
             services.GetService<ILogger<JwksCache>>());
-        _verifier = new TokenVerifier(TokenIssuers.Agent, keys, clock, gate.TokenVerification);
     }
-
-    // This server's name as the agent addresses it (ServerAddress.Name), which a token must be signed
-    // for.
-    public string Audience { get; }
 
     internal static IMcpServerBuilder Install(IMcpServerBuilder builder, McpGateSettings gate)
     {
