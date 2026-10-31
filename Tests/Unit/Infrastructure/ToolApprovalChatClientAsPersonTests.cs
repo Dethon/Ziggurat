@@ -13,8 +13,8 @@ namespace Tests.Unit.Infrastructure;
 // whitelist says, and only approve-and-remember covers that site for the rest of it.
 public class ToolApprovalChatClientAsPersonTests
 {
-    private const string Browse = "mcp__mcp-websearch__web_browse";
-    private static readonly string[] _shippedWhitelist = ["mcp__mcp-websearch*"];
+    private const string Browse = "mcp__websearch__web_browse";
+    private static readonly string[] _shippedWhitelist = ["mcp__websearch*"];
 
     private readonly List<string> _browsed = [];
 

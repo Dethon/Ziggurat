@@ -18,6 +18,7 @@
       <Content Include="retention.json" CopyToOutputDirectory="PreserveNewest" />
       <Content Include="delivery.json" CopyToOutputDirectory="PreserveNewest" />
       <Content Include="token-verification.json" CopyToOutputDirectory="PreserveNewest" />
+      <Content Include="tunnel.json" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
     <ItemGroup>

@@ -32,10 +32,11 @@ public sealed class McpAgent : DisposableAgent
     private readonly string _agentId;
     private readonly IReadOnlyList<McpServerEndpoint> _endpoints;
     private readonly bool _usesOutposts;
-    private readonly bool _recordsOutpostVerdicts;
     private readonly bool _noTools;
     private readonly IReadOnlySet<string> _withheldTools;
-    private readonly OutpostAccess? _outposts;
+    private readonly IOutposts? _outposts;
+    private readonly IOwnServers? _ownServers;
+    private readonly string? _tenantId;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger<McpAgent>? _logger;
@@ -58,12 +59,17 @@ public sealed class McpAgent : DisposableAgent
 
     private readonly SkillsProvider _skills;
     private readonly RedisChatMessageStore _history;
-    private readonly ConcurrentDictionary<AgentSession, ThreadSession> _threadSessions = [];
+    private readonly ConcurrentDictionary<AgentSession, ReconciledSession> _threadSessions = [];
     private int _isDisposed;
     private string? _reportedPromptWarnings;
 
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
+
+    // A session and the household servers it was built with, which the next turn's start compares
+    // with what it finds.
+    private sealed record ReconciledSession(
+        ThreadSession Session, OwnServerResolution OwnServers, ComposedEndpoints Composed);
 
     // Both halves of a per-message config patch, and the response format the message asked for,
     // resolved once for a turn. The values ride that turn's ChatOptions, so nothing per-request
@@ -86,15 +92,17 @@ public sealed class McpAgent : DisposableAgent
         IReadOnlyList<PromptSection> domainPrompts,
         ILoggerFactory? loggerFactory = null,
         McpPromptCache? promptCache = null,
-        OutpostAccess? outposts = null,
+        IOutposts? outposts = null,
         ReadImageSupport? readImages = null,
         ISkillPreloader? skillPreloader = null,
         IVfsBridge? bridge = null,
-        CallTokens? callTokens = null)
+        CallTokens? callTokens = null,
+        IOwnServers? ownServers = null)
     {
         _endpoints = spec.McpServerEndpoints;
+        _tenantId = spec.TenantId;
+        _ownServers = ownServers;
         _usesOutposts = spec.UsesOutposts;
-        _recordsOutpostVerdicts = spec.RecordsOutpostVerdicts;
         _noTools = spec.NoTools;
         _withheldTools = spec.WithheldTools;
         _outposts = outposts;
@@ -137,7 +145,7 @@ public sealed class McpAgent : DisposableAgent
     }
 
     private IReadOnlyList<PromptSkill> SkillsOf(AgentSession? thread) =>
-        thread is not null && _threadSessions.TryGetValue(thread, out var session) ? session.Skills : [];
+        thread is not null && _threadSessions.TryGetValue(thread, out var session) ? session.Session.Skills : [];
 
     private IVirtualFileSystemRegistry? RegistryOf(AgentSession? thread) =>
         thread is not null ? GetFileSystemRegistry(thread) : null;
@@ -158,7 +166,7 @@ public sealed class McpAgent : DisposableAgent
         {
             foreach (var session in _threadSessions.Values)
             {
-                await session.DisposeAsync();
+                await session.Session.DisposeAsync();
             }
 
             _threadSessions.Clear();
@@ -187,7 +195,7 @@ public sealed class McpAgent : DisposableAgent
     // session exists is asking about an agent that has not warmed up, and the answer is "no
     // filesystem yet" rather than a session built as a side effect of the question.
     public override IVirtualFileSystemRegistry? GetFileSystemRegistry(AgentSession thread) =>
-        _threadSessions.TryGetValue(thread, out var session) ? session.FileSystemRegistry : null;
+        _threadSessions.TryGetValue(thread, out var session) ? session.Session.FileSystemRegistry : null;
 
     public override async ValueTask DisposeThreadSessionAsync(AgentSession thread)
     {
@@ -196,7 +204,7 @@ public sealed class McpAgent : DisposableAgent
         {
             if (_threadSessions.Remove(thread, out var session))
             {
-                await session.DisposeAsync();
+                await session.Session.DisposeAsync();
             }
         });
     }
@@ -296,7 +304,14 @@ public sealed class McpAgent : DisposableAgent
     {
         ObjectDisposedException.ThrowIf(_isDisposed == 1, this);
         thread ??= await CreateSessionAsync(cancellationToken);
-        var session = await GetOrCreateSessionAsync(thread, cancellationToken);
+        var reconciled = await GetOrCreateSessionAsync(thread, cancellationToken);
+        var session = reconciled.Session;
+
+        // Said on the turn's own message, never in the instructions: the system prompt is the cached
+        // prefix every turn shares, and which of a household's machines are on is this turn's news.
+        // Stamped as data and rendered by the decoration, so the persisted message stays as typed.
+        messageList.LastOrDefault(m => m.Role == ChatRole.User)
+            ?.SetOfflineServers(reconciled.OwnServers.Offline);
 
         var conversationContext = messageList
             .Select(m => m.GetConversationContext())
@@ -549,20 +564,41 @@ public sealed class McpAgent : DisposableAgent
         }
     }
 
-    private async Task<ThreadSession> GetOrCreateSessionAsync(AgentSession thread, CancellationToken ct)
+    // Reconciled at every turn's start. The household's servers and (for an agent opted in) its
+    // machines are asked again — a lookup, not a dial — and a session built with the very servers
+    // found now is the one this turn runs in. One that came online since, went offline, or
+    // reconnected as a new generation of its tunnel makes
+    // this turn build a new session in its place, so a server joins or leaves between turns and a
+    // session's tools never change under it (ADR 0012). Turns of one conversation group run one at a
+    // time, so the session replaced has no call in flight.
+    private async Task<ReconciledSession> GetOrCreateSessionAsync(AgentSession thread, CancellationToken ct)
     {
         return await _syncLock.WithLockAsync(async () =>
         {
+            var ownServers = OwnServerEndpoints.Resolve(_endpoints, _tenantId, _ownServers);
+            // Asked here rather than at construction, and at every turn rather than once per
+            // session: an agent outlives many sessions and an outpost's tunnel outlives none, so a
+            // machine that opened, closed or reopened since the last turn is reconciled like a
+            // household server, and nothing mutates a session already built.
+            var composed = OutpostEndpoints.Compose(
+                ownServers.Endpoints, _outposts, _usesOutposts, _tenantId);
             if (_threadSessions.TryGetValue(thread, out var existing))
             {
-                return existing;
-            }
+                if (existing.OwnServers.ReachesTheSameServersAs(ownServers)
+                    && existing.Composed.ReachesTheSameMachinesAs(composed))
+                {
+                    return existing;
+                }
 
-            // Asked here rather than at construction: an agent outlives many sessions and an
-            // outpost outlives none, so a machine that appeared since the last session is picked
-            // up by the next one and nothing mutates a session already built.
-            var composed = await OutpostEndpoints.ComposeAsync(
-                _endpoints, _outposts, _usesOutposts, _logger, ct);
+                _logger?.LogInformation(
+                    "Agent '{AgentName}' rebuilds its session: its household's servers or machines changed since "
+                    + "the last turn (offline now: {Offline}; machines now: {Outposts})",
+                    _name,
+                    ownServers.Offline.Count == 0 ? "none" : string.Join(", ", ownServers.Offline),
+                    composed.Outposts.Count == 0 ? "none" : string.Join(", ", composed.Outposts.Select(o => o.Name)));
+                _threadSessions.TryRemove(thread, out _);
+                await existing.Session.DisposeAsync();
+            }
 
             var newSession = await ThreadSession
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,
@@ -570,22 +606,14 @@ public sealed class McpAgent : DisposableAgent
                              ct, _promptCache, _readImages, _bridge, _noTools, _withheldTools, _callTokens,
                              _timeProvider.LocalTimeZone);
 
-            // The one moment a shadowed outpost is knowable, and the machine serving it has no way
-            // to find out for itself — the next keepalive carries the answer home. Whether this
-            // build is one that answers is a field on the spec, like everything else that differs
-            // between an agent and a subagent.
             // Asked about by name later, when the model tries a path on a machine that is not here.
             OutpostEndpoints.DeclareUnreachable(
                 newSession.FileSystemRegistry, composed.Outposts,
-                newSession.ClientManager.DialledEndpoints);
+                newSession.ClientManager.DialledServers);
 
-            await OutpostEndpoints.RecordVerdictsAsync(
-                _outposts, _recordsOutpostVerdicts, composed.Outposts,
-                newSession.MountedNames, newSession.ShadowedNames,
-                newSession.ClientManager.DialledEndpoints, _logger, ct);
-
-            _threadSessions[thread] = newSession;
-            return newSession;
+            var reconciled = new ReconciledSession(newSession, ownServers, composed);
+            _threadSessions[thread] = reconciled;
+            return reconciled;
         }, ct);
     }
 }

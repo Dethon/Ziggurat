@@ -8,7 +8,7 @@ namespace Tests.Unit.Domain.Tools.Web;
 // the model wrote them (JSON) or as an in-process caller handed them over (CLR values).
 public class AsPersonSubjectTests
 {
-    private const string Browse = "mcp__mcp-websearch__web_browse";
+    private const string Browse = "mcp__websearch__web_browse";
 
     private static Dictionary<string, object?> Args(object? asMe, string? url = "https://mail.google.com/mail/u/0") =>
         new() { ["url"] = url, ["asMe"] = asMe };

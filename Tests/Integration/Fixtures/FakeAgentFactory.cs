@@ -42,7 +42,8 @@ public sealed class FakeAgentFactory : IAgentFactory
     }
 
     public DisposableAgent Create(
-        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null)
+        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
+        string? tenantId = null)
     {
         var responses = new List<QueuedResponse>();
         while (_responseQueue.TryDequeue(out var response))

@@ -5,7 +5,7 @@ namespace Agent.App;
 // The public half of the agent's signing keys, for every server's gate to check a call token with.
 // Asked without a credential — public keys are no secret, and the servers that fetch them hold no
 // credential for the agent — and reached on the deployment's own network alone: the proxy routes
-// /api/agents* and /api/outposts* here and nothing else, so this path lands on another upstream on
+// /api/agents* and /tunnel here and nothing else, so this path lands on another upstream on
 // every host (DeploymentConformanceTests).
 public static class AgentKeysApi
 {

@@ -4,6 +4,7 @@ paths:
   - "McpServer*/**"
   - "McpChannel*/**"
   - "Tests/Integration/McpServers/**"
+  - "Domain/Security/ServerAddress.cs"
 ---
 
 # MCP Server Hosting
@@ -23,7 +24,7 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   Assistant action on every containerised deployment. The secrets id comes off the entry assembly, so
   the five servers with no `UserSecretsId` simply have no such source. The **outpost** is the one
   server that adds a source of its own on top: it is configured by the flags its operator types, and
-  the host puts the command line *underneath* the environment, so `OutpostConfiguration` re-applies
+  the host puts the command line *underneath* the environment, so `OutpostFlags` re-applies
   it above `BindSettings`' sources — a `Jailed` variable that happens to be set must not overrule a
   `--jailed` somebody typed. `McpServerTableTests` names that exemption by file; nothing else may
   copy it. Nested sections bind through
@@ -32,7 +33,7 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   (Telegram, WebSearch, HomeAssistant, Idealista, Library).
 - **`IServiceCollection.AddMcpHost(settings)`** is the five things every server has: the settings
   singleton, the server, the HTTP transport, the gate on `/mcp` and the call-token gate on every tool
-  call (`CallTokenGate`; the outpost alone opts out, through `IMcpHostSettings.ChecksCallTokens`). All
+  call (`CallTokenGate`; every server checks, the outpost too, against the keys its tunnel delivers). All
   fourteen use it. The credential lets a caller talk to a server; only the agent's call token says
   who a tool call acts for (`.claude/rules/service-identity.md`, "Call tokens").
 - **Every `/mcp` asks for a secret, and the host installs the gate, not the server.** A tool
@@ -42,15 +43,19 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   registers `McpSecretGate`, an `IStartupFilter` that answers 401 ahead of routing, comparing with
   `Domain/Security/SharedSecret.cs` (the one comparison every shared-secret gate uses). A deployment
   server's settings carry `McpGateSettings Mcp`, bound from `MCP__SHAREDSECRET` — that server's own
-  credential, fed from its own compose variable (`MCP_SECRET_<SERVER>`), so holding one (the
-  sandbox's included) opens no other. The agent binds every server's under `Mcp:Secrets` keyed by the
-  host it dials (`MCP__SECRETS__<host>`, the same variable on both ends) and `McpCredentials` hands
-  each endpoint the deployment's own settings name its host's (`AgentSpecProjection`, agents and
+  credential, fed from its own compose variable (`MCP_SECRET_<SERVER>`), so holding one opens no
+  other. A server given a tunnel (`Mcp:Tunnel`, `.claude/rules/tunnel.md`) — every household server,
+  the tenant kit's sandbox among them — asks for its tunnel credential instead, which the relay presents — no deployment holds a household
+  server's secret. The agent binds every server's under `Mcp:Secrets` keyed by the
+  name it answers to (`MCP__SECRETS__<host>`, the same variable on both ends) and `McpCredentials` hands
+  each endpoint the deployment's own settings name its server's (`AgentSpecProjection`, agents and
   workers alike; `DeploymentEndpoints` is the list) and each channel connection likewise; a host it
   is configured to dial without a credential stops the agent at startup. A registered agent's
   endpoints are whatever `POST /api/agents` said, so one the settings do not name is dialled bare —
   no credential may follow a registration to an address of its choosing. The **outpost**
-  answers the member with its own `SharedSecret` and never sees the deployment's. **The gate guards
+  answers the member with its tunnel (`OutpostSettings.Mcp` is computed from its flags and the
+  `CREDENTIAL` in its environment), so its `/mcp` asks for that credential and it never sees the
+  deployment's. **The gate guards
   the `/mcp` path and nothing else**: a server's other endpoints are called by browsers, Home
   Assistant and satellites, and the ones that need a gate carry their own token, so every server
   must map its endpoint at exactly `"/mcp"` (`McpServerTableTests` reads it off the source). An
@@ -58,6 +63,23 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   one transport; `McpSecretGateTests` pins all three verbs, `CallTokenGateTests` the token's refusals,
   and a test that boots a server through
   the hosting library presents `Tests/McpTestSecret`.
+- **A server is keyed by its `ServerAddress` and never by a URL's host** (`Domain/Security/ServerAddress.cs`).
+  `Name` is the name it answers to — the call token's audience (`TokenAudiences.CallTo`), the key
+  `McpCredentials` finds its credential by, what the server binds as `MCP__AUDIENCE`
+  (`CallTokenGate`, through `ServerAddress.Named`); `Qualifier` is what its tools are qualified with
+  (`mcp__<qualifier>__<tool>`); `CacheKey` is what its prompts and skills are cached under (the
+  qualifier for a URL, the full name for a household's server); the address itself, equal
+  as a server (scheme, host, port, path, user info), is what `DeploymentEndpoints` and the outposts a session
+  dialled (`McpClientManager.DialledServers`) compare. A URL endpoint's comes from `ServerAddress.FromUrl` — `Name` the host,
+  `Qualifier` the host or `host-port` off the default port, so a server on `:8080` is
+  `mcp-vault` to its token and credential and `mcp-vault-8080` to its tools — and a server with no
+  URL of its own gets another factory there, which every one of those keys then follows: a
+  household's server reached through its tunnel is `ServerAddress.Tunnelled(household, name)`
+  (`.claude/rules/tunnel.md`). `FromUrl` takes only http(s) with a host, so a server named by its
+  name is never read as a URL.
+  `ServerAddressConformanceTests` fails on any other `Agent`, `Infrastructure`, `Domain` or
+  `Mcp.Hosting` file reading a `.Host`; a web page's site (the browser, logins, search, push) is not
+  a server and is left out of the scan by path.
 - **A server whose pages the proxy routes keeps them on a listener of their own.** One server does
   today: the browse server's login handoff and logins pages answer on its second listener (8081),
   `/mcp` on the first (8080), both named by its `Listeners` settings and bound in `Program.cs`
@@ -66,9 +88,10 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   reads the Host header the proxy passes on as the browser sent it — and answers 404 for anything
   outside `/browse` on the pages listener and for `/browse` on the other. It is a startup filter
   inserted first, ahead of the gate, so `/mcp` on the pages listener is absent rather than asking
-  for a credential. The Caddyfile names the pages port alone (`DeploymentConformanceTests` reads
-  it off the server's `appsettings.json`), and `WebIdentityServerHarness` opens both listeners, so
-  the handoff tests reach the pages the way the proxy does.
+  for a credential. The proxy reaches the pages through the relay alone, which opens its streams
+  to the pages listener by the `pages` tag the server registers for it (`.claude/rules/tunnel.md`,
+  "Browse pages"); no route names the server (`DeploymentConformanceTests`). `WebIdentityServerHarness`
+  opens both listeners, so the handoff tests reach the pages on the listener the tunnel lands on.
 - **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for the
   nine servers that offer the agent things to call. Being a tool server and being a channel server
   are independent, so a dual-role server calls `AddToolServer` and then `AddChannelServer`.

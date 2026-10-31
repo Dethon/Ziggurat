@@ -52,7 +52,8 @@ public sealed class MultiAgentFactory(
         serviceProvider?.GetService<ILemonadeModelSource>() ?? FixedLemonadeModelSource.None;
 
     public DisposableAgent Create(
-        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null)
+        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
+        string? tenantId = null)
     {
         // A person's custom agents are registered under their account's id, so a turn that names
         // the account finds them by it and not by its sender, which may be the account's display name.
@@ -71,7 +72,7 @@ public sealed class MultiAgentFactory(
                 ? "No agent id was supplied and no default agent is configured for the channel."
                 : $"No agent found for identifier '{agentId}'.");
 
-        return CreateFromDefinition(agentKey, userId, definition, approvalHandler);
+        return CreateFromDefinition(agentKey, userId, definition, approvalHandler, tenantId ?? account?.TenantId);
     }
 
     public DisposableAgent CreateSubAgent(
@@ -86,13 +87,14 @@ public sealed class MultiAgentFactory(
     }
 
     private DisposableAgent CreateFromDefinition(
-        AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler)
+        AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler,
+        string? tenantId)
     {
         // Asked without a user, the provider lists the built-in agents alone: the deployment's own.
         var deployment = new DeploymentEndpoints(definitionProvider.GetAll().SelectMany(a => a.McpServerEndpoints));
         var spec = AgentSpecProjection.ForAgent(
             definition, agentKey, userId, openRouterConfig, _patchableModels,
-            LemonadeHostAddress, _credentials, deployment, _logger);
+            LemonadeHostAddress, _credentials, deployment, _logger, tenantId);
 
         return Build(spec, approvalHandler);
     }
@@ -114,7 +116,7 @@ public sealed class MultiAgentFactory(
         // reach the projection with no second source of truth for any of them.
         var spawn = new SpawnContext(
             spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts,
-            spec.Model, spec.ProviderRouting);
+            spec.Model, spec.ProviderRouting, spec.TenantId);
 
         // The spawner is absent in every deployment, so the factory builds its own workers; when
         // one is registered it stands in for them whole, which is the only way a scenario about
@@ -165,10 +167,9 @@ public sealed class MultiAgentFactory(
             domainPrompts,
             loggerFactory,
             _promptCache,
-            // Optional: a host with no outpost access — every test host, and any deployment that
-            // never turned them on — simply has no outposts to offer, which is the same answer as
-            // an agent that did not opt in.
-            serviceProvider?.GetService<OutpostAccess>(),
+            // Optional: a host with no outposts — every test host but the outposts' own — simply
+            // has none to offer, which is the same answer as an agent that did not opt in.
+            serviceProvider?.GetService<IOutposts>(),
             BuildReadImageSupport(spec),
             // Optional for the same reason: a host with no judge preloads nothing and the model
             // loads for itself. A worker gets it by this same line, judged on its delegation
@@ -182,7 +183,11 @@ public sealed class MultiAgentFactory(
             // refuses, which is the loud failure an unsigned deployment should be. A worker gets
             // them by this same line, and signs for its parent's person because it carries its
             // parent's context.
-            serviceProvider?.GetService<CallTokens>());
+            serviceProvider?.GetService<CallTokens>(),
+            // Where a household's own server is reached: its tunnel in the deployment, the server a
+            // stack hosts in process in a test. A host with neither reaches none, and a session that
+            // needs one fails as a configured endpoint that will not answer does.
+            serviceProvider?.GetService<IOwnServers>());
     }
 
     // Everything file_read needs to show the model a picture, resolved where the spec and the

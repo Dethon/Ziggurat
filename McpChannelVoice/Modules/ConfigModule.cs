@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Infrastructure.Clients.Accounts;
+using Infrastructure.Clients.Topics;
 using Infrastructure.Clients.Transcription;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
@@ -27,22 +28,22 @@ public static class ConfigModule
         VoiceSettings settings)
     {
         var redisConnection = settings.RedisConnectionString;
+        if (settings.Metrics.Url.Length == 0)
+        {
+            // The metrics feed's alone: topics are minted by the agent.
+            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection));
+        }
 
         services
             .AddSingleton(new SatelliteRegistry(settings.Satellites))
-            .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection))
-            .AddMetricsPublishing("mcp-channel-voice")
+            .AddMetricsPublishing("mcp-channel-voice", settings.Metrics)
             .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton(TimeProvider.System)
-            .AddSingleton<Domain.Contracts.IThreadStateStore>(sp =>
-                new Infrastructure.StateManagers.RedisThreadStateStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>(),
-                    settings.Retention,
-                    sp.GetRequiredService<TimeProvider>()))
-            .AddSingleton<Domain.Contracts.IConversationFactory, Infrastructure.Conversations.ConversationFactory>();
+            // A conversation's topic is the agent's to mint and keep; this server holds no topic store.
+            .AddTopicMinter(settings.Agent);
 
         services
             .AddSingleton<SatelliteSessionRegistry>()
@@ -63,7 +64,7 @@ public static class ConfigModule
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<TranscriptDispatcher>>()))
             .AddSingleton(sp => new VoiceConversationManager(
-                sp.GetRequiredService<Domain.Contracts.IConversationFactory>(),
+                sp.GetRequiredService<ITopicMinter>(),
                 sp.GetRequiredService<ReplyTextAccumulator>(),
                 sp.GetRequiredService<TimeProvider>(),
                 settings.ConversationLifetime,

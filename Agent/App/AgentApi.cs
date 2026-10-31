@@ -11,7 +11,7 @@ namespace Agent.App;
 // SexyTime's server, presents the shared secret on every verb; the gate is the group's, so a route
 // added here later is gated without asking for it.
 //
-// The comparison is SharedSecret's, the same rule the outposts and the MCP servers are held to,
+// The comparison is SharedSecret's, the same rule the MCP servers are held to,
 // and an unset secret refuses everything rather than leaving the door open.
 //
 // Whose catalogue it is comes from X-Ziggurat-Assertion, which SexyTime's server copies off the

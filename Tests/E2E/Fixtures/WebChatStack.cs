@@ -460,6 +460,7 @@ internal sealed partial class WebChatStack
             {
               "openRouter": { "apiUrl": "https://openrouter.ai/api/v1/", "apiKey": "{{apiKey}}" },
               "redis": { "connectionString": "redis:6379" },
+              "backCalls": { "lemonadeUrl": "http://lemonade:13305" },
               // Without these the model/effort menu never renders, so nothing in the suite ever
               // exercised the control the drawer's gesture bugs live next to.
               "patchableModels": [

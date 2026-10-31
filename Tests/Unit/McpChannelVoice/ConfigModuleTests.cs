@@ -1,8 +1,6 @@
 using Domain.Contracts;
-using Domain.Conversations;
-using Domain.DTOs.Channel;
 using Domain.DTOs.Voice;
-using Domain.DTOs.WebChat;
+using Infrastructure.Clients.Topics;
 using McpChannelVoice.Modules;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.Stt;
@@ -84,7 +82,7 @@ public class ConfigModuleTests
             }
         });
         services.AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>());
-        services.AddSingleton(StubConversationFactory());
+        services.AddSingleton<ITopicMinter>(new FakeTopicMinter());
         using var provider = services.BuildServiceProvider();
 
         var dispatcher = provider.GetRequiredService<TranscriptDispatcher>();
@@ -121,24 +119,26 @@ public class ConfigModuleTests
             Arbitration = new ArbitrationSettings { WindowMs = 375 }
         });
         services.AddSingleton<IMetricsPublisher>(Mock.Of<IMetricsPublisher>());
-        services.AddSingleton(StubConversationFactory());
+        services.AddSingleton<ITopicMinter>(new FakeTopicMinter());
         using var provider = services.BuildServiceProvider();
 
         provider.GetRequiredService<WakeArbiter>().ShouldNotBeNull();
         provider.GetRequiredService<ArbitrationSettings>().WindowMs.ShouldBe(375);
     }
 
-    private static IConversationFactory StubConversationFactory()
+    // A conversation's topic is the agent's: this server keeps no topic store of its own and asks
+    // the agent, at the address its settings give, for each one it opens.
+    [Fact]
+    public void ConfigureVoiceChannel_KeepsNoTopicStore_AndMintsTopicsThroughTheAgent()
     {
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-x");
-                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
-        return factory.Object;
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.ConfigureVoiceChannel(new VoiceSettings { Agent = new AgentClientConfig { BaseUrl = "http://agent.test:8080" } });
+
+        services.ShouldNotContain(d => d.ServiceType == typeof(IThreadStateStore) || d.ServiceType == typeof(IConversationFactory));
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ITopicMinter>().ShouldBeOfType<AgentTopicsClient>();
+        provider.GetRequiredService<IHttpClientFactory>().CreateClient(AgentTopicsClient.ClientName)
+            .BaseAddress.ShouldBe(new Uri("http://agent.test:8080/"));
     }
 }

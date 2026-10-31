@@ -2,6 +2,7 @@ using System.Collections;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Domain.DTOs;
+using Domain.DTOs.Tunnel;
 using Domain.Security.Signing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Configuration.UserSecrets;
@@ -40,6 +41,7 @@ public static class SettingsBinder
         configBuilder.AddJsonFile(RetentionSettings.FileName, optional: true);
         configBuilder.AddJsonFile(DeliverySettings.FileName, optional: true);
         configBuilder.AddJsonFile(TokenVerificationSettings.FileName, optional: true);
+        configBuilder.AddJsonFile(TunnelSettings.FileName, optional: true);
         configBuilder.AddEnvironmentVariables();
         if (userSecretsId is not null)
         {

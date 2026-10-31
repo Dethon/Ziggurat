@@ -22,6 +22,7 @@ paths:
   - "McpServerSugary/App/Person.cs"
   - "McpChannelSignalR/Hubs/SignedInConnectionFilter.cs"
   - "Agent/App/AgentApi.cs"
+  - "Agent/App/TopicMintingApi.cs"
   - "Domain/Monitor/ConversationGroup.cs"
   - "Domain/Monitor/ChatMonitor.cs"
   - "Infrastructure/Clients/Accounts/AccountsResolverClient.cs"
@@ -186,9 +187,11 @@ takes `WithCallTokensFromTheTestProcess()` (`MCP__AUDIENCE` = `TestContainers.Di
 
 ## Call tokens
 
-The agent's token for one call to one server. **Audience**: the host the agent dials the server at
-(`TokenAudiences.CallTo(address)`, the same key `McpCredentials` finds its credential by, never the
-port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.herfluffness/callToken"]`
+The agent's token for one call to one server. **Audience**: the name the server answers to,
+`ServerAddress.Name` (`Domain/Security/ServerAddress.cs`) — for a server dialled at a URL, its host,
+never the port — read by `TokenAudiences.CallTo(server)`, the same key `McpCredentials` finds its
+credential by, which the server binds as `MCP__AUDIENCE` (`CallTokenGate` takes it through
+`ServerAddress.Named`). **Where**: `params._meta["com.herfluffness/callToken"]`
 (`ChannelProtocol.CallTokenMetaKey`) on every `tools/call`, beside the conversation context.
 **Lifetime** 2 minutes, a fresh one minted once the last is within `RefreshMargin` (30 s) of expiry
 (`CallTokens:Lifetime`, `CallTokens:RefreshMargin` in the agent's appsettings).
@@ -226,14 +229,17 @@ port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.
   user — and a tool deciding who may do something (Telegram's `request_approval` among them) decides
   from the token's person or refuses. Only the household migration still reads that `UserId`, off
   persisted pre-account history, as evidence of who started a topic (`TopicOwners`).
-- **The outpost** answers `IMcpHostSettings.ChecksCallTokens` with false, explicitly: it receives the
-  token and is not required to check it, and `CallTurn` then names nobody. Every other server says
-  yes by saying nothing, and no setting can switch the check off.
+- **Every server checks**, the outpost included: it is a household's server on a tunnel, so it checks
+  against the audience and keys its tunnel delivered (`TunnelTrust`), as any tunnelled server does.
+  `IMcpHostSettings.ChecksCallTokens` is true for every server, and no setting can switch it off.
 - **Keys and wiring.** The agent opens its `SigningKeyStore` from `Signing` (`SIGNING__KEYDIRECTORY`
   = `/keys`, the `./volumes/agent-keys` volume `agent-volume` chowns, the agent running as PUID) and
   serves the JWKS at `/internal/jwks` (`AgentKeysApi`), which no Caddy route reaches. Each server binds
   `MCP__AUDIENCE` and `MCP__AGENTKEYSURL` (`http://agent:8080/internal/jwks`) in compose; either left
-  empty refuses every tool call. The verifiers' timing is `Domain/token-verification.json`
+  empty refuses every tool call. A household's server on a tunnel binds neither: its audience and the
+  agent's keys arrive over its tunnel (`TunnelTrust`), the keys again before the first call signed with
+  a rotated one, so a rotation reaches every household without a public route
+  (`.claude/rules/tunnel.md`, "Keys"). The verifiers' timing is `Domain/token-verification.json`
   (`mcp:tokenVerification`), read by `BindSettings`, the agent's configuration, the dashboard's
   (`OperatorGate.GetTokenVerification`) and the accounts service's (`AccountsSettings.Read`, for the
   skew its retirement waits out), and handed to every verifier they build — `AddAssertionVerifier`,

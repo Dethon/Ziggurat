@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Moq;
 using Shouldly;
+using StackExchange.Redis;
 using SignalRSettings = McpChannelSignalR.Settings;
 using TelegramSettings = McpChannelTelegram.Settings;
 using VoiceSettings = McpChannelVoice.Settings;
@@ -41,6 +42,7 @@ public class MetricsRegistrationContractTests
             {
                 OpenRouter = new OpenRouterConfiguration { ApiUrl = "http://openrouter", ApiKey = "x" },
                 Redis = new RedisConfiguration { ConnectionString = UnreachableRedis },
+                BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
                 Agents = []
             })
         },
@@ -69,6 +71,23 @@ public class MetricsRegistrationContractTests
             {
                 BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
                 RedisConnectionString = UnreachableRedis
+            })
+        },
+        // A household's own servers post their events on their metrics back-call instead.
+        {
+            "mcp-channel-voice on a tunnel",
+            services => services.ConfigureVoiceChannel(new VoiceSettings.VoiceSettings
+            {
+                Metrics = new MetricsFeedConfig { Url = FeedUrl }
+            })
+        },
+        {
+            "mcp-websearch on a tunnel",
+            services => services.ConfigureMcp(new WebSearchSettings.McpSettings
+            {
+                BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
+                RedisConnectionString = UnreachableRedis,
+                Metrics = new MetricsFeedConfig { Url = FeedUrl }
             })
         },
         {
@@ -106,6 +125,22 @@ public class MetricsRegistrationContractTests
             .OfType<HeartbeatService>()
             .ShouldHaveSingleItem($"{service} publishes metrics, so it must report a heartbeat");
     }
+
+    // Voice's Redis was the feed's alone, so a household's voice that posts its events holds no
+    // connection to any deployment database at all.
+    [Fact]
+    public async Task HostRegistration_VoiceGivenAFeedUrl_PostsItsEventsAndHoldsNoRedis()
+    {
+        await using var provider = Build(services => services.ConfigureVoiceChannel(new VoiceSettings.VoiceSettings
+        {
+            Metrics = new MetricsFeedConfig { Url = FeedUrl }
+        }));
+
+        provider.GetRequiredService<IMetricSink>().ShouldBeOfType<HttpMetricSink>();
+        provider.GetService<IConnectionMultiplexer>().ShouldBeNull();
+    }
+
+    private const string FeedUrl = "http://127.0.0.1:1/events";
 
     private static ServiceProvider Build(Action<IServiceCollection> configure)
     {

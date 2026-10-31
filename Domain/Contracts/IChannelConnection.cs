@@ -19,6 +19,11 @@ public interface IChannelConnection
     // to that conversation as a later target of the fan-out, never as the first (ADR 0046).
     bool HostsReviewCopies { get; }
 
+    // Whether the channel's server is connected now. A fan-out mints the agent's own topic for an
+    // attach-only target only while it is: a topic nothing will attach to is an empty one left in
+    // somebody's sidebar.
+    bool IsConnected { get; }
+
     IAsyncEnumerable<ChannelMessage> Messages { get; }
 
     // The record rather than its fields spread out: it is already the wire shape every channel

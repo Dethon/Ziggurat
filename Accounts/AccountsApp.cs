@@ -8,6 +8,7 @@ using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Signing;
 using Accounts.Store;
+using Accounts.Tunnels;
 using Domain.Security.Signing;
 using Microsoft.AspNetCore.DataProtection;
 
@@ -66,6 +67,8 @@ public static class AccountsApp
             .AddSingleton<MemberStore>()
             .AddSingleton<PersonStore>()
             .AddSingleton<HouseholdImporter>()
+            .AddSingleton<TunnelRevocationPublisher>()
+            .AddSingleton<TunnelCredentialStore>()
             // Opened when first asked rather than here, so a command that signs nothing never
             // writes a key; the server's first assertion or JWKS request generates it.
             .AddSingleton(_ => SigningKeyStore.Open(settings.SigningKeys))
