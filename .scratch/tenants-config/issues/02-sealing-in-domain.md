@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately once 4a is merged)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A sealed value opens with its key and associated data and fails with either changed or tampered
-- [ ] Remembered logins sealed before the move still open
+- [x] A sealed value opens with its key and associated data and fails with either changed or tampered
+- [x] Remembered logins sealed before the move still open
