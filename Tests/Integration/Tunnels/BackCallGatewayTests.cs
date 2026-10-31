@@ -108,17 +108,19 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _relay.Reached.ShouldHaveSingleItem().ShouldBe(new ReachedTarget("/v1/audio/speech", _home, "voice", null));
     }
 
-    [Fact]
-    public async Task AMetricEvent_IsPublishedOntoTheFeedAsTheHouseholdsServers()
+    [Theory]
+    [InlineData(HouseholdServerNames.Voice)]
+    [InlineData(HouseholdServerNames.WebSearch)]
+    public async Task AMetricEvent_IsPublishedOntoTheFeedAsTheHouseholdsServers(string serverName)
     {
-        var port = await VoiceOfAsync(_home, BackCallProtocol.Metrics);
+        var port = await ServerOfAsync(_home, serverName, BackCallProtocol.Metrics);
         var sink = new HttpMetricSink(new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}{BackCallProtocol.MetricsPath}") });
 
-        await sink.SendAsync(new HeartbeatEvent { Service = "mcp-channel-voice" });
+        await sink.SendAsync(new HeartbeatEvent { Service = "a-household-server" });
 
         _metrics.Published.OfType<HeartbeatEvent>().ShouldHaveSingleItem().ShouldSatisfyAllConditions(
-            e => e.Service.ShouldBe("mcp-channel-voice"),
-            e => e.Origin.ShouldBe(ServerAddress.Tunnelled(_home, "voice").Name));
+            e => e.Service.ShouldBe("a-household-server"),
+            e => e.Origin.ShouldBe(ServerAddress.Tunnelled(_home, serverName).Name));
     }
 
     // The sandbox's FUSE daemon asks the bridge one operation per request, with the exec's call token
