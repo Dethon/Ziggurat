@@ -94,10 +94,10 @@ public sealed class TranscriptDispatcher(
         // comes from who spoke.
         var speaker = SpeakerOfAsync(session, identifiedSpeaker, ct);
 
-        // AgentId is required by CreateConversationParams; the dispatch path always supplies one in
-        // production, so the null-coalesce is only a defensive fallback (not expected at runtime).
+        // A topic is minted for an agent; the dispatch path always supplies one in production, so the
+        // null-coalesce is only a defensive fallback (not expected at runtime).
         var conversationId = await manager.GetOrCreateAsync(
-            session, agentId ?? string.Empty, transcript.Text, ct, WhoSpokeAsync(speaker));
+            session, agentId ?? string.Empty, ct, WhoSpokeAsync(speaker));
         var (principal, sender, assertion) = await speaker;
 
         var dismissedAlert = session.TryConsumeDismissedAlert(timeProvider.GetUtcNow());
@@ -192,11 +192,12 @@ public sealed class TranscriptDispatcher(
         }
     }
 
-    // Whose a new conversation's topic is needs who spoke, not what vouched for them.
-    private static async Task<(Principal Principal, string Sender)> WhoSpokeAsync(Task<Speaker> speaker)
+    // Whose a new conversation's topic is, is the agent's to say from the accounts service's word for
+    // who spoke, never from the principal this server stamps.
+    private static async Task<(string Sender, string? Assertion)> WhoSpokeAsync(Task<Speaker> speaker)
     {
-        var (principal, sender, _) = await speaker;
-        return (principal, sender);
+        var (_, sender, assertion) = await speaker;
+        return (sender, assertion);
     }
 
     // Who a turn is for, the name it goes out under, and the accounts service's word for it — none when

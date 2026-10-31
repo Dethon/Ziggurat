@@ -30,7 +30,10 @@ public class ChatMonitor(
     // Who a fire acts for: the delegation the agent signed for the object raising it, checked against
     // its own keys. Optional because its absence is safe — a monitor that checks no delegation
     // believes none, and every fire acts for nobody.
-    DelegationVerifier? delegations = null)
+    DelegationVerifier? delegations = null,
+    // Where the agent mints a fire's topic when only an attach-only channel delivers it. Optional
+    // for the hosts that keep no topic store; the agent's own host registers one.
+    IConversationFactory? topics = null)
 {
     // A person's turn whose assertion was not believed, on the errors feed beside the servers'
     // CallTokenRefused: a channel server that misbehaves, an accounts service the agent cannot
@@ -42,7 +45,7 @@ public class ChatMonitor(
     // presenting what it was never given.
     public const string DelegationRefusedErrorType = "DelegationRefused";
 
-    private readonly DeliveryTargetResolver _targetResolver = new(channels, logger);
+    private readonly DeliveryTargetResolver _targetResolver = new(channels, logger, topics);
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
 
     public async Task Monitor(CancellationToken cancellationToken)
