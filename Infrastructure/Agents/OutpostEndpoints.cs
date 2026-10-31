@@ -8,14 +8,22 @@ namespace Infrastructure.Agents;
 // What one session build was given, and which of those endpoints were machines.
 internal sealed record ComposedEndpoints(
     IReadOnlyList<McpServerEndpoint> Endpoints,
-    IReadOnlyList<LiveOutpost> Outposts);
+    IReadOnlyList<LiveOutpost> Outposts)
+{
+    // The same machines on the same openings of their tunnels, in the same (name) order: a machine
+    // that opened, closed or reopened since makes a session built from the other a stale one.
+    public bool ReachesTheSameMachinesAs(ComposedEndpoints other) =>
+        Outposts.Select(o => (o.Name, o.Endpoint.Generation))
+            .SequenceEqual(other.Outposts.Select(o => (o.Name, o.Endpoint.Generation)));
+}
 
 // The household's live outposts joining an agent's endpoint list, asked for at the moment a session
 // is built.
 //
 // Asked then rather than when the agent is created, because an agent outlives many sessions and an
-// outpost's tunnel outlives none: a machine whose tunnel opened takes effect at the next session
-// build and one whose tunnel closed likewise, and nothing ever mutates a session that already exists.
+// outpost's tunnel outlives none: asked at every turn's start, a machine whose tunnel opened, closed
+// or reopened since the last turn makes that turn build a new session (ReachesTheSameMachinesAs), and
+// nothing ever mutates a session that already exists.
 // That is the same rule ADR-0012 sets for a channel server's tool set, for the same reason.
 //
 // Configured endpoints stay first and outposts follow in name order. Mount order is what decides a
