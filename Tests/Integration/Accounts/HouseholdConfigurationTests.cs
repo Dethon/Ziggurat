@@ -352,6 +352,21 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         (await AgentViewAsync(server, fran.TenantId)).IsHome.ShouldBeTrue();
     }
 
+    // The agent's catalogue for its channels, and a turn that acts for nobody, are the home's: it asks
+    // for the home by name, before any turn could tell it the home's id, and is answered the home's
+    // view under its real id.
+    [Fact]
+    public async Task TheAgent_AskingForTheHome_IsAnsweredTheHomesView()
+    {
+        await using var server = await StartAsync();
+        var home = (await server.MintOperatorAsync("Fran")).TenantId;
+
+        var config = await AgentViewAsync(server, HouseholdConfigProtocol.HomeHousehold);
+
+        config.HouseholdId.ShouldBe(home);
+        config.IsHome.ShouldBeTrue();
+    }
+
     // The Telegram server polls every bot from its start, so it is answered every household's at once.
     [Fact]
     public async Task TheTelegramServer_IsAnsweredEveryHouseholdsBots()

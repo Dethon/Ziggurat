@@ -4,21 +4,21 @@ using Shouldly;
 namespace Tests.Unit.Domain.Agents;
 
 // Which agent answers a message that names none is a configured decision. The agent array is a
-// catalogue ordered for display, and nothing here may read it.
+// catalogue ordered for display, and nothing here may read it. The deployment's defaults are per
+// channel; any other channel falls back to its household's default (ChatMonitorAgentRoutingTests).
 public class AgentDefaultsTests
 {
     private static readonly AgentDefaults _defaults = new()
     {
-        Fallback = "jonas",
         ByChannel = new Dictionary<string, string> { ["voice"] = "nabu" }
     };
 
     [Theory]
     [InlineData("voice", "nabu")]
     [InlineData("VOICE", "nabu")]
-    [InlineData("telegram", "jonas")]
-    [InlineData(null, "jonas")]
-    public void For_Channel_ResolvesItsDefaultOrTheFallback(string? channelId, string expected)
+    [InlineData("telegram", null)]
+    [InlineData(null, null)]
+    public void For_Channel_ResolvesItsOwnDefaultAlone(string? channelId, string? expected)
     {
         _defaults.For(channelId).ShouldBe(expected);
     }
@@ -27,19 +27,5 @@ public class AgentDefaultsTests
     public void For_NothingConfigured_ResolvesNothing()
     {
         new AgentDefaults().For("telegram").ShouldBeNull();
-    }
-
-    [Fact]
-    public void Validate_DefaultNamesAnUnconfiguredAgent_Throws()
-    {
-        var ex = Should.Throw<InvalidOperationException>(() => _defaults.Validate(["jack", "jonas"]));
-
-        ex.Message.ShouldContain("nabu");
-    }
-
-    [Fact]
-    public void Validate_EveryDefaultNamesAConfiguredAgent_Passes()
-    {
-        Should.NotThrow(() => _defaults.Validate(["jack", "jonas", "nabu"]));
     }
 }

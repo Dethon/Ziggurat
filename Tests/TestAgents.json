@@ -1,8 +1,9 @@
 // The agents the eval, the prompt snapshots and the WebChat stack drive: the tests' own copies of
-// their definitions (Tests/TestAgents.cs). TestAgentsTests holds them equal to today's.
+// their definitions (Tests/TestAgents.cs). TestAgentsTests holds them equal to the home household's
+// seeded definitions (HouseholdMigration/Home/agents.json) and the deployment's own settings.
 {
+    "defaultAgent": "jonas",
     "agentDefaults": {
-        "fallback": "jonas",
         "byChannel": {
             "voice": "nabu",
             "sugary": "sugary"

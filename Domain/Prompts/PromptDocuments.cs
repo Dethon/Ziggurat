@@ -13,11 +13,15 @@ public static class PromptDocuments
 {
     private const string SectionResources = "Domain.Prompts.Sections.";
     private const string SkillResources = "Domain.Prompts.Skills.";
+    private const string AgentTemplateResources = "Domain.Prompts.Agents.";
     private const string Extension = ".md";
 
     public static IReadOnlyList<PromptDocument> Sections { get; } = Load(SectionResources);
 
     public static IReadOnlyList<PromptDocument> Skills { get; } = Load(SkillResources);
+
+    // The agent templates a household's agent starts from (AgentTemplates), Agents/<name>.md.
+    public static IReadOnlyList<PromptDocument> AgentTemplates { get; } = Load(AgentTemplateResources);
 
     private static readonly Dictionary<string, PromptDocument> _sections =
         Sections.ToDictionary(document => document.Name, StringComparer.OrdinalIgnoreCase);

@@ -202,7 +202,7 @@ public sealed class EvalStack : IAsyncDisposable
 
     // The compose hosts a run of this agent can reach: its own servers, and its workers' when it
     // has any. By host name, the way Rewrite matches an endpoint to the server standing in for it.
-    public static IReadOnlyList<string> Dialled(AgentSettings settings, string agentId)
+    public static IReadOnlyList<string> Dialled(TestAgentSettings settings, string agentId)
     {
         var agent = settings.Agents.Single(a => a.Id == agentId);
         var workers = agent.EnabledFeatures.Any(feature =>
@@ -228,7 +228,7 @@ public sealed class EvalStack : IAsyncDisposable
 
     // Where each household server the definitions name is reached in this stack: the server it hosts
     // in that server's place, dialled directly — the eval runs no tunnel.
-    public static InProcessOwnServers OwnServers(AgentSettings settings, IReadOnlyDictionary<string, string> hosted) =>
+    public static InProcessOwnServers OwnServers(TestAgentSettings settings, IReadOnlyDictionary<string, string> hosted) =>
         new(settings.Agents.SelectMany(a => a.McpServerEndpoints)
             .Concat(settings.SubAgents.SelectMany(w => w.McpServerEndpoints))
             .Where(TunnelCredentialProtocol.IsServerName)
@@ -442,7 +442,7 @@ public sealed class EvalStack : IAsyncDisposable
     // than a per-run prefix, so the slate is wiped on the way in: a schedule left behind by the
     // previous run would show up in this one's listing and count against its ceiling.
     private async Task<string> StartSchedulingAsync(
-        AgentSettings shipped, string redisConnectionString)
+        TestAgentSettings shipped, string redisConnectionString)
     {
         await ClearSchedulesAsync(redisConnectionString);
 
@@ -509,7 +509,7 @@ public sealed class EvalStack : IAsyncDisposable
     // deployment secret is the one every server this stack hosts is gated behind, and the agent
     // signs with the suite's key.
     // Bound once per process, so an edit to the file mid-pass reaches no stack of it.
-    private static AgentSettings ShippedSettings(string redisConnectionString) =>
+    private static TestAgentSettings ShippedSettings(string redisConnectionString) =>
         EvalModel.FromEnvironment(ShippedDefinition.Repository.Settings) with
         {
             Redis = new RedisConfiguration { ConnectionString = redisConnectionString },
@@ -523,7 +523,7 @@ public sealed class EvalStack : IAsyncDisposable
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,
     // to the servers this stack hosts.
     private void BuildAgentServices(
-        AgentSettings shipped, Recording recording, Scenario scenario,
+        TestAgentSettings shipped, Recording recording, Scenario scenario,
         IReadOnlyDictionary<string, string> hosted)
     {
         var settings = scenario.Workers == WorkerMode.None
@@ -533,6 +533,9 @@ public sealed class EvalStack : IAsyncDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAgent(settings);
+        // The eval's own copies of today's agents, as every household's: a pass measures today's
+        // definitions, whatever any household's configuration says.
+        services.AddSingleton<IHouseholdAgentSource>(settings.Households);
         services.AddSubAgents(settings.SubAgents);
         services.AddSingleton<IToolInvocationObserver>(recording);
         // Registered after the agent's own publisher so it wins the resolution: what the chat
@@ -588,7 +591,7 @@ public sealed class EvalStack : IAsyncDisposable
     // One agent without the feature that gives it workers: no tool to call them with and no
     // section telling it they exist. Everything else about it, and everything about every other
     // agent, is the shipped definition.
-    public static AgentSettings Alone(AgentSettings settings, string agentId) =>
+    public static TestAgentSettings Alone(TestAgentSettings settings, string agentId) =>
         settings with
         {
             Agents =
@@ -608,7 +611,7 @@ public sealed class EvalStack : IAsyncDisposable
 
     // A worker's endpoints as much as an agent's. A canned worker dials nothing and never
     // noticed; one that really runs dials what its own profile names.
-    public static AgentSettings Rehosted(AgentSettings shipped, IReadOnlyDictionary<string, string> hosted) =>
+    public static TestAgentSettings Rehosted(TestAgentSettings shipped, IReadOnlyDictionary<string, string> hosted) =>
         shipped with
         {
             Agents =

@@ -134,8 +134,10 @@ public static class BrowseServerListeners
     }
 }
 
-// The servers the shipped agent reaches: its agents', its workers' and its channels' endpoints — the
-// deployment's own it dials at a URL, a household's it names by the server's name.
+// The servers the shipped agent reaches: the home household's seeded agents', the shipped templates',
+// its workers', its shared servers' and its channels' endpoints — the deployment's own it dials at a
+// URL, a household's it names by the server's name. The agents are no longer in the agent's settings
+// file: a household's are its configuration's, the home's seeded from HouseholdMigration/Home.
 public static class ShippedAgentSettings
 {
     public static IReadOnlyList<string> DialledHosts() =>
@@ -175,10 +177,39 @@ public static class ShippedAgentSettings
                     : [])
                 : [];
 
-        IEnumerable<string> tool = tools ? [.. Listed("agents", "mcpServerEndpoints"), .. Listed("subAgents", "mcpServerEndpoints")] : [];
+        IEnumerable<string> shared = root.TryGetProperty("sharedServers", out var servers)
+            ? servers.EnumerateObject().Select(server => server.Value.GetString()!)
+            : [];
+        IEnumerable<string> tool = tools
+            ?
+            [
+                .. HomeAgents.Definitions().SelectMany(a => a.McpServerEndpoints),
+                .. global::Domain.Prompts.AgentTemplates.All.SelectMany(a => a.McpServerEndpoints),
+                .. Listed("subAgents", "mcpServerEndpoints"),
+                .. shared
+            ]
+            : [];
         IEnumerable<string> channel = channels ? Listed("channelEndpoints", "endpoint") : [];
         return [.. tool, .. channel];
     }
+}
+
+// The home household's agents as the household migration seeds them (HouseholdMigration/Home/agents.json),
+// read the way the accounts service reads an agents section.
+public static class HomeAgents
+{
+    public static string Path => System.IO.Path.Combine(TestHelpers.FindSolutionRoot(), "HouseholdMigration", "Home", "agents.json");
+
+    public static global::Domain.DTOs.Household.AgentsSection Section()
+    {
+        var schema = global::Domain.DTOs.Household.HouseholdSections.AgentsSchema;
+        return schema.Read(schema.Migrate(System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path))!.AsObject()));
+    }
+
+    public static IReadOnlyList<global::Domain.DTOs.AgentDefinition> Definitions() =>
+        [.. Section().Agents.Select(agent => agent.Definition!)];
+
+    public static global::Domain.DTOs.AgentDefinition Definition(string id) => Definitions().Single(a => a.Id == id);
 }
 
 // The services, and the networks the file declares with whether each is another project's

@@ -1,26 +1,44 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.DTOs;
+using Domain.DTOs.Household;
 using Shouldly;
 using Tests.E2E.Fixtures;
+using Tests.Unit.Deployment;
 
 namespace Tests.Unit;
 
 // The agents the eval, the prompt snapshots and the WebChat stack drive are the tests' own copies,
-// so retiring the definitions from the agent's settings file changes nothing they measure. Until
-// that retirement the shipped file still carries them, and a copy that drifted from it would have
-// the eval grading an agent nobody runs.
+// so no household's configuration changes what they measure. They are today's definitions, which the
+// household migration seeds as the home household's own, beside the worker profiles and channel
+// defaults the agent's settings still carry; a copy that drifted from either would have the eval
+// grading an agent nobody runs.
 public class TestAgentsTests
 {
-    private static readonly string[] _sections = ["agentDefaults", "agents", "subAgents"];
+    private static readonly string[] _sections = ["defaultAgent", "agentDefaults", "agents", "subAgents"];
 
     [Fact]
-    public void TheCopies_EqualTodaysShippedDefinitions()
+    public void TheCopies_EqualTheHomeHouseholdsSeededDefinitions()
+    {
+        var home = HomeAgents.Section();
+
+        JsonNode.DeepEquals(
+                Written(TestAgents.Repository.Agents),
+                Written(home.Agents.Select(agent => agent.Definition!)))
+            .ShouldBeTrue("the copies are not the definitions the household migration seeds");
+        home.Agents.ShouldAllBe(agent => agent.Definition != null && agent.Definition.Id == agent.Id);
+        TestAgents.Repository.DefaultAgent.ShouldBe(home.DefaultAgent);
+    }
+
+    [Fact]
+    public void TheCopies_EqualTheDeploymentsWorkersAndChannelDefaults()
     {
         var copies = Parse(TestAgents.Repository.Path);
         var shipped = Parse(Path.Combine(TestHelpers.FindSolutionRoot(), "Agent", "appsettings.json"));
 
         copies.Select(section => section.Key).Order().ShouldBe(_sections.Order());
-        _sections.ShouldAllBe(section => JsonNode.DeepEquals(copies[section], shipped[section]));
+        JsonNode.DeepEquals(copies["subAgents"], shipped["subAgents"]).ShouldBeTrue();
+        JsonNode.DeepEquals(copies["agentDefaults"], shipped["agentDefaults"]).ShouldBeTrue();
     }
 
     [Fact]
@@ -74,8 +92,12 @@ public class TestAgentsTests
         var agents = string.Join(",", agentIds.Select(id =>
             $$"""{ "id": "{{id}}", "name": "{{id}}", "model": "z-ai/glm-5.3-flash", "mcpServerEndpoints": [] }"""));
 
-        return $$"""{ "agentDefaults": { "fallback": "jack" }, "agents": [{{agents}}], "subAgents": [] }""";
+        return $$"""{ "defaultAgent": "jack", "agentDefaults": {}, "agents": [{{agents}}], "subAgents": [] }""";
     }
+
+    // As the accounts service writes a definition: what it stores and what the agent is answered.
+    private static JsonNode Written(IEnumerable<AgentDefinition> agents) =>
+        new JsonArray([.. agents.Select(agent => JsonSerializer.SerializeToNode(agent, SectionSchema.Json))]);
 
     private static JsonObject Parse(string path) =>
         JsonNode.Parse(

@@ -51,9 +51,9 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void FeatureConfig_CarriesAProviderResolvingToTheEnclosingToolInvocation(bool subAgent)
+    public async Task FeatureConfig_CarriesAProviderResolvingToTheEnclosingToolInvocation(bool subAgent)
     {
-        var captured = CaptureFeatureConfig(subAgent);
+        var captured = await CaptureFeatureConfigAsync(subAgent);
 
         captured.ConversationContextProvider.ShouldNotBeNull();
 
@@ -61,7 +61,7 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
         captured.ConversationContextProvider().ShouldBe(_parentContext);
     }
 
-    private static FeatureConfig CaptureFeatureConfig(bool subAgent)
+    private static async Task<FeatureConfig> CaptureFeatureConfigAsync(bool subAgent)
     {
         var captured = new List<FeatureConfig>();
         var registry = new Mock<IDomainToolRegistry>();
@@ -80,9 +80,6 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
             Model = "test-model",
             McpServerEndpoints = []
         };
-        var optionsMonitor = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        optionsMonitor.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions { Agents = [definition] });
-
         var serviceProvider = new Mock<IServiceProvider>();
         serviceProvider
             .Setup(sp => sp.GetService(typeof(IThreadStateStore)))
@@ -90,7 +87,7 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
 
         var factory = new MultiAgentFactory(
             serviceProvider.Object,
-            new AgentDefinitionProvider(optionsMonitor.Object, new CustomAgentRegistry()),
+            FixedHouseholdAgents.Provider(definition),
             new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
             registry.Object);
 
@@ -109,7 +106,7 @@ public sealed class SubAgentConversationContextWiringTests : IDisposable
         }
         else
         {
-            factory.Create(new AgentKey("conv-11", "jack"), "fran", "jack", approvalHandler);
+            await factory.CreateAsync(new AgentKey("conv-11", "jack"), "fran", "jack", approvalHandler);
         }
 
         return captured.ShouldHaveSingleItem();

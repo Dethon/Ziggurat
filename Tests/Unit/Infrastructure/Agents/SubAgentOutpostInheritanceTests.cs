@@ -71,8 +71,7 @@ public sealed class SubAgentOutpostInheritanceTests
             McpServerEndpoints = [],
             UsesOutposts = parentUsesOutposts
         };
-        var options = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        options.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions { Agents = [parent] });
+        AgentDefinition[] agents = [parent];
 
         var services = new ServiceCollection()
             .AddSingleton(outposts)
@@ -81,11 +80,11 @@ public sealed class SubAgentOutpostInheritanceTests
 
         var factory = new MultiAgentFactory(
             services,
-            new AgentDefinitionProvider(options.Object, new CustomAgentRegistry()),
+            FixedHouseholdAgents.Provider(new CustomAgentRegistry(), agents),
             new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
             toolRegistry.Object);
 
-        await using var agent = factory.Create(
+        await using var agent = await factory.CreateAsync(
             new AgentKey("conv-1", "jack"), "fran", "jack", new Mock<IToolApprovalHandler>().Object, tenantId: Household);
 
         var spawn = captured.ShouldHaveSingleItem().SubAgentFactory.ShouldNotBeNull();

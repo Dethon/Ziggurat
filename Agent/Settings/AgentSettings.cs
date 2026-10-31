@@ -18,13 +18,24 @@ public record AgentSettings
 {
     public required OpenRouterConfiguration OpenRouter { get; init; }
     public required RedisConfiguration Redis { get; init; }
-    public required AgentDefinition[] Agents { get; [UsedImplicitly] init; }
 
-    // Who answers when the channel that carried a message named no agent. Empty is legal and means
-    // such a message is refused rather than routed by position in the array above.
+    // No agents: a household's are its configuration's, kept by the accounts service
+    // (.claude/rules/household-config.md), read per turn and built from the shipped templates or the
+    // definitions seeded for it (HouseholdAgents).
+
+    // Who answers when the channel that carried a message named no agent, for a channel whose messages
+    // belong to one agent by nature; any other channel's go to the household's default. Empty is legal
+    // and means every such message reaches its household's default.
     public AgentDefaults AgentDefaults { get; [UsedImplicitly] init; } = new();
     public ChannelEndpoint[] ChannelEndpoints { get; init; } = [];
+
+    // The deployment's worker profiles, every household's agents' alike: a worker runs its parent's
+    // model for its parent's household, and the household's `workers` feature decides whether its
+    // agents may spawn one at all.
     public SubAgentDefinition[] SubAgents { get; init; } = [];
+
+    // Where the deployment runs each shared server, by the household feature that offers it.
+    public SharedServers SharedServers { get; init; } = new();
     public PatchableModel[] PatchableModels { get; init; } = [];
     public AttachmentConfiguration Attachments { get; init; } = new();
     public ReadImageConfiguration ReadImages { get; init; } = new();
