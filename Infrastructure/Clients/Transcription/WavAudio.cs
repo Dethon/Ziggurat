@@ -32,4 +32,40 @@ public static class WavAudio
         pcm.CopyTo(span[44..]);
         return wav;
     }
+
+    // How long a WAV recording is, read off its chunks rather than assuming this class's 44-byte
+    // header, because a browser's encoder may write others; null for anything that is not one.
+    public static double? Seconds(ReadOnlySpan<byte> wav)
+    {
+        if (wav.Length < 12 || !wav[..4].SequenceEqual("RIFF"u8) || !wav[8..12].SequenceEqual("WAVE"u8))
+        {
+            return null;
+        }
+
+        int? byteRate = null;
+        for (var offset = 12; offset + 8 <= wav.Length;)
+        {
+            var id = wav.Slice(offset, 4);
+            var size = BinaryPrimitives.ReadInt32LittleEndian(wav[(offset + 4)..]);
+            if (id.SequenceEqual("fmt "u8) && offset + 16 <= wav.Length - 4)
+            {
+                byteRate = BinaryPrimitives.ReadInt32LittleEndian(wav[(offset + 16)..]);
+            }
+            else if (id.SequenceEqual("data"u8))
+            {
+                var data = Math.Min(size, wav.Length - offset - 8);
+                return byteRate is > 0 ? (double)data / byteRate.Value : null;
+            }
+
+            if (size < 0)
+            {
+                return null;
+            }
+
+            // Chunks are padded to an even length.
+            offset += 8 + size + (size & 1);
+        }
+
+        return null;
+    }
 }

@@ -13,4 +13,8 @@ public record TranscriptionResult
     public double? AvgLogProb { get; init; }
     public double? NoSpeechProb { get; init; }
     public double? CompressionRatio { get; init; }
+
+    // How long the recording was, as whisper reported it (verbose_json's duration, else where its
+    // last segment ended); null when the body said neither.
+    public double? AudioSeconds { get; init; }
 }
