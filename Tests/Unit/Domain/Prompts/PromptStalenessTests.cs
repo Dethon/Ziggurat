@@ -42,9 +42,15 @@ public class PromptStalenessTests
     // /vfs is the sandbox's own: where a command finds the session's other mounts.
     private static readonly string[] _nativePaths = ["/etc", "/home", "/tmp", "/usr", "/var", "/vfs", "/"];
 
+    // Paths the mounts section names as what never to pass: a bare path from no mount, and a
+    // machine spelled as a directory of the tree.
+    private static readonly string[] _counterExamples = ["/notes", "/<NAME>"];
+
+    // Every section document and every skill. A served or feature section is read as its server
+    // serves it, filled; any other is read as its document's words, every part included, so no
+    // sentence a host can choose escapes the walk.
     public static TheoryData<string> Sections =>
-        [.. AgentPromptFixture.ServedText.Keys.Concat(AgentPromptFixture.FeatureText.Keys)
-            .Concat(AgentPromptFixture.ServedSkills.Keys)];
+        [.. PromptDocuments.Sections.Select(d => d.Name).Concat(AgentPromptFixture.ServedSkills.Keys)];
 
     // Every prompt any server in this solution serves, found the way the agent finds them: by
     // asking, rather than by a list somebody maintains. A server that adds a prompt gets a budget
@@ -184,6 +190,7 @@ public class PromptStalenessTests
             .Distinct()
             .Where(path => !_mountRoots.Contains(path.TrimStart('/'), StringComparer.OrdinalIgnoreCase))
             .Where(path => !_nativePaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+            .Where(path => !_counterExamples.Contains(path, StringComparer.Ordinal))
             .ToList();
 
         stale.ShouldBeEmpty(
@@ -519,7 +526,12 @@ public class PromptStalenessTests
             ? served
             : AgentPromptFixture.FeatureText.TryGetValue(name, out var feature)
                 ? feature
-                : AgentPromptFixture.ServedSkills[name].Body;
+                : AgentPromptFixture.ServedSkills.TryGetValue(name, out var skill)
+                    ? skill.Body
+                    : Words(PromptDocuments.Section(name));
+
+    private static string Words(PromptDocument document) =>
+        string.Join("\n\n", [document.Body, .. document.Parts.Values]);
 
     // Every skill body resource each server's real registration publishes, named with the service
     // the deployment dials that server as. The compose service name is the row's id under the
