@@ -110,11 +110,13 @@ public class TenantKitConformanceTests
         names.Distinct().Count().ShouldBe(servers.Count);
     }
 
-    // The deployment looks two of a household's servers up by name — the browser a browse page is
-    // forwarded to, the voice server a timer rings — so those two run under exactly those names.
+    // The deployment knows three of a household's servers by name — the browser a browse page is
+    // forwarded to, the voice server a timer rings and whose back-calls speak for the household's
+    // people, the sandbox whose back-call is the exec bridge — so those run under exactly those names.
     [Theory]
     [InlineData(BrowseServerListeners.Service, HouseholdServerNames.WebSearch)]
     [InlineData("mcp-channel-voice", HouseholdServerNames.Voice)]
+    [InlineData("mcp-sandbox", HouseholdServerNames.Sandbox)]
     public void TheServersTheDeploymentFindsByName_RunUnderTheNamesItLooksFor(string service, string name)
     {
         Kit.Service(service).Environment["MCP__TUNNEL__SERVERNAME"].ShouldBe(name);
@@ -257,6 +259,7 @@ public class TenantKitConformanceTests
     [InlineData("qbittorrent")]
     [InlineData("homeassistant")]
     [InlineData("jackett")]
+    [InlineData("filebrowser")]
     public void TheHouseholdsLanTools_ListenOnTheNamedLanAddress(string service)
     {
         var ports = Kit.Service(service).Ports;
@@ -273,8 +276,27 @@ public class TenantKitConformanceTests
         var kit = Kit;
 
         kit.Services.Values.Where(s => s.Ports.Count > 0).Select(s => s.Name)
-            .ShouldBe(["redis", "qbittorrent", "homeassistant", "jackett"], ignoreOrder: true);
+            .ShouldBe(["redis", "qbittorrent", "homeassistant", "jackett", "filebrowser"], ignoreOrder: true);
         kit.Service("redis").Ports.ShouldAllBe(p => p.BindAddress == "127.0.0.1");
+    }
+
+    // The home's media and the host's devices are the kit's: the library, its downloads, Plex and
+    // filebrowser mount the media, and Plex and the sandbox the render node — none of it the
+    // deployment's (DeploymentConformanceTests).
+    [Fact]
+    public void TheMediaAndTheRenderNode_AreTheKits()
+    {
+        var kit = Kit;
+
+        kit.Services.Values.Where(s => s.Volumes.Any(v => v.Contains("${DATA_PATH", StringComparison.Ordinal)))
+            .Select(s => s.Name)
+            .ShouldBe(["qbittorrent", "mcp-library", "plex", "filebrowser"], ignoreOrder: true);
+        kit.Services.Values.Where(s => s.Devices.Contains("/dev/dri:/dev/dri"))
+            .Select(s => s.Name)
+            .ShouldBe(["mcp-sandbox", "plex"], ignoreOrder: true);
+        kit.Service("plex").NetworkMode.ShouldBe("host", "Plex finds and is found by the household's players on the LAN");
+        DeploymentFiles.KitCompose("docker-compose.override.no-dri.yml").Services.Keys
+            .ShouldBe(["mcp-sandbox", "plex"], ignoreOrder: true);
     }
 
     [Fact]

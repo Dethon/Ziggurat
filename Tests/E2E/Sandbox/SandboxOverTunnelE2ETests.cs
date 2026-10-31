@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Tunnel;
 using Domain.Security;
 using Domain.Security.Signing;
 using DotNet.Testcontainers.Configurations;
@@ -57,7 +58,7 @@ public class SandboxOverTunnelE2ETests(RedisFixture redis) : IClassFixture<Redis
             Redis = new() { ConnectionString = redis.ConnectionString }
         });
         _household = (await _accounts.MintOperatorAsync("Fran")).TenantId;
-        var credential = await _accounts.MintTunnelCredentialAsync(_household, "sandbox");
+        var credential = await _accounts.MintTunnelCredentialAsync(_household, HouseholdServerNames.Sandbox);
         _keys = SigningKeyStore.Open(new SigningKeySettings { KeyDirectory = _keyDirectory });
         _relay = await RelayHost.StartAsync(
             _accounts, AgentCredential, redis.ConnectionString, _keys, new RecordingMetricsPublisher(), on: IPAddress.Any);
@@ -69,7 +70,7 @@ public class SandboxOverTunnelE2ETests(RedisFixture redis) : IClassFixture<Redis
             .WithExtraHost("host.docker.internal", "host-gateway")
             .WithEnvironment("MCP__TUNNEL__HUB", _relay.HubFromContainers)
             .WithEnvironment("MCP__TUNNEL__CREDENTIAL", credential.Credential)
-            .WithEnvironment("MCP__TUNNEL__SERVERNAME", "sandbox")
+            .WithEnvironment("MCP__TUNNEL__SERVERNAME", HouseholdServerNames.Sandbox)
             .WithEnvironment("MCP__TUNNEL__BACKCALLS__vfs-bridge", BridgeBackCall.ToString())
             .WithEnvironment("VFSBRIDGEURL", $"http://127.0.0.1:{BridgeBackCall}{BackCallTargetsRoute}")
             .Build();
@@ -115,11 +116,11 @@ public class SandboxOverTunnelE2ETests(RedisFixture redis) : IClassFixture<Redis
     {
         Skip.If(_relay is null, "Docker is not available");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
-        await Eventually.Until(() => _relay.Registry.Find(_household, "sandbox") is not null, "the sandbox's tunnel opens");
+        await Eventually.Until(() => _relay.Registry.Find(_household, HouseholdServerNames.Sandbox) is not null, "the sandbox's tunnel opens");
         var notes = new MemoryDisk("notes", new Dictionary<string, string> { ["todo.md"] = "milk\n" });
         var call = _relay.Bridge.Mint(BridgeFixtures.Registry((notes, "/notes", null)), BridgeFixtures.Everything, null, null);
         await using var agent = await McpClientManager.CreateAsync(
-            "jonas", "fran", "test", [_relay.OwnServers.Resolve(_household, "sandbox")!], new McpClientHandlers(),
+            "jonas", "fran", "test", [_relay.OwnServers.Resolve(_household, HouseholdServerNames.Sandbox)!], new McpClientHandlers(),
             callTokens: new CallTokens(_keys, TimeProvider.System), ct: cts.Token);
 
         var result = await agent.Clients.Single().CallToolAsync(new CallToolRequestParams

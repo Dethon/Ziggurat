@@ -4,6 +4,7 @@ using System.Text;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Tunnel;
+using Domain.Outposts;
 using Domain.Security;
 using Domain.Security.Signing;
 using Infrastructure.Clients.Accounts;
@@ -107,17 +108,19 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _relay.Reached.ShouldHaveSingleItem().ShouldBe(new ReachedTarget("/v1/audio/speech", _home, "voice", null));
     }
 
-    [Fact]
-    public async Task AMetricEvent_IsPublishedOntoTheFeedAsTheHouseholdsServers()
+    [Theory]
+    [InlineData(HouseholdServerNames.Voice)]
+    [InlineData(HouseholdServerNames.WebSearch)]
+    public async Task AMetricEvent_IsPublishedOntoTheFeedAsTheHouseholdsServers(string serverName)
     {
-        var port = await VoiceOfAsync(_home, BackCallProtocol.Metrics);
+        var port = await ServerOfAsync(_home, serverName, BackCallProtocol.Metrics);
         var sink = new HttpMetricSink(new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}{BackCallProtocol.MetricsPath}") });
 
-        await sink.SendAsync(new HeartbeatEvent { Service = "mcp-channel-voice" });
+        await sink.SendAsync(new HeartbeatEvent { Service = "a-household-server" });
 
         _metrics.Published.OfType<HeartbeatEvent>().ShouldHaveSingleItem().ShouldSatisfyAllConditions(
-            e => e.Service.ShouldBe("mcp-channel-voice"),
-            e => e.Origin.ShouldBe(ServerAddress.Tunnelled(_home, "voice").Name));
+            e => e.Service.ShouldBe("a-household-server"),
+            e => e.Origin.ShouldBe(ServerAddress.Tunnelled(_home, serverName).Name));
     }
 
     // The sandbox's FUSE daemon asks the bridge one operation per request, with the exec's call token
@@ -163,6 +166,35 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _relay.Reached.ShouldBeEmpty();
         Refusals().ShouldHaveSingleItem().ShouldSatisfyAllConditions(
             m => m.ShouldContain("'voice'"), m => m.ShouldContain(_home), m => m.ShouldContain("/" + path));
+    }
+
+    // A back-call is for the server that makes it: a household's printer, vault or library — or an
+    // outpost on a member's laptop — holding its own credential would otherwise mint voice assertions
+    // for anybody in its household, topics as them, or speech on the deployment's Lemonade; voice would
+    // reach the exec bridge; an outpost, which publishes nothing, would write onto the feed.
+    public static TheoryData<string, string, string> OtherServers => new()
+    {
+        { "vault", BackCallProtocol.Accounts, "accounts/internal/guest" },
+        { OutpostServerName.For("laptop"), BackCallProtocol.Accounts, "accounts/internal/resolve" },
+        { "printer", BackCallProtocol.Topics, TopicMinting.Path.TrimStart('/') },
+        { "library", BackCallProtocol.Lemonade, "v1/audio/speech" },
+        { HouseholdServerNames.Voice, BackCallProtocol.VfsBridge, $"{BackCallTargets.BridgeRoute.TrimStart('/')}/read?path=/notes/todo.md" },
+        { OutpostServerName.For("laptop"), BackCallProtocol.Metrics, BackCallProtocol.MetricsPath.TrimStart('/') }
+    };
+
+    [Theory]
+    [MemberData(nameof(OtherServers))]
+    public async Task ABackCallFromAServerItIsNotFor_IsRefusedAndReported(string serverName, string tag, string path)
+    {
+        var port = await ServerOfAsync(_home, serverName, tag);
+        using var http = new HttpClient { BaseAddress = Loopback(port) };
+
+        using var response = await http.PostAsync(path, new StringContent("{\"channel\":\"voice\"}"));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        _relay.Reached.ShouldBeEmpty();
+        Refusals().ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            m => m.ShouldContain($"'{serverName}'"), m => m.ShouldContain(_home), m => m.ShouldContain($"'{tag}'"));
     }
 
     // A server configured with a back-call the deployment does not offer opens a stream nobody takes.
