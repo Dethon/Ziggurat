@@ -103,23 +103,22 @@ public class DeploymentConformanceTests
             .ShouldAllBe(p => p.BindAddress == "127.0.0.1");
     }
 
-    // A household's own LAN tools — qBittorrent, Jackett, Home Assistant — moved into the tenant kit
-    // with its servers, and are held to the same rule there (TenantKitConformanceTests).
-    [Theory]
-    [InlineData("filebrowser")]
-    [InlineData("lemonade")]
-    public void TheOperatorsLanTools_ListenOnTheNamedLanAddress(string service)
+    // A household's own LAN tools — qBittorrent, Jackett, Home Assistant, Plex, filebrowser — moved
+    // into the tenant kit with its servers, and are held to the same rule there
+    // (TenantKitConformanceTests). Lemonade is the shared box's, which the speech typist posts at.
+    [Fact]
+    public void Lemonade_ListensOnTheNamedLanAddress()
     {
-        var ports = DeploymentFiles.Compose().Service(service).Ports;
+        var ports = DeploymentFiles.Compose().Service("lemonade").Ports;
 
         ports.ShouldNotBeEmpty();
         ports.ShouldAllBe(p => p.BindAddress == "${LAN_BIND_ADDRESS:-127.0.0.1}");
     }
 
     [Fact]
-    public void OnlyTheProxyAndTheLanTools_ArePublishedAtAll()
+    public void OnlyTheProxyRedisAndLemonade_ArePublishedAtAll()
     {
-        string[] published = ["caddy", "redis", "filebrowser", "lemonade"];
+        string[] published = ["caddy", "redis", "lemonade"];
 
         DeploymentFiles.Compose().Services.Values
             .Where(s => s.Ports.Count > 0)
@@ -251,7 +250,7 @@ public class DeploymentConformanceTests
     [Theory]
     [InlineData("mcp-websearch", new[] { "camoufox" })]
     [InlineData("mcp-vault", new string[0])]
-    [InlineData("mcp-library", new[] { "qbittorrent", "jackett" })]
+    [InlineData("mcp-library", new[] { "qbittorrent", "jackett", "plex", "filebrowser" })]
     [InlineData("mcp-sandbox", new string[0])]
     [InlineData("mcp-printer", new string[0])]
     [InlineData("mcp-homeassistant", new[] { "homeassistant", "music-assistant" })]
@@ -286,10 +285,25 @@ public class DeploymentConformanceTests
     [InlineData("Announce__Token")]
     [InlineData("VAULT_PATH")]
     [InlineData("SANDBOX_HOME_PATH")]
+    [InlineData("DATA_PATH")]
     public void AMovedServersSetting_IsNoLongerTheDeployments(string variable)
     {
         DeploymentFiles.Placeholders().Keys.ShouldNotContain(variable);
         DeploymentFiles.Variables(DeploymentFiles.Directory).ShouldNotContain(variable);
+    }
+
+    // The home's media and the host's devices are the household's: no deployment service mounts the
+    // media, and only the shared Lemonade is handed a device — its render node, for whisper on the GPU.
+    [Fact]
+    public void TheDeployment_MountsNoMedia_AndHandsADeviceToLemonadeAlone()
+    {
+        var services = DeploymentFiles.Compose().Services.Values;
+
+        services.Where(s => s.Volumes.Any(v => v.Contains("${DATA_PATH", StringComparison.Ordinal)))
+            .Select(s => s.Name)
+            .ShouldBeEmpty();
+        services.Where(s => s.Devices.Count > 0).Select(s => s.Name).ShouldBe(["lemonade"]);
+        DeploymentFiles.Compose("docker-compose.override.no-dri.yml").Services.Keys.ShouldBe(["lemonade"]);
     }
 
     // The agent presents each server the credential the server reads, so the two must name the
