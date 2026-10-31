@@ -18,7 +18,7 @@ public record MetricsSummary(
     long MemoriesMerged = 0,
     long MemoriesDecayed = 0);
 
-public record ServiceHealthResponse(string Service, bool IsHealthy, string LastSeen);
+public record ServiceHealthResponse(string Service, bool IsHealthy, string LastSeen, string? Household = null);
 
 public sealed class MetricsApiService(HttpClient http)
 {

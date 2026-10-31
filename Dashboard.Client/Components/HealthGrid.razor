@@ -6,6 +6,10 @@
         <div class="health-item" title="@(svc.IsHealthy ? "Healthy" : "Unhealthy") — Last seen: @(svc.LastSeen ?? "never")">
             <span class="health-dot @(svc.IsHealthy ? "healthy" : "unhealthy")"></span>
             <span class="health-name">@svc.Service</span>
+            @if (svc.Household is { } household)
+            {
+                <span class="health-household" title="@household">@household[..Math.Min(8, household.Length)]</span>
+            }
         </div>
     }
     @if (!Services.Any())
@@ -25,5 +29,6 @@
     .health-dot.healthy { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
     .health-dot.unhealthy { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
     .health-name { font-size: 0.85rem; color: var(--text-primary); }
+    .health-household { font-size: 0.7rem; color: var(--text-secondary); font-family: monospace; }
     .no-data { color: var(--text-secondary); font-size: 0.85rem; }
 </style>

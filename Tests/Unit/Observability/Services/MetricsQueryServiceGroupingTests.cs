@@ -46,7 +46,7 @@ public class MetricsQueryServiceGroupingTests
         string keyA, double expectedA, string keyB, double expectedB)
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:tokens:2026-03-15",
+        SetupSortedSet("metrics:tokens:deployment:2026-03-15",
         [
             new TokenUsageEvent { Sender = "alice", Model = "gpt-4", InputTokens = 100, OutputTokens = 50, Cost = 0.1m, AgentId = "agent-1" },
             new TokenUsageEvent { Sender = "alice", Model = "gpt-4", InputTokens = 200, OutputTokens = 100, Cost = 0.2m, AgentId = "agent-1" },
@@ -68,7 +68,7 @@ public class MetricsQueryServiceGroupingTests
         ToolDimension dimension, ToolMetric metric)
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:tools:2026-03-15",
+        SetupSortedSet("metrics:tools:deployment:2026-03-15",
         [
             new ToolCallEvent { ToolName = "search", DurationMs = 100, Success = true },
             new ToolCallEvent { ToolName = "search", DurationMs = 300, Success = false },
@@ -106,7 +106,7 @@ public class MetricsQueryServiceGroupingTests
         ErrorDimension dimension, string keyA, int expectedA, string keyB, int expectedB)
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:errors:2026-03-15",
+        SetupSortedSet("metrics:errors:deployment:2026-03-15",
         [
             new ErrorEvent { Service = "Agent", ErrorType = "NullReference", Message = "oops" },
             new ErrorEvent { Service = "Agent", ErrorType = "Timeout", Message = "timed out" },
@@ -126,7 +126,7 @@ public class MetricsQueryServiceGroupingTests
         ScheduleDimension dimension, string keyA, int expectedA, string keyB, int expectedB)
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:schedules:2026-03-15",
+        SetupSortedSet("metrics:schedules:deployment:2026-03-15",
         [
             new ScheduleExecutionEvent { ScheduleId = "daily-report", Prompt = "...", DurationMs = 1000, Success = true },
             new ScheduleExecutionEvent { ScheduleId = "daily-report", Prompt = "...", DurationMs = 1200, Success = false },
@@ -153,21 +153,21 @@ public class MetricsQueryServiceGroupingTests
         MemoryDimension dimension, MemoryMetric metric)
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:memory-recall:2026-03-15",
+        SetupSortedSet("metrics:memory-recall:deployment:2026-03-15",
         [
             new MemoryRecallEvent { DurationMs = 100, MemoryCount = 5, UserId = "alice" },
             new MemoryRecallEvent { DurationMs = 300, MemoryCount = 3, UserId = "alice" },
         ]);
-        SetupSortedSet("metrics:memory-extraction:2026-03-15",
+        SetupSortedSet("metrics:memory-extraction:deployment:2026-03-15",
         [
             new MemoryExtractionEvent { DurationMs = 1000, CandidateCount = 8, StoredCount = 3, DroppedCount = 4, UserId = "alice", Outcome = MemoryExtractionOutcomes.Extracted },
             new MemoryExtractionEvent { DurationMs = 2000, CandidateCount = 12, StoredCount = 5, UserId = "bob" },
         ]);
-        SetupSortedSet("metrics:memory-judgment:2026-03-15",
+        SetupSortedSet("metrics:memory-judgment:deployment:2026-03-15",
         [
             new MemoryJudgmentEvent { Kind = MemoryJudgmentKinds.Gate, UserId = "bob", Answered = true, Skipped = true },
         ]);
-        SetupSortedSet("metrics:memory-dreaming:2026-03-15",
+        SetupSortedSet("metrics:memory-dreaming:deployment:2026-03-15",
         [
             new MemoryDreamingEvent { MergedCount = 5, DecayedCount = 2, ProfileRegenerated = true, UserId = "alice", AgentId = "agent-1", RefusedMerges = [["mem_1", "mem_2"], ["mem_3", "mem_4"]] },
             new MemoryDreamingEvent { MergedCount = 3, DecayedCount = 1, ProfileRegenerated = false, UserId = "bob", AgentId = "agent-1" },
@@ -242,7 +242,7 @@ public class MetricsQueryServiceGroupingTests
         string keyA, double expectedA, string keyB, double expectedB)
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:latency:2026-03-15",
+        SetupSortedSet("metrics:latency:deployment:2026-03-15",
         [
             new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 100, Model = "m1" },
             new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 300, Model = "m1" },
@@ -266,7 +266,7 @@ public class MetricsQueryServiceGroupingTests
         VoiceDimension dimension, VoiceMetric metric)
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:voice:2026-03-15",
+        SetupSortedSet("metrics:voice:deployment:2026-03-15",
         [
             new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household" },
             new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = "kitchen-01", Room = "Kitchen", Identity = "household" },
@@ -304,7 +304,7 @@ public class MetricsQueryServiceGroupingTests
     public async Task GetVoiceGroupedAsync_NewDurationMetric_AveragesInsteadOfCounting()
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:voice:2026-03-15",
+        SetupSortedSet("metrics:voice:deployment:2026-03-15",
         [
             new VoiceEvent { Metric = VoiceMetric.SpeechEndToFirstAudioMs, Room = "office", DurationMs = 1000 },
             new VoiceEvent { Metric = VoiceMetric.SpeechEndToFirstAudioMs, Room = "office", DurationMs = 3000 },
@@ -322,7 +322,7 @@ public class MetricsQueryServiceGroupingTests
     public async Task GetVoiceGroupedAsync_HonoursRequestedAggregation()
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:voice:2026-03-15",
+        SetupSortedSet("metrics:voice:deployment:2026-03-15",
         [
             new VoiceEvent { Metric = VoiceMetric.EndpointTailMs, Room = "office", DurationMs = 1000 },
             new VoiceEvent { Metric = VoiceMetric.EndpointTailMs, Room = "office", DurationMs = 9000 },
@@ -338,7 +338,7 @@ public class MetricsQueryServiceGroupingTests
     public async Task GetVoiceGroupedAsync_NullDimensionValue_BucketsAsUnknown()
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:voice:2026-03-15",
+        SetupSortedSet("metrics:voice:deployment:2026-03-15",
         [
             new VoiceEvent { Metric = VoiceMetric.UtteranceTranscribed, SatelliteId = null, Room = null, Identity = null },
         ]);
@@ -356,12 +356,12 @@ public class MetricsQueryServiceGroupingTests
     public async Task GetGroupedAsync_EmptyData_ReturnsEmptyDictionary(string query)
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:tokens:2026-03-15", []);
-        SetupSortedSet("metrics:memory-recall:2026-03-15", []);
-        SetupSortedSet("metrics:memory-extraction:2026-03-15", []);
-        SetupSortedSet("metrics:memory-dreaming:2026-03-15", []);
-        SetupSortedSet("metrics:latency:2026-03-15", []);
-        SetupSortedSet("metrics:voice:2026-03-15", []);
+        SetupSortedSet("metrics:tokens:deployment:2026-03-15", []);
+        SetupSortedSet("metrics:memory-recall:deployment:2026-03-15", []);
+        SetupSortedSet("metrics:memory-extraction:deployment:2026-03-15", []);
+        SetupSortedSet("metrics:memory-dreaming:deployment:2026-03-15", []);
+        SetupSortedSet("metrics:latency:deployment:2026-03-15", []);
+        SetupSortedSet("metrics:voice:deployment:2026-03-15", []);
 
         var result = query switch
         {
@@ -379,7 +379,7 @@ public class MetricsQueryServiceGroupingTests
     public async Task GetLatencyTrendAsync_ShortRange_BucketsHourlyPerStage()
     {
         var date = new DateOnly(2026, 3, 15);
-        SetupSortedSet("metrics:latency:2026-03-15",
+        SetupSortedSet("metrics:latency:deployment:2026-03-15",
         [
             new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 100,
                 Timestamp = new DateTimeOffset(2026, 3, 15, 10, 5, 0, TimeSpan.Zero) },
@@ -404,14 +404,14 @@ public class MetricsQueryServiceGroupingTests
     {
         var from = new DateOnly(2026, 3, 15);
         var to = new DateOnly(2026, 3, 20);
-        SetupSortedSet("metrics:latency:2026-03-15",
+        SetupSortedSet("metrics:latency:deployment:2026-03-15",
         [
             new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 100,
                 Timestamp = new DateTimeOffset(2026, 3, 15, 9, 5, 0, TimeSpan.Zero) },
             new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 300,
                 Timestamp = new DateTimeOffset(2026, 3, 15, 22, 50, 0, TimeSpan.Zero) },
         ]);
-        SetupSortedSet("metrics:latency:2026-03-18",
+        SetupSortedSet("metrics:latency:deployment:2026-03-18",
         [
             new LatencyEvent { Stage = LatencyStage.LlmTotal, DurationMs = 999,
                 Timestamp = new DateTimeOffset(2026, 3, 18, 3, 1, 0, TimeSpan.Zero) },
