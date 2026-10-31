@@ -18,10 +18,11 @@ namespace Infrastructure.Tunnels;
 
 // Where the relay sends every stream a household's server opens: its back-calls. A Kestrel of its own,
 // listening on nothing but those streams (BackCallTransport), reads each request and lets it through
-// only if its tag names a back-call and its path is one of that back-call's (BackCallTargets) —
-// forwarded to the deployment service behind it with who asked: the tunnel's household and server
-// name in BackCallProtocol's headers, set over any the server sent. A stream with any other tag, and
-// a request to any other path, is refused, logged and reported on the errors feed.
+// only if its tag names a back-call its server may make and its path is one of that back-call's
+// (BackCallTargets) — forwarded to the deployment service behind it with who asked: the tunnel's
+// household and server name in BackCallProtocol's headers, set over any the server sent. A stream
+// with any other tag, and a request to any other path or from a server its tag is not for, is
+// refused, logged and reported on the errors feed.
 //
 // Its own Kestrel rather than the agent's: the agent's listens where its configuration says, and a
 // listener added in code would replace that configuration rather than join it.
@@ -110,7 +111,7 @@ public sealed class BackCallGateway(
         var origin = http.Features.Get<BackCallOrigin>()
                      ?? throw new InvalidOperationException("A back-call arrived on no tunnel.");
         var path = http.Request.Path.Value ?? "";
-        if (!HttpMethods.IsPost(http.Request.Method) || !targets.Allows(origin.Tag, path))
+        if (!HttpMethods.IsPost(http.Request.Method) || !targets.Allows(origin.Tag, origin.Tunnel.ServerName, path))
         {
             Refuse(origin.Tunnel, $"{http.Request.Method} {path} on its '{origin.Tag}' back-call");
             http.Response.StatusCode = StatusCodes.Status403Forbidden;

@@ -53,9 +53,8 @@ internal static class AgentSpecProjection
             // credential: its tunnel's client presents the tunnel's own (OwnServerEndpoints).
             McpServerEndpoints =
             [
-                .. definition.McpServerEndpoints.Select(address => TunnelCredentialProtocol.IsServerName(address)
-                    ? McpServerEndpoint.OwnServer(address)
-                    : McpServerEndpoint.Configured(address, deployment.Names(address) ? credentials.For(address) : null))
+                .. definition.McpServerEndpoints.Select(address => EndpointOf(
+                    address, server => deployment.Names(server) ? credentials.For(server) : null))
             ],
             TenantId = tenantId,
             UsesOutposts = definition.UsesOutposts,
@@ -110,12 +109,7 @@ internal static class AgentSpecProjection
             // A worker's endpoints are the deployment's servers as much as its parent's are.
             // A worker's definition is the deployment's own — nothing registers one — so every
             // endpoint it names is a deployment server.
-            McpServerEndpoints =
-            [
-                .. definition.McpServerEndpoints.Select(address => TunnelCredentialProtocol.IsServerName(address)
-                    ? McpServerEndpoint.OwnServer(address)
-                    : McpServerEndpoint.Configured(address, credentials.For(address)))
-            ],
+            McpServerEndpoints = [.. definition.McpServerEndpoints.Select(address => EndpointOf(address, credentials.For))],
             // The parent's household, whose servers the worker reaches as its parent does.
             TenantId = spawn.TenantId,
             // Two yeses, and neither alone is enough. The parent's is the ceiling — a subagent
@@ -194,4 +188,11 @@ internal static class AgentSpecProjection
             .Select(p => p[1])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
+
+    // A definition's endpoint: a household server's name, or a URL presenting what `credential` hands
+    // the server it reaches — nothing for an address that is no server's.
+    private static McpServerEndpoint EndpointOf(string address, Func<ServerAddress, string?> credential) =>
+        TunnelCredentialProtocol.IsServerName(address)
+            ? McpServerEndpoint.OwnServer(address)
+            : McpServerEndpoint.Configured(address, ServerAddress.FromUrl(address) is { } server ? credential(server) : null);
 }

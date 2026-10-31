@@ -4,6 +4,7 @@ using System.Text.Json;
 using Domain.DTOs.Tunnel;
 using Domain.Security;
 using Domain.Security.Signing;
+using Infrastructure.Agents;
 using Mcp.Hosting.Tunnel;
 
 namespace Infrastructure.Tunnels;
@@ -72,6 +73,14 @@ public sealed class OpenTunnel : IAsyncDisposable
     // one whose servers the deployment's channel endpoints name.
     public bool Home { get; }
 
+    // What the agent dials this opening at, bound to it: its tools are this generation's (ADR 0012),
+    // and a call made after it closed fails as the server going offline.
+    public McpServerEndpoint Endpoint => McpServerEndpoint.Relayed(Address, Client, Generation, Closed);
+
+    // The same, for a machine: dynamic, so a tunnel that closes between a session's compose and its
+    // dial costs that session the mount and nothing else (ADR 0027).
+    public McpServerEndpoint OutpostEndpoint => McpServerEndpoint.RelayedOutpost(Address, Client, Generation, Closed);
+
     // What the agent's call tokens for this server are signed for, its tools qualified with and its
     // prompts cached under.
     public ServerAddress Address { get; }
@@ -84,6 +93,10 @@ public sealed class OpenTunnel : IAsyncDisposable
     public HttpClient Client { get; }
 
     public bool IsOpen => !_closing.IsCancellationRequested && !_mux.IsClosed;
+
+    // The home household's server of that name: what a request naming no household is for
+    // (TunnelRegistry.FindHome), and what a channel endpoint named by server name follows.
+    public bool IsHome(string serverName) => Home && ServerName == serverName;
 
     // Cancelled once the tunnel is closing or closed, by either end. Taken once, so a consumer that
     // reads it after the tunnel is gone and disposed still gets a token that says so.
