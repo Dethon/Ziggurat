@@ -4,10 +4,10 @@
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A real server connected to a real relay answers a signed tool call through the tunnel and refuses an unsigned one
-- [ ] An unknown, revoked or other-name credential is refused with its reason and reported; revoking closes an open tunnel
-- [ ] The tunnel reconnects after the relay restarts, and a key rotation reaches the server over the tunnel
-- [ ] The proxy routes only the tunnel's path to the relay (conformance)
-- [ ] The eval and integration stacks pass with tunnel endpoints resolved in process
+- [x] A real server connected to a real relay answers a signed tool call through the tunnel and refuses an unsigned one
+- [x] An unknown, revoked or other-name credential is refused with its reason and reported; revoking closes an open tunnel
+- [x] The tunnel reconnects after the relay restarts, and a key rotation reaches the server over the tunnel
+- [x] The proxy routes only the tunnel's path to the relay (conformance)
+- [x] The eval and integration stacks pass with tunnel endpoints resolved in process

@@ -18,8 +18,9 @@ public enum McpEndpointOrigin
 // An MCP endpoint once it has reached a running agent. The typing stops at the spec boundary:
 // agent and subagent definitions and the custom-agent registration keep plain strings, because
 // they bind straight from appsettings.json and there is no distinction configuration can make —
-// everything in a settings file is configured by definition. AgentSpecProjection composes these,
-// which is also where live outposts are merged in as dynamic ones.
+// everything in a settings file is configured by definition. AgentSpecProjection composes these;
+// a session build resolves a household's servers, named rather than addressed, to their tunnels and
+// merges live outposts in as dynamic ones.
 public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
 {
     // What this endpoint has to present to be allowed to talk. Every server asks: a deployment
