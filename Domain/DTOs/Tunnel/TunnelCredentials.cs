@@ -32,9 +32,12 @@ public static partial class TunnelCredentialProtocol
 public sealed record TunnelCredentialQuery(string Credential, string ServerName);
 
 // A credential that opens a tunnel for that server. The id is the credential's, not a secret: it is
-// what a revocation names, so the relay closes the tunnel this credential opened and no other.
+// what a revocation names, so the relay closes the tunnel this credential opened and no other. Home
+// says the household is the operator's own, whose servers the deployment's channel endpoints name:
+// the agent learns which household that is from the accounts service rather than from a setting
+// somebody would have to copy an id into.
 [PublicAPI]
-public sealed record TunnelCredentialVerified(string CredentialId, string TenantId, string ServerName);
+public sealed record TunnelCredentialVerified(string CredentialId, string TenantId, string ServerName, bool Home = false);
 
 [PublicAPI]
 public sealed record TunnelCredentialRefused(TunnelCredentialRefusal Reason);

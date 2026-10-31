@@ -90,6 +90,31 @@ public class InjectorModuleTests
             .Message.ShouldContain(endpoint);
     }
 
+    // A channel endpoint is read the same way: one that is neither would be a connection retrying a
+    // dial that can never work for as long as the agent runs.
+    [Fact]
+    public void AddAgent_WhenAChannelEndpointIsNeitherAUrlNorAServersName_Refuses()
+    {
+        var settings = Settings(openRouterKey: "key") with
+        {
+            ChannelEndpoints = [new ChannelEndpoint { ChannelId = "homeassistant", Endpoint = "Home Assistant" }]
+        };
+
+        Should.Throw<InvalidOperationException>(() => new ServiceCollection().AddLogging().AddAgent(settings))
+            .Message.ShouldContain("Home Assistant");
+    }
+
+    [Fact]
+    public void AddAgent_TakesAChannelEndpointNamingAHouseholdServer_WithNoCredential()
+    {
+        var settings = Settings(openRouterKey: "key") with
+        {
+            ChannelEndpoints = [new ChannelEndpoint { ChannelId = "homeassistant", Endpoint = "homeassistant" }]
+        };
+
+        Should.NotThrow(() => new ServiceCollection().AddLogging().AddAgent(settings));
+    }
+
     [Fact]
     public void AddAgent_TakesAHouseholdServersName_WithNoCredential()
     {
@@ -116,6 +141,7 @@ public class InjectorModuleTests
 
         provider.GetRequiredService<TunnelRelay>().ShouldNotBeNull();
         provider.GetRequiredService<IOwnServers>().ShouldBeOfType<RelayedOwnServers>();
+        provider.GetRequiredService<IOwnChannelServers>().ShouldBeOfType<RelayedOwnServers>();
         services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(TunnelRevocations));
     }
 
