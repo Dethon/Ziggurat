@@ -99,6 +99,14 @@ public sealed class MigrationRig : IAsyncDisposable
         return new Account(resolved["tenantId"]!.GetValue<string>(), resolved["userId"]!.GetValue<string>());
     }
 
+    // The household the accounts service made as it first started, which the run imports into.
+    public async Task<string> HomeHouseholdAsync()
+    {
+        await using var db = await Accounts
+            .Service<IDbContextFactory<global::Accounts.Store.AccountsDbContext>>().CreateDbContextAsync();
+        return await db.Tenants.Where(t => t.IsHome).Select(t => t.Id).SingleAsync();
+    }
+
     // What the account's own session is told about them.
     public async Task<JsonObject> MeAsync(Account account)
     {
