@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.Tools;
 using Microsoft.Extensions.AI;
@@ -9,10 +10,14 @@ namespace Infrastructure.Agents.Mcp;
 
 // The store is constructor-injected and nullable: a host without one passes an image result
 // through exactly as before rather than failing, the same bargain IAttachmentSource makes.
+//
+// `offline` is cancelled when the server's tunnel closes (McpServerEndpoint.Offline); a server not on
+// a tunnel never goes offline this way and passes none.
 internal sealed class QualifiedMcpTool(
     string serverName,
     McpClientTool innerTool,
-    IReadImageStore? readImageStore = null) : AIFunction
+    IReadImageStore? readImageStore = null,
+    CancellationToken offline = default) : AIFunction
 {
     private const string McpPrefix = "mcp";
     private const string Separator = "__";
@@ -33,7 +38,7 @@ internal sealed class QualifiedMcpTool(
 
     public QualifiedMcpTool WithProgress(IProgress<ProgressNotificationValue> progress)
     {
-        return new QualifiedMcpTool(serverName, innerTool.WithProgress(progress), readImageStore);
+        return new QualifiedMcpTool(serverName, innerTool.WithProgress(progress), readImageStore, offline);
     }
 
     protected override async ValueTask<object?> InvokeCoreAsync(
@@ -43,7 +48,23 @@ internal sealed class QualifiedMcpTool(
         var context = ConversationContextMeta.TryRead(FunctionInvokingChatClient.CurrentContext?.Options);
         var meta = ConversationContextMeta.TryBuild(FunctionInvokingChatClient.CurrentContext?.Options);
         var tool = meta is null ? innerTool : innerTool.WithMeta(meta);
-        var result = await tool.InvokeAsync(arguments, cancellationToken);
+        if (offline.IsCancellationRequested)
+        {
+            return WentOffline();
+        }
+
+        // The call waits on the tunnel as well as on the turn: a tunnel that closes under a call ends
+        // it whether or not anything the transport reads notices first.
+        object? result;
+        using var call = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, offline);
+        try
+        {
+            result = await tool.InvokeAsync(arguments, call.Token);
+        }
+        catch (Exception) when (offline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            return WentOffline();
+        }
 
         // Lifted here rather than inside Flatten: this is where the conversation is already
         // resolved, and Flatten is a pure shape rule with no access to ids or storage. Bytes must
@@ -57,6 +78,17 @@ internal sealed class QualifiedMcpTool(
 
         return Flatten(lifted);
     }
+
+    // What the stream's IOException or the client's refusal would have said, in the words the model
+    // acts on: the server is not answering, nothing it did is known to have landed, and it is the
+    // user's machine to switch back on. Its tools stay listed for the rest of this turn and give the
+    // same answer; the next turn goes without them and names the server as offline.
+    private JsonObject WentOffline() =>
+        CapabilityError.For(
+            CapabilityState.Unavailable,
+            $"{serverName} went offline: its tunnel closed while the call was in flight, so whether it did anything is unknown",
+            $"Tell the user {serverName} is offline. Its tools come back on a later turn once it reconnects; "
+            + "calling them again this turn gets the same answer.").ToNode();
 
     // Multi-block tool results from MCP arrive here as AIContent[]. The downstream
     // OpenAI bridge (Microsoft.Extensions.AI.OpenAI) JSON-serializes any non-string

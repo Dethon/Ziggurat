@@ -42,6 +42,7 @@ public static class TunnelModule
                 .AddSingleton(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
                 .AddSingleton<IOwnServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
                 .AddSingleton<IOwnChannelServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
+                .AddSingleton<TunnelListing>()
                 .AddHostedService<TunnelRevocations>();
         }
     }

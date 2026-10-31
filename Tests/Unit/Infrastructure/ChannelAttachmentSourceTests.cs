@@ -80,6 +80,8 @@ public class ChannelAttachmentSourceTests
 
         public bool HostsReviewCopies => false;
 
+        public bool IsConnected => true;
+
         public IAsyncEnumerable<ChannelMessage> Messages => AsyncEnumerable.Empty<ChannelMessage>();
 
         public async Task<byte[]?> FetchAttachmentAsync(string attachmentId, CancellationToken ct)
