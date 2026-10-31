@@ -18,10 +18,15 @@ namespace Infrastructure.Tunnels;
 // server's credential opens only what that server may reach. What it may reach is the list below,
 // by household server and by path under it; anything else is refused before a byte is forwarded.
 //
-// The request goes on without the caller's credential, its name or the deployment's announce
-// secret, presenting the household's server the credential of its own tunnel instead (the mcp tag's
-// pool, RelayHandler), so nothing of the deployment's reaches a household. Which household:
-// the home household's, in this phase (TunnelRegistry.FindHome).
+// The request goes on without the caller's credential, its name, the household it named or the
+// deployment's announce secret, presenting the household's server the credential of its own tunnel
+// instead (the mcp tag's pool, RelayHandler), so nothing of the deployment's reaches a household.
+//
+// Which household: the one the request names (HouseholdHeader), and that household's server of the
+// name alone — another household's of the same name is never reached instead. A caller on the list
+// is a shared server, which serves every household and so may act for any of them; it names the
+// household each request is for from what it holds, the timers server from the verified call that
+// armed the timer. A request naming none is refused: there is no household it could be for.
 public sealed class RelayedCalls(
     TunnelForwarder forwarder,
     McpCredentials credentials,
@@ -39,7 +44,8 @@ public sealed class RelayedCalls(
 
     // What the caller sent for the relay alone, and the deployment's own secret for the voice API,
     // which a household's server is never told.
-    private static readonly string[] _withheld = [RelayedCallProtocol.CallerHeader, "X-Announce-Token"];
+    private static readonly string[] _withheld =
+        [RelayedCallProtocol.CallerHeader, RelayedCallProtocol.HouseholdHeader, "X-Announce-Token"];
 
     public async Task ForwardAsync(HttpContext context, string server)
     {
@@ -61,7 +67,15 @@ public sealed class RelayedCalls(
             return;
         }
 
-        await forwarder.ForwardHomeAsync(context, server, TunnelProtocol.McpTag, rest, _withheld, UnreachableAsync);
+        var household = context.Request.Headers[RelayedCallProtocol.HouseholdHeader].ToString();
+        if (household.Length == 0)
+        {
+            await RefuseAsync(context, StatusCodes.Status403Forbidden, caller, server,
+                $"{caller} named no household, and {server} is always one household's");
+            return;
+        }
+
+        await forwarder.ForwardAsync(context, household, server, TunnelProtocol.McpTag, rest, _withheld, UnreachableAsync);
     }
 
     private bool Presents(HttpRequest request, string caller) =>
