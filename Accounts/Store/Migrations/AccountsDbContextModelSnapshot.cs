@@ -87,6 +87,60 @@ namespace Accounts.Store.Migrations
                     b.ToTable("Credentials");
                 });
 
+            modelBuilder.Entity("Accounts.Store.HouseholdDataKey", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64);
+
+                    b.Property<DateTime>("CreatedAt");
+
+                    b.Property<string>("MasterKeyId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<DateTime?>("RewrappedAt");
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<byte[]>("WrappedKey")
+                        .IsRequired();
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId")
+                        .IsUnique();
+
+                    b.ToTable("HouseholdDataKeys");
+                });
+
+            modelBuilder.Entity("Accounts.Store.HouseholdSection", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64);
+
+                    b.Property<string>("Document")
+                        .IsRequired();
+
+                    b.Property<string>("Section")
+                        .IsRequired()
+                        .HasMaxLength(32);
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<DateTime>("UpdatedAt");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Section")
+                        .IsUnique();
+
+                    b.ToTable("HouseholdSections");
+                });
+
             modelBuilder.Entity("Accounts.Store.Link", b =>
                 {
                     b.Property<string>("Id")
@@ -305,6 +359,24 @@ namespace Accounts.Store.Migrations
                     b.HasOne("Accounts.Store.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Accounts.Store.HouseholdDataKey", b =>
+                {
+                    b.HasOne("Accounts.Store.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Accounts.Store.HouseholdSection", b =>
+                {
+                    b.HasOne("Accounts.Store.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
