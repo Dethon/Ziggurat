@@ -193,7 +193,12 @@ internal static class AgentPromptFixture
             .SelectMany(service => PromptManifest.Skills.Where(s => s.ServedBy == service))
             .Select(s => ServedSkills[s.Name]);
 
-    public static string ServiceOf(string endpoint) => new Uri(endpoint).Host;
+    // A household's server, named rather than addressed, is the server the deployment ran under the
+    // compose name the manifest declares it by (vault -> mcp-vault), which is what serves its prompts.
+    public static string ServiceOf(string endpoint) =>
+        global::Domain.DTOs.Tunnel.TunnelCredentialProtocol.IsServerName(endpoint)
+            ? $"mcp-{endpoint}"
+            : new Uri(endpoint).Host;
 
     public static string SkillSnapshotPath(string name) =>
         Path.Combine(McpServerRegistrations.RepoRoot, "Tests", "Snapshots", $"skill.{name}.md");

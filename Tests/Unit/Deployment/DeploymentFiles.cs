@@ -1,3 +1,4 @@
+using Domain.DTOs.Tunnel;
 using Tests.E2E.Fixtures;
 using YamlDotNet.RepresentationModel;
 
@@ -9,10 +10,33 @@ public static class DeploymentFiles
 {
     public static string Directory => Path.Combine(TestHelpers.FindSolutionRoot(), "DockerCompose");
 
-    public static ComposeFile Compose(string file = "docker-compose.yml")
+    // The tenant kit: the compose file a household runs its own servers from, beside the deployment
+    // or anywhere else, reaching it through their tunnels alone.
+    public static string KitDirectory => Path.Combine(TestHelpers.FindSolutionRoot(), "TenantKit");
+
+    public static ComposeFile Compose(string file = "docker-compose.yml") => ComposeIn(Directory, file);
+
+    public static ComposeFile KitCompose(string file = "docker-compose.yml") => ComposeIn(KitDirectory, file);
+
+    // The tracked secrets file: every placeholder the deployment reads, with whatever value ships.
+    public static IReadOnlyDictionary<string, string> Placeholders() => PlaceholdersIn(Directory);
+
+    // The kit's own: what a household fills in, none of it the deployment's.
+    public static IReadOnlyDictionary<string, string> KitPlaceholders() => PlaceholdersIn(KitDirectory);
+
+    // Every ${VAR} a compose file reads, defaulted or not: what it is handed from its .env.
+    public static IReadOnlyList<string> Variables(string directory, string file = "docker-compose.yml") =>
+    [
+        .. System.Text.RegularExpressions.Regex
+            .Matches(File.ReadAllText(Path.Combine(directory, file)), @"\$\{([A-Za-z_][A-Za-z0-9_]*)")
+            .Select(m => m.Groups[1].Value)
+            .Distinct()
+    ];
+
+    private static ComposeFile ComposeIn(string directory, string file)
     {
         var yaml = new YamlStream();
-        using var reader = new StreamReader(Path.Combine(Directory, file));
+        using var reader = new StreamReader(Path.Combine(directory, file));
         yaml.Load(reader);
 
         var root = (YamlMappingNode)yaml.Documents[0].RootNode;
@@ -21,12 +45,19 @@ public static class DeploymentFiles
                 c => ((YamlScalarNode)c.Key).Value!,
                 c => ComposeService.From(((YamlScalarNode)c.Key).Value!, (YamlMappingNode)c.Value))
             : [];
-        return new ComposeFile(services);
+        var networks = root.Children.TryGetValue(new YamlScalarNode("networks"), out var declared)
+            && declared is YamlMappingNode map
+                ? map.Children.ToDictionary(
+                    c => ((YamlScalarNode)c.Key).Value!,
+                    c => c.Value is YamlMappingNode settings
+                         && settings.Children.TryGetValue(new YamlScalarNode("external"), out var external)
+                         && external is YamlScalarNode { Value: "true" })
+                : [];
+        return new ComposeFile(services, networks);
     }
 
-    // The tracked secrets file: every placeholder the deployment reads, with whatever value ships.
-    public static IReadOnlyDictionary<string, string> Placeholders() =>
-        File.ReadAllLines(Path.Combine(Directory, ".env"))
+    private static IReadOnlyDictionary<string, string> PlaceholdersIn(string directory) =>
+        File.ReadAllLines(Path.Combine(directory, ".env"))
             .Select(l => l.Trim())
             .Where(l => l.Length > 0 && !l.StartsWith('#') && l.Contains('='))
             .Select(l => l.Split('=', 2))
@@ -49,6 +80,7 @@ public static class DeploymentFiles
         return
         [
             .. SourceFilesUnder(Directory),
+            .. SourceFilesUnder(KitDirectory),
             .. System.IO.Directory.EnumerateFiles(root, "Dockerfile*"),
             .. projects.SelectMany(project => SourceFilesUnder(project).Where(file =>
             {
@@ -60,17 +92,16 @@ public static class DeploymentFiles
         ];
     }
 
-    private static string Volumes => Path.Combine(Directory, "volumes");
-
     private static IEnumerable<string> SourceFilesUnder(string directory) =>
         System.IO.Directory.EnumerateFiles(directory)
             .Concat(System.IO.Directory.EnumerateDirectories(directory)
-                .Where(d => Path.GetFileName(d) is not ("bin" or "obj" or "node_modules") && d != Volumes)
+                .Where(d => Path.GetFileName(d) is not ("bin" or "obj" or "node_modules")
+                            && d != Path.Combine(Directory, "volumes") && d != Path.Combine(KitDirectory, "volumes"))
                 .SelectMany(SourceFilesUnder));
 }
 
-// The browse server's two listeners as it ships them: its appsettings.json, under whatever its
-// compose entry sets over it.
+// The browse server's two listeners as it ships them: its appsettings.json, under whatever the tenant
+// kit's entry for it sets over it.
 public static class BrowseServerListeners
 {
     public const string Service = "mcp-websearch";
@@ -81,7 +112,7 @@ public static class BrowseServerListeners
 
     private static int Port(string name)
     {
-        var environment = DeploymentFiles.Compose().Service(Service).Environment;
+        var environment = DeploymentFiles.KitCompose().Service(Service).Environment;
         if (environment.TryGetValue($"LISTENERS__{name.ToUpperInvariant()}", out var overridden))
         {
             return int.Parse(overridden);
@@ -97,10 +128,29 @@ public static class BrowseServerListeners
     }
 }
 
-// The servers the shipped agent dials: its agents', its workers' and its channels' endpoints.
+// The servers the shipped agent reaches: its agents', its workers' and its channels' endpoints — the
+// deployment's own it dials at a URL, a household's it names by the server's name.
 public static class ShippedAgentSettings
 {
-    public static IReadOnlyList<string> DialledHosts()
+    public static IReadOnlyList<string> DialledHosts() =>
+    [
+        .. Endpoints()
+            .Where(endpoint => !TunnelCredentialProtocol.IsServerName(endpoint))
+            .Select(address => new Uri(address).Host)
+            .Distinct()
+    ];
+
+    public static IReadOnlyList<string> ServerNames() =>
+        [.. Endpoints().Where(TunnelCredentialProtocol.IsServerName).Distinct()];
+
+    // A tool server's names: what the agents and workers name for their tools, not the channels.
+    public static IReadOnlyList<string> ToolServerNames() =>
+        [.. Endpoints(channels: false).Where(TunnelCredentialProtocol.IsServerName).Distinct()];
+
+    public static IReadOnlyList<string> ChannelServerNames() =>
+        [.. Endpoints(tools: false).Where(TunnelCredentialProtocol.IsServerName).Distinct()];
+
+    private static IReadOnlyList<string> Endpoints(bool tools = true, bool channels = true)
     {
         var path = Path.Combine(TestHelpers.FindSolutionRoot(), "Agent", "appsettings.json");
         using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path),
@@ -110,7 +160,7 @@ public static class ShippedAgentSettings
             });
         var root = document.RootElement;
 
-        IEnumerable<string> Endpoints(string section, string property) =>
+        IEnumerable<string> Listed(string section, string property) =>
             root.TryGetProperty(section, out var list)
                 ? list.EnumerateArray().SelectMany(item => item.TryGetProperty(property, out var value)
                     ? value.ValueKind == System.Text.Json.JsonValueKind.Array
@@ -119,18 +169,16 @@ public static class ShippedAgentSettings
                     : [])
                 : [];
 
-        return
-        [
-            .. Endpoints("agents", "mcpServerEndpoints")
-                .Concat(Endpoints("subAgents", "mcpServerEndpoints"))
-                .Concat(Endpoints("channelEndpoints", "endpoint"))
-                .Select(address => new Uri(address).Host)
-                .Distinct()
-        ];
+        IEnumerable<string> tool = tools ? [.. Listed("agents", "mcpServerEndpoints"), .. Listed("subAgents", "mcpServerEndpoints")] : [];
+        IEnumerable<string> channel = channels ? Listed("channelEndpoints", "endpoint") : [];
+        return [.. tool, .. channel];
     }
 }
 
-public sealed record ComposeFile(IReadOnlyDictionary<string, ComposeService> Services)
+// The services, and the networks the file declares with whether each is another project's
+// (`external: true`) rather than its own.
+public sealed record ComposeFile(
+    IReadOnlyDictionary<string, ComposeService> Services, IReadOnlyDictionary<string, bool> Networks)
 {
     public ComposeService Service(string name) =>
         Services.TryGetValue(name, out var service)
@@ -177,6 +225,17 @@ public sealed record ComposeService(
 {
     public bool TakesWholeSecretsFile => EnvFiles.Any(f => Path.GetFileName(f) == ".env");
 
+    // `network_mode` (the host's network), or null for a service on compose networks.
+    public string? NetworkMode { get; init; }
+
+    // What it is built from, as written: the context and the Dockerfile within it. A build given as a
+    // bare path is that context with its own Dockerfile.
+    public string? BuildContext { get; init; }
+
+    public string? Dockerfile { get; init; }
+
+    public string? Image { get; init; }
+
     public static ComposeService From(string name, YamlMappingNode node) => new(
         name,
         [.. Sequence(node, "ports").Select(PublishedPort.Parse)],
@@ -192,7 +251,20 @@ public sealed record ComposeService(
         Child(node, "healthcheck") is YamlMappingNode health ? Sequence(health, "test") : [],
         Child(node, "user") is YamlScalarNode user ? user.Value : null,
         Sequence(node, "profiles"),
-        NetworksOf(node));
+        NetworksOf(node))
+    {
+        NetworkMode = Child(node, "network_mode") is YamlScalarNode mode ? mode.Value : null,
+        BuildContext = Child(node, "build") switch
+        {
+            YamlScalarNode context => context.Value,
+            YamlMappingNode build => Child(build, "context") is YamlScalarNode context ? context.Value : null,
+            _ => null
+        },
+        Dockerfile = Child(node, "build") is YamlMappingNode built && Child(built, "dockerfile") is YamlScalarNode file
+            ? file.Value
+            : Child(node, "build") is not null ? "Dockerfile" : null,
+        Image = Child(node, "image") is YamlScalarNode image ? image.Value : null
+    };
 
     // A list of names or a map of them to their settings; none at all is compose's default network,
     // and a service on another network mode (the host's) is on no compose network.

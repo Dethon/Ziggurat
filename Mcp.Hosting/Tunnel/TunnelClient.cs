@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Domain.DTOs.Tunnel;
 using Domain.Security;
@@ -38,6 +40,12 @@ internal sealed class TunnelClient(
 
     private readonly TimeProvider _clock = services.GetKeyedService<TimeProvider>(ClockKey) ?? TimeProvider.System;
 
+    // Read once: a file that is not a certificate fails the server's start naming the setting, rather
+    // than every open failing one at a time.
+    private readonly X509Certificate2? _hubAuthority = settings.HubCertificateAuthority.Length > 0
+        ? X509Certificate2.CreateFromPem(File.ReadAllText(settings.HubCertificateAuthority))
+        : null;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Its listeners' ports are only known once the server is listening, and a stream opened before
@@ -69,6 +77,28 @@ internal sealed class TunnelClient(
         }
     }
 
+    // The system's roots vouched for it, or the authority this server was told of did. Only the chain
+    // is ever taken on the authority's word: a certificate for another name, or none, is refused.
+    private static bool IssuedForTheHub(X509Certificate? presented, SslPolicyErrors errors, X509Certificate2 authority)
+    {
+        if (errors == SslPolicyErrors.None)
+        {
+            return true;
+        }
+
+        if (errors != SslPolicyErrors.RemoteCertificateChainErrors || presented is null)
+        {
+            return false;
+        }
+
+        using var chain = new X509Chain();
+        chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+        chain.ChainPolicy.CustomTrustStore.Add(authority);
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+        using var certificate = new X509Certificate2(presented);
+        return chain.Build(certificate);
+    }
+
     private TimeSpan Doubled(TimeSpan wait) =>
         wait * 2 > settings.ReconnectAtMost ? settings.ReconnectAtMost : wait * 2;
 
@@ -79,6 +109,12 @@ internal sealed class TunnelClient(
         socket.Options.SetRequestHeader(TunnelProtocol.ServerHeader, settings.ServerName);
         socket.Options.KeepAliveInterval = settings.KeepAlive;
         socket.Options.KeepAliveTimeout = settings.KeepAliveTimeout;
+        if (_hubAuthority is not null)
+        {
+            socket.Options.RemoteCertificateValidationCallback = (_, certificate, _, errors) =>
+                IssuedForTheHub(certificate, errors, _hubAuthority);
+        }
+
         try
         {
             await socket.ConnectAsync(new Uri(settings.Hub), ct);
