@@ -24,7 +24,7 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   Assistant action on every containerised deployment. The secrets id comes off the entry assembly, so
   the five servers with no `UserSecretsId` simply have no such source. The **outpost** is the one
   server that adds a source of its own on top: it is configured by the flags its operator types, and
-  the host puts the command line *underneath* the environment, so `OutpostConfiguration` re-applies
+  the host puts the command line *underneath* the environment, so `OutpostFlags` re-applies
   it above `BindSettings`' sources — a `Jailed` variable that happens to be set must not overrule a
   `--jailed` somebody typed. `McpServerTableTests` names that exemption by file; nothing else may
   copy it. Nested sections bind through
@@ -33,7 +33,7 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   (Telegram, WebSearch, HomeAssistant, Idealista, Library).
 - **`IServiceCollection.AddMcpHost(settings)`** is the five things every server has: the settings
   singleton, the server, the HTTP transport, the gate on `/mcp` and the call-token gate on every tool
-  call (`CallTokenGate`; the outpost alone opts out, through `IMcpHostSettings.ChecksCallTokens`). All
+  call (`CallTokenGate`; every server checks, the outpost too, against the keys its tunnel delivers). All
   fourteen use it. The credential lets a caller talk to a server; only the agent's call token says
   who a tool call acts for (`.claude/rules/service-identity.md`, "Call tokens").
 - **Every `/mcp` asks for a secret, and the host installs the gate, not the server.** A tool
@@ -53,7 +53,9 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   is configured to dial without a credential stops the agent at startup. A registered agent's
   endpoints are whatever `POST /api/agents` said, so one the settings do not name is dialled bare —
   no credential may follow a registration to an address of its choosing. The **outpost**
-  answers the member with its own `SharedSecret` and never sees the deployment's. **The gate guards
+  answers the member with its tunnel (`OutpostSettings.Mcp` is computed from its flags and the
+  `CREDENTIAL` in its environment), so its `/mcp` asks for that credential and it never sees the
+  deployment's. **The gate guards
   the `/mcp` path and nothing else**: a server's other endpoints are called by browsers, Home
   Assistant and satellites, and the ones that need a gate carry their own token, so every server
   must map its endpoint at exactly `"/mcp"` (`McpServerTableTests` reads it off the source). An
@@ -67,8 +69,8 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   (`CallTokenGate`, through `ServerAddress.Named`); `Qualifier` is what its tools are qualified with
   (`mcp__<qualifier>__<tool>`); `CacheKey` is what its prompts and skills are cached under (the
   qualifier for a URL, the full name for a household's server); the address itself, equal
-  as a server (scheme, host, port, path, user info), is what `DeploymentEndpoints` and the outpost
-  verdicts compare. A URL endpoint's comes from `ServerAddress.FromUrl` — `Name` the host,
+  as a server (scheme, host, port, path, user info), is what `DeploymentEndpoints` and the outposts a session
+  dialled (`McpClientManager.DialledServers`) compare. A URL endpoint's comes from `ServerAddress.FromUrl` — `Name` the host,
   `Qualifier` the host or `host-port` off the default port, so a server on `:8080` is
   `mcp-vault` to its token and credential and `mcp-vault-8080` to its tools — and a server with no
   URL of its own gets another factory there, which every one of those keys then follows: a

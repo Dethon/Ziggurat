@@ -40,7 +40,16 @@ public static class TunnelModule
                     sp.GetRequiredService<ILogger<TunnelRelay>>(),
                     sp.GetService<IHostApplicationLifetime>()))
                 .AddSingleton<IOwnServers>(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
-                .AddHostedService<TunnelRevocations>();
+                .AddHostedService<TunnelRevocations>()
+                // The household's outposts are its open tunnels minted as machines, so they need the
+                // registry and nothing of their own: no route, no store, no secret.
+                .AddSingleton(sp => new TunnelledOutposts(
+                    sp.GetRequiredService<TunnelRegistry>(),
+                    sp.GetRequiredService<IMetricsPublisher>(),
+                    TimeProvider.System,
+                    sp.GetRequiredService<ILogger<TunnelledOutposts>>()))
+                .AddSingleton<IOutposts>(sp => sp.GetRequiredService<TunnelledOutposts>())
+                .AddSingleton<IHostedService>(sp => sp.GetRequiredService<TunnelledOutposts>());
         }
     }
 }

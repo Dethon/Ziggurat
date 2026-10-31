@@ -119,6 +119,21 @@ public class InjectorModuleTests
         services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(TunnelRevocations));
     }
 
+    // An outpost is one of the household's tunnels, so the deployment's outposts are the relay's.
+    [Fact]
+    public void ConfigureAgents_OffersOutpostsFromTheRelaysTunnels()
+    {
+        var settings = Settings(openRouterKey: "key") with { Signing = TestSigningKeys.Settings(TestSigningKeys.Agent) };
+        var services = new ServiceCollection().AddLogging();
+        services.ConfigureAgents(settings, new CommandLineParams(), new ConfigurationBuilder().Build());
+        services.RemoveAll<IMetricsPublisher>();
+        services.AddSingleton<IMetricsPublisher>(new RecordingMetricsPublisher());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<IOutposts>().ShouldBeOfType<TunnelledOutposts>()
+            .ShouldBeSameAs(provider.GetRequiredService<TunnelledOutposts>());
+    }
+
     // One set of credentials for the host: the one startup checked is the one every agent, worker
     // and channel connection is built with.
     [Fact]

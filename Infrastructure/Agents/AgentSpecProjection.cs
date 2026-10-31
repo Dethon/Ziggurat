@@ -46,8 +46,8 @@ internal static class AgentSpecProjection
             // Every endpoint a definition names is dialled as configured, but only the ones the
             // deployment's own settings name present a deployment credential, each its own server's.
             // A built-in agent's all do; a registered agent's are whatever the registration said,
-            // and no credential may follow it to an address of its choosing. Dynamic endpoints — live outposts — are merged in downstream, where the
-            // registry of them is reachable, each with its own secret.
+            // and no credential may follow it to an address of its choosing. Dynamic endpoints — the
+            // household's live outposts — are merged in downstream, each through its own tunnel.
             //
             // A household's own server is named rather than addressed, and presents no deployment
             // credential: its tunnel's client presents the tunnel's own (OwnServerEndpoints).
@@ -66,7 +66,6 @@ internal static class AgentSpecProjection
             PromptSections = ResolveSections(definition.Id, definition.PromptSections),
             Language = definition.Language,
             KeepsHistory = true,
-            RecordsOutpostVerdicts = true,
             PatchableModels = patchableModels,
             LemonadeHostAddress = lemonadeHostAddress
         };
@@ -142,7 +141,6 @@ internal static class AgentSpecProjection
             // that agent: its endpoint list is its own, so it can reach a different verdict for
             // the same machine, and writing it would report a collision inside somebody's
             // delegated task as the operator's name being taken.
-            RecordsOutpostVerdicts = false,
             // The parent's whitelist, because the parent's model on a turn the person moved
             // elsewhere is the model that turn asked for. The run tool writes that model onto the
             // worker's request and the worker resolves it here exactly as the parent did, so the

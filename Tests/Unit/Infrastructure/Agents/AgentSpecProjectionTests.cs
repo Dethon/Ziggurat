@@ -93,7 +93,6 @@ public sealed class AgentSpecProjectionTests
         Row("keeps history", s => s.KeepsHistory, true, false),
         // A mount verdict answers "did the agent you registered with mount you", so a delegated
         // task's collision set is nobody's business at the machine.
-        Row("records outpost verdicts", s => s.RecordsOutpostVerdicts, true, false),
         // A worker names no model: it runs the one its parent runs, whoever the parent is.
         Row("model", s => s.Model, "z-ai/glm-5.2", "z-ai/glm-5.2"),
         // The parent's list, so a turn the person moved to another model moves its workers with
@@ -117,7 +116,7 @@ public sealed class AgentSpecProjectionTests
         Row("provider routing", s => s.ProviderRouting, _declaredRouting, _declaredRouting),
         // An endpoint stops being a bare string here. Everything the projection reads came out of
         // appsettings.json, so everything it composes is marked configured; a dynamic one is
-        // contributed later, by the registry of live outposts, and never by a definition. Every
+        // contributed later, by the household's open outposts, and never by a definition. Every
         // configured endpoint is a deployment server, so every one presents the deployment secret
         // its /mcp asks for — a worker's as much as its parent's.
         Row("mcp server endpoints", s => s.McpServerEndpoints,

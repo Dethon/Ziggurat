@@ -7,15 +7,14 @@ namespace Mcp.Hosting;
 // saying which secret guards it — a new server that forgot fails to compile, not to be gated.
 //
 // A deployment server binds the section from configuration, which is the one property it adds.
-// The outpost answers with the secret it registers with: it is not part of the deployment and
-// never holds the deployment's.
+// The outpost computes it — its tunnel, from its flags and its credential — so no variable of the
+// deployment's can reach it.
 public interface IMcpHostSettings
 {
     McpGateSettings Mcp { get; }
 
     // Whether a tool call must carry the agent's call token for this server (CallTokenGate). Every
-    // deployment server says yes by saying nothing; the outpost alone answers no, explicitly — it is
-    // somebody's own machine, configured by flags, and receives the token without being required to
-    // check it. Not a setting: nothing a deployment binds can switch the check off.
+    // server says yes by saying nothing — the outpost too, since its tunnel delivers the agent's keys.
+    // Not a setting: nothing a deployment binds can switch the check off.
     bool ChecksCallTokens => true;
 }
