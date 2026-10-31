@@ -76,6 +76,22 @@ public class BotRegistryTests
         registry.All.Select(b => b.Key).ShouldBe(["shared", "household-home.jack"]);
     }
 
+    // A token Telegram's client cannot take is that bot's problem alone: every other household's bots
+    // still start, and the next save that fixes it starts it then.
+    [Fact]
+    public void Replace_LeavesOutABotWhoseTokenTheClientRefuses_AndStartsTheRest()
+    {
+        var registry = new BotRegistry("1000:shared", token => token == "not a token"
+            ? throw new ArgumentException("Invalid format of bot token", nameof(token))
+            : new Mock<ITelegramBotClient>().Object);
+
+        var changes = registry.Replace(
+            [new HouseholdTelegramBot(Casa, "chef", "not a token"), new HouseholdTelegramBot(Home, "jack", "1001:jack")]);
+
+        changes.Started.Select(b => b.Key).ShouldBe(["household-home.jack"]);
+        registry.Of(Casa, "chef").ShouldBeNull();
+    }
+
     // Who writes first to a person: their household's bot for the agent, its other bots, the shared bot
     // last — and never another household's bot.
     [Fact]

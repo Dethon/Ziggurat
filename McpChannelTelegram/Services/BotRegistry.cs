@@ -16,6 +16,7 @@ public sealed class BotRegistry
     private readonly ConcurrentDictionary<long, TelegramBot> _chats = new();
     private readonly Lock _replacing = new();
     private volatile IReadOnlyList<(TelegramBot Bot, string Token)> _households = [];
+    private IReadOnlyList<string> _unpolled = [];
 
     public BotRegistry(BotSettings settings, ILogger<BotRegistry> logger)
         : this(settings.SharedToken, token => new TelegramBotClient(token), logger)
@@ -38,7 +39,8 @@ public sealed class BotRegistry
     // The households' bots as configured now: one bound to an agent whose token is unchanged is the
     // very bot already polling, any other is new, and one no longer configured is gone. Telegram
     // answers one poller per token, so a token configured twice — or the shared bot's — is polled once,
-    // by the first.
+    // by the first; a token Telegram's client refuses is left out, so one household's mistake keeps no
+    // other's bots from starting. What is left out is logged when it changes, not on every read.
     public BotChanges Replace(IReadOnlyList<HouseholdTelegramBot> configured)
     {
         lock (_replacing)
@@ -48,19 +50,34 @@ public sealed class BotRegistry
                 .Where(bot => bot.Token.Length > 0 && bot.Token != _sharedToken)
                 .GroupBy(bot => bot.Token, StringComparer.Ordinal)
                 .ToList();
-            foreach (var unpolled in byToken.SelectMany(g => g.Skip(1)).Concat(configured.Where(bot => bot.Token == _sharedToken)))
+            var unpolled = byToken.SelectMany(g => g.Skip(1))
+                .Concat(configured.Where(bot => bot.Token == _sharedToken))
+                .Select(bot => $"household {bot.HouseholdId}'s bot for {bot.AgentId} has a token another bot already polls with")
+                .ToList();
+            var wanted = new List<(TelegramBot Bot, string Token)>();
+            foreach (var bot in byToken.Select(g => g.First()))
             {
-                _logger?.LogWarning(
-                    "Household {Household}'s bot for {AgentId} has a token another bot already polls with; it is not polled",
-                    unpolled.HouseholdId, unpolled.AgentId);
+                if (current.TryGetValue(TelegramBot.KeyOf(bot.HouseholdId, bot.AgentId), out var kept) && kept.Token == bot.Token)
+                {
+                    wanted.Add(kept);
+                    continue;
+                }
+
+                try
+                {
+                    wanted.Add((TelegramBot.Of(bot.HouseholdId, bot.AgentId, _connect(bot.Token)), bot.Token));
+                }
+                catch (ArgumentException)
+                {
+                    unpolled.Add($"household {bot.HouseholdId}'s bot for {bot.AgentId} has a token Telegram's client refuses");
+                }
             }
 
-            var wanted = byToken
-                .Select(g => g.First())
-                .Select(bot => current.TryGetValue(TelegramBot.KeyOf(bot.HouseholdId, bot.AgentId), out var kept) && kept.Token == bot.Token
-                    ? kept
-                    : (Bot: TelegramBot.Of(bot.HouseholdId, bot.AgentId, _connect(bot.Token)), bot.Token))
-                .ToList();
+            if (!unpolled.SequenceEqual(_unpolled))
+            {
+                unpolled.ForEach(why => _logger?.LogWarning("A Telegram bot is not polled: {Why}", why));
+                _unpolled = unpolled;
+            }
 
             var started = wanted.Where(w => !current.TryGetValue(w.Bot.Key, out var kept) || kept.Bot != w.Bot)
                 .Select(w => w.Bot).ToList();
