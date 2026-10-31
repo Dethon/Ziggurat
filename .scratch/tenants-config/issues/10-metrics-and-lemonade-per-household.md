@@ -8,3 +8,4 @@
 
 - [ ] Every metric event names its household and the dashboard's roll-ups can be read per household
 - [ ] A transcription, a spoken reply and an embedding each count against their household
+- [ ] A household-migration step re-keys today's roll-ups into the home household

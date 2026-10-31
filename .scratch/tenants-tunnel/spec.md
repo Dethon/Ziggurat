@@ -243,7 +243,8 @@ Five seams, one of them new:
    only the tunnel's path and the browse pages to the agent, and no agent setting names a
    household's address. Prior art: `DeploymentConformanceTests`.
 5. **The smoke tier (existing).** The home kit beside the smoke stack: a signed-in reply that uses a
-   tunnelled server, a browse page through the tunnel, a forged tunnel credential refused.
+   tunnelled server, a browse page through the tunnel, a forged tunnel credential refused. Prior
+   art: `StackSmokeTests`.
 
 The eval and integration stacks keep hosting servers in process and resolve tunnel endpoints to
 them directly.
@@ -259,8 +260,22 @@ them directly.
 
 ## Further Notes
 
-- Phase 4a of the multi-tenant plan (`.scratch/multi-tenant/plan.md`, "Tenants decisions"). It
-  branches from `web-identity` and merges back into it.
+- Phase 4a of the multi-tenant plan ("Tenants decisions"). It branches from `web-identity` and
+  merges back into it. The glossary's Households section names its terms: own server, shared
+  server, tunnel, relay, back-call, tenant kit.
+- ADRs it touches:
+  - *Static endpoints fail, dynamic ones are dropped* (0027): a household's own server named by an
+    agent is configured, yet an offline one no longer fails the session; it is left out of the turn
+    and named in its context. That is a deliberate change for tunnel endpoints only; URL endpoints
+    of shared servers keep failing as before.
+  - *A server's tool set is fixed for a connection generation* (0012): each opening of a tunnel is
+    a new generation; the reconciliation at a turn's start is where a new generation's tools enter.
+  - *A subagent inherits outposts only if it also asks* (0028): unchanged; an outpost on the tunnel
+    is still an outpost.
+  - *A watch is a home automation and the home carries its fires back* (0038): unchanged in spirit;
+    the home is now the household's site and its fires come back through the tunnel.
+- The glossary's outpost entries change with this phase: an outpost registration becomes its open
+  tunnel.
 - Deploying it is a move of the home: mint a credential per home server, start the kit, run the
   state move, remove the moved services from the deployment, and reload the proxy for the tunnel
   route. Outposts need a new credential each and a restart without `--advertise`.

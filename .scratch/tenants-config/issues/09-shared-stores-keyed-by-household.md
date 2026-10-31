@@ -8,3 +8,4 @@
 
 - [ ] Two households' topics, schedules, space subscriptions and outposts never appear in each other's lists
 - [ ] A search over topics returns only the caller's household's
+- [ ] A household-migration step re-keys each of these stores into the home household, re-runnable with a dry run

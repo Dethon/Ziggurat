@@ -10,3 +10,4 @@
 - [ ] A feature turned off removes its server and tools from the household's agents
 - [ ] A new household's agents are the two shipped templates
 - [ ] The settings file carries no agent definitions, and every eval, integration and E2E stack passes
+- [ ] A household-migration step seeds the home household's settings and its jack, jonas, nabu and sugary from today's definitions, re-runnable with a dry run

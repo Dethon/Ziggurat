@@ -605,6 +605,57 @@ It is chosen from what the page offers about the picture — a description, a ca
 link's words, a filename — none of which is the label itself, only where one may come from.
 _Avoid_: caption, alt text, image name
 
+## Households
+
+**Household**:
+The people who share one Ziggurat: their agents, spaces, keys and shared data. Every person
+belongs to exactly one, and nothing a household shares is visible to another. The code calls it
+a tenant, and the operator's own is the home household.
+_Avoid_: tenant (in prose), family, account, organisation
+
+**Household configuration**:
+What a household is, kept by the accounts service in versioned sections — its settings, agents,
+keys, features and spaces — with its secrets sealed under a key of its own. A server reads only
+its own section of the calling household's configuration.
+_Avoid_: tenant settings, household config file, profile
+
+**Shared server**:
+A server the deployment runs for every household, answering each call for the household its
+verified token names.
+_Avoid_: cloud server, common server, global server
+
+**Own server**:
+A server a household runs at its own site, which reaches the deployment only through its tunnel.
+The home household's web search, vault, library, sandbox, printer, Home Assistant and voice are
+own servers.
+_Avoid_: home-only server, private server, tenant server, remote server
+
+**Tunnel**:
+The one outbound connection an own server keeps open to the deployment, inside which every call
+to it, every notification from it, every page it serves and every back-call it makes travels. The
+deployment never dials a household's address.
+_Avoid_: reverse proxy, VPN, outpost connection, link
+
+**Relay**:
+The end of every tunnel inside the deployment: it admits a tunnel by its credential, routes the
+agent's calls and a person's pages into it, and lets through only the back-calls on its allowlist.
+_Avoid_: hub, gateway, broker
+
+**Back-call**:
+A request an own server makes to the deployment, carried back over its tunnel and allowed only to
+a short list of deployment services.
+_Avoid_: callback, upcall, reverse call
+
+**Tenant kit**:
+The compose file the repo ships for a household to run its own servers, holding no deployment
+secret. The home household runs it beside the deployment.
+_Avoid_: household compose, edge stack, site bundle
+
+**Agent template**:
+A shipped agent definition a household's agent starts from; a household changes its name and
+custom instructions.
+_Avoid_: default agent, base agent, preset
+
 ## Outposts
 
 **Outpost**:
