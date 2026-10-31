@@ -104,7 +104,7 @@ public sealed class MultiAgentFactory(
     private DisposableAgent Build(AgentSpec spec, IToolApprovalHandler approvalHandler)
     {
         IMetricsPublisher agentPublisher = metricsPublisher is not null
-            ? new AgentMetricsPublisher(metricsPublisher, spec.MetricsAgentId)
+            ? new AgentMetricsPublisher(metricsPublisher, spec.MetricsAgentId, spec.TenantId)
             : NoOpMetricsPublisher.Instance;
 
         var chatClient = CreateChatClient(

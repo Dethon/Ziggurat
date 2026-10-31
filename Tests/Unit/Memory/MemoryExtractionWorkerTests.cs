@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Judgments;
 using Domain.Memory;
 using Infrastructure.Memory;
@@ -181,6 +182,23 @@ public class MemoryExtractionWorkerTests
         evt.Outcome.ShouldBe(MemoryExtractionOutcomes.Failed);
         evt.CandidateCount.ShouldBe(2);
         evt.StoredCount.ShouldBe(1);
+    }
+
+    // Each candidate checked against what is already stored is embedded on the shared Lemonade, and
+    // counts against the household the turn was for, as the extraction itself does.
+    [Fact]
+    public async Task ProcessRequestAsync_EachCandidatesEmbeddingAndTheExtraction_CountAgainstTheTurnsHousehold()
+    {
+        ExtractorReturns(Fact("Trabaja en Globex"), Fact("Vive en Madrid"));
+        var published = Recording();
+        var worker = Worker(Verifying(_ => Verified(0.9)));
+
+        await worker.ProcessRequestAsync(
+            Current("trabajo en Globex y vivo en Madrid") with { TenantId = "home" }, CancellationToken.None);
+
+        published.OfType<LemonadeUsageEvent>().Where(e => e.Use == LemonadeUse.Embedding)
+            .Select(e => (e.Amount, e.TenantId)).ShouldBe([(1, "home"), (1, "home")]);
+        published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem().TenantId.ShouldBe("home");
     }
 
     private static readonly (string, double)[] _somethingLasting = [("fact", 0.9), ("preference", 0.05), ("instruction", 0.05)];

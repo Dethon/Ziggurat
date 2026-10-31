@@ -4,6 +4,7 @@ using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Domain.Memory;
+using Domain.Metrics;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -52,6 +53,9 @@ public class MemoryExtractionWorker(
 
         var sw = Stopwatch.StartNew();
 
+        // What extracting from a turn costs is the household's whose turn it was.
+        var metrics = metricsPublisher.ForHousehold(request.TenantId);
+
         // What the candidates did, filled in as they settle: a failure partway through still
         // reports what the ones before it stored, rather than the zeros that read as a turn which
         // wrote nothing. Written by one thread per candidate, so it is locked on write.
@@ -70,7 +74,7 @@ public class MemoryExtractionWorker(
                     .Select(c => VerifyThenStoreAsync(request, extraction.Window, c, outcomes, ct)));
 
             sw.Stop();
-            metricsPublisher.Publish(Event(request, sw, candidateCount, outcomes, extraction.Outcome));
+            metrics.Publish(Event(request, sw, candidateCount, outcomes, extraction.Outcome));
         }
         catch (Exception ex) when (!IsCancellation(ex, ct))
         {
@@ -78,13 +82,13 @@ public class MemoryExtractionWorker(
             // rather than the same zero as a turn with nothing in it. The counts are whatever the
             // candidates managed before the throw — Task.WhenAll lets its siblings finish.
             logger.LogError(ex, "Memory extraction failed for user {UserId}", request.UserId);
-            metricsPublisher.Publish(new ErrorEvent
+            metrics.Publish(new ErrorEvent
             {
                 Service = "memory",
                 ErrorType = ex.GetType().Name,
                 Message = $"Extraction failed: {ex.Message}"
             });
-            metricsPublisher.Publish(Event(request, sw, candidateCount, outcomes, MemoryExtractionOutcomes.Failed));
+            metrics.Publish(Event(request, sw, candidateCount, outcomes, MemoryExtractionOutcomes.Failed));
         }
     }
 
@@ -214,15 +218,18 @@ public class MemoryExtractionWorker(
             return CandidateOutcome.Dropped;
         }
 
-        return await StoreIfNovelAsync(request.UserId, candidate, request.ConversationId, ct)
+        return await StoreIfNovelAsync(
+                metricsPublisher.ForHousehold(request.TenantId), request.UserId, candidate, request.ConversationId, ct)
             ? CandidateOutcome.Stored
             : CandidateOutcome.Duplicate;
     }
 
     private async Task<bool> StoreIfNovelAsync(
-        string userId, ExtractionCandidate candidate, string? conversationId, CancellationToken ct)
+        IMetricsPublisher metrics, string userId, ExtractionCandidate candidate, string? conversationId,
+        CancellationToken ct)
     {
         var embedding = await embeddingService.GenerateEmbeddingAsync(candidate.Content, ct);
+        metrics.RecordEmbedded(1, conversationId);
 
         var similar = await store.SearchAsync(
             userId, queryEmbedding: embedding, categories: [candidate.Category], limit: 3, ct: ct);
