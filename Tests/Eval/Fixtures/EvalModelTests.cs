@@ -66,7 +66,7 @@ public class EvalModelTests
             .ShouldAllBe(only => only != null && only.SequenceEqual(new[] { "z-ai" }));
     }
 
-    private static AgentSettings Shipped() => new()
+    private static TestAgentSettings Shipped() => new()
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = "https://openrouter.ai/api/v1/", ApiKey = "" },
         Redis = new RedisConfiguration { ConnectionString = "localhost" },

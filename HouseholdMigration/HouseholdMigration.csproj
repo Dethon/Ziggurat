@@ -32,4 +32,11 @@
     <InternalsVisibleTo Include="Tests" />
   </ItemGroup>
 
+  <!-- The home household's agents and features as the deployment ran them (Steps/HomeConfiguration).
+       Embedded rather than copied: the run has no appsettings.json of its own, and a file copied to
+       its output would be one more beside the Sugary server's. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Home/*.json" LogicalName="HouseholdMigration.Home.%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

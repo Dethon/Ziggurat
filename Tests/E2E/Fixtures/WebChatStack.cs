@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Agent.App;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
@@ -36,6 +37,10 @@ internal sealed partial class WebChatStack
     // Where the stack's agent publishes its keys, which every server checks a tool call's token
     // against, as compose wires it.
     private const string AgentKeysUrl = $"http://agent:8080{AgentKeysApi.Path}";
+
+    // The agent's credential with the accounts service (CALLERS__agent), its own API's secret as
+    // compose hands it.
+    private const string AgentCredential = "e2e-agent-api-secret";
 
     private static readonly Lock _gate = new();
     private static Task? _images;
@@ -416,6 +421,9 @@ internal sealed partial class WebChatStack
             // household's default zone is this service's, the home's as compose's shared TZ makes it.
             .WithEnvironment("CALLERS__mcp-sugary", McpTestSecret.For("mcp-sugary"))
             .WithEnvironment("AGENTKEYSURL", AgentKeysUrl)
+            // The agent reads its households' configuration with the credential it holds for its own
+            // API, as compose wires it, beside a token it signs for the configuration.
+            .WithEnvironment("CALLERS__agent", AgentCredential)
             .WithEnvironment("TZ", "Europe/Madrid")
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
@@ -434,6 +442,9 @@ internal sealed partial class WebChatStack
             E2ETrace.TimeAsync("start:accounts", () => _accounts.StartAsync(ct)),
             whisperPortTask);
         var whisperPort = await whisperPortTask;
+        // Before the agent starts, so its first catalogue for the channels is these and not the
+        // templates a household that saved no agents runs.
+        await E2ETrace.TimeAsync("seed:agents", SaveAgentsAsync);
 
         _mcpChannelSignalR = TestContainers.Container(signalRImageName)
             .WithNetwork(_network)
@@ -470,7 +481,6 @@ internal sealed partial class WebChatStack
         // Raise with E2E_AGENT_LOG_LEVEL=Debug when a failing run needs the agent's own account
         // of a turn rather than the browser's.
         var agentLogLevel = Environment.GetEnvironmentVariable("E2E_AGENT_LOG_LEVEL") ?? "Information";
-        var sugaryAgent = TestAgents.Repository.Json("sugary");
         // Without this, the default appsettings.json baked into the image also registers
         // channels for telegram and extra MCP endpoints that don't exist here.
         var e2EAppSettings = Encoding.UTF8.GetBytes($$"""
@@ -483,35 +493,6 @@ internal sealed partial class WebChatStack
               "patchableModels": [
                 { "id": "~deepseek/deepseek-v4-flash-latest:nitro", "name": "DeepSeek V4 Flash" },
                 { "id": "google/gemini-3.1-flash-lite", "name": "Gemini 3.1 Flash Lite" }
-              ],
-              "agents": [
-                {
-                  "id": "test-agent",
-                  "name": "Test Agent",
-                  "model": "~deepseek/deepseek-v4-flash-latest:nitro",
-                  "mcpServerEndpoints": [ "http://mcp-vault:8080/mcp" ],
-                  "whitelistPatterns": ["__none__"],
-                  // The model sometimes answers a plain greeting with a tool call, which raises
-                  // an approval prompt no test asked for and leaks it onto every later page.
-                  // The approval tests demand a tool call explicitly, so they still get one.
-                  "customInstructions": "Use tools only when the message explicitly asks for an action that needs one; otherwise reply with plain text."
-                },
-                {
-                  // The attachment E2E needs a model that accepts image input: capability is
-                  // discovered from the provider and the composer refuses the send otherwise.
-                  // Its own agent, because the other tests are tuned against the default
-                  // agent's model; no tool endpoints, so the reply is always text and never
-                  // an approval prompt.
-                  "id": "vision-agent",
-                  "name": "Vision Agent",
-                  "model": "google/gemini-3.1-flash-lite",
-                  "mcpServerEndpoints": [],
-                  "whitelistPatterns": ["__none__"]
-                },
-                // Her carb-counting agent as the deployment defines it — model, effort, prompt
-                // server, features — read from the tests' copies of the agents (TestAgents) rather
-                // than restated, so the Sugary E2E estimates with the agent she uses.
-                {{sugaryAgent}}
               ],
               // The app's messages name no agent; the deployment routes the channel to sugary.
               "agentDefaults": { "byChannel": { "sugary": "sugary" } },
@@ -535,6 +516,8 @@ internal sealed partial class WebChatStack
             .WithEnvironment("MCP__SECRETS__mcp-vault", McpTestSecret.For("mcp-vault"))
             .WithEnvironment("MCP__SECRETS__mcp-sugary", McpTestSecret.For("mcp-sugary"))
             .WithEnvironment("MCP__SECRETS__mcp-channel-signalr", McpTestSecret.For("mcp-channel-signalr"))
+            // The home's agents are its configuration's, read from the accounts service with this.
+            .WithEnvironment("AGENTAPI__SHAREDSECRET", AgentCredential)
             // The suite's fixed key instead of one generated into a volume, so the tests' own
             // clients, which sign with the same key, are the agent as far as the servers can tell.
             .WithEnvironment("SIGNING__PRIVATEKEY", TestSigningKeys.Agent)
@@ -644,6 +627,61 @@ internal sealed partial class WebChatStack
         SugaryMcpEndpoint = $"{SugaryUrl}/mcp";
         WebChatUrl = $"{baseUrl}/";
     }
+
+    // The home household's agents, as the household migration seeds the deployment's: the agent's
+    // settings carry none, and a household that saved none runs the two templates.
+    private async Task SaveAgentsAsync()
+    {
+        await _accounts!.CopyAsync(
+            Encoding.UTF8.GetBytes(HouseholdSections.AgentsSchema.Write(Agents).ToJsonString()), "/tmp/agents.json");
+        await AccountsAsync(
+            "set-household-config", "--household", "home", "--section", HouseholdSections.Agents, "--file", "/tmp/agents.json");
+    }
+
+    private static readonly AgentsSection Agents = new()
+    {
+        DefaultAgent = "test-agent",
+        Agents =
+        [
+            new HouseholdAgent
+            {
+                Id = "test-agent",
+                Definition = new AgentDefinition
+                {
+                    Id = "test-agent",
+                    Name = "Test Agent",
+                    Model = "~deepseek/deepseek-v4-flash-latest:nitro",
+                    McpServerEndpoints = ["http://mcp-vault:8080/mcp"],
+                    WhitelistPatterns = ["__none__"],
+                    // The model sometimes answers a plain greeting with a tool call, which raises an
+                    // approval prompt no test asked for and leaks it onto every later page. The
+                    // approval tests demand a tool call explicitly, so they still get one.
+                    CustomInstructions =
+                        "Use tools only when the message explicitly asks for an action that needs one; otherwise reply with plain text."
+                }
+            },
+            // The attachment E2E needs a model that accepts image input: capability is discovered from
+            // the provider and the composer refuses the send otherwise. Its own agent, because the
+            // other tests are tuned against the default agent's model; no tool endpoints, so the reply
+            // is always text and never an approval prompt.
+            new HouseholdAgent
+            {
+                Id = "vision-agent",
+                Definition = new AgentDefinition
+                {
+                    Id = "vision-agent",
+                    Name = "Vision Agent",
+                    Model = "google/gemini-3.1-flash-lite",
+                    McpServerEndpoints = [],
+                    WhitelistPatterns = ["__none__"]
+                }
+            },
+            // Her carb-counting agent as the home defines it — model, effort, prompt server, features —
+            // read from the tests' copies of the agents (TestAgents) rather than restated, so the
+            // Sugary E2E estimates with the agent she uses.
+            new HouseholdAgent { Id = "sugary", Definition = TestAgents.Repository.Agents.Single(a => a.Id == "sugary") }
+        ]
+    };
 
     // The household's spaces as its owner would save them: the default space, one per collection,
     // and the kitchen. Saved before any page has asked the hub for them, so none is kept from before.

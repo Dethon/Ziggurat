@@ -12,6 +12,14 @@ paths:
   - "Mcp.Hosting/CallHousehold.cs"
   - "Domain/Contracts/ICallHousehold.cs"
   - "Tests/Integration/McpServers/CallHouseholdTests.cs"
+  - "Accounts/Internal/HouseholdConfigSeedApi.cs"
+  - "Domain/Agents/HouseholdAgents.cs"
+  - "Domain/Contracts/IHouseholdAgentSource.cs"
+  - "Domain/DTOs/SharedServers.cs"
+  - "Infrastructure/Agents/HouseholdAgentSource.cs"
+  - "Agent/App/HomeAgentCatalog.cs"
+  - "HouseholdMigration/Home/**"
+  - "HouseholdMigration/Steps/HomeConfiguration.cs"
 ---
 
 # Household configuration
@@ -141,6 +149,42 @@ detail says why: a `TokenRefusal`, another server's audience, another channel, n
 `UnknownHousehold`, 503 `SecretsUnavailable` (no master, or a data key under another), each a
 `HouseholdConfigRefused { reason, detail }` and never carrying a secret.
 
+The agent may name the home household as `@home` (`HouseholdConfigProtocol.HomeHousehold`; an id is 32
+hex characters, so no household is called that) and is answered the home's view under its real id:
+it asks so for what is the home's before any turn names an id — the catalogue it registers with its
+channels, a turn acting for nobody. Its reader keeps that answer under the name and drops it on any
+household's save, since a save names the home by an id the reader may not have been told.
+
+## The agents a household runs
+
+The agent builds a turn's agents from the turn's household's view (`HouseholdAgents.Of`, Domain, over
+`HouseholdAgentSource`, the agent's `IHouseholdAgentSource`):
+
+- **An entry is a template or a definition.** `{ id, template, name, customInstructions }` is the
+  shipped template (`AgentTemplates`, `Domain/Prompts/Agents/<name>.md`, `.claude/rules/prompts.md`) under
+  the entry's id, with the entry's name and custom instructions and nothing else of the owner's; it
+  reaches only those of its servers the deployment runs as shared servers. `{ id, definition }` is its
+  definition as seeded (the home's jack, jonas, nabu and sugary), dialled as written. An entry naming a
+  template this build does not ship is left out and logged, not fatal to the household's other agents.
+- **A section that names no agent is the two templates** (`HouseholdAgents.Starting`): `jonas`, the
+  barebones Jonas, and `sugary`, under their own ids and names, `jonas` answering by default — so a new
+  household has agents before anything is saved, and the deployment's channel defaults (`sugary` for
+  the Sugary app) name an agent it has.
+- **The settings fill the prompt.** The language is every agent's that pins none (an agent's own pin
+  wins: nabu stays Spanish); the zone is the day's (`AgentSpec.TimeZone` → the `date` section's `zoned`
+  part, named only when it is not the host's own, so the home's prompts are the snapshots'), and the
+  zone a session reads a write's bare time in. The household's name is not in the prompt: an agent's
+  name is the entry's.
+- **The features withhold.** `sharedServers` in the agent's settings (`SharedServers`) maps each
+  feature to the address the deployment runs its server at; a feature turned off drops that address
+  from every definition — the household's, a person's registered agent's — and from every worker its
+  agents spawn (`SpawnContext.WithheldServers`), and `memory` off drops the `memory` feature, `workers`
+  off the `subagents` one. Only the household's own agents' endpoints present deployment credentials.
+- **A turn acting for nobody runs the home's agents** (`@home`) and reaches no household's servers.
+- **The worker profiles stay the deployment's** (`subAgents` in the agent's settings): a worker runs its
+  parent's model for its parent's household, and the household's `workers` feature decides whether
+  its agents may spawn one at all.
+
 ## Saves are announced; readers keep briefly
 
 A save publishes `HouseholdConfigSaved { householdId, section }` on Redis's
@@ -207,16 +251,16 @@ stored one wherever the file says `{"sealed": true}` — so get, edit, set round
 keys. A sealed blob in a file is refused (it was sealed for elsewhere). Exit 2 for an unknown section
 or a document that is not one (each problem listed, never a value), 1 for a household that does not
 exist, secrets with no master, or readers not told. Saving `settings` also renames the tenant row.
+`--household home` names the home household, for a stack being set up that does not know its id yet
+(the smoke stack seeds the home's agents so, `scripts/smoke-stack.sh up`).
 
 ## For the tickets that build on it
 
-- **06** (agents per household): seed the home's settings, agents (jack, jonas, nabu, sugary as
-  definition entries, bots moved to keys) through the store's `SaveAsync` — a migration endpoint for
-  `CALLERS__household-migration` beside `household-import` is the natural way, re-runnable (skip a
-  section already saved) with a dry run. Register `AddHouseholdConfiguration` in the agent and in
-  `Tests/E2E/Fixtures/WebChatStack.cs`'s stack (its accounts container then needs `AGENTKEYSURL`
-  pointed at its agent). Decide what a household with an empty agents section runs (the two
-  templates).
+- **06** (done): "The agents a household runs" above; the agent reads with `CALLERS__agent`
+  (`AGENTAPI__SHAREDSECRET`) and its own token. The household migration's `HomeConfiguration` seeds
+  the home's settings (the deployment's zone, no language), its agents (`HouseholdMigration/Home/agents.json`,
+  today's definitions, a threshold an object) and its features (every one on, Idealista too) through
+  the seed route below; the bots are 13's.
 - **07**: `AgentHouseholdConfig.IsHome` picks the deployment key; `OpenRouterApiKey` null refuses the
   turn. Dreaming needs a list of households and their people, which is not here yet.
 - **08** (done): the accessor above (`CallHousehold`), its fire proof and the three `CALLERS__` entries.
@@ -228,13 +272,17 @@ exist, secrets with no master, or readers not told. Saving `settings` also renam
   (`HouseholdConfigSeedApi`, `{ householdId, section, document, dryRun }` → `{ saved, alreadySaved }`,
   400 with the problems), admitted for `CALLERS__household-migration` alone like the import. A section
   the household already saved is left as it is, so a rerun changes nothing and an owner's own edits
-  are never put over; a dry run checks the document and writes nothing. Any section: 06 seeds the
+  are never put over; a dry run checks the document and writes nothing. The document is laid over the
+  section as the household reads it now, top-level field by field, so what it leaves out stays the
+  household's (the settings' name its row carries, the features it does not name). Any section: 06 seeds the
   agents through it as 12 seeds the spaces (`HouseholdMigration/Steps/HouseholdSpaces`). It tells
   readers as any save does but ignores a failure to, since nothing has read a section before it exists.
-- **06**, from 08: the agent reads a bare `runAt` in its own zone when it describes a write for the
-  schedule's delegation (`ScheduleDelegation.OfWrite`, `ThreadSession`'s `localZone`), while the
-  scheduling server now reads it in the household's; a household whose zone is not the agent's must
-  have its turns' zone handed to the session too, or its offset-less one-shots fire for nobody.
+- **06**, from 08 (done): a session reads a write's bare `runAt` in the household's zone (`McpAgent.Zone`
+  into `ThreadSession`'s `localZone`), as the scheduling server does.
+- **07**: `HouseholdAgents.Configuration` carries the view a turn's agents were built from — `IsHome`,
+  `OpenRouterApiKey` — beside the spec; `MultiAgentFactory.CreateAsync` has it in hand where the chat
+  client is made. Memory extraction's request names its household (`TenantId`), which the worker
+  already reads its agent by.
 - **13**: `TelegramBotsAsync` at startup and again when it changes; `/agent` needs a household's
   agent list on `telegram`, a new view.
 

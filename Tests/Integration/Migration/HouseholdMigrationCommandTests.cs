@@ -21,6 +21,7 @@ using Observability.Services;
 using Shouldly;
 using StackExchange.Redis;
 using Tests.Integration.Fixtures;
+using Tests.Unit.Deployment;
 
 namespace Tests.Integration.Migration;
 
@@ -426,6 +427,52 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         (await store.ReadAsync(home, HouseholdSections.SpacesSchema, CancellationToken.None)).ShouldNotBeNull().Spaces.Select(s => s.Slug)
             .ShouldBe(["kitchen"]);
         output.ShouldContain("already saved");
+    }
+
+    // The home's agents were the agent's settings' four, the same for every turn: they are its own
+    // configuration now, seeded whole, its days read in the deployment's zone, and every feature its
+    // agents used on — Idealista too, which a new household starts without.
+    [Fact]
+    public async Task TheHomeHousehold_IsGivenTheDeploymentsZone_TodaysAgents_AndEveryFeature()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var home = (await rig.AccountOfAsync(fran.TelegramId)).TenantId;
+        var store = rig.Accounts.Service<HouseholdConfigStore>();
+        var settings = (await store.ReadAsync(home, HouseholdSections.SettingsSchema, CancellationToken.None)).ShouldNotBeNull();
+        settings.TimeZone.ShouldBe(TimeZoneInfo.Local.Id);
+        settings.Language.ShouldBeNull();
+        var agents = (await store.ReadAsync(home, HouseholdSections.AgentsSchema, CancellationToken.None)).ShouldNotBeNull();
+        agents.DefaultAgent.ShouldBe("jonas");
+        agents.Agents.Select(a => a.Id).ShouldBe(["jack", "jonas", "nabu", "sugary"]);
+        HouseholdSections.AgentsSchema.Write(agents).ToJsonString()
+            .ShouldBe(HouseholdSections.AgentsSchema.Write(HomeAgents.Section()).ToJsonString());
+        (await store.ReadAsync(home, HouseholdSections.FeaturesSchema, CancellationToken.None))
+            .ShouldBe(new FeaturesSection { Idealista = true });
+        output.ShouldContain("jack, jonas, nabu, sugary");
+    }
+
+    // Agents an owner or the operator saved before the migration ran are theirs.
+    [Fact]
+    public async Task AHomeHouseholdThatSavedItsAgents_KeepsThem()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var store = rig.Accounts.Service<HouseholdConfigStore>();
+        var home = await rig.HomeHouseholdAsync();
+        var own = new AgentsSection { Agents = [new HouseholdAgent { Id = "ana", Template = "jonas", Name = "Ana" }] };
+        (await store.SaveAsync(home, HouseholdSections.AgentsSchema, HouseholdSections.AgentsSchema.Write(own), CancellationToken.None))
+            .ShouldBeOfType<SectionSave.Saved>();
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        (await store.ReadAsync(home, HouseholdSections.AgentsSchema, CancellationToken.None)).ShouldNotBeNull().Agents
+            .Select(a => a.Id).ShouldBe(["ana"]);
     }
 
     [Fact]

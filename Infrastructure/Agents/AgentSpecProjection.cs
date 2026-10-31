@@ -25,7 +25,8 @@ internal static class AgentSpecProjection
         McpCredentials credentials,
         DeploymentEndpoints deployment,
         ILogger? logger,
-        string? tenantId = null) => new()
+        string? tenantId = null,
+        HouseholdAgents? household = null) => new()
         {
             NoTools = RefuseFeaturesWithoutTools(definition),
             WithheldTools = new HashSet<string>(),
@@ -57,6 +58,8 @@ internal static class AgentSpecProjection
                     address, server => deployment.Names(server) ? credentials.For(server) : null))
             ],
             TenantId = tenantId,
+            TimeZone = household?.TimeZone,
+            WithheldServers = household?.WithheldServers ?? [],
             UsesOutposts = definition.UsesOutposts,
             EnabledFeatures = definition.EnabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures),
@@ -109,9 +112,19 @@ internal static class AgentSpecProjection
             // A worker's endpoints are the deployment's servers as much as its parent's are.
             // A worker's definition is the deployment's own — nothing registers one — so every
             // endpoint it names is a deployment server.
-            McpServerEndpoints = [.. definition.McpServerEndpoints.Select(address => EndpointOf(address, credentials.For))],
-            // The parent's household, whose servers the worker reaches as its parent does.
+            // Less the shared servers its parent's household turned off: a profile is the deployment's,
+            // shared by every household's agents, and a feature off is off for their workers too.
+            McpServerEndpoints =
+            [
+                .. definition.McpServerEndpoints
+                    .Where(address => !SharedServers.Names(spawn.WithheldServers ?? [], address))
+                    .Select(address => EndpointOf(address, credentials.For))
+            ],
+            // The parent's household, whose servers the worker reaches as its parent does, and whose
+            // day its prompt names.
             TenantId = spawn.TenantId,
+            TimeZone = spawn.TimeZone,
+            WithheldServers = spawn.WithheldServers ?? [],
             // Two yeses, and neither alone is enough. The parent's is the ceiling — a subagent
             // acts on its behalf and cannot reach a machine it could not — and the definition's
             // is what keeps a narrow worker off the machines: the list of subagents is shared by

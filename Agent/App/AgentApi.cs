@@ -28,8 +28,10 @@ public static class AgentApi
             .RequireSharedSecret(sharedSecret)
             .RequireAssertedPerson();
 
-        agents.MapGet("/", (IAgentDefinitionProvider provider, HttpContext context) =>
-            provider.GetAll(OwnerOf(context)).Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description)));
+        // The person's household's agents, then their own.
+        agents.MapGet("/", async (IAgentDefinitionProvider provider, HttpContext context) =>
+            (await provider.GetAllAsync(OwnerOf(context).TenantId, OwnerOf(context), context.RequestAborted))
+            .Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description)));
 
         agents.MapPost("/", async (IAgentDefinitionProvider provider, HttpContext context, CustomAgentRegistration registration) =>
         {

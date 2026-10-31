@@ -51,7 +51,12 @@ public sealed class HouseholdConfigurationClient(
                         ?? throw new InvalidOperationException("only the agent reads a household's agent view, with a token of its own");
             var answer = await AskAsync<AgentHouseholdConfig>(
                 HouseholdConfigProtocol.AgentView, new HouseholdConfigQuery(householdId, token), ct);
-            return Expected(householdId, answer.HouseholdId, answer);
+            return householdId == HouseholdConfigProtocol.HomeHousehold
+                ? answer.IsHome
+                    ? answer
+                    : throw new HouseholdConfigRefusedException(new HouseholdConfigRefused(
+                        HouseholdConfigRefusal.Unproven, $"asked for the home, answered household {answer.HouseholdId}"))
+                : Expected(householdId, answer.HouseholdId, answer);
         }, ct);
 
     public Task<HouseholdSettings> SettingsAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
@@ -207,12 +212,17 @@ public sealed class HouseholdConfigurationClient(
         }
     }
 
+    // The home asked by name is kept under its name, and a save names the home by its id, which this
+    // host may not have been told: any household's save drops it, a re-ask on a save of another.
     private void Drop(string household)
     {
-        _announced.AddOrUpdate(household, 1, (_, count) => count + 1);
-        foreach (var key in _kept.Keys.Where(key => key.Household == household))
+        foreach (var dropped in (string[])[household, HouseholdConfigProtocol.HomeHousehold])
         {
-            _kept.TryRemove(key, out _);
+            _announced.AddOrUpdate(dropped, 1, (_, count) => count + 1);
+            foreach (var key in _kept.Keys.Where(key => key.Household == dropped))
+            {
+                _kept.TryRemove(key, out _);
+            }
         }
     }
 

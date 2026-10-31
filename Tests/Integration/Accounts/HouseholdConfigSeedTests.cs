@@ -71,12 +71,36 @@ public sealed class HouseholdConfigSeedTests
         (await db.HouseholdSections.SingleAsync()).Document.ShouldContain("kitchen");
     }
 
+    // The migration knows the deployment's zone but not what the household is called: a seeded
+    // document is laid over the section as the household reads it now, so what it leaves out stays
+    // the household's — the name its row carries, the features it did not name.
+    [Fact]
+    public async Task ASeededDocument_KeepsWhatItLeavesOut_AsTheHouseholdReadsIt()
+    {
+        await using var server = await StartAsync();
+        var home = await HomeAsync(server);
+
+        var settings = await SeedAsync(server, home, new JsonObject { ["timeZone"] = "America/New_York", ["language"] = null },
+            dryRun: false, section: "settings");
+        var features = await SeedAsync(server, home, new JsonObject { ["idealista"] = true }, dryRun: false, section: "features");
+
+        settings.StatusCode.ShouldBe(HttpStatusCode.OK, await settings.Content.ReadAsStringAsync());
+        features.StatusCode.ShouldBe(HttpStatusCode.OK, await features.Content.ReadAsStringAsync());
+        var store = server.Service<global::Accounts.Configuration.HouseholdConfigStore>();
+        var saved = (await store.ReadAsync(home, HouseholdSections.SettingsSchema, CancellationToken.None))!;
+        saved.Name.ShouldBe(AccountsDatabase.HomeTenantName);
+        saved.TimeZone.ShouldBe("America/New_York");
+        var offered = (await store.ReadAsync(home, HouseholdSections.FeaturesSchema, CancellationToken.None))!;
+        offered.ShouldBe(new FeaturesSection { Idealista = true });
+    }
+
     private static async Task<HttpResponseMessage> SeedAsync(
-        AccountsServer server, string household, JsonObject document, bool dryRun, string credential = Credential)
+        AccountsServer server, string household, JsonObject document, bool dryRun, string credential = Credential,
+        string section = "spaces")
     {
         var request = new HttpRequestMessage(HttpMethod.Post, Seed)
         {
-            Content = JsonContent.Create(new { householdId = household, section = "spaces", document, dryRun })
+            Content = JsonContent.Create(new { householdId = household, section, document, dryRun })
         };
         request.Headers.Add("Authorization", $"Bearer {credential}");
         return await server.Client().SendAsync(request);

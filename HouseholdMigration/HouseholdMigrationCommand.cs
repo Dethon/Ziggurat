@@ -108,12 +108,15 @@ public static class HouseholdMigrationCommand
         return left > 0 ? 1 : 0;
     }
 
-    // In the order a person would want them done if the run stopped part way: what they told the agent,
-    // then their logins, their phones and the spaces they are in, their schedules, their topics, their
+    // In the order a person would want them done if the run stopped part way: the household's own
+    // configuration first, since every turn after the deploy runs its agents; then what they told the
+    // agent, their logins, their phones and the spaces they are in, their schedules, their topics, their
     // voice and their log; the dashboard's figures last, which are only ever the operator's.
     private static IReadOnlyList<IMigrationStep> Steps(
         MigrationSettings settings, IConnectionMultiplexer redis, SealingKey? stateKey, HttpClient accounts) =>
     [
+        // Compose hands the run the deployment's shared TZ, the zone the home's schedules always ran in.
+        new HomeConfiguration(new HouseholdConfigSeed(accounts, settings.Accounts.Credential), TimeZoneInfo.Local.Id),
         // The embedding service is never called; its options carry the index's width.
         new MemoryBuckets(new RedisStackMemoryStore(redis, new EmbeddingOptions
         {
@@ -122,7 +125,7 @@ public static class HouseholdMigrationCommand
         new RememberedLogins(redis, new RedisPersonStateStore(redis, stateKey)),
         new PushSubscriptions(redis, new RedisPushSubscriptionStore(redis)),
         new PushSpaces(redis),
-        new HouseholdSpaces(accounts, settings.Accounts.Credential),
+        new HouseholdSpaces(new HouseholdConfigSeed(accounts, settings.Accounts.Credential)),
         new ScheduleCreators(redis),
         new ScheduleHouseholds(redis),
         new TopicOwners(redis, Threads(redis)),

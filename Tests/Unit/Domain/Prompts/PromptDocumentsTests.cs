@@ -105,4 +105,55 @@ public class PromptDocumentsTests
         Should.Throw<InvalidOperationException>(() => PromptDocuments.Section("no_such_section"))
             .Message.ShouldContain("no_such_section");
     }
+
+    // What a new household's agents start from: a barebones Jonas its owner names, and Sugary.
+    [Fact]
+    public void AgentTemplates_AreABarebonesJonasAndSugary_EachADefinition()
+    {
+        PromptDocuments.AgentTemplates.Select(d => d.Name).ShouldBe(["jonas", "sugary"], ignoreOrder: true);
+
+        var jonas = AgentTemplates.Named("jonas").ShouldNotBeNull();
+        jonas.Id.ShouldBe("jonas");
+        jonas.Name.ShouldBe("Jonas");
+        jonas.Description.ShouldNotBeNullOrWhiteSpace();
+        jonas.EnabledFeatures.ShouldBe(["filesystem", "subagents", "memory"]);
+        jonas.ProviderRouting.ShouldNotBeNull().Ignore.ShouldBe(["relace", "morph"]);
+        jonas.UsesOutposts.ShouldBeTrue();
+
+        var sugary = AgentTemplates.Named("sugary").ShouldNotBeNull();
+        sugary.NoTools.ShouldBeTrue();
+        sugary.McpServerEndpoints.ShouldBe(["http://mcp-sugary:8080/mcp"]);
+        AgentTemplates.Named("jack").ShouldBeNull();
+    }
+
+    // Barebones: a template dials the deployment's shared servers alone. A household's own servers
+    // are its site's, and an agent reaches one only once its own configuration names it.
+    [Fact]
+    public void AgentTemplates_DialTheSharedServersAlone()
+    {
+        AgentTemplates.All.SelectMany(t => t.McpServerEndpoints)
+            .ShouldAllBe(endpoint => endpoint.StartsWith("http://", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AgentTemplates_EveryDocumentInTheSourceTree_IsShipped_UnderItsOwnName()
+    {
+        var files = Directory.EnumerateFiles(
+                Path.Combine(McpServerRegistrations.RepoRoot, "Domain", "Prompts", "Agents"), "*.md")
+            .Select(Path.GetFileNameWithoutExtension)
+            .ToList();
+
+        files.ShouldNotBeEmpty();
+        PromptDocuments.AgentTemplates.Select(d => d.Name).ShouldBe(files, ignoreOrder: true);
+    }
+
+    // A template's header is what the definition carries; a key it does not know is a typo that would
+    // otherwise be read as nothing.
+    [Fact]
+    public void AgentTemplate_AnUnknownKey_IsRefused()
+    {
+        var document = PromptDocument.Parse("x.md", "---\nname: x\nagent-name: X\nmodel: m\nmodle: m\n---\n\nWords.");
+
+        Should.Throw<FormatException>(() => AgentTemplates.Read(document)).Message.ShouldContain("modle");
+    }
 }

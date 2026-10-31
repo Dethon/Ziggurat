@@ -62,12 +62,9 @@ public class InjectorModuleTests
     {
         var settings = Settings(openRouterKey: "key") with
         {
-            Agents = [new AgentDefinition
-            {
-                Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["http://mcp-vault:8080/mcp"]
-            }],
+            SharedServers = new SharedServers { Scheduling = "http://mcp-scheduling:8080/mcp" },
             ChannelEndpoints = [new ChannelEndpoint { ChannelId = "signalr", Endpoint = "http://mcp-channel-signalr:8080/mcp" }],
-            Mcp = new McpGateSettings { Secrets = new() { ["mcp-vault"] = "vault-secret" } }
+            Mcp = new McpGateSettings { Secrets = new() { ["mcp-scheduling"] = "scheduling-secret" } }
         };
 
         Should.Throw<InvalidOperationException>(() => new ServiceCollection().AddLogging().AddAgent(settings))
@@ -122,7 +119,7 @@ public class InjectorModuleTests
     {
         var settings = Settings(openRouterKey: "key") with
         {
-            Agents = [new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["vault"] }]
+            SubAgents = [new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = ["vault"] }]
         };
 
         Should.NotThrow(() => new ServiceCollection().AddLogging().AddAgent(settings));
@@ -226,7 +223,6 @@ public class InjectorModuleTests
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = OpenRouterUrl, ApiKey = openRouterKey },
         Redis = new RedisConfiguration { ConnectionString = "localhost:1" },
-        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
-        Agents = []
+        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" }
     };
 }

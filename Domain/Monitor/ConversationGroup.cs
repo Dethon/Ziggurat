@@ -540,8 +540,8 @@ internal sealed class ConversationGroup(
         // The household the verified identity names — the guest's too, who has no account — is the
         // one whose own servers the agent reaches.
         var tenantId = x.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null;
-        var agent = _agent = agentFactory.Create(
-            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account, tenantId);
+        var agent = _agent = await agentFactory.CreateAsync(
+            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account, tenantId, _groupCt);
         var thread = await GetOrRestoreThread(agent, deliveryKey);
 
         // Start session warmup (MCP connections + tool discovery) without awaiting it yet, so

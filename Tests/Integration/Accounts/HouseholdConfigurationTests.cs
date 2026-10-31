@@ -380,6 +380,21 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         (await AgentViewAsync(server, fran.TenantId)).IsHome.ShouldBeTrue();
     }
 
+    // The agent's catalogue for its channels, and a turn that acts for nobody, are the home's: it asks
+    // for the home by name, before any turn could tell it the home's id, and is answered the home's
+    // view under its real id.
+    [Fact]
+    public async Task TheAgent_AskingForTheHome_IsAnsweredTheHomesView()
+    {
+        await using var server = await StartAsync();
+        var home = (await server.MintOperatorAsync("Fran")).TenantId;
+
+        var config = await AgentViewAsync(server, HouseholdConfigProtocol.HomeHousehold);
+
+        config.HouseholdId.ShouldBe(home);
+        config.IsHome.ShouldBeTrue();
+    }
+
     // The Telegram server polls every bot from its start, so it is answered every household's at once.
     [Fact]
     public async Task TheTelegramServer_IsAnsweredEveryHouseholdsBots()
@@ -528,6 +543,24 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
 
         exit.ShouldBe(1, output);
         output.ShouldContain("no household");
+    }
+
+    // A stack being set up — the smoke stack, a test stack — knows its home only as the home, and the
+    // operator need not look its id up to configure their own household.
+    [Fact]
+    public async Task SetAndGet_TheHouseholdCalledHome_IsTheHomeHousehold()
+    {
+        await using var server = await StartAsync();
+        var home = (await server.MintOperatorAsync("Fran")).TenantId;
+
+        var (exit, output) = await SetAsync(server, "home", HouseholdSections.Features, """{ "idealista": true }""");
+        var (_, printed) = await server.RunAsync(server.Settings, "",
+            AccountsCommand.GetHouseholdConfig, "--household", "home", "--section", HouseholdSections.Features);
+
+        exit.ShouldBe(0, output);
+        output.ShouldContain(home);
+        (await AgentViewAsync(server, home)).Features.Idealista.ShouldBeTrue();
+        printed.ShouldContain("\"idealista\": true");
     }
 
     // Rotation rewraps each household's data key and touches no sealed field: the stored sections are
