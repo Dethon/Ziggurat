@@ -142,7 +142,7 @@ public class InjectorModuleTests
         provider.GetRequiredService<TunnelRelay>().ShouldNotBeNull();
         provider.GetRequiredService<IOwnServers>().ShouldBeOfType<RelayedOwnServers>();
         provider.GetRequiredService<IOwnChannelServers>().ShouldBeOfType<RelayedOwnServers>();
-        services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(TunnelRevocations));
+        services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(TunnelRevocationListener));
     }
 
     // An outpost is one of the household's tunnels, so the deployment's outposts are the relay's.
@@ -172,7 +172,7 @@ public class InjectorModuleTests
 
         using var provider = new ServiceCollection().AddLogging().AddAgent(settings).BuildServiceProvider();
 
-        provider.GetRequiredService<McpCredentials>().For("http://mcp-vault:8080/mcp").ShouldBe("vault-secret");
+        provider.GetRequiredService<McpCredentials>().For(ServerAddress.FromUrl("http://mcp-vault:8080/mcp")!).ShouldBe("vault-secret");
     }
 
     private static JudgmentRequest ALocalTurn() =>
@@ -208,6 +208,7 @@ public class InjectorModuleTests
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = OpenRouterUrl, ApiKey = openRouterKey },
         Redis = new RedisConfiguration { ConnectionString = "localhost:1" },
+        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
         Agents = []
     };
 }

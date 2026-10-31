@@ -283,6 +283,7 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
     {
         OpenRouter = new global::Agent.Settings.OpenRouterConfiguration { ApiUrl = "http://test", ApiKey = "test" },
         Redis = new global::Agent.Settings.RedisConfiguration { ConnectionString = "localhost" },
+        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
         Agents = [],
         AgentApi = new global::Agent.Settings.AgentApiConfiguration { SharedSecret = AgentCredential }
     };

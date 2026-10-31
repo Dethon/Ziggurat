@@ -27,7 +27,7 @@ public abstract record TunnelVerdict
 // live credential at a time, so a credential is replaced without a gap: mint the new one, start the
 // server with it, revoke the old.
 public sealed class TunnelCredentialStore(
-    IDbContextFactory<AccountsDbContext> contexts, AccountsClock clock, TunnelRevocations revocations)
+    IDbContextFactory<AccountsDbContext> contexts, AccountsClock clock, TunnelRevocationPublisher revocations)
 {
     public async Task<MintedTunnelCredential?> MintAsync(string tenantId, string serverName, CancellationToken ct)
     {

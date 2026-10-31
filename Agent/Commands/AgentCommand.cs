@@ -201,13 +201,17 @@ public static class AgentCommand
         return
         [
             .. settings.ChannelEndpoints.Select(endpoint => new Redelegation.Server(endpoint.ChannelId, ct =>
-                McpClient.CreateAsync(new SigningClientTransport(new HttpClientTransport(new HttpClientTransportOptions
+            {
+                var server = ServerAddress.FromUrl(endpoint.Endpoint)
+                             ?? throw new UriFormatException($"The channel endpoint '{endpoint.Endpoint}' is not an absolute URL");
+                return McpClient.CreateAsync(new SigningClientTransport(new HttpClientTransport(new HttpClientTransportOptions
                 {
                     Endpoint = new Uri(endpoint.Endpoint),
-                    AdditionalHeaders = credentials.For(endpoint.Endpoint) is { } secret
+                    AdditionalHeaders = credentials.For(server) is { } secret
                         ? new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(secret) }
                         : null
-                }), tokens, TokenAudiences.CallTo(endpoint.Endpoint)), cancellationToken: ct)))
+                }), tokens, TokenAudiences.CallTo(server)), cancellationToken: ct);
+            }))
         ];
     }
 
