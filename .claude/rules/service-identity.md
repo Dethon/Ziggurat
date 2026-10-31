@@ -236,7 +236,10 @@ credential by, which the server binds as `MCP__AUDIENCE` (`CallTokenGate` takes 
   = `/keys`, the `./volumes/agent-keys` volume `agent-volume` chowns, the agent running as PUID) and
   serves the JWKS at `/internal/jwks` (`AgentKeysApi`), which no Caddy route reaches. Each server binds
   `MCP__AUDIENCE` and `MCP__AGENTKEYSURL` (`http://agent:8080/internal/jwks`) in compose; either left
-  empty refuses every tool call. The verifiers' timing is `Domain/token-verification.json`
+  empty refuses every tool call. A household's server on a tunnel binds neither: its audience and the
+  agent's keys arrive over its tunnel (`TunnelTrust`), the keys again before the first call signed with
+  a rotated one, so a rotation reaches every household without a public route
+  (`.claude/rules/tunnel.md`, "Keys"). The verifiers' timing is `Domain/token-verification.json`
   (`mcp:tokenVerification`), read by `BindSettings`, the agent's configuration, the dashboard's
   (`OperatorGate.GetTokenVerification`) and the accounts service's (`AccountsSettings.Read`, for the
   skew its retirement waits out), and handed to every verifier they build — `AddAssertionVerifier`,

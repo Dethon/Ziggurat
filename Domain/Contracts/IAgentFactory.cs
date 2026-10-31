@@ -10,8 +10,12 @@ public interface IAgentFactory
     // the turn acts for where its channel knew one, which a person's custom agents are filed under.
     // The two differ on a chat-client turn, whose sender is the account's display name. Memory reads
     // neither from here: it takes each turn's own account, since a later turn may be someone else's.
+    //
+    // tenantId is the household the turn is for — a person's, or the guest's — whose own servers the
+    // agent reaches. Null for a turn that acts for nobody.
     DisposableAgent Create(
-        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null);
+        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
+        string? tenantId = null);
     DisposableAgent CreateSubAgent(
         SubAgentDefinition definition, IToolApprovalHandler approvalHandler, SpawnContext spawn);
 }

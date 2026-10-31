@@ -133,16 +133,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         var clients = await Task.WhenAll(endpoints.Select(async endpoint =>
         {
             Task<McpClient> dial() => McpClient.CreateAsync(
-                Signed(new HttpClientTransport(new HttpClientTransportOptions
-                {
-                    Endpoint = new Uri(endpoint.Address),
-                    // Presented on every request to a server that asked for one. Both directions
-                    // present the same shared secret: the machine when it registers, and this when
-                    // it dials the machine back.
-                    AdditionalHeaders = endpoint.Secret is { } secret
-                        ? new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(secret) }
-                        : null
-                }), ServerOf(endpoint), callTokens),
+                Signed(TransportOf(endpoint), ServerOf(endpoint), callTokens),
                 new McpClientOptions
                 {
                     ClientInfo = new Implementation { Name = name, Description = description, Version = "1.0.0" },
@@ -209,11 +200,32 @@ internal sealed class McpClientManager : IAsyncDisposable
             .ToArray<AITool>();
     }
 
+    // A household's server reached through its tunnel is sent over the tunnel's own client, which
+    // presents the tunnel's credential; everything else is dialled at its URL.
+    private static HttpClientTransport TransportOf(McpServerEndpoint endpoint)
+    {
+        var options = new HttpClientTransportOptions
+        {
+            Endpoint = new Uri(endpoint.Address),
+            // Presented on every request to a server that asked for one. Both directions
+            // present the same shared secret: the machine when it registers, and this when
+            // it dials the machine back.
+            AdditionalHeaders = endpoint.Secret is { } secret
+                ? new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(secret) }
+                : null
+        };
+        return endpoint.Through is { } through
+            ? new HttpClientTransport(options, through, ownsHttpClient: false)
+            : new HttpClientTransport(options);
+    }
+
     // Read only once the endpoint's URL has been taken apart for its dial, which is what refuses one
-    // that is not a URL.
+    // that is not a URL — or a household's server nobody resolved.
     private static ServerAddress ServerOf(McpServerEndpoint endpoint) =>
-        ServerAddress.FromUrl(endpoint.Address)
-        ?? throw new UriFormatException($"The MCP endpoint '{endpoint.Address}' is not an absolute URL");
+        endpoint.Server
+        ?? throw new UriFormatException(endpoint.NamesOwnServer
+            ? $"The household server '{endpoint.Address}' was never resolved to its tunnel"
+            : $"The MCP endpoint '{endpoint.Address}' is not an absolute URL");
 
     private static async Task<PromptSection[]> LoadPrompts(
         IEnumerable<(McpClient Client, ServerAddress Server, string Address)> clients,
@@ -231,7 +243,7 @@ internal sealed class McpClientManager : IAsyncDisposable
             .Where(c => c.Client.ServerCapabilities.Prompts is not null)
             .Select(c => promptCache is null
                 ? FetchPromptsAsync(c.Client, ct)
-                : promptCache.GetOrFetchAsync(c.Server.Qualifier, ctk => FetchPromptsAsync(c.Client, ctk), ct)));
+                : promptCache.GetOrFetchAsync(c.Server.CacheKey, ctk => FetchPromptsAsync(c.Client, ctk), ct)));
 
         return perClient
             .SelectMany(p => p)
@@ -268,7 +280,7 @@ internal sealed class McpClientManager : IAsyncDisposable
             return promptCache is null
                 ? await McpSkillReader.ReadAsync(client, logger, ct)
                 : await promptCache.GetOrFetchAsync(
-                    server.Qualifier + ":skills", ctk => McpSkillReader.ReadAsync(client, logger, ctk), ct);
+                    server.CacheKey + ":skills", ctk => McpSkillReader.ReadAsync(client, logger, ctk), ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

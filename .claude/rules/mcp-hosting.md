@@ -44,7 +44,9 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   `Domain/Security/SharedSecret.cs` (the one comparison every shared-secret gate uses). A deployment
   server's settings carry `McpGateSettings Mcp`, bound from `MCP__SHAREDSECRET` — that server's own
   credential, fed from its own compose variable (`MCP_SECRET_<SERVER>`), so holding one (the
-  sandbox's included) opens no other. The agent binds every server's under `Mcp:Secrets` keyed by the
+  sandbox's included) opens no other. A server given a tunnel (`Mcp:Tunnel`, `.claude/rules/tunnel.md`)
+  asks for its tunnel credential instead, which the relay presents — no deployment holds a household
+  server's secret. The agent binds every server's under `Mcp:Secrets` keyed by the
   name it answers to (`MCP__SECRETS__<host>`, the same variable on both ends) and `McpCredentials` hands
   each endpoint the deployment's own settings name its server's (`AgentSpecProjection`, agents and
   workers alike; `DeploymentEndpoints` is the list) and each channel connection likewise; a host it
@@ -63,12 +65,16 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   `Name` is the name it answers to — the call token's audience (`TokenAudiences.CallTo`), the key
   `McpCredentials` finds its credential by, what the server binds as `MCP__AUDIENCE`
   (`CallTokenGate`, through `ServerAddress.Named`); `Qualifier` is what its tools are qualified with
-  (`mcp__<qualifier>__<tool>`) and its prompts and skills are cached under; the address itself, equal
+  (`mcp__<qualifier>__<tool>`); `CacheKey` is what its prompts and skills are cached under (the
+  qualifier for a URL, the full name for a household's server); the address itself, equal
   as a server (scheme, host, port, path, user info), is what `DeploymentEndpoints` and the outpost
   verdicts compare. A URL endpoint's comes from `ServerAddress.FromUrl` — `Name` the host,
   `Qualifier` the host or `host-port` off the default port, so a server on `:8080` is
   `mcp-vault` to its token and credential and `mcp-vault-8080` to its tools — and a server with no
-  URL of its own gets another factory there, which every one of those keys then follows.
+  URL of its own gets another factory there, which every one of those keys then follows: a
+  household's server reached through its tunnel is `ServerAddress.Tunnelled(household, name)`
+  (`.claude/rules/tunnel.md`). `FromUrl` takes only http(s) with a host, so a server named by its
+  name is never read as a URL.
   `ServerAddressConformanceTests` fails on any other `Agent`, `Infrastructure`, `Domain` or
   `Mcp.Hosting` file reading a `.Host`; a web page's site (the browser, logins, search, push) is not
   a server and is left out of the scan by path.

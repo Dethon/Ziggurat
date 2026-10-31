@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Tunnel;
 using Domain.Prompts;
 using Domain.Security;
 using Domain.Tools.FileSystem;
@@ -23,7 +24,8 @@ internal static class AgentSpecProjection
         string? lemonadeHostAddress,
         McpCredentials credentials,
         DeploymentEndpoints deployment,
-        ILogger? logger) => new()
+        ILogger? logger,
+        string? tenantId = null) => new()
         {
             NoTools = RefuseFeaturesWithoutTools(definition),
             WithheldTools = new HashSet<string>(),
@@ -46,11 +48,16 @@ internal static class AgentSpecProjection
             // A built-in agent's all do; a registered agent's are whatever the registration said,
             // and no credential may follow it to an address of its choosing. Dynamic endpoints — live outposts — are merged in downstream, where the
             // registry of them is reachable, each with its own secret.
+            //
+            // A household's own server is named rather than addressed, and presents no deployment
+            // credential: its tunnel's client presents the tunnel's own (OwnServerEndpoints).
             McpServerEndpoints =
             [
-                .. definition.McpServerEndpoints.Select(address =>
-                    McpServerEndpoint.Configured(address, deployment.Names(address) ? credentials.For(address) : null))
+                .. definition.McpServerEndpoints.Select(address => TunnelCredentialProtocol.IsServerName(address)
+                    ? McpServerEndpoint.OwnServer(address)
+                    : McpServerEndpoint.Configured(address, deployment.Names(address) ? credentials.For(address) : null))
             ],
+            TenantId = tenantId,
             UsesOutposts = definition.UsesOutposts,
             EnabledFeatures = definition.EnabledFeatures,
             FilesystemEnabledTools = ExtractFilesystemEnabledTools(definition.EnabledFeatures),
@@ -105,7 +112,13 @@ internal static class AgentSpecProjection
             // A worker's definition is the deployment's own — nothing registers one — so every
             // endpoint it names is a deployment server.
             McpServerEndpoints =
-                [.. definition.McpServerEndpoints.Select(address => McpServerEndpoint.Configured(address, credentials.For(address)))],
+            [
+                .. definition.McpServerEndpoints.Select(address => TunnelCredentialProtocol.IsServerName(address)
+                    ? McpServerEndpoint.OwnServer(address)
+                    : McpServerEndpoint.Configured(address, credentials.For(address)))
+            ],
+            // The parent's household, whose servers the worker reaches as its parent does.
+            TenantId = spawn.TenantId,
             // Two yeses, and neither alone is enough. The parent's is the ceiling — a subagent
             // acts on its behalf and cannot reach a machine it could not — and the definition's
             // is what keeps a narrow worker off the machines: the list of subagents is shared by

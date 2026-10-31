@@ -534,8 +534,11 @@ internal sealed class ConversationGroup(
             : (x.Channel, agentKey);
         // Asked where the delivery anchors, and offered to the turn's person wherever else they are.
         var approvals = new ApprovalRelay(approvalChannel, channels, logger, TimeProvider.System);
+        // The household the verified identity names — the guest's too, who has no account — is the
+        // one whose own servers the agent reaches.
         var agent = _agent = agentFactory.Create(
-            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account);
+            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account,
+            x.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null);
         var thread = await GetOrRestoreThread(agent, deliveryKey);
 
         // Start session warmup (MCP connections + tool discovery) without awaiting it yet, so

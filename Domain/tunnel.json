@@ -1,0 +1,22 @@
+// How a household's server keeps its tunnel to the deployment: every server built on the hosting
+// library and the relay at the other end read this one file (TunnelSettings), so the two ends keep a
+// tunnel alive on the same schedule and a deploy's restart is ridden out the same way by every
+// server. Shipped beside its type in Domain, read after each host's appsettings.json and before
+// environment variables (MCP__TUNNEL__RECONNECTATMOST, and so on).
+//
+// Under "mcp" because a server binds its tunnel with its gate (McpGateSettings.Tunnel); the hub, the
+// credential and the server's name are per site and come from the environment.
+{
+  "mcp": {
+    "tunnel": {
+      // Both ends ping on this interval and drop a tunnel whose ping went unanswered for the timeout.
+      "keepAlive": "00:00:20",
+      "keepAliveTimeout": "00:00:20",
+
+      // A dropped or failed tunnel is retried after the first, doubling up to the most; a refused one
+      // waits the most.
+      "reconnectAfter": "00:00:01",
+      "reconnectAtMost": "00:01:00"
+    }
+  }
+}
