@@ -35,9 +35,10 @@ public record AgentSettings
     // the registration API takes its person from the one SexyTime forwards.
     public AccountsClientConfig Accounts { get; init; } = new();
 
-    // Each configured MCP server's own credential, keyed by the host the agent dials it at
-    // (MCP__SECRETS__<host>): every configured endpoint and channel connection presents the one for
-    // its host, the same value that server binds as its own (MCP__SHAREDSECRET).
+    // Each configured MCP server's own credential, keyed by the name it answers to (ServerAddress.Name,
+    // the host the agent dials it at — MCP__SECRETS__<host>): every configured endpoint and channel
+    // connection presents the one for its server, the same value that server binds as its own
+    // (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
 
     // The key the agent signs its call tokens with, and the delegations deferred turns act on. A deployment names a directory in the agent's own volume (SIGNING__KEYDIRECTORY), where the
