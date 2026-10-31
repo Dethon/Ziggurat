@@ -39,7 +39,9 @@ public static class TunnelModule
                     TimeProvider.System,
                     sp.GetRequiredService<ILogger<TunnelRelay>>(),
                     sp.GetService<IHostApplicationLifetime>()))
-                .AddSingleton<IOwnServers>(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
+                .AddSingleton(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
+                .AddSingleton<IOwnServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
+                .AddSingleton<IOwnChannelServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
                 .AddHostedService<TunnelRevocations>();
         }
     }

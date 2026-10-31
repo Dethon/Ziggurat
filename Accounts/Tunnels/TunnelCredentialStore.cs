@@ -71,7 +71,9 @@ public sealed class TunnelCredentialStore(
             null => new TunnelVerdict.Refused(TunnelCredentialRefusal.Unknown),
             { RevokedAt: not null } => new TunnelVerdict.Refused(TunnelCredentialRefusal.Revoked),
             var row when row.ServerName != serverName => new TunnelVerdict.Refused(TunnelCredentialRefusal.AnotherServer),
-            var row => new TunnelVerdict.Opens(new TunnelCredentialVerified(row.Id, row.TenantId, row.ServerName))
+            var row => new TunnelVerdict.Opens(new TunnelCredentialVerified(
+                row.Id, row.TenantId, row.ServerName,
+                Home: await db.Tenants.AnyAsync(t => t.Id == row.TenantId && t.IsHome, ct)))
         };
     }
 
