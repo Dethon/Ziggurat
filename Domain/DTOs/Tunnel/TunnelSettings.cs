@@ -24,6 +24,12 @@ public sealed record TunnelSettings
     // The name the credential was minted for, which the tunnel claims.
     public string ServerName { get; init; } = "";
 
+    // A certificate authority's certificate (a PEM file) the hub's certificate may chain to besides
+    // the system's roots: a deployment served by a CA of its own — a smoke stack on Caddy's local CA
+    // — is trusted only by a server told so. Empty trusts the system's roots alone, and the hub's
+    // name must match its certificate either way. Per site, so the tenant kit sets it where needed.
+    public string HubCertificateAuthority { get; init; } = "";
+
     // Both ends ping on this interval and give the tunnel up when a ping is not answered within the
     // timeout, so a dead link is noticed by the relay (the server goes offline) and by the server
     // (it reconnects) within the sum of the two.

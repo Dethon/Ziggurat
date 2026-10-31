@@ -22,6 +22,7 @@ paths:
   - "Domain/DTOs/Tunnel/**"
   - "Domain/tunnel.json"
   - "DockerCompose/**"
+  - "TenantKit/**"
   - "Tests/Integration/Tunnels/**"
   - "Tests/InProcessOwnServers.cs"
 ---
@@ -112,6 +113,15 @@ writes tunnel code.** Tunnelled, the host:
 - checks call tokens against `TunnelTrust`: the audience and the keys the relay handed over **this
   tunnel**, never `Mcp:Audience` or `Mcp:AgentKeysUrl`. Before admission there are no keys
   (`KeysUnavailable`); a `TunnelKeys` message replaces them.
+
+**The hub's certificate** is checked as any HTTPS client checks one: the system's roots, and the
+hub's name. A deployment served by a certificate authority of its own — a smoke stack on Caddy's local
+CA — is trusted by a server told that CA: `MCP__TUNNEL__HUBCERTIFICATEAUTHORITY` names a PEM file, read
+once at start (a file that is not a certificate fails the start), and a certificate the roots refuse
+for its chain alone is accepted if it chains to that one (`X509ChainTrustMode.CustomRootTrust`). A
+name that does not match, or no certificate, is refused either way. Tested at the round trip
+(`TunnelRelayTests`: a relay on a test authority's certificate is never joined, joined once told,
+and never joined under another name).
 
 Liveness is the WebSocket's own keep-alive on both ends (`KeepAlive`, `KeepAliveTimeout`). The four
 timings are one shared policy file, `Domain/tunnel.json` (`mcp.tunnel`), read by `BindSettings` and
@@ -393,15 +403,39 @@ opening and closing as an `OutpostEvent`. A consumer of `Open` or `WatchAsync` t
 machine for a channel, and the operator's listing (`TunnelListing`) shows a machine as `outpost-<NAME>`
 beside the household's servers, deliberately.
 
-## Not yet (later tickets)
+## The tenant kit
 
-- **11** must run web search under `HouseholdServerNames.WebSearch`: until it is tunnelled, the
-  deployment's (and the smoke stack's) `/browse/*` answers the offline page, and
-  `StackSmokeTests.TheBrowsePages_AreReachedThroughTheProxy…` with it. Likewise voice under
-  `HouseholdServerNames.Voice`: the deployment's timers server already rings through the relay
-  (`VOICEHUB__BASEURL`), so until voice is tunnelled a timer's create fails as the hub unreachable.
-  The kit's voice keeps `Announce__Token` only for its own site's callers (Home Assistant's watch
-  callback and resolve), never the deployment's value.
-- **11** switches the home's definitions to server names (and their whitelists to the bare names).
-- **11/12**: the server's `ClientWebSocket` trusts the system's roots only, so a kit pointed at a
-  smoke stack served by Caddy's local CA needs that CA trusted in the kit's images or a seam for it.
+`TenantKit/docker-compose.yml` is a household's own servers, run at its own site with the images the
+deployment builds; `TenantKit/README.md` is how to run it and how the home moved into it. What it holds
+to (`TenantKitConformanceTests`, through `DeploymentFiles.KitCompose`):
+
+- **Each server is tunnelled by its environment alone**: `MCP__TUNNEL__HUB` (one value for all,
+  `wss://${DEPLOYMENT_HOST}/tunnel`), `MCP__TUNNEL__CREDENTIAL` (`${TUNNEL_CREDENTIAL_<SERVER>}`, one per
+  server) and `MCP__TUNNEL__SERVERNAME`. None is told a dialled server's gate — no `MCP__SHAREDSECRET`,
+  `MCP__AUDIENCE` or `MCP__AGENTKEYSURL` — and the kit's `.env` shares no line with the deployment's but
+  what any site has of its own (paths, ids, the LAN address), the household's own OpenRouter key and
+  `LOGINS__STATEKEY`, which the deployment keeps only for the household migration.
+- **The names**: `websearch`, `vault`, `library`, `sandbox`, `printer`, `homeassistant`, `voice` — the
+  set the shipped definitions and channels name, exactly (a name nothing runs is a server offline
+  forever, a context line and nothing louder), with web search and voice under `HouseholdServerNames`.
+  Each name is also a server the test stacks host in its place (`AgentAppSettingsTests`, by
+  `McpServerRegistrations`: tools for an agent, a channel for a channel).
+- **Back-calls are loopback ports dialled by their client**: voice's `accounts` (`ACCOUNTS__BASEURL`),
+  `topics` (`AGENT__BASEURL`), `lemonade` (`Stt__OpenAi__BaseUrl`/`Tts__OpenAi__BaseUrl`, `/v1`) and
+  `metrics` (`METRICS__URL`, so voice opens no Redis); web search's `metrics`; the sandbox's
+  `vfs-bridge` (`VFSBRIDGEURL`). A server names only the back-calls it makes, and every loopback URL it
+  is given is one.
+- **The deployment is reached through the tunnels alone**: every address a kit service is told is a kit
+  service, its own loopback, the host's gateway (Music Assistant) or the deployment's main host (the
+  hub, and web search's `HANDOFF__PUBLICBASEURL`); no network is `external`. The sandbox is on a network
+  no other kit service is on and is handed nothing but its tunnel credential.
+- **Its own state is its own**: the kit's Redis (`KIT_REDIS_PASSWORD`) holds web search's logins and
+  links and the library's routing. Home Assistant's server and voice talk on the kit's network under
+  the kit's own `Announce__Token`; the deployment's timers server rings voice through the relay, which
+  presents voice's tunnel credential instead.
+- **The state move** (`state-move`, profile `move`, `.claude/rules/household-migration.md`) copies the
+  home's Redis state out of the deployment's into the kit's, told the deployment's Redis on its own
+  command line.
+
+The eval and integration stacks host each named server in process (`InProcessOwnServers`); they name
+their channels by URL (the eval none), so `InProcessOwnServers` needs no `IOwnChannelServers`.
