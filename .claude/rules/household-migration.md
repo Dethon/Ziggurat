@@ -48,3 +48,13 @@ Environment variables over `MigrationSettings`' defaults (`/sugary/sugary.db`, `
 ## Tests
 
 `HouseholdMigrationCommandTests` runs the container's command (`HouseholdMigrationCommand.RunAsync`) against the accounts service in-process (`AccountsServer`, admitting the migration's credential), a Sugary database and a voices folder of the test's own (`MigrationRig`), and a Redis Stack of the class's own: `HouseholdMigrationRedisFixture` asks for a pool by a name nobody else uses, because the memory index lives on database 0, which the search pools share between classes, and the run moves the `household` bucket and scans every topic and schedule — on a shared database it would take a sibling's rows mid-run. Old names carry a per-test tag. "Changes nothing" is asserted on a snapshot of every Redis key's dump, the accounts store's counts, the voices folder and the log's owners. `HouseholdImportTests` drives the import endpoint raw.
+
+## The home's state move (`move-home-state`)
+
+The same image carries a second verb, for the deploy that moves the home's servers into the tenant kit (`TenantKit/README.md`, "Moving the home onto the tunnel"): `HomeStateMove` copies what those servers kept in the deployment's Redis into the kit's — web search's remembered logins (`websearch:person:*`) and one-time links (`websearch:link:*`), and the library's download routing (`download-routing:*` and its `download-routing` index) — and nothing else. It runs after the household migration, which re-seals the logins it then carries. The kit's `state-move` service (profile `move`, `network_mode: host`) runs it with `HOMESTATE__TO` the kit's Redis on its loopback port; the deployment's (`HOMESTATE__FROM`) is given on the run's own command line, because its password is the deployment's and the kit's files hold no deployment secret.
+
+- **Each key goes as it is**: `DUMP`/`RESTORE` with the key's remaining TTL, so a sealed login stays sealed under the same `LOGINS__STATEKEY` (the kit's must be the deployment's value) and a link keeps the minutes it had.
+- **It copies and never overwrites.** A key the kit already holds is the kit's, newer than the deployment's, so a second run copies nothing twice and a login made through the kit since is never replaced; the download index is the one key both sides add to, so its missing members are added. The deployment keeps its copy.
+- It prints a line per kind (`remembered logins: 1 copied, 2 already in the kit`); `--dry-run` counts and writes nothing; a missing address is exit 2, naming it.
+
+`HomeStateMoveTests` writes the state through the stores that own it into one leased database, runs the move, and reads it back through the same stores from another.
