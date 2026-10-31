@@ -2,6 +2,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State.Alert;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -74,6 +75,14 @@ public sealed class HubEventDispatcher(
     // caught up says only what was asked in it, and this was asked somewhere else.
     public void HandleApprovalOffered(ApprovalOfferedNotification notification) =>
         dispatcher.Dispatch(new ShowApproval(null, notification.Request));
+
+    // A timer ringing for this person rings here whatever topic or space is open: it was set for
+    // them, not for a conversation.
+    public void HandleAlertOffered(AlertOfferedNotification notification) =>
+        dispatcher.Dispatch(new AlertRang(notification));
+
+    public void HandleAlertSettled(AlertSettledNotification notification) =>
+        dispatcher.Dispatch(new AlertEnded(notification.AlertId));
 
     public void HandleAgentsUpdated(IReadOnlyList<AgentCatalogEntry> agents)
     {

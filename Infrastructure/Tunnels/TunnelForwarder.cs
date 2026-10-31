@@ -32,15 +32,38 @@ public sealed class TunnelForwarder(IHttpForwarder forwarder, TunnelRegistry reg
 
     // To the home household's server of that name (TunnelRegistry.FindHome). With none open, or one
     // whose tunnel closed before its answer began, `offline` answers the exchange with the reason.
-    public async Task ForwardHomeAsync(
+    public Task ForwardHomeAsync(
         HttpContext context,
+        string serverName,
+        string tag,
+        PathString path,
+        IReadOnlyCollection<string> withheld,
+        Func<HttpContext, string, Task> offline) =>
+        ForwardToAsync(context, registry.FindHome(serverName), serverName, tag, path, withheld, offline);
+
+    // To one household's server of that name, and never another household's of the same name.
+    public Task ForwardAsync(
+        HttpContext context,
+        string tenantId,
+        string serverName,
+        string tag,
+        PathString path,
+        IReadOnlyCollection<string> withheld,
+        Func<HttpContext, string, Task> offline) =>
+        ForwardToAsync(
+            context, registry.Find(tenantId, serverName) is { IsOpen: true } open ? open : null,
+            serverName, tag, path, withheld, offline);
+
+    private async Task ForwardToAsync(
+        HttpContext context,
+        OpenTunnel? found,
         string serverName,
         string tag,
         PathString path,
         IReadOnlyCollection<string> withheld,
         Func<HttpContext, string, Task> offline)
     {
-        if (registry.FindHome(serverName) is not { } tunnel)
+        if (found is not { } tunnel)
         {
             await offline(context, $"{serverName} is offline: its tunnel is not open");
         }

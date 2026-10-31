@@ -8,6 +8,7 @@ using Infrastructure.Timers;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerTimers.McpPrompts;
+using McpServerTimers.McpTools;
 using McpServerTimers.Services;
 using McpServerTimers.Settings;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,21 +39,29 @@ public static class ConfigModule
         services
             .AddSingleton(TimeProvider.System)
             .AddSingleton<ITimerStore, InMemoryTimerStore>()
-            // The three hub-local capabilities reached over HTTP: fire (announce), stop (dismiss),
-            // and target resolution/roster (satellites). The adapters create the named client per
-            // call, so the factory's handler rotation works despite their singleton lifetimes.
-            .AddSingleton<IInsistentAnnouncer>(sp => new HttpInsistentAnnouncer(sp.GetRequiredService<IHttpClientFactory>(), settings.Announce.Token))
-            .AddSingleton<IAlertDismisser>(sp => new HttpAlertDismisser(sp.GetRequiredService<IHttpClientFactory>(), settings.Announce.Token))
-            .AddSingleton<ISatelliteCatalog>(sp => new HttpSatelliteCatalog(sp.GetRequiredService<IHttpClientFactory>(), settings.Announce.Token))
+            // The three hub-local capabilities reached over HTTP — fire (announce), stop (dismiss),
+            // and target resolution/roster (satellites) — bound per household, so each request names
+            // the household it is for. The adapters create the named client per call, so the
+            // factory's handler rotation works despite their singleton lifetimes.
+            .AddSingleton<IHouseholdVoices>(sp => new HttpHouseholdVoices(
+                sp.GetRequiredService<IHttpClientFactory>(), settings.Announce.Token))
+            .AddSingleton<ChannelAlerts>()
+            .AddSingleton<IChannelAlerts>(sp => sp.GetRequiredService<ChannelAlerts>())
             .AddSingleton(sp => new TimerFileSystem(
                 sp.GetRequiredService<ITimerStore>(),
                 sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<IAlertDismisser>(),
-                sp.GetRequiredService<ISatelliteCatalog>()))
+                sp.GetRequiredService<IHouseholdVoices>(),
+                sp.GetRequiredService<IChannelAlerts>()))
             .AddHostedService<TimerFireService>();
 
         services
             .AddToolServer(settings, ToolResponse.Create)
+            // Dual-role: a timer with no satellite to ring on rings on its owner's channels, which only
+            // the agent holds, so this server raises it in its inbox as scheduling raises a fire.
+            // Gate-on-live, as scheduling's: the timer is claimed once and fires once, so an alert
+            // nobody was polling to take is reported not rung rather than kept to ring late.
+            .AddChannelServer(DeliveryPolicy.GateOnLive, noOutboundSurface: true)
+            .WithTools<SettleAlertTool>()
             .AddFileSystemTools<TimerFileSystem>()
             .AddFileSystemResource<TimerFileSystem>()
             // The skill that teaches this server's files ships beside them.

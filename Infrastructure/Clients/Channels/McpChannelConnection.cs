@@ -33,7 +33,7 @@ public sealed class McpChannelConnection(
     // reply, the catalog — for nobody, since the agent makes them for no person. Null signs nothing,
     // and a gated channel server refuses every call.
     CallTokens? callTokens = null)
-    : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
+    : IChannelConnection, IAlertChannel, IMcpChannelConnection, IAsyncDisposable
 {
     private static readonly TimeSpan _defaultHealthCheckInterval = TimeSpan.FromSeconds(30);
 
@@ -77,6 +77,7 @@ public sealed class McpChannelConnection(
     private const int SplitStreamRewarnEvery = 240;
 
     private readonly Channel<ChannelMessage> _messageChannel = Channel.CreateUnbounded<ChannelMessage>();
+    private readonly Channel<AlertSignal> _alertChannel = Channel.CreateUnbounded<AlertSignal>();
     private McpClient? _client;
     // What the far end offers, for this connection generation and no other. Every server in this
     // repo registers its tools before its transport starts, so the answer cannot change while one
@@ -107,6 +108,8 @@ public sealed class McpChannelConnection(
     public bool IsConnected => _client is not null;
 
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
+
+    public IAsyncEnumerable<AlertSignal> Alerts => _alertChannel.Reader.ReadAllAsync();
 
     // A URL dialled with this connection's own credential.
     public Task RunAsync(string endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct) =>
@@ -383,15 +386,26 @@ public sealed class McpChannelConnection(
 
     private void Dispatch(ChannelInboxItem item)
     {
-        if (item.Kind == ChannelInboxItemKind.Message)
+        switch (item.Kind)
         {
-            HandleChannelMessageNotification(
-                JsonSerializer.SerializeToElement(item.Message, ChannelProtocol.SerializerOptions));
-        }
-        else
-        {
-            HandleChannelCancelNotification(
-                JsonSerializer.SerializeToElement(item.Cancel, ChannelProtocol.SerializerOptions));
+            case ChannelInboxItemKind.Message:
+                HandleChannelMessageNotification(
+                    JsonSerializer.SerializeToElement(item.Message, ChannelProtocol.SerializerOptions));
+                break;
+            case ChannelInboxItemKind.Cancel:
+                HandleChannelCancelNotification(
+                    JsonSerializer.SerializeToElement(item.Cancel, ChannelProtocol.SerializerOptions));
+                break;
+            // An alert is no turn: it goes to the relay that rings it, never to a conversation.
+            case ChannelInboxItemKind.Alert when item.Alert is { } alert:
+                _alertChannel.Writer.TryWrite(new AlertSignal.Ring(alert));
+                break;
+            case ChannelInboxItemKind.AlertStopped when item.AlertStopped is { } stopped:
+                _alertChannel.Writer.TryWrite(new AlertSignal.Stop(stopped.AlertId));
+                break;
+            default:
+                logger?.LogWarning("Discarding a {Kind} inbox item on {ChannelId} with nothing in it", item.Kind, ChannelId);
+                break;
         }
     }
 
@@ -581,6 +595,46 @@ public sealed class McpChannelConnection(
         await client.CallToolAsync(
             ChannelProtocol.SettleApprovalTool,
             ChannelProtocol.ToArguments(new SettleApprovalParams { ApprovalId = approvalId, Result = result }),
+            cancellationToken: ct);
+    }
+
+    // Signed for nobody, as the rest of the channel plumbing is: an alert is no turn, and the person
+    // it is for is named in the offer, as an approval's asker is.
+    public async Task<bool> OfferAlertAsync(ChannelAlertNotification alert, CancellationToken ct)
+    {
+        var client = _client;
+        if (client is null || !await OffersToolAsync(client, ChannelProtocol.OfferAlertTool, ct))
+        {
+            return false;
+        }
+
+        var result = await client.CallToolAsync(
+            ChannelProtocol.OfferAlertTool,
+            ChannelProtocol.ToArguments(new OfferAlertParams
+            {
+                AlertId = alert.AlertId,
+                Owner = alert.Owner,
+                Text = alert.Text,
+                Kind = alert.Kind,
+                AgentId = alert.AgentId
+            }),
+            cancellationToken: ct);
+
+        return result.IsError != true
+               && result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text == ChannelProtocol.AlertDismissed;
+    }
+
+    public async Task SettleAlertAsync(string alertId, bool dismissed, CancellationToken ct)
+    {
+        var client = _client;
+        if (client is null || !await OffersToolAsync(client, ChannelProtocol.SettleAlertTool, ct))
+        {
+            return;
+        }
+
+        await client.CallToolAsync(
+            ChannelProtocol.SettleAlertTool,
+            ChannelProtocol.ToArguments(new SettleAlertParams { AlertId = alertId, Dismissed = dismissed }),
             cancellationToken: ct);
     }
 

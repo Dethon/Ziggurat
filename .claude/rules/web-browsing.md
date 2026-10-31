@@ -5,6 +5,7 @@ paths:
   - "Domain/Prompts/WebBrowsingPrompt.cs"
   - "Domain/Prompts/Sections/websearch_prompt.md"
   - "Domain/Prompts/WebBrowsingSkill.cs"
+  - "Domain/Prompts/Skills/web-browsing.md"
   - "Domain/Contracts/IWebBrowser.cs"
   - "Infrastructure/Clients/Browser/**"
   - "DockerCompose/camoufox/**"
