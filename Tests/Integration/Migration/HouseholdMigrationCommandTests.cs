@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Accounts.Configuration;
+using Accounts.Store;
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -31,6 +32,11 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     : IClassFixture<HouseholdMigrationRedisFixture>
 {
     private const int Dimension = 4;
+    private const string JackToken = "1001:jack-token-of-the-home";
+    private const string JonasToken = "1002:jonas-token-of-the-home";
+
+    // What the operator pipes into the run from the deployment's .env, which held them as BOTS__0 and BOTS__1.
+    private const string HomeBots = $$"""{ "jack": { "token": "{{JackToken}}" }, "jonas": { "token": "{{JonasToken}}" } }""";
 
     private readonly string _tag = Guid.NewGuid().ToString("N")[..6];
 
@@ -475,17 +481,82 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
             .Select(a => a.Id).ShouldBe(["ana"]);
     }
 
+    // The jack and jonas bots were two tokens in the deployment's .env; they are the home's own bots
+    // now, in its keys section, each bound to the agent it always answered as, sealed like any secret.
+    // The tokens arrive on the run's input, never on its command line or in a file of the volume.
+    [Fact]
+    public async Task TheHomesBots_AreSeededIntoItsKeys_SealedAndBoundToTheirAgents()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await RunAsync(rig, fran, ana, input: HomeBots, "--telegram-bots", "-");
+
+        exit.ShouldBe(0, output);
+        var home = await rig.HomeHouseholdAsync();
+        var keys = (await rig.Accounts.Service<HouseholdConfigStore>().ReadAsync(home, HouseholdSections.KeysSchema, CancellationToken.None))
+            .ShouldNotBeNull();
+        keys.TelegramBots.ToDictionary(b => b.Key, b => b.Value.Token)
+            .ShouldBe(new Dictionary<string, string> { ["jack"] = JackToken, ["jonas"] = JonasToken });
+        await using (var db = await rig.Accounts.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync())
+        {
+            var stored = (await db.HouseholdSections.SingleAsync(s => s.TenantId == home && s.Section == HouseholdSections.Keys)).Document;
+            stored.ShouldNotContain(JackToken);
+            stored.ShouldNotContain(JonasToken);
+        }
+
+        output.ShouldContain("jack, jonas");
+        output.ShouldNotContain(JackToken);
+    }
+
+    // A run given no bots seeds none and says how, so the steps before and after still run.
+    [Fact]
+    public async Task ARunGivenNoBots_SeedsNoKeys_AndSaysHow()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        output.ShouldContain("--telegram-bots");
+        await using var db = await rig.Accounts.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        (await db.HouseholdSections.AnyAsync(s => s.Section == HouseholdSections.Keys)).ShouldBeFalse();
+    }
+
+    // A file that is not the bots' shape, or names an agent the home does not have, migrates nothing,
+    // and no token is ever printed.
+    [Theory]
+    [InlineData("""{ "jack": "1001:jack-token" }""")]
+    [InlineData("""{ "Jack": { "token": "1001:jack-token" } }""")]
+    [InlineData("""{ "jak": { "token": "1001:jack-token" } }""")]
+    [InlineData("""{ "jack": { "token": "" } }""")]
+    [InlineData("not json 1001:jack-token")]
+    public async Task ABotsFileThatIsNotTheHomesBots_MigratesNothing(string file)
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await RunAsync(rig, fran, ana, input: file, "--telegram-bots", "-");
+
+        exit.ShouldBe(2, output);
+        output.ShouldContain("nothing was migrated");
+        output.ShouldNotContain("1001:jack-token");
+        await using var db = await rig.Accounts.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        (await db.Users.CountAsync()).ShouldBe(0);
+    }
+
     [Fact]
     public async Task RunningItAgain_ChangesNothingAndSaysSo()
     {
         await using var rig = await MigrationRig.StartAsync(redis, Dimension);
         var (fran, ana) = (Fran(), Ana());
         await SeedEverythingAsync(rig, fran, ana);
-        var first = await RunAsync(rig, fran, ana);
+        var first = await RunAsync(rig, fran, ana, input: HomeBots, "--telegram-bots", "-");
         first.Exit.ShouldBe(0, first.Output);
         var migrated = await SnapshotAsync(rig);
 
-        var (exit, output) = await RunAsync(rig, fran, ana);
+        var (exit, output) = await RunAsync(rig, fran, ana, input: HomeBots, "--telegram-bots", "-");
 
         exit.ShouldBe(0, output);
         output.ShouldContain("Nothing changed");
@@ -501,10 +572,11 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         await SeedEverythingAsync(rig, fran, ana);
         var before = await SnapshotAsync(rig);
 
-        var (exit, output) = await RunAsync(rig, fran, ana, "--dry-run");
+        var (exit, output) = await RunAsync(rig, fran, ana, input: HomeBots, "--dry-run", "--telegram-bots", "-");
 
         exit.ShouldBe(0, output);
         output.ShouldContain("dry run");
+        output.ShouldContain("telegramBots: jack, jonas");
         output.ShouldContain($"'{fran.Telegram}'");
         output.ShouldContain($"'{fran.Voice}' renamed");
         output.ShouldContain("would be made");
@@ -678,7 +750,11 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
 
     // Fran runs the deployment and owns the household; the Sugary log was Ana's.
     private static Task<(int Exit, string Output)> RunAsync(MigrationRig rig, Person fran, Person ana, params string[] extra) =>
+        RunAsync(rig, fran, ana, input: null, extra);
+
+    private static Task<(int Exit, string Output)> RunAsync(
+        MigrationRig rig, Person fran, Person ana, string? input, params string[] extra) =>
         rig.RunAsync(
-            new[] { Entry(fran), Entry(ana) },
+            new[] { Entry(fran), Entry(ana) }, input,
             ["--operator", fran.Name, "--owner", fran.Name, "--sugary", ana.Name, .. extra]);
 }
