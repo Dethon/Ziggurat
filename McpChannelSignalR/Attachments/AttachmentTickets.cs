@@ -37,8 +37,9 @@ public sealed class AttachmentTickets(AttachmentSettings settings, TimeProvider 
 
     // No slot counter and no conversation: a dictation produces composer text, so it must not
     // spend one of a message's attachment slots or force a conversation into existence the way
-    // picking a file does.
-    private sealed record DictationScope(string SpaceSlug, DateTimeOffset ExpiresAt);
+    // picking a file does. The household is the minting connection's, verified by the hub: the upload
+    // carries only the ticket, and the recording is transcribed on that household's behalf.
+    public sealed record DictationScope(string SpaceSlug, DateTimeOffset ExpiresAt, string? TenantId);
 
     // The identity, not two adjacent same-typed strings: swapping the topic and the conversation
     // spelling used to compile.
@@ -74,23 +75,24 @@ public sealed class AttachmentTickets(AttachmentSettings settings, TimeProvider 
         return scope.ExpiresAt <= timeProvider.GetUtcNow() || scope.TopicId != topicId ? null : scope;
     }
 
-    public DictationTicket MintDictation(string spaceSlug)
+    public DictationTicket MintDictation(string spaceSlug, string? tenantId = null)
     {
         Prune();
         var token = NewToken();
         var expiresAt = timeProvider.GetUtcNow().AddSeconds(settings.TicketTtlSeconds);
-        _dictations[token] = new DictationScope(spaceSlug, expiresAt);
+        _dictations[token] = new DictationScope(spaceSlug, expiresAt, tenantId);
         return new DictationTicket(token, expiresAt);
     }
 
-    public bool ResolvesDictation(string? token, string? spaceSlug)
+    // Null covers no such ticket, one that has expired and one minted for another space.
+    public DictationScope? ResolveDictation(string? token, string? spaceSlug)
     {
         if (string.IsNullOrWhiteSpace(token) || !_dictations.TryGetValue(token, out var scope))
         {
-            return false;
+            return null;
         }
 
-        return scope.ExpiresAt > timeProvider.GetUtcNow() && scope.SpaceSlug == spaceSlug;
+        return scope.ExpiresAt > timeProvider.GetUtcNow() && scope.SpaceSlug == spaceSlug ? scope : null;
     }
 
     public bool ResolvesDownload(string? token, string attachmentId)

@@ -1,13 +1,21 @@
+using System.Text.Json;
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
+using Domain.Metrics;
 using Infrastructure.Memory;
 using Infrastructure.StateManagers;
 using McpServerSugary.Store;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Observability.Hubs;
+using Observability.Services;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -250,6 +258,43 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         (await his.Foods.Select(f => f.Name).ToListAsync()).ShouldBe(["Pan de molde"]);
     }
 
+    // The collector keys by household from the deploy on, so the day of the deploy is in both shapes
+    // when the run comes: what the dashboard counted before is the home's, added to what it counted since.
+    [Fact]
+    public async Task TheRollUpsFromBeforeHouseholds_AreTheHomeHouseholds_AddedToWhatItCountedSince()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        (await RunAsync(rig, fran, ana)).Exit.ShouldBe(0);
+        var home = (await rig.AccountOfAsync(fran.TelegramId)).TenantId;
+        var day = Day();
+        var db = redis.Connection.GetDatabase();
+        var collector = new MetricsCollectorService(
+            redis.Connection, Mock.Of<IHubContext<MetricsHub>>(h => h.Clients.All == Mock.Of<IClientProxy>()),
+            NullLogger<MetricsCollectorService>.Instance);
+        await SeedLegacyRollUpsAsync(day, input: 100, error: $"Vault gone {_tag}");
+        await collector.ProcessEventAsync(
+            new TokenUsageEvent
+            {
+                Sender = "fran", Model = "z-ai/glm-5", InputTokens = 20, OutputTokens = 0, Cost = 0m,
+                TenantId = home, Timestamp = Noon(day)
+            },
+            db);
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        output.ShouldContain("Metric roll-ups");
+        var query = new MetricsQueryService(redis.Connection);
+        (await query.GetSummaryAsync(day, day, home)).InputTokens.ShouldBe(120);
+        (await query.GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, day, day, home))
+            .Select(e => e.InputTokens).ShouldBe([100, 20], ignoreOrder: true);
+        (await query.GetRecentErrorsAsync(household: home)).ShouldContain(e => e.Message == $"Vault gone {_tag}");
+        (await query.GetHouseholdsAsync()).ShouldContain(home);
+        (await db.KeyExistsAsync(LegacyKey("totals", day))).ShouldBeFalse();
+        (await db.KeyTimeToLiveAsync(MetricKeys.Daily(MetricKeys.Tokens, home, day))).ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task RunningItAgain_ChangesNothingAndSaysSo()
     {
@@ -305,8 +350,39 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         (await SnapshotAsync(rig)).ShouldBe(before);
     }
 
+    // The dashboard's lists as the collector kept them before households: one set for everybody.
+    private async Task SeedLegacyRollUpsAsync(DateOnly day, int input, string error)
+    {
+        var db = redis.Connection.GetDatabase();
+        var usage = new TokenUsageEvent
+        {
+            Sender = "fran", Model = "z-ai/glm-5", InputTokens = input, OutputTokens = 0, Cost = 0m, Timestamp = Noon(day)
+        };
+        await db.SortedSetAddAsync(
+            LegacyKey("tokens", day), JsonSerializer.Serialize<MetricEvent>(usage, _metricJson),
+            usage.Timestamp.ToUnixTimeMilliseconds());
+        await db.KeyExpireAsync(LegacyKey("tokens", day), TimeSpan.FromDays(30));
+        await db.HashIncrementAsync(LegacyKey("totals", day), "tokens:input", input);
+        await db.KeyExpireAsync(LegacyKey("totals", day), TimeSpan.FromDays(30));
+        await db.ListLeftPushAsync(
+            MetricKeys.LegacyRecentErrors,
+            JsonSerializer.Serialize<MetricEvent>(
+                new ErrorEvent { Service = "agent", ErrorType = "Gone", Message = error, Timestamp = Noon(day) },
+                _metricJson));
+    }
+
+    private static readonly JsonSerializerOptions _metricJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    private static string LegacyKey(string family, DateOnly day) => $"metrics:{family}:{day:yyyy-MM-dd}";
+
+    // A day of the class's own, so two tests' roll-ups never fall on one key.
+    private static DateOnly Day() => new DateOnly(2026, 1, 1).AddDays(Random.Shared.Next(0, 3000));
+
+    private static DateTimeOffset Noon(DateOnly day) => new(day.ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero);
+
     private async Task SeedEverythingAsync(MigrationRig rig, Person fran, Person ana)
     {
+        await SeedLegacyRollUpsAsync(Day(), input: 7, error: $"Printer jammed {_tag}");
         await Memories().StoreAsync(Memory(fran.Telegram, $"Likes game meat {_tag}", [1, 0, 0, 0]));
         await Memories().StoreAsync(Memory("household", $"The cat is called Mus {_tag}", [1, 1, 0, 0]));
         await new RedisPersonStateStore(redis.Connection, MigrationRig.StateKey)

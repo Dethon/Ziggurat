@@ -109,7 +109,8 @@ public static class HouseholdMigrationCommand
     }
 
     // In the order a person would want them done if the run stopped part way: what they told the agent,
-    // then their logins, their phones, their schedules, their topics, their voice and their log.
+    // then their logins, their phones, their schedules, their topics, their voice and their log; the
+    // dashboard's figures last, which are only ever the operator's.
     private static IReadOnlyList<IMigrationStep> Steps(MigrationSettings settings, IConnectionMultiplexer redis, SealingKey? stateKey) =>
     [
         // The embedding service is never called; its options carry the index's width.
@@ -122,7 +123,8 @@ public static class HouseholdMigrationCommand
         new ScheduleCreators(new RedisScheduleStore(redis), redis),
         new TopicOwners(redis, new RedisThreadStateStore(redis, new RetentionSettings(), TimeProvider.System)),
         new VoiceProfiles(settings.VoicesPath),
-        new SugaryLog(settings.SugaryDatabasePath)
+        new SugaryLog(settings.SugaryDatabasePath),
+        new MetricRollups(redis)
     ];
 
     private static Task WriteAsync(StepReport report, TextWriter output) =>

@@ -158,13 +158,17 @@ public static class ConfigModule
                 settings.Approval.Judgment,
                 sp.GetRequiredService<TimeProvider>()));
 
+        // Metered outermost, over everything every caller — replies, announcements, the approval
+        // question — is spoken through.
         services.AddSingleton<ITextToSpeech>(sp =>
-            McpChannelVoice.Services.Tts.SilenceTrimmingTextToSpeech.Wrap(
-                new McpChannelVoice.Services.Tts.OpenAiTextToSpeech(
-                    sp.GetRequiredService<IHttpClientFactory>(),
-                    settings.Tts.OpenAi,
-                    sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.OpenAiTextToSpeech>>()),
-                settings.Tts.OpenAi.TrailingSilenceTrimThreshold));
+            new McpChannelVoice.Services.Tts.MeteredTextToSpeech(
+                McpChannelVoice.Services.Tts.SilenceTrimmingTextToSpeech.Wrap(
+                    new McpChannelVoice.Services.Tts.OpenAiTextToSpeech(
+                        sp.GetRequiredService<IHttpClientFactory>(),
+                        settings.Tts.OpenAi,
+                        sp.GetRequiredService<ILogger<McpChannelVoice.Services.Tts.OpenAiTextToSpeech>>()),
+                    settings.Tts.OpenAi.TrailingSilenceTrimThreshold),
+                sp.GetRequiredService<Domain.Contracts.IMetricsPublisher>()));
 
         services.AddSingleton(settings.Announce);
         services.AddSingleton<AnnouncementService>();

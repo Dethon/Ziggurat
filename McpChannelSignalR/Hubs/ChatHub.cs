@@ -198,7 +198,7 @@ public sealed class ChatHub(
     // screen where no conversation has been started yet.
     public DictationTicket CreateDictationTicket()
     {
-        return attachmentService.MintDictation(CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+        return attachmentService.MintDictation(CurrentSpaceSlug ?? AttachmentService.SpaceDefault, SignedIn.TenantId);
     }
 
     // The ticket is scoped to the topic being composed in, so a caller can only put bytes against
