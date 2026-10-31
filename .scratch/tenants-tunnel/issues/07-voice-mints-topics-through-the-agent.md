@@ -4,8 +4,8 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A voice turn's topic is minted through the agent API and appears in the chat client as before
-- [ ] The voice server holds no connection to the deployment's Redis for topics
-- [ ] The voice and chat-client review-copy tests pass
+- [x] A voice turn's topic is minted through the agent API and appears in the chat client as before
+- [x] The voice server holds no connection to the deployment's Redis for topics (its Redis connection remains, for the metrics feed alone)
+- [x] The voice and chat-client review-copy tests pass

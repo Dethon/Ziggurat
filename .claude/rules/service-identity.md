@@ -22,6 +22,7 @@ paths:
   - "McpServerSugary/App/Person.cs"
   - "McpChannelSignalR/Hubs/SignedInConnectionFilter.cs"
   - "Agent/App/AgentApi.cs"
+  - "Agent/App/TopicMintingApi.cs"
   - "Domain/Monitor/ConversationGroup.cs"
   - "Domain/Monitor/ChatMonitor.cs"
   - "Infrastructure/Clients/Accounts/AccountsResolverClient.cs"

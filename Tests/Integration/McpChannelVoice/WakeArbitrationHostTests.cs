@@ -187,20 +187,10 @@ public class WakeArbitrationHostTests
 
         var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var metrics = new RecordingMetrics();
-        var factory = new Mock<IConversationFactory>();
-        var minted = 0;
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var topicName = $"topic-{Interlocked.Increment(ref minted)}";
-                var identity = ConversationIdGenerator.CreateFor(topicName);
-                var topic = new TopicMetadata(topicName, identity.ChatId, identity.ThreadId, "mycroft",
-                    "household", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
+        var factory = new FakeTopicMinter();
 
         var manager = new VoiceConversationManager(
-            factory.Object, new ReplyTextAccumulator(), TimeProvider.System,
+            factory, new ReplyTextAccumulator(), TimeProvider.System,
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
             emitter.Emitter, new FakeAccountResolver(), metrics, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), new ReplyTextAccumulator(), -1.0, 0.6, -1.4, 2000, TimeProvider.System,

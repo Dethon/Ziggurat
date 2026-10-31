@@ -87,19 +87,16 @@ public class SatelliteConnectionTests
                     }
                 });
 
-            var factory = new Mock<IConversationFactory>();
-            factory.Setup(f => f.CreateAsync(
-                    It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
+            var factory = new Mock<ITopicMinter>();
+            factory.Setup(f => f.MintAsync(
+                    It.IsAny<TopicMintRequest>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
                 .Returns(async () =>
                 {
                     if (CreateConversationDelay > TimeSpan.Zero)
                     {
                         await Task.Delay(CreateConversationDelay);
                     }
-                    var identity = ConversationIdGenerator.CreateFor("topic-x");
-                    var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
-                        $"{Config.Identity} @ {Config.Room}", DateTimeOffset.UtcNow, null);
-                    return new ConversationCreation(identity, topic);
+                    return new TopicMinted("topic-x", ConversationIdGenerator.CreateFor("topic-x").ConversationId);
                 });
             var manager = new VoiceConversationManager(
                 factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
