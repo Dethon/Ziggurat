@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately once 4a is merged)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A timer for a household without satellites rings on the person's chat client and Telegram
-- [ ] Dismissing it on one channel stops it on every channel
-- [ ] The home's timers still ring on its satellites
-- [ ] A timer is listed and dismissed only by its household
+- [x] A timer for a household without satellites rings on the person's chat client and Telegram
+- [x] Dismissing it on one channel stops it on every channel
+- [x] The home's timers still ring on its satellites
+- [x] A timer is listed and dismissed only by its household
