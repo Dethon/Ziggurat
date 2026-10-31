@@ -19,6 +19,7 @@ using Mcp.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using StackExchange.Redis;
@@ -79,9 +80,9 @@ internal sealed class RelayHost : IAsyncDisposable
         AccountsServer accounts, string agentCredential, string redis, SigningKeyStore keys,
         IMetricsPublisher metrics, int? port = null, IPAddress? on = null,
         IReadOnlyDictionary<string, string>? sharedServers = null,
-        // Served over TLS with this certificate, as the proxy serves the tunnel's route: a hub the
-        // servers reach at wss://.
-        X509Certificate2? certificate = null)
+        // Served over TLS with this certificate and its chain, as the proxy serves the tunnel's route:
+        // a hub the servers reach at wss://.
+        HubCertificate? certificate = null)
     {
         // Picked ahead rather than bound on port 0: the shared Lemonade's stand-in is this host itself,
         // named in the back-call settings before it listens.
@@ -93,7 +94,11 @@ internal sealed class RelayHost : IAsyncDisposable
         {
             if (certificate is not null)
             {
-                listen.UseHttps(certificate);
+                listen.UseHttps(new HttpsConnectionAdapterOptions
+                {
+                    ServerCertificate = certificate.Leaf,
+                    ServerCertificateChain = certificate.Chain
+                });
             }
         }));
         builder.Services
@@ -280,15 +285,20 @@ internal sealed record ReachedTarget(string Path, string? Household, string? Ser
         http.Request.Headers[BackCallProtocol.ServerHeader].SingleOrDefault(),
         http.Request.Headers.Authorization.SingleOrDefault());
 }
-// A certificate authority of a test's own, as a local stack's proxy has one (Caddy's `tls internal`):
-// its certificate written as a PEM file a server can be told of, and a certificate it issues a host.
+// A certificate authority of a test's own, shaped as a local stack's proxy has one (Caddy's `tls
+// internal`): a root, written as a PEM file a server can be told of, and an intermediate under it that
+// issues each host's certificate, which the hub serves with the intermediate beside it. The root alone
+// is what a server is told of, so a check that builds the chain from the leaf and the root alone fails
+// here as it fails against Caddy.
 internal sealed class LocalAuthority : IDisposable
 {
-    private readonly X509Certificate2 _authority;
+    private readonly X509Certificate2 _root;
+    private readonly X509Certificate2 _intermediate;
 
-    private LocalAuthority(X509Certificate2 authority, string file)
+    private LocalAuthority(X509Certificate2 root, X509Certificate2 intermediate, string file)
     {
-        _authority = authority;
+        _root = root;
+        _intermediate = intermediate;
         CertificateFile = file;
     }
 
@@ -296,22 +306,34 @@ internal sealed class LocalAuthority : IDisposable
 
     public static LocalAuthority Create()
     {
-        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
-        var request = new CertificateRequest(
-            "CN=Ziggurat Test Local Authority", key, HashAlgorithmName.SHA256);
-        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, false, 0, true));
+        using var rootKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var root = AuthorityRequest("CN=Ziggurat Test Local Authority Root", rootKey, pathLength: 1)
+            .CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
+        using var intermediateKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var request = AuthorityRequest("CN=Ziggurat Test Local Authority Intermediate", intermediateKey, pathLength: 0);
+        request.CertificateExtensions.Add(X509AuthorityKeyIdentifierExtension.CreateFromCertificate(root, true, false));
+        using var signed = request.Create(
+            root, DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(29), RandomNumberGenerator.GetBytes(16));
+        var intermediate = signed.CopyWithPrivateKey(intermediateKey);
+        var file = Path.Combine(Path.GetTempPath(), $"local-authority-{Guid.NewGuid():N}.crt");
+        File.WriteAllText(file, root.ExportCertificatePem());
+        return new LocalAuthority(root, intermediate, file);
+    }
+
+    private static CertificateRequest AuthorityRequest(string name, ECDsa key, int pathLength)
+    {
+        var request = new CertificateRequest(name, key, HashAlgorithmName.SHA256);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, pathLength, true));
         request.CertificateExtensions.Add(new X509KeyUsageExtension(
             X509KeyUsageFlags.KeyCertSign
             | X509KeyUsageFlags.CrlSign, true));
         request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
-        var authority = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
-        var file = Path.Combine(Path.GetTempPath(), $"local-authority-{Guid.NewGuid():N}.crt");
-        File.WriteAllText(file, authority.ExportCertificatePem());
-        return new LocalAuthority(authority, file);
+        return request;
     }
 
-    // A server certificate for `host`, signed by this authority, with its private key.
-    public X509Certificate2 Issue(string host)
+    // A server certificate for `host`, signed by this authority's intermediate, with its private key
+    // and the chain the hub serves beside it.
+    public HubCertificate Issue(string host)
     {
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var request = new CertificateRequest(
@@ -325,19 +347,31 @@ internal sealed class LocalAuthority : IDisposable
         names.AddDnsName(host);
         request.CertificateExtensions.Add(names.Build());
         request.CertificateExtensions.Add(
-            X509AuthorityKeyIdentifierExtension.CreateFromCertificate(_authority, true, false));
+            X509AuthorityKeyIdentifierExtension.CreateFromCertificate(_intermediate, true, false));
         using var issued = request.Create(
-            _authority, DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(29),
+            _intermediate, DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(28),
             RandomNumberGenerator.GetBytes(16));
         using var withKey = issued.CopyWithPrivateKey(key);
         // Through PKCS#12, so the key is one Kestrel's TLS can use on every platform.
-        return X509CertificateLoader.LoadPkcs12(
-            withKey.Export(X509ContentType.Pkcs12), null);
+        return new HubCertificate(
+            X509CertificateLoader.LoadPkcs12(withKey.Export(X509ContentType.Pkcs12), null),
+            [X509CertificateLoader.LoadCertificate(_intermediate.RawData)]);
     }
 
     public void Dispose()
     {
-        _authority.Dispose();
+        _root.Dispose();
+        _intermediate.Dispose();
         File.Delete(CertificateFile);
+    }
+}
+
+// What a hub serves: its own certificate, and the intermediates between it and the root.
+internal sealed record HubCertificate(X509Certificate2 Leaf, X509Certificate2Collection Chain) : IDisposable
+{
+    public void Dispose()
+    {
+        Leaf.Dispose();
+        Chain.ToList().ForEach(c => c.Dispose());
     }
 }
