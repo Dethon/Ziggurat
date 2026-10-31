@@ -62,7 +62,11 @@ public class MemoryDreamingService(
     public async Task RunDreamingAsync(DateTimeOffset now, CancellationToken ct)
     {
         var userIds = (await store.GetAllUserIdsAsync(ct)).ToHashSet(StringComparer.Ordinal);
-        var walk = await households.PeopleAsync(ct);
+        if (await WalkAsync(ct) is not { } walk)
+        {
+            return;
+        }
+
         logger.LogInformation("Starting dreaming cycle for {UserCount} users in {HouseholdCount} households",
             userIds.Count, walk.Count);
 
@@ -91,6 +95,29 @@ public class MemoryDreamingService(
         if (inNoHousehold > 0)
         {
             logger.LogWarning("Dreaming left {Count} users alone: they are in no household, so nobody pays for them", inNoHousehold);
+        }
+    }
+
+    // Every household and its people, or none tonight: with the accounts service away nobody's household
+    // is known, so nobody can be paid for — and an outage at the tick must not stop the agent, which a
+    // throw out of a hosted service does.
+    private async Task<IReadOnlyList<HouseholdMembers>?> WalkAsync(CancellationToken ct)
+    {
+        try
+        {
+            return await households.PeopleAsync(ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+                                       or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            logger.LogError(ex, "Could not read the households and their people; nobody is dreamt for tonight");
+            metricsPublisher.Publish(new ErrorEvent
+            {
+                Service = "memory",
+                ErrorType = ex.GetType().Name,
+                Message = "Dreaming skipped: the households and their people could not be read"
+            });
+            return null;
         }
     }
 

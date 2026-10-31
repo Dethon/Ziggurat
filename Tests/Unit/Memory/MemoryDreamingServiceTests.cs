@@ -554,6 +554,24 @@ public class MemoryDreamingServiceTests
             .ShouldBe([("fran", Home), ("luis", Casa)], ignoreOrder: true);
     }
 
+    // Nobody can be paid for without knowing their household: an accounts service away at the night's
+    // tick skips the night and says so, and never takes the agent down with it.
+    [Fact]
+    public async Task RunDreamingAsync_WhenTheHouseholdsCannotBeRead_SkipsTheNightAndThrowsNothing()
+    {
+        var published = new List<MetricEvent>();
+        _metricsPublisher.Setup(p => p.Publish(It.IsAny<MetricEvent>())).Callback<MetricEvent>(published.Add);
+        _store.Setup(s => s.GetAllUserIdsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(["fran"]);
+        _households.Setup(h => h.PeopleAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TaskCanceledException("the accounts service timed out"));
+
+        await _service.RunDreamingAsync(_now, CancellationToken.None);
+
+        _consolidator.Verify(c => c.ConsolidateAsync(
+            It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Never);
+        published.OfType<ErrorEvent>().ShouldHaveSingleItem().Service.ShouldBe("memory");
+    }
+
     // A merge embeds its text on the shared Lemonade, which is counted as the household's use.
     [Fact]
     public async Task RunDreamingForUserAsync_AMerge_CountsItsEmbeddingUnderTheHousehold()
