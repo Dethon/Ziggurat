@@ -115,6 +115,27 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
             "the casa household's bot to be answered");
     }
 
+    // The bot lists a household's agents on the assertion of the person asking, and an agent renamed
+    // reaches the list as soon as the save is announced.
+    [Fact]
+    public async Task TheTelegramBot_ReadsAHouseholdsAgentNamesOnAPersonsAssertion()
+    {
+        await using var server = await StartAsync();
+        var household = await server.SeedHouseholdAsync("Casa");
+        await using var client = Client(server, Telegram);
+        var proof = HouseholdProof.OfAssertion(server.Service<global::Accounts.Signing.Assertions>().OfGuest(household, "telegram"));
+
+        var starting = await client.AgentNamesAsync(household, proof, CancellationToken.None);
+        await SetAsync(server, household, HouseholdSections.Agents,
+            """{ "agents": [ { "id": "chef", "template": "jonas", "name": "Chef" } ], "defaultAgent": "chef" }""");
+
+        starting.Agents.Select(a => a.Id).ShouldBe(["jonas", "sugary"]);
+        await Eventually.Until(
+            async () => (await client.AgentNamesAsync(household, proof, CancellationToken.None)).Agents
+                .SequenceEqual([new HouseholdAgentName("chef", "Chef")]),
+            "the saved agents to be listed");
+    }
+
     [Fact]
     public async Task TheAgent_ReadsAnyHouseholdByIdWithItsOwnToken()
     {

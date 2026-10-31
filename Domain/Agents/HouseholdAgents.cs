@@ -53,10 +53,7 @@ public sealed record HouseholdAgents
 
     public static HouseholdAgents Of(AgentHouseholdConfig configuration, SharedServers shared)
     {
-        var section = configuration.Agents;
-        var (entries, defaultAgent) = section.Agents.Count == 0
-            ? (Starting, (string?)AgentTemplates.Jonas)
-            : (section.Agents, section.DefaultAgent);
+        var (entries, defaultAgent) = Entries(configuration.Agents);
         var withheld = shared.WithheldBy(configuration.Features);
         var built = entries
             .Select(entry => (Entry: entry, Definition: Definition(entry, shared)))
@@ -89,6 +86,23 @@ public sealed record HouseholdAgents
             ]
         };
     }
+
+    // The household's agents as a person picks among them (the shared Telegram bot's /agent): the very
+    // ones its turns run, by id and name, an entry this build cannot build left out as it is there.
+    public static HouseholdAgentNames Names(AgentsSection section)
+    {
+        var (entries, defaultAgent) = Entries(section);
+        return new HouseholdAgentNames(defaultAgent,
+        [
+            .. entries.Select(entry => Definition(entry, new SharedServers())).OfType<AgentDefinition>()
+                .Select(definition => new HouseholdAgentName(definition.Id, definition.Name))
+        ]);
+    }
+
+    private static (IReadOnlyList<HouseholdAgent> Entries, string? DefaultAgent) Entries(AgentsSection section) =>
+        section.Agents.Count == 0
+            ? (Starting, AgentTemplates.Jonas)
+            : (section.Agents, section.DefaultAgent);
 
     // Agents a stack names in code, offered as a household's would be with every feature on.
     public static HouseholdAgents Fixed(IReadOnlyList<AgentDefinition> agents, string? defaultAgent = null) =>
