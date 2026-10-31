@@ -138,7 +138,8 @@ public class MemoryExtractionWorker(
         {
             return await agentDefinitionProvider.GetByIdAsync(request.AgentId, request.TenantId, ct: ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException)
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+                                       or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read agent {AgentId} of household {Household}; extracting as for an unknown agent",
                 request.AgentId, request.TenantId);

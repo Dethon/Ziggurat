@@ -127,7 +127,8 @@ public class ChatMonitor(
         {
             return (await agentDefinitions.ForHouseholdAsync(message.Principal?.Account?.TenantId, ct)).DefaultAgent;
         }
-        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException)
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+                                       or TaskCanceledException && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read the default agent of the household of {ConversationId}",
                 message.ConversationId);
