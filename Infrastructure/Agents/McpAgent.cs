@@ -72,7 +72,8 @@ public sealed class McpAgent : DisposableAgent
     // model the request ran on.
     // A session and the household servers it was built with, which the next turn's start compares
     // with what it finds.
-    private sealed record ReconciledSession(ThreadSession Session, OwnServerResolution OwnServers);
+    private sealed record ReconciledSession(
+        ThreadSession Session, OwnServerResolution OwnServers, ComposedEndpoints Composed);
 
     private sealed record TurnConfig(
         string? ModelOverride, ReasoningEffort? Effort, ResponseFormat? ResponseFormat = null);
@@ -563,9 +564,10 @@ public sealed class McpAgent : DisposableAgent
         }
     }
 
-    // Reconciled at every turn's start. The household's servers are asked again — a lookup, not a
-    // dial — and a session built with the very servers found now is the one this turn runs in. One
-    // that came online since, went offline, or reconnected as a new generation of its tunnel makes
+    // Reconciled at every turn's start. The household's servers and (for an agent opted in) its
+    // machines are asked again — a lookup, not a dial — and a session built with the very servers
+    // found now is the one this turn runs in. One that came online since, went offline, or
+    // reconnected as a new generation of its tunnel makes
     // this turn build a new session in its place, so a server joins or leaves between turns and a
     // session's tools never change under it (ADR 0012). Turns of one conversation group run one at a
     // time, so the session replaced has no call in flight.
@@ -574,26 +576,29 @@ public sealed class McpAgent : DisposableAgent
         return await _syncLock.WithLockAsync(async () =>
         {
             var ownServers = OwnServerEndpoints.Resolve(_endpoints, _tenantId, _ownServers);
+            // Asked here rather than at construction, and at every turn rather than once per
+            // session: an agent outlives many sessions and an outpost's tunnel outlives none, so a
+            // machine that opened, closed or reopened since the last turn is reconciled like a
+            // household server, and nothing mutates a session already built.
+            var composed = OutpostEndpoints.Compose(
+                ownServers.Endpoints, _outposts, _usesOutposts, _tenantId);
             if (_threadSessions.TryGetValue(thread, out var existing))
             {
-                if (existing.OwnServers.ReachesTheSameServersAs(ownServers))
+                if (existing.OwnServers.ReachesTheSameServersAs(ownServers)
+                    && existing.Composed.ReachesTheSameMachinesAs(composed))
                 {
                     return existing;
                 }
 
                 _logger?.LogInformation(
-                    "Agent '{AgentName}' rebuilds its session: its household's servers changed since the last turn "
-                    + "(offline now: {Offline})",
-                    _name, ownServers.Offline.Count == 0 ? "none" : string.Join(", ", ownServers.Offline));
+                    "Agent '{AgentName}' rebuilds its session: its household's servers or machines changed since "
+                    + "the last turn (offline now: {Offline}; machines now: {Outposts})",
+                    _name,
+                    ownServers.Offline.Count == 0 ? "none" : string.Join(", ", ownServers.Offline),
+                    composed.Outposts.Count == 0 ? "none" : string.Join(", ", composed.Outposts.Select(o => o.Name)));
                 _threadSessions.TryRemove(thread, out _);
                 await existing.Session.DisposeAsync();
             }
-
-            // Asked here rather than at construction: an agent outlives many sessions and an
-            // outpost's tunnel outlives none, so a machine that appeared since the last session is
-            // picked up by the next one and nothing mutates a session already built.
-            var composed = OutpostEndpoints.Compose(
-                ownServers.Endpoints, _outposts, _usesOutposts, _tenantId);
 
             var newSession = await ThreadSession
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,
@@ -606,7 +611,7 @@ public sealed class McpAgent : DisposableAgent
                 newSession.FileSystemRegistry, composed.Outposts,
                 newSession.ClientManager.DialledServers);
 
-            var reconciled = new ReconciledSession(newSession, ownServers);
+            var reconciled = new ReconciledSession(newSession, ownServers, composed);
             _threadSessions[thread] = reconciled;
             return reconciled;
         }, ct);

@@ -1,4 +1,5 @@
 using Accounts.Store;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
@@ -11,8 +12,10 @@ using Infrastructure.Agents;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Tunnels;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
+using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Integration.Tunnels;
@@ -32,6 +35,8 @@ public class OutpostTunnelTests(RedisFixture redis, McpVaultServerFixture vault)
     private const string AgentCredential = "agent-credential";
 
     private readonly RecordingMetricsPublisher _metrics = new();
+    private readonly List<(IReadOnlyList<ChatMessage> Messages, ChatOptions? Options)> _requests = [];
+    private bool _callTheMachineOnNextRequest;
     private readonly string _keyDirectory = Path.Combine(Path.GetTempPath(), "outpost-tunnel-tests", Guid.NewGuid().ToString("N"));
     private AccountsServer _accounts = null!;
     private RelayHost _relay = null!;
@@ -175,6 +180,57 @@ public class OutpostTunnelTests(RedisFixture redis, McpVaultServerFixture vault)
             .ShouldBe([("laptop", _household, OutpostLifecycle.Opened), ("laptop", _household, OutpostLifecycle.Closed)]);
     }
 
+    // A conversation outlives the tunnels of the machines it reaches: each turn's start asks again
+    // which machines are open, and one that opened since the last turn is mounted for this one.
+    [Fact]
+    public async Task AnOutpostThatOpensMidConversation_IsMountedOnTheNextTurn()
+    {
+        await using var agent = Agent();
+        var conversation = await agent.CreateSessionAsync();
+        await TurnAsync(agent, conversation);
+
+        await using var laptop = await StartAsync("laptop");
+        await TurnAsync(agent, conversation);
+
+        ToolsOf(_requests[0]).ShouldNotContain(name => name.Contains("outpost-laptop"));
+        ToolsOf(_requests[1]).ShouldContain(name => name.Contains("outpost-laptop"));
+    }
+
+    [Fact]
+    public async Task AnOutpostThatClosesMidConversation_LeavesTheNextTurn()
+    {
+        var laptop = await StartAsync("laptop");
+        await using var agent = Agent();
+        var conversation = await agent.CreateSessionAsync();
+        await TurnAsync(agent, conversation);
+
+        await CloseAsync(laptop, "laptop");
+        await TurnAsync(agent, conversation);
+
+        ToolsOf(_requests[0]).ShouldContain(name => name.Contains("outpost-laptop"));
+        ToolsOf(_requests[1]).ShouldNotContain(name => name.Contains("outpost-laptop"));
+    }
+
+    // Reopened between turns, the machine lists the same tools under the same name, but on a new
+    // opening of its tunnel: the next turn reaches it there, not through the one that closed.
+    [Fact]
+    public async Task AnOutpostThatReopensMidConversation_IsReachedThroughItsNewTunnelOnTheNextTurn()
+    {
+        var before = await StartAsync("laptop");
+        await using var agent = Agent();
+        var conversation = await agent.CreateSessionAsync();
+        await TurnAsync(agent, conversation);
+
+        await CloseAsync(before, "laptop");
+        await using var reopened = await StartAsync("laptop");
+        _callTheMachineOnNextRequest = true;
+        await TurnAsync(agent, conversation);
+
+        var answer = _requests.Last().Messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>()
+            .ShouldHaveSingleItem();
+        answer.Result?.ToString().ShouldNotContain("went offline");
+    }
+
     // Only the home household exists in this phase, so a second one is written straight into the store.
     private async Task<string> SeedHouseholdAsync()
     {
@@ -209,6 +265,56 @@ public class OutpostTunnelTests(RedisFixture redis, McpVaultServerFixture vault)
         OutpostEndpoints.DeclareUnreachable(session.FileSystemRegistry, composed.Outposts, session.ClientManager.DialledServers);
         return session;
     }
+
+    private async Task CloseAsync(OutpostMachine machine, string name)
+    {
+        await machine.DisposeAsync();
+        await Eventually.Until(
+            () => _relay.Registry.Find(_household, OutpostServerName.For(name)) is null, $"{name}'s tunnel closes");
+    }
+
+    // An opted-in agent of the household, its calls signed as the deployment signs them and its tool
+    // calls run as a chat client runs them.
+    private McpAgent Agent() => new(
+        TestAgentSpec.Default with { TenantId = _household, UsesOutposts = true },
+        new FunctionInvokingChatClient(ChatClient()),
+        new Mock<IThreadStateStore>().Object,
+        _metrics,
+        TimeProvider.System,
+        [],
+        [],
+        outposts: _outposts,
+        callTokens: new CallTokens(_keys, TimeProvider.System));
+
+    // Answers "ok" — or, once asked to, first calls the machine's fs_info on its root.
+    private IChatClient ChatClient()
+    {
+        var client = new Mock<IChatClient>();
+        client
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions?>(), It.IsAny<CancellationToken>()))
+            .Returns<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((messages, options, _) =>
+            {
+                _requests.Add(([.. messages], options));
+                var info = options?.Tools?.FirstOrDefault(t => t.Name.Contains("outpost-laptop") && t.Name.EndsWith("__fs_info"));
+                ChatResponseUpdate update = _callTheMachineOnNextRequest && info is not null
+                    ? new()
+                    {
+                        Role = ChatRole.Assistant,
+                        Contents = [new FunctionCallContent("call-1", info.Name, new Dictionary<string, object?> { ["path"] = "/" })]
+                    }
+                    : new() { Role = ChatRole.Assistant, Contents = [new TextContent("ok")] };
+                _callTheMachineOnNextRequest = false;
+                return new[] { update }.ToAsyncEnumerable();
+            });
+        return client.Object;
+    }
+
+    private static Task TurnAsync(McpAgent agent, Microsoft.Agents.AI.AgentSession conversation) =>
+        agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "what is on my laptop?")], conversation).ToListAsync().AsTask();
+
+    private static IReadOnlyList<string> ToolsOf((IReadOnlyList<ChatMessage> Messages, ChatOptions? Options) request) =>
+        [.. request.Options.ShouldNotBeNull().Tools.ShouldNotBeNull().Select(t => t.Name)];
 
     private static FileSystemResolution Resolve(IVirtualFileSystemRegistry registry, string path) =>
         registry.Resolve(path).TryGetValue(out var resolution, out _)
