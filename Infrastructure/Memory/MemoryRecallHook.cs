@@ -58,7 +58,7 @@ public class MemoryRecallHook(
         AgentSession thread,
         CancellationToken ct)
     {
-        if (!agentDefinitionProvider.HasFeatureEnabled(agentId, "memory"))
+        if (!agentDefinitionProvider.HasFeatureEnabled(agentId, "memory", account))
         {
             return;
         }
@@ -104,7 +104,7 @@ public class MemoryRecallHook(
             // for a recall that never happened. The guard is a string emptiness check, so nothing
             // measurable moves.
             var agentName = agentId is not null
-                ? agentDefinitionProvider.GetById(agentId)?.Name ?? agentId
+                ? agentDefinitionProvider.GetById(agentId, account)?.Name ?? agentId
                 : null;
             using var latency = metricsPublisher.MeasureLatency(
                 LatencyStage.MemoryRecall, conversationId, agentName);

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Prompts;
 using Domain.Security;
 using Infrastructure.Agents;
@@ -81,7 +82,8 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
             .WithHttpTransport()
             .WithTools<TestEchoTool>());
         var (factory, _, definitions) = FactoryAndDefinitions();
-        var registered = definitions.RegisterCustomAgent("fran", new CustomAgentRegistration
+        var fran = new Account("home", "fran");
+        var registered = await definitions.RegisterCustomAgentAsync(fran, new CustomAgentRegistration
         {
             Name = "Registered",
             Model = "test-model",
@@ -90,7 +92,7 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
         presented.Clear();
 
         await using var agent = factory.Create(
-            new AgentKey("conv-1", registered.Id), "fran", registered.Id, new Mock<IToolApprovalHandler>().Object);
+            new AgentKey("conv-1", registered.Id), "fran", registered.Id, new Mock<IToolApprovalHandler>().Object, fran);
         var session = await agent.CreateSessionAsync();
         await agent.WarmupSessionAsync(session);
 

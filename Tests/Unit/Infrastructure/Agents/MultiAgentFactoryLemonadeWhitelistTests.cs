@@ -31,7 +31,7 @@ public sealed class MultiAgentFactoryLemonadeWhitelistTests
             Id = "jonas", Name = "Jonas", Model = "configured/model", McpServerEndpoints = []
         };
         var provider = new Mock<IAgentDefinitionProvider>();
-        provider.Setup(p => p.GetAll(It.IsAny<string?>())).Returns([definition]);
+        provider.Setup(p => p.GetAll(It.IsAny<Account?>())).Returns([definition]);
         var services = new Mock<IServiceProvider>();
         services.Setup(sp => sp.GetService(typeof(ILemonadeModelSource))).Returns(source);
         services.Setup(sp => sp.GetService(typeof(LemonadeChatHostOptions)))

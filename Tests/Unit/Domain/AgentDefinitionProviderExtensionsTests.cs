@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Moq;
 using Shouldly;
@@ -11,7 +12,7 @@ public class AgentDefinitionProviderExtensionsTests
     private readonly Mock<IAgentDefinitionProvider> _provider = new();
 
     private void Define(string agentId, params string[] enabledFeatures) =>
-        _provider.Setup(p => p.GetById(agentId)).Returns(new AgentDefinition
+        _provider.Setup(p => p.GetById(agentId, It.IsAny<Account?>())).Returns(new AgentDefinition
         {
             Id = agentId,
             Name = agentId,

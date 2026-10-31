@@ -55,9 +55,11 @@ public sealed class MultiAgentFactory(
         AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
         string? tenantId = null)
     {
-        // A person's custom agents are registered under their account's id, so a turn that names
-        // the account finds them by it and not by its sender, which may be the account's display name.
-        var agents = definitionProvider.GetAll(account?.UserId ?? userId);
+        // A person's custom agents are registered under their account — household and person — so a
+        // turn finds them by the account it acts for, never by its sender, which may be the account's
+        // display name or anything a channel reports. A turn acting for no account sees the built-in
+        // agents alone.
+        var agents = definitionProvider.GetAll(account);
 
         // By id or not at all. Falling back to the first configured agent read routing off the
         // order of a display catalogue, so a request that named nobody was answered by whichever

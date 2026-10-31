@@ -68,7 +68,9 @@ public sealed class MultiAgentFactoryTests
             null);
     }
 
-    private AgentDefinition AddCustomAgent(string userId, string name = "TestBot", string model = "test-model")
+    private static Account AccountOf(string userId) => new("home", userId);
+
+    private async Task<AgentDefinition> AddCustomAgent(string userId, string name = "TestBot", string model = "test-model")
     {
         var definition = new AgentDefinition
         {
@@ -77,52 +79,52 @@ public sealed class MultiAgentFactoryTests
             Model = model,
             McpServerEndpoints = []
         };
-        _customAgentRegistry.Add(userId, definition);
+        await _customAgentRegistry.AddAsync(AccountOf(userId), definition);
         return definition;
     }
 
     public static IEnumerable<object[]> SuccessCases =>
     [
-        ["built-in agent id", "user1", (Func<MultiAgentFactoryTests, string?>)(_ => _builtInAgent.Id)],
-        ["custom agent id for owning user", "user1", (Func<MultiAgentFactoryTests, string?>)(t => t.AddCustomAgent("user1").Id)]
+        ["built-in agent id", "user1", (Func<MultiAgentFactoryTests, Task<string?>>)(_ => Task.FromResult<string?>(_builtInAgent.Id))],
+        ["custom agent id for owning user", "user1", (Func<MultiAgentFactoryTests, Task<string?>>)(async t => (await t.AddCustomAgent("user1")).Id)]
     ];
 
     [Theory]
     [MemberData(nameof(SuccessCases))]
-    public void Create_SupportedAgentIdentifier_ReturnsAgent(string _, string userId, Func<MultiAgentFactoryTests, string?> agentIdFactory)
+    public async Task Create_SupportedAgentIdentifier_ReturnsAgent(string _, string userId, Func<MultiAgentFactoryTests, Task<string?>> agentIdFactory)
     {
-        var agentId = agentIdFactory(this);
+        var agentId = await agentIdFactory(this);
         var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
-        var agent = _sut.Create(agentKey, userId, agentId, _approvalHandler.Object);
+        var agent = _sut.Create(agentKey, userId, agentId, _approvalHandler.Object, AccountOf(userId));
 
         agent.ShouldNotBeNull();
     }
 
     public static IEnumerable<object?[]> ErrorCases =>
     [
-        ["unknown agent id", "user1", (Func<MultiAgentFactoryTests, string>)(_ => "unknown-id"), "unknown-id"],
+        ["unknown agent id", "user1", (Func<MultiAgentFactoryTests, Task<string?>>)(_ => Task.FromResult<string?>("unknown-id")), "unknown-id"],
         // Never the first configured agent: the array is ordered for display, and picking from it
         // would answer a general request with whichever assistant happens to be listed first.
-        ["no agent id at all", "user1", (Func<MultiAgentFactoryTests, string?>)(_ => null), "No agent id"],
-        ["custom agent unregistered before create", "user1", (Func<MultiAgentFactoryTests, string>)(t =>
+        ["no agent id at all", "user1", (Func<MultiAgentFactoryTests, Task<string?>>)(_ => Task.FromResult<string?>(null)), "No agent id"],
+        ["custom agent unregistered before create", "user1", (Func<MultiAgentFactoryTests, Task<string?>>)(async t =>
         {
-            var def = t.AddCustomAgent("user1");
-            t._customAgentRegistry.Remove("user1", def.Id);
+            var def = await t.AddCustomAgent("user1");
+            await t._customAgentRegistry.RemoveAsync(AccountOf("user1"), def.Id);
             return def.Id;
         }), null],
-        ["custom agent owned by a different user", "user2", (Func<MultiAgentFactoryTests, string>)(t => t.AddCustomAgent("user1").Id), null]
+        ["custom agent owned by a different user", "user2", (Func<MultiAgentFactoryTests, Task<string?>>)(async t => (await t.AddCustomAgent("user1")).Id), null]
     ];
 
     [Theory]
     [MemberData(nameof(ErrorCases))]
-    public void Create_RejectsInvalidAgentId_Throws(string _, string userId, Func<MultiAgentFactoryTests, string?> agentIdFactory, string? expectedMessageFragment)
+    public async Task Create_RejectsInvalidAgentId_Throws(string _, string userId, Func<MultiAgentFactoryTests, Task<string?>> agentIdFactory, string? expectedMessageFragment)
     {
-        var agentId = agentIdFactory(this);
+        var agentId = await agentIdFactory(this);
         var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
         var ex = Should.Throw<InvalidOperationException>(
-            () => _sut.Create(agentKey, userId, agentId, _approvalHandler.Object));
+            () => _sut.Create(agentKey, userId, agentId, _approvalHandler.Object, AccountOf(userId)));
 
         ex.Message.ShouldContain(expectedMessageFragment ?? agentId!);
     }
@@ -130,9 +132,9 @@ public sealed class MultiAgentFactoryTests
     // A person's custom agents are filed under their account, and a chat-client turn's sender is the
     // name the account goes by: the agent is found by the account the turn acts for, never by the name.
     [Fact]
-    public void Create_ACustomAgentOfTheTurnsAccount_IsFoundWhateverTheSenderIsCalled()
+    public async Task Create_ACustomAgentOfTheTurnsAccount_IsFoundWhateverTheSenderIsCalled()
     {
-        var agentId = AddCustomAgent("acct-1").Id;
+        var agentId = (await AddCustomAgent("acct-1")).Id;
 
         var agent = _sut.Create(
             new AgentKey("1:1", agentId), "Fran", agentId, _approvalHandler.Object, new Account("home", "acct-1"));
@@ -141,9 +143,9 @@ public sealed class MultiAgentFactoryTests
     }
 
     [Fact]
-    public void Create_ACustomAgentOfAnotherAccount_IsNotFound()
+    public async Task Create_ACustomAgentOfAnotherAccount_IsNotFound()
     {
-        var agentId = AddCustomAgent("acct-1").Id;
+        var agentId = (await AddCustomAgent("acct-1")).Id;
 
         Should.Throw<InvalidOperationException>(() => _sut.Create(
             new AgentKey("1:1", agentId), "acct-1", agentId, _approvalHandler.Object, new Account("home", "acct-2")));
