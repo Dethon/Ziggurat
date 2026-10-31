@@ -5,6 +5,7 @@ paths:
   - "Domain/Prompts/SchedulingPrompt.cs"
   - "Domain/Prompts/Sections/scheduling_prompt.md"
   - "Domain/Prompts/SchedulingSkill.cs"
+  - "Domain/Prompts/Skills/scheduling.md"
   - "Domain/DTOs/Schedule.cs"
 ---
 

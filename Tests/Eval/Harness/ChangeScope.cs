@@ -7,11 +7,12 @@ namespace Tests.Eval.Harness;
 // and every scenario that tests the claim — citing, guarding, judging, or conditionally — is
 // the diff's. A scenario file that changed runs whole: its scenarios are what changed.
 //
-// A prompt document declares its claims in its header (Domain/Prompts/Sections), read with the
-// parser the manifest reads it with, so an edit anywhere in the document — its words, a part, a
-// claim's statement — selects every claim it declares, and an id its words merely mention is not
-// one. Code declares a claim by spelling its id as a string, which is how a claim handle beside
-// generated prose, or a skill still declared in code, is found.
+// A prompt document — a section's or a skill's (Domain/Prompts/Sections, Domain/Prompts/Skills) —
+// declares its claims in its header, read with the parser the manifest reads it with, so an edit
+// anywhere in the document — its words, a part, a claim's statement — selects every claim it
+// declares, and an id its words merely mention is not one. Code declares a claim by spelling its id
+// as a string, which is how a claim handle's file, or a claim declared beside generated prose, is
+// found.
 //
 // Nothing else selects. A tool description, a fixture, a harness edit or the agent definition
 // have no claims to be read through, and a tier that guessed at them would be a full pass that

@@ -3,222 +3,62 @@ namespace Domain.Prompts;
 // The doing rules of the web, loaded when a request reaches for the browser. That a url comes from
 // a search and that no call is a probe stay in the web prompt, because both are decided before
 // the first call — and a probe is the call that would precede any load (docs/adr/0039).
+// Its words and claims are Skills/web-browsing.md; this is the handle the server and the scenarios hold.
 public static class WebBrowsingSkill
 {
     public const string Name = "web-browsing";
 
+    private static readonly PromptDocument _document = PromptDocuments.Skill(Name);
+
     // The whole trigger: the one line about this skill that is in every turn.
-    public const string Description =
-        "Any task on the web: searching for something, reading a page or its pictures, filling or submitting a form, navigating a site, or checking an account of the person's on a site (\"look up how long the gazpacho rests\", \"book a place on that course\", \"has my order shipped\"). The tools at a glance, the read-then-act workflow, chaining actions from a snapshot's refs, browsing as the person and handing them a login, error recovery, and how a written or spoken answer cites what it found.";
+    public static readonly string Description = _document.AsSkill().Description;
 
-    public const string Body =
-        """
-        ### Tools at a glance
-
-        - **web_search** — find candidate URLs before navigating; don't guess URLs.
-        - **web_browse** — load a URL and read its content as markdown.
-        - **web_snapshot** — see the current page's interactive elements with refs.
-        - **web_action** — interact with an element (or navigate back) by ref.
-        - **view_image** — look at pictures on the page you browsed, by their image refs.
-        - **web_login** — hand a login to the person: a one-time link to a live view of the site
-          in their own browser, where they sign in themselves.
-        - **web_logins** — a one-time link to the page where the person sees and forgets the
-          sites you are logged into as them; give it when they ask what you can reach.
-
-        The parameters carry the arguments and their defaults — read them there rather than from
-        memory.
-
-        ### Core Workflow
-
-        **No web call is announced.** Beside it a written reply says nothing, a spoken one no more
-        than its one word — never "ya lo abro", never "relleno el nombre" — and the reply, after the
-        last result, is the answer, never the route to it. The source url is part of the answer,
-        not a step.
-
-        **Reading a page.** A search result's snippet is the engine's cached summary, written at
-        crawl time: choose which result to open by it, never answer from it — the page wins where
-        they disagree. Call web_browse. If the response is truncated or you need a specific region,
-        narrow it before falling back to a second call: `selector` for one region, `useReadability`
-        for a clean article without ads and navigation, `scrollToLoad` for lazy-loaded content,
-        `offset` (the `nextOffset` the previous call returned) for the remainder. When the page you
-        opened for an answer arrives truncated, read its remainder before opening a different
-        page — the answer is usually in the tail you have not read, and another page's snippet is
-        a promise, not the page.
-
-        **Looking at a picture.** web_browse lists each image where it sits in the page text, as
-        `[image i-1: what the page calls it]`. Pass those refs to view_image to see the pictures
-        themselves — several in one call. Ask when the answer is in the picture rather than the
-        prose: a chart's numbers, a scan with no text layer, what a product actually looks like.
-        Image refs (i-1) and element refs (e-1) are separate: view_image takes the first, web_action
-        the second, and each refuses the other by name.
-
-        **Interacting with a page.** Load with web_browse using snapshot=true to get content and refs
-        in a single call, then chain web_action calls. Each web_action returns a diff with new refs —
-        use those for the next action and only call web_snapshot again if the diff doesn't show what
-        you need.
-
-        **Autocomplete / combobox fields.** Type the value to trigger the page's JS handler; if a
-        dropdown appears in the diff, click the option you want, otherwise confirm the selection
-        with the appropriate key press.
-
-        **Hover menus / tooltips.** Hover the trigger first; the diff reveals the menu refs to click.
-        Focus does the same for a datepicker or a dropdown that opens on focus.
-
-        **The other verbs.** `press` takes the key's name in `value` (Enter, Tab, Escape,
-        ArrowDown); `select` takes the option's text; `drag` takes the destination ref in `endRef`;
-        `clear` empties a field; `back` needs no ref.
-
-        **Browsing as the person.** Pass `asMe` to web_browse only when the task needs the
-        person's own account on a site — orders, bookings, statements, settings. Every other page,
-        a search result included, is browsed without it. Act on an `asMe` page's refs as on any
-        other — every web_action still names its ref.
-
-        **A login page means hand off.** When `asMe` is refused for want of a login, or its page
-        asks them to sign in, never type into it or ask for their password: call web_login with its url, give them the link (on voice it is already in
-        their WebChat — say so), and stop. You are woken here when they
-        press Done; carry on with `asMe` without asking them anything.
-
-        **Nobody to hand it to.** On a schedule's or a watch's turn, web_login refuses, and so does
-        `asMe` on a site with no login: stop, look no other way, and report that they must log in
-        by asking you directly. A worker has no
-        web_login: it reports the login page in its answer, and the parent hands it off.
-
-        **Multi-page navigation.** Click links/buttons normally. Going back is web_action's back
-        action, never a second web_browse of a page you already visited — knowing its URL does not
-        change that; a re-browse starts the page over and loses its state.
-
-        ### Key Principles
-
-        1. **One snapshot, then chain actions.** Snapshot is expensive context; reuse the refs from
-           each action's diff before snapshotting again.
-        2. **web_browse for content, web_snapshot for structure.** Don't call both for the same
-           purpose — text vs. element refs are distinct goals.
-        3. **Type vs. fill.** Use type when the field reacts to keystrokes (autocomplete, validation
-           on input); use fill when you just need the value set.
-        4. **Read the diff.** Added elements (`+`) and removed (`-`) tell you exactly what changed;
-           new refs there are valid for the next action.
-        5. **Verify silently.** Verify each action produced the expected change before the next one;
-           verification is internal — do not report the steps.
-
-        ### Error Recovery
-
-        | Situation                | Strategy                                                                |
-        |--------------------------|-------------------------------------------------------------------------|
-        | Content truncated        | Page with `offset`, or narrow with `selector` / `useReadability`.        |
-        | Can't find element       | Re-snapshot to see what's actually there.                               |
-        | Autocomplete not opening | Type the full value, then confirm with a key press.                     |
-        | Lazy-loaded content      | Re-browse with `scrollToLoad`.                                          |
-        | Session expired          | Re-browse to start a fresh session.                                     |
-        | Modal blocking content   | Usually auto-dismissed; otherwise find a close button via snapshot.     |
-        | Hidden hover content     | Hover the trigger to reveal it.                                         |
-        | Image ref no longer resolves | Refs live in the session that listed them: re-browse the page for fresh ones. |
-        | Need to go back          | Use web_action's back rather than re-browsing the previous URL.         |
-                | Click times out on a ref | Retry once with `force` only if you're certain the ref is right. A click waits for the element to be visible, enabled and unobscured; an overlay with no ARIA role (a floating label, a decoration) is invisible to the snapshot yet intercepts the click, and `force` skips the wait. Those checks are also what catch a wrong ref or a real modal, so never force a first attempt. |
-
-        ### Response Style
-
-        - Answer the question from what you found; never dump raw page content.
-        - A written reply ends with a markdown link to the page it answered from,
-          `[page title](https://<host>/<path>)`, the full url inside it and never the site's name
-          alone — the user has to be able to open the source. A reply that is read aloud never
-          carries a url.
-        - If content is partial, fetch the missing part once, then answer with what you have; if you
-          still cannot, say so in one clause — don't offer to get more.
-        - In a written reply, format extracted data as a table or list; when your reply is read aloud,
-          speak the values only.
-
-        ### Limitations
-
-        - Cannot access pages requiring CAPTCHA (unless CapSolver configured).
-        - Cannot interact with file download dialogs.
-        - The anonymous session is per-conversation and resets between conversations; the
-          person's own logins (`asMe`) are theirs across conversations until they forget them.
-        - Some sites may block automated access.
-        """;
+    public static readonly string Body = _document.Text;
 
     public static readonly SkillText Text = new(Name, Description, Body);
 
-    // The trigger claim: a request of this kind loads the skill. Cited by every web scenario, so a
-    // skill nobody loads shows as a red description rather than a red body.
     public static readonly PromptClaim LoadsForAWebTask =
-        new("web-browsing.loads-for-a-web-task",
-            "A request to search, read a page, act on one or navigate a site loads the web-browsing skill before the first web call.");
+        _document.Claim("web-browsing.loads-for-a-web-task");
 
-    // Every falsifiable statement the prose above makes. They split into two: where an answer
-    // comes from, and how an interaction is aimed — and only the second fails loudly, because a
-    // ref that was never in a snapshot simply misses.
     public static readonly PromptClaim AnswerComesFromWhatWasRead =
-        new("web-browsing.answer-comes-from-what-was-read",
-            "The answer states what the page said, not what the search result summarised.");
+        _document.Claim("web-browsing.answer-comes-from-what-was-read");
 
     public static readonly PromptClaim RawContentIsNeverDumped =
-        new("web-browsing.raw-content-is-never-dumped",
-            "A reply answers the question rather than pasting the page back.");
+        _document.Claim("web-browsing.raw-content-is-never-dumped");
 
     public static readonly PromptClaim RefsComeFromASnapshot =
-        new("web-browsing.refs-come-from-a-snapshot",
-            "An element is acted on by a ref that came from a snapshot of the page, taken before the action.");
+        _document.Claim("web-browsing.refs-come-from-a-snapshot");
 
     public static readonly PromptClaim ActionsChainFromTheDiff =
-        new("web-browsing.actions-chain-from-the-diff",
-            "Refs from an action's diff are reused rather than a fresh snapshot being taken between every action.");
+        _document.Claim("web-browsing.actions-chain-from-the-diff");
 
     public static readonly PromptClaim BrowseReadsAndSnapshotStructures =
-        new("web-browsing.browse-reads-and-snapshot-structures",
-            "Content is read with a browse and structure with a snapshot, never both for the same purpose.");
+        _document.Claim("web-browsing.browse-reads-and-snapshot-structures");
 
     public static readonly PromptClaim TypeReactsAndFillSets =
-        new("web-browsing.type-reacts-and-fill-sets",
-            "A field that reacts to keystrokes is typed into; one that only needs a value is filled.");
+        _document.Claim("web-browsing.type-reacts-and-fill-sets");
 
     public static readonly PromptClaim UrlsAreCitedOnlyInWriting =
-        new("web-browsing.urls-are-cited-only-in-writing",
-            "A source url appears in a written reply and never in one that is read aloud.");
+        _document.Claim("web-browsing.urls-are-cited-only-in-writing");
 
     public static readonly PromptClaim StepsAreNotReported =
-        new("web-browsing.steps-are-not-reported",
-            "The reply carries the answer rather than an account of the pages and clicks it took.");
+        _document.Claim("web-browsing.steps-are-not-reported");
 
     public static readonly PromptClaim PartialContentIsFetchedOnce =
-        new("web-browsing.partial-content-is-fetched-once",
-            "Truncated content is fetched once more and then answered from, never offered to be fetched again.");
+        _document.Claim("web-browsing.partial-content-is-fetched-once");
 
     public static readonly PromptClaim AsMeOnlyForThePersonsAccount =
-        new("web-browsing.as-me-only-for-the-persons-account",
-            "A browse carries asMe when the task needs the person's own account on the site, and a public page is browsed without it.");
+        _document.Claim("web-browsing.as-me-only-for-the-persons-account");
 
     public static readonly PromptClaim ALoginPageIsHandedOff =
-        new("web-browsing.a-login-page-is-handed-off",
-            "A page browsed as the person that asks them to sign in, or an asMe browse refused because they have no login on the site, is handed off with web_login, its link given and the turn stopped, never typed into.");
+        _document.Claim("web-browsing.a-login-page-is-handed-off");
 
     public static readonly PromptClaim AFireReportsALoginWall =
-        new("web-browsing.a-fire-reports-a-login-wall",
-            "A turn a schedule or a watch started reports that the person must log in again rather than starting a handoff.");
+        _document.Claim("web-browsing.a-fire-reports-a-login-wall");
 
     public static readonly PromptClaim AWorkerReportsALoginWall =
-        new("web-browsing.a-worker-reports-a-login-wall",
-            "A worker that meets a login page says so in its answer, and its parent starts the handoff.");
+        _document.Claim("web-browsing.a-worker-reports-a-login-wall");
 
     public static readonly PromptClaim BackIsAnAction =
-        new("web-browsing.back-is-an-action",
-            "Going back to the previous page is the browser's own back rather than a second browse of its url.");
-
-    public static readonly IReadOnlyList<PromptClaim> Claims =
-    [
-        LoadsForAWebTask,
-        AnswerComesFromWhatWasRead,
-        RawContentIsNeverDumped,
-        RefsComeFromASnapshot,
-        ActionsChainFromTheDiff,
-        BrowseReadsAndSnapshotStructures,
-        TypeReactsAndFillSets,
-        UrlsAreCitedOnlyInWriting,
-        StepsAreNotReported,
-        PartialContentIsFetchedOnce,
-        BackIsAnAction,
-        AsMeOnlyForThePersonsAccount,
-        ALoginPageIsHandedOff,
-        AFireReportsALoginWall,
-        AWorkerReportsALoginWall
-    ];
+        _document.Claim("web-browsing.back-is-an-action");
 }

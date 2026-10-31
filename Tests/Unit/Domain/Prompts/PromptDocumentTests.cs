@@ -184,6 +184,65 @@ public class PromptDocumentTests
         Should.Throw<FormatException>(() => document.AsSection()).Message.ShouldContain(named);
     }
 
+    private const string Timer =
+        """
+        ---
+        name: countdown-timers
+        # The whole trigger, read on every turn: a sentence with colons in it.
+        description: Touching a countdown under `/timers`: setting one ("timer for eight minutes"). Not a watch.
+        description-budget: 130
+        body-budget: 900
+        served-by: mcp-timers
+        preload-reads: /timers/index.md, /timers/help.md
+        placeholders: zone
+        claims:
+        - countdown-timers.loads-for-a-timer-request: A request about a countdown loads the skill.
+        ---
+
+        - Create one at `/timers/<id>/timer.json`, in {{zone}}.
+        """;
+
+    [Fact]
+    public void AsSkill_TheHeader_DeclaresTheSkill()
+    {
+        var declaration = PromptDocument.Parse("countdown-timers.md", Timer).AsSkill();
+
+        declaration.Name.ShouldBe("countdown-timers");
+        declaration.Description.ShouldBe(
+            "Touching a countdown under `/timers`: setting one (\"timer for eight minutes\"). Not a watch.");
+        declaration.DescriptionBudget.ShouldBe(130);
+        declaration.BodyBudget.ShouldBe(900);
+        declaration.ServedBy.ShouldBe("mcp-timers");
+        declaration.PreloadReads.ShouldBe(["/timers/index.md", "/timers/help.md"]);
+        declaration.Declared.ShouldBeTrue();
+        declaration.Claims.ShouldBe([
+            new PromptClaim("countdown-timers.loads-for-a-timer-request", "A request about a countdown loads the skill.")
+        ]);
+    }
+
+    [Theory]
+    [InlineData("body-budget: 900", "body-budgte: 900", "body-budgte")]
+    [InlineData("body-budget: 900", "body-budget: lots", "lots")]
+    [InlineData("served-by: mcp-timers", "", "served-by")]
+    [InlineData("description-budget: 130", "", "description-budget")]
+    public void AsSkill_AHeaderTheManifestCannotRead_FailsNamingTheValue(string line, string typo, string named)
+    {
+        var document = PromptDocument.Parse("countdown-timers.md", Timer.Replace(line, typo));
+
+        Should.Throw<FormatException>(() => document.AsSkill()).Message.ShouldContain(named);
+    }
+
+    // The two kinds share a format and not a declaration: a section's band means nothing to a skill,
+    // and a skill's description nothing to a section.
+    [Fact]
+    public void AsSkill_ASectionsHeader_IsNotASkill()
+    {
+        Should.Throw<FormatException>(() => PromptDocument.Parse("timers_prompt.md", Timers).AsSkill())
+            .Message.ShouldContain("priority");
+        Should.Throw<FormatException>(() => PromptDocument.Parse("countdown-timers.md", Timer).AsSection())
+            .Message.ShouldContain("description");
+    }
+
     [Fact]
     public void Parse_TextWithNoHeader_Fails()
     {
