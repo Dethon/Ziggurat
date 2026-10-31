@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Prompts;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -30,4 +31,8 @@ public abstract class DisposableAgent : AIAgent, IAsyncDisposable
 
     public virtual Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ChatMessage>>([]);
+
+    // Who pays for the model calls made for this agent's turns — the household it was built for and
+    // its key — so what is asked beside a turn (the skill preload) is paid the way the turn is.
+    public virtual ModelPayer Payer => ModelPayer.Deployment;
 }

@@ -123,7 +123,8 @@ verified, so a tool reads its section of that household's configuration and no o
   publishes a usage event of its own; a use's own event (`SkillPreloadEvent`, `ExecScreenEvent`)
   may keep a copy of the cost for its dashboard family, and the eval's spend ignores that copy. The value is passed down as plain data, never read from an ambient: a
   server's tool takes it from the call (`JudgmentCaller.For(context.Turn)`)
-  and hands it on as a parameter, the agent host takes it from the message, and a question with no
+  and hands it on as a parameter, the agent host takes it from the message (and the household's key
+  with it, `JudgmentCaller.Payer`; a server's names the household and asks on its own key), and a question with no
   turn behind it (memory) names the user with a null turn model. Two
   filters nested around each other would let the outer one convert the very cancellation the inner
   rethrows, so a second ask is a no-op and the first ask's error shape wins.

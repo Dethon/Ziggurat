@@ -52,6 +52,9 @@ internal sealed class FakeTelegramHouseholds : IHouseholdConfiguration
     public Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         throw new NotSupportedException("the Telegram server reads its bots and agent names alone");
 
+    public Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct) =>
+        throw new NotSupportedException("the Telegram server reads its bots and agent names alone");
+
     private static HouseholdConfigRefusedException Refused(string detail) =>
         new(new HouseholdConfigRefused(HouseholdConfigRefusal.Unproven, detail));
 }

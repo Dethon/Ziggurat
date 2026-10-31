@@ -37,12 +37,46 @@ public sealed class FakeOpenRouter : IAsyncDisposable
         """;
 
     private readonly ConcurrentQueue<Request> _requests = new();
+    private readonly ConcurrentQueue<string> _scripted = new();
     private WebApplication _app = null!;
     private int _port;
 
     public string ApiUrl => $"http://127.0.0.1:{_port}/api/v1/";
 
     public IReadOnlyList<Request> Requests => [.. _requests];
+
+    // Answers the next requests with these, in order, and every one after them with the short reply.
+    public void Script(params string[] replies)
+    {
+        foreach (var reply in replies)
+        {
+            _scripted.Enqueue(reply);
+        }
+    }
+
+    // A reply that calls one tool with these arguments (a JSON object), for a turn that has to reach a
+    // tool before it ends.
+    public static string CallingTool(string tool, string arguments)
+    {
+        var escaped = JsonValue.Create(arguments).ToJsonString();
+        return $$$$"""
+            event: response.created
+            data: {"type":"response.created","response":{"id":"resp_call","object":"response","status":"in_progress","store":false}}
+
+            event: response.output_item.added
+            data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"{{{{tool}}}}","arguments":"","status":"in_progress"}}
+
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"{{{{tool}}}}","arguments":{{{{escaped}}}},"status":"completed"}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_call","object":"response","status":"completed","store":false,"model":"test-model","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"{{{{tool}}}}","arguments":{{{{escaped}}}},"status":"completed"}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}
+
+            data: [DONE]
+
+
+            """;
+    }
 
     public static async Task<FakeOpenRouter> StartAsync()
     {
@@ -56,7 +90,7 @@ public sealed class FakeOpenRouter : IAsyncDisposable
             var body = JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();
             fake._requests.Enqueue(new Request(http.Request.Path, http.Request.Headers.Authorization.ToString(), body));
             http.Response.ContentType = "text/event-stream";
-            await http.Response.WriteAsync(Reply, Encoding.UTF8);
+            await http.Response.WriteAsync(fake._scripted.TryDequeue(out var scripted) ? scripted : Reply, Encoding.UTF8);
         });
         await fake._app.StartAsync();
         return fake;

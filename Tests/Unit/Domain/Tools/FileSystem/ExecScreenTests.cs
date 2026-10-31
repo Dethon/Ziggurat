@@ -197,6 +197,21 @@ public class ExecScreenTests
         screened.ServesRequest.ShouldBeNull();
     }
 
+    // What a household's agent was screened on is counted under that household.
+    [Fact]
+    public async Task AScreenedExec_IsCountedUnderTheHouseholdItWasAskedFor()
+    {
+        var metrics = new RecordingMetricsPublisher();
+        var request = Request(ShellReach.Host) with
+        {
+            Caller = new JudgmentCaller("m", "fran") { Payer = new ModelPayer("0123456789abcdef0123456789abcdef", null) }
+        };
+
+        await Screen(new ScriptedJudge(_ => Answered(0.97)), metrics: metrics).ScreenAsync(request, CancellationToken.None);
+
+        metrics.Published.OfType<ExecScreenEvent>().ShouldHaveSingleItem().TenantId.ShouldBe("0123456789abcdef0123456789abcdef");
+    }
+
     [Fact]
     public async Task TheDeadline_IsHandedToTheJudge()
     {

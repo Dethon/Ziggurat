@@ -53,6 +53,21 @@ public sealed class HouseholdProofs
             : Unproven($"the agent's token for the configuration is {verified.Refusal}");
     }
 
+    // The agent asking about every household at once (dreaming's walk) names none, and proves only that
+    // it is the agent, as for its own view. Null when it did.
+    public async Task<HouseholdProven.Refused?> AgentItselfAsync(HouseholdConfigQuery query, CancellationToken ct)
+    {
+        if (query is not { HouseholdId: null, Assertion: null, Delegation: null })
+        {
+            return (HouseholdProven.Refused)BadQuery("asked about every household, the agent names none and presents its own token alone");
+        }
+
+        var verified = await _agent.VerifyAsync(query.CallToken, TokenAudiences.HouseholdConfiguration, ct);
+        return verified.IsVerified
+            ? null
+            : (HouseholdProven.Refused)Unproven($"the agent's token for the configuration is {verified.Refusal}");
+    }
+
     // `callers` are the names the presented credential matched that may read the view asked for.
     public async Task<HouseholdProven> SharedAsync(HouseholdConfigQuery query, IReadOnlyList<string> callers, CancellationToken ct)
     {
