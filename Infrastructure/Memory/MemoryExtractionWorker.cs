@@ -46,13 +46,16 @@ public class MemoryExtractionWorker(
 
     public async Task ProcessRequestAsync(MemoryExtractionRequest request, CancellationToken ct)
     {
-        // A request names its person and not their household, so a custom agent is not found here
-        // and its features and name are read as an unknown agent's. Only recall enqueues a request,
-        // and recall has already asked the custom agent itself with the turn's account.
-        if (!agentDefinitionProvider.HasFeatureEnabled(request.AgentId, "memory"))
+        // A request names its person and their household but no account, so a custom agent is not
+        // found here and its features and name are read as an unknown agent's. Only recall enqueues
+        // a request, and recall has already asked the custom agent itself with the turn's account.
+        var agent = await AgentAsync(request, ct);
+        if (agent is not null && !agent.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
         {
             return;
         }
+
+        var agentName = request.AgentId is null ? null : agent?.Name ?? request.AgentId;
 
         var sw = Stopwatch.StartNew();
 
@@ -67,17 +70,17 @@ public class MemoryExtractionWorker(
 
         try
         {
-            var extraction = await ExtractWithRetryAsync(request, ct);
+            var extraction = await ExtractWithRetryAsync(request, agentName, ct);
             candidateCount = extraction.Candidates.Count;
 
             // Each candidate is checked and then stored, in parallel across candidates as the
             // store fan-out always was. The embedding dedup runs after the check, unchanged.
             await Task.WhenAll(
                 extraction.Candidates.Take(options.MaxCandidatesPerMessage)
-                    .Select(c => VerifyThenStoreAsync(request, extraction.Window, c, outcomes, ct)));
+                    .Select(c => VerifyThenStoreAsync(request, agentName, extraction.Window, c, outcomes, ct)));
 
             sw.Stop();
-            metrics.Publish(Event(request, sw, candidateCount, outcomes, extraction.Outcome));
+            metrics.Publish(Event(request, agentName, sw, candidateCount, outcomes, extraction.Outcome));
         }
         catch (Exception ex) when (!IsCancellation(ex, ct))
         {
@@ -91,7 +94,7 @@ public class MemoryExtractionWorker(
                 ErrorType = ex.GetType().Name,
                 Message = $"Extraction failed: {ex.Message}"
             });
-            metrics.Publish(Event(request, sw, candidateCount, outcomes, MemoryExtractionOutcomes.Failed));
+            metrics.Publish(Event(request, agentName, sw, candidateCount, outcomes, MemoryExtractionOutcomes.Failed));
         }
     }
 
@@ -101,8 +104,8 @@ public class MemoryExtractionWorker(
     private static bool IsCancellation(Exception ex, CancellationToken ct) =>
         ex is OperationCanceledException && ct.IsCancellationRequested;
 
-    private MemoryExtractionEvent Event(
-        MemoryExtractionRequest request, Stopwatch sw, int candidateCount,
+    private static MemoryExtractionEvent Event(
+        MemoryExtractionRequest request, string? agentName, Stopwatch sw, int candidateCount,
         List<CandidateOutcome> outcomes, string outcome)
     {
         lock (outcomes)
@@ -115,14 +118,33 @@ public class MemoryExtractionWorker(
                 StoredCount = outcomes.Count(o => o == CandidateOutcome.Stored),
                 Outcome = outcome,
                 UserId = request.UserId,
-                AgentId = AgentName(request),
+                AgentId = agentName,
                 ConversationId = request.ConversationId
             };
         }
     }
 
-    private string? AgentName(MemoryExtractionRequest request) =>
-        request.AgentId is not null ? agentDefinitionProvider.GetById(request.AgentId)?.Name ?? request.AgentId : null;
+    // The request's agent as its household has it, or none: unknown, or a household that could not be
+    // read just now, which fails open as an unknown agent does — memory is kept, never lost to an
+    // outage of the configuration.
+    private async Task<AgentDefinition?> AgentAsync(MemoryExtractionRequest request, CancellationToken ct)
+    {
+        if (request.AgentId is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await agentDefinitionProvider.GetByIdAsync(request.AgentId, request.TenantId, ct: ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException)
+        {
+            logger.LogWarning(ex, "Could not read agent {AgentId} of household {Household}; extracting as for an unknown agent",
+                request.AgentId, request.TenantId);
+            return null;
+        }
+    }
 
     // What the extractor produced and how it ended: an empty window and an empty answer are both
     // "empty", and a turn the gate judges to hold nothing lasting will be "gated".
@@ -143,7 +165,7 @@ public class MemoryExtractionWorker(
     }
 
     private async Task<Extraction> ExtractWithRetryAsync(
-        MemoryExtractionRequest request, CancellationToken ct)
+        MemoryExtractionRequest request, string? agentName, CancellationToken ct)
     {
         var window = await BuildExtractionWindowAsync(request);
         if (window.Count == 0)
@@ -158,7 +180,7 @@ public class MemoryExtractionWorker(
         // the extractor, so an unsure, late or absent answer costs a fraction of a cent and never
         // a memory. A Lemonade turn never reaches here — the recall hook did not enqueue it — so
         // the ADR 0042 boundary covers Jev without a second gate.
-        var gate = await judge.GateAsync(window, Context(request), ct);
+        var gate = await judge.GateAsync(window, Context(request, agentName), ct);
         if (gate.Skip)
         {
             logger.LogDebug("Extraction gated for user {UserId}: nothing lasting in the turn", request.UserId);
@@ -168,8 +190,8 @@ public class MemoryExtractionWorker(
         return await ExtractWithRetryAsync(window, request.UserId, ct);
     }
 
-    private MemoryJudgmentContext Context(MemoryExtractionRequest request) =>
-        new(request.UserId, AgentName(request), request.ConversationId);
+    private static MemoryJudgmentContext Context(MemoryExtractionRequest request, string? agentName) =>
+        new(request.UserId, agentName, request.ConversationId);
 
     private async Task<IReadOnlyList<ChatMessage>> BuildExtractionWindowAsync(MemoryExtractionRequest request)
     {
@@ -201,10 +223,10 @@ public class MemoryExtractionWorker(
     }
 
     private async Task VerifyThenStoreAsync(
-        MemoryExtractionRequest request, IReadOnlyList<ChatMessage> window, ExtractionCandidate candidate,
+        MemoryExtractionRequest request, string? agentName, IReadOnlyList<ChatMessage> window, ExtractionCandidate candidate,
         List<CandidateOutcome> outcomes, CancellationToken ct)
     {
-        var outcome = await VerifyThenStoreAsync(request, window, candidate, ct);
+        var outcome = await VerifyThenStoreAsync(request, agentName, window, candidate, ct);
         lock (outcomes)
         {
             outcomes.Add(outcome);
@@ -212,9 +234,10 @@ public class MemoryExtractionWorker(
     }
 
     private async Task<CandidateOutcome> VerifyThenStoreAsync(
-        MemoryExtractionRequest request, IReadOnlyList<ChatMessage> window, ExtractionCandidate candidate, CancellationToken ct)
+        MemoryExtractionRequest request, string? agentName, IReadOnlyList<ChatMessage> window, ExtractionCandidate candidate,
+        CancellationToken ct)
     {
-        var verdict = await judge.VerifyAsync(window, candidate, Context(request), ct);
+        var verdict = await judge.VerifyAsync(window, candidate, Context(request, agentName), ct);
         if (!verdict.Store)
         {
             logger.LogDebug("Dropping candidate for user {UserId}: {Content}", request.UserId, candidate.Content);

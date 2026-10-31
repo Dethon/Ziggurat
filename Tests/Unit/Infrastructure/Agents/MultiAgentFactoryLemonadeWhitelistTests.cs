@@ -30,19 +30,18 @@ public sealed class MultiAgentFactoryLemonadeWhitelistTests
         {
             Id = "jonas", Name = "Jonas", Model = "configured/model", McpServerEndpoints = []
         };
-        var provider = new Mock<IAgentDefinitionProvider>();
-        provider.Setup(p => p.GetAll(It.IsAny<Account?>())).Returns([definition]);
+        var provider = FixedHouseholdAgents.Provider(definition);
         var services = new Mock<IServiceProvider>();
         services.Setup(sp => sp.GetService(typeof(ILemonadeModelSource))).Returns(source);
         services.Setup(sp => sp.GetService(typeof(LemonadeChatHostOptions)))
             .Returns(new LemonadeChatHostOptions { ApiUrl = "http://lemonade-chat-host.invalid:13305/api/v1" });
         services.Setup(sp => sp.GetService(typeof(IThreadStateStore))).Returns(Mock.Of<IThreadStateStore>());
         var factory = new MultiAgentFactory(
-            services.Object, provider.Object,
+            services.Object, provider,
             new OpenRouterConfig { ApiUrl = "http://openrouter.invalid/api/v1", ApiKey = "key" },
             Mock.Of<IDomainToolRegistry>());
 
-        await using var agent = factory.Create(
+        await using var agent = await factory.CreateAsync(
             new AgentKey("conv-1", "jonas"), "fran", "jonas", Mock.Of<IToolApprovalHandler>());
         source.Current = [new LemonadeModel("local", [], null)];
         var message = new ChatMessage(ChatRole.User, "hi");

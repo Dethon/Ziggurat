@@ -24,6 +24,7 @@ namespace Infrastructure.Agents;
 public sealed class McpAgent : DisposableAgent
 {
     private readonly string? _customInstructions;
+    private readonly string? _timeZone;
     private readonly string? _language;
     private readonly string _description;
     private readonly IReadOnlyList<AIFunction> _domainTools;
@@ -114,6 +115,7 @@ public sealed class McpAgent : DisposableAgent
         _description = spec.Description;
         _userId = spec.UserId;
         _customInstructions = spec.CustomInstructions;
+        _timeZone = spec.TimeZone;
         _language = spec.Language;
         _domainTools = domainTools;
         _domainPrompts = domainPrompts;
@@ -489,6 +491,11 @@ public sealed class McpAgent : DisposableAgent
     // Append calls with a comment each is now the manifest those comments moved into.
     private string BuildInstructions(ThreadSession session)
     {
+        // The household's zone; one this host does not know reads as the host's rather than failing
+        // the turn, since accounts checked the name when it was saved against a zone list of its own.
+        var zone = _timeZone is { } id && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var found)
+            ? found
+            : _timeProvider.LocalTimeZone;
         var assembly = PromptComposer.Compose(new PromptContext
         {
             AgentId = _agentId,
@@ -501,7 +508,10 @@ public sealed class McpAgent : DisposableAgent
             Skills = session.Skills,
             CustomInstructions = _customInstructions,
             Language = _language,
-            Now = _timeProvider.GetLocalNow()
+            Now = TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), zone),
+            // Named only where it is not the host's own: the home's agents read the prompt they always
+            // read, and a household elsewhere is told whose eight o'clock it is.
+            TimeZone = zone.Id == _timeProvider.LocalTimeZone.Id ? null : zone.Id
         });
 
         ReportPromptWarnings(assembly);

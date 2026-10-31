@@ -16,10 +16,10 @@ public sealed class ShippedDefinition(string path, TestAgents agents)
     public static ShippedDefinition Repository { get; } =
         new(Path.Combine(RepositoryRoot.Path, "Agent", "appsettings.json"), TestAgents.Repository);
 
-    private readonly Lazy<AgentSettings> _settings =
+    private readonly Lazy<TestAgentSettings> _settings =
         new(() => agents.Into(Bind(path)), LazyThreadSafetyMode.ExecutionAndPublication);
 
-    public AgentSettings Settings => _settings.Value;
+    public TestAgentSettings Settings => _settings.Value;
 
     // The secrets come from user secrets rather than from the environment the container would
     // have had; everything else is the file's.

@@ -38,6 +38,15 @@ public sealed class HouseholdConfigStore(
             .SingleOrDefaultAsync(ct);
     }
 
+    public async Task<ConfiguredHousehold?> HomeAsync(CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return await db.Tenants.AsNoTracking()
+            .Where(t => t.IsHome)
+            .Select(t => new ConfiguredHousehold(t.Id, t.Name, t.IsHome))
+            .SingleOrDefaultAsync(ct);
+    }
+
     // The households that have saved a section, for a view across households.
     public async Task<IReadOnlyList<string>> HouseholdsWithAsync(string section, CancellationToken ct)
     {

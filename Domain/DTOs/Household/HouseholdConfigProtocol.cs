@@ -36,6 +36,12 @@ public static class HouseholdConfigProtocol
     // its household in the query (the agent is the one caller that may).
     public const string AgentTokenChannel = "household-config";
 
+    // What the agent names the home household by in its view's query, for what is the home's before
+    // any turn names its id: the catalogue it registers with its channels, and a turn that acts for
+    // nobody. A household id is 32 lowercase hex characters, so no household is ever called this; the
+    // answer carries the home's real id.
+    public const string HomeHousehold = "@home";
+
     public static string PathOf(string view) => PathPrefix + view;
 }
 

@@ -9,7 +9,7 @@ namespace Tests.Eval.Fixtures;
 // because a worker that really runs dials what its own profile names.
 public class EvalStackTests
 {
-    private static readonly AgentSettings _shipped = new()
+    private static readonly TestAgentSettings _shipped = new()
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = "https://openrouter.ai/api/v1/", ApiKey = "" },
         Redis = new RedisConfiguration { ConnectionString = "localhost" },
@@ -110,7 +110,7 @@ public class EvalStackTests
 // sugary agent, whose one server is Sugary's, it was a sandbox container per benchmark meal.
 public class EvalStackDialledTests
 {
-    private static readonly AgentSettings _shipped = new()
+    private static readonly TestAgentSettings _shipped = new()
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = "https://openrouter.ai/api/v1/", ApiKey = "" },
         Redis = new RedisConfiguration { ConnectionString = "localhost" },

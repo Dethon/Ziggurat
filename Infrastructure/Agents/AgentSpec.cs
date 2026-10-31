@@ -33,6 +33,14 @@ public sealed record AgentSpec
     // built the agent named none (it acted for nobody), and then no household server is reached.
     public string? TenantId { get; init; }
 
+    // The zone that household's days are read in (an IANA name), which the prompt's date is given in;
+    // null for agents no household's configuration gave, which read the host's.
+    public string? TimeZone { get; init; }
+
+    // The shared servers that household's features turned off: its definitions come without them
+    // already, and a worker this agent spawns drops them from its own profile's list.
+    public IReadOnlyList<string> WithheldServers { get; init; } = [];
+
     // Whether the household's live outposts join the endpoint list above when a session is built. A deliberate
     // choice per agent, never a default.
     public bool UsesOutposts { get; init; }

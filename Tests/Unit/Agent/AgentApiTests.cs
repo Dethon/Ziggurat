@@ -80,7 +80,7 @@ public class AgentApiTests
     public async Task Get_WithTheSecret_ListsTheForwardedPersonsCatalogue()
     {
         var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
-        provider.Setup(p => p.GetAll(Alice)).Returns([_registered]);
+        provider.Setup(p => p.GetAllAsync(Alice.TenantId, Alice, It.IsAny<CancellationToken>())).ReturnsAsync([_registered]);
         await using var app = await StartAsync(provider.Object, Secret);
         using var client = app.GetTestClient();
 
@@ -129,9 +129,8 @@ public class AgentApiTests
     [Fact]
     public async Task APersonsCustomAgent_IsListedAndDeletableOnlyByThem()
     {
-        var builtIn = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        builtIn.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions { Agents = [] });
-        await using var app = await StartAsync(new AgentDefinitionProvider(builtIn.Object, new CustomAgentRegistry()), Secret);
+        AgentDefinition[] agents = [];
+        await using var app = await StartAsync(FixedHouseholdAgents.Provider(new CustomAgentRegistry(), agents), Secret);
         using var client = app.GetTestClient();
 
         using var registered = await client.SendAsync(Request("POST", "Bearer " + Secret, user: "alice"));
@@ -179,7 +178,7 @@ public class AgentApiTests
     public async Task AnAssertionNamingAlice_UnderAHeaderNamingMallory_ListsAlicesCatalogue()
     {
         var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
-        provider.Setup(p => p.GetAll(Alice)).Returns([_registered]);
+        provider.Setup(p => p.GetAllAsync(Alice.TenantId, Alice, It.IsAny<CancellationToken>())).ReturnsAsync([_registered]);
         await using var app = await StartAsync(provider.Object, Secret);
         using var client = app.GetTestClient();
 

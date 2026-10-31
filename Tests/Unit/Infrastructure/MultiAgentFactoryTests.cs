@@ -35,10 +35,7 @@ public sealed class MultiAgentFactoryTests
     private static AgentDefinitionProvider CreateProvider(
         CustomAgentRegistry registry, params AgentDefinition[] agents)
     {
-        var optionsMonitor = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        optionsMonitor.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions { Agents = agents });
-
-        return new AgentDefinitionProvider(optionsMonitor.Object, registry);
+        return FixedHouseholdAgents.Provider(registry, agents);
     }
 
     private static MultiAgentFactory CreateFactory(IAgentDefinitionProvider definitionProvider)
@@ -96,7 +93,7 @@ public sealed class MultiAgentFactoryTests
         var agentId = await agentIdFactory(this);
         var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
-        var agent = _sut.Create(agentKey, userId, agentId, _approvalHandler.Object, AccountOf(userId));
+        var agent = await _sut.CreateAsync(agentKey, userId, agentId, _approvalHandler.Object, AccountOf(userId));
 
         agent.ShouldNotBeNull();
     }
@@ -123,8 +120,8 @@ public sealed class MultiAgentFactoryTests
         var agentId = await agentIdFactory(this);
         var agentKey = new AgentKey(ConversationId: "1:1", AgentId: "test");
 
-        var ex = Should.Throw<InvalidOperationException>(
-            () => _sut.Create(agentKey, userId, agentId, _approvalHandler.Object, AccountOf(userId)));
+        var ex = await Should.ThrowAsync<InvalidOperationException>(
+            () => _sut.CreateAsync(agentKey, userId, agentId, _approvalHandler.Object, AccountOf(userId)));
 
         ex.Message.ShouldContain(expectedMessageFragment ?? agentId!);
     }
@@ -136,7 +133,7 @@ public sealed class MultiAgentFactoryTests
     {
         var agentId = (await AddCustomAgent("acct-1")).Id;
 
-        var agent = _sut.Create(
+        var agent = await _sut.CreateAsync(
             new AgentKey("1:1", agentId), "Fran", agentId, _approvalHandler.Object, new Account("home", "acct-1"));
 
         agent.ShouldNotBeNull();
@@ -147,7 +144,7 @@ public sealed class MultiAgentFactoryTests
     {
         var agentId = (await AddCustomAgent("acct-1")).Id;
 
-        Should.Throw<InvalidOperationException>(() => _sut.Create(
+        await Should.ThrowAsync<InvalidOperationException>(() => _sut.CreateAsync(
             new AgentKey("1:1", agentId), "acct-1", agentId, _approvalHandler.Object, new Account("home", "acct-2")));
     }
 
@@ -156,7 +153,7 @@ public sealed class MultiAgentFactoryTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void Create_AgentsReorderedInConfiguration_BuildsTheSameAgent(bool reversed)
+    public async Task Create_AgentsReorderedInConfiguration_BuildsTheSameAgent(bool reversed)
     {
         AgentDefinition[] agents =
         [
@@ -167,7 +164,7 @@ public sealed class MultiAgentFactoryTests
             new CustomAgentRegistry(), reversed ? [.. agents.Reverse()] : agents);
         var sut = CreateFactory(provider);
 
-        var agent = sut.Create(
+        var agent = await sut.CreateAsync(
             new AgentKey("1:1", "jonas"), "user1", "jonas", _approvalHandler.Object);
 
         // The display name is the definition's name and the conversation it was built for.
