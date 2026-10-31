@@ -132,14 +132,40 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         var (fran, ana) = (Fran(), Ana());
         var push = new RedisPushSubscriptionStore(redis.Connection);
         var phone = new PushSubscriptionDto($"https://push.example/{_tag}", "p256dh", "auth");
-        await push.SaveAsync(fran.WebChat, phone, $"kitchen-{_tag}");
+        await BeforeHouseholds.PhoneAsync(redis.Connection.GetDatabase(), fran.WebChat, phone, $"kitchen-{_tag}");
 
         var (exit, output) = await RunAsync(rig, fran, ana);
 
         exit.ShouldBe(0, output);
-        var franId = (await rig.AccountOfAsync(fran.TelegramId)).UserId;
-        (await push.GetBySpaceAsync($"kitchen-{_tag}")).ShouldBe([(franId, phone)]);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        (await push.GetBySpaceAsync(franAccount.TenantId, $"kitchen-{_tag}")).ShouldBe([(franAccount.UserId, phone)]);
         (await push.GetAllAsync()).ShouldNotContain(s => s.UserId == fran.WebChat);
+    }
+
+    // A space is the household's now, and so are the phones that hear of it: a phone already under
+    // its person's account, in a space every household shared, joins the home household's space.
+    [Fact]
+    public async Task ASpacesPhones_AreTheHomeHouseholdsSpacesPhones()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var push = new RedisPushSubscriptionStore(redis.Connection);
+        var phone = new PushSubscriptionDto($"https://push.example/space-{_tag}", "p256dh", "auth");
+        var elsewhere = new Account($"elsewhere{_tag}", $"laura{_tag}");
+        var hers = new PushSubscriptionDto($"https://push.example/elsewhere-{_tag}", "p256dh", "auth");
+        await push.SaveAsync(elsewhere, hers, $"porch-{_tag}");
+
+        var (first, _) = await RunAsync(rig, fran, ana);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        await BeforeHouseholds.PhoneAsync(db, franAccount.UserId, phone, $"porch-{_tag}");
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        first.ShouldBe(0);
+        exit.ShouldBe(0, output);
+        (await push.GetBySpaceAsync(franAccount.TenantId, $"porch-{_tag}")).ShouldBe([(franAccount.UserId, phone)]);
+        (await push.GetBySpaceAsync(elsewhere.TenantId, $"porch-{_tag}")).ShouldBe([(elsewhere.UserId, hers)]);
+        (await db.KeyExistsAsync($"push:space:porch-{_tag}")).ShouldBeFalse();
     }
 
     [Fact]
@@ -338,8 +364,8 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         await Memories().StoreAsync(Memory("household", $"The cat is called Mus {_tag}", [1, 1, 0, 0]));
         await new RedisPersonStateStore(redis.Connection, MigrationRig.StateKey)
             .SaveAsync(fran.Name, new PersonState("{}", []));
-        await new RedisPushSubscriptionStore(redis.Connection)
-            .SaveAsync(ana.WebChat, new PushSubscriptionDto($"https://push.example/{_tag}", "p", "a"));
+        await BeforeHouseholds.PhoneAsync(
+            redis.Connection.GetDatabase(), ana.WebChat, new PushSubscriptionDto($"https://push.example/{_tag}", "p", "a"));
         await BeforeHouseholds.ScheduleAsync(redis.Connection.GetDatabase(), Schedule(new Principal("telegram", fran.Telegram)));
         await TopicAsync(
             new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System), ana.WebChat);

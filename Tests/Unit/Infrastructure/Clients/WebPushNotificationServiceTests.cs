@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Infrastructure.Clients.Push;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,7 +18,7 @@ public sealed class WebPushNotificationServiceTests
 
     public WebPushNotificationServiceTests()
     {
-        _store.Setup(s => s.GetBySpaceAsync("default", It.IsAny<CancellationToken>()))
+        _store.Setup(s => s.GetBySpaceAsync("home", "default", It.IsAny<CancellationToken>()))
             .ReturnsAsync([
                 ("fran", new PushSubscriptionDto("https://push.example/fran-phone", "k", "a")),
                 ("laura", new PushSubscriptionDto("https://push.example/laura-phone", "k", "a")),
@@ -34,7 +35,7 @@ public sealed class WebPushNotificationServiceTests
     [Fact]
     public async Task APersonsPush_ReachesTheirDevicesInTheSpaceAndNobodyElses()
     {
-        await _sut.SendToPersonAsync("fran", "default", "Plum jam", "The agent has finished responding", "/default");
+        await _sut.SendToPersonAsync(new Account("home", "fran"), "default", "Plum jam", "The agent has finished responding", "/default");
 
         _reached.ShouldBe(["https://push.example/fran-phone", "https://push.example/fran-laptop"]);
     }
@@ -42,7 +43,7 @@ public sealed class WebPushNotificationServiceTests
     [Fact]
     public async Task ASpacesPush_ReachesEveryoneInIt()
     {
-        await _sut.SendToSpaceAsync("default", "Plum jam", "The agent has finished responding", "/default");
+        await _sut.SendToSpaceAsync("home", "default", "Plum jam", "The agent has finished responding", "/default");
 
         _reached.Count.ShouldBe(3);
     }
