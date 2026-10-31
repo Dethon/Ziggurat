@@ -33,7 +33,7 @@ public static class ConfigModule
             .AddSubAgents(settings.SubAgents)
             .AddMemory(config)
             .AddChatMonitoring(settings, cmdParams)
-            .AddTunnelRelay(settings.Mcp.Tunnel, settings.Accounts, settings.AgentApi.SharedSecret)
+            .AddTunnelRelay(settings.Mcp.Tunnel, settings.Accounts, settings.AgentApi.SharedSecret, settings.BackCalls)
             // The registration API's person is the accounts service's assertion SexyTime forwards.
             .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification);
     }

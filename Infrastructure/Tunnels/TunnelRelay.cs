@@ -28,7 +28,8 @@ public sealed class TunnelRelay(
     IMetricsPublisher metrics,
     TimeProvider clock,
     ILogger<TunnelRelay> logger,
-    IHostApplicationLifetime? lifetime = null)
+    IHostApplicationLifetime? lifetime = null,
+    BackCallGateway? backCalls = null)
 {
     public const string RefusedErrorType = "TunnelRefused";
 
@@ -52,12 +53,18 @@ public sealed class TunnelRelay(
             KeepAliveTimeout = settings.KeepAliveTimeout
         });
 
-        // A server-opened stream is a back-call, and none is let through yet: each is reset.
-        await using var mux = new TunnelMux(socket, TunnelEnd.Relay, (_, _) => Task.CompletedTask);
+        // A server-opened stream is a back-call, which the gateway takes once the tunnel is admitted
+        // and only to its allowlist; with no gateway, each is reset.
+        OpenTunnel? admitted = null;
+        await using var mux = new TunnelMux(
+            socket,
+            TunnelEnd.Relay,
+            (_, _) => Task.CompletedTask,
+            backCalls is null ? null : (stream, tag) => backCalls.AcceptAsync(Volatile.Read(ref admitted), stream, tag));
         switch (await VerifyAsync(presented, claimed, ct))
         {
             case TunnelVerdict.Opens { Credential: var credential }:
-                await RelayAsync(mux, credential, presented, ct);
+                await RelayAsync(mux, credential, presented, tunnel => Volatile.Write(ref admitted, tunnel), ct);
                 break;
             case TunnelVerdict.Refused { Reason: var reason }:
                 Report(claimed, reason);
@@ -69,10 +76,12 @@ public sealed class TunnelRelay(
         }
     }
 
-    private async Task RelayAsync(TunnelMux mux, TunnelCredentialVerified credential, string presented, CancellationToken ct)
+    private async Task RelayAsync(
+        TunnelMux mux, TunnelCredentialVerified credential, string presented, Action<OpenTunnel> admit, CancellationToken ct)
     {
         await using var tunnel = new OpenTunnel(
             credential, presented, registry.NextGeneration(), clock.GetUtcNow(), mux, keys);
+        admit(tunnel);
         await tunnel.SendAsync(tunnel.Admitted, ct);
         if (registry.Add(tunnel) is { } replaced)
         {

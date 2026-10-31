@@ -77,6 +77,18 @@ public sealed class TunnelCredentialStore(
         };
     }
 
+    // Whose live credential this is, whatever server it was minted for: what the internal API asks of
+    // a household's server whose back-call the relay showed it, and null for anything not live.
+    public async Task<TunnelCredentialVerified?> LiveAsync(string credential, CancellationToken ct)
+    {
+        var hash = Tokens.Hash(credential);
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return await db.TunnelCredentials.AsNoTracking()
+            .Where(t => t.CredentialHash == hash && t.RevokedAt == null)
+            .Select(t => new TunnelCredentialVerified(t.Id, t.TenantId, t.ServerName))
+            .SingleOrDefaultAsync(ct);
+    }
+
     public async Task<IReadOnlyList<ListedTunnelCredential>> ListAsync(CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);

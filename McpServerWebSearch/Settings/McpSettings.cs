@@ -1,6 +1,7 @@
 using Domain.Security;
 using Domain.Tools.Web;
 using Infrastructure.Judgments;
+using Infrastructure.Metrics;
 using Mcp.Hosting;
 
 namespace McpServerWebSearch.Settings;
@@ -30,6 +31,10 @@ public record McpSettings : IMcpHostSettings
     // handoff's one-time links and each person's remembered logins, sealed. Page images still cross
     // to Redis at the agent's bridge, never here.
     public string RedisConnectionString { get; init; } = "redis:6379";
+
+    // Where metrics go instead, when set: a household's web search keeps its logins and links in
+    // its own site's Redis and posts its events on its metrics back-call (METRICS__URL).
+    public MetricsFeedConfig Metrics { get; init; } = new();
 
     // Jev, the hosted judge this server asks which of a wall's buttons closes it. It is asked
     // through OpenRouter, so the key is OPENROUTER__APIKEY, the same line the agent reads; empty
