@@ -44,7 +44,7 @@ internal sealed class RelayHost : IAsyncDisposable
 
     public static async Task<RelayHost> StartAsync(
         AccountsServer accounts, string agentCredential, string redis, SigningKeyStore keys,
-        IMetricsPublisher metrics, int? port = null)
+        IMetricsPublisher metrics, int? port = null, IReadOnlyDictionary<string, string>? sharedServers = null)
     {
         var builder = WebApplication.CreateBuilder();
         // A port of its own choosing unless a restart must come back on the old one: one picked
@@ -53,6 +53,9 @@ internal sealed class RelayHost : IAsyncDisposable
         builder.Services
             .AddSingleton(keys)
             .AddSingleton(metrics)
+            // The deployment's own servers' credentials, as the agent holds them to dial each: the ones
+            // a shared server presents to the relay's endpoint.
+            .AddSingleton(new McpCredentials(sharedServers ?? new Dictionary<string, string>()))
             .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis))
             .AddTunnelRelay(
                 new TunnelSettings(),
@@ -62,6 +65,7 @@ internal sealed class RelayHost : IAsyncDisposable
         app.UseWebSockets();
         app.MapTunnel();
         app.MapBrowsePages();
+        app.MapRelayedCalls();
         await app.StartAsync();
         return new RelayHost(app, new Uri(app.Urls.First()).Port);
     }
@@ -82,7 +86,7 @@ internal sealed class TunnelledServer : IAsyncDisposable
 
     private TunnelledServer(WebApplication app) => _app = app;
 
-    private sealed record Settings(McpGateSettings Mcp) : IMcpHostSettings;
+    internal sealed record Settings(McpGateSettings Mcp) : IMcpHostSettings;
 
     // What a household's server is told: a hub, its credential and its name. Quick to come back, so a
     // test waits on the reconnect rather than the schedule.

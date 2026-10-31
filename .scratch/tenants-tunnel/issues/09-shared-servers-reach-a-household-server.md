@@ -4,8 +4,14 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A timer for the home household rings, is dismissed and validates its satellite through the relay
-- [ ] A shared server cannot reach a household's server outside the relay's endpoint
-- [ ] An offline voice server makes a timer's create fail clearly
+- [x] A timer for the home household rings, is dismissed and validates its satellite through the relay
+- [x] A shared server cannot reach a household's server outside the relay's endpoint
+- [x] An offline voice server makes a timer's create fail clearly
+
+The endpoint is `/internal/relay/<server>/<path>` on the agent; the caller names itself and presents
+its own /mcp credential, which the agent already holds to dial it, and may reach only its listed
+server and path (`RelayedCalls`). The household is the one with a voice tunnel open
+(`SoleHousehold`), in this phase. The deployment's timers already ring through the relay; voice must
+run tunnelled (ticket 11) for them to ring in the deployment.

@@ -29,6 +29,7 @@ app.MapAgentKeys();
 app.MapTopicMinting();
 app.MapTunnel();
 app.MapBrowsePages();
+app.MapRelayedCalls();
 
 await app.RunAsync();
 return 0;

@@ -42,10 +42,13 @@ public static class TunnelModule
                 .AddSingleton<IOwnServers>(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
                 .AddHostedService<TunnelRevocations>()
                 // Exchanges that arrive at the agent for a household's server and go on down its
-                // tunnel: the browse pages a person opens from a link.
+                // tunnel: the browse pages a person opens from a link, and a shared server's calls to
+                // a household's server, each caller checked against the credential the agent holds
+                // to dial it (McpCredentials).
                 .AddHttpForwarder()
                 .AddSingleton<TunnelForwarder>()
-                .AddSingleton<BrowsePages>();
+                .AddSingleton<BrowsePages>()
+                .AddSingleton<RelayedCalls>();
         }
     }
 }

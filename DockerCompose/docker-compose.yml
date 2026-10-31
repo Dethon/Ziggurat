@@ -600,18 +600,20 @@ services:
     restart: unless-stopped
     environment:
       # The secrets this service reads, by name: it is never handed the whole .env.
-      Announce__Token: ${Announce__Token}
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP_SECRET_TIMERS}
       # A tool call's token: the agent's, for this name, checked against the keys it publishes.
       MCP__AUDIENCE: mcp-timers
       MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
+      # The household's voice server, which rings its satellites, has no address here: it is reached
+      # through the relay's endpoint on the agent, down its tunnel. The relay asks this server's name
+      # and its own credential above (the agent's MCP__SECRETS__mcp-timers), and presents the voice
+      # server the credential of its tunnel, so no announce secret is needed.
+      VOICEHUB__BASEURL: http://agent:8080/internal/relay/voice/
     networks:
       - jackbot
     depends_on:
       base-sdk:
-        condition: service_started
-      mcp-channel-voice:
         condition: service_started
 
   # Docker creates a missing bind-mount folder as root, and mcp-sugary runs as PUID, so on a fresh
