@@ -42,7 +42,7 @@ public class AlertServiceTests
             Times.Once);
         // Pushed whether or not a chat client is open: an alarm must reach a phone in a pocket.
         _push.Verify(push => push.SendToPersonAsync(
-                "fran", SpaceConfig.DefaultSlug, It.IsAny<string>(), "pasta is ready", It.IsAny<string>(),
+                _fran, SpaceConfig.DefaultSlug, It.IsAny<string>(), "pasta is ready", It.IsAny<string>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
         _sut.OfferedTo(_fran).ShouldHaveSingleItem().AlertId.ShouldBe(alertId);
