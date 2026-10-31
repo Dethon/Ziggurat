@@ -2,8 +2,19 @@
 # under ./volumes/smoke, so a stale copy of the deployment's data in ./volumes is never loaded — its
 # schedules would fire — and Caddy serves the shipped Caddyfile through its own local CA instead of
 # Cloudflare's DNS challenge. The script starts only the servers that reach nothing outside this
-# machine: no Telegram bot. A household's own servers are the tenant kit's, not this file's.
+# machine: no Telegram bot. A household's own servers are the tenant kit's, not this file's: the
+# script starts the kit beside this stack (TenantKit/docker-compose.override.smoke.yml).
 services:
+  # Where the smoke tests stand to call a server from inside the deployment's network, past Caddy, as
+  # anything on it could: curl and nothing else, beside every server and app. Nothing ships it.
+  smoke-probe:
+    image: curlimages/curl:8.11.1
+    container_name: smoke-probe
+    entrypoint: ["sh", "-c", "trap 'exit 0' TERM; while :; do sleep 3600 & wait $$!; done"]
+    restart: "no"
+    networks:
+      - jackbot
+
   redis:
     volumes: ["./volumes/smoke/redis:/data"]
   accounts-volume:

@@ -9,11 +9,18 @@ namespace Tests.Smoke;
 // A stack scripts/smoke-stack.sh started on this machine, reached as a browser reaches the deployment:
 // by the deployment's own hostnames, through Caddy — but always at 127.0.0.1, whatever those names
 // resolve to here, so a smoke run can never touch the deployment's host. The people it acts as are
-// made in the stack's own accounts service for this run.
+// made in the stack's own accounts service for this run. Beside it runs the home household's tenant
+// kit (project tenant-kit-smoke), its servers tunnelled to this stack's relay through Caddy.
 public sealed partial class SmokeStack : IAsyncLifetime
 {
     public const string Enabled = "ZIGGURAT_SMOKE";
+    public const string KitProject = "tenant-kit-smoke";
+    public const string Inside = "smoke-probe";
     private const int ProxyPort = 443;
+
+    // The home's servers the script starts in the kit, by their tunnels' names: never voice or Home
+    // Assistant's, which reach the home's satellites and devices.
+    public static readonly IReadOnlyList<string> KitServers = ["websearch", "vault", "library", "sandbox", "printer"];
 
     public static bool IsEnabled => Environment.GetEnvironmentVariable(Enabled) == "1";
 
@@ -25,12 +32,18 @@ public sealed partial class SmokeStack : IAsyncLifetime
 
     public string OperatorSession { get; private set; } = "";
     public string MemberSession { get; private set; } = "";
-    public HttpClient Http { get; } = new(new SocketsHttpHandler
+
+    // The home household: the member is in it, and every kit server's credential was minted for it.
+    public string Home { get; private set; } = "";
+
+    public HttpClient Http { get; } = new(Handler());
+
+    // Every name is answered at loopback: the deployment's hostnames select Caddy's site, and what they
+    // resolve to on this machine is never asked.
+    public static SocketsHttpHandler Handler() => new()
     {
         AllowAutoRedirect = false,
         UseCookies = false,
-        // Every name is answered at loopback: the deployment's hostnames select Caddy's site, and
-        // what they resolve to on this machine is never asked.
         ConnectCallback = async (_, ct) =>
         {
             var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
@@ -39,7 +52,7 @@ public sealed partial class SmokeStack : IAsyncLifetime
         },
         // Caddy's local CA, which nothing on this machine trusts.
         SslOptions = { RemoteCertificateValidationCallback = (_, _, _, _) => true }
-    });
+    };
 
     public async Task InitializeAsync()
     {
@@ -52,6 +65,7 @@ public sealed partial class SmokeStack : IAsyncLifetime
         OperatorSession = await SessionOfAsync(UserIn(op));
         var member = await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "create-user", "--name", $"Smoke Member {Guid.NewGuid():N}"[..19]);
         MemberSession = await SessionOfAsync(UserIn(member));
+        Home = HouseholdIn(member);
     }
 
     public Task DisposeAsync()
@@ -71,6 +85,14 @@ public sealed partial class SmokeStack : IAsyncLifetime
         return request;
     }
 
+    // The home's servers connected through their tunnels now, as the agent's own listing says.
+    public async Task<IReadOnlyList<string>> ConnectedKitServersAsync() =>
+    [
+        .. ConnectedServer()
+            .Matches(await DockerAsync("exec", "agent", "dotnet", "Agent.dll", "list-household-servers", "--household", Home))
+            .Select(m => m.Groups["name"].Value)
+    ];
+
     public static async Task<string> DockerAsync(params string[] args)
     {
         var start = new ProcessStartInfo("docker") { RedirectStandardOutput = true, RedirectStandardError = true };
@@ -82,15 +104,43 @@ public sealed partial class SmokeStack : IAsyncLifetime
         return process.ExitCode == 0 ? output : throw new InvalidOperationException($"docker {string.Join(' ', args)}: {error}{output}");
     }
 
-    // A request made from inside the deployment's network, past Caddy: from the browser container,
-    // which sits beside every server and opens whatever page the model asks for — where a forged
-    // call would come from. Its healthcheck is curl, so curl is there.
-    public static async Task<InsideAnswer> FromInsideAsync(
-        HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers = null, string? body = null)
+    // A kit service's container, which compose names after the project: found by its labels.
+    public static async Task<string> KitContainerAsync(string service) =>
+        (await DockerAsync("ps", "--filter", $"label=com.docker.compose.project={KitProject}",
+            "--filter", $"label=com.docker.compose.service={service}", "--format", "{{.Names}}")).Trim() is { Length: > 0 } name
+            ? name
+            : throw new InvalidOperationException($"the kit's {service} is not running");
+
+    // A request made from inside the deployment's network, past Caddy, where a forged call would come
+    // from: the smoke stack's probe container, beside every server and app.
+    public static Task<InsideAnswer> FromInsideAsync(
+        HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers = null, string? body = null) =>
+        FromAsync(Inside, method, url, headers, body);
+
+    // The same from inside the kit's own network: from its browser container, which sits beside the
+    // kit's servers and opens whatever page the model asks for. Its healthcheck is curl, so curl is there.
+    public static async Task<InsideAnswer> FromInsideTheKitAsync(
+        HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers = null, string? body = null) =>
+        await FromAsync(await KitContainerAsync("camoufox"), method, url, headers, body);
+
+    public static async Task<(int ExitCode, string Output)> TryDockerAsync(params string[] args)
+    {
+        try
+        {
+            return (0, await DockerAsync(args));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return (1, ex.Message);
+        }
+    }
+
+    private static async Task<InsideAnswer> FromAsync(
+        string container, HttpMethod method, string url, IReadOnlyDictionary<string, string>? headers, string? body)
     {
         string[] args =
         [
-            "exec", Inside, "curl", "-sS", "--max-time", "30", "-D", "-", "-X", method.Method,
+            "exec", container, "curl", "-sS", "--max-time", "30", "-D", "-", "-X", method.Method,
             .. (headers ?? new Dictionary<string, string>()).SelectMany(h => new[] { "-H", $"{h.Key}: {h.Value}" }),
             .. body is null ? [] : new[] { "--data-binary", body },
             url
@@ -108,20 +158,6 @@ public sealed partial class SmokeStack : IAsyncLifetime
             parts.Length > 1 ? parts[1] : "");
     }
 
-    public const string Inside = "camoufox";
-
-    public static async Task<(int ExitCode, string Output)> TryDockerAsync(params string[] args)
-    {
-        try
-        {
-            return (0, await DockerAsync(args));
-        }
-        catch (InvalidOperationException ex)
-        {
-            return (1, ex.Message);
-        }
-    }
-
     private static async Task<string> SessionOfAsync(string userId) =>
         (await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "mint-session", "--user", userId)).Trim()
             .Split('\n').Last().Trim();
@@ -131,11 +167,23 @@ public sealed partial class SmokeStack : IAsyncLifetime
             ? match.Groups["id"].Value
             : throw new InvalidOperationException($"no user id in: {commandOutput}");
 
+    private static string HouseholdIn(string commandOutput) =>
+        Household().Match(commandOutput) is { Success: true } match
+            ? match.Groups["id"].Value
+            : throw new InvalidOperationException($"no household in: {commandOutput}");
+
     private static string HostStartingWith(string prefix) =>
         DeploymentFiles.Caddyfile().Hosts.Select(h => h.Name).First(n => n.StartsWith(prefix, StringComparison.Ordinal));
 
     [GeneratedRegex(@"user (?<id>[0-9a-f]{32})")]
     private static partial Regex UserId();
+
+    [GeneratedRegex(@"household (?<id>[0-9a-f]{32})")]
+    private static partial Regex Household();
+
+    // list-household-servers' line per connected server: its name, two spaces, since when.
+    [GeneratedRegex(@"^(?<name>[a-z0-9-]+)  connected since", RegexOptions.Multiline)]
+    private static partial Regex ConnectedServer();
 }
 
 public sealed record InsideAnswer(HttpStatusCode Status, IReadOnlyDictionary<string, string> Headers, string Body);

@@ -4,9 +4,18 @@
 
 **Blocked by:** 10, 11
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A signed-in reply uses a tool of a tunnelled server
-- [ ] A browse page answers through the tunnel
-- [ ] A forged tunnel credential is refused
-- [ ] The smoke suite passes on a fresh `scripts/smoke-stack.sh up`
+- [x] A signed-in reply uses a tool of a tunnelled server
+- [x] A browse page answers through the tunnel
+- [x] A forged tunnel credential is refused
+- [x] The smoke suite passes on a fresh `scripts/smoke-stack.sh up`
+
+Done: `scripts/smoke-stack.sh up` starts the kit beside the stack as project `tenant-kit-smoke`
+(`TenantKit/docker-compose.override.smoke.yml`) — web search with Camoufox, vault, library, sandbox,
+printer and the kit's Redis, never voice, Home Assistant's server, Home Assistant or Music Assistant —
+with credentials minted from the stack's accounts service for its home household; the deployment's
+in-network probe is a `smoke-probe` curl container in the deployment's smoke override. The first run
+found a real defect: a server told the hub's CA built the chain from the leaf and the root alone, so
+Caddy's intermediate-issued certificate was refused (fixed in `TunnelClient`, test authority reshaped
+like Caddy's).
