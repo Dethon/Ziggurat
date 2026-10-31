@@ -108,6 +108,7 @@ public class RedelegationTests(McpSchedulingServerFixture fixture) : IClassFixtu
         var schedule = stored(new Schedule
         {
             Id = $"redeleg-{Guid.NewGuid():N}"[..20],
+            TenantId = Household,
             AgentId = "jonas",
             Prompt = "summarize my unread mail",
             CronExpression = "0 8 * * *",
@@ -136,7 +137,7 @@ public class RedelegationTests(McpSchedulingServerFixture fixture) : IClassFixtu
 
     private async Task<FireAdmission> AdmitAsync(string id, SigningKeyStore? agentKeys = null)
     {
-        var schedule = (await Store.GetAsync(id, CancellationToken.None)).ShouldNotBeNull();
+        var schedule = (await Store.GetAsync(Household, id, CancellationToken.None)).ShouldNotBeNull();
         var fire = ScheduleFirePlanner.Plan(schedule, TestDelegations.Delivery.DefaultDeliverTo, null, DateTimeOffset.UtcNow).Payload;
         return agentKeys is null
             ? await TestDelegations.AdmitAsync(fire, "scheduling")

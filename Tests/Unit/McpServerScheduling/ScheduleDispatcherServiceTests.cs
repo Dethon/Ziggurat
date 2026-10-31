@@ -30,7 +30,7 @@ public class ScheduleDispatcherServiceTests
         // "0 8 * * *" at 08:00 local (+02:00) = 06:00 UTC; now is 00:00Z so next occurrence is same day
         store.Verify(
             s => s.UpdateLastRunAsync(
-                "daily", It.IsAny<DateTime?>(), new DateTime(2026, 7, 1, 6, 0, 0, DateTimeKind.Utc), It.IsAny<CancellationToken>()),
+                "home", "daily", It.IsAny<DateTime?>(), new DateTime(2026, 7, 1, 6, 0, 0, DateTimeKind.Utc), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -43,10 +43,10 @@ public class ScheduleDispatcherServiceTests
 
         await BuildDispatcher(store.Object, emitter).DispatchDueAsync(CancellationToken.None);
 
-        store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        store.Verify(s => s.DeleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         store.Verify(
             s => s.UpdateLastRunAsync(
-                It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -58,7 +58,7 @@ public class ScheduleDispatcherServiceTests
 
         await BuildDispatcher(store.Object, emitter).DispatchDueAsync(CancellationToken.None);
 
-        store.Verify(s => s.DeleteAsync("once", It.IsAny<CancellationToken>()), Times.Once);
+        store.Verify(s => s.DeleteAsync("home", "once", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // One warning per outage, not one per schedule per tick: an overnight disconnection with a
@@ -185,10 +185,10 @@ public class ScheduleDispatcherServiceTests
     }
 
     private static Schedule OneShot() =>
-        new() { Id = "once", AgentId = "jack", Prompt = "p", RunAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow };
+        new() { Id = "once", TenantId = "home", AgentId = "jack", Prompt = "p", RunAt = DateTime.UtcNow, CreatedAt = DateTime.UtcNow };
 
     private static Schedule Recurring() =>
-        new() { Id = "daily", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow };
+        new() { Id = "daily", TenantId = "home", AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *", CreatedAt = DateTime.UtcNow };
 
     private static Mock<IScheduleStore> StoreWithDue(Schedule schedule)
     {

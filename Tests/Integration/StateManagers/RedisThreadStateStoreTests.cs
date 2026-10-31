@@ -137,6 +137,43 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         (await store.GetMessageCountAsync(key)).ShouldBe(2);
     }
 
+    // A space is its household's: two households' topics with the same agent in a space of the same
+    // name are two lists, and a topic read by id is found only by its own household.
+    [Fact]
+    public async Task GetTopicPageAsync_AnotherHouseholdsTopicsInTheSameSpace_AreNotListed()
+    {
+        var store = NewStore();
+        var now = DateTimeOffset.UtcNow;
+        await store.SaveTopicAsync(new TopicMetadata("t-h-ours", 310, 0, "agent-households", "Ours", now, now, TenantId: "home"));
+        await store.SaveTopicAsync(new TopicMetadata("t-h-away", 311, 0, "agent-households", "Theirs", now, now,
+            TenantId: "away", Shared: true));
+
+        var listed = (await store.GetTopicPageAsync("agent-households", "default", Anyone, null, 10)).Topics;
+        var listedAway = (await store.GetTopicPageAsync("agent-households", "default", new TopicViewer("laura", "away"), null, 10)).Topics;
+
+        listed.Select(t => t.TopicId).ShouldBe(["t-h-ours"]);
+        listedAway.Select(t => t.TopicId).ShouldBe(["t-h-away"]);
+        (await store.GetTopicAsync("home", "agent-households", 311, "t-h-away")).ShouldBeNull();
+        (await store.GetTopicAsync("away", "agent-households", 311, "t-h-away")).ShouldNotBeNull();
+    }
+
+    // A conversation's id is the same whichever household holds it, so it still leads to its topic —
+    // which says whose it is — and what is appended to it moves that topic in its own household.
+    [Fact]
+    public async Task AppendMessagesAsync_StampsATopicInItsOwnHousehold()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-h-stamp", 312, 4, "agent-households-stamp", "Theirs", DateTimeOffset.UtcNow, null, TenantId: "away"));
+
+        await store.AppendMessagesAsync(
+            HistoryKey("agent-households-stamp", 312, 4), [new ChatMessage(ChatRole.User, "is the gin ready")]);
+
+        var held = (await store.GetTopicByChatIdAndThreadIdAsync("agent-households-stamp", 312, 4)).ShouldNotBeNull();
+        held.TenantId.ShouldBe("away");
+        held.MessageCount.ShouldBe(1);
+    }
+
     [Fact]
     public async Task GetTopicPageAsync_FiltersBySpaceSlug()
     {
@@ -144,9 +181,9 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var now = DateTimeOffset.UtcNow;
 
         await store.SaveTopicAsync(new TopicMetadata("t-s1", 300, 0, "agent-slug", "Space1", now, null,
-            SpaceSlug: "space-a"));
+            SpaceSlug: "space-a", TenantId: "home"));
         await store.SaveTopicAsync(new TopicMetadata("t-s2", 301, 0, "agent-slug", "Space2", now, null,
-            SpaceSlug: "space-b"));
+            SpaceSlug: "space-b", TenantId: "home"));
 
         var filtered = (await store.GetTopicPageAsync("agent-slug", "space-a", Anyone, null, 10)).Topics;
 
@@ -249,7 +286,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 3, 1, 9, 0, 0, TimeSpan.Zero));
         var store = NewStore(clock);
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-stamp", 500, 7, "agent-stamp", "Kitchen", clock.GetUtcNow(), LastMessageAt: null));
+            "t-stamp", 500, 7, "agent-stamp", "Kitchen", clock.GetUtcNow(), LastMessageAt: null, TenantId: "home"));
 
         clock.Advance(TimeSpan.FromHours(3));
         await store.AppendMessagesAsync(
@@ -265,11 +302,11 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 3, 2, 9, 0, 0, TimeSpan.Zero));
         var store = NewStore(clock);
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-old", 510, 0, "agent-order", "Older", clock.GetUtcNow(), LastMessageAt: null));
+            "t-old", 510, 0, "agent-order", "Older", clock.GetUtcNow(), LastMessageAt: null, TenantId: "home"));
 
         clock.Advance(TimeSpan.FromHours(1));
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-new", 511, 0, "agent-order", "Newer", clock.GetUtcNow(), LastMessageAt: null));
+            "t-new", 511, 0, "agent-order", "Newer", clock.GetUtcNow(), LastMessageAt: null, TenantId: "home"));
 
         clock.Advance(TimeSpan.FromHours(1));
         await store.AppendMessagesAsync(
@@ -287,7 +324,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     {
         var store = NewStore();
         await WriteTopicRecordDirectlyAsync(new TopicMetadata(
-            "t-unindexed", 520, 0, "agent-unindexed", "Ghost", DateTimeOffset.UtcNow, null));
+            "t-unindexed", 520, 0, "agent-unindexed", "Ghost", DateTimeOffset.UtcNow, null, TenantId: "home"));
 
         ((await store.GetTopicPageAsync("agent-unindexed", "default", Anyone, null, 10)).Topics).ShouldBeEmpty();
     }
@@ -297,9 +334,9 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     {
         var store = NewStore();
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-gone", 530, 0, "agent-delete", "Going", DateTimeOffset.UtcNow, null));
+            "t-gone", 530, 0, "agent-delete", "Going", DateTimeOffset.UtcNow, null, TenantId: "home"));
 
-        await store.DeleteTopicAsync("agent-delete", 530, "t-gone");
+        await store.DeleteTopicAsync("home", "agent-delete", 530, "t-gone");
 
         ((await store.GetTopicPageAsync("agent-delete", "default", Anyone, null, 10)).Topics).ShouldBeEmpty();
     }
@@ -312,7 +349,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 3, 3, 9, 0, 0, TimeSpan.Zero));
         var store = NewStore(clock, snippetLength: 12);
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-snip", 560, 0, "agent-snippet", "Kitchen", clock.GetUtcNow(), null));
+            "t-snip", 560, 0, "agent-snippet", "Kitchen", clock.GetUtcNow(), null, TenantId: "home"));
 
         await store.AppendMessagesAsync(HistoryKey("agent-snippet", 560),
         [
@@ -331,7 +368,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     {
         var store = NewStore();
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-count", 580, 0, "agent-count", "Counting", DateTimeOffset.UtcNow, null));
+            "t-count", 580, 0, "agent-count", "Counting", DateTimeOffset.UtcNow, null, TenantId: "home"));
 
         await store.AppendMessagesAsync(HistoryKey("agent-count", 580),
             [new ChatMessage(ChatRole.User, "one"), new ChatMessage(ChatRole.Assistant, "two")]);
@@ -350,7 +387,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     {
         var store = NewStore();
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-tools", 585, 0, "agent-tools", "Tooling", DateTimeOffset.UtcNow, null));
+            "t-tools", 585, 0, "agent-tools", "Tooling", DateTimeOffset.UtcNow, null, TenantId: "home"));
 
         await store.AppendMessagesAsync(HistoryKey("agent-tools", 585),
         [
@@ -377,7 +414,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
 
         // The record alone, the way key expiry leaves it: the member stays in the index.
         await redisFixture.Connection.GetDatabase()
-            .KeyDeleteAsync("topic:agent-dangling:601:t-agent-dangling-1");
+            .KeyDeleteAsync("topic@home:agent-dangling:601:t-agent-dangling-1");
 
         var first = await store.GetTopicPageAsync("agent-dangling", "default", Anyone, null, 2);
         var second = await store.GetTopicPageAsync("agent-dangling", "default", Anyone, first.NextCursor, 2);
@@ -396,7 +433,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var store = NewStore();
         const long wideChatId = 6_437_294_812_345_678_901;
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-wide-stamp", wideChatId, 0, "agent-wide", "Wide id", DateTimeOffset.UtcNow, null));
+            "t-wide-stamp", wideChatId, 0, "agent-wide", "Wide id", DateTimeOffset.UtcNow, null, TenantId: "home"));
 
         await store.AppendMessagesAsync(
             HistoryKey("agent-wide", wideChatId), [new ChatMessage(ChatRole.Assistant, "a reply")]);
@@ -416,9 +453,9 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         const long wideChatId = 8_935_141_660_703_064_219;
         await store.SaveTopicAsync(new TopicMetadata(
             "t-wide-read", wideChatId, 0, "agent-wide-read", "Wide id", DateTimeOffset.UtcNow, null,
-            MessageCount: 2));
+            MessageCount: 2, TenantId: "home"));
 
-        await store.MarkTopicReadAsync("agent-wide-read", wideChatId, "t-wide-read");
+        await store.MarkTopicReadAsync("home", "agent-wide-read", wideChatId, "t-wide-read");
 
         var topic = (await store.GetTopicPageAsync("agent-wide-read", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
@@ -433,11 +470,11 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     {
         var store = NewStore();
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-read", 590, 0, "agent-read", "Reading", DateTimeOffset.UtcNow, null));
+            "t-read", 590, 0, "agent-read", "Reading", DateTimeOffset.UtcNow, null, TenantId: "home"));
         await store.AppendMessagesAsync(HistoryKey("agent-read", 590),
             [new ChatMessage(ChatRole.User, "one"), new ChatMessage(ChatRole.Assistant, "two")]);
 
-        await store.MarkTopicReadAsync("agent-read", 590, "t-read");
+        await store.MarkTopicReadAsync("home", "agent-read", 590, "t-read");
 
         var topic = (await store.GetTopicPageAsync("agent-read", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
@@ -453,7 +490,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     {
         var store = NewStore();
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-race", 650, 0, "agent-race", "Racing", DateTimeOffset.UtcNow, null));
+            "t-race", 650, 0, "agent-race", "Racing", DateTimeOffset.UtcNow, null, TenantId: "home"));
 
         // Interleaved in batches rather than as one burst of two hundred. What is under test is that
         // an append and a read-stamp racing each other lose neither write, and a batch of ten of
@@ -466,11 +503,11 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
             {
                 store.AppendMessagesAsync(
                     HistoryKey("agent-race", 650), [new ChatMessage(ChatRole.Assistant, $"reply {i}")]),
-                store.MarkTopicReadAsync("agent-race", 650, "t-race")
+                store.MarkTopicReadAsync("home", "agent-race", 650, "t-race")
             }));
         }
 
-        await store.MarkTopicReadAsync("agent-race", 650, "t-race");
+        await store.MarkTopicReadAsync("home", "agent-race", 650, "t-race");
 
         var topic = (await store.GetTopicPageAsync("agent-race", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
@@ -561,11 +598,11 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 4, 7, 0, 0, 0, TimeSpan.Zero));
         var store = NewStore(clock);
         var when = clock.GetUtcNow();
-        await store.SaveTopicAsync(new TopicMetadata("t-tied-a", 700, 0, "agent-tied", "tied-a", when, when));
-        await store.SaveTopicAsync(new TopicMetadata("t-tied-b", 701, 0, "agent-tied", "tied-b", when, when));
+        await store.SaveTopicAsync(new TopicMetadata("t-tied-a", 700, 0, "agent-tied", "tied-a", when, when, TenantId: "home"));
+        await store.SaveTopicAsync(new TopicMetadata("t-tied-b", 701, 0, "agent-tied", "tied-b", when, when, TenantId: "home"));
         clock.Advance(TimeSpan.FromMinutes(1));
         await store.SaveTopicAsync(new TopicMetadata(
-            "t-top", 702, 0, "agent-tied", "top", clock.GetUtcNow(), clock.GetUtcNow()));
+            "t-top", 702, 0, "agent-tied", "top", clock.GetUtcNow(), clock.GetUtcNow(), TenantId: "home"));
 
         var first = await store.GetTopicPageAsync("agent-tied", "default", Anyone, null, 2);
         var second = await store.GetTopicPageAsync("agent-tied", "default", Anyone, first.NextCursor, 2);
@@ -660,7 +697,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero));
         var store = NewStore(clock, archiveHorizon: TimeSpan.FromDays(30), purgeHorizon: TimeSpan.FromDays(60));
         await store.SaveTopicAsync(Topic("t-purged", 630, "agent-purge", clock.GetUtcNow()));
-        var indexKey = "topics:agent-purge:default";
+        var indexKey = "topics@home:agent-purge:default";
         (await redisFixture.Connection.GetDatabase().SortedSetLengthAsync(indexKey)).ShouldBe(1);
 
         clock.Advance(TimeSpan.FromDays(61));
@@ -678,11 +715,11 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var store = NewStore();
         await store.SaveTopicAsync(Topic("t-keep", 680, "agent-keep", DateTimeOffset.UtcNow));
         var db = redisFixture.Connection.GetDatabase();
-        await db.KeyExpireAsync("topic:agent-keep:680:t-keep", TimeSpan.FromDays(10));
+        await db.KeyExpireAsync("topic@home:agent-keep:680:t-keep", TimeSpan.FromDays(10));
 
-        await store.MarkTopicReadAsync("agent-keep", 680, "t-keep");
+        await store.MarkTopicReadAsync("home", "agent-keep", 680, "t-keep");
 
-        var ttl = await db.KeyTimeToLiveAsync("topic:agent-keep:680:t-keep");
+        var ttl = await db.KeyTimeToLiveAsync("topic@home:agent-keep:680:t-keep");
         ttl.ShouldNotBeNull();
         ttl.Value.ShouldBeLessThanOrEqualTo(TimeSpan.FromDays(10));
     }
@@ -693,15 +730,15 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var store = NewStore();
         await store.SaveTopicAsync(Topic("t-rename", 681, "agent-keep", DateTimeOffset.UtcNow));
         var db = redisFixture.Connection.GetDatabase();
-        await db.KeyExpireAsync("topic:agent-keep:681:t-rename", TimeSpan.FromDays(10));
+        await db.KeyExpireAsync("topic@home:agent-keep:681:t-rename", TimeSpan.FromDays(10));
 
-        var renamed = (await store.GetTopicAsync("agent-keep", 681, "t-rename"))! with { Name = "Renamed" };
+        var renamed = (await store.GetTopicAsync("home", "agent-keep", 681, "t-rename"))! with { Name = "Renamed" };
         await store.SaveTopicAsync(renamed, keepTtl: true);
 
-        var ttl = await db.KeyTimeToLiveAsync("topic:agent-keep:681:t-rename");
+        var ttl = await db.KeyTimeToLiveAsync("topic@home:agent-keep:681:t-rename");
         ttl.ShouldNotBeNull();
         ttl.Value.ShouldBeLessThanOrEqualTo(TimeSpan.FromDays(10));
-        (await store.GetTopicAsync("agent-keep", 681, "t-rename"))!.Name.ShouldBe("Renamed");
+        (await store.GetTopicAsync("home", "agent-keep", 681, "t-rename"))!.Name.ShouldBe("Renamed");
     }
 
     [Fact]
@@ -711,8 +748,8 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var topic = Topic("t-get", 670, "agent-get", DateTimeOffset.UtcNow);
         await store.SaveTopicAsync(topic);
 
-        (await store.GetTopicAsync("agent-get", 670, "t-get")).ShouldBe(topic);
-        (await store.GetTopicAsync("agent-get", 670, "t-never")).ShouldBeNull();
+        (await store.GetTopicAsync("home", "agent-get", 670, "t-get")).ShouldBe(topic);
+        (await store.GetTopicAsync("home", "agent-get", 670, "t-never")).ShouldBeNull();
     }
 
     [Fact]
@@ -722,21 +759,21 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.SaveTopicAsync(Topic("t-ttl", 640, "agent-ttl", DateTimeOffset.UtcNow));
 
         var ttl = await redisFixture.Connection.GetDatabase()
-            .KeyTimeToLiveAsync("topic:agent-ttl:640:t-ttl");
+            .KeyTimeToLiveAsync("topic@home:agent-ttl:640:t-ttl");
 
         ttl.ShouldNotBeNull();
         ttl!.Value.ShouldBeGreaterThan(TimeSpan.FromDays(364));
     }
 
     private static TopicMetadata Topic(string topicId, long chatId, string agentId, DateTimeOffset at) =>
-        new(topicId, chatId, 0, agentId, topicId, at, at);
+        new(topicId, chatId, 0, agentId, topicId, at, at, TenantId: "home");
 
     private static readonly Account Fran = new("home", "fran");
     private static readonly Account Laura = new("home", "laura");
     private static readonly TopicViewer AsFran = new(Fran.UserId, Fran.TenantId);
 
-    // Every topic these tests write is nobody's unless a test owns it, and nobody's is everyone's,
-    // so a viewer who is no one in particular reads them all.
+    // Every topic these tests write is nobody's unless a test owns it, and a topic nobody owns is its
+    // household's, so a viewer of the household who is no one in particular reads them all.
     private static readonly TopicViewer Anyone = new("anyone", "home");
 
     private static TopicMetadata Owned(
@@ -751,7 +788,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         foreach (var i in Enumerable.Range(0, count))
         {
             await store.SaveTopicAsync(new TopicMetadata(
-                $"t-{agentId}-{i}", 600 + i, 0, agentId, $"topic-{i}", clock.GetUtcNow(), clock.GetUtcNow()));
+                $"t-{agentId}-{i}", 600 + i, 0, agentId, $"topic-{i}", clock.GetUtcNow(), clock.GetUtcNow(), TenantId: "home"));
             clock.Advance(TimeSpan.FromMinutes(1));
         }
     }
@@ -760,7 +797,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
     private async Task WriteTopicRecordDirectlyAsync(TopicMetadata topic)
     {
         await redisFixture.Connection.GetDatabase().StringSetAsync(
-            $"topic:{topic.AgentId}:{topic.ChatId}:{topic.TopicId}",
+            $"topic@{topic.TenantId}:{topic.AgentId}:{topic.ChatId}:{topic.TopicId}",
             System.Text.Json.JsonSerializer.Serialize(topic));
     }
 

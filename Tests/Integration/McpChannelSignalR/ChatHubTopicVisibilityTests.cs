@@ -141,7 +141,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         var refusal = await Should.ThrowAsync<HubException>(() => Call(call, laura, topic));
 
         refusal.Message.ShouldContain("No such conversation");
-        var stored = (await _store.GetTopicAsync(_agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
+        var stored = (await _store.GetTopicAsync(Home, _agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
         (stored.Name, stored.Shared).ShouldBe(("Fran's plum jam", false));
         _sessions.TryGetSession(topic.TopicId, out _).ShouldBeTrue();
     }
@@ -218,7 +218,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
             fran.InvokeAsync("DeleteTopic", topic.AgentId, topic.TopicId, topic.ChatId, topic.ThreadId + 1));
 
         (await _store.GetMessagesAsync(elsewhere)).ShouldNotBeNull();
-        (await _store.GetTopicAsync(_agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
+        (await _store.GetTopicAsync(Home, _agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
     }
 
     [Fact]
@@ -259,7 +259,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         var refusal = await Should.ThrowAsync<HubException>(() => Call(call, laura, topic));
 
         refusal.Message.ShouldContain("Only the person whose conversation this is");
-        var stored = (await _store.GetTopicAsync(_agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
+        var stored = (await _store.GetTopicAsync(Home, _agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
         stored.Name.ShouldBe("Fran's plum jam");
     }
 
@@ -283,12 +283,12 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
     public async Task ATopicNobodyOwns_IsRenamedByWhoeverSeesIt()
     {
         var laura = await ConnectAsync(Laura);
-        await ShowReviewCopyAsync("33:43", new Principal("voice", "household"), "kitchen");
+        await ShowGroupsCopyAsync("33:43");
         var topic = (await _store.GetTopicByChatIdAndThreadIdAsync(_agent, 33, 43)).ShouldNotBeNull();
 
         await laura.InvokeAsync("SaveTopic", topic with { Name = "The kitchen's paella" }, false);
 
-        (await _store.GetTopicAsync(_agent, 33, topic.TopicId))!.Name.ShouldBe("The kitchen's paella");
+        (await _store.GetTopicAsync(Home, _agent, 33, topic.TopicId))!.Name.ShouldBe("The kitchen's paella");
     }
 
     // A topic nobody owns is still the household's it was recorded for — a Telegram group's copy names
@@ -341,8 +341,8 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         await Should.ThrowAsync<HubException>(
             () => olga.InvokeAsync("SetTopicShared", mine.AgentId, mine.ChatId, mine.TopicId, true));
 
-        (await _store.GetTopicAsync(_agent, shared.ChatId, shared.TopicId))!.Shared.ShouldBeTrue();
-        (await _store.GetTopicAsync(_agent, mine.ChatId, mine.TopicId))!.Shared.ShouldBeFalse();
+        (await _store.GetTopicAsync(Home, _agent, shared.ChatId, shared.TopicId))!.Shared.ShouldBeTrue();
+        (await _store.GetTopicAsync(Home, _agent, mine.ChatId, mine.TopicId))!.Shared.ShouldBeFalse();
     }
 
     [Fact]
@@ -371,7 +371,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
 
         await Should.ThrowAsync<HubException>(() => Call(call, olga, topic));
 
-        var stored = (await _store.GetTopicAsync(_agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
+        var stored = (await _store.GetTopicAsync(Home, _agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
         stored.Name.ShouldBe("Fran's plum jam");
         (await ReceiveAsync()).ShouldBeEmpty();
     }
@@ -391,7 +391,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
 
         await olga.InvokeAsync("MarkTopicRead", topic.AgentId, topic.ChatId, topic.TopicId);
 
-        var stored = (await _store.GetTopicAsync(_agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
+        var stored = (await _store.GetTopicAsync(Home, _agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
         (stored.MessageCount, stored.ReadPosition).ShouldBe((1L, 0L));
     }
 
@@ -423,8 +423,8 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         (await asked.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBe("rejected");
     }
 
-    // An approval is its asker's: in a topic the whole household sees — a voice guest's, which
-    // nobody owns and anybody seeing it could answer for as long as nothing recorded the asker — the
+    // An approval is its asker's: in a topic the whole household sees — a group's, which nobody owns
+    // and anybody seeing it could answer for as long as nothing recorded the asker — the
     // member reading along and the one who sees everything are told no, and only the person whose
     // turn asked settles it.
     [Fact]
@@ -433,7 +433,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         var fran = await ConnectAsync(Fran);
         var laura = await ConnectAsync(Laura);
         var olga = await ConnectAsync(Olga, "sees-all");
-        await ShowReviewCopyAsync("33:43", new Principal("voice", "household"), "kitchen");
+        await ShowGroupsCopyAsync("33:43");
         var topic = (await _store.GetTopicByChatIdAndThreadIdAsync(_agent, 33, 43)).ShouldNotBeNull();
         topic.OwnerId.ShouldBeNull();
         var asked = Approvals.RequestApprovalAsync(
@@ -589,26 +589,47 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         (await ListAsync(laura)).ShouldNotContain(topic.TopicId);
     }
 
-    // A turn that acts for nobody — the voice guest's — gives a topic the household shares.
+    // A group's conversation is several people's, so its copy is nobody's and its household's to share.
     [Fact]
-    public async Task AGuestsReviewCopy_IsTheHouseholds()
+    public async Task AGroupsReviewCopy_IsTheHouseholds()
     {
         var laura = await ConnectAsync(Laura);
         var heard = Listen(("laura", laura));
 
-        await ShowReviewCopyAsync("32:42", new Principal("voice", "household"), "kitchen");
+        await ShowGroupsCopyAsync("32:42");
 
         var topic = (await _store.GetTopicByChatIdAndThreadIdAsync(_agent, 32, 42)).ShouldNotBeNull();
-        (topic.OwnerId, topic.Shared).ShouldBe(((string?)null, true));
+        (topic.OwnerId, topic.TenantId, topic.Shared).ShouldBe(((string?)null, Home, true));
         await Eventually.Until(() => heard.About(topic.TopicId).Count > 0, "the space to hear");
         (await ListAsync(laura)).ShouldContain(topic.TopicId);
     }
 
-    private Task<string> ShowReviewCopyAsync(string conversationId, Principal principal, string sender) =>
+    // A copy for a turn acting for no account names no household — nothing here says which household's
+    // space it would be shown in — so no household sees it, and nobody is told of it.
+    [Fact]
+    public async Task AReviewCopyForATurnActingForNoAccount_IsNoHouseholdsToSee()
+    {
+        var laura = await ConnectAsync(Laura);
+        var heard = Listen(("laura", laura));
+
+        await ShowReviewCopyAsync("34:44", new Principal("voice", "household"), "kitchen");
+
+        var topic = (await _store.GetTopicByChatIdAndThreadIdAsync(_agent, 34, 44)).ShouldNotBeNull();
+        topic.TenantId.ShouldBeNull();
+        (await ListAsync(laura)).ShouldNotContain(topic.TopicId);
+        await Eventually.Settle();
+        heard.About(topic.TopicId).ShouldBeEmpty();
+    }
+
+    private Task<string> ShowReviewCopyAsync(string conversationId, Principal principal, string sender, bool group = false) =>
         CreateConversationTool.McpRun(
             _agent, "Meal estimate", sender, _app.Services,
             initialPrompt: "a plate of paella", address: null, existingConversationId: conversationId,
-            principal: principal);
+            principal: principal, group: group);
+
+    // A Telegram group's turn, its sender Fran: a copy everyone of the household in the group wrote in.
+    private Task<string> ShowGroupsCopyAsync(string conversationId) =>
+        ShowReviewCopyAsync(conversationId, new Principal("telegram", Fran, new Account(Home, Fran)), "Fran", group: true);
 
     private ApprovalService Approvals => _app.Services.GetRequiredService<ApprovalService>();
 
@@ -704,7 +725,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
             .ShouldBeTrue();
         await connection.InvokeAsync("SaveTopic",
             new TopicMetadata(topicId, identity.ChatId, identity.ThreadId, _agent, name, DateTimeOffset.UtcNow, null), true);
-        return (await _store.GetTopicAsync(_agent, identity.ChatId, topicId)).ShouldNotBeNull();
+        return (await _store.GetTopicAsync(Home, _agent, identity.ChatId, topicId)).ShouldNotBeNull();
     }
 
     private async Task<IReadOnlyList<string>> ListAsync(HubConnection connection) =>

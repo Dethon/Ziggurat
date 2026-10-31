@@ -589,7 +589,7 @@ public sealed class ChatHub(
     // Renaming one is its owner's, shared or not.
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
     {
-        var stored = await threadStore.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId);
+        var stored = await threadStore.GetTopicAsync(SignedIn.TenantId, topic.AgentId, topic.ChatId, topic.TopicId);
         if (stored is not null)
         {
             RequireMayRenameOrDelete(stored);
@@ -597,7 +597,10 @@ public sealed class ChatHub(
             return;
         }
 
-        if (!IsItsOwnConversation(topic.TopicId, topic.ChatId, topic.ThreadId))
+        // The topics this household holds are not the only ones: a conversation another household's
+        // topic holds is theirs, and saving a topic of this one over it would take it from them.
+        if (!IsItsOwnConversation(topic.TopicId, topic.ChatId, topic.ThreadId)
+            || await threadStore.GetTopicByChatIdAndThreadIdAsync(topic.AgentId, topic.ChatId, topic.ThreadId) is not null)
         {
             throw new HubException(NoSuchConversation);
         }
@@ -616,7 +619,7 @@ public sealed class ChatHub(
     // see it now can, and on unsharing their list lets it go (TopicViewer, in the client too).
     public async Task SetTopicShared(string agentId, long chatId, string topicId, bool shared)
     {
-        var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId)
+        var stored = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId)
                      ?? throw new HubException(NoSuchConversation);
         RequireSees(stored);
         if (!Viewer.Owns(stored))
@@ -627,7 +630,7 @@ public sealed class ChatHub(
         var changed = stored with { Shared = shared };
         await threadStore.SaveTopicAsync(changed, keepTtl: true);
         await hubSender.SendToGroupAsync(
-            TopicAudience.Space(changed.SpaceSlug),
+            TopicAudience.Space(SignedIn.TenantId, changed.SpaceSlug),
             "OnTopicChanged",
             new TopicChangedNotification(TopicChangeType.Updated, topicId, changed, changed.SpaceSlug));
     }
@@ -651,11 +654,11 @@ public sealed class ChatHub(
     // person's private one leaves it as unread as its owner left it.
     public async Task MarkTopicRead(string agentId, long chatId, string topicId)
     {
-        var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId);
+        var stored = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId);
         RequireSees(stored);
         if (stored is null || Viewer.MayContinue(stored))
         {
-            await threadStore.MarkTopicReadAsync(agentId, chatId, topicId);
+            await threadStore.MarkTopicReadAsync(SignedIn.TenantId, agentId, chatId, topicId);
         }
     }
 
@@ -676,12 +679,15 @@ public sealed class ChatHub(
     // Whether a topic exists is its owner's to decide, shared or not.
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
-        var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId);
+        // Another household's topic over the conversation is held to the same rule, which it fails:
+        // its history and its stream are not this caller's to name into a delete.
+        var stored = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId)
+                     ?? await threadStore.GetTopicByChatIdAndThreadIdAsync(agentId, chatId, threadId);
         RequireMayRenameOrDelete(stored);
 
         // The topic's own conversation and no other: a thread it does not hold is not the caller's
         // to name into the delete.
-        if (stored is not null && stored.ThreadId != threadId)
+        if (stored is not null && (stored.ThreadId != threadId || stored.TopicId != topicId))
         {
             throw new HubException(NoSuchConversation);
         }
@@ -693,7 +699,7 @@ public sealed class ChatHub(
         // whose the conversation is, only one its own id names is this chat's to delete.
         if (stored is null && !IsItsOwnConversation(topicId, chatId, threadId))
         {
-            await hubSender.SendToTopicAsync(null, spaceSlug, "OnTopicChanged", notification);
+            await hubSender.SendToGroupAsync(TopicAudience.Space(SignedIn.TenantId, spaceSlug), "OnTopicChanged", notification);
             return;
         }
 
@@ -710,7 +716,7 @@ public sealed class ChatHub(
         await approvalService.CancelPendingApprovalsForTopicAsync(topicId);
 
         await threadStore.DeleteAsync(new AgentKey(identity.ConversationId, agentId));
-        await threadStore.DeleteTopicAsync(agentId, chatId, topicId);
+        await threadStore.DeleteTopicAsync(SignedIn.TenantId, agentId, chatId, topicId);
 
         // Removing a conversation removes what was in it. The sweep would reach these eventually;
         // deleting a topic is the person saying they want them gone now.
@@ -719,15 +725,18 @@ public sealed class ChatHub(
         // Said to whoever may see the topic rather than to this caller: another tab holds a row
         // for a conversation that no longer exists, and paging only ever fetches backwards, so
         // nothing would ever refetch that row away. Deleting a topic that is already gone says the
-        // same thing again, which is harmless and is what makes a repeated delete safe.
-        await hubSender.SendToTopicAsync(stored, spaceSlug, "OnTopicChanged", notification);
+        // same thing again, which is harmless and is what makes a repeated delete safe — to this
+        // caller's household, the only one that could hold a row for it.
+        await (stored is null
+            ? hubSender.SendToGroupAsync(TopicAudience.Space(SignedIn.TenantId, spaceSlug), "OnTopicChanged", notification)
+            : hubSender.SendToTopicAsync(stored, spaceSlug, "OnTopicChanged", notification));
     }
 
     public async Task SubscribePush(PushSubscriptionDto subscription)
     {
         ValidateSubscription(subscription);
 
-        await pushSubscriptionStore.SaveAsync(SignedIn.UserId, subscription, CurrentSpaceSlug ?? "default");
+        await pushSubscriptionStore.SaveAsync(SignedIn.Account, subscription, CurrentSpaceSlug ?? "default");
     }
 
     public async Task ReplacePushSubscription(PushSubscriptionDto subscription, string oldEndpoint)
@@ -739,7 +748,7 @@ public sealed class ChatHub(
             throw new HubException("Old endpoint is required for replacement.");
         }
 
-        await pushSubscriptionStore.SaveAsync(SignedIn.UserId, subscription, CurrentSpaceSlug ?? "default",
+        await pushSubscriptionStore.SaveAsync(SignedIn.Account, subscription, CurrentSpaceSlug ?? "default",
             replacingEndpoint: oldEndpoint);
     }
 

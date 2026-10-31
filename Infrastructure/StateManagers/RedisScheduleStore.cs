@@ -5,27 +5,40 @@ using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
 
+// Every key names the household: `schedule@{tenantId}:{id}` and the household's set
+// `schedules@{tenantId}`. The '@' keeps the shape apart from the one before households
+// (`schedule:{id}`, `schedules`), so the household migration's pattern for what is still unmoved can
+// never match a household's schedule. What is due is one set for the deployment's one dispatcher,
+// its members `{tenantId}:{id}` — a household id is hex, so the first ':' ends it.
 public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : IScheduleStore
 {
-    private const string ScheduleSetKey = "schedules";
-    private const string DueSetKey = "schedules:due";
+    public const string DueSetKey = "schedules-due";
+    private const string HouseholdSetPrefix = "schedules@";
     private static readonly TimeSpan _oneShotBuffer = TimeSpan.FromHours(1);
 
     private readonly IDatabase _db = redis.GetDatabase();
 
+    public static string ScheduleKey(string tenantId, string id) => $"schedule@{tenantId}:{id}";
+
+    public static string HouseholdSetKey(string tenantId) => $"{HouseholdSetPrefix}{tenantId}";
+
+    public static string DueMember(string tenantId, string id) => $"{tenantId}:{id}";
+
     public async Task<Schedule> CreateAsync(Schedule schedule, CancellationToken ct = default)
     {
-        var key = ScheduleKey(schedule.Id);
+        ArgumentException.ThrowIfNullOrEmpty(schedule.TenantId, nameof(schedule.TenantId));
+        var key = ScheduleKey(schedule.TenantId, schedule.Id);
         var json = JsonSerializer.Serialize(schedule);
 
         var transaction = _db.CreateTransaction();
 
         _ = transaction.StringSetAsync(key, json);
-        _ = transaction.SetAddAsync(ScheduleSetKey, schedule.Id);
+        _ = transaction.SetAddAsync(HouseholdSetKey(schedule.TenantId), schedule.Id);
 
         if (schedule.NextRunAt.HasValue)
         {
-            _ = transaction.SortedSetAddAsync(DueSetKey, schedule.Id, schedule.NextRunAt.Value.Ticks);
+            _ = transaction.SortedSetAddAsync(
+                DueSetKey, DueMember(schedule.TenantId, schedule.Id), schedule.NextRunAt.Value.Ticks);
         }
 
         if (schedule.CronExpression is null && schedule.RunAt.HasValue)
@@ -38,65 +51,65 @@ public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : ISchedule
         return schedule;
     }
 
-    public async Task<Schedule?> GetAsync(string id, CancellationToken ct = default)
+    public async Task<Schedule?> GetAsync(string tenantId, string id, CancellationToken ct = default)
     {
-        var json = await _db.StringGetAsync(ScheduleKey(id));
+        var json = await _db.StringGetAsync(ScheduleKey(tenantId, id));
         return json.IsNullOrEmpty ? null : JsonSerializer.Deserialize<Schedule>(json.ToString());
     }
 
-    public async Task<IReadOnlyList<Schedule>> ListAsync(CancellationToken ct = default)
+    public async Task<IReadOnlyList<Schedule>> ListAsync(string tenantId, CancellationToken ct = default)
     {
-        var ids = await _db.SetMembersAsync(ScheduleSetKey);
-        var schedules = new List<Schedule>();
+        var ids = await _db.SetMembersAsync(HouseholdSetKey(tenantId));
+        var schedules = await Task.WhenAll(ids.Select(id => GetAsync(tenantId, id.ToString(), ct)));
+        return schedules.OfType<Schedule>().OrderBy(s => s.NextRunAt ?? DateTime.MaxValue).ToList();
+    }
 
-        foreach (var id in ids)
+    // A scan, which is fine for the operator's occasional housekeeping and nothing else.
+    public async Task<IReadOnlyList<Schedule>> ListEveryHouseholdAsync(CancellationToken ct = default)
+    {
+        var households = new List<string>();
+        foreach (var endpoint in redis.GetEndPoints())
         {
-            var schedule = await GetAsync(id!, ct);
-            if (schedule is not null)
+            await foreach (var key in redis.GetServer(endpoint)
+                               .KeysAsync(_db.Database, $"{HouseholdSetPrefix}*").WithCancellation(ct))
             {
-                schedules.Add(schedule);
+                households.Add(key.ToString()[HouseholdSetPrefix.Length..]);
             }
         }
 
-        return schedules.OrderBy(s => s.NextRunAt ?? DateTime.MaxValue).ToList();
+        var lists = await Task.WhenAll(households.Distinct().Select(h => ListAsync(h, ct)));
+        return [.. lists.SelectMany(l => l)];
     }
 
-    public async Task DeleteAsync(string id, CancellationToken ct = default)
+    public async Task DeleteAsync(string tenantId, string id, CancellationToken ct = default)
     {
         var transaction = _db.CreateTransaction();
 
-        _ = transaction.KeyDeleteAsync(ScheduleKey(id));
-        _ = transaction.SetRemoveAsync(ScheduleSetKey, id);
-        _ = transaction.SortedSetRemoveAsync(DueSetKey, id);
+        _ = transaction.KeyDeleteAsync(ScheduleKey(tenantId, id));
+        _ = transaction.SetRemoveAsync(HouseholdSetKey(tenantId), id);
+        _ = transaction.SortedSetRemoveAsync(DueSetKey, DueMember(tenantId, id));
 
         await transaction.ExecuteAsync();
     }
 
     public async Task<IReadOnlyList<Schedule>> GetDueSchedulesAsync(DateTime asOf, CancellationToken ct = default)
     {
-        var dueIds = await _db.SortedSetRangeByScoreAsync(
+        var due = await _db.SortedSetRangeByScoreAsync(
             DueSetKey,
             stop: asOf.Ticks,
             take: 100);
 
-        var schedules = new List<Schedule>();
-
-        foreach (var id in dueIds)
-        {
-            var schedule = await GetAsync(id!, ct);
-            if (schedule is not null)
-            {
-                schedules.Add(schedule);
-            }
-        }
-
-        return schedules;
+        var schedules = await Task.WhenAll(due
+            .Select(member => member.ToString())
+            .Where(member => member.Contains(':'))
+            .Select(member => GetAsync(member[..member.IndexOf(':')], member[(member.IndexOf(':') + 1)..], ct)));
+        return schedules.OfType<Schedule>().ToList();
     }
 
-    public async Task UpdateLastRunAsync(string id, DateTime? lastRunAt, DateTime? nextRunAt,
+    public async Task UpdateLastRunAsync(string tenantId, string id, DateTime? lastRunAt, DateTime? nextRunAt,
         CancellationToken ct = default)
     {
-        var schedule = await GetAsync(id, ct);
+        var schedule = await GetAsync(tenantId, id, ct);
         if (schedule is null)
         {
             return;
@@ -112,14 +125,12 @@ public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : ISchedule
 
         var transaction = _db.CreateTransaction();
 
-        _ = transaction.StringSetAsync(ScheduleKey(id), json);
+        _ = transaction.StringSetAsync(ScheduleKey(tenantId, id), json);
 
         _ = nextRunAt.HasValue
-            ? transaction.SortedSetAddAsync(DueSetKey, id, nextRunAt.Value.Ticks)
-            : transaction.SortedSetRemoveAsync(DueSetKey, id);
+            ? transaction.SortedSetAddAsync(DueSetKey, DueMember(tenantId, id), nextRunAt.Value.Ticks)
+            : transaction.SortedSetRemoveAsync(DueSetKey, DueMember(tenantId, id));
 
         await transaction.ExecuteAsync();
     }
-
-    private static string ScheduleKey(string id) => $"schedule:{id}";
 }
