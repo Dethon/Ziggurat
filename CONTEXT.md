@@ -647,9 +647,15 @@ a short list of deployment services.
 _Avoid_: callback, upcall, reverse call
 
 **Tenant kit**:
-The compose file the repo ships for a household to run its own servers, holding no deployment
-secret. The home household runs it beside the deployment.
+The compose file the repo ships for a household to run its own servers (`TenantKit/`), with their
+helpers and a Redis of its own, holding no deployment secret: each server holds the tunnel credential
+minted for it. The home household runs it beside the deployment.
 _Avoid_: household compose, edge stack, site bundle
+
+**State move**:
+The one-off that carries what a household's own servers kept in the deployment's Redis — remembered
+logins, one-time links, download routing — into its tenant kit's, when its servers move there.
+_Avoid_: migration (that is the household migration), sync, import
 
 **Agent template**:
 A shipped agent definition a household's agent starts from; a household changes its name and

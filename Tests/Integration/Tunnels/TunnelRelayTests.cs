@@ -169,6 +169,62 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         ToolErrorResult.FromEnvelope(JsonNode.Parse(answer)).ShouldBeNull(answer);
     }
 
+    // A deployment behind a certificate authority of its own — a local stack's proxy on Caddy's CA —
+    // is one a server trusts only when told that authority: the system's roots do not vouch for it,
+    // so the tunnel is never opened and the relay never hears from the server.
+    [Fact]
+    public async Task AHubOnACertificateNoTrustedRootIssued_IsNeverJoined()
+    {
+        using var authority = LocalAuthority.Create();
+        using var certificate = authority.Issue("localhost");
+        await using var relay = await RelayHost.StartAsync(
+            _accounts, AgentCredential, redis.ConnectionString, _keys, _metrics, certificate: certificate);
+        var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+
+        await using var server = await TunnelledServer.StartAsync(relay.Hub, credential.Credential, "vault");
+        await Eventually.Settle();
+
+        relay.Hub.ShouldStartWith("wss://");
+        relay.Registry.Find(_household, "vault").ShouldBeNull();
+        server.IsAdmitted.ShouldBeFalse();
+    }
+
+    // Told the authority (MCP__TUNNEL__HUBCERTIFICATEAUTHORITY), the same server opens its tunnel and
+    // is called through it as any other.
+    [Fact]
+    public async Task AHubOnTheCertificateAuthorityTheServerWasToldOf_AdmitsItsTunnel()
+    {
+        using var authority = LocalAuthority.Create();
+        using var certificate = authority.Issue("localhost");
+        await using var relay = await RelayHost.StartAsync(
+            _accounts, AgentCredential, redis.ConnectionString, _keys, _metrics, certificate: certificate);
+        var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+
+        await using var server = await TunnelledServer.StartAsync(
+            relay.Hub, credential.Credential, "vault", hubAuthority: authority.CertificateFile);
+        await using var agent = await DialAsync(relay, "vault");
+
+        (await WhoAsync(agent))["account"]!["tenantId"]!.GetValue<string>().ShouldBe(_household);
+    }
+
+    // The authority vouches for the names it issued and no other: a hub whose certificate names
+    // another host is refused, told the authority or not.
+    [Fact]
+    public async Task AHubWhoseCertificateNamesAnotherHost_IsNeverJoined_EvenOnTheAuthorityItWasToldOf()
+    {
+        using var authority = LocalAuthority.Create();
+        using var certificate = authority.Issue("assistants.example.com");
+        await using var relay = await RelayHost.StartAsync(
+            _accounts, AgentCredential, redis.ConnectionString, _keys, _metrics, certificate: certificate);
+        var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+
+        await using var server = await TunnelledServer.StartAsync(
+            relay.Hub, credential.Credential, "vault", hubAuthority: authority.CertificateFile);
+        await Eventually.Settle();
+
+        relay.Registry.Find(_household, "vault").ShouldBeNull();
+    }
+
     // The operator asks the running agent which of a household's servers are connected: each one
     // open, since when, and the tools it offers through its tunnel now — and nothing of another
     // household's.
