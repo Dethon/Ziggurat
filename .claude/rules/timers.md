@@ -3,6 +3,7 @@ paths:
   - "McpServerTimers/**"
   - "Domain/Tools/Timers/**"
   - "Domain/Prompts/TimerPrompt.cs"
+  - "Domain/Prompts/Sections/timers_prompt.md"
   - "Domain/Prompts/CountdownTimersSkill.cs"
   - "Domain/Contracts/IInsistentAnnouncer.cs"
   - "Domain/Contracts/IAlertDismisser.cs"

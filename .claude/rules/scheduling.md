@@ -3,6 +3,7 @@ paths:
   - "McpServerScheduling/**"
   - "Domain/Tools/Scheduling/**"
   - "Domain/Prompts/SchedulingPrompt.cs"
+  - "Domain/Prompts/Sections/scheduling_prompt.md"
   - "Domain/Prompts/SchedulingSkill.cs"
   - "Domain/DTOs/Schedule.cs"
 ---

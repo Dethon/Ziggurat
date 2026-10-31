@@ -10,6 +10,7 @@ using McpServerSugary.Channel;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
+using Tests.E2E.Fixtures;
 
 namespace Tests.Unit.Deployment;
 
@@ -32,6 +33,22 @@ public class DeploymentConformanceTests
         hosts.ShouldNotBeEmpty();
         hosts.ShouldAllBe(h => h.Body.Contains("import tls_{$CADDY_TLS:cloudflare}"));
         DeploymentFiles.Compose().Service("caddy").Environment.ShouldNotContainKey("CADDY_TLS");
+    }
+
+    // Every section's words are a markdown document embedded into Domain, and the build context
+    // drops markdown: a context that lost them builds images whose agents have no prompt.
+    [Fact]
+    public void ThePromptDocuments_ReachEveryImagesBuildContext()
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var ignore = DeploymentFiles.DockerIgnore();
+        var documents = Directory
+            .EnumerateFiles(Path.Combine(root, "Domain", "Prompts"), "*.md", SearchOption.AllDirectories)
+            .Select(file => Path.GetRelativePath(root, file).Replace('\\', '/'))
+            .ToList();
+
+        documents.ShouldNotBeEmpty();
+        documents.ShouldAllBe(document => !ignore.Excludes(document));
     }
 
     // A household's server opens its tunnel through the proxy on the main host, to the relay in the
