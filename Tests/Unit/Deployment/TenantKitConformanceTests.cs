@@ -110,11 +110,13 @@ public class TenantKitConformanceTests
         names.Distinct().Count().ShouldBe(servers.Count);
     }
 
-    // The deployment looks two of a household's servers up by name — the browser a browse page is
-    // forwarded to, the voice server a timer rings — so those two run under exactly those names.
+    // The deployment knows three of a household's servers by name — the browser a browse page is
+    // forwarded to, the voice server a timer rings and whose back-calls speak for the household's
+    // people, the sandbox whose back-call is the exec bridge — so those run under exactly those names.
     [Theory]
     [InlineData(BrowseServerListeners.Service, HouseholdServerNames.WebSearch)]
     [InlineData("mcp-channel-voice", HouseholdServerNames.Voice)]
+    [InlineData("mcp-sandbox", HouseholdServerNames.Sandbox)]
     public void TheServersTheDeploymentFindsByName_RunUnderTheNamesItLooksFor(string service, string name)
     {
         Kit.Service(service).Environment["MCP__TUNNEL__SERVERNAME"].ShouldBe(name);

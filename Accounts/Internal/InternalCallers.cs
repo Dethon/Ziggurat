@@ -2,6 +2,7 @@ using Accounts.Links;
 using Accounts.Settings;
 using Accounts.Tunnels;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Security;
 
 namespace Accounts.Internal;
@@ -30,9 +31,9 @@ public static class InternalCallers
     // credential is refused it as it is refused another channel.
     public const string Tunnels = "tunnels";
 
-    // A household's own server, asking on its accounts back-call: the relay shows this service the
-    // credential the tunnel was opened with, never a deployment secret, so the server is whoever that
-    // live credential was minted for. It asks about voice alone — a tunnelled voice resolving its
+    // A household's own voice server, asking on its accounts back-call: the relay shows this service
+    // the credential the tunnel was opened with, never a deployment secret, so the server is whoever
+    // that live credential was minted for, and only one minted for voice is. It asks about voice alone — a tunnelled voice resolving its
     // speakers and its household's guest — and about its own household alone (Household): a stolen
     // household credential mints that household's voice people and nobody else's.
     public const string HouseholdServer = "household-server";
@@ -61,19 +62,26 @@ public static class InternalCallers
     }
 
     // A caller none of the entries name may still be a household's server, by the live tunnel
-    // credential it presented; it is then that server and nothing else.
-    public static async Task<bool> PresentingHouseholdServerAsync(
+    // credential it presented; it is then that server and nothing else. Only the household's voice
+    // server is one: the relay lets no other server's accounts back-call through, and this does not
+    // lean on that — a printer's, vault's or outpost's live credential is known and refused.
+    public static async Task<HouseholdServerPresented> PresentingHouseholdServerAsync(
         HttpContext http, TunnelCredentialStore credentials, CancellationToken ct)
     {
         if (SharedSecret.Bearer(http.Request.Headers.Authorization.ToString()) is not { Length: > 0 } presented
             || await credentials.LiveAsync(presented, ct) is not { } credential)
         {
-            return false;
+            return HouseholdServerPresented.None;
+        }
+
+        if (credential.ServerName != HouseholdServerNames.Voice)
+        {
+            return HouseholdServerPresented.AnotherServer;
         }
 
         http.Items[ItemKey] = (IReadOnlyList<string>)[HouseholdServer];
         http.Items[HouseholdKey] = credential.TenantId;
-        return true;
+        return HouseholdServerPresented.Voice;
     }
 
     // The one household a household's server may ask about; null for a deployment caller, which asks
@@ -88,4 +96,13 @@ public static class InternalCallers
 
     // The answer to a caller asking about a channel that is not its own, before anything is read.
     public static IResult NotYours => Results.StatusCode(StatusCodes.Status403Forbidden);
+}
+
+// What a presented tunnel credential is to the internal API: nobody's (401), the household's voice
+// server, or another of the household's servers, which asks about nothing (403).
+public enum HouseholdServerPresented
+{
+    None,
+    Voice,
+    AnotherServer
 }
