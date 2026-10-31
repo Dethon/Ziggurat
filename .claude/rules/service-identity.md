@@ -186,9 +186,11 @@ takes `WithCallTokensFromTheTestProcess()` (`MCP__AUDIENCE` = `TestContainers.Di
 
 ## Call tokens
 
-The agent's token for one call to one server. **Audience**: the host the agent dials the server at
-(`TokenAudiences.CallTo(address)`, the same key `McpCredentials` finds its credential by, never the
-port), which the server binds as `MCP__AUDIENCE`. **Where**: `params._meta["com.herfluffness/callToken"]`
+The agent's token for one call to one server. **Audience**: the name the server answers to,
+`ServerAddress.Name` (`Domain/Security/ServerAddress.cs`) — for a server dialled at a URL, its host,
+never the port — read by `TokenAudiences.CallTo(server)`, the same key `McpCredentials` finds its
+credential by, which the server binds as `MCP__AUDIENCE` (`CallTokenGate` takes it through
+`ServerAddress.Named`). **Where**: `params._meta["com.herfluffness/callToken"]`
 (`ChannelProtocol.CallTokenMetaKey`) on every `tools/call`, beside the conversation context.
 **Lifetime** 2 minutes, a fresh one minted once the last is within `RefreshMargin` (30 s) of expiry
 (`CallTokens:Lifetime`, `CallTokens:RefreshMargin` in the agent's appsettings).
