@@ -1,9 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs.Channel;
+using Domain.Security.Sealing;
 using HouseholdMigration;
 using McpServerSugary.Store;
 using Microsoft.EntityFrameworkCore;
@@ -24,7 +24,7 @@ public sealed class MigrationRig : IAsyncDisposable
     private const string TelegramCredential = "telegram-credential";
 
     // The browse server's key: what the old records were sealed with and the new ones will be.
-    public static readonly byte[] StateKey = RandomNumberGenerator.GetBytes(32);
+    public static readonly SealingKey StateKey = SealingKey.Generate();
 
     private readonly ServiceProvider _sugary;
 
@@ -37,7 +37,7 @@ public sealed class MigrationRig : IAsyncDisposable
         {
             RedisConnectionString = redis,
             Accounts = new AccountsEndpoint { BaseUrl = accounts.Address.ToString(), Credential = Credential },
-            Logins = new LoginsSettings { StateKey = Convert.ToBase64String(StateKey) },
+            Logins = new LoginsSettings { StateKey = Convert.ToBase64String(StateKey.Export()) },
             SugaryDatabasePath = Path.Combine(directory, "sugary", "sugary.db"),
             VoicesPath = Path.Combine(directory, "voices"),
             MemoryDimension = memoryDimension

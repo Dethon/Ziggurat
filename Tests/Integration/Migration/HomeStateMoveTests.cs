@@ -1,6 +1,6 @@
-using System.Security.Cryptography;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Security.Sealing;
 using HouseholdMigration;
 using Infrastructure.StateManagers;
 using McpServerWebSearch.Handoff;
@@ -58,7 +58,7 @@ public sealed class HomeStateRedisFixture : IAsyncLifetime
 // misses or mangles is a login, a link or a download notice the kit's servers cannot find.
 public class HomeStateMoveTests(HomeStateRedisFixture redis) : IClassFixture<HomeStateRedisFixture>, IAsyncLifetime
 {
-    private static readonly byte[] _sealingKey = RandomNumberGenerator.GetBytes(RedisPersonStateStore.KeyBytes);
+    private static readonly SealingKey _sealingKey = SealingKey.Generate();
 
     private static readonly PersonState _franRemembers = new(
         """{"cookies":[{"name":"sid","value":"abc","domain":".example.com"}],"origins":[]}""",
