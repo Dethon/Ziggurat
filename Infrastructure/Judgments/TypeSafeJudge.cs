@@ -49,7 +49,6 @@ public sealed class TypeSafeJudge : IJudge
         _metricsPublisher = metricsPublisher;
         _logger = logger;
         httpClient.BaseAddress = options.BaseAddress;
-        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
     }
 
     // The empty key registers a judge that answers absence, so nothing downstream checks the key.
@@ -77,9 +76,20 @@ public sealed class TypeSafeJudge : IJudge
 
         try
         {
-            using var response = await _httpClient.PostAsJsonAsync(Endpoint, Wire(request), _wireJson, deadline);
+            // On the key of the household it is asked for, or the host's own: a household's
+            // judgments are its calls as much as its turns are.
+            var payer = request.Caller.Payer;
+            using var message = new HttpRequestMessage(HttpMethod.Post, Endpoint)
+            {
+                Content = JsonContent.Create(Wire(request), options: _wireJson)
+            };
+            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", payer.Key?.Reveal() ?? _options.ApiKey);
+            using var response = await _httpClient.SendAsync(message, deadline);
             return response.StatusCode switch
             {
+                // A household's own key refused is the household's to fix, not the host's setting.
+                HttpStatusCode.Unauthorized when payer.Key is not null => await MisconfiguredAsync(
+                    $"household {payer.TenantId}'s OpenRouter key", response, deadline),
                 HttpStatusCode.Unauthorized => await MisconfiguredAsync("openRouter:apiKey", response, deadline),
                 // A model that does not exist, or a question the endpoint refuses: the body says
                 // which, and either way no retry clears it.
@@ -138,6 +148,7 @@ public sealed class TypeSafeJudge : IJudge
         {
             _metricsPublisher.Publish(new TokenUsageEvent
             {
+                TenantId = caller.Payer.TenantId,
                 Sender = caller.Sender ?? "unknown",
                 AgentId = caller.AgentId,
                 ConversationId = caller.ConversationId,

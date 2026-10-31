@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 
 namespace Domain.Judgments;
@@ -22,6 +23,9 @@ public sealed record JudgmentRequest(
 // - Sender, AgentId and ConversationId are whom the judgment's usage is billed to, the way a chat
 //   turn's is: a judgment costs money like any model call, and its cost lands on the same
 //   figures. Any of them may be unknown; Sender is then "unknown", as a chat turn's is.
+// - Payer is the household it is asked for, whose figures it is counted under, and the key it goes
+//   out on: a household's own in the agent host, which is handed it with the turn; none is the
+//   host's own key — the home household's, and every shared server's, which holds no household's.
 public sealed record JudgmentCaller(
     string? TurnModel,
     string? Sender,
@@ -31,11 +35,17 @@ public sealed record JudgmentCaller(
     // Nobody and no turn: a question with nothing behind it to bill.
     public static readonly JudgmentCaller None = new(null, null);
 
+    public ModelPayer Payer { get; init; } = ModelPayer.Deployment;
+
     // The conversation a server's tool call came from, as its `_meta` carried it; none is a call
-    // with nothing behind it (a fixture, a harness).
+    // with nothing behind it (a fixture, a harness). Counted under the household the call's verified
+    // identity names, on the server's own key.
     public static JudgmentCaller For(ConversationContext? conversation) => conversation is null
         ? None
-        : new(conversation.ConfigPatchModel, conversation.UserId, conversation.AgentId, conversation.ConversationId);
+        : new(conversation.ConfigPatchModel, conversation.UserId, conversation.AgentId, conversation.ConversationId)
+        {
+            Payer = new ModelPayer(conversation.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null, null)
+        };
 }
 
 // The question kinds a use here has needed. A score is added by the first use that needs one.

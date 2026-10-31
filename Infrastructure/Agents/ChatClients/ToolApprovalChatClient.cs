@@ -38,6 +38,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
     private readonly IToolInvocationObserver? _observer;
     private readonly IExecScreen? _execScreen;
     private readonly string? _agentId;
+    private readonly ModelPayer _payer;
     private int _observed;
 
     // One line per request, found by the history the request's calls are all handed. Per request
@@ -59,12 +60,15 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
         IMetricsPublisher? metricsPublisher = null,
         IToolInvocationObserver? observer = null,
         IExecScreen? execScreen = null,
-        string? agentId = null)
+        string? agentId = null,
+        ModelPayer? payer = null)
         : base(innerClient)
     {
         _observer = observer;
         _execScreen = execScreen;
         _agentId = agentId;
+        // Who pays for the agent's calls, which the screen asked about one of them is paid by too.
+        _payer = payer ?? ModelPayer.Deployment;
         ArgumentNullException.ThrowIfNull(approvalHandler);
         ArgumentNullException.ThrowIfNull(conversationId);
         _approvalHandler = approvalHandler;
@@ -233,6 +237,9 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
                 shellReach, CallArguments.Text(context.Arguments, "command") ?? "", path, context.Messages)
             {
                 Caller = new JudgmentCaller(asking?.GetTurnModel(), asking?.GetSenderId(), _agentId, _conversationId)
+                {
+                    Payer = _payer
+                }
             },
             ct);
     }
