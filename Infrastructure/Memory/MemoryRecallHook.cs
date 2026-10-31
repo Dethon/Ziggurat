@@ -74,6 +74,9 @@ public class MemoryRecallHook(
 
         var userId = account.UserId;
 
+        // Everything this recall publishes is the household's whose account the turn acts for.
+        var metrics = metricsPublisher.ForHousehold(account.TenantId);
+
         // The two reasons a turn reads memory and writes none, stated together. A person picks a
         // model on their own box so that what they type stays there, and extraction sends exactly
         // their own words to a hosted model — so a turn addressed to the box is not extracted from.
@@ -106,7 +109,7 @@ public class MemoryRecallHook(
             var agentName = agentId is not null
                 ? agentDefinitionProvider.GetById(agentId)?.Name ?? agentId
                 : null;
-            using var latency = metricsPublisher.MeasureLatency(
+            using var latency = metrics.MeasureLatency(
                 LatencyStage.MemoryRecall, conversationId, agentName);
 
             // Whether the user is remembered at all needs nothing from the thread, and both
@@ -128,7 +131,7 @@ public class MemoryRecallHook(
                 : Task.FromResult<PersonalityProfile?>(null);
 
             var memories = await SearchMemoriesAsync(
-                userId, messageText, persisted, hasMemoriesTask, conversationId, agentName, ct);
+                metrics, userId, messageText, persisted, hasMemoriesTask, conversationId, agentName, ct);
             var profile = await profileTask;
 
             if (memories.Count > 0 || profile is not null)
@@ -145,7 +148,7 @@ public class MemoryRecallHook(
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Failed to update access timestamps for user {UserId}", userId);
-                    metricsPublisher.Publish(new ErrorEvent
+                    metrics.Publish(new ErrorEvent
                     {
                         Service = "memory",
                         ErrorType = ex.GetType().Name,
@@ -159,13 +162,14 @@ public class MemoryRecallHook(
                 await extractionQueue.EnqueueAsync(
                     new MemoryExtractionRequest(userId, stateKey, anchor, conversationId, agentId)
                     {
-                        FallbackContent = messageText
+                        FallbackContent = messageText,
+                        TenantId = account.TenantId
                     }, ct);
             }
 
             // Same duration as the latency event the scope publishes, taken off the scope rather
             // than from a second stopwatch.
-            metricsPublisher.Publish(new MemoryRecallEvent
+            metrics.Publish(new MemoryRecallEvent
             {
                 DurationMs = latency.ElapsedMilliseconds,
                 MemoryCount = memories.Count,
@@ -177,7 +181,7 @@ public class MemoryRecallHook(
         catch (Exception ex)
         {
             logger.LogError(ex, "Memory recall failed for user {UserId}", userId);
-            metricsPublisher.Publish(new ErrorEvent
+            metrics.Publish(new ErrorEvent
             {
                 Service = "memory",
                 ErrorType = ex.GetType().Name,
@@ -187,6 +191,7 @@ public class MemoryRecallHook(
     }
 
     private async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(
+        IMetricsPublisher metrics,
         string userId,
         string messageText,
         ChatMessage[]? persisted,
@@ -211,9 +216,9 @@ public class MemoryRecallHook(
         // difference between the stage and what storage is known to cost. The scope
         // publishes on disposal, so a failed call is measured too.
         float[]? embedding;
-        using (metricsPublisher.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentName))
+        using (metrics.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentName))
         {
-            embedding = await EmbedAsync(embeddingInput, userId, ct);
+            embedding = await EmbedAsync(metrics, embeddingInput, userId, ct);
         }
 
         // An embedding outage costs the turn its recall block and nothing else. Throwing
@@ -248,11 +253,13 @@ public class MemoryRecallHook(
         }
     }
 
-    private async Task<float[]?> EmbedAsync(string input, string userId, CancellationToken ct)
+    private async Task<float[]?> EmbedAsync(IMetricsPublisher metrics, string input, string userId, CancellationToken ct)
     {
         try
         {
-            return await embeddingService.GenerateEmbeddingAsync(input, ct);
+            var embedding = await embeddingService.GenerateEmbeddingAsync(input, ct);
+            metrics.RecordEmbedded(1);
+            return embedding;
         }
         // Only a cancellation the turn itself asked for propagates. An HttpClient timeout
         // also arrives as a TaskCanceledException, and a hung server is the likeliest way
@@ -270,7 +277,7 @@ public class MemoryRecallHook(
             // Published under its own service name so an embedding outage is distinguishable
             // from an ordinary recall that simply found nothing.
             logger.LogWarning(ex, "Embedding the recall window failed for user {UserId}", userId);
-            metricsPublisher.Publish(new ErrorEvent
+            metrics.Publish(new ErrorEvent
             {
                 Service = EmbeddingErrorService,
                 ErrorType = ex.GetType().Name,
