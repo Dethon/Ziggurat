@@ -9,6 +9,7 @@ using McpServerSugary.Store;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
 using Shouldly;
+using StackExchange.Redis;
 using Tests.Integration.Fixtures;
 
 namespace Tests.Integration.Migration;
@@ -236,22 +237,62 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         exit.ShouldBe(0, output);
         var franAccount = await rig.AccountOfAsync(fran.TelegramId);
         var anaAccount = await rig.AccountOfAsync(ana.TelegramId);
-        (await threads.GetTopicAsync(anasTopic.AgentId, anasTopic.ChatId, anasTopic.TopicId)).ShouldBe(anasTopic with
+        var home = franAccount.TenantId;
+        (await threads.GetTopicAsync(home, anasTopic.AgentId, anasTopic.ChatId, anasTopic.TopicId)).ShouldBe(anasTopic with
         {
             OwnerId = anaAccount.UserId,
             TenantId = anaAccount.TenantId,
             Shared = true,
             OwnerName = ana.Name
         });
-        (await threads.GetTopicAsync(guestsTopic.AgentId, guestsTopic.ChatId, guestsTopic.TopicId)).ShouldBe(guestsTopic with
+        (await threads.GetTopicAsync(home, guestsTopic.AgentId, guestsTopic.ChatId, guestsTopic.TopicId)).ShouldBe(guestsTopic with
         {
             OwnerId = franAccount.UserId,
             TenantId = franAccount.TenantId,
             Shared = true
         });
-        (await threads.GetTopicAsync(someonesPrivate.AgentId, someonesPrivate.ChatId, someonesPrivate.TopicId))
+        (await threads.GetTopicAsync("home", someonesPrivate.AgentId, someonesPrivate.ChatId, someonesPrivate.TopicId))
             .ShouldBe(someonesPrivate);
-        (await threads.GetTopicAsync(aGroupsCopy.AgentId, aGroupsCopy.ChatId, aGroupsCopy.TopicId)).ShouldBe(aGroupsCopy);
+        (await threads.GetTopicAsync("home", aGroupsCopy.AgentId, aGroupsCopy.ChatId, aGroupsCopy.TopicId)).ShouldBe(aGroupsCopy);
+    }
+
+    // The deployment's topics were all the home household's, so each is moved under it as it was: still
+    // listed in its space, still found by what was said in it, its conversation still leading to it —
+    // and the search index from before households, which had no household to filter on, is gone.
+    // Another household's topic is nothing this run touches.
+    [Fact]
+    public async Task ATopic_IsListedAndSearchedInTheHomeHousehold_AndItsConversationStillLeadsToIt()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var threads = new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System);
+        await BeforeHouseholds.SearchIndexAsync(db);
+        var quince = await TopicAsync(threads, firstSender: ana.WebChat, text: $"quince{_tag} jelly");
+        var elsewhere = new TopicMetadata(Guid.NewGuid().ToString("N"), Random.Shared.NextInt64(1, long.MaxValue), 1,
+            "jonas", $"Topic {_tag}", DateTimeOffset.UtcNow, null, TenantId: $"elsewhere{_tag}", Shared: true);
+        await threads.SaveTopicAsync(elsewhere);
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        var franSees = new TopicViewer(franAccount.UserId, franAccount.TenantId);
+        var held = (await threads.GetTopicByChatIdAndThreadIdAsync(quince.AgentId, quince.ChatId, quince.ThreadId))
+            .ShouldNotBeNull();
+        held.TenantId.ShouldBe(franAccount.TenantId);
+        IReadOnlyList<TopicMetadata> found = [];
+        await Eventually.Until(
+            async () => (found = (await threads.SearchTopicsAsync("jonas", "default", franSees, $"quince{_tag}", null, 10)).Topics)
+                .Count > 0,
+            "the moved topic to be indexed");
+        found.Select(t => t.TopicId).ShouldBe([quince.TopicId]);
+        (await threads.GetTopicPageAsync("jonas", "default", franSees, null, 500)).Topics
+            .ShouldContain(t => t.TopicId == quince.TopicId);
+        (await db.KeyExistsAsync($"topic:jonas:{quince.ChatId}:{quince.TopicId}")).ShouldBeFalse();
+        (await db.KeyExistsAsync($"topicdoc:jonas:{quince.ChatId}:{quince.TopicId}")).ShouldBeFalse();
+        ((RedisResult[])(await db.ExecuteAsync("FT._LIST"))!).Select(i => i.ToString()).ShouldNotContain("idx:topics");
+        (await threads.GetTopicAsync(elsewhere.TenantId!, "jonas", elsewhere.ChatId, elsewhere.TopicId)).ShouldBe(elsewhere);
     }
 
     [Fact]
@@ -445,20 +486,21 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     // A topic whose conversation began with a message the chat client stamped with whatever name its
     // picker sent, as every message did before accounts.
     private async Task<TopicMetadata> TopicAsync(
-        RedisThreadStateStore threads, string firstSender, Func<TopicMetadata, TopicMetadata>? owned = null)
+        RedisThreadStateStore threads, string firstSender, Func<TopicMetadata, TopicMetadata>? owned = null,
+        string? text = null)
     {
         var now = DateTimeOffset.UtcNow;
         var topic = new TopicMetadata(
             Guid.NewGuid().ToString("N"), Random.Shared.NextInt64(1, long.MaxValue), Random.Shared.NextInt64(1, 1_000_000),
             "jonas", $"Topic {_tag}", now, now, "default");
         topic = owned?.Invoke(topic) ?? topic;
-        await threads.SaveTopicAsync(topic);
+        await BeforeHouseholds.TopicAsync(redis.Connection.GetDatabase(), topic, text);
         var first = new ChatMessage(ChatRole.User, "What's for dinner?");
         first.SetSenderId(firstSender);
         await threads.AppendMessagesAsync(
             new AgentKey($"{topic.ChatId}:{topic.ThreadId}", topic.AgentId).ToString(),
             [first, new ChatMessage(ChatRole.Assistant, "Pasta.")]);
-        return (await threads.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId))!;
+        return topic;
     }
 
     private static object Entry(Person p, params string[] oldNames) => new

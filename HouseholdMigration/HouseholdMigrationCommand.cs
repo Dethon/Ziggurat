@@ -121,10 +121,14 @@ public static class HouseholdMigrationCommand
         new PushSpaces(redis),
         new ScheduleCreators(redis),
         new ScheduleHouseholds(redis),
-        new TopicOwners(redis, new RedisThreadStateStore(redis, new RetentionSettings(), TimeProvider.System)),
+        new TopicOwners(redis, Threads(redis)),
+        new TopicHouseholds(redis, Threads(redis)),
         new VoiceProfiles(settings.VoicesPath),
         new SugaryLog(settings.SugaryDatabasePath)
     ];
+
+    private static RedisThreadStateStore Threads(IConnectionMultiplexer redis) =>
+        new(redis, new RetentionSettings(), TimeProvider.System);
 
     private static Task WriteAsync(StepReport report, TextWriter output) =>
         output.WriteLineAsync(string.Join(output.NewLine,

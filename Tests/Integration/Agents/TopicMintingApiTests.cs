@@ -72,17 +72,18 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
         (await PageAsync(new TopicViewer("bob", Home))).ShouldBeEmpty();
     }
 
-    // The guest is somebody in the house acting as no person: a topic nobody owns, recording no
-    // household, which everyone in its space sees.
+    // The guest is somebody in the house acting as no person: a topic nobody owns, recording the
+    // household whose guest they are, which everyone of it sees and no other household does.
     [Fact]
-    public async Task TheGuestsConversation_IsATopicNobodyOwns()
+    public async Task TheGuestsConversation_IsATopicNobodyOwns_OfTheGuestsHousehold()
     {
         await _client.MintAsync(
             new TopicMintRequest(_agent, "Kitchen @ Cocina", "Kitchen"), TestAssertions.OfGuest(Home, ChannelIds.Voice), default);
 
         var topic = (await PageAsync(new TopicViewer("bob", Home))).ShouldHaveSingleItem();
         (topic.OwnerId, topic.TenantId, topic.Shared, topic.OwnerName)
-            .ShouldBe(((string?)null, (string?)null, true, (string?)null));
+            .ShouldBe(((string?)null, Home, true, (string?)null));
+        (await PageAsync(new TopicViewer("laura", "elsewhere"))).ShouldBeEmpty();
     }
 
     // Whose a topic is was signed; nothing a caller writes beside the assertion moves it.

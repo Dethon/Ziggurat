@@ -40,7 +40,7 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
             LastMessageAt: null,
             SpaceSlug: "default",
             OwnerId: owner?.UserId,
-            TenantId: account?.TenantId,
+            TenantId: account?.TenantId ?? p.GuestTenantId,
             Shared: owner is null,
             OwnerName: owner is null ? null : p.Sender);
 
