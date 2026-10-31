@@ -135,10 +135,81 @@ Real users, with the tenant already in the model (only the home tenant exists ye
   Telegram and voice review copies included. Sessions last until revoked, approvals belong to the
   asker on any of their channels, Sugary logs are per person with a shared pantry, and the
   ServiceBus channel is removed.
-- **Service identity:** implemented 2026-10-30 on branch `service-identity` (9 tickets plus review fixes; full suite and smoke tier green; not yet merged into `web-identity`). The accounts
+- **Service identity:** implemented 2026-10-30 on branch `service-identity` (9 tickets plus review fixes; full suite and smoke tier green; merged into `web-identity` 2026-10-31). The accounts
   service signs assertions, the agent signs per-call tokens and delegations for deferred turns,
   servers refuse unsigned calls, apps verify the assertion, keys are generated and published as
   JWKS, and a long turn keeps fresh call tokens while its identity is verified once at its start.
-- **Tenants:** the config schema and its versioning; the capability catalogue (which servers are
-  cloud-safe); the agent editor (prompts and skills in a browser); validating a tenant's keys; the
-  storage seam for a future per-tenant blob store; whether a tenant may run the eval on its edits.
+- **Tenants:** grilled 2026-10-31 (decisions below); split into three phases, each its own spec
+  under `.scratch/tenants-<a|b|c>/`, each branching from and merging into `web-identity`.
+
+## Tenants decisions (grilled 2026-10-31)
+
+- **Split.** 4a *Tunnel*: the relay, tunnelled servers, outposts moved onto it, the home kit
+  running over it, offline servers' tools omitted. 4b *Tenant config*: sealed keys, per-section
+  JSON, prompts and skills as documents, per-tenant agent building and keys, tenant-keyed stores and
+  the migration, timers on channels, spaces. 4c *Admin and onboarding*: the owner's admin area, the
+  agent editor, probes, the operator's tenant list and suspend, usage.
+- **Two kinds of server.** *Shared deployment servers* serve every tenant: scheduling, timers,
+  Sugary, Idealista, WebChat (SignalR) and Telegram. *A tenant's own servers* run at the tenant's
+  site and reach the stack only through the tunnel: web search (+ Camoufox, so it browses from the
+  tenant's IP), vault, library, sandbox, printer, Home Assistant, voice. The home tenant is the
+  first: it runs a **tenant compose kit** the repo ships (same images, env config, one tunnel
+  credential per server) beside the deployment on the same machine.
+- **The tunnel.** True tunnel, built into `Mcp.Hosting`: a server told "connect to <hub> with
+  <credential>" opens one outbound WebSocket through Caddy and serves its MCP session,
+  notifications (an HA watch's fire, a voice turn) and HTTP pages (web search's `/browse/*`, which
+  Caddy routes to the relay) over it. One tunnel per server; the relay lives in the agent. The agent
+  never dials a tenant-supplied address. **Outposts move onto it from the start** (the outpost
+  binary uses the same code; no more dial-back). The tunnel credential proves "tenant X's server
+  Y"; call tokens inside still say who each call acts for. The agent's JWKS reaches tunnelled
+  servers **over the tunnel** (on open and on rotation), never a public route.
+- **Offline servers.** A turn is built with the servers connected when it starts; an offline
+  server's tools and skills are left out and one line of context names the offline servers. A call
+  in flight when the tunnel drops fails with a clear error.
+- **Config.** In the accounts service: one JSON document per tenant per section (agents, features,
+  keys, spaces, servers…) with a `schemaVersion`, migrated forward by accounts on read and on save.
+  Shared servers fetch their own section per call (tenant from the verified call token) from the
+  accounts internal API, cached briefly and invalidated by a Redis message on save; secrets are
+  unsealed by accounts and sent only to the server they belong to. A tenant's own servers are
+  configured at its site.
+- **Secrets.** A random data key per tenant seals its secrets (AES-GCM); the data key is wrapped by
+  one deployment master key, the one new `.env` secret. Losing the master loses every tenant
+  secret (owners re-enter them).
+- **Model costs.** A tenant brings its own OpenRouter key before its agents run; every model call
+  made for it (turns, workers, memory extraction, dreaming, Jev, image reads) is billed to it, with
+  no fallback. The home tenant uses the deployment key. Lemonade is shared and metered per tenant.
+- **Agents.** Prompt sections and skills become text documents shipped in the repo as defaults;
+  ceilings, the skill index and snapshots run over them. Shipped templates are a barebones Jonas
+  (owner names it) and Sugary only; jack, jonas, nabu and sugary become the home tenant's own agents,
+  seeded from today's definitions. A tenant forks templates and edits prompt sections, skills,
+  tools/servers and model in a plain editor with validation, a short revision history, reset to
+  shipped and a diff when the shipped template changed. No eval on tenant edits this phase.
+- **Telegram.** One shared deployment bot serves every tenant (a linked person's messages go to
+  their tenant's default agent; `/agent` switches); the home tenant keeps its jack and jonas bots as
+  tenant-owned bots in its config.
+- **Stores.** Per-person stores stay keyed by user id (memory, push, web logins). Everything a
+  household shares or the deployment counts gets the tenant id: topics and spaces, schedules,
+  watches, custom agents (made durable), outposts, metrics. Existing data migrates into the home
+  tenant.
+- **Timers** become a shared server like scheduling: a timer rings on the tenant's satellites
+  through its voice server when it has one, otherwise as an insistent alert on the person's
+  channels (WebChat push, Telegram) with dismiss from there.
+- **Spaces** are a tenant config section edited by the owner; a new tenant starts with one default
+  space; the home tenant's current spaces migrate into its config; space keys carry the tenant id.
+- **Callbacks.** HA is entirely in the tenant's network: its watch-fired callback reaches the
+  tenant's HA server locally, which sends the fire to the agent over its tunnel. No public callback
+  route.
+- **Validation.** Saving a key probes it (OpenRouter, Idealista, …): a definite auth failure
+  refuses the save, an unreachable provider saves with a warning; auth failures in use re-probe and
+  show the owner. Own servers show connected, last seen and tools offered.
+- **Onboarding.** The operator creates a tenant (dashboard or CLI) and mints the owner's link; the
+  owner's first sign-in lands in the admin area (OpenRouter key, name the default agent, invite
+  members); until a key is set the tenant's agents refuse turns with a clear message.
+- **Admin area.** Owner-only in WebChat: members and invites, keys, features, agents (editor),
+  spaces, own servers (create, credential shown once, connected/tools, revoke) and a usage view
+  (tokens, cost, Lemonade seconds). The operator's dashboard gains a tenant dimension and a tenant
+  list (create, suspend).
+- **Removal.** Suspend only (sessions refused, turns refused, tunnels closed); deleting and
+  exporting a tenant's data is a later phase.
+- **Out of scope.** A hosted per-tenant blob store (own servers cover it; every VFS mount must still
+  resolve per tenant); eval on tenant edits.
