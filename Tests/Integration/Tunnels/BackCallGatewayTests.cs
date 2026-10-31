@@ -57,6 +57,8 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
             await server.DisposeAsync();
         }
 
+        _ports.ForEach(TestPort.Release);
+
         await _relay.DisposeAsync();
         await _accounts.DisposeAsync();
         Directory.Delete(_keyDirectory, recursive: true);
@@ -220,6 +222,7 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
     {
         var credential = await _accounts.MintTunnelCredentialAsync(household, serverName);
         var port = TestPort.GetAvailable();
+        _ports.Add(port);
         _servers.Add(await TunnelledServer.StartAsync(
             _relay.Hub, credential.Credential, serverName, new Dictionary<string, int> { [tag] = port }));
         await Eventually.Until(() => _servers[^1].IsAdmitted, $"{serverName}'s tunnel is admitted");
@@ -227,6 +230,7 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
     }
 
     private readonly List<TunnelledServer> _servers = [];
+    private readonly List<int> _ports = [];
 
     private static Uri Loopback(int port) => new($"http://127.0.0.1:{port}/");
 }

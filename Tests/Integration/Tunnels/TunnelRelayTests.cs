@@ -338,9 +338,7 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
         await using var server = await TunnelledServer.StartAsync(_relay.Hub, credential.Credential, "vault");
         await ConnectedAsync(_relay, "vault");
-        var port = _relay.Port;
-
-        await _relay.DisposeAsync();
+        var port = await _relay.StopKeepingItsPortAsync();
         _relay = await StartRelayAsync(port);
         await using var agent = await DialAsync(_relay, "vault");
 
