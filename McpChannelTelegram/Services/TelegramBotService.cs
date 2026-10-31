@@ -2,14 +2,22 @@ using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
 using Mcp.Hosting;
+using McpChannelTelegram.Settings;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 
 namespace McpChannelTelegram.Services;
 
-// The pump, and nothing more: it reads updates and hands each one on. The album buffer beside it
-// owns the only clock, and the intake owns every rule that turns a message into attachments.
+// The pump, and nothing more: it keeps a poller on every bot and hands each update on. The album
+// buffer beside it owns the only clock a message has, and the intake owns every rule that turns a
+// message into attachments.
+//
+// The shared bot is polled from the start. The households' own bots are their configuration's, read
+// across households at once (IHouseholdConfiguration.TelegramBotsAsync, which takes no proof: nothing
+// has named a household yet) and again every BotSettings.Refresh, so a bot saved, changed or removed
+// starts or stops within moments of the save being announced, and an accounts service that cannot
+// answer leaves the bots already polling as they are.
 public sealed class TelegramBotService : BackgroundService
 {
     private const int PollTimeoutSeconds = 30;
@@ -20,8 +28,13 @@ public sealed class TelegramBotService : BackgroundService
     private readonly IAgentCatalog _agentCatalog;
     private readonly VoiceNoteDictation _dictation;
     private readonly TelegramGate _gate;
+    private readonly ChatAgents _chatAgents;
+    private readonly IHouseholdConfiguration _households;
+    private readonly BotSettings _settings;
+    private readonly TimeProvider _time;
     private readonly ILogger<TelegramBotService> _logger;
     private readonly AlbumBuffer _albums;
+    private readonly Dictionary<string, Poller> _pollers = [];
 
     public TelegramBotService(
         BotRegistry botRegistry,
@@ -30,6 +43,9 @@ public sealed class TelegramBotService : BackgroundService
         IAgentCatalog agentCatalog,
         VoiceNoteDictation dictation,
         TelegramGate gate,
+        ChatAgents chatAgents,
+        IHouseholdConfiguration households,
+        BotSettings settings,
         TimeProvider timeProvider,
         ILogger<TelegramBotService> logger)
     {
@@ -39,6 +55,10 @@ public sealed class TelegramBotService : BackgroundService
         _agentCatalog = agentCatalog;
         _dictation = dictation;
         _gate = gate;
+        _chatAgents = chatAgents;
+        _households = households;
+        _settings = settings;
+        _time = timeProvider;
         _logger = logger;
         _albums = new AlbumBuffer(timeProvider, ReleaseAlbumAsync);
     }
@@ -47,26 +67,61 @@ public sealed class TelegramBotService : BackgroundService
     {
         _logger.LogInformation("Telegram bot polling started");
 
-        var pollers = _botRegistry.GetAllBots()
-            .Select(b => PollBotAsync(b.AgentId, b.Client, stoppingToken))
-            .ToArray();
+        try
+        {
+            using var refresh = new PeriodicTimer(_settings.Refresh, _time);
+            do
+            {
+                await RefreshAsync(stoppingToken);
+            } while (await refresh.WaitForNextTickAsync(stoppingToken));
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
 
-        await Task.WhenAll(pollers);
-
+        await Task.WhenAll(_pollers.Values.Select(poller => poller.Polling));
+        _pollers.Values.ToList().ForEach(poller => poller.Stop.Dispose());
         _logger.LogInformation("Telegram bot polling stopped");
     }
 
-    private async Task PollBotAsync(string agentId, ITelegramBotClient botClient, CancellationToken stoppingToken)
+    private async Task RefreshAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            _botRegistry.Replace(await _households.TelegramBotsAsync(stoppingToken));
+        }
+        catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Could not read the households' Telegram bots; the bots already polling go on");
+        }
+
+        var current = _botRegistry.All;
+        foreach (var gone in _pollers.Values.Where(poller => !current.Contains(poller.Bot)).ToList())
+        {
+            await gone.Stop.CancelAsync();
+            await gone.Polling;
+            gone.Stop.Dispose();
+            _pollers.Remove(gone.Bot.Key);
+        }
+
+        foreach (var bot in current.Where(bot => !_pollers.ContainsKey(bot.Key)))
+        {
+            var stop = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            _pollers[bot.Key] = new Poller(bot, stop, Task.Run(() => PollBotAsync(bot, stop.Token), CancellationToken.None));
+        }
+    }
+
+    private async Task PollBotAsync(TelegramBot bot, CancellationToken stoppingToken)
     {
         int? offset = null;
 
-        _logger.LogInformation("Started polling for agent {AgentId}", agentId);
+        _logger.LogInformation("Started polling the bot {Bot}", bot.Key);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                var updates = await botClient.GetUpdates(
+                var updates = await bot.Client.GetUpdates(
                     offset: offset,
                     timeout: PollTimeoutSeconds,
                     cancellationToken: stoppingToken);
@@ -79,7 +134,7 @@ public sealed class TelegramBotService : BackgroundService
 
                 foreach (var update in updates)
                 {
-                    await ProcessUpdateAsync(agentId, botClient, update, stoppingToken);
+                    await ProcessUpdateAsync(bot, update, stoppingToken);
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -88,19 +143,26 @@ public sealed class TelegramBotService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Telegram polling error for agent {AgentId}: {Message}", agentId, ex.Message);
-                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                _logger.LogError(ex, "Telegram polling error for the bot {Bot}: {Message}", bot.Key, ex.Message);
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
             }
         }
 
-        _logger.LogInformation("Stopped polling for agent {AgentId}", agentId);
+        _logger.LogInformation("Stopped polling the bot {Bot}", bot.Key);
     }
 
-    private async Task ProcessUpdateAsync(string agentId, ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
+    private async Task ProcessUpdateAsync(TelegramBot bot, Update update, CancellationToken cancellationToken)
     {
         if (update.CallbackQuery is not null)
         {
-            await _approvalCallbackRouter.HandleCallbackQueryAsync(botClient, update.CallbackQuery, cancellationToken);
+            await _approvalCallbackRouter.HandleCallbackQueryAsync(bot.Client, update.CallbackQuery, cancellationToken);
             return;
         }
 
@@ -113,11 +175,11 @@ public sealed class TelegramBotService : BackgroundService
         // turn carries every reference and the caption, wherever in the group it landed.
         if (message.MediaGroupId is not null)
         {
-            _albums.Add(agentId, botClient, message);
+            _albums.Add(bot, message);
             return;
         }
 
-        await HandleMessagesAsync(agentId, botClient, [message], cancellationToken);
+        await HandleMessagesAsync(bot, [message], cancellationToken);
     }
 
     // The buffer cannot tell a sender to try again, so a released group must never throw back at
@@ -127,20 +189,20 @@ public sealed class TelegramBotService : BackgroundService
     {
         try
         {
-            await HandleMessagesAsync(album.AgentId, album.Client, album.Messages, CancellationToken.None);
+            await HandleMessagesAsync(album.Bot, album.Messages, CancellationToken.None);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to handle a released Telegram album for agent {AgentId}", album.AgentId);
+            _logger.LogError(ex, "Failed to handle a released Telegram album for the bot {Bot}", album.Bot.Key);
         }
     }
 
     private async Task HandleMessagesAsync(
-        string agentId,
-        ITelegramBotClient botClient,
+        TelegramBot bot,
         IReadOnlyList<Message> messages,
         CancellationToken cancellationToken)
     {
+        var botClient = bot.Client;
         var first = messages[0];
         var content = messages
             .Select(m => m.Text ?? m.Caption)
@@ -153,7 +215,7 @@ public sealed class TelegramBotService : BackgroundService
 
         var chatId = first.Chat.Id;
         var conversationId = ConversationIdentity.ForChat(chatId, first.MessageThreadId).ConversationId;
-        var intake = AttachmentIntake.Read(agentId, conversationId, messages);
+        var intake = AttachmentIntake.Read(bot.Key, conversationId, messages);
 
         // A voice note is the one piece of media that becomes words rather than a file, so it is
         // read here and not by the intake, which mints references.
@@ -169,8 +231,17 @@ public sealed class TelegramBotService : BackgroundService
         // Admitted by the account the sender's numeric id is linked to, never by a username, which
         // is its owner's to change and Telegram's to reassign, or a chat's name or a first name,
         // which are anybody's to pick. Anything else the gate has answered already.
-        if (await _gate.AdmitAsync(botClient, first, content, cancellationToken) is not { } person)
+        if (await _gate.AdmitAsync(bot, first, content, cancellationToken) is not { } person)
         {
+            return;
+        }
+
+        // Who answers here, asked by somebody let in: a stranger is only ever shown the ways in.
+        if (TelegramCommand.Of(content) is (ChatAgents.Command, var argument))
+        {
+            await botClient.SendMessage(
+                chatId, await _chatAgents.AnswerAsync(bot, chatId, person, argument, cancellationToken),
+                replyParameters: first.MessageId, cancellationToken: cancellationToken);
             return;
         }
 
@@ -180,7 +251,11 @@ public sealed class TelegramBotService : BackgroundService
         var from = first.From!;
         var sender = from.Username ?? $"{from.Id}";
 
-        _botRegistry.RegisterChatAgent(chatId, agentId);
+        // A household's bot is its agent's. On the shared bot the chat's pick answers, and a chat that
+        // picked none names no agent, which the agent answers with the household's default.
+        var agentId = bot.AgentId ?? await _chatAgents.ChosenAsync(person.Account.TenantId, chatId, cancellationToken);
+
+        _botRegistry.RegisterChat(chatId, bot);
 
         var turnStops = await ReportRefusalsAsync(agentId, botClient, first, intake, cancellationToken);
 
@@ -245,8 +320,8 @@ public sealed class TelegramBotService : BackgroundService
                 "No live channel_receive subscriber; buffering message from {Sender} for later delivery", sender);
         }
 
-        _logger.LogDebug("Emitted message notification for conversation {ConversationId} from {Sender} (agent: {AgentId})",
-            conversationId, sender, agentId);
+        _logger.LogDebug("Emitted message notification for conversation {ConversationId} from {Sender} (bot: {Bot}, agent: {AgentId})",
+            conversationId, sender, bot.Key, agentId);
     }
 
     // Every turn asks, so a person's Telegram conversations sit among their topics in the chat
@@ -263,7 +338,7 @@ public sealed class TelegramBotService : BackgroundService
     // model that cannot read what was attached would answer as though nothing had been sent, and
     // an answer that silently ignores the question is worse than no answer.
     private async Task<bool> ReportRefusalsAsync(
-        string agentId,
+        string? agentId,
         ITelegramBotClient botClient,
         Message first,
         Intake intake,
@@ -272,10 +347,11 @@ public sealed class TelegramBotService : BackgroundService
         // The same resolution WebChat asks, from the same catalogue shape, so the two channels
         // cannot disagree about which model is refusing. Permissive wherever the catalogue is
         // silent — a cold start, or a blip at the provider, must not remove the feature. Telegram
-        // has no per-message model override, so the model a turn runs on is the agent's default.
+        // has no per-message model override, so the model a turn runs on is the agent's default; a
+        // shared bot's chat that picked no agent names none, and is as silent.
         var capabilityRefusal = intake.Attachments.Count > 0
             ? AttachmentCapability.Refusal(
-                _agentCatalog.Get(agentId), null, intake.Attachments.Select(a => a.MediaType))
+                agentId is null ? null : _agentCatalog.Get(agentId), null, intake.Attachments.Select(a => a.MediaType))
             : null;
 
         var reasons = intake.Refusals
@@ -306,4 +382,6 @@ public sealed class TelegramBotService : BackgroundService
         _albums.Dispose();
         base.Dispose();
     }
+
+    private sealed record Poller(TelegramBot Bot, CancellationTokenSource Stop, Task Polling);
 }
