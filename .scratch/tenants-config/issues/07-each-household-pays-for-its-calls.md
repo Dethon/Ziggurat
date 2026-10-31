@@ -4,9 +4,14 @@
 
 **Blocked by:** 06
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A household's turn, its worker and its memory extraction and dreaming are sent with that household's key
-- [ ] A household with no key gets a clear refusal and no model call is made
-- [ ] The home household's calls use the deployment key
-- [ ] No background work reads its household from ambient state
+- [x] A household's turn, its worker and its memory extraction and dreaming are sent with that household's key
+- [x] A household with no key gets a clear refusal and no model call is made
+- [x] The home household's calls use the deployment key
+- [x] No background work reads its household from ambient state
+
+Notes: the contracts are `.claude/rules/household-config.md`, "Who pays for a household's model calls".
+Dreaming walks a new agent-only `people` view of the accounts service. A shared server's own Jev use
+(voice's approval reader, the web search modal judge) is counted under the call's household but asked
+on the server's own key, since no shared server is given a household's key.

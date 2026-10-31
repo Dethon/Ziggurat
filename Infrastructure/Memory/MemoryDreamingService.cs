@@ -1,6 +1,8 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
+using Domain.Metrics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -17,6 +19,9 @@ public record MemoryDreamingOptions
     public int MaxMergePasses { get; init; } = 3;
 }
 
+// A night's dreaming walks every household and its people (the accounts service's people view), and
+// dreams for each person on their household's key, counting what it does under the household: there
+// is no call behind it to name one, so the household travels with the walk.
 public class MemoryDreamingService(
     IMemoryStore store,
     IMemoryConsolidator consolidator,
@@ -24,7 +29,9 @@ public class MemoryDreamingService(
     IMetricsPublisher metricsPublisher,
     ICronValidator cronValidator,
     ILogger<MemoryDreamingService> logger,
-    MemoryDreamingOptions options) : BackgroundService
+    MemoryDreamingOptions options,
+    IHouseholdConfiguration households,
+    IAgentDefinitionProvider agents) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -47,31 +54,73 @@ public class MemoryDreamingService(
         }
     }
 
-    private async Task RunDreamingAsync(CancellationToken ct)
-    {
-        var userIds = await store.GetAllUserIdsAsync(ct);
-        logger.LogInformation("Starting dreaming cycle for {UserCount} users", userIds.Count);
+    private Task RunDreamingAsync(CancellationToken ct) => RunDreamingAsync(DateTimeOffset.UtcNow, ct);
 
-        var now = DateTimeOffset.UtcNow;
-        foreach (var userId in userIds)
+    // Each household's people the store keeps memory for, on the household's key. A household that
+    // cannot pay — its own, with no key set — or cannot be read just now is not dreamt for tonight, and
+    // a person the store names who is in no household is nobody's to pay for, so is left alone.
+    public async Task RunDreamingAsync(DateTimeOffset now, CancellationToken ct)
+    {
+        var userIds = (await store.GetAllUserIdsAsync(ct)).ToHashSet(StringComparer.Ordinal);
+        var walk = await households.PeopleAsync(ct);
+        logger.LogInformation("Starting dreaming cycle for {UserCount} users in {HouseholdCount} households",
+            userIds.Count, walk.Count);
+
+        foreach (var household in walk)
         {
-            try
+            var people = household.People.Where(userIds.Contains).ToList();
+            if (people.Count == 0 || await PayerAsync(household.HouseholdId, ct) is not { } payer)
             {
-                await RunDreamingForUserAsync(userId, now, ct);
+                continue;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+
+            foreach (var userId in people)
             {
-                logger.LogError(ex, "Dreaming failed for user {UserId}", userId);
+                try
+                {
+                    await RunDreamingForUserAsync(userId, now, payer, ct);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    logger.LogError(ex, "Dreaming failed for user {UserId}", userId);
+                }
             }
+        }
+
+        var inNoHousehold = userIds.Except(walk.SelectMany(h => h.People), StringComparer.Ordinal).Count();
+        if (inNoHousehold > 0)
+        {
+            logger.LogWarning("Dreaming left {Count} users alone: they are in no household, so nobody pays for them", inNoHousehold);
         }
     }
 
-    public async Task RunDreamingForUserAsync(string userId, DateTimeOffset now, CancellationToken ct)
+    private async Task<ModelPayer?> PayerAsync(string householdId, CancellationToken ct)
     {
+        try
+        {
+            if ((await agents.ForHouseholdAsync(householdId, ct)).Payer is { } payer)
+            {
+                return payer with { TenantId = householdId };
+            }
+
+            logger.LogWarning("Household {Household} has set no OpenRouter key; its people are not dreamt for", householdId);
+            return null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+                                       or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            logger.LogError(ex, "Could not read household {Household}; its people are not dreamt for tonight", householdId);
+            return null;
+        }
+    }
+
+    public async Task RunDreamingForUserAsync(string userId, DateTimeOffset now, ModelPayer payer, CancellationToken ct)
+    {
+        var metrics = metricsPublisher.ForHousehold(payer.TenantId);
         var activeMemories = await GetActiveMemoriesAsync(userId, ct);
         if (activeMemories.Count == 0)
         {
-            await RemoveOrphanedProfileAsync(userId, ct);
+            await RemoveOrphanedProfileAsync(userId, metrics, ct);
             return;
         }
 
@@ -79,7 +128,7 @@ public class MemoryDreamingService(
         var refused = new List<IReadOnlyList<string>>();
         for (var pass = 0; pass < options.MaxMergePasses; pass++)
         {
-            var (passMerges, passRefusals) = await MergeAsync(userId, activeMemories, ct);
+            var (passMerges, passRefusals) = await MergeAsync(userId, activeMemories, payer, metrics, ct);
             refused.AddRange(passRefusals);
             if (passMerges == 0)
             {
@@ -92,10 +141,10 @@ public class MemoryDreamingService(
 
         var decayedCount = await DecayAsync(userId, activeMemories, now, ct);
 
-        var profile = await consolidator.SynthesizeProfileAsync(userId, activeMemories, ct);
+        var profile = await consolidator.SynthesizeProfileAsync(userId, activeMemories, payer, ct);
         await store.SaveProfileAsync(profile, ct);
 
-        metricsPublisher.Publish(new MemoryDreamingEvent
+        metrics.Publish(new MemoryDreamingEvent
         {
             MergedCount = mergedCount,
             DecayedCount = decayedCount,
@@ -109,11 +158,11 @@ public class MemoryDreamingService(
             userId, mergedCount, refused.Count, decayedCount);
     }
 
-    private async Task RemoveOrphanedProfileAsync(string userId, CancellationToken ct)
+    private async Task RemoveOrphanedProfileAsync(string userId, IMetricsPublisher metrics, CancellationToken ct)
     {
         var removed = await store.DeleteProfileAsync(userId, ct);
 
-        metricsPublisher.Publish(new MemoryDreamingEvent
+        metrics.Publish(new MemoryDreamingEvent
         {
             MergedCount = 0,
             DecayedCount = 0,
@@ -129,9 +178,10 @@ public class MemoryDreamingService(
 
     // What a pass applied, and the merges it refused by the source ids the model named.
     private async Task<(int Merged, IReadOnlyList<IReadOnlyList<string>> Refused)> MergeAsync(
-        string userId, IReadOnlyList<MemoryEntry> activeMemories, CancellationToken ct)
+        string userId, IReadOnlyList<MemoryEntry> activeMemories, ModelPayer payer, IMetricsPublisher metrics,
+        CancellationToken ct)
     {
-        var consolidation = await consolidator.ConsolidateAsync(activeMemories, ct);
+        var consolidation = await consolidator.ConsolidateAsync(activeMemories, payer, ct);
         var refused = new List<IReadOnlyList<string>>();
 
         // Keyed without case, and resolving to the id the store holds rather than the one that came
@@ -199,7 +249,7 @@ public class MemoryDreamingService(
             switch (decision.Action)
             {
                 case MergeAction.Merge:
-                    await ApplyMergeAsync(userId, decision with { SourceIds = validSourceIds }, ct);
+                    await ApplyMergeAsync(userId, decision with { SourceIds = validSourceIds }, metrics, ct);
                     mergedCount++;
                     break;
 
@@ -218,9 +268,10 @@ public class MemoryDreamingService(
         return await store.GetByUserIdAsync(userId, ct);
     }
 
-    private async Task ApplyMergeAsync(string userId, MergeDecision decision, CancellationToken ct)
+    private async Task ApplyMergeAsync(string userId, MergeDecision decision, IMetricsPublisher metrics, CancellationToken ct)
     {
         var embedding = await embeddingService.GenerateEmbeddingAsync(decision.MergedContent!, ct);
+        metrics.RecordEmbedded(1);
 
         var merged = new MemoryEntry
         {

@@ -330,5 +330,8 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 
         public Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct) =>
             throw new NotSupportedException();
+
+        public Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct) =>
+            throw new NotSupportedException();
     }
 }

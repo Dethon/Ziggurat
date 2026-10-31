@@ -27,6 +27,10 @@ public static class HouseholdConfigProtocol
     // before any call names a household.
     public const string TelegramBotsView = "telegram-bots";
 
+    // The agent's, for work no call is behind (dreaming): every household and the people in it, each
+    // then read on its own view for its key. Asked naming no household.
+    public const string PeopleView = "people";
+
     // Where a save is announced (a HouseholdConfigSaved, as JSON), so every reader drops what it
     // cached of that household. Pub/sub reaches only who is subscribed then: a reader's cache
     // lifetime is what bounds a missed one.
@@ -76,6 +80,14 @@ public sealed record HouseholdTelegramBots(IReadOnlyList<HouseholdTelegramBot> B
 
 [PublicAPI]
 public sealed record HouseholdTelegramBot(string HouseholdId, string AgentId, string Token);
+
+// The agent's view across households: each household, and the user ids of its people (none for a
+// household nobody has joined yet).
+[PublicAPI]
+public sealed record HouseholdPeople(IReadOnlyList<HouseholdMembers> Households);
+
+[PublicAPI]
+public sealed record HouseholdMembers(string HouseholdId, IReadOnlyList<string> People);
 
 // Why a question was not answered, with what the service could say about it.
 [PublicAPI]
