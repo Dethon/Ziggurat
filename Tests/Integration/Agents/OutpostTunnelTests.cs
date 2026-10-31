@@ -49,14 +49,11 @@ public class OutpostTunnelTests(RedisFixture redis, McpVaultServerFixture vault)
         _household = (await _accounts.MintOperatorAsync("Fran")).TenantId;
         _keys = SigningKeyStore.Open(new SigningKeySettings { KeyDirectory = _keyDirectory });
         _relay = await RelayHost.StartAsync(_accounts, AgentCredential, redis.ConnectionString, _keys, _metrics);
-        _outposts = new TunnelledOutposts(_relay.Registry, _metrics, TimeProvider.System);
-        await _outposts.StartAsync(CancellationToken.None);
+        _outposts = _relay.Outposts;
     }
 
     public async Task DisposeAsync()
     {
-        await _outposts.StopAsync(CancellationToken.None);
-        _outposts.Dispose();
         await _relay.DisposeAsync();
         await _accounts.DisposeAsync();
         Directory.Delete(_keyDirectory, recursive: true);
@@ -136,6 +133,8 @@ public class OutpostTunnelTests(RedisFixture redis, McpVaultServerFixture vault)
     {
         await using var laptop = await StartAsync("laptop");
         var endpoint = _outposts.Live(_household).ShouldHaveSingleItem().Endpoint;
+        // Bound to that opening, so a call after it closes fails as the server going offline.
+        endpoint.Generation.ShouldBe(_relay.Registry.Find(_household, OutpostServerName.For("laptop"))!.Generation);
 
         await using var unsigned = await McpClient.CreateAsync(new HttpClientTransport(
             new HttpClientTransportOptions { Endpoint = new Uri(endpoint.Address) }, endpoint.Through!, ownsHttpClient: false));

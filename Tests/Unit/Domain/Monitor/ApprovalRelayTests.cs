@@ -236,6 +236,8 @@ internal sealed class ApprovalChannel(string channelId) : IChannelConnection
     public string ChannelId => channelId;
     public bool AttachOnly => false;
     public bool HostsReviewCopies => false;
+
+    public bool IsConnected => true;
     public IAsyncEnumerable<ChannelMessage> Messages => AsyncEnumerable.Empty<ChannelMessage>();
 
     public IReadOnlyList<ApprovalAsk> Asked => Snapshot(_asked);

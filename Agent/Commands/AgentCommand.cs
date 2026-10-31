@@ -1,5 +1,7 @@
 using System.CommandLine;
+using System.Net.Http.Json;
 using Agent.Settings;
+using Domain.DTOs.Tunnel;
 using Domain.Security;
 using Domain.Security.Signing;
 using Infrastructure.Agents;
@@ -14,6 +16,7 @@ namespace Agent.Commands;
 //   docker exec agent dotnet Agent.dll rotate-signing-key
 //   docker exec agent dotnet Agent.dll redelegate [--yes]
 //   docker exec agent dotnet Agent.dll retire-signing-keys [--force]
+//   docker exec agent dotnet Agent.dll list-household-servers --household <tenantId>
 //
 // The agent signs call tokens and the delegations deferred turns act on with one key. A rotation
 // makes a new key the signing one and keeps the previous published, which the running agent and
@@ -23,14 +26,22 @@ namespace Agent.Commands;
 // After the key is lost (the volume gone), the agent generates a new one on start and every stored
 // delegation stops verifying: redelegate shows each as it claims to be and signs it again on the
 // operator's yes.
+//
+// A household's own servers are connected to the running agent alone, through their tunnels, so
+// list-household-servers asks it: each server of the household connected now, since when, and the
+// tools it offers, through the agent's /internal listing behind the agent API's secret.
 public static class AgentCommand
 {
     public const string RotateSigningKey = "rotate-signing-key";
     public const string RetireSigningKeys = "retire-signing-keys";
     public const string Redelegate = "redelegate";
+    public const string ListHouseholdServers = "list-household-servers";
+
+    // Where the agent answers inside its own container, which is where these commands run.
+    public const string OwnAddress = "http://localhost:8080";
 
     public static bool IsCommand(IReadOnlyList<string> args) =>
-        args is [RotateSigningKey or RetireSigningKeys or Redelegate, ..];
+        args is [RotateSigningKey or RetireSigningKeys or Redelegate or ListHouseholdServers, ..];
 
     // The clock is the wall clock the running agent signs on, handed in by the host: a command signs
     // and verifies the same tokens the agent does.
@@ -58,8 +69,59 @@ public static class AgentCommand
         var retire = new Command(RetireSigningKeys, "Unpublish every key but the current one") { force };
         retire.SetAction((parse, token) => RetireAsync(settings, clock, parse.GetValue(force), input, output, token));
 
-        var root = new RootCommand("The agent's operator commands") { rotate, redelegate, retire };
+        var household = new Option<string>("--household")
+        {
+            Description = "The household (tenant id) whose connected servers to list",
+            Required = true
+        };
+        var agent = new Option<string>("--agent")
+        {
+            Description = "Where the running agent answers",
+            DefaultValueFactory = _ => OwnAddress
+        };
+        var list = new Command(ListHouseholdServers, "List a household's servers connected now, since when, and their tools")
+        {
+            household, agent
+        };
+        list.SetAction((parse, token) => ListAsync(
+            settings, parse.GetValue(household)!, parse.GetValue(agent)!, output, token));
+
+        var root = new RootCommand("The agent's operator commands") { rotate, redelegate, retire, list };
         return root.Parse(args).InvokeAsync(new InvocationConfiguration { Output = output, Error = output }, ct);
+    }
+
+    private static async Task<int> ListAsync(
+        AgentSettings settings, string household, string agent, TextWriter output, CancellationToken ct)
+    {
+        using var http = new HttpClient { BaseAddress = new Uri(agent) };
+        using var request = new HttpRequestMessage(HttpMethod.Get, ConnectedServers.For(household));
+        request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(settings.AgentApi.SharedSecret));
+        using var response = await http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            await output.WriteLineAsync(
+                $"The agent at {agent} refused the listing ({(int)response.StatusCode}): it asks for AGENTAPI__SHAREDSECRET.");
+            return 1;
+        }
+
+        var servers = await response.Content.ReadFromJsonAsync<IReadOnlyList<ConnectedServer>>(
+            TunnelProtocol.SerializerOptions, ct) ?? [];
+        if (servers.Count == 0)
+        {
+            await output.WriteLineAsync($"No server of household {household} is connected.");
+            return 0;
+        }
+
+        foreach (var server in servers)
+        {
+            await output.WriteLineAsync(
+                $"{server.ServerName}  connected since {server.OpenedAt:u} (tunnel generation {server.Generation})");
+            await output.WriteLineAsync(server.Tools is { } tools
+                ? $"  tools: {(tools.Count == 0 ? "none" : string.Join(", ", tools))}"
+                : "  tools: it did not answer when asked for them");
+        }
+
+        return 0;
     }
 
     private static async Task<int> RotateAsync(AgentSettings settings, TextWriter output)

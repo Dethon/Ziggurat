@@ -33,7 +33,8 @@ public sealed class TunnelledOutposts(
                     .Where(outpost => outpost.Name is not null)
                     .OrderBy(outpost => outpost.Name, StringComparer.Ordinal)
                     .Select(outpost => new LiveOutpost(
-                        outpost.Name!, McpServerEndpoint.RelayedOutpost(outpost.Tunnel.Address, outpost.Tunnel.Client)))
+                        outpost.Name!, McpServerEndpoint.RelayedOutpost(
+                            outpost.Tunnel.Address, outpost.Tunnel.Client, outpost.Tunnel.Generation, outpost.Tunnel.Closed)))
             ];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

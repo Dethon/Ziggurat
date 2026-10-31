@@ -4,9 +4,13 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A turn built while a server is offline offers none of its tools and names it in its context
-- [ ] A server that comes online is offered on the next turn of the same conversation
-- [ ] A call in flight when the tunnel drops fails with the went-offline error
-- [ ] The operator command lists connected servers with their connection time and tools
+- [x] A turn built while a server is offline offers none of its tools and names it in its context
+- [x] A server that comes online is offered on the next turn of the same conversation
+- [x] A call in flight when the tunnel drops fails with the went-offline error
+- [x] The operator command lists connected servers with their connection time and tools
+
+ADR 0027's exception for tunnel endpoints is recorded in `.claude/rules/tunnel.md` ("Offline servers"),
+not in the ADR. The command is `list-household-servers --household <tenantId>`, reading the running
+agent's `/internal/tunnels/{tenantId}` behind `AGENTAPI__SHAREDSECRET`.

@@ -8,6 +8,9 @@ paths:
   - "Agent/App/ChannelConnectionHost.cs"
   - "Infrastructure/Agents/OwnServerEndpoints.cs"
   - "Infrastructure/Agents/McpServerEndpoint.cs"
+  - "Infrastructure/Agents/McpAgent.cs"
+  - "Infrastructure/Agents/Mcp/QualifiedMcpTool.cs"
+  - "Agent/Commands/AgentCommand.cs"
   - "Infrastructure/Clients/Accounts/TunnelCredentialClient.cs"
   - "Agent/App/TunnelApi.cs"
   - "Agent/Modules/TunnelModule.cs"
@@ -146,10 +149,10 @@ server name)**. Each `OpenTunnel` is one connection generation in ADR 0012's sen
   agent's household travels as data: `ConversationGroup` passes the verified identity's tenant — a
   person's or **the guest's** — to `IAgentFactory.Create(..., tenantId)`; it lands on
   `AgentSpec.TenantId`, and a worker takes its parent's through `SpawnContext.TenantId`.
-- **Resolved when a session is built** (`OwnServerEndpoints`, beside the outposts in
+- **Resolved at every turn's start** (`OwnServerEndpoints`, beside the outposts in
   `McpAgent.GetOrCreateSessionAsync`), in the definition's order, through **`IOwnServers`** — the
   resolver seam. The deployment's is `RelayedOwnServers`: the open tunnel's
-  `McpServerEndpoint.Relayed(address, client)`, bound to that generation. A stack that hosts its
+  `McpServerEndpoint.Relayed(address, client, generation, closed)`, bound to that generation. A stack that hosts its
   servers in process registers its own: the eval (`EvalStack.OwnServers`: a name stands for the
   compose server `mcp-<name>`) and integration tests (`Tests/InProcessOwnServers.cs`), which answer
   the hosted server's URL — **no tunnel runs in either**.
@@ -163,6 +166,51 @@ audience, a hostname the relay's client puts in requests without it resolving an
 the server's name alone, so its tools are `mcp__vault__…` for every household and a whitelist reads the
 same everywhere; `CacheKey` = the full name, so the prompt cache (one per process) never serves one
 household's server prompts to another. A URL's `CacheKey` is its qualifier, as before.
+
+## Offline servers
+
+**An exception to ADR 0027, for tunnel endpoints only** (the ADR itself is not edited; this is where
+the exception is recorded). A household's server named in a definition is `Configured` — the
+deployment's settings named it — yet one that is not connected **does not fail the session**: it is
+left out of the turn and named in its context. A machine at home being off is not the deployment being
+broken. Shared servers' URL endpoints keep ADR 0027's rule: retried, then fatal.
+
+- **Reconciled at each turn's start.** `OwnServerEndpoints.Resolve` answers an `OwnServerResolution`:
+  the endpoints to dial with every unreachable household server left out, the names left out, and one
+  `OwnServerState(name, online, generation)` per named server. `McpAgent` keeps it beside the session
+  and compares it with the next turn's (`ReachesTheSameServersAs`): equal, the session is reused;
+  different — a server came online, went offline, or **reconnected as a new tunnel generation** — the
+  old session is disposed and a new one built, outposts and shared servers redialled with it. That is
+  how a new generation's tools enter (ADR 0012): only at a turn's start, never under a running turn.
+  Turns of one conversation group run one at a time, so the session replaced has no call in flight.
+  A stack hosting servers in process has no generations (`InProcessOwnServers` answers null), so there
+  presence alone is the key.
+- **Unreachable** is no tunnel of that name open for the household, or a turn that names no household
+  (the relay answers null for both). A tunnel that closes between the lookup and the dial is dialled
+  once, never retried, and dropped like an offline one (`McpClientManager`, on `McpServerEndpoint.Offline`
+  being cancelled); failing any other way it still fails the session.
+- **The context line** is stamped on the turn's own user message as data (`SetOfflineServers`), never
+  in the system prompt, so the cached prefix is untouched; `TurnDecoration` renders it first in the
+  prefix: `[Offline household servers: printer, vault. Their tools are missing this turn; tell the
+  user if the request needs them]`. It persists with the message, so history decorates the same
+  bytes every turn; a turn with nothing offline clears it.
+- **A call in flight when its tunnel drops** (`QualifiedMcpTool`, on the endpoint's `Offline` — the
+  tunnel's `Closed` token): the call's token is linked to it, and whatever the transport throws once
+  it is cancelled (the stream's `IOException` wrapped in `HttpRequestException`, the client's
+  went-offline refusal, the linked cancellation) becomes `CapabilityError.For(Unavailable, "<name> went
+  offline: its tunnel closed while the call was in flight, …")` — `transient_dependency`, with a hint
+  to tell the user and that its tools return on a later turn. A call made later in the same turn gets
+  the same envelope without being sent.
+
+### Listing a household's connected servers
+
+`docker exec agent dotnet Agent.dll list-household-servers --household <tenantId>` prints each open
+tunnel of that household: its name, `connected since <OpenedAt:u>`, its generation, and the tools it
+lists **through its tunnel now** (`TunnelListing`, ten seconds at most, "did not answer" past that).
+The registry lives in the serving process alone, so the command asks it at `GET
+/internal/tunnels/{tenantId}` (`ConnectedServers.Path`), under `/internal` (never routed by the
+proxy) and behind `AGENTAPI__SHAREDSECRET`, which the command reads from the same environment.
+`--agent` defaults to `http://localhost:8080`, the agent inside its own container.
 
 ## A household's channel server
 
@@ -209,11 +257,6 @@ machine's tunnel is never taken for a channel.
 
 ## Not yet (later tickets)
 
-- **05** reconciles a conversation's sessions at each turn's start and names offline servers. Today a
-  household server that is offline, or a turn that names no household, **fails the session** as a
-  configured endpoint does (ADR 0027): `OwnServerEndpoints` throws `HttpRequestException`. A call in
-  flight when a tunnel drops fails with the stream's `IOException`, or the client's went-offline
-  `HttpRequestException` on its next exchange.
 - **06** adds the `pages` tag (`AddTunnelListener`) and routes `/browse/*` to the relay.
 - **08** gives the relay an `accept` for server-opened streams, with its allowlist.
 - **09** lets shared servers reach a household's server through the relay.
