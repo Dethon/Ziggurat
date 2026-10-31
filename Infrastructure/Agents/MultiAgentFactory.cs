@@ -62,6 +62,9 @@ public sealed class MultiAgentFactory(
         // household's agents alone.
         var householdId = tenantId ?? account?.TenantId;
         var household = await definitionProvider.ForHouseholdAsync(householdId, ct);
+        // Before anything is built, so a household that cannot pay is asked nothing: not its agents'
+        // servers, and no model.
+        _ = household.Payer ?? throw new HouseholdWithoutKeyException(household.HouseholdId ?? householdId ?? "");
         var agents = await definitionProvider.GetAllAsync(householdId, account, ct);
 
         // By id or not at all. Falling back to the first configured agent read routing off the
@@ -110,13 +113,14 @@ public sealed class MultiAgentFactory(
         var chatClient = CreateChatClient(
             spec.Model, agentPublisher, spec.MaxContextTokens,
             sessionId: spec.RoutingSessionId,
-            providerRouting: spec.ProviderRouting);
+            providerRouting: spec.ProviderRouting,
+            key: spec.Key);
 
         // Composed from the spec this build is already running against, so the parent's values
         // reach the projection with no second source of truth for any of them.
         var spawn = new SpawnContext(
             spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts,
-            spec.Model, spec.ProviderRouting, spec.TenantId, spec.WithheldServers, spec.TimeZone);
+            spec.Model, spec.ProviderRouting, spec.TenantId, spec.WithheldServers, spec.TimeZone, spec.Key);
 
         // The spawner is absent in every deployment, so the factory builds its own workers; when
         // one is registered it stands in for them whole, which is the only way a scenario about
@@ -153,7 +157,8 @@ public sealed class MultiAgentFactory(
             // before the screen existed. A worker gets it by this same line, screened on its
             // delegation prompt.
             serviceProvider?.GetService<IExecScreen>(),
-            spec.MetricsAgentId);
+            spec.MetricsAgentId,
+            spec.Payer);
 
         return new McpAgent(
             spec,
@@ -246,10 +251,13 @@ public sealed class MultiAgentFactory(
     // The OpenRouter client is built exactly as before. With a Lemonade chat host configured it is
     // one side of a routing client, the other being a client for the box; without one it is the
     // whole client, and no turn can reach a Lemonade model because none is ever whitelisted.
+    // It is sent with the household's own key, or the deployment's where none is given (the home's
+    // agents and anything built for nobody); the box is the deployment's, on its own key.
     internal IChatClient CreateChatClient(
         string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null,
         string? sessionId = null, ProviderRouting? providerRouting = null,
-        HttpMessageHandler? transportHandler = null, HttpMessageHandler? lemonadeTransportHandler = null)
+        HttpMessageHandler? transportHandler = null, HttpMessageHandler? lemonadeTransportHandler = null,
+        ModelKey? key = null)
     {
         var effectivePublisher = publisher ?? metricsPublisher;
         var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
@@ -265,7 +273,7 @@ public sealed class MultiAgentFactory(
 
         var openRouter = new OpenRouterChatClient(
             openRouterConfig.ApiUrl,
-            openRouterConfig.ApiKey,
+            key?.Reveal() ?? openRouterConfig.ApiKey,
             model,
             effectiveContext,
             effectivePublisher,

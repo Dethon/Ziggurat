@@ -50,41 +50,15 @@ public static class MemoryModule
                 // outlives the factory's default and manages pooling itself.
                 .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 
-            services.AddSingleton<IMemoryExtractor>(sp =>
-            {
-                var openRouterConfig = config.GetSection("openRouter");
-                var providerRouting = openRouterConfig.GetSection("providerRouting").Get<ProviderRouting>();
-                var extractionModel = memoryConfig["Extraction:Model"] ?? "z-ai/glm-4.7-flash";
-                var metricsPublisher = sp.GetRequiredService<IMetricsPublisher>();
-                var chatClient = new OpenRouterChatClient(
-                    openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!,
-                    extractionModel,
-                    maxContextTokens: openRouterConfig.GetValue<int?>("maxContextTokens"),
-                    metricsPublisher: metricsPublisher,
-                    providerRouting: providerRouting);
-                return new OpenRouterMemoryExtractor(
-                    chatClient,
-                    sp.GetRequiredService<IMemoryStore>(),
-                    sp.GetRequiredService<ILogger<OpenRouterMemoryExtractor>>());
-            });
+            services.AddSingleton<IMemoryExtractor>(sp => new OpenRouterMemoryExtractor(
+                PaidClients(config, sp, memoryConfig["Extraction:Model"] ?? "z-ai/glm-4.7-flash").For,
+                sp.GetRequiredService<IMemoryStore>(),
+                sp.GetRequiredService<ILogger<OpenRouterMemoryExtractor>>()));
 
-            services.AddSingleton<IMemoryConsolidator>(sp =>
-            {
-                var openRouterConfig = config.GetSection("openRouter");
-                var providerRouting = openRouterConfig.GetSection("providerRouting").Get<ProviderRouting>();
-                var dreamingModel = memoryConfig["Dreaming:Model"] ?? "z-ai/glm-4.7-flash";
-                var metricsPublisher = sp.GetRequiredService<IMetricsPublisher>();
-                var chatClient = new OpenRouterChatClient(
-                    openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!,
-                    dreamingModel,
-                    maxContextTokens: openRouterConfig.GetValue<int?>("maxContextTokens"),
-                    metricsPublisher: metricsPublisher,
-                    providerRouting: providerRouting);
-                return new OpenRouterMemoryConsolidator(
-                    chatClient,
-                    sp.GetRequiredService<MemoryJudge>(),
-                    sp.GetRequiredService<ILogger<OpenRouterMemoryConsolidator>>());
-            });
+            services.AddSingleton<IMemoryConsolidator>(sp => new OpenRouterMemoryConsolidator(
+                PaidClients(config, sp, memoryConfig["Dreaming:Model"] ?? "z-ai/glm-4.7-flash").For,
+                sp.GetRequiredService<MemoryJudge>(),
+                sp.GetRequiredService<ILogger<OpenRouterMemoryConsolidator>>()));
 
             var recallOptions = new MemoryRecallOptions
             {
@@ -127,5 +101,17 @@ public static class MemoryModule
 
             return services;
         }
+    }
+
+    // A memory model's client per payer (PaidChatClients), on the deployment's settings and key.
+    private static PaidChatClients PaidClients(IConfiguration config, IServiceProvider sp, string model)
+    {
+        var openRouterConfig = config.GetSection("openRouter");
+        var providerRouting = openRouterConfig.GetSection("providerRouting").Get<ProviderRouting>();
+        return new PaidChatClients(
+            openRouterConfig["apiUrl"]!, openRouterConfig["apiKey"]!, model,
+            sp.GetRequiredService<IMetricsPublisher>(),
+            openRouterConfig.GetValue<int?>("maxContextTokens"),
+            providerRouting);
     }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.Extensions;
 using Domain.Judgments;
 using Domain.Prompts;
@@ -41,6 +42,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     private readonly Func<AgentSession?, IReadOnlyList<ChatMessage>> _historyOf;
     private readonly Func<AgentSession?, IVirtualFileSystemRegistry?> _registryOf;
     private readonly ISkillPreloader? _preloader;
+    private readonly ModelPayer _payer;
     private readonly AgentSkillsProvider _inner;
 
     // The preloader is optional the way the recall hook is: a host without one — every test host
@@ -54,9 +56,13 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
         Func<AgentSession?, IReadOnlyList<PromptSkill>> skillsOf,
         ISkillPreloader? preloader = null,
         Func<AgentSession?, IReadOnlyList<ChatMessage>>? historyOf = null,
-        Func<AgentSession?, IVirtualFileSystemRegistry?>? registryOf = null)
+        Func<AgentSession?, IVirtualFileSystemRegistry?>? registryOf = null,
+        ModelPayer? payer = null)
     {
         _skillsOf = skillsOf;
+        // Who the agent's calls are paid by, which a preload asked here — a worker's, an eval's — is
+        // paid by too.
+        _payer = payer ?? ModelPayer.Deployment;
         _historyOf = historyOf ?? (_ => []);
         _registryOf = registryOf ?? (_ => null);
         _preloader = preloader;
@@ -145,7 +151,10 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
                 : await _preloader.PreloadAsync(
                     new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
                     {
-                        Caller = new JudgmentCaller(request.GetTurnModel(), request.GetSenderId(), context.Agent.Name),
+                        Caller = new JudgmentCaller(request.GetTurnModel(), request.GetSenderId(), context.Agent.Name)
+                        {
+                            Payer = _payer
+                        },
                         Reader = SkillPreloadReads.ReaderOver(_registryOf(context.Session))
                     },
                     ct);

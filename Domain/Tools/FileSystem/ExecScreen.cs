@@ -200,6 +200,7 @@ public sealed class ExecScreen(
 
     private static ExecScreenEvent ToEvent(ExecScreenRequest request, Screened screened, TimeSpan latency) => new()
     {
+        TenantId = request.Caller.Payer.TenantId,
         AgentId = request.Caller.AgentId,
         ConversationId = request.Caller.ConversationId,
         Reach = JsonNamingPolicy.CamelCase.ConvertName(request.Reach.ToString()),

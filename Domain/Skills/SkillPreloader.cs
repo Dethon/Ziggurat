@@ -152,6 +152,7 @@ public sealed class SkillPreloader(
 
     public static SkillPreloadEvent ToEvent(SkillPreloadRequest request, SkillPreload preload) => new()
     {
+        TenantId = request.Caller.Payer.TenantId,
         AgentId = request.Caller.AgentId,
         ConversationId = request.Caller.ConversationId,
         Channel = request.ChannelId,

@@ -68,7 +68,7 @@ public class OpenRouterMemoryConsolidatorTests
             ("0-1", "updates"), ("0-2", "unrelated"), ("0-3", "unrelated"),
             ("1-2", "unrelated"), ("1-3", "unrelated"), ("2-3", "distinct"))));
 
-        var consolidation = await consolidator.ConsolidateAsync(TheMoveAndTheSiblings(), CancellationToken.None);
+        var consolidation = await consolidator.ConsolidateAsync(TheMoveAndTheSiblings(), ModelPayer.Deployment, CancellationToken.None);
 
         var prompt = prompts.ShouldHaveSingleItem();
         prompt.ShouldContain("mem_madrid");
@@ -84,7 +84,7 @@ public class OpenRouterMemoryConsolidatorTests
         var prompts = CapturingPrompts();
         var consolidator = Consolidator(StubJudge.Absent(AbsenceReason.Deadline));
 
-        var consolidation = await consolidator.ConsolidateAsync(TheMoveAndTheSiblings(), CancellationToken.None);
+        var consolidation = await consolidator.ConsolidateAsync(TheMoveAndTheSiblings(), ModelPayer.Deployment, CancellationToken.None);
 
         var prompt = prompts.ShouldHaveSingleItem();
         prompt.ShouldContain("mem_madrid");
@@ -107,7 +107,7 @@ public class OpenRouterMemoryConsolidatorTests
         var near = Enumerable.Range(0, 12).Select(i => CreateMemory($"near_{i}", $"near {i}", embedding: [1.0f, 0.0f]));
         var far = Enumerable.Range(0, 18).Select(i => CreateMemory($"far_{i}", $"far {i}", embedding: [0.9f, i % 2 == 0 ? 0.2f : -0.2f]));
 
-        var consolidation = await consolidator.ConsolidateAsync([.. near, .. far], CancellationToken.None);
+        var consolidation = await consolidator.ConsolidateAsync([.. near, .. far], ModelPayer.Deployment, CancellationToken.None);
 
         judge.Requests.Select(r => r.State["memories"]!.AsArray().Count).ShouldBe([12, 12, 6]);
         judge.Requests[0].Questions.Count.ShouldBe(66);
@@ -134,7 +134,7 @@ public class OpenRouterMemoryConsolidatorTests
             .Select(i => CreateMemory($"m_{i}", $"m {i}", embedding: [1.0f, i * 0.001f]))
             .ToArray();
 
-        var consolidation = await consolidator.ConsolidateAsync(memories, CancellationToken.None);
+        var consolidation = await consolidator.ConsolidateAsync(memories, ModelPayer.Deployment, CancellationToken.None);
 
         judge.Requests.ShouldAllBe(r => r.State["memories"]!.AsArray().Count >= 2);
         prompts.ShouldAllBe(p => p.Count(c => c == '\n') >= 1);
@@ -154,7 +154,7 @@ public class OpenRouterMemoryConsolidatorTests
             .Select(i => CreateMemory($"m_{i}", $"m {i}", embedding: [1.0f, i * 0.001f]))
             .ToArray();
 
-        var consolidation = await consolidator.ConsolidateAsync(memories, CancellationToken.None);
+        var consolidation = await consolidator.ConsolidateAsync(memories, ModelPayer.Deployment, CancellationToken.None);
 
         prompts.ShouldHaveSingleItem();
         consolidation.MergeableGroups.ShouldHaveSingleItem().Count.ShouldBe(30);
@@ -168,7 +168,7 @@ public class OpenRouterMemoryConsolidatorTests
 
         var memories = Enumerable.Range(0, 15).Select(i => CreateMemory($"m_{i}", $"m {i}", embedding: [1.0f, i * 0.01f])).ToArray();
 
-        var consolidation = await consolidator.ConsolidateAsync(memories, CancellationToken.None);
+        var consolidation = await consolidator.ConsolidateAsync(memories, ModelPayer.Deployment, CancellationToken.None);
 
         prompts.Count.ShouldBe(2);
         consolidation.MergeableGroups.Select(g => g.Count).ShouldBe([12, 3]);
@@ -181,7 +181,7 @@ public class OpenRouterMemoryConsolidatorTests
         var judge = StubJudge.Absent(AbsenceReason.Error);
         var consolidator = Consolidator(judge);
 
-        await consolidator.ConsolidateAsync(TheMoveAndTheSiblings(), CancellationToken.None);
+        await consolidator.ConsolidateAsync(TheMoveAndTheSiblings(), ModelPayer.Deployment, CancellationToken.None);
 
         var request = judge.Requests.ShouldHaveSingleItem();
         request.State.ToJsonString().ShouldNotContain("mem_");
@@ -211,7 +211,7 @@ public class OpenRouterMemoryConsolidatorTests
             CreateMemory("mem_2", "Works on .NET projects")
         };
 
-        var result = (await _consolidator.ConsolidateAsync(memories, CancellationToken.None)).Decisions;
+        var result = (await _consolidator.ConsolidateAsync(memories, ModelPayer.Deployment, CancellationToken.None)).Decisions;
 
         result.Count.ShouldBe(1);
         result[0].Action.ShouldBe(MergeAction.Merge);
@@ -233,7 +233,7 @@ public class OpenRouterMemoryConsolidatorTests
 
         var memories = new[] { CreateMemory("mem_1", "Some memory") };
 
-        var result = await _consolidator.ConsolidateAsync(memories, CancellationToken.None);
+        var result = await _consolidator.ConsolidateAsync(memories, ModelPayer.Deployment, CancellationToken.None);
 
         result.Decisions.ShouldBeEmpty();
     }
@@ -268,7 +268,7 @@ public class OpenRouterMemoryConsolidatorTests
             .Select(i => CreateMemory($"mem_{i}", $"Memory content {i}"))
             .ToArray();
 
-        var result = await _consolidator.SynthesizeProfileAsync("user1", memories, CancellationToken.None);
+        var result = await _consolidator.SynthesizeProfileAsync("user1", memories, ModelPayer.Deployment, CancellationToken.None);
 
         result.UserId.ShouldBe("user1");
         result.Summary.ShouldBe("A senior .NET developer at Contoso who prefers concise technical answers.");
@@ -304,7 +304,7 @@ public class OpenRouterMemoryConsolidatorTests
             CreateMemory("mem_3", "Unrelated thing")
         };
 
-        await _consolidator.ConsolidateAsync(memories, CancellationToken.None);
+        await _consolidator.ConsolidateAsync(memories, ModelPayer.Deployment, CancellationToken.None);
 
         _chatClient.Verify(c => c.GetResponseAsync(
             It.IsAny<IEnumerable<ChatMessage>>(),
@@ -334,6 +334,7 @@ public class OpenRouterMemoryConsolidatorTests
 
         await _consolidator.ConsolidateAsync(
             [clusterA1, clusterA2, clusterA3, clusterB1, clusterB2],
+            ModelPayer.Deployment,
             CancellationToken.None);
 
         // Two clusters → two LLM calls
@@ -364,7 +365,7 @@ public class OpenRouterMemoryConsolidatorTests
             It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"decisions": []}""")));
 
-        await _consolidator.ConsolidateAsync([loner, pair1, pair2], CancellationToken.None);
+        await _consolidator.ConsolidateAsync([loner, pair1, pair2], ModelPayer.Deployment, CancellationToken.None);
 
         _chatClient.Verify(c => c.GetResponseAsync(
             It.IsAny<IEnumerable<ChatMessage>>(),
@@ -390,7 +391,7 @@ public class OpenRouterMemoryConsolidatorTests
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant,
                 """{"decisions":[{"sourceIds":["b1","b2"],"action":"merge","mergedContent":"B merged","category":"fact","importance":0.8,"tags":[]}]}""")));
 
-        var result = (await _consolidator.ConsolidateAsync([a1, a2, b1, b2], CancellationToken.None)).Decisions;
+        var result = (await _consolidator.ConsolidateAsync([a1, a2, b1, b2], ModelPayer.Deployment, CancellationToken.None)).Decisions;
 
         result.Count.ShouldBe(2);
         result.Select(r => r.MergedContent).ShouldBe(new[] { "A merged", "B merged" }, ignoreOrder: true);

@@ -27,4 +27,7 @@ public sealed record SpawnContext(
     // more than its agents do, whatever their profile names.
     IReadOnlyList<string>? WithheldServers = null,
     // That household's zone, whose day the worker's prompt names as its parent's does.
-    string? TimeZone = null);
+    string? TimeZone = null,
+    // The key that household pays its parent's calls with, which pays the worker's too; null is the
+    // deployment's (the home household's, or nobody's).
+    ModelKey? Key = null);

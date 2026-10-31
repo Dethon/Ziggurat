@@ -21,6 +21,8 @@ paths:
   - "HouseholdMigration/Home/**"
   - "HouseholdMigration/Steps/HomeConfiguration.cs"
   - "HouseholdMigration/Steps/HomeTelegramBots.cs"
+  - "Domain/DTOs/ModelPayer.cs"
+  - "Infrastructure/Memory/PaidChatClients.cs"
 ---
 
 # Household configuration
@@ -108,6 +110,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 | `spaces` | `mcp-channel-signalr` | `HouseholdConfigAnswer<SpacesSection>` | none |
 | `telegram-bots` | `mcp-channel-telegram` | `HouseholdTelegramBots`: every household's bots | the bots' tokens |
 | `agent-names` | `mcp-channel-telegram` | `HouseholdConfigAnswer<HouseholdAgentNames>`: each agent's id and name and the default (`HouseholdAgents.Names`, the entries its turns are built from: the two templates for a household that saved none, an unshipped template left out), proven by the person's assertion on `telegram` | none |
+| `people` | `agent` | `HouseholdPeople`: every household and its people's user ids | none |
 
 A secret is unsealed into its own server's view and **left out** of every other, never sent sealed.
 A new view, or a server that comes to need one, is a line in that table, a route, and a row here.
@@ -140,6 +143,10 @@ is `HouseholdConfigQuery { householdId, callToken, assertion, delegation }`:
   presents a token of its own signed for `TokenAudiences.HouseholdConfiguration`, acting for nobody
   (`HouseholdConfigurationClient.AgentToken(callTokens)`), so the shared secret alone opens no
   household's OpenRouter key.
+- **The agent's `people` view names no household** (a `householdId`, an assertion or a delegation is
+  400): dreaming walks every household and its people with no call behind it, so it presents its own
+  token alone (`HouseholdProofs.AgentItselfAsync`), and is answered every household, one nobody has
+  joined too. It is never kept: nothing announces a person joining, and dreaming asks once a night.
 - **Exception 2, Telegram reads every household's bots.** It long-polls its bots from startup,
   before any call could name a household, so `telegram-bots` takes no proof and answers every
   household's (a household whose secrets do not open is left out and logged, not fatal to the rest).
@@ -186,6 +193,39 @@ The agent builds a turn's agents from the turn's household's view (`HouseholdAge
 - **The worker profiles stay the deployment's** (`subAgents` in the agent's settings): a worker runs its
   parent's model for its parent's household, and the household's `workers` feature decides whether
   its agents may spawn one at all.
+
+## Who pays for a household's model calls
+
+Every model call made for a household goes out on its own OpenRouter key and is counted under it
+(`ModelPayer(TenantId, Key)`, `Domain/DTOs`; a null key is the host's own, the deployment's):
+
+- **`HouseholdAgents.Payer`** is the one rule: the home household — and agents no household's
+  configuration gave (`HouseholdAgents.Fixed`) — pays with the deployment's key whatever its keys
+  section holds; any other household with its own `OpenRouterApiKey`; one with none is null, and
+  `MultiAgentFactory.CreateAsync` throws `HouseholdWithoutKeyException` before anything is built. The
+  conversation group answers that turn as a refused one ends (`ConversationGroup.WithoutKeyAnswer`,
+  an `Error` then `StreamComplete`; a fire, nobody waiting, only the errors feed's
+  `HouseholdWithoutKey`) and ends the group, so the first message after a key is saved runs. Its
+  agents are still listed: naming them costs nothing.
+- **The key travels as plain data**: `AgentSpec.Key`, `SpawnContext.Key` (a worker runs on its
+  parent's), `JudgmentCaller.Payer` (the skill preload — `DisposableAgent.Payer` in the group,
+  `SkillsProvider` in the agent — and the exec screen, `ToolApprovalChatClient`), `MemoryJudgmentContext.Payer`,
+  and the memory models' `ExtractAsync` / `ConsolidateAsync` / `SynthesizeProfileAsync` parameter,
+  asked through `PaidChatClients` (one OpenRouter client per payer, kept). `ModelKey` prints as
+  nothing and is never written or read as JSON, so a spec or a caller can be logged whole; only the
+  client sending a call reveals it, into the call's header.
+- **Extraction** reads the request's household (`MemoryExtractionRequest.TenantId`) before the gate:
+  no key, or a household the configuration cannot answer for just now (a `failed` extraction and an
+  error under the household), extracts nothing rather than pay on another's key. A person's custom
+  agent is read under `Account(TenantId, UserId)`.
+- **Dreaming** walks the `people` view: each household's people the store keeps memory for, on the
+  household's key, its events and the merge's embeddings counted under it. A household that cannot
+  pay or be read is not dreamt for that night; a user id in no household is left alone (one warning).
+- **Housekeeping stays the deployment's**: the keep-alive and model capabilities.
+- **A shared server's Jev** (the voice approval reader, the web search modal judge) holds no
+  household's key, so `JudgmentCaller.For(context)` names the call's household for the figures and
+  asks on the server's own key.
+- A household's key OpenRouter refuses is logged once per household by the judge, never the key.
 
 ## Saves are announced; readers keep briefly
 
@@ -263,8 +303,7 @@ exist, secrets with no master, or readers not told. Saving `settings` also renam
   the home's settings (the deployment's zone, no language), its agents (`HouseholdMigration/Home/agents.json`,
   today's definitions, a threshold an object) and its features (every one on, Idealista too) through
   the seed route below; the bots are 13's.
-- **07**: `AgentHouseholdConfig.IsHome` picks the deployment key; `OpenRouterApiKey` null refuses the
-  turn. Dreaming needs a list of households and their people, which is not here yet.
+- **07** (done): who pays, below.
 - **08** (done): the accessor above (`CallHousehold`), its fire proof and the three `CALLERS__` entries.
 - **12** (done): the hub (`ChatHub.GetSpaces`, `JoinSpace`) proves with the **session refresh's**
   assertion (`ISessionAccounts.SessionAsync`, as every turn does), not the one the connection arrived
@@ -283,10 +322,7 @@ exist, secrets with no master, or readers not told. Saving `settings` also renam
   (the smoke stack runs so: a migration given no bots seeds no keys and needs none).
 - **06**, from 08 (done): a session reads a write's bare `runAt` in the household's zone (`McpAgent.Zone`
   into `ThreadSession`'s `localZone`), as the scheduling server does.
-- **07**: `HouseholdAgents.Configuration` carries the view a turn's agents were built from — `IsHome`,
-  `OpenRouterApiKey` — beside the spec; `MultiAgentFactory.CreateAsync` has it in hand where the chat
-  client is made. Memory extraction's request names its household (`TenantId`), which the worker
-  already reads its agent by.
+- **07** (done): who pays, below.
 - **13** (done): the Telegram server reads `telegram-bots` at its start and every `Bots:Refresh` (five
   seconds; the reader's cache makes that free, and a `keys` save drops it), starting and stopping each
   household's bots as the answer changes, and `agent-names` for `/agent` on the asking person's

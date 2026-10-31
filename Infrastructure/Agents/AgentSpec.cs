@@ -33,6 +33,13 @@ public sealed record AgentSpec
     // built the agent named none (it acted for nobody), and then no household server is reached.
     public string? TenantId { get; init; }
 
+    // The household's own OpenRouter key every model call of this agent is sent with; null for the
+    // home household's agents and every agent no household's configuration gave, which are sent with
+    // the deployment's. A worker's is its parent's. It prints as nothing (ModelKey).
+    public ModelKey? Key { get; init; }
+
+    public ModelPayer Payer => new(TenantId, Key);
+
     // The zone that household's days are read in (an IANA name), which the prompt's date is given in;
     // null for agents no household's configuration gave, which read the host's.
     public string? TimeZone { get; init; }
