@@ -486,16 +486,18 @@ public sealed class McpAgent : DisposableAgent
         return new AdditionalPropertiesDictionary { [ConversationContextMeta.OptionsKey] = conversationContext };
     }
 
+    // The household's zone, which its day and its bare times are read in. One this host does not know
+    // reads as the host's rather than failing the turn: accounts checked the name against a zone list
+    // of its own when it was saved.
+    private TimeZoneInfo Zone =>
+        _timeZone is { } id && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var found) ? found : _timeProvider.LocalTimeZone;
+
     // Every section this agent has, handed to the composer as data. Nothing about the order lives
     // here any more: a section carries its own band, and what used to be a chain of Prepend and
     // Append calls with a comment each is now the manifest those comments moved into.
     private string BuildInstructions(ThreadSession session)
     {
-        // The household's zone; one this host does not know reads as the host's rather than failing
-        // the turn, since accounts checked the name when it was saved against a zone list of its own.
-        var zone = _timeZone is { } id && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var found)
-            ? found
-            : _timeProvider.LocalTimeZone;
+        var zone = Zone;
         var assembly = PromptComposer.Compose(new PromptContext
         {
             AgentId = _agentId,
@@ -614,7 +616,10 @@ public sealed class McpAgent : DisposableAgent
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
                              ct, _promptCache, _readImages, _bridge, _noTools, _withheldTools, _callTokens,
-                             _timeProvider.LocalTimeZone);
+                             // A write's bare time is read in the household's zone, as the server
+                             // that keeps the schedule reads it, so the delegation describes the same
+                             // instant the server will fire at.
+                             Zone);
 
             // Asked about by name later, when the model tries a path on a machine that is not here.
             OutpostEndpoints.DeclareUnreachable(

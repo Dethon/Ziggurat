@@ -27,8 +27,8 @@ public sealed record SharedServers
             .Select(s => s.Address!)
     ];
 
-    // Whether an endpoint is one of these servers: compared as servers, not as strings, so a trailing
-    // slash or a port spelt out is the same server.
+    // Whether an endpoint is one of these servers: compared as servers (ServerAddress: scheme, host,
+    // port and path), not as strings, so a host spelt in capitals is the same server.
     public static bool Names(IEnumerable<string> servers, string endpoint) =>
         ServerAddress.FromUrl(endpoint) is { } server
         && servers.Any(address => ServerAddress.FromUrl(address) is { } other && other == server);
