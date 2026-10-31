@@ -118,7 +118,8 @@ public static class HouseholdMigrationCommand
         })),
         new RememberedLogins(redis, new RedisPersonStateStore(redis, stateKey)),
         new PushSubscriptions(redis, new RedisPushSubscriptionStore(redis)),
-        new ScheduleCreators(new RedisScheduleStore(redis), redis),
+        new ScheduleCreators(redis),
+        new ScheduleHouseholds(redis),
         new TopicOwners(redis, new RedisThreadStateStore(redis, new RetentionSettings(), TimeProvider.System)),
         new VoiceProfiles(settings.VoicesPath),
         new SugaryLog(settings.SugaryDatabasePath)

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using StackExchange.Redis;
@@ -14,7 +13,11 @@ namespace HouseholdMigration.Steps;
 // nobody — the voice guest, a stranger, a schedule from before principals were recorded — runs as the
 // owner, as if they had written it in their chat client: the spec's answer for a schedule nobody can
 // be told about.
-public sealed class ScheduleCreators(IScheduleStore schedules, IConnectionMultiplexer redis) : IMigrationStep
+//
+// Every schedule from before accounts is also from before households, so it is read where it still
+// is, under the shape ScheduleHouseholds then moves into the home household (`schedule:{id}`, the
+// `schedules` set), and stamped in place; a household's schedule is never touched.
+public sealed class ScheduleCreators(IConnectionMultiplexer redis) : IMigrationStep
 {
     private static readonly string[] _channelsKeyedByAccount = [ChannelIds.SignalR, ChannelIds.Voice];
 
@@ -22,7 +25,7 @@ public sealed class ScheduleCreators(IScheduleStore schedules, IConnectionMultip
     {
         var report = new StepReport("Schedules");
         var db = redis.GetDatabase();
-        var stamped = (await schedules.ListAsync(ct))
+        var stamped = (await ScheduleHouseholds.UnmovedAsync(db))
             .Where(s => s.CreatedBy?.Account is null)
             .Select(s => (Schedule: s, Writer: household.Named(s.CreatedBy?.UserId)))
             .ToList();
@@ -31,7 +34,7 @@ public sealed class ScheduleCreators(IScheduleStore schedules, IConnectionMultip
             // Its own key, its own expiry: a one-shot still expires an hour past its time, and one that
             // fired or was deleted meanwhile is not brought back.
             await db.StringSetAsync(
-                $"schedule:{schedule.Id}",
+                ScheduleHouseholds.UnmovedKey(schedule.Id),
                 JsonSerializer.Serialize(schedule with { CreatedBy = Stamp(schedule.CreatedBy, writer ?? household.Owner) }),
                 expiry: null, keepTtl: true, when: When.Exists);
         }

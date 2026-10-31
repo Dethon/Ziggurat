@@ -147,22 +147,49 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     {
         await using var rig = await MigrationRig.StartAsync(redis, Dimension);
         var (fran, ana) = (Fran(), Ana());
-        var schedules = new RedisScheduleStore(redis.Connection);
-        var byTelegram = await schedules.CreateAsync(Schedule(new Principal("telegram", fran.Telegram)));
-        var byChatClient = await schedules.CreateAsync(Schedule(new Principal("signalr", ana.WebChat.ToUpperInvariant())));
-        var byGuest = await schedules.CreateAsync(Schedule(new Principal("voice", "household")));
-        var fromBefore = await schedules.CreateAsync(Schedule(null));
+        var db = redis.Connection.GetDatabase();
+        var byTelegram = await BeforeHouseholds.ScheduleAsync(db, Schedule(new Principal("telegram", fran.Telegram)));
+        var byChatClient = await BeforeHouseholds.ScheduleAsync(db, Schedule(new Principal("signalr", ana.WebChat.ToUpperInvariant())));
+        var byGuest = await BeforeHouseholds.ScheduleAsync(db, Schedule(new Principal("voice", "household")));
+        var fromBefore = await BeforeHouseholds.ScheduleAsync(db, Schedule(null));
 
         var (exit, output) = await RunAsync(rig, fran, ana);
 
         exit.ShouldBe(0, output);
         var franAccount = await rig.AccountOfAsync(fran.TelegramId);
         var anaAccount = await rig.AccountOfAsync(ana.TelegramId);
-        (await schedules.GetAsync(byTelegram.Id))!.CreatedBy.ShouldBe(new Principal("telegram", fran.Telegram, franAccount));
-        (await schedules.GetAsync(byChatClient.Id))!.CreatedBy.ShouldBe(new Principal("signalr", anaAccount.UserId, anaAccount));
-        (await schedules.GetAsync(byGuest.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
-        (await schedules.GetAsync(fromBefore.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
-        (await schedules.GetAsync(fromBefore.Id))!.Prompt.ShouldBe(fromBefore.Prompt);
+        var home = franAccount.TenantId;
+        var schedules = new RedisScheduleStore(redis.Connection);
+        (await schedules.GetAsync(home, byTelegram.Id))!.CreatedBy.ShouldBe(new Principal("telegram", fran.Telegram, franAccount));
+        (await schedules.GetAsync(home, byChatClient.Id))!.CreatedBy.ShouldBe(new Principal("signalr", anaAccount.UserId, anaAccount));
+        (await schedules.GetAsync(home, byGuest.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
+        (await schedules.GetAsync(home, fromBefore.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
+        (await schedules.GetAsync(home, fromBefore.Id))!.Prompt.ShouldBe(fromBefore.Prompt);
+    }
+
+    // The deployment's schedules were all the home household's, so each is moved under it as it was —
+    // still due when it was due — and nothing is left under the shape from before households.
+    [Fact]
+    public async Task ASchedule_IsKeptUnderTheHomeHousehold_AndStillComesDue()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var bins = await BeforeHouseholds.ScheduleAsync(db,
+            Schedule(new Principal("telegram", fran.Telegram)) with { NextRunAt = DateTime.UtcNow.AddMinutes(-1) });
+        var schedules = new RedisScheduleStore(redis.Connection);
+        var elsewhere = await schedules.CreateAsync(Schedule(null) with { TenantId = $"elsewhere{_tag}" });
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var home = (await rig.AccountOfAsync(fran.TelegramId)).TenantId;
+        (await schedules.ListAsync(home)).Where(s => s.Prompt.EndsWith(_tag, StringComparison.Ordinal))
+            .Select(s => (s.Id, s.TenantId, s.Prompt)).ShouldBe([(bins.Id, home, bins.Prompt)]);
+        (await schedules.GetDueSchedulesAsync(DateTime.UtcNow)).ShouldContain(s => s.Id == bins.Id && s.TenantId == home);
+        (await db.KeyExistsAsync($"schedule:{bins.Id}")).ShouldBeFalse();
+        (await db.SetContainsAsync("schedules", bins.Id)).ShouldBeFalse();
+        (await schedules.GetAsync(elsewhere.TenantId, elsewhere.Id)).ShouldBe(elsewhere);
     }
 
     [Fact]
@@ -313,7 +340,7 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
             .SaveAsync(fran.Name, new PersonState("{}", []));
         await new RedisPushSubscriptionStore(redis.Connection)
             .SaveAsync(ana.WebChat, new PushSubscriptionDto($"https://push.example/{_tag}", "p", "a"));
-        await new RedisScheduleStore(redis.Connection).CreateAsync(Schedule(new Principal("telegram", fran.Telegram)));
+        await BeforeHouseholds.ScheduleAsync(redis.Connection.GetDatabase(), Schedule(new Principal("telegram", fran.Telegram)));
         await TopicAsync(
             new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System), ana.WebChat);
         Directory.CreateDirectory(Path.Combine(rig.Voices, fran.Voice));
