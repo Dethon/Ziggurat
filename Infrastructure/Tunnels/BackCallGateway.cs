@@ -29,7 +29,7 @@ public sealed class BackCallGateway(
     BackCallTargets targets,
     IMetricsPublisher metrics,
     IServiceProvider services,
-    ILoggerFactory loggers) : IHostedService, IAsyncDisposable
+    ILoggerFactory loggers) : IHostedService, IDisposable
 {
     public const string RefusedErrorType = "BackCallRefused";
 
@@ -76,12 +76,12 @@ public sealed class BackCallGateway(
         }
     }
 
-    public async ValueTask DisposeAsync()
+    // Synchronous, so a container disposed either way can let it go.
+    public void Dispose()
     {
         _transport.Complete();
         _server?.Dispose();
         _forward.Dispose();
-        await ValueTask.CompletedTask;
     }
 
     // The relay's answer to a stream its tunnel's server opened. Before the tunnel is admitted there
@@ -240,9 +240,9 @@ public sealed class BackCallGateway(
     {
         var bound = services.GetService<IServer>()?.Features.Get<IServerAddressesFeature>()?.Addresses.FirstOrDefault()
                     ?? throw new InvalidOperationException("The agent is not listening anywhere its own back-calls could reach.");
+        // On loopback whatever the agent bound: every stack binds it either everywhere or there.
         var address = BindingAddress.Parse(bound);
-        var host = address.Host is "+" or "*" or "0.0.0.0" or "[::]" or "::" ? "127.0.0.1" : address.Host;
-        return new Uri($"{address.Scheme}://{host}:{address.Port}/");
+        return new Uri($"{address.Scheme}://127.0.0.1:{address.Port}/");
     }
 
     private sealed class Application(RequestDelegate handle) : IHttpApplication<HttpContext>
