@@ -1,5 +1,6 @@
 using System.Globalization;
 using Accounts.Internal;
+using Accounts.Settings;
 using Agent.App;
 using Agent.Modules;
 using Domain.DTOs.Channel;
@@ -184,6 +185,7 @@ public class DeploymentConformanceTests
     [InlineData("BOTS__1__BOTTOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("WEBPUSH__PRIVATEKEY", new[] { "mcp-channel-signalr", "mcp-sugary" })]
     [InlineData("AGENTAPI__SHAREDSECRET", new[] { "agent", "accounts" })]
+    [InlineData("HOUSEHOLD_CONFIG_MASTER_KEY", new[] { "accounts" })]
     public void ASecret_ReachesOnlyTheServicesThatReadIt(string variable, string[] readers)
     {
         DeploymentFiles.Compose().Services.Values
@@ -809,6 +811,34 @@ public class DeploymentConformanceTests
         migration.Profiles.ShouldBe(["migrate"]);
         migration.Ports.ShouldBeEmpty();
         migration.DependsOn.ShouldBe(["base-sdk", "redis", "accounts"], ignoreOrder: true);
+    }
+
+    // The accounts service spells Sugary's channel again (it references no server), and the assertion
+    // Sugary forwards as its proof of a household must name the channel Sugary is.
+    [Fact]
+    public void TheSugaryChannelTheAccountsServiceHoldsAssertionsTo_IsSugarysOwn() =>
+        InternalCallers.SugaryChannel.ShouldBe(SugaryChannel.ChannelId);
+
+    // The one secret households' configuration adds: the master key their data keys are wrapped with,
+    // a placeholder shipped empty and handed to the accounts service as the setting it reads.
+    [Fact]
+    public void TheHouseholdConfigMasterKey_IsAnEmptyPlaceholderTheAccountsServiceReads()
+    {
+        DeploymentFiles.Placeholders()["HOUSEHOLD_CONFIG_MASTER_KEY"].ShouldBeEmpty();
+        DeploymentFiles.Compose().Service("accounts").Environment.GetValueOrDefault("HOUSEHOLDCONFIG__MASTERKEY")
+            .ShouldBe("${HOUSEHOLD_CONFIG_MASTER_KEY}");
+    }
+
+    // A shared server proves which household it asks about with the agent's call token it was handed,
+    // and the agent proves itself with one of its own, so the accounts service checks them against the
+    // keys the agent publishes on the compose network — the address its default names too.
+    [Fact]
+    public void TheAccountsService_ChecksCallTokensAgainstTheAgentsKeys()
+    {
+        var expected = $"http://agent:8080{AgentKeysApi.Path}";
+
+        DeploymentFiles.Compose().Service("accounts").Environment.GetValueOrDefault("AGENTKEYSURL").ShouldBe(expected);
+        AccountsSettings.DefaultAgentKeysUrl.ShouldBe(expected);
     }
 
     // The household import can make the operator and mint their link, so the accounts service admits
