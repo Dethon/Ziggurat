@@ -14,6 +14,10 @@ namespace Accounts.Commands;
 // does not exist or readers not told, 2 for a section or a document that is not one.
 internal static class HouseholdConfigCommands
 {
+    // What `--household` may say for the home household, whose id a stack being set up does not know
+    // yet; an id is 32 hex characters, so no household is called this.
+    public const string Home = "home";
+
     public static async Task<int> GetAsync(
         HouseholdConfigStore store, string household, string section, TextWriter output, CancellationToken ct)
     {
@@ -22,6 +26,8 @@ internal static class HouseholdConfigCommands
             await output.WriteLineAsync(UnknownSection(section));
             return 2;
         }
+
+        household = await IdOfAsync(store, household, ct);
 
         try
         {
@@ -41,6 +47,9 @@ internal static class HouseholdConfigCommands
         }
     }
 
+    private static async Task<string> IdOfAsync(HouseholdConfigStore store, string household, CancellationToken ct) =>
+        household == Home && await store.HomeAsync(ct) is { } home ? home.Id : household;
+
     public static async Task<int> SetAsync(
         HouseholdConfigStore store, string household, string section, string file, TextReader input, TextWriter output,
         CancellationToken ct)
@@ -51,6 +60,7 @@ internal static class HouseholdConfigCommands
             return 2;
         }
 
+        household = await IdOfAsync(store, household, ct);
         JsonObject document;
         try
         {

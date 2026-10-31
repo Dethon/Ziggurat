@@ -138,21 +138,24 @@ public static class InjectorModule
                 // there (CALLERS__agent, the one it holds for its own API) and a token it signs for
                 // the configuration, so that credential alone, which SexyTime's server shares, opens
                 // no household's key.
+                // The signing key is opened at the first ask, not as the reader is made: the host
+                // resolves its hosted services before anything is asked.
                 .AddHouseholdConfiguration(
                     settings.Accounts, settings.AgentApi.SharedSecret,
-                    sp => HouseholdConfigurationClient.AgentToken(sp.GetRequiredService<CallTokens>()))
+                    sp => () => HouseholdConfigurationClient.AgentToken(sp.GetRequiredService<CallTokens>())())
                 .AddSingleton(settings.SharedServers)
                 .AddSingleton<IHouseholdAgentSource>(sp => new HouseholdAgentSource(
                     sp.GetRequiredService<IHouseholdConfiguration>(),
                     settings.SharedServers,
                     sp.GetService<ILogger<HouseholdAgentSource>>()))
                 .AddSingleton<IAgentDefinitionProvider, AgentDefinitionProvider>()
-                // Before the channel connections, so their first registration carries the home's
-                // agents rather than none.
+                // Read once the agent listens, and waited for by the channel connections, so their
+                // first registration carries the home's agents rather than none.
                 .AddSingleton(sp => new HomeAgentCatalog(
                     sp.GetRequiredService<IHouseholdAgentSource>(),
                     settings.Accounts.ConfigurationLifetime,
-                    sp.GetRequiredService<ILogger<HomeAgentCatalog>>()))
+                    sp.GetRequiredService<ILogger<HomeAgentCatalog>>(),
+                    sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default))
                 .AddSingleton<IHostedService>(sp => sp.GetRequiredService<HomeAgentCatalog>())
                 .AddSingleton<IAgentFactory>(sp =>
                     new MultiAgentFactory(
@@ -274,7 +277,8 @@ public static class InjectorModule
                         sp.GetRequiredService<McpCredentials>(),
                         // A channel endpoint naming a household server follows the home household's
                         // tunnel of that name (the relay's, AddTunnelRelay).
-                        sp.GetService<IOwnChannelServers>()));
+                        sp.GetService<IOwnChannelServers>(),
+                        sp.GetRequiredService<HomeAgentCatalog>().FirstRead));
         }
 
         private IServiceCollection AddRedis(RedisConfiguration config, RetentionSettings retention)
