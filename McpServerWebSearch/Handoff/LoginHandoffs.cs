@@ -29,7 +29,8 @@ public sealed class LoginHandoffs(
     private readonly ConcurrentDictionary<string, LiveHandoff> _live = new();
 
     public sealed class LiveHandoff(
-        string id, string person, ConversationContext context, string url, string token, HandoffLease lease)
+        string id, string person, ConversationContext context, string url, string token, HandoffLease lease,
+        string? delegation = null)
     {
         public string Id { get; } = id;
         public string Person { get; } = person;
@@ -37,6 +38,10 @@ public sealed class LoginHandoffs(
         // The whole context of the turn that asked: the wake goes back to its conversation and
         // reply target, the satellite address included.
         public ConversationContext Context { get; } = context;
+
+        // The agent's delegation for this handoff, as the asking call carried it: what lets each wake
+        // act for the person. Null when the call carried none, and the wakes then act for nobody.
+        public string? Delegation { get; } = delegation;
         public string Url { get; } = url;
         public string Token { get; } = token;
 
@@ -54,7 +59,7 @@ public sealed class LoginHandoffs(
     public string LinkFor(string token) => BrowseLinks.For(settings, "handoff", token);
 
     public async Task<string> BeginAsync(
-        string person, ConversationContext context, string url, bool inChatClient, CancellationToken ct)
+        string person, ConversationContext context, string url, bool inChatClient, string? delegation, CancellationToken ct)
     {
         // Taken before the tab opens: the login page's own requests must not arm a save of a
         // login nobody has finished.
@@ -83,7 +88,7 @@ public sealed class LoginHandoffs(
             throw;
         }
 
-        var handoff = new LiveHandoff(id, person, context, url, token, lease);
+        var handoff = new LiveHandoff(id, person, context, url, token, lease, delegation);
         _live[id] = handoff;
         handoff.Expiry = time.CreateTimer(_ => _ = ExpireAsync(id), null, TicketLifetime, Timeout.InfiniteTimeSpan);
 

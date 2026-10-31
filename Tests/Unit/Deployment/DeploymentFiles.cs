@@ -34,6 +34,67 @@ public static class DeploymentFiles
 
     public static CaddyConfig Caddyfile() =>
         CaddyConfig.Parse(File.ReadAllText(Path.Combine(Directory, "caddy", "Caddyfile")));
+
+    // Every file a container is built from or configured by: the compose directory whole but for its
+    // volumes, every Dockerfile, and each project's settings and the policy files beside its project
+    // file. What a test fixture holds must never be in one of them. ./volumes is what running stacks
+    // wrote (gitignored, never shipped): the containers' own users own it, so a stack running in this
+    // checkout — the smoke stack — would make it unreadable here.
+    public static IReadOnlyList<string> Shipped()
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var projects = System.IO.Directory.EnumerateDirectories(root)
+            .Where(d => Path.GetFileName(d) != "Tests" && System.IO.Directory.EnumerateFiles(d, "*.csproj").Any());
+
+        return
+        [
+            .. SourceFilesUnder(Directory),
+            .. System.IO.Directory.EnumerateFiles(root, "Dockerfile*"),
+            .. projects.SelectMany(project => SourceFilesUnder(project).Where(file =>
+            {
+                var name = Path.GetFileName(file);
+                return name.StartsWith("Dockerfile", StringComparison.Ordinal)
+                       || (name.StartsWith("appsettings", StringComparison.Ordinal) && name.EndsWith(".json", StringComparison.Ordinal))
+                       || (Path.GetDirectoryName(file) == project && name.EndsWith(".json", StringComparison.Ordinal));
+            }))
+        ];
+    }
+
+    private static string Volumes => Path.Combine(Directory, "volumes");
+
+    private static IEnumerable<string> SourceFilesUnder(string directory) =>
+        System.IO.Directory.EnumerateFiles(directory)
+            .Concat(System.IO.Directory.EnumerateDirectories(directory)
+                .Where(d => Path.GetFileName(d) is not ("bin" or "obj" or "node_modules") && d != Volumes)
+                .SelectMany(SourceFilesUnder));
+}
+
+// The browse server's two listeners as it ships them: its appsettings.json, under whatever its
+// compose entry sets over it.
+public static class BrowseServerListeners
+{
+    public const string Service = "mcp-websearch";
+
+    public static int Mcp => Port("Mcp");
+
+    public static int Pages => Port("Pages");
+
+    private static int Port(string name)
+    {
+        var environment = DeploymentFiles.Compose().Service(Service).Environment;
+        if (environment.TryGetValue($"LISTENERS__{name.ToUpperInvariant()}", out var overridden))
+        {
+            return int.Parse(overridden);
+        }
+
+        var path = Path.Combine(TestHelpers.FindSolutionRoot(), "McpServerWebSearch", "appsettings.json");
+        using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path),
+            new System.Text.Json.JsonDocumentOptions
+            {
+                CommentHandling = System.Text.Json.JsonCommentHandling.Skip, AllowTrailingCommas = true
+            });
+        return document.RootElement.GetProperty("Listeners").GetProperty(name).GetInt32();
+    }
 }
 
 // The servers the shipped agent dials: its agents', its workers' and its channels' endpoints.

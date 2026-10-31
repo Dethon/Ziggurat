@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Domain.DTOs.Channel;
+using Domain.Tools.HomeAssistant.Vfs;
 using Mcp.Hosting;
 using McpServerHomeAssistant.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -27,6 +29,7 @@ public static class WatchFiredEndpoint
             HttpContext ctx,
             McpSettings settings,
             ChannelNotificationEmitter emitter,
+            HaWatches watches,
             TimeProvider time,
             ILoggerFactory loggers,
             CancellationToken ct) =>
@@ -55,9 +58,12 @@ public static class WatchFiredEndpoint
                 return Results.BadRequest(new { error = malformed });
             }
 
-            var payload = WatchFire.Compose(request, settings.Delivery.DefaultDeliverTo, time.GetUtcNow());
-            var receipt = await emitter.EmitWithReceiptAsync(payload, ct);
             var logger = loggers.CreateLogger(typeof(WatchFiredEndpoint));
+            var watch = await StoredAsync(watches, request.WatchId!, logger, ct);
+            var written = watch?.Meta.Effects.OfType<HaPromptEffect>().ElementAtOrDefault(request.PromptIndex ?? -1)?.Prompt;
+            var payload = WatchFire.Compose(request, settings.Delivery.DefaultDeliverTo, time.GetUtcNow(), written,
+                watch is { Meta.Delegation: { } token } ? new FireDelegation(token, WatchDelegation.Of(watch).Description) : null);
+            var receipt = await emitter.EmitWithReceiptAsync(payload, ct);
             if (!receipt.Accepted)
             {
                 logger.LogWarning("Watch {WatchId} fired for agent {AgentId} and no agent is connected; the fire is lost",
@@ -71,6 +77,23 @@ public static class WatchFiredEndpoint
                 request.WatchId, request.AgentId, receipt.Live ? "delivered" : "buffered for a reconnecting agent");
             return Results.Accepted(value: new { conversationId = payload.ConversationId, delivered = receipt.Live });
         });
+    }
+
+    // The watch as the home keeps it at fire time — its own prompts, its delegation and what it does
+    // now — rather than anything the home posted: the payload is whatever the automation renders, and
+    // anything holding the announce token can post one. A watch the home cannot be asked about fires
+    // for nobody rather than not at all.
+    private static async Task<HaWatch?> StoredAsync(HaWatches watches, string watchId, ILogger logger, CancellationToken ct)
+    {
+        try
+        {
+            return await watches.GetAsync(watchId, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Watch {WatchId} fired and the home could not be asked for its delegation; it fires for nobody", watchId);
+            return null;
+        }
     }
 
     // Constant-time, and an unset token refuses everyone rather than admitting anyone.

@@ -1,11 +1,11 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -31,7 +31,7 @@ public class McpFileDownloadTool(
         string? title,
         CancellationToken cancellationToken)
     {
-        if (!ConversationScope.TryResolve(context.Params?.Meta, out var sessionId))
+        if (!context.TryScope(out var sessionId))
         {
             return ToolResponse.Create(ToolError.Create(
                 ToolError.Codes.InvalidArgument,
@@ -47,7 +47,7 @@ public class McpFileDownloadTool(
             return ToolResponse.Create(validation);
         }
 
-        var conversationContext = ConversationScope.Parse(context.Params?.Meta);
+        var conversationContext = context.Turn;
 
         var result = searchResultId.HasValue
             ? await Run(sessionId, searchResultId.Value, conversationContext, cancellationToken)

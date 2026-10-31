@@ -1,22 +1,43 @@
 using Domain.DTOs.Channel;
 using Domain.Security;
+using McpServerSugary.Channel;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace McpServerSugary.App;
 
-// Who an app request acts for: the account the proxy's session check named in the three headers it
-// copies onto every request, over any the client sent. Bound per request from those headers, as a
-// route's parameter, and kept nowhere. The app believes them because only the proxy reaches it; a
-// request without them is answered 401 before any route runs (SugaryApp), so a route never binds
-// nobody.
-public sealed record Person(Account Account)
+// Who an app request acts for: the account the proxy's session check named in the assertion it
+// signs and the proxy copies onto every request, verified against the accounts service's keys and
+// held to Sugary's channel. The three plain headers beside it are never read: anything on the
+// compose network could write them. Verified once per request, before any route runs (SugaryApp),
+// and kept on that request alone; a request with no believable assertion is answered 401 there, so
+// a route never binds nobody.
+//
+// The assertion itself is kept beside the account: a turn the person's request opens carries it on
+// to the agent, which believes it and not this server (the agent checks it again as the turn arrives).
+public sealed record Person(Account Account, string Assertion)
 {
-    public static ValueTask<Person?> BindAsync(HttpContext http) => ValueTask.FromResult(Of(http.Request));
+    private static readonly object _item = new();
 
-    // A header the proxy sets has one value; a request carrying two did not come from it alone.
-    public static Person? Of(HttpRequest request) =>
-        ForwardedAccount.From(header => request.Headers[header] is { Count: 1 } values ? values[0] : null)
-            is { } forwarded
-            ? new Person(forwarded.Account)
-            : null;
+    public static ValueTask<Person?> BindAsync(HttpContext http) => ValueTask.FromResult(Of(http));
+
+    // The person the gate in front of /api verified for this request.
+    public static Person? Of(HttpContext http) =>
+        http.Items.TryGetValue(_item, out var person) ? person as Person : null;
+
+    // The assertion is kept as well as believed: the channel hands it on with every turn it starts.
+    internal static async Task<Person?> SignedInAsync(HttpContext http, CancellationToken ct)
+    {
+        var assertion = AssertionVerifier.AssertionOf(http.Request.Headers);
+        var account = await http.RequestServices.GetRequiredService<AssertionVerifier>()
+            .VerifyAsync(assertion, SugaryChannel.ChannelId, ct);
+        if (account is null)
+        {
+            return null;
+        }
+
+        var person = new Person(account.Account, assertion!);
+        http.Items[_item] = person;
+        return person;
+    }
 }

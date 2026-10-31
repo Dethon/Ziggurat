@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Domain.Security.Signing;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -145,18 +146,31 @@ public static class EvalRun
         // through the decoration that renders it in production rather than through a second path.
         message.SetMemoryContext(memories);
         // Every turn acts for the eval's one account, as a channel on accounts stamps a person's turn
-        // and a fire carries the principal of the turn that wrote it — an eval's fire stands in for
-        // one the person wrote from the channel it delivers to. Memory is keyed by the account, so
-        // its user id is the one the remembered facts are filed under.
+        // and a fire acts for the person whose write its delegation stands behind — an eval's fire
+        // stands in for one the person wrote from the channel it delivers to. Memory is keyed by the
+        // account, so its user id is the one the remembered facts are filed under.
         var channel = EvalAttachments.Channel(scenario.Turn);
         message.SetConversationContext(new ConversationContext(
             scenario.AgentId, conversationId, UserId,
             new ReplyTarget(channel, conversationId, scenario.Turn.SatelliteId),
             OriginKind: scenario.Turn.Origin,
-            Principal: new Principal(channel, UserId, Account)));
+            Principal: new Principal(channel, UserId, Account),
+            Identity: IdentityOf(scenario.Turn, channel)));
 
         return message;
     }
+
+    // An eval drives the agent below the turn-start check — no channel server, no monitor — so it
+    // stamps what that check answers: for a person's turn, the eval account's assertion on the turn's
+    // channel (signed with the accounts test key, as a test stack's accounts service signs it); for a
+    // schedule's, a watch's or a login's fire, the delegation the agent would have signed when the
+    // eval account wrote it from that channel. A download's fire acts for nobody, as in the
+    // deployment. EvalRunTests holds each to what the agent's own checks answer.
+    private static IdentityClaims? IdentityOf(EvalTurn turn, string channel) =>
+        turn.Origin is MessageOriginKind.Download ? null : IdentityClaims.Person(UserId, Tenant, channel, Roles);
+
+    // The household role the accounts service names a member with.
+    public static IReadOnlyList<string> Roles { get; } = ["member"];
 
     // The turn's files put in the sandbox as ConversationGroup puts a channel's there: after the
     // session is built, because the mounts only exist then, and recorded on the message rather than

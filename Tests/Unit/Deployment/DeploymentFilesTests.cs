@@ -1,4 +1,5 @@
 using Shouldly;
+using Tests.E2E.Fixtures;
 
 namespace Tests.Unit.Deployment;
 
@@ -43,5 +44,28 @@ public class DeploymentFilesTests
         var host = caddy.Host("assistants.herfluffness.com");
         host.Routes.ShouldContain(r => r.Matcher == "/hubs/*" && r.Upstream == "mcp-channel-signalr:8080");
         host.Routes.ShouldContain(r => r.Matcher == null && r.Upstream == "webui:8080");
+    }
+
+    // A check that nothing ships proves nothing if the list of what ships is short.
+    [Fact]
+    public void TheShippedFiles_AreTheComposeDirectoryEveryHostsSettingsAndPolicyFilesAndEveryDockerfile()
+    {
+        var shipped = DeploymentFiles.Shipped()
+            .Select(f => Path.GetRelativePath(TestHelpers.FindSolutionRoot(), f).Replace('\\', '/'))
+            .ToList();
+
+        shipped.ShouldContain("DockerCompose/docker-compose.yml");
+        shipped.ShouldContain("DockerCompose/docker-compose.override.smoke.yml");
+        shipped.ShouldContain("DockerCompose/.env");
+        shipped.ShouldContain("DockerCompose/caddy/Caddyfile");
+        shipped.ShouldContain("Dockerfile.base-sdk");
+        shipped.ShouldContain("Accounts/Dockerfile");
+        shipped.ShouldContain("Accounts/appsettings.Local.json");
+        shipped.ShouldContain("Agent/appsettings.json");
+        shipped.ShouldContain("McpChannelVoice/appsettings.Development.json");
+        shipped.ShouldContain("Domain/retention.json");
+        shipped.ShouldNotContain(f => f.StartsWith("Tests/", StringComparison.Ordinal));
+        shipped.ShouldNotContain(f => f.StartsWith("DockerCompose/volumes/", StringComparison.Ordinal));
+        shipped.ShouldNotContain(f => f.Contains("/bin/", StringComparison.Ordinal) || f.Contains("/obj/", StringComparison.Ordinal));
     }
 }

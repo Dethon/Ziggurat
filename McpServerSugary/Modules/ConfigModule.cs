@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.Prompts;
 using Domain.Tools.Sugary.Vfs;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Push;
 using Infrastructure.Utils;
 using Mcp.Hosting;
@@ -49,7 +50,8 @@ public static class ConfigModule
             .AddSingleton<AgentTurns>()
             .AddSingleton<OpenEstimates>()
             .AddSingleton<SugaryChannel>()
-            .AddSugaryApp(settings);
+            .AddSugaryApp(settings)
+            .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification);
 
         // Pen reminders are pushed with the deployment's VAPID keys, and without them there are none.
         if (settings.WebPush.IsConfigured)

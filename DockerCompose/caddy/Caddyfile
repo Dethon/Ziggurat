@@ -15,34 +15,36 @@ assistants.herfluffness.com {
     import tls_{$CADDY_TLS:cloudflare}
 
     # The chat client, its hub and the hub's upload and dictation endpoints ask the accounts service's
-    # session check first. A signed-in request goes on carrying the person in three headers, which
-    # copy_headers sets over any the client sent; a signed-out page is sent to sign-in and back, and
-    # anything else is answered 401.
+    # session check first. A signed-in request goes on carrying the person in three headers and a
+    # fourth, the service's signed assertion of them, which copy_headers sets over any the client
+    # sent; a signed-out page is sent to sign-in and back, and anything else is answered 401. Every
+    # check names the channel it guards (?channel=), which the assertion then names: a turn it
+    # starts must come on that channel.
     handle /hubs/* {
         forward_auth accounts:8080 {
-            uri /accounts/verify
-            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+            uri /accounts/verify?channel=signalr
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
         }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/attachments* {
         forward_auth accounts:8080 {
-            uri /accounts/verify
-            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+            uri /accounts/verify?channel=signalr
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
         }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/dictation* {
         forward_auth accounts:8080 {
-            uri /accounts/verify
-            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+            uri /accounts/verify?channel=signalr
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
         }
         reverse_proxy mcp-channel-signalr:8080
     }
 
-    # SexyTime's server calls this with a secret of its own.
+    # SexyTime's server calls this with a secret of its own and the assertion the check signed for it.
     handle /api/agents* {
         reverse_proxy agent:8080
     }
@@ -54,14 +56,15 @@ assistants.herfluffness.com {
         reverse_proxy agent:8080
     }
 
-    # A login handoff's live view and a person's logins page (the browse server). Before the
-    # WebChat catch-all; reverse_proxy carries the live view's WebSocket upgrade as it is.
+    # A login handoff's live view and a person's logins page, on the browse server's pages listener:
+    # its /mcp answers on 8080 alone, which nothing here may name. Before the WebChat catch-all;
+    # reverse_proxy carries the live view's WebSocket upgrade as it is.
     handle /browse/* {
-        reverse_proxy mcp-websearch:8080
+        reverse_proxy mcp-websearch:8081
     }
 
     # Who holds which identity is asked by the deployment's servers on the compose network, never
-    # through here.
+    # through here; nor are the keys assertions verify with (/accounts/internal/jwks).
     handle /accounts/internal/* {
         respond 404
     }
@@ -74,8 +77,8 @@ assistants.herfluffness.com {
 
     handle {
         forward_auth accounts:8080 {
-            uri /accounts/verify
-            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+            uri /accounts/verify?channel=signalr
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
         }
         reverse_proxy webui:8080
     }
@@ -90,8 +93,8 @@ assistants-dashboard.herfluffness.com {
     # the check's answer, so a client cannot supply its own; a site-level request_header strip would
     # run after forward_auth in Caddy's directive order and blank the identity it copied.
     forward_auth accounts:8080 {
-        uri /accounts/verify?role=operator
-        copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+        uri /accounts/verify?role=operator&channel=dashboard
+        copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
     }
 
     handle {
@@ -105,30 +108,31 @@ sexy.herfluffness.com {
     # The chat hub and its endpoints, checked as on the main host.
     handle /hubs/* {
         forward_auth accounts:8080 {
-            uri /accounts/verify
-            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+            uri /accounts/verify?channel=signalr
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
         }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/attachments* {
         forward_auth accounts:8080 {
-            uri /accounts/verify
-            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+            uri /accounts/verify?channel=signalr
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
         }
         reverse_proxy mcp-channel-signalr:8080
     }
 
     handle /api/dictation* {
         forward_auth accounts:8080 {
-            uri /accounts/verify
-            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+            uri /accounts/verify?channel=signalr
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
         }
         reverse_proxy mcp-channel-signalr:8080
     }
 
-    # SexyTime's server calls this with the agent API's secret and the X-Ziggurat-User it was handed
-    # by the check below; the agent believes that header only beside the secret.
+    # SexyTime's server calls this with the agent API's secret and the X-Ziggurat-Assertion it was
+    # handed by the check below; the agent acts for the person it names once it verifies, and only
+    # beside the secret.
     handle /api/agents* {
         reverse_proxy agent:8080
     }
@@ -148,8 +152,8 @@ sexy.herfluffness.com {
     # sign-in on the main host and back here, a signed-out call to its API is answered 401.
     handle {
         forward_auth accounts:8080 {
-            uri /accounts/verify
-            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+            uri /accounts/verify?channel=sexytime
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
         }
         reverse_proxy sexytime:8080
     }
@@ -179,8 +183,8 @@ sugary.herfluffness.com {
     # signed-out page is sent to sign-in and back here, a signed-out call to the API is answered 401.
     handle {
         forward_auth accounts:8080 {
-            uri /accounts/verify
-            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles
+            uri /accounts/verify?channel=sugary
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
         }
         # A filmed meal is up to 200 MiB plus four photos (McpServerSugary's MaxClipBytes).
         request_body {

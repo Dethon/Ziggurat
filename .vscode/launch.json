@@ -224,6 +224,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:5000"
       }
@@ -277,6 +279,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_URLS": "http://localhost:6001"
       }
     },
@@ -290,6 +294,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_URLS": "http://localhost:6002"
       }
     },
@@ -303,7 +309,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
-        "ASPNETCORE_URLS": "http://localhost:6003"
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks"
       }
     },
     {
@@ -316,6 +323,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_URLS": "http://localhost:6005"
       }
     },
@@ -329,6 +338,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_URLS": "http://localhost:6006"
       }
     },
@@ -342,6 +353,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_URLS": "http://localhost:6004"
       }
     },
@@ -355,6 +368,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:6010"
       }
@@ -369,6 +384,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_URLS": "http://localhost:6011"
       }
     },
@@ -383,6 +400,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_ENVIRONMENT": "Local",
         "ASPNETCORE_URLS": "http://localhost:6015",
         "RedisConnectionString": "localhost:6379,password=local-redis-password",
@@ -402,6 +421,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_URLS": "http://localhost:6013",
         "RedisConnectionString": "localhost:6379,password=local-redis-password"
       }
@@ -416,6 +437,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_URLS": "http://localhost:6014",
         "SPOOLPATH": "${workspaceFolder}/McpServerPrinter/.spool"
       }
@@ -431,6 +454,8 @@
         "DOTNET_ENVIRONMENT": "Local",
         "MCP__SHAREDSECRET": "local-mcp-secret",
         "MCP__SECRETS__localhost": "local-mcp-secret",
+        "MCP__AUDIENCE": "localhost",
+        "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
         "ASPNETCORE_URLS": "http://localhost:6016",
         "VoiceHub__BaseUrl": "http://localhost:6015"
       }

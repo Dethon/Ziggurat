@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.Prompts;
 using Domain.Security;
+using Domain.Security.Signing;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
@@ -65,10 +66,11 @@ internal sealed class McpClientManager : IAsyncDisposable
         McpPromptCache? promptCache = null,
         ILogger? logger = null,
         IReadImageStore? readImageStore = null,
+        CallTokens? callTokens = null,
         CancellationToken ct = default)
     {
         var clientsWithEndpoints = await CreateClientsWithRetry(
-            name, description, endpoints, handlers, logger, ct);
+            name, description, endpoints, handlers, callTokens, logger, ct);
         var toolsTask = LoadTools(clientsWithEndpoints, readImageStore, ct);
         var promptsTask = LoadPrompts(clientsWithEndpoints, userId, promptCache, ct);
         var skillsTask = LoadSkills(clientsWithEndpoints, promptCache, logger, ct);
@@ -120,6 +122,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         string description,
         IReadOnlyList<McpServerEndpoint> endpoints,
         McpClientHandlers handlers,
+        CallTokens? callTokens,
         ILogger? logger,
         CancellationToken ct)
     {
@@ -130,7 +133,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         var clients = await Task.WhenAll(endpoints.Select(async endpoint =>
         {
             Task<McpClient> dial() => McpClient.CreateAsync(
-                new HttpClientTransport(new HttpClientTransportOptions
+                Signed(new HttpClientTransport(new HttpClientTransportOptions
                 {
                     Endpoint = new Uri(endpoint.Address),
                     // Presented on every request to a server that asked for one. Both directions
@@ -139,7 +142,7 @@ internal sealed class McpClientManager : IAsyncDisposable
                     AdditionalHeaders = endpoint.Secret is { } secret
                         ? new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(secret) }
                         : null
-                }),
+                }), endpoint.Address, callTokens),
                 new McpClientOptions
                 {
                     ClientInfo = new Implementation { Name = name, Description = description, Version = "1.0.0" },
@@ -177,6 +180,13 @@ internal sealed class McpClientManager : IAsyncDisposable
 
         return [.. clients.Where(c => c is not null).Select(c => c!.Value)];
     }
+
+    // Every server the agent dials is handed its call token on every tool call, outposts included:
+    // an outpost is not required to check it, and the agent does not ask which servers will. A
+    // manager built without tokens — a probe of what a server offers, which calls nothing — sends
+    // none, and a gated server refuses its tool calls.
+    internal static IClientTransport Signed(IClientTransport transport, string address, CallTokens? callTokens) =>
+        callTokens is null ? transport : new SigningClientTransport(transport, callTokens, TokenAudiences.CallTo(address));
 
     private static async Task<AITool[]> LoadTools(
         IEnumerable<(McpClient Client, string ServerName, string Address)> clients,

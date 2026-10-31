@@ -176,7 +176,13 @@ public sealed class MultiAgentFactory(
             serviceProvider?.GetService<ISkillPreloader>(),
             // Optional as well: a host with no bridge endpoint runs sandbox commands with only the
             // sandbox's own disk, as before the bridge existed.
-            serviceProvider?.GetService<IVfsBridge>());
+            serviceProvider?.GetService<IVfsBridge>(),
+            // The agent's call tokens, which every server's gate asks a tool call for. The
+            // deployment registers them; a host that does not sends calls every gated server
+            // refuses, which is the loud failure an unsigned deployment should be. A worker gets
+            // them by this same line, and signs for its parent's person because it carries its
+            // parent's context.
+            serviceProvider?.GetService<CallTokens>());
     }
 
     // Everything file_read needs to show the model a picture, resolved where the spec and the

@@ -1,0 +1,28 @@
+// How every host that verifies a signed token treats time: each MCP server's gate checking the
+// agent's call tokens, and the agent checking what it is handed. The issuer and its verifiers sit in
+// different containers whose clocks drift apart, so the drift forgiven and how long a fetched copy of
+// an issuer's keys is believed must be the same everywhere, or a token one host takes another
+// refuses. So this is one file rather than a block in each host's appsettings.json: it ships beside
+// the TokenVerificationSettings type it fills, in Domain, and every host that references Domain gets
+// it in its own output.
+//
+// Under "mcp" because that is where a server's gate reads everything it checks a call with
+// (McpGateSettings). Read after each host's own appsettings.json and before environment variables, so
+// a host cannot quietly disagree with it and a single container can still be overridden
+// (MCP__TOKENVERIFICATION__CLOCKSKEW, and so on).
+{
+  "mcp": {
+    "tokenVerification": {
+      // Forgiven on every expiry and not-before, so a few seconds of drift never refuses a call.
+      "clockSkew": "00:00:30",
+
+      // How long a fetched copy of the issuer's keys is believed before it is fetched again. Also how
+      // long a retired key may still be believed somewhere: wait this out, plus the longest token
+      // lifetime, between a rotation and retiring the key it replaced.
+      "keysLifetime": "00:10:00",
+
+      // The least time between two fetches a token naming an unknown key can cause.
+      "keysRefetchInterval": "00:00:10"
+    }
+  }
+}

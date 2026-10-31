@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.FileSystem;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
@@ -35,11 +36,12 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
         int contextLines = 1,
         [Description("Return full content with context, or just the matching file paths")]
         VfsTextSearchOutputMode outputMode = VfsTextSearchOutputMode.Content,
+        AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
         if (filePath is not null)
         {
-            if (!registry.Resolve(filePath).TryGetValue(out var fileResolution, out var unresolvedFile))
+            if (!registry.Resolve(filePath, arguments).TryGetValue(out var fileResolution, out var unresolvedFile))
             {
                 return unresolvedFile.ToNode();
             }
@@ -57,7 +59,7 @@ public class VfsTextSearchTool(IVirtualFileSystemRegistry registry)
                 "Either filePath or directoryPath must be provided");
         }
 
-        if (!registry.Resolve(directoryPath).TryGetValue(out var dirResolution, out var unresolvedDir))
+        if (!registry.Resolve(directoryPath, arguments).TryGetValue(out var dirResolution, out var unresolvedDir))
         {
             return unresolvedDir.ToNode();
         }

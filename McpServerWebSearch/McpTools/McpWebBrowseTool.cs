@@ -1,10 +1,10 @@
 using System.ComponentModel;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.Judgments;
 using Domain.Tools;
 using Domain.Tools.Web;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -39,14 +39,14 @@ public class McpWebBrowseTool(IWebBrowser browser, AsMeGate asMeGate)
         bool asMe = false,
         CancellationToken ct = default)
     {
-        if (!ConversationScope.TryResolve(context.Params?.Meta, out var sessionId))
+        if (!context.TryScope(out var sessionId))
         {
             return ToolResponse.Create(ToolError.Create(
                 ToolError.Codes.InvalidArgument,
                 "Conversation context is missing from request _meta; cannot scope the browser session."));
         }
 
-        var conversation = ConversationScope.Parse(context.Params?.Meta);
+        var conversation = context.Turn;
         string? person = null;
         if (asMe)
         {

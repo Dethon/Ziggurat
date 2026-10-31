@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
@@ -17,9 +18,10 @@ public class VfsRemoveTool(IVirtualFileSystemRegistry registry)
     public async Task<JsonNode> RunAsync(
         [Description("Virtual path to file or directory to remove")]
         string path,
+        AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
-        if (!registry.Resolve(path).TryGetValue(out var resolution, out var unresolved))
+        if (!registry.Resolve(path, arguments).TryGetValue(out var resolution, out var unresolved))
         {
             return unresolved.ToNode();
         }

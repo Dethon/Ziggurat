@@ -20,12 +20,13 @@ internal static class McpFileSystemDiscovery
         IReadOnlySet<McpClient> dynamicClients,
         VirtualFileSystemRegistry registry,
         ILogger logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        TimeZoneInfo? localZone = null)
     {
         var perClient = await Task.WhenAll(clients
             .Where(c => c.ServerCapabilities.Resources is not null)
             .Select(async client => (
-                Mounts: await GatherMountsAsync(client, logger, ct),
+                Mounts: await GatherMountsAsync(client, logger, localZone, ct),
                 Registered: dynamicClients.Contains(client))));
 
         // In the order the endpoints were dialled. A mount point already taken is a collision the
@@ -72,7 +73,7 @@ internal static class McpFileSystemDiscovery
     }
 
     private static async Task<IReadOnlyList<(FileSystemMount Mount, McpFileSystemBackend Backend)>> GatherMountsAsync(
-        McpClient client, ILogger logger, CancellationToken ct)
+        McpClient client, ILogger logger, TimeZoneInfo? localZone, CancellationToken ct)
     {
         var resources = await client.ListResourcesAsync(cancellationToken: ct);
         var filesystemResources = resources
@@ -108,7 +109,7 @@ internal static class McpFileSystemDiscovery
                     return ((FileSystemMount Mount, McpFileSystemBackend Backend)?)null;
                 }
 
-                var backend = new McpFileSystemBackend(client, mount.Name, advertised, logger);
+                var backend = new McpFileSystemBackend(client, mount.Name, advertised, logger, localZone);
                 return (mount, backend);
             }
             catch (Exception ex)

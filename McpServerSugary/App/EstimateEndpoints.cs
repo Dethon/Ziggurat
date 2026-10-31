@@ -54,7 +54,7 @@ public static class EstimateEndpoints
         if (field("conversationId") is { Length: > 0 } conversation)
         {
             return await FollowUpAsync(
-                person.Account, conversation, photos, filmed, field, channel, estimates, Log(loggers), ct);
+                person, conversation, photos, filmed, field, channel, estimates, Log(loggers), ct);
         }
 
         var description = field("description");
@@ -108,7 +108,8 @@ public static class EstimateEndpoints
             Filmed: clip is not null));
         return Answer(
             await channel.AskAsync(
-                person.Account, opened, turn, MealEstimateSchema.Format, attachments, patch: null, review, ct),
+                person.Account, person.Assertion, opened, turn, MealEstimateSchema.Format, attachments, patch: null,
+                review, ct),
             opened, Log(loggers));
     }
 
@@ -116,7 +117,7 @@ public static class EstimateEndpoints
     // still holds with her photos and words; hydration puts the photos back on the way to the model,
     // so they are neither stored nor sent again.
     private static async Task<IResult> FollowUpAsync(
-        Account person, string conversation, IReadOnlyList<IFormFile> photos, IReadOnlyList<IFormFile> clips,
+        Person person, string conversation, IReadOnlyList<IFormFile> photos, IReadOnlyList<IFormFile> clips,
         Func<string, string?> field, SugaryChannel channel, OpenEstimates estimates, ILogger log,
         CancellationToken ct)
     {
@@ -128,7 +129,7 @@ public static class EstimateEndpoints
                 : "Answers go without a clip: the estimate already has this meal's clip.");
         }
 
-        if (estimates.TryContinue(person, conversation) is not { } review)
+        if (estimates.TryContinue(person.Account, conversation) is not { } review)
         {
             return Problem(StatusCodes.Status410Gone,
                 "This estimate is no longer open, so the meal has to be estimated again.");
@@ -136,7 +137,9 @@ public static class EstimateEndpoints
 
         var turn = MealTurn.FollowUp(new MealFollowUp(field("clarifications"), field("counted"), field("language")));
         return Answer(
-            await channel.AskAsync(person, conversation, turn, MealEstimateSchema.Format, [], patch: null, review, ct),
+            await channel.AskAsync(
+                person.Account, person.Assertion, conversation, turn, MealEstimateSchema.Format, [], patch: null, review,
+                ct),
             conversation, log);
     }
 

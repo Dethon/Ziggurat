@@ -12,13 +12,29 @@ public record ChannelMessageNotification
     // The person an unprompted fire is on behalf of, when its author named one: a schedule's or a
     // watch's `userId`. Null for a message a person sent themselves — the sender is that person.
     public string? UserId { get; init; }
-    // Who the turn acts for, as the channel that vouched for them (Principal): stamped by a server
-    // that fires on somebody's behalf from the turn that set it going, never from what the model
-    // wrote, and by a channel that knows the person's account on their own message (the chat
-    // client, from the proxy's session check), so the account rides with it. Null on a person's own
-    // message from a channel that knows no account yet, whose channel and sender are the voucher, and
-    // on a fire nobody's own turn stands behind.
+    // Who the turn acts for, as the channel that vouched for them (Principal): stamped by a channel
+    // that knows the person's account on their own message (the chat client, from the proxy's session
+    // check), and by a server that fires on somebody's behalf from the turn that set it going. Null on
+    // a person's own message from a channel that knows no account yet, whose channel and sender are
+    // the voucher. The agent believes neither: on a person's own message it keeps only the user id
+    // (the account is the one the assertion below names), and on a fire it reads nothing of it (the
+    // person is the one the delegation below names, or nobody).
     public Principal? Principal { get; init; }
+    // The accounts service's signed word for who a person's own message is from, as the channel got
+    // it when it learned the person — the session check's header, the resolution API's answer, the
+    // household guest's — and carried here untouched. The agent believes this and not the principal:
+    // it verifies it as the turn arrives and refuses a person's turn without one. A fire nobody sent
+    // carries none.
+    public string? Assertion { get; init; }
+    // A fire's word for who it acts for: the delegation the agent signed when a person's turn wrote
+    // the schedule, the watch or the login handoff raising it, with what that object does now. The
+    // agent checks it as the fire arrives; a fire carrying none, or one that fails, acts for nobody.
+    public FireDelegation? Delegation { get; init; }
+    // What the server raising a fire reports beside it — what fired and how the home rendered a
+    // watch's prompt, the one-time link a voice login puts in the chat client — which is that server's
+    // word, never the instruction: Content is what the fire asks, the part a delegation covers, and
+    // the agent frames this as a report beside it (FireReports). Null on everything else.
+    public string? FireReport { get; init; }
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     // Optional originating room for room-aware prompts. Part of the shared channel protocol but

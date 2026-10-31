@@ -59,6 +59,8 @@ public class HomeAssistantWatchFireTests(HomeAssistantFixture fixture) : IClassF
             fire.Payload["deliverTo"]!.ToJsonString().ShouldBe("""["telegram"]""");
             fire.Payload["userId"]!.GetValue<string>().ShouldBe("123456789");
             fire.Payload["prompt"]!.GetValue<string>().ShouldBe("Her sugar is 190: look into it.");
+            // Which of the watch's prompts it rendered, as a number the home did not render.
+            fire.Payload["promptIndex"]!.GetValue<int>().ShouldBe(0);
             fire.Payload["entityId"]!.GetValue<string>().ShouldBe(Sensor);
             fire.Payload["fromState"]!.GetValue<string>().ShouldBe("120");
             fire.Payload["toState"]!.GetValue<string>().ShouldBe("190");

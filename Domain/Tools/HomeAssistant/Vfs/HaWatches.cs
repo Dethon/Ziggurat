@@ -68,8 +68,10 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
 
     // Create or replace, under the same id, so a change never leaves a second watch. The creator
     // and the creation instant survive a replacement: the agent that created a watch is the one
-    // that runs its prompts, whoever edits it later.
-    public async Task<HaWatch> WriteAsync(string watchId, HaWatchSpec spec, string agentId, HaWatch? existing, CancellationToken ct)
+    // that runs its prompts, whoever edits it later. The delegation does not: it is the write's,
+    // and a write that carried none leaves the watch acting for nobody.
+    public async Task<HaWatch> WriteAsync(
+        string watchId, HaWatchSpec spec, string agentId, HaWatch? existing, string? delegation, CancellationToken ct)
     {
         var client = clientFactory();
         var meta = new HaWatchMetadata(
@@ -79,7 +81,8 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
             spec.DeliverTo,
             spec.UserId,
             existing?.Meta.CreatedAt ?? _time.GetUtcNow(),
-            spec.Enabled);
+            spec.Enabled,
+            delegation);
         var id = HaWatchAutomation.AutomationId(watchId);
 
         await client.UpsertAutomationConfigAsync(id, HaWatchAutomation.Render(watchId, spec, meta), ct);
@@ -97,6 +100,15 @@ public sealed class HaWatches(Func<IHomeAssistantClient> clientFactory, TimeProv
 
         return new HaWatch(watchId, spec with { Enabled = state?.IsOn ?? spec.Enabled }, meta, state);
     }
+
+    // The same automation with another delegation in its metadata, and nothing else touched: the
+    // entity's on/off is left where the home has it, so a spent one-shot is not re-armed by the
+    // operator re-signing its delegation.
+    public Task ReplaceDelegationAsync(HaWatch watch, string delegation, CancellationToken ct) =>
+        clientFactory().UpsertAutomationConfigAsync(
+            HaWatchAutomation.AutomationId(watch.Id),
+            HaWatchAutomation.Render(watch.Id, watch.Spec, watch.Meta with { Delegation = delegation }),
+            ct);
 
     private async Task<HaAutomationState?> ReloadedStateAsync(IHomeAssistantClient client, string id, CancellationToken ct)
     {

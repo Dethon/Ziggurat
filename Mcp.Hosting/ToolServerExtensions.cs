@@ -8,9 +8,9 @@ namespace Mcp.Hosting;
 // The two calls that sit beside AddChannelServer, so a reader comparing them sees exactly what a
 // channel adds.
 //
-// AddMcpHost is the four things every MCP server in the repo has, whatever else it does: its own
-// settings available to everything it registers, a server, an HTTP transport, and the secret gate
-// on /mcp. AddToolServer is that plus the error rule, for a server that offers the agent things to
+// AddMcpHost is the five things every MCP server in the repo has, whatever else it does: its own
+// settings available to everything it registers, a server, an HTTP transport, the secret gate on
+// /mcp, and the call-token gate on every tool call (the outpost alone opts out, by saying so). AddToolServer is that plus the error rule, for a server that offers the agent things to
 // call.
 //
 // Being a tool server and being a channel server are independent facts about a server, which is why
@@ -24,11 +24,12 @@ public static class ToolServerExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(settings);
 
-        return services
+        var server = services
             .AddSingleton(settings)
             .AddSingleton<IStartupFilter>(new McpSecretGate(settings.Mcp.SharedSecret))
             .AddMcpServer()
             .WithHttpTransport();
+        return settings.ChecksCallTokens ? CallTokenGate.Install(server, settings.Mcp) : server;
     }
 
     // The error shape is the caller's to supply: the envelope the nine tool servers answer with

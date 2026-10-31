@@ -2,9 +2,12 @@ using System.Net;
 using System.Text.RegularExpressions;
 using Accounts;
 using Accounts.Commands;
+using Accounts.Internal;
 using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
+using Domain.DTOs.Channel;
+using Domain.Security.Signing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.Sqlite;
@@ -74,6 +77,14 @@ public sealed partial class AccountsServer : IAsyncDisposable
     // cookie and token the service's pages hand out, carried as a browser would carry them.
     public PageClient SignedIn(string session) => new(Client(), session);
 
+    // A verifier of the assertions this service signs, as the agent and the apps will hold one: over
+    // the keys the service publishes, fetched from it, on the service's clock.
+    public TokenVerifier AssertionVerifier() =>
+        new(TokenIssuers.Accounts, new JwksCache(ct => Client().GetStringAsync(InternalApi.JwksPath, ct), Clock), Clock);
+
+    public Task<TokenVerification<IdentityClaims>> VerifyAssertionAsync(string? assertion) =>
+        AssertionVerifier().VerifyAsync(assertion, TokenAudiences.Assertion);
+
     // The container's command, run as `docker exec accounts dotnet Accounts.dll <args>` runs it.
     public async Task<(int Exit, string Output)> RunAsync(params string[] args)
     {
@@ -100,9 +111,12 @@ public sealed partial class AccountsServer : IAsyncDisposable
     // Accept, and the original request's method, host and path in its forwarded headers.
     public Task<HttpResponseMessage> VerifyAsync(
         string? session, string method = "GET", string uri = "/", string accept = "text/html,application/xhtml+xml",
-        string host = "assistants.example", string? role = null)
+        string host = "assistants.example", string? role = null, string? channel = ChannelIds.SignalR)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, role is null ? "/accounts/verify" : $"/accounts/verify?role={role}");
+        var query = string.Join('&', new[] { ("role", role), ("channel", channel) }
+            .Where(p => p.Item2 is not null)
+            .Select(p => $"{p.Item1}={Uri.EscapeDataString(p.Item2!)}"));
+        var request = new HttpRequestMessage(HttpMethod.Get, query.Length == 0 ? "/accounts/verify" : $"/accounts/verify?{query}");
         request.Headers.Add("X-Forwarded-Method", method);
         request.Headers.Add("X-Forwarded-Uri", uri);
         request.Headers.Add("X-Forwarded-Host", host);

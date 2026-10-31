@@ -2,9 +2,12 @@ using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Security;
+using Domain.Security.Signing;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Agents.Mcp;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Judgments;
 using JetBrains.Annotations;
 
@@ -28,10 +31,29 @@ public record AgentSettings
     public OutpostConfiguration Outposts { get; init; } = new();
     public AgentApiConfiguration AgentApi { get; init; } = new();
 
+    // Where the accounts service publishes the keys its assertions verify with (ACCOUNTS__JWKSURL):
+    // the registration API takes its person from the one SexyTime forwards.
+    public AccountsClientConfig Accounts { get; init; } = new();
+
     // Each configured MCP server's own credential, keyed by the host the agent dials it at
     // (MCP__SECRETS__<host>): every configured endpoint and channel connection presents the one for
     // its host, the same value that server binds as its own (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
+
+    // The key the agent signs its call tokens with, and the delegations deferred turns act on. A deployment names a directory in the agent's own volume (SIGNING__KEYDIRECTORY), where the
+    // key is generated on first start; a test stack hands it a fixed one (SIGNING__PRIVATEKEY).
+    public SigningKeySettings Signing { get; init; } = new();
+
+    public CallTokenSettings CallTokens { get; init; } = new();
+
+    // How long a login handoff's delegation lives; a schedule's or a watch's lives as long as the
+    // object it names.
+    public DelegationSettings Delegations { get; init; } = new();
+
+    // Where a fire whose author named no channel is delivered (Domain/delivery.json), which the agent
+    // reads too: a fire acting for somebody must deliver where that default says, not wherever the
+    // server that raised it chose.
+    public DeliverySettings Delivery { get; init; } = new();
 
     // The browser origins the registration API answers with credentials (CORS__ALLOWEDORIGINS__n),
     // the same section the hub binds.

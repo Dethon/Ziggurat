@@ -26,7 +26,12 @@ public sealed class McpChannelConnection(
     // is dialled at. Presented on the first dial and on every reconnect, since both go through
     // ConnectAsync. Null presents nothing, which a gated
     // server refuses — the dial then fails and is retried like any other.
-    string? mcpSecret = null)
+    string? mcpSecret = null,
+    // The agent's call tokens. Every call this connection makes is a tool call the channel server's
+    // gate asks one for: an approval is signed for the turn it guards, and the rest — the poll, a
+    // reply, the catalog — for nobody, since the agent makes them for no person. Null signs nothing,
+    // and a gated channel server refuses every call.
+    CallTokens? callTokens = null)
     : IChannelConnection, IMcpChannelConnection, IAsyncDisposable
 {
     private static readonly TimeSpan _defaultHealthCheckInterval = TimeSpan.FromSeconds(30);
@@ -237,13 +242,13 @@ public sealed class McpChannelConnection(
         await StopPumpAsync();
 
         var client = await McpClient.CreateAsync(
-            new HttpClientTransport(new HttpClientTransportOptions
+            McpClientManager.Signed(new HttpClientTransport(new HttpClientTransportOptions
             {
                 Endpoint = new Uri(endpoint),
                 AdditionalHeaders = string.IsNullOrEmpty(mcpSecret)
                     ? null
                     : new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(mcpSecret) }
-            }),
+            }), endpoint, callTokens),
             new McpClientOptions
             {
                 ClientInfo = new Implementation
@@ -425,6 +430,9 @@ public sealed class McpChannelConnection(
             AgentId = notification.AgentId,
             UserId = notification.UserId,
             Principal = notification.Principal,
+            Assertion = notification.Assertion,
+            Delegation = notification.Delegation,
+            FireReport = notification.FireReport,
             ReplyTo = notification.ReplyTo,
             Origin = notification.Origin,
             Location = notification.Location,

@@ -10,9 +10,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace McpServerWebSearch.Handoff;
 
 // The person's side of a login handoff, under the assistants host's /browse path (Caddy routes it
-// here; the host is VPN-only like WebChat). The link's GET only shows the page, because link
-// previewers and prefetch issue GETs; the page's own claim spends the link and binds the view to a
-// cookie only that browser holds. Everything after — frames, input, Done — answers to the cookie.
+// to this server's pages listener, which answers nothing else — PagesListener; the host is
+// VPN-only like WebChat). The link's GET only shows the page, because link previewers and
+// prefetch issue GETs; the page's own claim spends the link and binds the view to a cookie only
+// that browser holds. Everything after — frames, input, Done — answers to the cookie.
 public static class HandoffEndpoints
 {
     public const string ViewCookie = "zg_handoff";
