@@ -28,7 +28,10 @@ public class ChannelConnectionHost(
     McpCredentials? credentials = null,
     // Where a household server named as a channel endpoint opens; without it such an endpoint is
     // never run.
-    IOwnChannelServers? ownServers = null) : BackgroundService
+    IOwnChannelServers? ownServers = null,
+    // Completes once the catalogue has been read (HomeAgentCatalog.FirstRead), so the first
+    // registration is the agents rather than an empty list. None waits for nothing.
+    Task? catalogRead = null) : BackgroundService
 {
     private readonly Dictionary<string, string> _endpointMap = BuildEndpointMap(endpoints);
 
@@ -41,6 +44,11 @@ public class ChannelConnectionHost(
             {
                 await started.Task.WaitAsync(stoppingToken);
             }
+        }
+
+        if (catalogRead is not null)
+        {
+            await catalogRead.WaitAsync(stoppingToken);
         }
 
         var endpointMap = _endpointMap;

@@ -111,6 +111,22 @@ touches its class.
   prompts are the system prompts of its own model calls, and the HA setup index is a file the mount
   builds on every read; neither reaches an agent's prompt as a section.
 
+## An agent template is a document
+
+A household's agent starts from a shipped template (CONTEXT.md, "Agent template"):
+`Domain/Prompts/Agents/<name>.md`, embedded as the sections are, read by `AgentTemplates` into an
+`AgentDefinition` whose id is the file's name. Today: `jonas`, a barebones general assistant that
+dials the shared servers alone (scheduling, timers, Sugary, Idealista) with files, workers and memory,
+and `sugary`, the estimator. The header is the definition — `name`, `purpose`, `agent-name` (the name a
+household starts with), `model`, `reasoning-effort`, `provider-routing` (one JSON object on its line,
+a threshold an object as a seeded definition's is), `servers`, `features`, `whitelist`,
+`prompt-sections` (comma lists), `uses-outposts`, `no-tools` — and the words are the description the
+identity section reads after the agent's name; a template fills no placeholder and has no parts or
+claims. An unknown key fails the document. A household gives a template its id, its name and its
+custom instructions (`.claude/rules/household-config.md`, "The agents a household runs"); everything
+else is the template's. The prompt snapshots are the home's seeded agents' (the eval's copies), not
+the templates'.
+
 ## A skill is a section the model reads on demand
 
 The glossary (`CONTEXT.md` § Prompt) pins four words. The **base prompt** is every section an

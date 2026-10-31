@@ -16,6 +16,7 @@ using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Channels;
 using Infrastructure.Conversations;
 using Infrastructure.Judgments;
@@ -34,6 +35,10 @@ public static class InjectorModule
     {
         public IServiceCollection AddAgent(AgentSettings settings)
         {
+            // Before any of them is read: a section the settings lack is named here, not met as a
+            // NullReferenceException wherever it is first used.
+            RequiredSettings.Checked(settings);
+
             var llmConfig = new OpenRouterConfig
             {
                 ApiUrl = settings.OpenRouter.ApiUrl,
@@ -45,16 +50,17 @@ public static class InjectorModule
                 MaxInlineImageBytes = settings.ReadImages.MaxInlineBytes
             };
 
-            // Before anything is registered: a default naming an agent nobody configured routes
-            // every unattributed message into an error, and the deployment should refuse to start
-            // rather than discover it one message at a time.
-            settings.AgentDefaults.Validate(settings.Agents.Select(a => a.Id));
+            // The agents are each household's (HouseholdAgents): what the deployment itself names is its
+            // worker profiles, its shared servers and its channels, each checked here before anything is
+            // registered. A template reaches only the shared servers among these (HouseholdAgents).
+            var named = settings.SubAgents.SelectMany(a => a.McpServerEndpoints)
+                .Concat(settings.SharedServers.All)
+                .ToList();
 
             // An endpoint is a server's URL or a household server's name (reached through its tunnel),
             // and nothing else: anything else would slip past the credential check below and fail in
             // the first session that dialled it — or, for a channel, in a connection retrying for ever.
-            var unreadable = settings.Agents.SelectMany(a => a.McpServerEndpoints)
-                .Concat(settings.SubAgents.SelectMany(a => a.McpServerEndpoints))
+            var unreadable = named
                 .Concat(settings.ChannelEndpoints.Select(c => c.Endpoint))
                 .Where(endpoint => ServerAddress.FromUrl(endpoint) is null && !TunnelCredentialProtocol.IsServerName(endpoint))
                 .Distinct(StringComparer.Ordinal)
@@ -68,9 +74,7 @@ public static class InjectorModule
             // And for a server the deployment configured without its credential: dialled bare, its
             // gate would refuse every call, and the session that needed it would fail far from here.
             var credentials = McpCredentials.From(settings.Mcp);
-            var uncredentialed = credentials.MissingFor(settings.Agents.SelectMany(a => a.McpServerEndpoints)
-                .Concat(settings.SubAgents.SelectMany(a => a.McpServerEndpoints))
-                .Concat(settings.ChannelEndpoints.Select(c => c.Endpoint)));
+            var uncredentialed = credentials.MissingFor(named.Concat(settings.ChannelEndpoints.Select(c => c.Endpoint)));
             if (uncredentialed.Count > 0)
             {
                 throw new InvalidOperationException(
@@ -83,10 +87,8 @@ public static class InjectorModule
             // otherwise go missing in silence. The projection refuses it too, per agent built;
             // this refuses the deployment.
             PromptManifest.Validate(
-                settings.Agents.Select(a => (a.Id, (IEnumerable<string>)a.PromptSections))
+                AgentTemplates.All.Select(a => (a.Id, (IEnumerable<string>)a.PromptSections))
                     .Concat(settings.SubAgents.Select(a => (a.Id, (IEnumerable<string>)a.PromptSections))));
-
-            services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
 
             var lemonadeChatHost = new LemonadeChatHostOptions
             {
@@ -132,7 +134,29 @@ public static class InjectorModule
                     sp.GetRequiredService<IConnectionMultiplexer>()))
                 .AddSingleton(sp => new CustomAgentRegistry(sp.GetRequiredService<ICustomAgentStore>()))
                 .AddSingleton<IHostedService>(sp => sp.GetRequiredService<CustomAgentRegistry>())
+                // Each household's agents, from its configuration: read with the agent's own credential
+                // there (CALLERS__agent, the one it holds for its own API) and a token it signs for
+                // the configuration, so that credential alone, which SexyTime's server shares, opens
+                // no household's key.
+                // The signing key is opened at the first ask, not as the reader is made: the host
+                // resolves its hosted services before anything is asked.
+                .AddHouseholdConfiguration(
+                    settings.Accounts, settings.AgentApi.SharedSecret,
+                    sp => () => HouseholdConfigurationClient.AgentToken(sp.GetRequiredService<CallTokens>())())
+                .AddSingleton(settings.SharedServers)
+                .AddSingleton<IHouseholdAgentSource>(sp => new HouseholdAgentSource(
+                    sp.GetRequiredService<IHouseholdConfiguration>(),
+                    settings.SharedServers,
+                    sp.GetService<ILogger<HouseholdAgentSource>>()))
                 .AddSingleton<IAgentDefinitionProvider, AgentDefinitionProvider>()
+                // Read once the agent listens, and waited for by the channel connections, so their
+                // first registration carries the home's agents rather than none.
+                .AddSingleton(sp => new HomeAgentCatalog(
+                    sp.GetRequiredService<IHouseholdAgentSource>(),
+                    settings.Accounts.ConfigurationLifetime,
+                    sp.GetRequiredService<ILogger<HomeAgentCatalog>>(),
+                    sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default))
+                .AddSingleton<IHostedService>(sp => sp.GetRequiredService<HomeAgentCatalog>())
                 .AddSingleton<IAgentFactory>(sp =>
                     new MultiAgentFactory(
                         sp,
@@ -244,7 +268,7 @@ public static class InjectorModule
                         // Read per registration, not captured once: attachment capability is
                         // discovered from the model provider and refreshed while the agent runs.
                         () => AgentCatalogBuilder.Build(
-                            settings.Agents,
+                            sp.GetRequiredService<HomeAgentCatalog>().Current,
                             settings.PatchableModels,
                             sp.GetRequiredService<IModelCapabilityCatalog>(),
                             sp.GetRequiredService<ILemonadeModelSource>()),
@@ -253,7 +277,8 @@ public static class InjectorModule
                         sp.GetRequiredService<McpCredentials>(),
                         // A channel endpoint naming a household server follows the home household's
                         // tunnel of that name (the relay's, AddTunnelRelay).
-                        sp.GetService<IOwnChannelServers>()));
+                        sp.GetService<IOwnChannelServers>(),
+                        sp.GetRequiredService<HomeAgentCatalog>().FirstRead));
         }
 
         private IServiceCollection AddRedis(RedisConfiguration config, RetentionSettings retention)

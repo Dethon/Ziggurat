@@ -1,31 +1,36 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
-using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Agents;
 
 public class AgentDefinitionProvider(
-    IOptionsMonitor<AgentRegistryOptions> registryOptions,
+    IHouseholdAgentSource households,
     CustomAgentRegistry customAgentRegistry) : IAgentDefinitionProvider
 {
-    public AgentDefinition? GetById(string agentId, Account? owner = null)
+    public Task<HouseholdAgents> ForHouseholdAsync(string? householdId, CancellationToken ct = default) =>
+        households.ForAsync(householdId, ct);
+
+    // The household's own agent wins an id a person's agent also carries: a custom agent's id is
+    // minted (custom-<guid>), so a clash is somebody's registration naming the household's agent.
+    public async Task<AgentDefinition?> GetByIdAsync(
+        string agentId, string? householdId, Account? owner = null, CancellationToken ct = default)
     {
-        return registryOptions.CurrentValue.Agents
-                   .FirstOrDefault(a => a.Id.Equals(agentId, StringComparison.OrdinalIgnoreCase))
-               ?? (owner is null ? null : customAgentRegistry.Find(owner, agentId));
+        var household = await households.ForAsync(householdId, ct);
+        return household.Find(agentId)
+               ?? (owner is null ? null : customAgentRegistry.Find(owner, agentId) is { } custom ? household.Offered(custom) : null);
     }
 
-    public IReadOnlyList<AgentDefinition> GetAll(Account? owner = null)
+    public async Task<IReadOnlyList<AgentDefinition>> GetAllAsync(
+        string? householdId, Account? owner = null, CancellationToken ct = default)
     {
-        var builtIn = registryOptions.CurrentValue.Agents.ToList();
-
-        if (owner is not null)
-        {
-            builtIn.AddRange(customAgentRegistry.GetByOwner(owner));
-        }
-
-        return builtIn;
+        var household = await households.ForAsync(householdId, ct);
+        return
+        [
+            .. household.Agents,
+            .. owner is null ? [] : customAgentRegistry.GetByOwner(owner).Select(household.Offered)
+        ];
     }
 
     public async Task<AgentDefinition> RegisterCustomAgentAsync(

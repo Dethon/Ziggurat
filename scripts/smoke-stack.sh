@@ -67,6 +67,15 @@ retry() {
   "$@"
 }
 
+# One section of the home household's configuration as the household migration seeds it
+# (HouseholdMigration/Home): the agent's settings carry no agents, so without them the home would run
+# the two templates, and the signed-in reply reads a vault note through the home's own jonas. Saving
+# again on a second up changes nothing. No master key is set here, and these sections hold no secret.
+seed() {
+  docker exec -i accounts dotnet Accounts.dll set-household-config --household home --section "$1" --file - \
+    < "HouseholdMigration/Home/$1.json"
+}
+
 # One credential per kit server for the home household, minted once per smoke state and kept beside it
 # (credentials.env), so a second up starts the kit with the same ones.
 credentials() {
@@ -99,6 +108,8 @@ case "${1:-}" in
 
     mkdir -p "$KIT_STATE"/{redis,vault,media,sandbox}
     credentials
+    retry seed agents
+    retry seed features
     # Caddy's local root, which the kit's servers are told to trust for the hub; copied out because
     # Caddy keeps it where only root reads.
     retry docker exec caddy test -s /data/caddy/pki/authorities/local/root.crt

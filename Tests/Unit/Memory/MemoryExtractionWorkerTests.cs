@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Judgments;
@@ -532,8 +533,9 @@ public class MemoryExtractionWorkerTests
     [Fact]
     public async Task ProcessRequestAsync_SkipsExtraction_WhenAgentDoesNotHaveMemoryFeature()
     {
-        _agentDefinitionProvider.Setup(p => p.GetById("agent-no-memory"))
-            .Returns(new AgentDefinition
+        _agentDefinitionProvider.Setup(p => p.GetByIdAsync(
+                "agent-no-memory", It.IsAny<string?>(), It.IsAny<Account?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentDefinition
             {
                 Id = "agent-no-memory", Name = "NoMem", Model = "test",
                 McpServerEndpoints = [], EnabledFeatures = []

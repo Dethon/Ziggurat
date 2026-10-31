@@ -22,7 +22,15 @@ public static class HouseholdConfiguration
                 return InternalCallers.NotYours;
             }
 
-            return await AnswerAsync(await proofs.AgentAsync(query, ct), store, logger, async household =>
+            // The home by name is the home's id: the agent asks so before any turn told it the id.
+            var proven = await proofs.AgentAsync(query, ct);
+            if (proven is HouseholdProven.Household { Id: HouseholdConfigProtocol.HomeHousehold }
+                && await store.HomeAsync(ct) is { } home)
+            {
+                proven = new HouseholdProven.Household(home.Id);
+            }
+
+            return await AnswerAsync(proven, store, logger, async household =>
                 new AgentHouseholdConfig(
                     household.Id,
                     household.IsHome,

@@ -39,7 +39,7 @@ public class ShippedDefinitionTests
         var settings = new ShippedDefinition(files.Settings, new TestAgents(files.Agents)).Settings;
 
         settings.Agents.Select(a => a.Id).ShouldBe(["nabu"]);
-        settings.AgentDefaults.Fallback.ShouldBe("jack");
+        settings.DefaultAgent.ShouldBe("jack");
     }
 
     private static string Settings(string redis, string? agents = null) =>

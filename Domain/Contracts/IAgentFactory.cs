@@ -11,11 +11,12 @@ public interface IAgentFactory
     // The two differ on a chat-client turn, whose sender is the account's display name. Memory reads
     // neither from here: it takes each turn's own account, since a later turn may be someone else's.
     //
-    // tenantId is the household the turn is for — a person's, or the guest's — whose own servers the
-    // agent reaches. Null for a turn that acts for nobody.
-    DisposableAgent Create(
+    // tenantId is the household the turn is for — a person's, or the guest's — whose agents it runs
+    // and whose own servers the agent reaches. Null for a turn that acts for nobody, which runs the
+    // home household's agents and reaches no household's servers.
+    Task<DisposableAgent> CreateAsync(
         AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
-        string? tenantId = null);
+        string? tenantId = null, CancellationToken ct = default);
     DisposableAgent CreateSubAgent(
         SubAgentDefinition definition, IToolApprovalHandler approvalHandler, SpawnContext spawn);
 }

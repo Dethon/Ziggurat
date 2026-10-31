@@ -56,7 +56,7 @@ public static class EvalRun
         await using var stack = await EvalStack.StartAsync(
             scenario, redisConnectionString, recording);
 
-        await using var agent = stack.Factory.Create(
+        await using var agent = await stack.Factory.CreateAsync(
             new AgentKey(conversationId, scenario.AgentId),
             userId: UserId,
             agentId: scenario.AgentId,

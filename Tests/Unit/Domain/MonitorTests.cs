@@ -191,12 +191,12 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
     public List<(AgentKey Key, string? AgentId, IToolApprovalHandler ApprovalHandler, string UserId, Account? Account, string? TenantId)> Created { get; } = [];
 
-    public DisposableAgent Create(
+    public Task<DisposableAgent> CreateAsync(
         AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
-        string? tenantId = null)
+        string? tenantId = null, CancellationToken ct = default)
     {
         Created.Add((agentKey, agentId, approvalHandler, userId, account, tenantId));
-        return agent;
+        return Task.FromResult(agent);
     }
 
     public DisposableAgent CreateSubAgent(

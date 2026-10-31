@@ -58,7 +58,8 @@ public class MemoryRecallHook(
         AgentSession thread,
         CancellationToken ct)
     {
-        if (!agentDefinitionProvider.HasFeatureEnabled(agentId, "memory", account))
+        var agent = await AgentAsync(agentId, account, ct);
+        if (agent is not null && !agent.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
         {
             return;
         }
@@ -106,9 +107,7 @@ public class MemoryRecallHook(
             // the scope publishes on disposal, so opening it earlier would report a recall latency
             // for a recall that never happened. The guard is a string emptiness check, so nothing
             // measurable moves.
-            var agentName = agentId is not null
-                ? agentDefinitionProvider.GetById(agentId, account)?.Name ?? agentId
-                : null;
+            var agentName = agentId is not null ? agent?.Name ?? agentId : null;
             using var latency = metrics.MeasureLatency(
                 LatencyStage.MemoryRecall, conversationId, agentName);
 
@@ -234,6 +233,28 @@ public class MemoryRecallHook(
         // A result with no measured similarity came from a search that took none, and is passed
         // on as found rather than judged by a number it does not have.
         return [.. found.Where(r => r.Similarity is not { } similarity || similarity >= options.MinSimilarity)];
+    }
+
+    // The turn's agent as its household has it, or none: unknown, or a household that could not be read
+    // just now, which fails open as an unknown agent does. The turn's agent was built from the same
+    // household a moment ago, so this is the reader's kept copy.
+    private async Task<AgentDefinition?> AgentAsync(string? agentId, Account? account, CancellationToken ct)
+    {
+        if (agentId is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await agentDefinitionProvider.GetByIdAsync(agentId, account?.TenantId, account, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+                                       or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Could not read agent {AgentId}; recalling as for an unknown agent", agentId);
+            return null;
+        }
     }
 
     // Never faults. It runs alongside the search rather than after it, so a search that

@@ -1,0 +1,143 @@
+using Domain.DTOs;
+using Domain.DTOs.Household;
+using Domain.DTOs.Tunnel;
+using Domain.Prompts;
+
+namespace Domain.Agents;
+
+// A household's agents as its turns run them, built from its configuration (.claude/rules/household-config.md):
+// each entry of its agents section is a shipped template given the household's name and custom
+// instructions for it, or a full definition seeded for it (the home's jack, jonas, nabu and sugary);
+// the household's language is every agent's that pins none; and its features withhold the shared
+// servers and the domain features it turned off. A household whose section names no agent has the
+// two templates, as a new household does.
+public sealed record HouseholdAgents
+{
+    private const string MemoryFeature = "memory";
+    private const string WorkersFeature = "subagents";
+
+    // Null for agents no household's configuration gave: a stack that configures its agents in code.
+    public string? HouseholdId { get; init; }
+
+    public required IReadOnlyList<AgentDefinition> Agents { get; init; }
+
+    // Who answers a message whose channel named no agent and has no default of its own.
+    public string? DefaultAgent { get; init; }
+
+    // The zone the household's days are read in (an IANA name); null where no household said, and
+    // the host's own is used.
+    public string? TimeZone { get; init; }
+
+    public FeaturesSection Features { get; init; } = new();
+
+    // The shared servers the household's features turned off: no agent of its, and no worker one
+    // spawns, reaches them.
+    public IReadOnlyList<string> WithheldServers { get; init; } = [];
+
+    // Entries that could not be built — a template this build does not ship — left out rather than
+    // taking the household's other agents with them, for the host to report.
+    public IReadOnlyList<string> Problems { get; init; } = [];
+
+    // What the agent read of the household, for what is decided by it beyond its agents (whose key
+    // pays). Null for agents no household's configuration gave.
+    public AgentHouseholdConfig? Configuration { get; init; }
+
+    // A new household's agents: one of each shipped template, under the template's own id and name.
+    public static IReadOnlyList<HouseholdAgent> Starting { get; } =
+    [
+        .. new[] { AgentTemplates.Jonas, AgentTemplates.Sugary }.Select(name => new HouseholdAgent
+        {
+            Id = name, Template = name, Name = AgentTemplates.Named(name)!.Name
+        })
+    ];
+
+    public static HouseholdAgents Of(AgentHouseholdConfig configuration, SharedServers shared)
+    {
+        var section = configuration.Agents;
+        var (entries, defaultAgent) = section.Agents.Count == 0
+            ? (Starting, (string?)AgentTemplates.Jonas)
+            : (section.Agents, section.DefaultAgent);
+        var withheld = shared.WithheldBy(configuration.Features);
+        var built = entries
+            .Select(entry => (Entry: entry, Definition: Definition(entry, shared)))
+            .ToList();
+        var household = new HouseholdAgents
+        {
+            HouseholdId = configuration.HouseholdId,
+            Agents = [],
+            DefaultAgent = defaultAgent,
+            TimeZone = configuration.Settings.TimeZone,
+            Features = configuration.Features,
+            WithheldServers = withheld,
+            Configuration = configuration,
+            Problems =
+            [
+                .. built.Where(b => b.Definition is null)
+                    .Select(b => $"agent {b.Entry.Id} names the template '{b.Entry.Template}', which this deployment does not ship")
+            ]
+        };
+
+        return household with
+        {
+            Agents =
+            [
+                .. built.Select(b => b.Definition).OfType<AgentDefinition>()
+                    .Select(definition => household.Offered(definition with
+                    {
+                        Language = definition.Language ?? configuration.Settings.Language
+                    }))
+            ]
+        };
+    }
+
+    // Agents a stack names in code, offered as a household's would be with every feature on.
+    public static HouseholdAgents Fixed(IReadOnlyList<AgentDefinition> agents, string? defaultAgent = null) =>
+        new() { Agents = agents, DefaultAgent = defaultAgent };
+
+    // A definition as this household's features let its agents have it: without the shared servers
+    // they withhold, and without memory or workers where those are off. Applied to a person's own
+    // agents as much as to the household's.
+    public AgentDefinition Offered(AgentDefinition definition) =>
+        definition with
+        {
+            McpServerEndpoints =
+            [
+                .. definition.McpServerEndpoints.Where(endpoint => !SharedServers.Names(WithheldServers, endpoint))
+            ],
+            EnabledFeatures =
+            [
+                .. definition.EnabledFeatures.Where(feature => !Withheld(feature))
+            ]
+        };
+
+    public AgentDefinition? Find(string agentId) =>
+        Agents.FirstOrDefault(agent => agent.Id.Equals(agentId, StringComparison.OrdinalIgnoreCase));
+
+    private bool Withheld(string feature) =>
+        (feature.Equals(MemoryFeature, StringComparison.OrdinalIgnoreCase) && !Features.Memory)
+        || (feature.Equals(WorkersFeature, StringComparison.OrdinalIgnoreCase) && !Features.Workers);
+
+    // A template's entry is the template under the entry's id, name and instructions, reaching those
+    // of its servers this deployment runs as shared servers: a template is the repo's, and names the
+    // compose hosts a deployment runs them at, which one that runs no such server does not answer at.
+    // A definition entry is its definition, which carries its own and is this deployment's.
+    private static AgentDefinition? Definition(HouseholdAgent entry, SharedServers shared) =>
+        entry switch
+        {
+            { Definition: { } definition } => definition with { Id = entry.Id },
+            { Template: { } template } => AgentTemplates.Named(template) is { } shipped
+                ? shipped with
+                {
+                    Id = entry.Id,
+                    Name = entry.Name ?? shipped.Name,
+                    CustomInstructions = entry.CustomInstructions,
+                    McpServerEndpoints =
+                    [
+                        .. shipped.McpServerEndpoints.Where(endpoint =>
+                            TunnelCredentialProtocol.IsServerName(endpoint) || SharedServers.Names(shared.All, endpoint))
+                    ]
+                }
+                : null,
+            _ => null
+        };
+}

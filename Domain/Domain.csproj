@@ -36,6 +36,8 @@
            into a failed build rather than a container without its prompt or its skills. -->
       <EmbeddedResource Include="Prompts/Sections/*.md" LogicalName="Domain.Prompts.Sections.%(Filename)%(Extension)" />
       <EmbeddedResource Include="Prompts/Skills/*.md" LogicalName="Domain.Prompts.Skills.%(Filename)%(Extension)" />
+      <!-- The agent templates a new household's agents start from (AgentTemplates), beside them. -->
+      <EmbeddedResource Include="Prompts/Agents/*.md" LogicalName="Domain.Prompts.Agents.%(Filename)%(Extension)" />
     </ItemGroup>
 
     <Target Name="RequirePromptDocuments" BeforeTargets="BeforeBuild">

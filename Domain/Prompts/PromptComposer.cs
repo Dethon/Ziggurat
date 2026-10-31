@@ -31,7 +31,12 @@ public sealed record PromptContext
 
     public string? Language { get; init; }
 
+    // The day as the household lives it, in its own zone.
     public required DateTimeOffset Now { get; init; }
+
+    // The household's zone, named beside the day only where it is not the deployment's own; null
+    // for an agent in the zone every agent was written and measured in.
+    public string? TimeZone { get; init; }
 }
 
 // One place that turns a context into a prompt. Nothing here decides an order — every section
@@ -40,6 +45,9 @@ public sealed record PromptContext
 public static class PromptComposer
 {
     private static readonly PromptTemplate _date = PromptDocuments.Section(PromptManifest.Date).Template("date");
+
+    private static readonly PromptTemplate _zonedDate =
+        PromptDocuments.Section(PromptManifest.Date).Part("zoned", "date", "time_zone");
 
     private static readonly PromptTemplate _customInstructions =
         PromptDocuments.Section(PromptManifest.CustomInstructions).Template("instructions");
@@ -54,7 +62,7 @@ public static class PromptComposer
             .. Optional(PromptManifest.SkillsSection, context.Skills.Count > 0 ? SkillsPrompt.Instructions : null),
             .. context.FileSystem,
             .. context.Client,
-            PromptManifest.Bind(PromptManifest.Date, Today(context.Now)),
+            PromptManifest.Bind(PromptManifest.Date, Today(context.Now, context.TimeZone)),
             .. Optional(
                 PromptManifest.CustomInstructions,
                 string.IsNullOrEmpty(context.CustomInstructions)
@@ -77,6 +85,11 @@ public static class PromptComposer
     private static IEnumerable<PromptSection> Optional(string name, string? text) =>
         string.IsNullOrEmpty(text) ? [] : [PromptManifest.Bind(name, text)];
 
-    private static string Today(DateTimeOffset now) =>
-        _date.Fill(("date", now.ToString("dddd, yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)));
+    private static string Today(DateTimeOffset now, string? timeZone)
+    {
+        var day = now.ToString("dddd, yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        return timeZone is null
+            ? _date.Fill(("date", day))
+            : _zonedDate.Fill(("date", day), ("time_zone", timeZone));
+    }
 }

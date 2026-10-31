@@ -66,7 +66,7 @@ public class CustomAgentRegistryTests(RedisFixture redis) : IClassFixture<RedisF
         }
 
         var definitions = await RestartedAsync();
-        var restored = definitions.GetAll(_alice).Where(a => a.Id.StartsWith("custom-")).ShouldHaveSingleItem();
+        var restored = (await definitions.GetAllAsync(null, _alice)).Where(a => a.Id.StartsWith("custom-")).ShouldHaveSingleItem();
 
         restored.Name.ShouldBe("Helper");
         restored.Description.ShouldBe("Helps");
@@ -77,7 +77,7 @@ public class CustomAgentRegistryTests(RedisFixture redis) : IClassFixture<RedisF
         restored.EnabledFeatures.ShouldBe(["memory"]);
         restored.ProviderRouting.ShouldNotBeNull().Sort.ShouldBe(ProviderSort.Throughput);
         restored.ProviderRouting.Only.ShouldBe(["deepinfra"]);
-        await using var agent = Factory(definitions).Create(
+        await using var agent = await Factory(definitions).CreateAsync(
             new AgentKey("conv-1", restored.Id), "Alice", restored.Id, Mock.Of<IToolApprovalHandler>(), _alice);
     }
 
@@ -103,12 +103,12 @@ public class CustomAgentRegistryTests(RedisFixture redis) : IClassFixture<RedisF
         var definitions = await RestartedAsync();
         var factory = Factory(definitions);
 
-        definitions.GetById(registered.Id, _alice).ShouldNotBeNull();
-        definitions.GetById(registered.Id).ShouldBeNull();
+        (await definitions.GetByIdAsync(registered.Id, null, _alice)).ShouldNotBeNull();
+        (await definitions.GetByIdAsync(registered.Id, null)).ShouldBeNull();
         foreach (var other in others)
         {
-            definitions.GetById(registered.Id, other).ShouldBeNull();
-            Should.Throw<InvalidOperationException>(() => factory.Create(
+            (await definitions.GetByIdAsync(registered.Id, null, other)).ShouldBeNull();
+            await Should.ThrowAsync<InvalidOperationException>(() => factory.CreateAsync(
                 new AgentKey("conv-1", registered.Id), "alice", registered.Id, Mock.Of<IToolApprovalHandler>(), other));
         }
     }
@@ -123,14 +123,14 @@ public class CustomAgentRegistryTests(RedisFixture redis) : IClassFixture<RedisF
             (await DeleteAsync(client, _alice, registered.Id)).ShouldBeTrue();
         }
 
-        (await RestartedAsync()).GetAll(_alice).ShouldNotContain(a => a.Id.StartsWith("custom-"));
+        (await (await RestartedAsync()).GetAllAsync(null, _alice)).ShouldNotContain(a => a.Id.StartsWith("custom-"));
     }
 
     private async Task<AgentDefinitionProvider> RestartedAsync()
     {
         var registry = new CustomAgentRegistry(new RedisCustomAgentStore(redis.Connection));
         await registry.StartAsync(CancellationToken.None);
-        return new AgentDefinitionProvider(BuiltIn(), registry);
+        return FixedHouseholdAgents.Provider(registry, BuiltIn);
     }
 
     private static MultiAgentFactory Factory(IAgentDefinitionProvider definitions) =>
@@ -155,15 +155,8 @@ public class CustomAgentRegistryTests(RedisFixture redis) : IClassFixture<RedisF
         return app;
     }
 
-    private static IOptionsMonitor<AgentRegistryOptions> BuiltIn()
-    {
-        var options = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        options.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions
-        {
-            Agents = [new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = [] }]
-        });
-        return options.Object;
-    }
+    private static readonly AgentDefinition BuiltIn =
+        new() { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = [] };
 
     private static async Task<AgentCatalogEntry> RegisterAsync(HttpClient client, Account person)
     {

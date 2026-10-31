@@ -8,7 +8,7 @@ paths:
 
 # OpenRouter Provider Routing
 
-Each `agents[]` entry may carry a `providerRouting` object (`sort` ∈
+Each agent definition — a household's seeded one, a template's (`provider-routing:`, the same object on one line), a person's registered agent — may carry a `providerRouting` object (`sort` ∈
 `price`|`throughput`|`latency`, plus `order`, `only`, `ignore`, `allowFallbacks`,
 `preferredMinThroughput`, `preferredMaxLatency`, `maxPrice`), overriding
 `openRouter.providerRouting` **wholesale** — never field-by-field. It reaches the wire through
