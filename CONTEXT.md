@@ -820,9 +820,10 @@ knows before it decides what to do; it never changes shape mid-conversation.
 _Avoid_: system prompt, standing sections, static prompt, core prompt
 
 **Prompt document**:
-A section's words as a text file shipped in the repo: a small header carrying its
-declaration — purpose, band, budget, audience, conflicts, claims — over the words,
-and named parts for words the host adds or swaps in. The manifest is read from them.
+A section's or a skill's words as a text file shipped in the repo: a small header
+carrying its declaration — a section's purpose, band, budget, audience, conflicts and
+claims, or a skill's description, budgets, server and claims — over the words, and
+named parts for words the host adds or swaps in. The manifest is read from them.
 _Avoid_: prompt file, prompt template (a template is an agent's)
 
 **Placeholder**:
