@@ -32,6 +32,22 @@ public class TenantKitConformanceTests
             .ShouldBeEmpty("a variable the kit's .env does not declare is read from whatever shell runs it");
     }
 
+    // Handing the kit to another household hands them nothing of the deployment's: no line of the
+    // kit's .env is one of the deployment's, but what any site has of its own — where things are,
+    // who runs them — the household's own OpenRouter key, and the logins key, which the deployment
+    // keeps only while the household migration re-seals the records it is about to hand the kit.
+    [Fact]
+    public void TheKit_HoldsNoSecretOfTheDeployments()
+    {
+        string[] theHouseholdsOwn =
+            ["REPOSITORY_PATH", "DATA_PATH", "PUID", "PGID", "RENDER_GID", "LAN_BIND_ADDRESS", "OPENROUTER__APIKEY", "LOGINS__STATEKEY"];
+
+        DeploymentFiles.KitPlaceholders().Keys
+            .Intersect(DeploymentFiles.Placeholders().Keys)
+            .Except(theHouseholdsOwn)
+            .ShouldBeEmpty();
+    }
+
     [Fact]
     public void EveryKitPlaceholder_IsUsedByTheKit()
     {

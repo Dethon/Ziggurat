@@ -100,11 +100,10 @@ public class DeploymentConformanceTests
             .ShouldAllBe(p => p.BindAddress == "127.0.0.1");
     }
 
+    // A household's own LAN tools — qBittorrent, Jackett, Home Assistant — moved into the tenant kit
+    // with its servers, and are held to the same rule there (TenantKitConformanceTests).
     [Theory]
-    [InlineData("qbittorrent")]
-    [InlineData("homeassistant")]
     [InlineData("filebrowser")]
-    [InlineData("jackett")]
     [InlineData("lemonade")]
     public void TheOperatorsLanTools_ListenOnTheNamedLanAddress(string service)
     {
@@ -117,7 +116,7 @@ public class DeploymentConformanceTests
     [Fact]
     public void OnlyTheProxyAndTheLanTools_ArePublishedAtAll()
     {
-        string[] published = ["caddy", "redis", "qbittorrent", "homeassistant", "filebrowser", "jackett", "lemonade"];
+        string[] published = ["caddy", "redis", "filebrowser", "lemonade"];
 
         DeploymentFiles.Compose().Services.Values
             .Where(s => s.Ports.Count > 0)
@@ -159,9 +158,8 @@ public class DeploymentConformanceTests
     }
 
     [Theory]
-    [InlineData("OPENROUTER__APIKEY", new[] { "agent", "mcp-websearch", "mcp-channel-voice" })]
-    [InlineData("HOMEASSISTANT__TOKEN", new[] { "mcp-homeassistant" })]
-    [InlineData("LOGINS__STATEKEY", new[] { "mcp-websearch", "household-migration" })]
+    [InlineData("OPENROUTER__APIKEY", new[] { "agent" })]
+    [InlineData("LOGINS__STATEKEY", new[] { "household-migration" })]
     [InlineData("HOUSEHOLD_MIGRATION_SECRET", new[] { "accounts", "household-migration" })]
     [InlineData("BOTS__0__BOTTOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("BOTS__1__BOTTOKEN", new[] { "mcp-channel-telegram" })]
@@ -217,59 +215,78 @@ public class DeploymentConformanceTests
             .Select(s => (s.Name, Variable: s.Environment["MCP__SHAREDSECRET"]))
             .ToList();
 
-        credentials.Count.ShouldBeGreaterThan(10);
+        credentials.Count.ShouldBeGreaterThan(4);
         credentials.GroupBy(c => c.Variable)
             .Where(g => g.Count() > 1)
             .Select(g => $"{g.Key}: {string.Join(", ", g.Select(c => c.Name))}")
             .ShouldBeEmpty("holding one server's credential must open no other");
     }
 
-    [Fact]
-    public void TheSandbox_HoldsNoCredentialButItsOwn()
-    {
-        var compose = DeploymentFiles.Compose();
-        var own = compose.Service("mcp-sandbox").Environment["MCP__SHAREDSECRET"];
-        var others = compose.Services.Values
-            .Where(s => s.Name != "mcp-sandbox" && s.Environment.ContainsKey("MCP__SHAREDSECRET"))
-            .Select(s => s.Environment["MCP__SHAREDSECRET"])
-            .ToHashSet();
-
-        compose.Service("mcp-sandbox").Environment.Values.ShouldNotContain(v => others.Contains(v));
-        own.ShouldNotBeNullOrEmpty();
-    }
-
     // The sandbox runs whatever the model writes. The servers behind the proxy believe the identity
-    // headers it copies on because only the proxy reaches them, so the sandbox must not reach them
-    // either: it shares a network with the agent alone, which dials its /mcp and whose exec bridge
-    // it calls back.
+    // headers it copies on because only the proxy reaches them, so the sandbox must not reach them:
+    // it is a household's server now, in the tenant kit on a network nobody else is on
+    // (TenantKitConformanceTests), and reaches this deployment through its tunnel alone. So nothing
+    // here runs the model's commands, the agent is on no network but the deployment's own, and no
+    // service holds the sandbox's old credential.
     [Fact]
-    public void TheSandbox_SharesANetworkWithTheAgentAlone()
+    public void NothingInTheDeployment_RunsTheModelsCommands()
     {
         var compose = DeploymentFiles.Compose();
-        var sandbox = compose.Service("mcp-sandbox").Networks;
 
-        sandbox.ShouldNotBeEmpty();
         compose.Services.Values
-            .Where(s => s.Name is not ("mcp-sandbox" or "agent") && s.Networks.Intersect(sandbox).Any())
+            .Where(s => s.Image == "mcp-sandbox:latest" || s.Dockerfile == "McpServerSandbox/Dockerfile")
             .Select(s => s.Name)
             .ShouldBeEmpty();
-        compose.Service("agent").Networks.Intersect(sandbox).ShouldNotBeEmpty("the agent and the sandbox call each other");
-        compose.Service("agent").Networks.Except(sandbox).ShouldNotBeEmpty("the agent still dials every other server");
+        compose.Networks.Keys.ShouldBe(["jackbot"]);
+        compose.Service("agent").Networks.ShouldBe(["jackbot"]);
+        DeploymentFiles.Placeholders().Keys.ShouldNotContain("MCP_SECRET_SANDBOX");
     }
 
+    // A household's servers are reached through their tunnels: the deployment runs none of them, nor
+    // what stood beside them, and holds none of their credentials — the agent dials none by host,
+    // and the accounts service admits none by a deployment secret.
     [Theory]
-    [InlineData("mcp-sugary")]
-    [InlineData("mcp-channel-signalr")]
-    [InlineData("observability")]
-    [InlineData("webui")]
-    [InlineData("accounts")]
-    public void NoServiceThatBelievesTheForwardedHeaders_SharesANetworkWithTheSandbox(string service)
+    [InlineData("mcp-websearch", new[] { "camoufox" })]
+    [InlineData("mcp-vault", new string[0])]
+    [InlineData("mcp-library", new[] { "qbittorrent", "jackett" })]
+    [InlineData("mcp-sandbox", new string[0])]
+    [InlineData("mcp-printer", new string[0])]
+    [InlineData("mcp-homeassistant", new[] { "homeassistant", "music-assistant" })]
+    [InlineData("mcp-channel-voice", new[] { "tse-extractor" })]
+    public void AHouseholdsOwnServer_IsNoServiceOfTheDeployment(string server, string[] beside)
     {
         var compose = DeploymentFiles.Compose();
-        var networks = compose.Service(service).Networks;
+        var agent = compose.Service("agent").Environment;
 
-        networks.ShouldNotBeEmpty();
-        networks.Intersect(compose.Service("mcp-sandbox").Networks).ShouldBeEmpty();
+        compose.Services.Keys.ShouldNotContain(server);
+        compose.Services.Keys.Intersect(beside).ShouldBeEmpty();
+        agent.Keys.ShouldNotContain($"MCP__SECRETS__{server}");
+        compose.Service("accounts").Environment.Keys.ShouldNotContain($"CALLERS__{server}");
+        compose.Services.Values.SelectMany(s => s.DependsOn).ShouldNotContain(server);
+    }
+
+    // What the moved servers read leaves with them: their credentials, the third-party keys only they
+    // used, the announce secret Home Assistant and voice shared, and the paths of their mounts.
+    [Theory]
+    [InlineData("MCP_SECRET_LIBRARY")]
+    [InlineData("MCP_SECRET_VAULT")]
+    [InlineData("MCP_SECRET_WEBSEARCH")]
+    [InlineData("MCP_SECRET_HOMEASSISTANT")]
+    [InlineData("MCP_SECRET_PRINTER")]
+    [InlineData("MCP_SECRET_CHANNEL_VOICE")]
+    [InlineData("HOMEASSISTANT__TOKEN")]
+    [InlineData("MUSICASSISTANT__TOKEN")]
+    [InlineData("JACKETT__APIKEY")]
+    [InlineData("QBITTORRENT__PASSWORD")]
+    [InlineData("BRAVESEARCH__APIKEY")]
+    [InlineData("CAPSOLVER__APIKEY")]
+    [InlineData("Announce__Token")]
+    [InlineData("VAULT_PATH")]
+    [InlineData("SANDBOX_HOME_PATH")]
+    public void AMovedServersSetting_IsNoLongerTheDeployments(string variable)
+    {
+        DeploymentFiles.Placeholders().Keys.ShouldNotContain(variable);
+        DeploymentFiles.Variables(DeploymentFiles.Directory).ShouldNotContain(variable);
     }
 
     // The agent presents each server the credential the server reads, so the two must name the
@@ -386,10 +403,11 @@ public class DeploymentConformanceTests
 
     // A server asks the accounts service with the credential it already holds for its own /mcp, so
     // each caller the service admits is fed exactly the variable that server's own gate reads.
+    // A household's voice server is no such caller: it asks on its tunnel's accounts back-call, and
+    // the service reads who it is off the live tunnel credential the relay shows (accounts.md).
     [Theory]
     [InlineData("mcp-channel-signalr")]
     [InlineData("mcp-channel-telegram")]
-    [InlineData("mcp-channel-voice")]
     public void TheAccountsServicesCallers_PresentTheirOwnMcpCredential(string caller)
     {
         var compose = DeploymentFiles.Compose();
@@ -422,7 +440,7 @@ public class DeploymentConformanceTests
             .Select(k => k["CALLERS__".Length..])
             .Where(caller => caller != HouseholdImportApi.Caller)
             .ShouldBe(
-                [InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Voice, InternalCallers.Agent],
+                [InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Agent],
                 ignoreOrder: true);
     }
 
@@ -753,7 +771,9 @@ public class DeploymentConformanceTests
     }
 
     // The migration moves data in the Sugary server's and the voice channel's own volumes, as their
-    // user, and finds them where its settings look.
+    // user, and finds them where its settings look. It runs before the home moves into the tenant kit,
+    // so the voice profiles are still where the deployment kept them — the folder the kit's voice reads
+    // at the same place under the kit, once the move has carried it over (TenantKit/README.md).
     [Fact]
     public void TheHouseholdMigration_MountsTheVolumesItMovesDataInWhereItLooksForThem()
     {
@@ -764,13 +784,14 @@ public class DeploymentConformanceTests
             service.Volumes.Single(v => v.EndsWith($":{target}", StringComparison.Ordinal)).Split(':')[0];
 
         Source(migration, "/sugary").ShouldBe(Source(compose.Service("mcp-sugary"), "/data"));
-        Source(migration, "/voices").ShouldBe(Source(compose.Service("mcp-channel-voice"), "/voices"));
+        Source(migration, "/voices").ShouldBe(Source(DeploymentFiles.KitCompose().Service("mcp-channel-voice"), "/voices"));
         migration.Volumes.ShouldContain("./volumes/household-migration:/input:ro");
         Path.GetDirectoryName(defaults.SugaryDatabasePath).ShouldBe("/sugary");
         Path.GetFileName(defaults.SugaryDatabasePath)
             .ShouldBe(Path.GetFileName(new global::McpServerSugary.Settings.SugarySettings().DatabasePath));
         defaults.VoicesPath.ShouldBe("/voices");
         migration.User.ShouldBe(compose.Service("mcp-sugary").User);
+        migration.User.ShouldBe(DeploymentFiles.KitCompose().Service("mcp-channel-voice").User);
     }
 
     [Fact]

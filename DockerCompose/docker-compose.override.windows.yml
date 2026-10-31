@@ -2,21 +2,9 @@
 # secrets and no other's. The id is the project's UserSecretsId; the agent and the dashboard
 # share one. A project with no UserSecretsId reads none and mounts nothing.
 services:
-  mcp-library:
-    volumes:
-      - ${APPDATA}/Microsoft/UserSecrets/75983515-6b41-4913-a021-553345dc21ba:/home/app/.microsoft/usersecrets/75983515-6b41-4913-a021-553345dc21ba:ro
-
-  mcp-websearch:
-    volumes:
-      - ${APPDATA}/Microsoft/UserSecrets/d8f3e2a1-5b7c-4d9e-8f1a-2c3b4d5e6f7a:/home/app/.microsoft/usersecrets/d8f3e2a1-5b7c-4d9e-8f1a-2c3b4d5e6f7a:ro
-
   mcp-idealista:
     volumes:
       - ${APPDATA}/Microsoft/UserSecrets/e9f4a3b2-6c8d-4e5f-9a2b-3c4d5e6f7a8b:/home/app/.microsoft/usersecrets/e9f4a3b2-6c8d-4e5f-9a2b-3c4d5e6f7a8b:ro
-
-  mcp-homeassistant:
-    volumes:
-      - ${APPDATA}/Microsoft/UserSecrets/1ad2c5b9-7e4f-4a3b-9c8d-2f1e6a4b8c30:/home/app/.microsoft/usersecrets/1ad2c5b9-7e4f-4a3b-9c8d-2f1e6a4b8c30:ro
 
   mcp-channel-signalr:
     volumes:
@@ -25,10 +13,6 @@ services:
   mcp-channel-telegram:
     volumes:
       - ${APPDATA}/Microsoft/UserSecrets/ead7bc91-e201-4c21-be64-d50ecc783ad6:/home/app/.microsoft/usersecrets/ead7bc91-e201-4c21-be64-d50ecc783ad6:ro
-
-  mcp-channel-voice:
-    volumes:
-      - ${APPDATA}/Microsoft/UserSecrets/b2c5d8e1-9f44-4a72-9eaf-2c8f3d6b1a07:/home/app/.microsoft/usersecrets/b2c5d8e1-9f44-4a72-9eaf-2c8f3d6b1a07:ro
 
   agent:
     volumes:
