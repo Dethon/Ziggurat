@@ -227,7 +227,7 @@ internal sealed class McpClientManager : IAsyncDisposable
 
     // A household's server reached through its tunnel is sent over the tunnel's own client, which
     // presents the tunnel's credential; everything else is dialled at its URL.
-    private static HttpClientTransport TransportOf(McpServerEndpoint endpoint)
+    internal static HttpClientTransport TransportOf(McpServerEndpoint endpoint)
     {
         var options = new HttpClientTransportOptions
         {
