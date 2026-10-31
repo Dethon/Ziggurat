@@ -12,6 +12,7 @@ using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Internal;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 
 namespace McpChannelSignalR.Hubs;
@@ -786,6 +787,17 @@ public sealed class ChatHub(
     // client that was not open when they were.
     public IReadOnlyList<ToolApprovalRequestMessage> GetOfferedApprovals() =>
         approvalService.OfferedTo(SignedIn.UserId);
+
+    // False is "not yours to dismiss", or it already ended: an alert is its person's, and only their
+    // dismissal, from any of their clients, stops it — everywhere it rings. The service is the
+    // method's rather than the hub's, as the alerts are no part of a topic.
+    public Task<bool> DismissAlert(string alertId, [FromServices] AlertService alerts) =>
+        alerts.DismissAsync(alertId, SignedIn.Account);
+
+    // What still rings for this connection's person, for a chat client that was not open when it
+    // began — the one the push brought up, above all.
+    public IReadOnlyList<AlertOfferedNotification> GetOfferedAlerts([FromServices] AlertService alerts) =>
+        alerts.OfferedTo(SignedIn.Account);
 
     // Reading is never deciding: whoever sees every topic sees another person's prompt and cannot
     // settle it. A prompt acting for nobody is answered in a topic by its owner, in a shared one also
