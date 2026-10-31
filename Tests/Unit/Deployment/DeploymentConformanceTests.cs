@@ -4,6 +4,7 @@ using Agent.App;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Tunnel;
 using Domain.Security;
+using Infrastructure.Tunnels;
 using McpServerSugary.Channel;
 using Shouldly;
 
@@ -510,34 +511,39 @@ public class DeploymentConformanceTests
         route.ForwardAuth.ShouldBeNull();
     }
 
-    // A login handoff's live view and the logins page answer on the browse server's second
-    // listener, which serves nothing else, so the route that reaches them cannot reach its /mcp.
+    // A login handoff's live view and the logins page are served by the household's web search at its
+    // own site: the proxy sends /browse/* to the relay in the agent, which forwards each exchange down
+    // that server's tunnel to its pages listener, and to nothing else of the agent's.
     [Fact]
-    public void TheBrowsePages_ReachTheBrowseServersPagesListener()
+    public void TheBrowsePages_ReachTheRelayOnTheMainHostAlone()
     {
-        var route = DeploymentFiles.Caddyfile().Host(MainHost).Routes.Single(r => r.Matcher == "/browse/*");
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
 
-        route.Upstream.ShouldBe($"{BrowseServerListeners.Service}:{BrowseServerListeners.Pages}");
-        BrowseServerListeners.Pages.ShouldNotBe(BrowseServerListeners.Mcp);
+        var route = hosts.Single(h => h.Name == MainHost).Routes.Single(r => r.Matcher == $"{BrowsePages.Path}/*");
+        route.Upstream.ShouldBe("agent:8080");
+        route.ForwardAuth.ShouldBeNull();
+        foreach (var host in hosts.Where(h => h.Name != MainHost))
+        {
+            RouteFor(host, $"{BrowsePages.Path}/handoff/x")?.Upstream.ShouldNotBe("agent:8080", host.Name);
+        }
     }
 
-    // Any host, any route, nested or not: whatever the proxy hands the browse server lands on the
-    // pages listener, never on the one /mcp answers.
+    // The browse server is a household's, reached through its tunnel: no host, no route, nested or
+    // not, names it, so neither of its listeners is reachable through the proxy by any other way.
     [Fact]
-    public void NothingTheProxyRoutes_ReachesTheBrowseServersMcpListener()
+    public void NothingTheProxyRoutes_ReachesTheBrowseServer()
     {
         var upstreams = DeploymentFiles.Caddyfile().Hosts
             .SelectMany(h => h.Body.Split('\n'))
             .Select(l => l.Trim())
             .Where(l => l.StartsWith("reverse_proxy ", StringComparison.Ordinal))
             .SelectMany(l => l["reverse_proxy ".Length..].TrimEnd('{').Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            // http://mcp-websearch:8080 names the same listener as mcp-websearch:8080.
+            // http://mcp-websearch:8081 names the same server as mcp-websearch:8081.
             .Select(u => u.Contains("://", StringComparison.Ordinal) ? u[(u.IndexOf("://", StringComparison.Ordinal) + 3)..] : u)
-            .Where(u => u.Split(':')[0] == BrowseServerListeners.Service)
             .ToList();
 
         upstreams.ShouldNotBeEmpty();
-        upstreams.ShouldAllBe(u => u == $"{BrowseServerListeners.Service}:{BrowseServerListeners.Pages}");
+        upstreams.ShouldNotContain(u => u.Split(':')[0] == BrowseServerListeners.Service);
     }
 
     // Sugary's /mcp is the deployment's, gated by the server's own credential, and a person's phone

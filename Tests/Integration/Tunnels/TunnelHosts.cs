@@ -35,6 +35,9 @@ internal sealed class RelayHost : IAsyncDisposable
 
     public string Hub => $"ws://localhost:{Port}{TunnelProtocol.Path}";
 
+    // Where the proxy sends what it routes to the agent.
+    public string Address => $"http://localhost:{Port}";
+
     public TunnelRegistry Registry => _app.Services.GetRequiredService<TunnelRegistry>();
 
     public IOwnServers OwnServers => _app.Services.GetRequiredService<IOwnServers>();
@@ -43,9 +46,10 @@ internal sealed class RelayHost : IAsyncDisposable
         AccountsServer accounts, string agentCredential, string redis, SigningKeyStore keys,
         IMetricsPublisher metrics, int? port = null)
     {
-        var listening = port ?? TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, listening));
+        // A port of its own choosing unless a restart must come back on the old one: one picked
+        // ahead and bound later races every other test doing the same.
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port ?? 0));
         builder.Services
             .AddSingleton(keys)
             .AddSingleton(metrics)
@@ -57,8 +61,9 @@ internal sealed class RelayHost : IAsyncDisposable
         var app = builder.Build();
         app.UseWebSockets();
         app.MapTunnel();
+        app.MapBrowsePages();
         await app.StartAsync();
-        return new RelayHost(app, listening);
+        return new RelayHost(app, new Uri(app.Urls.First()).Port);
     }
 
     public async ValueTask DisposeAsync()
@@ -79,23 +84,23 @@ internal sealed class TunnelledServer : IAsyncDisposable
 
     private sealed record Settings(McpGateSettings Mcp) : IMcpHostSettings;
 
+    // What a household's server is told: a hub, its credential and its name. Quick to come back, so a
+    // test waits on the reconnect rather than the schedule.
+    public static TunnelSettings Tunnel(string hub, string credential, string serverName) => new()
+    {
+        Hub = hub,
+        Credential = credential,
+        ServerName = serverName,
+        ReconnectAfter = TimeSpan.FromMilliseconds(50),
+        ReconnectAtMost = TimeSpan.FromMilliseconds(200)
+    };
+
     public static async Task<TunnelledServer> StartAsync(string hub, string credential, string serverName)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, 0));
         builder.Services
-            .AddToolServer(new Settings(new McpGateSettings
-            {
-                Tunnel = new TunnelSettings
-                {
-                    Hub = hub,
-                    Credential = credential,
-                    ServerName = serverName,
-                    // Quick to come back, so a test waits on the reconnect rather than the schedule.
-                    ReconnectAfter = TimeSpan.FromMilliseconds(50),
-                    ReconnectAtMost = TimeSpan.FromMilliseconds(200)
-                }
-            }))
+            .AddToolServer(new Settings(new McpGateSettings { Tunnel = Tunnel(hub, credential, serverName) }))
             .WithTools<CallTokenGateTests.WhoTools>();
         var app = builder.Build();
         app.MapMcp("/mcp");
