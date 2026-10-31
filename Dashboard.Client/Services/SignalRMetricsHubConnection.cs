@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.SignalR.Client;
 
 namespace Dashboard.Client.Services;
 
-public record ServiceHealthUpdate(string Service, bool IsHealthy, DateTimeOffset Timestamp);
+public record ServiceHealthUpdate(string Service, bool IsHealthy, DateTimeOffset Timestamp, string? Household = null);
 
 public sealed class SignalRMetricsHubConnection : IMetricsHubConnection
 {

@@ -42,7 +42,7 @@ public class MetricsQueryServiceTruncationTests
     {
         var date = new DateOnly(2026, 5, 3);
         var ts = new DateTimeOffset(2026, 5, 3, 10, 0, 0, TimeSpan.Zero);
-        SetupTruncationEvents("metrics:truncations:2026-05-03",
+        SetupTruncationEvents("metrics:truncations:deployment:2026-05-03",
         [
             new() { Sender = "alice", Model = "m-A", DroppedMessages = 1, EstimatedTokensBefore = 100, EstimatedTokensAfter = 80, MaxContextTokens = 100, Timestamp = ts },
             new() { Sender = "bob",   Model = "m-A", DroppedMessages = 2, EstimatedTokensBefore = 200, EstimatedTokensAfter = 150, MaxContextTokens = 200, Timestamp = ts },
@@ -61,7 +61,7 @@ public class MetricsQueryServiceTruncationTests
     {
         var date = new DateOnly(2026, 5, 3);
         var ts = new DateTimeOffset(2026, 5, 3, 10, 0, 0, TimeSpan.Zero);
-        SetupTruncationEvents("metrics:truncations:2026-05-03",
+        SetupTruncationEvents("metrics:truncations:deployment:2026-05-03",
         [
             new() { Sender = "alice", Model = "m", DroppedMessages = 1, EstimatedTokensBefore = 100, EstimatedTokensAfter = 80, MaxContextTokens = 100, Timestamp = ts },
             new() { Sender = "alice", Model = "m", DroppedMessages = 3, EstimatedTokensBefore = 100, EstimatedTokensAfter = 80, MaxContextTokens = 100, Timestamp = ts },
@@ -80,7 +80,7 @@ public class MetricsQueryServiceTruncationTests
     {
         var date = new DateOnly(2026, 5, 3);
         var ts = new DateTimeOffset(2026, 5, 3, 10, 0, 0, TimeSpan.Zero);
-        SetupTruncationEvents("metrics:truncations:2026-05-03",
+        SetupTruncationEvents("metrics:truncations:deployment:2026-05-03",
         [
             new() { Sender = "alice", Model = "m-A", DroppedMessages = 1, EstimatedTokensBefore = 500, EstimatedTokensAfter = 400, MaxContextTokens = 500, Timestamp = ts },
             new() { Sender = "bob",   Model = "m-A", DroppedMessages = 1, EstimatedTokensBefore = 200, EstimatedTokensAfter = 100, MaxContextTokens = 200, Timestamp = ts }
