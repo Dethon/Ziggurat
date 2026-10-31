@@ -399,6 +399,12 @@ internal sealed partial class WebChatStack
             // The hub asks the name of each connection's account with its own MCP credential, as
             // compose wires it.
             .WithEnvironment("CALLERS__mcp-channel-signalr", McpTestSecret.For("mcp-channel-signalr"))
+            // Sugary reads its people's household zone with its own credential, proving the household
+            // with a call's token (checked against the agent's keys) or a request's assertion; a
+            // household's default zone is this service's, the home's as compose's shared TZ makes it.
+            .WithEnvironment("CALLERS__mcp-sugary", McpTestSecret.For("mcp-sugary"))
+            .WithEnvironment("AGENTKEYSURL", AgentKeysUrl)
+            .WithEnvironment("TZ", "Europe/Madrid")
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/accounts/sign-in")))
