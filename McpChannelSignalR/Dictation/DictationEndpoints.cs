@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
+using Domain.Metrics;
 using Infrastructure.Clients.Transcription;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Settings;
@@ -36,7 +37,7 @@ public static class DictationEndpoints
         CancellationToken ct)
     {
         var token = context.Request.Headers[DictationEndpointPaths.TicketHeader].FirstOrDefault();
-        if (!tickets.ResolvesDictation(token, space))
+        if (tickets.ResolveDictation(token, space) is not { } scope)
         {
             // In words, like every other refusal here: the browser shows whatever the server said,
             // and a bare 401 arrived as the sentence meant for a transcriber that could not be
@@ -100,12 +101,13 @@ public static class DictationEndpoints
                     // that says where the audio came from — without it every caller's recording
                     // arrives as the same audio.wav.
                     FileName = $"dictation-{space}.wav",
-                    Language = settings.Transcription.Language
+                    Language = settings.Transcription.Language,
+                    TenantId = scope.TenantId
                 },
                 ct);
 
             clock.Stop();
-            metrics.RecordTranscribed(Channel, "composed", result, clock.ElapsedMilliseconds);
+            metrics.ForHousehold(scope.TenantId).RecordTranscribed(Channel, "composed", result, clock.ElapsedMilliseconds);
 
             return Results.Ok(new DictationTranscript(result.Text.Trim()));
         }
@@ -119,7 +121,7 @@ public static class DictationEndpoints
             // browser turns any non-2xx into its one-line composer refusal, and the way on is to
             // record again.
             logger.LogWarning(ex, "Could not transcribe a dictation: {Message}", ex.Message);
-            metrics.RecordFailure(Channel, ex);
+            metrics.ForHousehold(scope.TenantId).RecordFailure(Channel, ex);
             return Results.Text(
                 "I could not turn that recording into words.", statusCode: StatusCodes.Status502BadGateway);
         }

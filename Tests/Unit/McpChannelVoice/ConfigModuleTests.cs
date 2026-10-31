@@ -50,7 +50,7 @@ public class ConfigModuleTests
     {
         using var provider = Build(new VoiceSettings());
 
-        provider.GetRequiredService<ITextToSpeech>().ShouldBeOfType<SilenceTrimmingTextToSpeech>();
+        provider.GetRequiredService<ITextToSpeech>().ShouldBeOfType<MeteredTextToSpeech>().Inner.ShouldBeOfType<SilenceTrimmingTextToSpeech>();
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class ConfigModuleTests
             Tts = new TtsSettings { OpenAi = new OpenAiTtsConfig { TrailingSilenceTrimThreshold = 0 } }
         });
 
-        provider.GetRequiredService<ITextToSpeech>().ShouldBeOfType<OpenAiTextToSpeech>();
+        provider.GetRequiredService<ITextToSpeech>().ShouldBeOfType<MeteredTextToSpeech>().Inner.ShouldBeOfType<OpenAiTextToSpeech>();
     }
 
     // Guards the gibberish-gate threshold wiring in ConfigureVoiceChannel. The two thresholds are

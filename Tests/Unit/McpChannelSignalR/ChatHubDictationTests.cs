@@ -74,8 +74,18 @@ public sealed class ChatHubDictationTests : IDisposable
         var ticket = _hub.CreateDictationTicket();
 
         ticket.ExpiresAt.ShouldBe(_time.GetUtcNow().AddSeconds(_attachmentSettings.TicketTtlSeconds));
-        _tickets.ResolvesDictation(ticket.Token, "default").ShouldBeTrue();
-        _tickets.ResolvesDictation(ticket.Token, "private").ShouldBeFalse();
+        _tickets.ResolveDictation(ticket.Token, "default").ShouldNotBeNull();
+        _tickets.ResolveDictation(ticket.Token, "private").ShouldBeNull();
+    }
+
+    // The upload carries only the ticket, so the household its recording is heard for is the one
+    // the hub verified when the ticket was asked for.
+    [Fact]
+    public void CreateDictationTicket_IsForTheCallersHousehold()
+    {
+        var ticket = _hub.CreateDictationTicket();
+
+        _tickets.ResolveDictation(ticket.Token, "default")!.TenantId.ShouldBe("home");
     }
 
     // Changing the cap or the floor must not need new JavaScript shipped, so the browser learns
