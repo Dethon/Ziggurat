@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A minted credential verifies to its household and server name; an unknown, revoked or tampered one does not
-- [ ] The store holds only a hash, and the credential is printed once
-- [ ] The verify API is internal only and refused through the proxy on every host
-- [ ] Revoking is a command and is reported to whoever is listening for revocations (the relay closes the tunnel in 03)
+- [x] A minted credential verifies to its household and server name; an unknown, revoked or tampered one does not
+- [x] The store holds only a hash, and the credential is printed once
+- [x] The verify API is internal only and refused through the proxy on every host
+- [x] Revoking is a command and is reported to whoever is listening for revocations (the relay closes the tunnel in 03)

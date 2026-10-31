@@ -227,6 +227,37 @@ namespace Accounts.Store.Migrations
                     b.ToTable("Tenants");
                 });
 
+            modelBuilder.Entity("Accounts.Store.TunnelCredential", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64);
+
+                    b.Property<DateTime>("CreatedAt");
+
+                    b.Property<string>("CredentialHash")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<DateTime?>("RevokedAt");
+
+                    b.Property<string>("ServerName")
+                        .IsRequired()
+                        .HasMaxLength(63);
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CredentialHash")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("TunnelCredentials");
+                });
+
             modelBuilder.Entity("Accounts.Store.User", b =>
                 {
                     b.Property<string>("Id")
@@ -311,6 +342,15 @@ namespace Accounts.Store.Migrations
                     b.HasOne("Accounts.Store.User", null)
                         .WithMany()
                         .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Accounts.Store.TunnelCredential", b =>
+                {
+                    b.HasOne("Accounts.Store.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
