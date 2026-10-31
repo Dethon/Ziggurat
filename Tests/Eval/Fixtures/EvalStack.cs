@@ -10,6 +10,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Tunnel;
 using Domain.DTOs.Voice;
+using Domain.Security.Signing;
 using Domain.Tools.FileSystem.Bridge;
 using Domain.Tools.Memory;
 using Domain.Tools.Timers.Vfs;
@@ -269,8 +270,15 @@ public sealed class EvalStack : IAsyncDisposable
     // Through the server's own create path, with the same JSON a model would write. Writing into
     // the store directly would arm a timer the server itself could not have produced, and a
     // scenario about changing a running timer would then be reading a state that never occurs.
-    private async Task ArmAsync(TimerFileSystem timers, Scenario scenario)
+    // Armed as the eval account, as its turn's call would be: a timer is its household's, and the
+    // turn finds only its own household's.
+    private async Task ArmAsync(TimerFileSystem server, Scenario scenario)
     {
+        var timers = server.For(new FileSystemCaller(
+            new ConversationContext(scenario.AgentId, "eval:arm", EvalRun.UserId, new ReplyTarget("signalr", "eval:arm"),
+                Principal: new Principal("signalr", EvalRun.UserId, EvalRun.Account),
+                Identity: IdentityClaims.Person(EvalRun.UserId, EvalRun.Tenant, "signalr", [])),
+            null));
         foreach (var seed in scenario.Armed.OrderByDescending(a => a.RunningFor))
         {
             Clock.SetUtcNow(scenario.Instant - seed.RunningFor);

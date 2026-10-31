@@ -10,6 +10,22 @@ namespace Tests.Unit.McpServerTimers;
 
 public class TimerFireServiceTests
 {
+    private const string Home = "0a1b";
+
+    // Every household's voice server is this one announcer: the loop's part is asking it.
+    private sealed class OneVoice(IInsistentAnnouncer announcer) : IHouseholdVoices
+    {
+        public HouseholdVoice For(string tenantId) => new(announcer, null!, null!);
+    }
+
+    private sealed class NoChannels : IChannelAlerts
+    {
+        public Task<bool> RingAsync(ArmedTimer timer, CancellationToken ct) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<DismissedAlert>> StopAllAsync(string tenantId, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<DismissedAlert>>([]);
+    }
+
     private sealed class RecordingAnnouncer : IInsistentAnnouncer
     {
         private readonly List<AnnounceRequest> _requests = [];
@@ -46,13 +62,14 @@ public class TimerFireServiceTests
         await store.ArmAsync(new ArmedTimer
         {
             Id = "pasta",
+            TenantId = Home,
             Text = "pasta is ready",
             Target = new AnnounceTarget { Room = "Kitchen" },
             DurationSeconds = 5,
             CreatedAtUtc = now,
             FiresAtUtc = now.AddSeconds(5)
         });
-        var service = new TimerFireService(store, announcer, time, NullLogger<TimerFireService>.Instance);
+        var service = new TimerFireService(store, new OneVoice(announcer), new NoChannels(), time, NullLogger<TimerFireService>.Instance);
 
         await service.StartAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(4));
@@ -70,7 +87,7 @@ public class TimerFireServiceTests
         request.Insistent!.GapSeconds.ShouldBe(10);
         request.Insistent.MaxRepeats.ShouldBe(12);
         request.Insistent.RampStartPercent.ShouldBe(100); // kitchen timers ring at full volume from round 1
-        (await store.GetAsync("pasta")).ShouldBeNull(); // fire-once
+        (await store.GetAsync(Home, "pasta")).ShouldBeNull(); // fire-once
 
         await service.StopAsync(CancellationToken.None);
     }
@@ -85,12 +102,13 @@ public class TimerFireServiceTests
         await store.ArmAsync(new ArmedTimer
         {
             Id = "pasta",
+            TenantId = Home,
             Target = new AnnounceTarget { Room = "Kitchen" },
             DurationSeconds = 1,
             CreatedAtUtc = now,
             FiresAtUtc = now.AddSeconds(1)
         });
-        var service = new TimerFireService(store, announcer, time, NullLogger<TimerFireService>.Instance);
+        var service = new TimerFireService(store, new OneVoice(announcer), new NoChannels(), time, NullLogger<TimerFireService>.Instance);
 
         await service.StartAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(2));
@@ -109,15 +127,15 @@ public class TimerFireServiceTests
         var now = time.GetUtcNow().UtcDateTime;
         await store.ArmAsync(new ArmedTimer
         {
-            Id = "first", Target = new AnnounceTarget { Room = "Ghost" }, DurationSeconds = 1,
+            Id = "first", TenantId = Home, Target = new AnnounceTarget { Room = "Ghost" }, DurationSeconds = 1,
             CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(1)
         });
         await store.ArmAsync(new ArmedTimer
         {
-            Id = "second", Target = new AnnounceTarget { Room = "Kitchen" }, DurationSeconds = 3,
+            Id = "second", TenantId = Home, Target = new AnnounceTarget { Room = "Kitchen" }, DurationSeconds = 3,
             CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(3)
         });
-        var service = new TimerFireService(store, announcer, time, NullLogger<TimerFireService>.Instance);
+        var service = new TimerFireService(store, new OneVoice(announcer), new NoChannels(), time, NullLogger<TimerFireService>.Instance);
 
         await service.StartAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(2));
@@ -141,15 +159,15 @@ public class TimerFireServiceTests
         var now = time.GetUtcNow().UtcDateTime;
         await store.ArmAsync(new ArmedTimer
         {
-            Id = "first", Target = new AnnounceTarget { Room = "Slow" }, DurationSeconds = 1,
+            Id = "first", TenantId = Home, Target = new AnnounceTarget { Room = "Slow" }, DurationSeconds = 1,
             CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(1)
         });
         await store.ArmAsync(new ArmedTimer
         {
-            Id = "second", Target = new AnnounceTarget { Room = "Kitchen" }, DurationSeconds = 3,
+            Id = "second", TenantId = Home, Target = new AnnounceTarget { Room = "Kitchen" }, DurationSeconds = 3,
             CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(3)
         });
-        var service = new TimerFireService(store, announcer, time, NullLogger<TimerFireService>.Instance);
+        var service = new TimerFireService(store, new OneVoice(announcer), new NoChannels(), time, NullLogger<TimerFireService>.Instance);
 
         await service.StartAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(2));

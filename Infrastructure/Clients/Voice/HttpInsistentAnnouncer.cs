@@ -7,7 +7,7 @@ namespace Infrastructure.Clients.Voice;
 // Fires timer rings by POSTing to the voice hub's announce endpoint. The hub owns the live satellite
 // sessions, so the out-of-process timers server can only reach them over HTTP. The named voice-hub
 // client carries the hub base address; only the shared announce token is passed here.
-public sealed class HttpInsistentAnnouncer(IHttpClientFactory httpClientFactory, string token) : IInsistentAnnouncer
+public sealed class HttpInsistentAnnouncer(IHttpClientFactory httpClientFactory, string token, string? household = null) : IInsistentAnnouncer
 {
     public async Task<AnnounceResponse> StartAsync(AnnounceRequest request, CancellationToken ct)
     {
@@ -15,7 +15,7 @@ public sealed class HttpInsistentAnnouncer(IHttpClientFactory httpClientFactory,
         {
             Content = JsonContent.Create(request)
         };
-        message.Headers.Add("X-Announce-Token", token);
+        VoiceHubHttp.Address(message, token, household);
 
         var response = await VoiceHubHttp.SendAsync(httpClientFactory, message, ct);
         response.EnsureSuccessStatusCode();

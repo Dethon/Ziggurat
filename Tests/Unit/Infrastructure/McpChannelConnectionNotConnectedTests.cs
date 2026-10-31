@@ -59,6 +59,28 @@ public class McpChannelConnectionNotConnectedTests
     }
 
     [Fact]
+    public async Task OfferAlertAsync_NotConnected_IsNotDismissedHere()
+    {
+        // An alert is offered beside every other channel's, off any turn: a channel that is down has
+        // simply not been dismissed on, and the relay waits on the others rather than catching.
+        var dismissed = await NeverConnected().OfferAlertAsync(new ChannelAlertNotification
+        {
+            AlertId = Guid.NewGuid().ToString("N"),
+            Owner = new Account("home", "fran"),
+            Text = "pasta is ready"
+        }, CancellationToken.None);
+
+        dismissed.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task SettleAlertAsync_NotConnected_ReturnsSilently()
+    {
+        await Should.NotThrowAsync(() => NeverConnected().SettleAlertAsync(
+            Guid.NewGuid().ToString("N"), dismissed: true, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task NotifyAutoApprovedAsync_NotConnected_Throws()
     {
         // The third send verb: same caller, same mid-turn moment, so the same behaviour. It is on

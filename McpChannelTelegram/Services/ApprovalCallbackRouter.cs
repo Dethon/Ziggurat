@@ -14,11 +14,15 @@ namespace McpChannelTelegram.Services;
 // comes: the asker's account, or a fire's household, is something only the accounts service can say.
 public delegate Task<bool> ApprovalAnswerer(long telegramId, CancellationToken ct);
 
+// Every keyboard a person answers by tapping: an approval's three buttons, and a ringing timer's one
+// Dismiss. Both are kept by their whole-GUID id with every copy shown, so an answer — here or on
+// another channel — edits them all.
 public sealed class ApprovalCallbackRouter
 {
     private const string ApproveCallbackPrefix = "tool_approve:";
     private const string AlwaysCallbackPrefix = "tool_always:";
     private const string RejectCallbackPrefix = "tool_reject:";
+    private const string DismissCallbackPrefix = "alert_dismiss:";
 
     private readonly ConcurrentDictionary<string, ApprovalWaiter> _pending = new();
 
@@ -41,6 +45,54 @@ public sealed class ApprovalCallbackRouter
         var resultTask = WaitAndCleanupAsync(id, waiter);
         return (id, resultTask);
     }
+
+    // A ringing timer, dismissed by its owner's tap alone and waiting for as long as it rings: the
+    // agent settles it or calls it off. Kept under the alert's own id, beside the approvals.
+    public (string AlertId, Task<string> ResultTask) RegisterAlert(
+        ApprovalAnswerer mayDismiss, string alertId, string text, CancellationToken cancellationToken)
+    {
+        var waiter = new ApprovalWaiter(Timeout.InfiniteTimeSpan, mayDismiss, cancellationToken) { AlertText = text };
+        var id = Guid.TryParseExact(alertId, "N", out _) && _pending.TryAdd(alertId, waiter) ? alertId : Mint(waiter);
+        return (id, WaitAndCleanupAsync(id, waiter));
+    }
+
+    // The alert in its owner's private chat with this bot, with its one button, kept with its copies.
+    // False for a person who linked no Telegram; a chat they never opened with this bot throws.
+    public async Task<bool> ShowAlertInPrivateChatAsync(
+        string alertId, Account owner, string text, ITelegramBotClient botClient, TelegramAccess access,
+        CancellationToken ct)
+    {
+        if (await access.PrivateChatOfAsync(owner, ct) is not { } privateChat)
+        {
+            return false;
+        }
+
+        var sent = await botClient.SendMessage(
+            privateChat, AlertLine(text, null), ParseMode.Html,
+            replyMarkup: new InlineKeyboardMarkup(
+                [[InlineKeyboardButton.WithCallbackData("Dismiss", $"{DismissCallbackPrefix}{alertId}")]]),
+            cancellationToken: CancellationToken.None);
+        Shown(alertId, botClient, privateChat, sent.MessageId);
+        return true;
+    }
+
+    // It ended elsewhere — dismissed on another channel or with ./dismiss, or rung out — so every copy
+    // says which and offers its button no more.
+    public async Task SettleAlertAsync(string alertId, bool dismissed, CancellationToken cancellationToken)
+    {
+        if (!_pending.TryRemove(alertId, out var waiter))
+        {
+            return;
+        }
+
+        waiter.SetResult(ChannelProtocol.NoAnswer);
+        await EditAllAsync(waiter, AlertLine(waiter.AlertText ?? "", dismissed ? "dismissed" : "stopped ringing"), cancellationToken);
+    }
+
+    private static string AlertLine(string text, string? outcome) =>
+        outcome is null
+            ? $"\u23f0 <b>{HtmlEncode(text)}</b>"
+            : $"\u23f0 {HtmlEncode(text)} \u2014 {outcome}";
 
     private string Mint(ApprovalWaiter waiter)
     {
@@ -122,6 +174,11 @@ public sealed class ApprovalCallbackRouter
             approvalId = data[RejectCallbackPrefix.Length..];
             result = "denied";
         }
+        else if (data.StartsWith(DismissCallbackPrefix, StringComparison.Ordinal))
+        {
+            approvalId = data[DismissCallbackPrefix.Length..];
+            result = ChannelProtocol.AlertDismissed;
+        }
         else
         {
             return false;
@@ -157,12 +214,19 @@ public sealed class ApprovalCallbackRouter
         {
             await botClient.AnswerCallbackQuery(
                 callbackQuery.Id,
-                "This approval isn't yours",
+                waiter.AlertText is null ? "This approval isn't yours" : "This alert isn't yours",
                 cancellationToken: cancellationToken);
             return true;
         }
 
         waiter.SetResult(result);
+
+        if (waiter.AlertText is { } alertText)
+        {
+            await botClient.AnswerCallbackQuery(callbackQuery.Id, "Dismissed", cancellationToken: cancellationToken);
+            await EditAllAsync(waiter, AlertLine(alertText, "dismissed"), cancellationToken);
+            return true;
+        }
 
         var responseText = result == "denied" ? "Rejected" : "Approved";
         var icon = result == "denied" ? "\u274c" : "\u2705";
@@ -291,6 +355,9 @@ public sealed class ApprovalCallbackRouter
         }
 
         public ApprovalAnswerer MayAnswer { get; }
+
+        // What a ringing timer's message says, for its edits; null on an approval.
+        public string? AlertText { get; init; }
 
         public Task<string> Task => _tcs.Task;
 
