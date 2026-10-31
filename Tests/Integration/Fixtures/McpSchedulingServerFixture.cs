@@ -7,6 +7,7 @@ using McpServerScheduling.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 namespace Tests.Integration.Fixtures;
@@ -40,6 +41,9 @@ public class McpSchedulingServerFixture : IAsyncLifetime
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
         builder.Services.ConfigureScheduling(settings);
+        // No accounts service here: every household's schedules are read in this machine's zone, as
+        // the server read them before households had one. A household's own is CallHouseholdTests'.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(TimeZoneInfo.Local)));
 
         var app = builder.Build();
         app.MapMcp("/mcp");

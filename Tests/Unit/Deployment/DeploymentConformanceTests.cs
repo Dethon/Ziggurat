@@ -464,6 +464,9 @@ public class DeploymentConformanceTests
     [Theory]
     [InlineData("mcp-channel-signalr")]
     [InlineData("mcp-channel-telegram")]
+    [InlineData("mcp-idealista")]
+    [InlineData("mcp-scheduling")]
+    [InlineData("mcp-sugary")]
     public void TheAccountsServicesCallers_PresentTheirOwnMcpCredential(string caller)
     {
         var compose = DeploymentFiles.Compose();
@@ -483,9 +486,10 @@ public class DeploymentConformanceTests
             .ShouldAllBe(caller => compose.Services.ContainsKey(caller));
     }
 
-    // The service confines each caller to its own channel — the agent to tunnel credentials — by the
-    // name compose gives it (InternalCallers), so a caller renamed on one side and not the other
-    // would be refused everything it asks.
+    // The service confines each caller to its own channel — the agent to tunnel credentials, a shared
+    // server to its own view of a household's configuration — by the name compose gives it
+    // (InternalCallers), so a caller renamed on one side and not the other would be refused
+    // everything it asks.
     [Fact]
     public void EveryChannelCallerOfTheAccountsService_IsOneItKnowsTheChannelOf()
     {
@@ -496,7 +500,10 @@ public class DeploymentConformanceTests
             .Select(k => k["CALLERS__".Length..])
             .Where(caller => caller != HouseholdImportApi.Caller)
             .ShouldBe(
-                [InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Agent],
+                [
+                    InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Agent,
+                    InternalCallers.Idealista, InternalCallers.Scheduling, InternalCallers.Sugary
+                ],
                 ignoreOrder: true);
     }
 

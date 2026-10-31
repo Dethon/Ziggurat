@@ -46,12 +46,14 @@ public static class HouseholdConfigProtocol
 }
 
 // A question for one view. A shared server proves which household it asks about with what it was
-// handed for that household — the agent's call token for it, or the accounts service's assertion on
-// its own channel — and never names one. The agent names the household (HouseholdId) and presents a
+// handed for that household — the agent's call token for it, the accounts service's assertion on
+// its own channel, or (the scheduling server, for a fire) the delegation stored with the schedule —
+// and never names one. The agent names the household (HouseholdId) and presents a
 // token of its own signed for the configuration (TokenAudiences.HouseholdConfiguration), since it is
 // the party that signs every other proof. The Telegram server's all-households view asks with none.
 [PublicAPI]
-public sealed record HouseholdConfigQuery(string? HouseholdId = null, string? CallToken = null, string? Assertion = null);
+public sealed record HouseholdConfigQuery(
+    string? HouseholdId = null, string? CallToken = null, string? Assertion = null, string? Delegation = null);
 
 // The agent's view of one household.
 [PublicAPI]

@@ -411,6 +411,12 @@ internal sealed partial class WebChatStack
             // Where a saved household configuration is announced, as compose wires it: the stack saves
             // its spaces, and a save nobody could be told of is a failed command.
             .WithEnvironment("REDIS__CONNECTIONSTRING", "redis:6379")
+            // Sugary reads its people's household zone with its own credential, proving the household
+            // with a call's token (checked against the agent's keys) or a request's assertion; a
+            // household's default zone is this service's, the home's as compose's shared TZ makes it.
+            .WithEnvironment("CALLERS__mcp-sugary", McpTestSecret.For("mcp-sugary"))
+            .WithEnvironment("AGENTKEYSURL", AgentKeysUrl)
+            .WithEnvironment("TZ", "Europe/Madrid")
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/accounts/sign-in")))

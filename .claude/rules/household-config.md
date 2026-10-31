@@ -9,6 +9,9 @@ paths:
   - "Infrastructure/Clients/Accounts/HouseholdConfigurationClient.cs"
   - "Infrastructure/Clients/Accounts/AccountsClientConfig.cs"
   - "Tests/Integration/Accounts/HouseholdConfiguration*"
+  - "Mcp.Hosting/CallHousehold.cs"
+  - "Domain/Contracts/ICallHousehold.cs"
+  - "Tests/Integration/McpServers/CallHouseholdTests.cs"
 ---
 
 # Household configuration
@@ -100,7 +103,7 @@ A secret is unsealed into its own server's view and **left out** of every other,
 A new view, or a server that comes to need one, is a line in that table, a route, and a row here.
 
 **The household comes from something signed, never from a parameter** (`HouseholdProofs`). The query
-is `HouseholdConfigQuery { householdId, callToken, assertion }`:
+is `HouseholdConfigQuery { householdId, callToken, assertion, delegation }`:
 
 - **A shared server** presents exactly one proof and names no household (a `householdId` is 400):
   the agent's **call token** it was called with — verified against the agent's JWKS (`AgentKeysUrl`,
@@ -111,6 +114,14 @@ is `HouseholdConfigQuery { householdId, callToken, assertion }`:
   a server serving a person rather than a call (the hub's connection, Sugary's app). The household
   is the claims' `tid`; a token naming nobody proves none. So a leaked server credential alone
   reads nobody's section, and with a token it reads that one household's own section.
+- **A schedule's fire** has no call behind it, so the scheduling server alone (`InternalCallers.Scheduling`;
+  anyone else is 400) may present instead the **delegation** stored with the schedule
+  (`Schedule.Delegation`): verified against the agent's JWKS for `TokenAudiences.Delegation`, and only
+  a delegation of kind `schedule` (a watch's or a login's is 404 `Unproven`). It is the agent's word,
+  signed while that person's turn wrote the schedule, for the person behind it — so their `tid` is the
+  schedule's household. A schedule that delegates nothing has no proof, and is read in the server's
+  own zone (`.claude/rules/scheduling.md`). Rather than an all-households view: the scheduling
+  server's credential still opens no household's section by itself.
 - **Exception 1, the agent names the household by id.** It signs every call token there is, so
   nothing it could present proves more than its word: for a turn it names the household of the
   identity it verified, and for work with no call behind it — memory extraction, dreaming walking
@@ -124,7 +135,8 @@ is `HouseholdConfigQuery { householdId, callToken, assertion }`:
   household's (a household whose secrets do not open is left out and logged, not fatal to the rest).
   It is cached as one entry, dropped by any household's `keys` save.
 
-Refusals: 400 `BadQuery` (no proof, two, or a shared server naming a household), 404 `Unproven` (the
+Refusals: 400 `BadQuery` (no proof, two, a shared server naming a household, or a delegation from
+anyone but scheduling), 404 `Unproven` (the
 detail says why: a `TokenRefusal`, another server's audience, another channel, nobody) or
 `UnknownHousehold`, 503 `SecretsUnavailable` (no master, or a data key under another), each a
 `HouseholdConfigRefused { reason, detail }` and never carrying a secret.
@@ -144,13 +156,43 @@ a shared server its own `MCP__SHAREDSECRET` and nothing else.
 
 - `ForAgentAsync(householdId)`, `SettingsAsync(householdId, proof)`, `IdealistaKeysAsync(householdId,
   proof)` (null: none set), `SpacesAsync(householdId, proof)`, `TelegramBotsAsync()`. `HouseholdProof.OfCallToken`
-  / `.OfAssertion`. The `householdId` a shared server passes is the one **it** already verified (the
+  / `.OfAssertion` / `.OfDelegation`. The `householdId` a shared server passes is the one **it** already verified (the
   call's `tid`); it is the cache key, and an answer for any other household is refused, not kept.
 - Kept per (view, household) for `Accounts:ConfigurationLifetime` (1 minute) and dropped the moment a
   save of that household is heard on the host's own `IConnectionMultiplexer`, subscribed before the
   first ask. An answer asked while a save was announced is returned but not kept. A host with no
-  Redis — Idealista and Sugary today — keeps for the lifetime alone; one whose Redis is away retries
-  the subscription once a lifetime.
+  Redis — Idealista and Sugary — keeps for the lifetime alone; one whose Redis is away retries
+  the subscription once a lifetime. Idealista and Sugary are given no Redis for this, deliberately:
+  a saved key or zone reaching them within a minute is "without a restart", and Sugary's log keeps
+  off Redis (`docs/adr/0043`). Scheduling has its own Redis, so a save reaches it at once.
+
+## A shared server's accessor
+
+A shared server never holds the reader in its tool code. It reads its own section of the household a
+call acts for through **one accessor**, `Mcp.Hosting/CallHousehold.cs` (`CallHousehold :
+ICallHousehold`, `Domain/Contracts`), beside `CallTurn`:
+
+- **`call.Household`** (`CallTurn`): null when the call acts for nobody or names no household;
+  otherwise the verified identity's `tid` and, as its proof, the very call token `CallTokenGate`
+  verified, which the gate leaves on the call's `Items` (`CallTurn.VerifiedTokenKey`) only once it
+  verified. `SettingsAsync(ct)`, `IdealistaKeysAsync(ct)`; `ICallHousehold.ZoneAsync(fallback, ct)`
+  (`CallHouseholds`) is the zone its dates are read in — the server's own for a call for nobody or a
+  zone this host's time zone database does not know. The reader is resolved from the call's services
+  when a section is asked, so every filesystem server can hand its mount the call's household
+  (`FileSystemCaller.Household`) and only those that read configuration register
+  `AddHouseholdConfiguration`; one that did not and asks is an `InvalidOperationException` naming it.
+- **`CallHousehold.OfPerson(householdId, assertion, reader)`**: a person a server's own app serves, on
+  the assertion its request carried (Sugary's `HomeCalendar.BindAsync`).
+- **`CallHousehold.OfFire(householdId, delegation, reader)`**: a schedule's fire, on its delegation.
+
+Who reads what through it: Idealista searches on the household's own keys (`IdealistaClients`, one
+client per key pair, so each account's token is its own; no keys is an `authentication` tool error and
+nothing is searched — the deployment holds no Idealista key at all, so on the deploy that removed
+`IDEALISTA__*` from `.env` the operator puts the home's keys into its `keys` section with
+`set-household-config`, and until then the home's searches say none is set); scheduling reads and fires in the
+household's zone; Sugary reads her times and her calendar's days in it. `CallHouseholdConformanceTests`
+fails on tool code (a server's tool types, `Domain/Tools`) naming the reader or a proof, on a call
+token's proof built anywhere but the accessor, and on the verified token read past it.
 - `HouseholdConfigRefusedException` for a refusal, `HttpRequestException` for an outage or a 503: a
   reader never mistakes either for a household with nothing set.
 
@@ -177,13 +219,7 @@ exist, secrets with no master, or readers not told. Saving `settings` also renam
   templates).
 - **07**: `AgentHouseholdConfig.IsHome` picks the deployment key; `OpenRouterApiKey` null refuses the
   turn. Dreaming needs a list of households and their people, which is not here yet.
-- **08**: compose gains `CALLERS__mcp-idealista`, `CALLERS__mcp-scheduling`, `CALLERS__mcp-sugary`
-  fed from each server's `MCP_SECRET_*` (update `EveryChannelCallerOfTheAccountsService_IsOneItKnowsTheChannelOf`
-  and `TheAccountsServicesCallers_PresentTheirOwnMcpCredential`); `CallTurn` exposes the verified
-  claims but not the raw call token, which the accessor must forward; Idealista and Sugary have no
-  Redis yet. A schedule fires with no call: its stored delegation (agent-signed, `tid`) is the
-  natural proof, which is a new proof kind here (`TokenAudiences.Delegation`, kind `schedule`) —
-  add it to `HouseholdProofs` for `mcp-scheduling` rather than an all-households view.
+- **08** (done): the accessor above (`CallHousehold`), its fire proof and the three `CALLERS__` entries.
 - **12** (done): the hub (`ChatHub.GetSpaces`, `JoinSpace`) proves with the **session refresh's**
   assertion (`ISessionAccounts.SessionAsync`, as every turn does), not the one the connection arrived
   with, which lives ten minutes while a chat client stays connected for hours. The chat client's host
@@ -195,6 +231,10 @@ exist, secrets with no master, or readers not told. Saving `settings` also renam
   are never put over; a dry run checks the document and writes nothing. Any section: 06 seeds the
   agents through it as 12 seeds the spaces (`HouseholdMigration/Steps/HouseholdSpaces`). It tells
   readers as any save does but ignores a failure to, since nothing has read a section before it exists.
+- **06**, from 08: the agent reads a bare `runAt` in its own zone when it describes a write for the
+  schedule's delegation (`ScheduleDelegation.OfWrite`, `ThreadSession`'s `localZone`), while the
+  scheduling server now reads it in the household's; a household whose zone is not the agent's must
+  have its turns' zone handed to the session too, or its offset-less one-shots fire for nobody.
 - **13**: `TelegramBotsAsync` at startup and again when it changes; `/agent` needs a household's
   agent list on `telegram`, a new view.
 
