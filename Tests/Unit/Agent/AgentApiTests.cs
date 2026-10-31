@@ -80,7 +80,7 @@ public class AgentApiTests
     public async Task Get_WithTheSecret_ListsTheForwardedPersonsCatalogue()
     {
         var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
-        provider.Setup(p => p.GetAll("alice")).Returns([_registered]);
+        provider.Setup(p => p.GetAll(Alice)).Returns([_registered]);
         await using var app = await StartAsync(provider.Object, Secret);
         using var client = app.GetTestClient();
 
@@ -95,8 +95,8 @@ public class AgentApiTests
     public async Task Post_WithTheSecret_RegistersTheAgentForTheForwardedPerson()
     {
         var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
-        provider.Setup(p => p.RegisterCustomAgent("alice", It.IsAny<CustomAgentRegistration>()))
-            .Returns(_registered);
+        provider.Setup(p => p.RegisterCustomAgentAsync(Alice, It.IsAny<CustomAgentRegistration>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_registered);
         await using var app = await StartAsync(provider.Object, Secret);
         using var client = app.GetTestClient();
 
@@ -105,15 +105,15 @@ public class AgentApiTests
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await response.Content.ReadFromJsonAsync<AgentCatalogEntry>())
             .ShouldBe(new AgentCatalogEntry("custom-1", "Helper", "Helps"));
-        provider.Verify(p => p.RegisterCustomAgent(
-            "alice", It.Is<CustomAgentRegistration>(r => r.Name == "Helper")), Times.Once);
+        provider.Verify(p => p.RegisterCustomAgentAsync(
+            Alice, It.Is<CustomAgentRegistration>(r => r.Name == "Helper"), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task Delete_WithTheSecret_UnregistersTheForwardedPersonsAgent()
     {
         var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
-        provider.Setup(p => p.UnregisterCustomAgent("alice", "custom-1")).Returns(true);
+        provider.Setup(p => p.UnregisterCustomAgentAsync(Alice, "custom-1", It.IsAny<CancellationToken>())).ReturnsAsync(true);
         await using var app = await StartAsync(provider.Object, Secret);
         using var client = app.GetTestClient();
 
@@ -121,7 +121,7 @@ public class AgentApiTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await response.Content.ReadFromJsonAsync<bool>()).ShouldBeTrue();
-        provider.Verify(p => p.UnregisterCustomAgent("alice", "custom-1"), Times.Once);
+        provider.Verify(p => p.UnregisterCustomAgentAsync(Alice, "custom-1", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // Through the real catalogue: what alice registers, bob neither lists nor takes back, and alice
@@ -179,7 +179,7 @@ public class AgentApiTests
     public async Task AnAssertionNamingAlice_UnderAHeaderNamingMallory_ListsAlicesCatalogue()
     {
         var provider = new Mock<IAgentDefinitionProvider>(MockBehavior.Strict);
-        provider.Setup(p => p.GetAll("alice")).Returns([_registered]);
+        provider.Setup(p => p.GetAll(Alice)).Returns([_registered]);
         await using var app = await StartAsync(provider.Object, Secret);
         using var client = app.GetTestClient();
 

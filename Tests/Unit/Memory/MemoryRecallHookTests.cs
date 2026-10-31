@@ -483,7 +483,7 @@ public class MemoryRecallHookTests
     {
         var message = new ChatMessage(ChatRole.User, "Hello");
         const string agentId = "agent-no-memory";
-        _agentDefinitionProvider.Setup(p => p.GetById(agentId))
+        _agentDefinitionProvider.Setup(p => p.GetById(agentId, It.IsAny<Account?>()))
             .Returns(new AgentDefinition
             {
                 Id = agentId, Name = agentId, Model = "test",

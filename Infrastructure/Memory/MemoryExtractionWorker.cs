@@ -45,6 +45,9 @@ public class MemoryExtractionWorker(
 
     public async Task ProcessRequestAsync(MemoryExtractionRequest request, CancellationToken ct)
     {
+        // A request names its person and not their household, so a custom agent is not found here
+        // and its features and name are read as an unknown agent's. Only recall enqueues a request,
+        // and recall has already asked the custom agent itself with the turn's account.
         if (!agentDefinitionProvider.HasFeatureEnabled(request.AgentId, "memory"))
         {
             return;

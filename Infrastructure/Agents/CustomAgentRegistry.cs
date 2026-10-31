@@ -1,40 +1,68 @@
 using System.Collections.Concurrent;
+using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Microsoft.Extensions.Hosting;
 
 namespace Infrastructure.Agents;
 
-public class CustomAgentRegistry
+// People's custom agents, by owner: the household and the person the agent API's verified assertion
+// named. Every read is on a turn's path and synchronous, so they are answered from this process's
+// copy; the store is the durable record, written before the copy changes and read back into it
+// when the host starts. Without a store an agent lasts as long as the process.
+public sealed class CustomAgentRegistry(ICustomAgentStore? store = null) : IHostedService
 {
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, AgentDefinition>> _agentsByUser = new();
+    private readonly ConcurrentDictionary<Account, ConcurrentDictionary<string, AgentDefinition>> _agentsByOwner = new();
 
-    public void Add(string userId, AgentDefinition definition)
+    // Started before the channel connections, so the first turn after a restart already finds them.
+    // An agent registered meanwhile is newer than the stored copy and is kept.
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var userAgents = _agentsByUser.GetOrAdd(userId, _ => new ConcurrentDictionary<string, AgentDefinition>());
-        userAgents[definition.Id] = definition;
+        if (store is null)
+        {
+            return;
+        }
+
+        var stored = await store.LoadAllAsync(cancellationToken);
+        foreach (var (owner, definition) in stored)
+        {
+            AgentsOf(owner).TryAdd(definition.Id, definition);
+        }
     }
 
-    public bool Remove(string userId, string agentId)
+    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public async Task AddAsync(Account owner, AgentDefinition definition, CancellationToken ct = default)
     {
-        if (!_agentsByUser.TryGetValue(userId, out var userAgents))
+        if (store is not null)
+        {
+            await store.SaveAsync(owner, definition, ct);
+        }
+
+        AgentsOf(owner)[definition.Id] = definition;
+    }
+
+    public async Task<bool> RemoveAsync(Account owner, string agentId, CancellationToken ct = default)
+    {
+        if (!_agentsByOwner.TryGetValue(owner, out var agents) || !agents.ContainsKey(agentId))
         {
             return false;
         }
 
-        return userAgents.TryRemove(agentId, out _);
+        if (store is not null)
+        {
+            await store.RemoveAsync(owner, agentId, ct);
+        }
+
+        return agents.TryRemove(agentId, out _);
     }
 
-    public AgentDefinition? FindById(string agentId)
-    {
-        return _agentsByUser.Values
-            .Select(userAgents => userAgents.GetValueOrDefault(agentId))
-            .FirstOrDefault(def => def is not null);
-    }
+    public AgentDefinition? Find(Account owner, string agentId) =>
+        _agentsByOwner.TryGetValue(owner, out var agents) ? agents.GetValueOrDefault(agentId) : null;
 
-    public IReadOnlyList<AgentDefinition> GetByUser(string userId)
-    {
-        return _agentsByUser.TryGetValue(userId, out var userAgents)
-            ? userAgents.Values.ToList()
-            : [];
-    }
+    public IReadOnlyList<AgentDefinition> GetByOwner(Account owner) =>
+        _agentsByOwner.TryGetValue(owner, out var agents) ? agents.Values.ToList() : [];
 
+    private ConcurrentDictionary<string, AgentDefinition> AgentsOf(Account owner) =>
+        _agentsByOwner.GetOrAdd(owner, _ => new ConcurrentDictionary<string, AgentDefinition>());
 }
