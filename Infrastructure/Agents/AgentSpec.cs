@@ -28,6 +28,11 @@ public sealed record AgentSpec
     public ProviderRouting? ProviderRouting { get; init; }
     public required IReadOnlyList<McpServerEndpoint> McpServerEndpoints { get; init; }
 
+    // The household this agent's turns are for, which a household server the endpoints name is
+    // resolved against when a session is built. A worker's is its parent's. Null where the turn that
+    // built the agent named none (it acted for nobody), and then no household server is reached.
+    public string? TenantId { get; init; }
+
     // Whether live outposts join the endpoint list above when a session is built. A deliberate
     // choice per agent, never a default.
     public bool UsesOutposts { get; init; }

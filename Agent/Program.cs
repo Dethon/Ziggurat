@@ -20,11 +20,13 @@ builder.Services.AddDeploymentCors(settings.Cors);
 
 var app = builder.Build();
 app.UseCors();
+app.UseWebSockets();
 
 app.MapAgents(settings.AgentApi.SharedSecret);
 app.MapOutposts(settings.Outposts.SharedSecret);
 app.MapVfsBridge();
 app.MapAgentKeys();
+app.MapTunnel();
 
 await app.RunAsync();
 return 0;

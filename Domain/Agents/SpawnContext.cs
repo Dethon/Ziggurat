@@ -19,4 +19,7 @@ public sealed record SpawnContext(
     // resolved: a worker names neither, so one profile serves every agent on that agent's own
     // model. Routing says who serves a model, which is why the two travel together.
     string Model,
-    ProviderRouting? ProviderRouting = null);
+    ProviderRouting? ProviderRouting = null,
+    // The household the parent's turns are for: a worker reaches the household servers its parent
+    // reaches, resolved against the same household.
+    string? TenantId = null);
