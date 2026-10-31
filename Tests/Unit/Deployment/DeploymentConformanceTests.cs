@@ -573,6 +573,22 @@ public class DeploymentConformanceTests
         }
     }
 
+    // A voice topic is minted for whoever the accounts service's assertion names, with no credential
+    // beside it, so only the deployment's own servers may ask: on every host the path lands on a
+    // route that is not the agent's.
+    [Fact]
+    public void TheAgentsTopicMinting_IsNeverRoutedThroughTheProxy()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+
+        hosts.ShouldNotBeEmpty();
+        hosts.ShouldContain(h => h.Routes.Any(r => r.Upstream == "agent:8080"), "a host routes the agent's API");
+        foreach (var host in hosts)
+        {
+            RouteFor(host, TopicMinting.Path)?.Upstream.ShouldNotBe("agent:8080", host.Name);
+        }
+    }
+
     // A passkey is bound to the relying party, the cookie to its domain and a sign-in's return to the
     // allowed origins, so the three must describe the hosts the proxy actually serves.
     [Fact]
