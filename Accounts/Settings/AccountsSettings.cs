@@ -30,7 +30,7 @@ public record AccountsSettings
     public Dictionary<string, string> Callers { get; init; } = [];
 
     // The deployment's Redis, where a revoked tunnel credential is announced to the relay
-    // (TunnelRevocations). Nothing is stored there.
+    // (TunnelRevocationPublisher). Nothing is stored there.
     public RedisSettings Redis { get; init; } = new();
 
     // How long an invite or recovery link stays redeemable.

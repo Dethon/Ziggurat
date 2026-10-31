@@ -15,8 +15,6 @@ public sealed class McpCredentials(IReadOnlyDictionary<string, string> byName)
 
     public string? For(ServerAddress server) => _byName.GetValueOrDefault(server.Name);
 
-    public string? For(string address) => ServerAddress.FromUrl(address) is { } server ? For(server) : null;
-
     public IReadOnlyList<string> MissingFor(IEnumerable<string> addresses) =>
     [
         .. addresses

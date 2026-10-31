@@ -1,6 +1,7 @@
 using Agent.Settings;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Tunnel;
+using Domain.Security;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
 
@@ -64,7 +65,8 @@ public class ChannelConnectionHost(
 
                 logger.LogInformation("Running channel {ChannelId} against {Endpoint}", conn.ChannelId, endpoint);
                 return conn.RunAsync(
-                    McpServerEndpoint.Configured(endpoint, credentials?.For(endpoint)), agentCatalog, stoppingToken);
+                    McpServerEndpoint.Configured(
+                        endpoint, ServerAddress.FromUrl(endpoint) is { } server ? credentials?.For(server) : null), agentCatalog, stoppingToken);
             });
 
         await Task.WhenAll(runs);

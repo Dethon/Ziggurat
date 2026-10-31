@@ -70,6 +70,7 @@ public class EvalModelTests
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = "https://openrouter.ai/api/v1/", ApiKey = "" },
         Redis = new RedisConfiguration { ConnectionString = "localhost" },
+        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
         Agents =
         [
             new AgentDefinition

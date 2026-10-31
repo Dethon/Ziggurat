@@ -42,6 +42,7 @@ public class MetricsRegistrationContractTests
             {
                 OpenRouter = new OpenRouterConfiguration { ApiUrl = "http://openrouter", ApiKey = "x" },
                 Redis = new RedisConfiguration { ConnectionString = UnreachableRedis },
+                BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
                 Agents = []
             })
         },

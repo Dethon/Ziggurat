@@ -12,9 +12,10 @@ internal sealed record ComposedEndpoints(
 {
     // The same machines on the same openings of their tunnels, in the same (name) order: a machine
     // that opened, closed or reopened since makes a session built from the other a stale one.
-    public bool ReachesTheSameMachinesAs(ComposedEndpoints other) =>
-        Outposts.Select(o => (o.Name, o.Endpoint.Generation))
-            .SequenceEqual(other.Outposts.Select(o => (o.Name, o.Endpoint.Generation)));
+    public bool ReachesTheSameMachinesAs(ComposedEndpoints other) => ServerState.Same(Machines, other.Machines);
+
+    private IReadOnlyList<ServerState> Machines =>
+        [.. Outposts.Select(o => new ServerState(o.Name, Online: true, o.Endpoint.Generation))];
 }
 
 // The household's live outposts joining an agent's endpoint list, asked for at the moment a session

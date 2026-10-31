@@ -66,15 +66,15 @@ public sealed class McpAgent : DisposableAgent
     public override string? Name => _innerAgent.Name;
     public override string? Description => _innerAgent.Description;
 
-    // Both halves of a per-message config patch, and the response format the message asked for,
-    // resolved once for a turn. The values ride that turn's ChatOptions, so nothing per-request
-    // lives on the shared chat client and the model stamped on metrics is by construction the
-    // model the request ran on.
     // A session and the household servers it was built with, which the next turn's start compares
     // with what it finds.
     private sealed record ReconciledSession(
         ThreadSession Session, OwnServerResolution OwnServers, ComposedEndpoints Composed);
 
+    // Both halves of a per-message config patch, and the response format the message asked for,
+    // resolved once for a turn. The values ride that turn's ChatOptions, so nothing per-request
+    // lives on the shared chat client and the model stamped on metrics is by construction the
+    // model the request ran on.
     private sealed record TurnConfig(
         string? ModelOverride, ReasoningEffort? Effort, ResponseFormat? ResponseFormat = null);
 

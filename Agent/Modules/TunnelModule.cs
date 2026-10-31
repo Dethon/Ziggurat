@@ -21,7 +21,7 @@ public static class TunnelModule
         // them through to the accounts service it already knows, the shared Lemonade and the agent's
         // own routes, and nowhere else.
         public IServiceCollection AddTunnelRelay(
-            TunnelSettings tunnel, AccountsClientConfig accounts, string credential, BackCallSettings? backCalls = null)
+            TunnelSettings tunnel, AccountsClientConfig accounts, string credential, BackCallSettings backCalls)
         {
             services.AddHttpClient(TunnelCredentialClient.ClientName, http =>
             {
@@ -45,7 +45,7 @@ public static class TunnelModule
                     sp.GetRequiredService<ILogger<TunnelRelay>>(),
                     sp.GetService<IHostApplicationLifetime>(),
                     sp.GetRequiredService<BackCallGateway>()))
-                .AddSingleton(BackCallTargets.From(backCalls ?? new BackCallSettings(), accounts.BaseUrl))
+                .AddSingleton(BackCallTargets.From(backCalls, accounts.BaseUrl))
                 .AddSingleton(sp => new BackCallGateway(
                     sp.GetRequiredService<BackCallTargets>(),
                     sp.GetRequiredService<IMetricsPublisher>(),
@@ -56,7 +56,7 @@ public static class TunnelModule
                 .AddSingleton<IOwnServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
                 .AddSingleton<IOwnChannelServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
                 .AddSingleton<TunnelListing>()
-                .AddHostedService<TunnelRevocations>()
+                .AddHostedService<TunnelRevocationListener>()
                 // The household's outposts are its open tunnels minted as machines, so they need the
                 // registry and nothing of their own: no route, no store, no secret.
                 .AddSingleton(sp => new TunnelledOutposts(

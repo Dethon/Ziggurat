@@ -60,7 +60,7 @@ internal static class McpTestSecret
     // at, which is the name the server answers to.
     public static IClientTransport Transport(string endpoint, string secret = Value, string? audience = null) =>
         new Vouching(new SigningClientTransport(
-            UnsignedTransport(endpoint, secret), CallTokens, audience ?? TokenAudiences.CallTo(endpoint)));
+            UnsignedTransport(endpoint, secret), CallTokens, audience ?? TokenAudiences.CallTo(ServerAddress.FromUrl(endpoint)!)));
 
     // The credential alone, for a test that presents a token of its own making, or none.
     public static HttpClientTransport UnsignedTransport(string endpoint, string secret = Value) =>

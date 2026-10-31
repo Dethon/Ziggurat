@@ -8,7 +8,7 @@ namespace Infrastructure.Tunnels;
 public sealed record BackCallSettings
 {
     // The shared Lemonade voice's speech goes to (BackCallProtocol.Lemonade), on the compose network.
-    public string LemonadeUrl { get; init; } = "http://lemonade:13305";
+    public required string LemonadeUrl { get; init; }
 }
 
 // The relay's allowlist: for each back-call, the deployment service it reaches and the only paths it
