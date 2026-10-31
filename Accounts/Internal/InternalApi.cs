@@ -53,5 +53,6 @@ public static class InternalApi
         TelegramLinking.Map(routes);
         HouseholdImportApi.Map(routes);
         TunnelVerification.Map(routes);
+        HouseholdConfiguration.Map(routes);
     }
 }

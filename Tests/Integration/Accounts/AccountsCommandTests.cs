@@ -166,8 +166,8 @@ public class AccountsCommandTests
         {
             await using var output = new StringWriter();
             var exit = await AccountsCommand.RunAsync(
-                ["mint-link", "--operator", "--name", "Fran"], settings, new AccountsClock(TimeProvider.System), output,
-                CancellationToken.None);
+                ["mint-link", "--operator", "--name", "Fran"], settings, new AccountsClock(TimeProvider.System),
+                TextReader.Null, output, CancellationToken.None);
 
             exit.ShouldBe(0, output.ToString());
             AccountsServer.MintedLink.Parse(output.ToString()).TenantId.ShouldNotBeNullOrEmpty();

@@ -1,3 +1,4 @@
+using Accounts.Configuration;
 using Accounts.Links;
 using Accounts.People;
 using Accounts.Sessions;
@@ -20,6 +21,9 @@ namespace Accounts.Commands;
 //   docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household <id> --server <name>
 //   docker exec accounts dotnet Accounts.dll list-tunnel-credentials
 //   docker exec accounts dotnet Accounts.dll revoke-tunnel-credential --id <id>
+//   docker exec accounts dotnet Accounts.dll get-household-config --household <id> --section <name>
+//   docker exec -i accounts dotnet Accounts.dll set-household-config --household <id> --section <name> --file - < section.json
+//   docker exec -i accounts dotnet Accounts.dll rewrap-household-keys < previous-master.key
 //
 // The first is the operator's way in before anyone can sign in, and back in after losing every
 // passkey; the second is a recovery link for anyone; the third prints a session cookie's value for
@@ -31,7 +35,10 @@ namespace Accounts.Commands;
 // retirement, once nothing the previous key signed can still be in date, unpublishes it. The tunnel
 // verbs are the operator's for a household's own servers until the owner's admin area exists: a
 // credential for one of a household's servers by name, printed once; every credential with no
-// secret; and a revocation, which the relay is told of so it closes that credential's tunnel.
+// secret; and a revocation, which the relay is told of so it closes that credential's tunnel. The
+// household configuration verbs are the operator's until the admin area exists: a section printed
+// with every secret masked, a section saved from a file (or the input) with its secrets sealed on the
+// way in, and the data keys rewrapped after the master key changed (.claude/rules/household-config.md).
 public static class AccountsCommand
 {
     public const string MintLink = "mint-link";
@@ -42,19 +49,25 @@ public static class AccountsCommand
     public const string MintTunnelCredential = "mint-tunnel-credential";
     public const string ListTunnelCredentials = "list-tunnel-credentials";
     public const string RevokeTunnelCredential = "revoke-tunnel-credential";
+    public const string GetHouseholdConfig = "get-household-config";
+    public const string SetHouseholdConfig = "set-household-config";
+    public const string RewrapHouseholdKeys = "rewrap-household-keys";
 
     private const string Usage =
         $"usage: {MintLink} --operator [--name <display name>] | {MintLink} --user <id> | {MintSession} --user <id>"
         + $" | {CreateUser} --name <display name> [--role owner|member] | {RotateSigningKey} | {RetireSigningKeys}"
         + $" | {MintTunnelCredential} --household <id> --server <name> | {ListTunnelCredentials}"
-        + $" | {RevokeTunnelCredential} --id <id>";
+        + $" | {RevokeTunnelCredential} --id <id>"
+        + $" | {GetHouseholdConfig} --household <id> --section <name> | {SetHouseholdConfig} --household <id> --section <name> --file <path|->"
+        + $" | {RewrapHouseholdKeys} (the previous master key on the input)";
 
     public static bool IsCommand(IReadOnlyList<string> args) =>
         args is [MintLink or MintSession or CreateUser or RotateSigningKey or RetireSigningKeys
-            or MintTunnelCredential or ListTunnelCredentials or RevokeTunnelCredential, ..];
+            or MintTunnelCredential or ListTunnelCredentials or RevokeTunnelCredential
+            or GetHouseholdConfig or SetHouseholdConfig or RewrapHouseholdKeys, ..];
 
     public static async Task<int> RunAsync(
-        IReadOnlyList<string> args, AccountsSettings settings, AccountsClock clock, TextWriter output,
+        IReadOnlyList<string> args, AccountsSettings settings, AccountsClock clock, TextReader input, TextWriter output,
         CancellationToken ct)
     {
         // The keys are files beside the store, not rows in it: nothing here needs the database.
@@ -93,6 +106,15 @@ public static class AccountsCommand
                 return await ListTunnelsAsync(services.GetRequiredService<TunnelCredentialStore>(), output, ct);
             case [RevokeTunnelCredential, "--id", var id]:
                 return await RevokeTunnelAsync(services.GetRequiredService<TunnelCredentialStore>(), id, output, ct);
+            case [GetHouseholdConfig, "--household", var household, "--section", var section]:
+                return await HouseholdConfigCommands.GetAsync(
+                    services.GetRequiredService<HouseholdConfigStore>(), household, section, output, ct);
+            case [SetHouseholdConfig, "--household", var household, "--section", var section, "--file", var file]:
+                return await HouseholdConfigCommands.SetAsync(
+                    services.GetRequiredService<HouseholdConfigStore>(), household, section, file, input, output, ct);
+            case [RewrapHouseholdKeys]:
+                return await HouseholdConfigCommands.RewrapAsync(
+                    services.GetRequiredService<HouseholdConfigStore>(), input, output, ct);
             default:
                 await output.WriteLineAsync(Usage);
                 return 2;
