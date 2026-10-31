@@ -1,9 +1,14 @@
 namespace Infrastructure.Agents;
 
-// What one household server named in an agent's definition was found to be when a turn started:
-// online and on which opening of its tunnel (ADR 0012's generation), or not there. Two turns whose
-// states are equal reach the same servers, so the session the first built serves the second.
-public sealed record OwnServerState(string ServerName, bool Online, long? Generation);
+// What one server a session is built with was found to be when a turn started — a household server
+// named in the agent's definition, or a machine: online and on which opening of its tunnel (ADR 0012's
+// generation), or not there. Two turns whose states are equal, in the same order, reach the same
+// servers, so the session the first built serves the second.
+public sealed record ServerState(string Name, bool Online, long? Generation)
+{
+    public static bool Same(IReadOnlyList<ServerState> one, IReadOnlyList<ServerState> other) =>
+        one.SequenceEqual(other);
+}
 
 // The household's servers as a turn found them: the endpoints to dial, in the definition's order,
 // with every server that is not there left out; the names of those left out; and the states a later
@@ -11,7 +16,7 @@ public sealed record OwnServerState(string ServerName, bool Online, long? Genera
 public sealed record OwnServerResolution(
     IReadOnlyList<McpServerEndpoint> Endpoints,
     IReadOnlyList<string> Unresolved,
-    IReadOnlyList<OwnServerState> States)
+    IReadOnlyList<ServerState> States)
 {
     // Those not there when the turn started, and any whose tunnel has closed since — one that went
     // while its session was being dialled is left out of it (McpClientManager) and is as offline.
@@ -21,7 +26,7 @@ public sealed record OwnServerResolution(
         .. Endpoints.Where(e => e.Offline.IsCancellationRequested).Select(e => e.Server!.Qualifier)
     ];
 
-    public bool ReachesTheSameServersAs(OwnServerResolution other) => States.SequenceEqual(other.States);
+    public bool ReachesTheSameServersAs(OwnServerResolution other) => ServerState.Same(States, other.States);
 }
 
 // A household's own servers named in an agent's endpoint list, resolved to where they are reached
@@ -49,6 +54,6 @@ internal static class OwnServerEndpoints
         return new OwnServerResolution(
             [.. resolved.Select(r => r.Reached).OfType<McpServerEndpoint>()],
             [.. own.Where(r => r.Reached is null).Select(r => r.Named.Address)],
-            [.. own.Select(r => new OwnServerState(r.Named.Address, r.Reached is not null, r.Reached?.Generation))]);
+            [.. own.Select(r => new ServerState(r.Named.Address, r.Reached is not null, r.Reached?.Generation))]);
     }
 }

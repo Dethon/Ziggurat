@@ -22,6 +22,7 @@ public class DeploymentFilesTests
 
         compose.Service("agent").Environment.ShouldContainKey("CORS__ALLOWEDORIGINS__0", "a list of merged anchors is read too");
         compose.Service("agent").Environment.ShouldContainKey("TZ");
+        compose.Service("lemonade").Devices.ShouldContain("/dev/dri:/dev/dri");
     }
 
     // A service names its networks as a list or as a map; one naming none is on compose's default
@@ -32,7 +33,7 @@ public class DeploymentFilesTests
         var compose = DeploymentFiles.Compose();
 
         compose.Service("agent").Networks.ShouldContain("jackbot");
-        compose.Service("plex").Networks.ShouldBeEmpty("a service on the host's network is on no compose network");
+        DeploymentFiles.KitCompose().Service("plex").Networks.ShouldBeEmpty("a service on the host's network is on no compose network");
         ComposeService.From("bare", new YamlDotNet.RepresentationModel.YamlMappingNode()).Networks.ShouldBe(["default"]);
     }
 

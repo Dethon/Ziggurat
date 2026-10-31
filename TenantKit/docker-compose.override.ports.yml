@@ -1,6 +1,7 @@
 # For a project run on the host for debugging (appsettings.Local.json): publishes on loopback the kit's
 # helpers a host-run server dials — the browser web search drives and voice's speech extraction. The
-# LAN tools (qBittorrent, Jackett, Home Assistant) are published by the base file already. A tunnelled
+# LAN tools (qBittorrent, Jackett, Home Assistant, filebrowser) are published by the base file
+# already, and Plex is on the host's network. A tunnelled
 # server needs no port of its own, so none is published here.
 services:
   camoufox:

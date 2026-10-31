@@ -16,8 +16,4 @@ public static class TokenAudiences
     // name the agent keys that server's credential by (McpCredentials) and the one the server binds as
     // its own (MCP__AUDIENCE).
     public static string CallTo(ServerAddress server) => server.Name;
-
-    // Empty for an address that is not one, which no server answers to.
-    public static string CallTo(string address) =>
-        ServerAddress.FromUrl(address) is { } server ? CallTo(server) : "";
 }
