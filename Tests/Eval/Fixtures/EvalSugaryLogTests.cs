@@ -1,10 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Domain.Prompts;
 using McpServerSugary.Modules;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -24,7 +27,10 @@ public sealed class EvalSugaryLogTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         Directory.CreateDirectory(_directory);
-        _server = await InMemoryMcpServer.StartAsync(services => services.ConfigureSugary(EvalSugaryLog.Settings(_directory)));
+        var settings = EvalSugaryLog.Settings(_directory);
+        // As the eval stack runs it, with no accounts service: her household keeps the home's zone.
+        _server = await InMemoryMcpServer.StartAsync(services => services.ConfigureSugary(settings)
+            .Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(ConfigModule.HomeZone(settings)))));
         await EvalSugaryLog.SeedAsync(_server.App.Services);
     }
 
