@@ -42,21 +42,13 @@ public class ReplySpeakerTests
             new SatelliteConfig { Identity = "household", Room = "Kitchen" });
         _sessions.Register(_session);
 
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-kitchen");
-                var topic = new TopicMetadata("topic-kitchen", identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
+        var factory = new FakeTopicMinter();
 
         var manager = new VoiceConversationManager(
-            factory.Object, _accumulator, _conversationClock,
+            factory, _accumulator, _conversationClock,
             _conversationLifetime, NullLogger<VoiceConversationManager>.Instance);
 
-        _conversationId = manager.GetOrCreateAsync(_session, "agent-1", "hello", default).GetAwaiter().GetResult();
+        _conversationId = manager.GetOrCreateAsync(_session, "agent-1", default).GetAwaiter().GetResult();
 
         _tts.Setup(t => t.SynthesizeAsync(
                 It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
