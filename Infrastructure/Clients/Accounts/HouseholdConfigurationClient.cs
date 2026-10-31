@@ -83,7 +83,7 @@ public sealed class HouseholdConfigurationClient(
         KeptAsync(view, householdId, async () =>
         {
             var answer = await AskAsync<HouseholdConfigAnswer<T>>(
-                view, new HouseholdConfigQuery(CallToken: proof.CallToken, Assertion: proof.Assertion), ct);
+                view, new HouseholdConfigQuery(CallToken: proof.CallToken, Assertion: proof.Assertion, Delegation: proof.Delegation), ct);
             return Expected(householdId, answer.HouseholdId, answer.Section);
         }, ct);
 

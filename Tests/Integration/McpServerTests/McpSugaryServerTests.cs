@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Sugary;
@@ -9,6 +10,8 @@ using Domain.Tools.Sugary.Vfs;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Utils;
 using McpServerSugary.Store;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
@@ -509,6 +512,21 @@ public class McpSugaryServerTests
             .Where(entry => entry != keys && !entry.StartsWith(keys + Path.DirectorySeparatorChar, StringComparison.Ordinal))
             .Select(Path.GetFileName)
             .ShouldAllBe(name => name == "sugary.db" || name == "sugary.db-wal" || name == "sugary.db-shm");
+    }
+
+    // Her times are on her household's clock, which need not be the server's: the household's settings,
+    // read through the call's household.
+    [Fact]
+    public async Task HerTimes_AreReadOnHerHouseholdsClock()
+    {
+        await using var server = await SugaryServer.StartAsync(homeZone: "Europe/Madrid", services: services => services.Replace(
+            ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(TimeZoneInfo.FindSystemTimeZoneById("Asia/Tokyo")))));
+        await server.SaveAsync(Meal("2026-10-11T20:00:00Z", null, Item("ramen", 70)));
+
+        var rows = await server.QueryAsync("select strftime(eaten_at_local, '%Y-%m-%d %H:%M') from meals");
+
+        rows.Single()![0]!.GetValue<string>().ShouldBe("2026-10-12 05:00");
+        (await server.GlobAsync("meals/*")).ShouldBe(["/meals/2026-10.parquet"]);
     }
 
     // "When did she last eat paella" is one query across every month.

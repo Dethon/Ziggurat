@@ -99,12 +99,12 @@ public static class FileSystemServerTools
                 ToolResponse.Create(await As(b, call).MoveOutCheckAsync(path, ct)))
     };
 
-    // The backend as the call's caller sees it: the turn through the one accessor every server
-    // reads it by, and the exec bridge's grant off the `_meta` the agent stamps on every hop.
+    // The backend as the call's caller sees it: the turn and the household through the one accessor
+    // every server reads them by, and the exec bridge's grant off the `_meta` the agent stamps on every hop.
     // Read inside the handler, so a context that does not parse is the caller's error result
     // like any other failure rather than something the envelope never sees.
     private static FileSystemBackendBase As(FileSystemBackendBase backend, RequestContext<CallToolRequestParams> call) =>
-        backend.For(new FileSystemCaller(call.Turn, VfsBridgeGrant.Parse(call.Params?.Meta), call.Delegation));
+        backend.For(new FileSystemCaller(call.Turn, VfsBridgeGrant.Parse(call.Params?.Meta), call.Delegation, call.Household));
 
     public static IMcpServerBuilder AddFileSystemTools<TBackend>(this IMcpServerBuilder builder)
         where TBackend : FileSystemBackendBase
