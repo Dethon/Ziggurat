@@ -119,7 +119,7 @@ public class DeliveryTargetResolver(
                 {
                     // Nothing anchors yet and this channel shows no topic of its own (voice): the agent
                     // mints the topic, for the principal it verified, so the channel only attaches.
-                    if (shared is null && channel.AttachOnly && topics is not null)
+                    if (shared is null && channel.AttachOnly && channel.IsConnected && topics is not null)
                     {
                         shared = (await topics.CreateAsync(new CreateConversationParams
                         {

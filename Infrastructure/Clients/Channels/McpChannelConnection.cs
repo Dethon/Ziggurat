@@ -103,6 +103,8 @@ public sealed class McpChannelConnection(
 
     public bool HostsReviewCopies { get; init; }
 
+    public bool IsConnected => _client is not null;
+
     public IAsyncEnumerable<ChannelMessage> Messages => _messageChannel.Reader.ReadAllAsync();
 
     // Connect, register the catalog, watch health, reconnect, re-register — for as long as the
