@@ -16,7 +16,12 @@ public static class TunnelModule
         // service lists the agent by (CALLERS__agent), so no secret exists for the relay alone; it
         // hands servers the keys of the agent's own SigningKeyStore, and hears revocations on the
         // agent's Redis.
-        public IServiceCollection AddTunnelRelay(TunnelSettings tunnel, AccountsClientConfig accounts, string credential)
+        //
+        // A household server's back-calls are answered by a gateway of the relay's own, which lets
+        // them through to the accounts service it already knows, the shared Lemonade and the agent's
+        // own routes, and nowhere else.
+        public IServiceCollection AddTunnelRelay(
+            TunnelSettings tunnel, AccountsClientConfig accounts, string credential, BackCallSettings? backCalls = null)
         {
             services.AddHttpClient(TunnelCredentialClient.ClientName, http =>
             {
@@ -38,7 +43,15 @@ public static class TunnelModule
                     sp.GetRequiredService<IMetricsPublisher>(),
                     TimeProvider.System,
                     sp.GetRequiredService<ILogger<TunnelRelay>>(),
-                    sp.GetService<IHostApplicationLifetime>()))
+                    sp.GetService<IHostApplicationLifetime>(),
+                    sp.GetRequiredService<BackCallGateway>()))
+                .AddSingleton(BackCallTargets.From(backCalls ?? new BackCallSettings(), accounts.BaseUrl))
+                .AddSingleton(sp => new BackCallGateway(
+                    sp.GetRequiredService<BackCallTargets>(),
+                    sp.GetRequiredService<IMetricsPublisher>(),
+                    sp,
+                    sp.GetRequiredService<ILoggerFactory>()))
+                .AddHostedService(sp => sp.GetRequiredService<BackCallGateway>())
                 .AddSingleton(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
                 .AddSingleton<IOwnServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
                 .AddSingleton<IOwnChannelServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
@@ -52,7 +65,15 @@ public static class TunnelModule
                     TimeProvider.System,
                     sp.GetRequiredService<ILogger<TunnelledOutposts>>()))
                 .AddSingleton<IOutposts>(sp => sp.GetRequiredService<TunnelledOutposts>())
-                .AddSingleton<IHostedService>(sp => sp.GetRequiredService<TunnelledOutposts>());
+                .AddSingleton<IHostedService>(sp => sp.GetRequiredService<TunnelledOutposts>())
+                // Exchanges that arrive at the agent for a household's server and go on down its
+                // tunnel: the browse pages a person opens from a link, and a shared server's calls to
+                // a household's server, each caller checked against the credential the agent holds
+                // to dial it (McpCredentials).
+                .AddHttpForwarder()
+                .AddSingleton<TunnelForwarder>()
+                .AddSingleton<BrowsePages>()
+                .AddSingleton<RelayedCalls>();
         }
     }
 }

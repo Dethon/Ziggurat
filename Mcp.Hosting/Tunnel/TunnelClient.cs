@@ -29,6 +29,7 @@ public sealed record TunnelListener(string Tag, int Port);
 internal sealed class TunnelClient(
     TunnelSettings settings,
     TunnelTrust trust,
+    TunnelLink link,
     IServiceProvider services,
     ILogger<TunnelClient> logger) : BackgroundService
 {
@@ -94,16 +95,32 @@ internal sealed class TunnelClient(
         }
 
         var admitted = false;
+        TunnelMux? opened = null;
         await using var mux = new TunnelMux(
             socket,
             TunnelEnd.Server,
             (json, _) =>
             {
-                admitted |= Control(json);
+                if (Control(json))
+                {
+                    admitted = true;
+                    // Back-calls go out only once the relay has said who this tunnel is for.
+                    link.Admitted(opened!);
+                }
+
                 return Task.CompletedTask;
             },
             (stream, tag) => PipeAsync(stream, tag, listeners, ct));
-        await mux.RunAsync(ct);
+        opened = mux;
+        try
+        {
+            await mux.RunAsync(ct);
+        }
+        finally
+        {
+            link.Ended(mux);
+        }
+
         if (ct.IsCancellationRequested)
         {
             return Outcome.Failed;

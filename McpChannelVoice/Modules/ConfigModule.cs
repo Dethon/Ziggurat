@@ -28,12 +28,15 @@ public static class ConfigModule
         VoiceSettings settings)
     {
         var redisConnection = settings.RedisConnectionString;
+        if (settings.Metrics.Url.Length == 0)
+        {
+            // The metrics feed's alone: topics are minted by the agent.
+            services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection));
+        }
 
         services
             .AddSingleton(new SatelliteRegistry(settings.Satellites))
-            // The metrics feed's alone: topics are minted by the agent.
-            .AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection))
-            .AddMetricsPublishing("mcp-channel-voice")
+            .AddMetricsPublishing("mcp-channel-voice", settings.Metrics)
             .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())

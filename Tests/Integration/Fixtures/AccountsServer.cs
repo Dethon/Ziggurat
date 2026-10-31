@@ -163,6 +163,22 @@ public sealed partial class AccountsServer : IAsyncDisposable
         return household.Id;
     }
 
+    // A second household and a person in it, which nothing but the Tenants phase's admin area makes:
+    // written straight into the store, as the home's member above is.
+    public async Task<(string TenantId, string UserId)> SeedHouseholdAsync(string name, string person)
+    {
+        await using var db = await Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        var household = new Tenant { Id = Tokens.NewId(), Name = name, CreatedAt = Clock.GetUtcNow() };
+        var user = new User
+        {
+            Id = Tokens.NewId(), TenantId = household.Id, DisplayName = person, Role = Role.Owner, CreatedAt = Clock.GetUtcNow()
+        };
+        db.Tenants.Add(household);
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        return (household.Id, user.Id);
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _app.StopAsync();

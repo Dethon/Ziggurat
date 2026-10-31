@@ -88,9 +88,10 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   reads the Host header the proxy passes on as the browser sent it — and answers 404 for anything
   outside `/browse` on the pages listener and for `/browse` on the other. It is a startup filter
   inserted first, ahead of the gate, so `/mcp` on the pages listener is absent rather than asking
-  for a credential. The Caddyfile names the pages port alone (`DeploymentConformanceTests` reads
-  it off the server's `appsettings.json`), and `WebIdentityServerHarness` opens both listeners, so
-  the handoff tests reach the pages the way the proxy does.
+  for a credential. The proxy reaches the pages through the relay alone, which opens its streams
+  to the pages listener by the `pages` tag the server registers for it (`.claude/rules/tunnel.md`,
+  "Browse pages"); no route names the server (`DeploymentConformanceTests`). `WebIdentityServerHarness`
+  opens both listeners, so the handoff tests reach the pages on the listener the tunnel lands on.
 - **`AddToolServer(settings, errorResult?)`** is the host plus the call-tool error filter, for the
   nine servers that offer the agent things to call. Being a tool server and being a channel server
   are independent, so a dual-role server calls `AddToolServer` and then `AddChannelServer`.
