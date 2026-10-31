@@ -1,4 +1,8 @@
+using System.Collections.Concurrent;
 using System.Net;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Accounts.Commands;
 using Domain.Channels;
 using Domain.Contracts;
@@ -11,16 +15,20 @@ using Domain.Security.Signing;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients.Accounts;
 using Mcp.Hosting;
+using McpServerIdealista.Modules;
 using McpServerScheduling.Modules;
 using McpServerScheduling.Services;
 using McpServerScheduling.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using IdealistaSettings = McpServerIdealista.Settings;
 
 namespace Tests.Integration.McpServers;
 
@@ -30,6 +38,7 @@ namespace Tests.Integration.McpServers;
 public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture>
 {
     private const string Scheduling = "mcp-scheduling";
+    private const string Idealista = "mcp-idealista";
 
     private const string Tokyo = """{ "name": "Casa", "timeZone": "Asia/Tokyo" }""";
 
@@ -102,6 +111,68 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
             "the saved zone to reach the scheduling server");
     }
 
+    [Fact]
+    public async Task APropertySearch_IsMadeWithTheCallingHouseholdsKeys()
+    {
+        await using var accounts = await StartAccountsAsync();
+        var (casa, ana) = await accounts.SeedHouseholdAsync("Casa", "Ana");
+        var (piso, luis) = await accounts.SeedHouseholdAsync("Piso", "Luis");
+        await SetAsync(accounts, casa, HouseholdSections.Keys, Keys("casa-key", "casa-secret"));
+        await SetAsync(accounts, piso, HouseholdSections.Keys, Keys("piso-key", "piso-secret"));
+        await using var api = await IdealistaApi.StartAsync();
+        await using var idealista = await StartIdealistaAsync(accounts, api);
+
+        var forCasa = await idealista.SearchAsync(casa, ana);
+        var forPiso = await idealista.SearchAsync(piso, luis);
+
+        forCasa.IsError.ShouldNotBe(true);
+        forPiso.IsError.ShouldNotBe(true);
+        api.SignedInWith.ShouldBe([("casa-key", "casa-secret"), ("piso-key", "piso-secret")]);
+    }
+
+    // Idealista searches on the household's own account, and the operator's is no household's.
+    [Fact]
+    public async Task AHouseholdWithNoKeys_IsToldSoAndNothingIsSearched()
+    {
+        await using var accounts = await StartAccountsAsync();
+        var (household, person) = await accounts.SeedHouseholdAsync("Casa", "Ana");
+        await using var api = await IdealistaApi.StartAsync();
+        await using var idealista = await StartIdealistaAsync(accounts, api);
+
+        var result = await idealista.SearchAsync(household, person);
+
+        result.IsError.ShouldBe(true);
+        Text(result).ShouldContain("Idealista key");
+        api.SignedInWith.ShouldBeEmpty();
+    }
+
+    // Idealista's server has no Redis to hear a save on, so a saved key reaches it when what it kept
+    // runs out: a lifetime of a second here, a minute on the deployment.
+    [Fact]
+    public async Task SavedKeys_ReachTheIdealistaServerWithoutARestart()
+    {
+        await using var accounts = await StartAccountsAsync();
+        var (household, person) = await accounts.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(accounts, household, HouseholdSections.Keys, Keys("old-key", "old-secret"));
+        await using var api = await IdealistaApi.StartAsync();
+        await using var idealista = await StartIdealistaAsync(accounts, api, lifetime: TimeSpan.FromSeconds(1));
+        await idealista.SearchAsync(household, person);
+
+        await SetAsync(accounts, household, HouseholdSections.Keys, Keys("new-key", "new-secret"));
+
+        await Eventually.Until(async () =>
+        {
+            await idealista.SearchAsync(household, person);
+            return api.SignedInWith.Contains(("new-key", "new-secret"));
+        }, "the saved keys to reach the Idealista server");
+    }
+
+    private static string Keys(string key, string secret) =>
+        $$"""{ "idealista": { "apiKey": "{{key}}", "secret": "{{secret}}" } }""";
+
+    private static string Text(CallToolResult result) =>
+        string.Join("", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+
     private static async Task<string> StatusAsync(IFileSystemBackend backend, string schedule) =>
         (await backend.ReadAsync($"{schedule}/status.json", null, null, CancellationToken.None))
         .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
@@ -109,9 +180,29 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
     private Task<AccountsServer> StartAccountsAsync() =>
         AccountsServer.StartAsync(s => s with
         {
-            Callers = new Dictionary<string, string> { [Scheduling] = McpTestSecret.Value },
+            Callers = new Dictionary<string, string> { [Scheduling] = McpTestSecret.Value, [Idealista] = McpTestSecret.Value },
             Redis = new() { ConnectionString = redis.ConnectionString }
         });
+
+    private static async Task<ServerHost> StartIdealistaAsync(AccountsServer accounts, IdealistaApi api, TimeSpan? lifetime = null)
+    {
+        var port = TestPort.GetAvailable();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+        builder.Services.ConfigureMcp(new IdealistaSettings.McpSettings
+        {
+            Idealista = new IdealistaSettings.IdealistaConfiguration { ApiUrl = api.Address },
+            Mcp = McpTestSecret.Gate with { Audience = Idealista },
+            Accounts = new AccountsClientConfig
+            {
+                BaseUrl = accounts.Address.ToString(), ConfigurationLifetime = lifetime ?? TimeSpan.FromMinutes(10)
+            }
+        });
+        var app = builder.Build();
+        app.MapMcp("/mcp");
+        await app.StartAsync();
+        return new ServerHost(app, port, Idealista);
+    }
 
     private async Task<ServerHost> StartSchedulingAsync(AccountsServer accounts, TimeSpan? lifetime = null)
     {
@@ -167,6 +258,28 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
             return new Mount(client, new McpFileSystemBackend(client, "schedules", null).As(TurnOf(household, person)));
         }
 
+        // A search for a flat to rent in Madrid, as a person's turn asks it.
+        public async Task<CallToolResult> SearchAsync(string household, string person)
+        {
+            await using var client = await ConnectAsync();
+            return await client.CallToolAsync(new CallToolRequestParams
+            {
+                Name = "property_search",
+                Arguments = new Dictionary<string, JsonElement>
+                {
+                    ["country"] = JsonSerializer.SerializeToElement("es"),
+                    ["operation"] = JsonSerializer.SerializeToElement("rent"),
+                    ["propertyType"] = JsonSerializer.SerializeToElement("homes"),
+                    ["locationId"] = JsonSerializer.SerializeToElement("0-EU-ES-28")
+                },
+                Meta = new JsonObject
+                {
+                    [ChannelProtocol.ConversationContextMetaKey] =
+                        JsonSerializer.SerializeToNode(TurnOf(household, person), ChannelProtocol.SerializerOptions)
+                }
+            });
+        }
+
         // One tick of the server's own dispatcher with the agent listening, as the agent's channel
         // connection drains what it fired.
         public async Task<IReadOnlyList<ChannelMessageNotification>> FireDueAsync()
@@ -178,6 +291,50 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
                 .DispatchDueAsync(CancellationToken.None);
             return (await inbox.ReceiveAsync(agent, TimeSpan.Zero, CancellationToken.None))
                 .Where(item => item.Kind == ChannelInboxItemKind.Message).Select(item => item.Message!).ToList();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+            TestPort.Release(port);
+        }
+    }
+
+    // Idealista's API as far as a search needs it: a token for whatever key and secret sign in, and an
+    // empty page of results. It keeps which keys signed in.
+    private sealed class IdealistaApi(WebApplication app, int port) : IAsyncDisposable
+    {
+        public string Address => $"http://localhost:{port}/";
+
+        public IReadOnlyList<(string Key, string Secret)> SignedInWith =>
+            [.. app.Services.GetRequiredService<ConcurrentQueue<(string, string)>>()];
+
+        public static async Task<IdealistaApi> StartAsync()
+        {
+            var port = TestPort.GetAvailable();
+            var builder = WebApplication.CreateBuilder();
+            builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
+            builder.Services.AddSingleton(new ConcurrentQueue<(string, string)>());
+            var app = builder.Build();
+            app.MapPost("/oauth/token", (HttpRequest request, ConcurrentQueue<(string, string)> signedIn) =>
+            {
+                var basic = Encoding.UTF8.GetString(Convert.FromBase64String(
+                    request.Headers.Authorization.ToString()["Basic ".Length..])).Split(':', 2);
+                signedIn.Enqueue((basic[0], basic[1]));
+                return Results.Json(new { access_token = $"token-{basic[0]}", token_type = "bearer", expires_in = 3600 });
+            });
+            app.MapPost("/3.5/es/search", () => Results.Json(new
+            {
+                actualPage = 1,
+                itemsPerPage = 20,
+                total = 0,
+                totalPages = 0,
+                paginable = false,
+                elementList = Array.Empty<object>()
+            }));
+            await app.StartAsync();
+            return new IdealistaApi(app, port);
         }
 
         public async ValueTask DisposeAsync()
