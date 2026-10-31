@@ -48,17 +48,9 @@ public class SendReplyToolTests
             ["office-01"] = new() { Identity = "household", Room = "Office" }
         });
 
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-office");
-                var topic = new TopicMetadata("topic-office", identity.ChatId, identity.ThreadId, "mycroft",
-                    "household @ Office", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
+        var factory = new FakeTopicMinter();
         _manager = new VoiceConversationManager(
-            factory.Object, accumulator, clock,
+            factory, accumulator, clock,
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
 
         _services = new ServiceCollection()
@@ -96,7 +88,7 @@ public class SendReplyToolTests
         var session = new SatelliteSession(
             "office-01", new SatelliteConfig { Identity = "household", Room = "Office" });
         _sessions.Register(session);
-        var convId = await _manager.GetOrCreateAsync(session, "mycroft", "hola", CancellationToken.None);
+        var convId = await _manager.GetOrCreateAsync(session, "mycroft", CancellationToken.None);
         _sessions.Unregister("office-01");   // the reboot window opens
 
         var result = await SendReplyTool.McpRun(
@@ -127,16 +119,15 @@ public class SendReplyToolTests
         var session = new SatelliteSession(
             "office-01", new SatelliteConfig { Identity = "household", Room = "Office" });
         _sessions.Register(session);
-        var convId = await _manager.GetOrCreateAsync(session, "mycroft", "hola", CancellationToken.None);
+        var convId = await _manager.GetOrCreateAsync(session, "mycroft", CancellationToken.None);
         _sessions.Unregister("office-01");   // the satellite drops off
 
         // The download alert announces into the conversation and, seeing no live session, binds.
-        await CreateConversationTool.McpRun(
-            "mycroft", string.Empty, "fran", _services, "[download-complete] film.mkv", "office-01", convId);
+        CreateConversationTool.McpRun(_services, "office-01", convId);
 
         _clock.Advance(TimeSpan.FromMinutes(2));
         _sessions.Register(session);   // reconnected, and the user speaks into the same conversation
-        await _manager.GetOrCreateAsync(session, "mycroft", "qué hora es", CancellationToken.None);
+        await _manager.GetOrCreateAsync(session, "mycroft", CancellationToken.None);
         await SendReplyTool.McpRun(convId, "Son las cinco.", ReplyContentType.Text, false, "m-1", _services);
 
         // The binding's 5-minute expiry falls inside the turn (the conversation's own timer was
@@ -156,7 +147,7 @@ public class SendReplyToolTests
         var session = new SatelliteSession(
             "office-01", new SatelliteConfig { Identity = "household", Room = "Office" });
         _sessions.Register(session);
-        var convId = await _manager.GetOrCreateAsync(session, "mycroft", "hola", CancellationToken.None);
+        var convId = await _manager.GetOrCreateAsync(session, "mycroft", CancellationToken.None);
         _sessions.Unregister("office-01");
 
         await SendReplyTool.McpRun(convId, "Recordatorio.", ReplyContentType.Text, false, "m-1", _services);

@@ -26,6 +26,7 @@ app.MapAgents(settings.AgentApi.SharedSecret);
 app.MapOutposts(settings.Outposts.SharedSecret);
 app.MapVfsBridge();
 app.MapAgentKeys();
+app.MapTopicMinting();
 app.MapTunnel();
 
 await app.RunAsync();

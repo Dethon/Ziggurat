@@ -123,17 +123,9 @@ public class WyomingSatelliteHostTests
 
         var emitter = new ChannelInboxProbe("voice", DeliveryPolicy.Broadcast);
         var publisher = new Mock<IMetricsPublisher>();
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-x");
-                var topic = new TopicMetadata("topic-x", identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
+        var factory = new FakeTopicMinter();
         var manager = new VoiceConversationManager(
-            factory.Object, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
+            factory, new ReplyTextAccumulator(), new FakeTimeProvider(DateTimeOffset.UtcNow),
             TimeSpan.FromMinutes(5), NullLogger<VoiceConversationManager>.Instance);
         var dispatcher = new TranscriptDispatcher(
             emitter.Emitter, new FakeAccountResolver(), publisher.Object, manager, new LocalCommandDispatcher(new VoiceCommandMatcher(new CommandSettings()), [new SpeakerVolumeCommandHandler()]), new ReplyTextAccumulator(), -1.0, 0.6, -1.4, 2000, TimeProvider.System, NullLogger<TranscriptDispatcher>.Instance);

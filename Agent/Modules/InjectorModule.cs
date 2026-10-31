@@ -18,6 +18,7 @@ using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Channels;
+using Infrastructure.Conversations;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
@@ -260,6 +261,10 @@ public static class InjectorModule
                     sp.GetRequiredService<IConnectionMultiplexer>(),
                     retention,
                     sp.GetRequiredService<TimeProvider>()))
+                // The topics the agent mints itself: a voice conversation's (TopicMintingApi), and a
+                // fire's that only an attach-only channel delivers, which nothing else anchors.
+                .AddSingleton<IConversationFactory>(sp => new ConversationFactory(
+                    sp.GetRequiredService<IThreadStateStore>(), sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
                     sp.GetRequiredService<IConnectionMultiplexer>()))
                 // Outside this process for the same reason an outpost registration is: recycling the
