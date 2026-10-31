@@ -52,7 +52,9 @@ public static class TunnelModule
                     sp,
                     sp.GetRequiredService<ILoggerFactory>()))
                 .AddHostedService(sp => sp.GetRequiredService<BackCallGateway>())
-                .AddSingleton<IOwnServers>(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
+                .AddSingleton(sp => new RelayedOwnServers(sp.GetRequiredService<TunnelRegistry>()))
+                .AddSingleton<IOwnServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
+                .AddSingleton<IOwnChannelServers>(sp => sp.GetRequiredService<RelayedOwnServers>())
                 .AddHostedService<TunnelRevocations>();
         }
     }
