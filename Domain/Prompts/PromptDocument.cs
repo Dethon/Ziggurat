@@ -4,9 +4,10 @@ using System.Text.RegularExpressions;
 namespace Domain.Prompts;
 
 // A prompt's words as a text document: a small header saying what the words are for, and the
-// words, with named holes for what only the host knows. The header is the section's declaration —
-// purpose, place, budget, audience, conflicts and claims — so a claim sits beside the prose that
-// teaches it (ADR 0031) in the one file an edit of that prose touches.
+// words, with named holes for what only the host knows. The header is the declaration — a
+// section's purpose, place, budget, audience, conflicts and claims, or a skill's advertisement,
+// budgets, server and claims — so a claim sits beside the prose that teaches it (ADR 0031) in the
+// one file an edit of that prose touches.
 //
 // The format is this repo's, not YAML: a header line is `key: value`, split at the first colon,
 // because a purpose or a claim is a sentence and sentences have colons in them. `#` starts a
@@ -32,6 +33,14 @@ public sealed partial record PromptDocument
     [
         "name", "purpose", "priority", "budget", "served-by", "audience-agents", "audience-channels",
         "governs", "beats", "selectable", PlaceholdersKey, ClaimsKey
+    ];
+
+    // What a skill's header may say: the advertisement and what it and the body may cost, the server
+    // that ships it, and the files a preload reads beside it.
+    private static readonly HashSet<string> _skillKeys =
+    [
+        "name", "description", "description-budget", "body-budget", "served-by", "preload-reads",
+        PlaceholdersKey, ClaimsKey
     ];
 
     // Where the document came from, for every error it raises: a file name in the repo, or a
@@ -98,11 +107,7 @@ public sealed partial record PromptDocument
     // The header read as a section's declaration.
     public PromptDeclaration AsSection()
     {
-        var unknown = Header.Keys.Where(key => !_sectionKeys.Contains(key)).ToList();
-        if (unknown.Count > 0)
-        {
-            throw new FormatException($"{Source}: a section's header has no '{string.Join("', '", unknown)}'");
-        }
+        Known("section", _sectionKeys);
 
         var rules = List(Value("governs")).ToList();
         var unruled = rules.Where(rule => !PromptRules.All.Contains(rule)).ToList();
@@ -125,9 +130,7 @@ public sealed partial record PromptDocument
             Priority = Enum.GetNames<PromptPriority>().Contains(Required("priority"), StringComparer.Ordinal)
                 ? Enum.Parse<PromptPriority>(Required("priority"))
                 : throw new FormatException($"{Source}: '{Required("priority")}' is not a PromptPriority band"),
-            TokenBudget = int.TryParse(Required("budget"), NumberStyles.None, CultureInfo.InvariantCulture, out var budget)
-                ? budget
-                : throw new FormatException($"{Source}: the budget '{Required("budget")}' is not a whole number of tokens"),
+            TokenBudget = Tokens("budget"),
             ServedBy = Value("served-by"),
             Audience = new PromptAudience
             {
@@ -139,10 +142,42 @@ public sealed partial record PromptDocument
         };
     }
 
+    // The header read as a skill's declaration (docs/adr/0039). A skill always names its server: it
+    // teaches that server's tools and is served beside them.
+    public SkillDeclaration AsSkill()
+    {
+        Known("skill", _skillKeys);
+
+        return new SkillDeclaration
+        {
+            Name = Name,
+            Description = Required("description"),
+            DescriptionBudget = Tokens("description-budget"),
+            BodyBudget = Tokens("body-budget"),
+            ServedBy = Required("served-by"),
+            Claims = Claims,
+            PreloadReads = [.. List(Value("preload-reads"))]
+        };
+    }
+
     public bool IsSelectable => Value("selectable") == "true";
+
+    private void Known(string kind, HashSet<string> keys)
+    {
+        var unknown = Header.Keys.Where(key => !keys.Contains(key)).ToList();
+        if (unknown.Count > 0)
+        {
+            throw new FormatException($"{Source}: a {kind}'s header has no '{string.Join("', '", unknown)}'");
+        }
+    }
 
     private string Required(string key) =>
         Value(key) ?? throw new FormatException($"{Source}: the header has no '{key}'");
+
+    private int Tokens(string key) =>
+        int.TryParse(Required(key), NumberStyles.None, CultureInfo.InvariantCulture, out var tokens)
+            ? tokens
+            : throw new FormatException($"{Source}: the {key} '{Required(key)}' is not a whole number of tokens");
 
     private static (Dictionary<string, string> Header, List<PromptClaim> Claims) ReadHeader(
         string source, string[] lines)

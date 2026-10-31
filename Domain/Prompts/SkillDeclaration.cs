@@ -68,6 +68,6 @@ public sealed record PromptSkill(SkillDeclaration Declaration, string Descriptio
         DescriptionTokens > Declaration.DescriptionBudget || BodyTokens > Declaration.BodyBudget;
 }
 
-// What a server ships for one skill, built from the constants beside its declaration. The hosting
+// What a server ships for one skill, built from its document (Domain/Prompts/Skills). The hosting
 // helper turns it into the index entry and the body resource, so no server hand-writes either.
 public sealed record SkillText(string Name, string Description, string Body);
