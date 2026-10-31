@@ -36,6 +36,11 @@ public sealed class BotRegistry
     public IReadOnlyList<(string AgentId, ITelegramBotClient Client)> GetAllBots() =>
         _botsByAgent.Select(kv => (kv.Key, kv.Value)).ToList();
 
+    // Every bot, the agent's own first: who speaks to a person unprompted, when any bot may. A bot can
+    // write first only in a chat the person opened with it, so the rest are there to be tried after.
+    public IReadOnlyList<ITelegramBotClient> BotsPreferring(string? agentId) =>
+        [.. _botsByAgent.OrderBy(kv => kv.Key == agentId ? 0 : 1).Select(kv => kv.Value)];
+
     public void RegisterChatAgent(long chatId, string agentId) =>
         _chatToAgent[chatId] = agentId;
 }

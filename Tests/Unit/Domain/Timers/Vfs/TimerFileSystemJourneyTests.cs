@@ -1,8 +1,10 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
 using Domain.Exceptions;
+using Domain.Security.Signing;
 using Domain.Tools;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Timers;
@@ -67,13 +69,83 @@ public class TimerFileSystemJourneyTests
             throw new VoiceHubUnavailableException("connection refused");
     }
 
-    private static (TimerFileSystem Fs, InMemoryTimerStore Store, FakeTimeProvider Time, FakeDismisser Dismisser) Build()
+    private sealed class EmptyCatalog : ISatelliteCatalog
+    {
+        public Task<IReadOnlyList<SatelliteDescriptor>> GetAllAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<SatelliteDescriptor>>([]);
+
+        public Task<IReadOnlyList<string>> ResolveAsync(AnnounceTarget target, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
+    }
+
+    private sealed class NoAnnouncer : IInsistentAnnouncer
+    {
+        public Task<AnnounceResponse> StartAsync(AnnounceRequest request, CancellationToken ct) =>
+            throw new InvalidOperationException("the mount never rings; the fire loop does");
+    }
+
+    // Each household's own voice server, as the relay reaches it by naming the household; one not
+    // listed is a household whose voice server is not connected.
+    private sealed class FakeVoices : IHouseholdVoices
+    {
+        public Dictionary<string, (IAlertDismisser Dismisser, ISatelliteCatalog Satellites)> Households { get; } = [];
+
+        public HouseholdVoice For(string tenantId) =>
+            Households.TryGetValue(tenantId, out var voice)
+                ? new HouseholdVoice(new NoAnnouncer(), voice.Dismisser, voice.Satellites)
+                : new HouseholdVoice(new NoAnnouncer(), new UnreachableDismisser(), new UnreachableCatalog());
+    }
+
+    // What rings on people's channels, by household, as the timers server holds it.
+    private sealed class FakeChannelAlerts : IChannelAlerts
+    {
+        public Dictionary<string, List<DismissedAlert>> Ringing { get; } = [];
+
+        public Task<bool> RingAsync(ArmedTimer timer, CancellationToken ct) => Task.FromResult(true);
+
+        public Task<IReadOnlyList<DismissedAlert>> StopAllAsync(string tenantId, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<DismissedAlert>>(Ringing.Remove(tenantId, out var ringing) ? ringing : []);
+    }
+
+    private const string Home = "0a1b";
+    private const string Neighbours = "0c2d";
+    private static readonly Account _fran = new(Home, "f1");
+    private static readonly Account _ana = new(Neighbours, "a1");
+
+    // A call as the registrar hands it to the mount: the token's identity and the token's principal.
+    private static FileSystemCaller PersonOf(Account account) =>
+        new(new ConversationContext("jonas", "conv-1", account.UserId, new ReplyTarget("signalr", "conv-1"),
+            Principal: new Principal("signalr", account.UserId, account),
+            Identity: IdentityClaims.Person(account.UserId, account.TenantId, "signalr", [])), null);
+
+    private static FileSystemCaller GuestOf(string household) =>
+        new(new ConversationContext("nabu", "conv-2", "household", new ReplyTarget("voice", "conv-2"),
+            Principal: new Principal("voice", IdentityClaims.GuestSubject),
+            Identity: IdentityClaims.Guest(household, "voice")), null);
+
+    private sealed record Mount(
+        TimerFileSystem Server, InMemoryTimerStore Store, FakeTimeProvider Time, FakeVoices Voices, FakeChannelAlerts Alerts)
+    {
+        public TimerFileSystem As(FileSystemCaller caller) => (TimerFileSystem)Server.For(caller);
+    }
+
+    private static Mount BuildMount(TimeSpan? regexMatchTimeout = null)
     {
         var time = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 10, 0, 0, TimeSpan.Zero));
         time.SetLocalTimeZone(_madrid);
         var store = new InMemoryTimerStore();
-        var dismisser = new FakeDismisser();
-        return (new TimerFileSystem(store, time, dismisser, new FakeSatelliteCatalog()), store, time, dismisser);
+        var voices = new FakeVoices();
+        voices.Households[Home] = (new FakeDismisser(), new FakeSatelliteCatalog());
+        voices.Households[Neighbours] = (new FakeDismisser(), new FakeSatelliteCatalog());
+        var alerts = new FakeChannelAlerts();
+        return new Mount(new TimerFileSystem(store, time, voices, alerts, regexMatchTimeout), store, time, voices, alerts);
+    }
+
+    // Fran's view of the mount, which is what every journey below drives unless it says otherwise.
+    private static (TimerFileSystem Fs, InMemoryTimerStore Store, FakeTimeProvider Time, FakeDismisser Dismisser) Build()
+    {
+        var mount = BuildMount();
+        return (mount.As(PersonOf(_fran)), mount.Store, mount.Time, (FakeDismisser)mount.Voices.Households[Home].Dismisser);
     }
 
     private const string PastaSpec = """
@@ -91,7 +163,7 @@ public class TimerFileSystemJourneyTests
         var created = await fs.CreateAsync("/pasta", PastaSpec, false, true, CancellationToken.None);
 
         created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>().Value.FilePath.ShouldEndWith("/pasta/timer.json");
-        (await store.GetAsync("pasta", CancellationToken.None)).ShouldNotBeNull();
+        (await store.GetAsync(Home, "pasta", CancellationToken.None)).ShouldNotBeNull();
     }
 
     [Fact]
@@ -104,7 +176,7 @@ public class TimerFileSystemJourneyTests
 
         var glob = (await fs.GlobAsync("/", "**", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value;
-        glob.Entries.ShouldBe(["/dismiss", "/pasta/", "/pasta/status.json", "/pasta/timer.json"]);
+        glob.Entries.ShouldBe(["/dismiss", "/pasta/", "/pasta/status.json", "/pasta/timer.json", "/satellites.json"]);
         glob.Executables.ShouldBe(["/dismiss"]);
 
         var spec = (await fs.ReadAsync("/pasta/timer.json", null, null, CancellationToken.None))
@@ -164,16 +236,189 @@ public class TimerFileSystemJourneyTests
         result.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
     }
 
+    // With no satellite named, a timer rings on its owner's channels — their chat client and their
+    // Telegram — which is how a household with no satellites has timers at all.
     [Fact]
-    public async Task Create_MissingTarget_IsRejected()
+    public async Task Create_WithNoTarget_ArmsATimerThatRingsOnItsOwnersChannels()
     {
-        var (fs, _, _, _) = Build();
+        var (fs, store, _, _) = Build();
 
         var result = await fs.CreateAsync(
-            "/bad/timer.json", """{"durationSeconds": 60}""", false, true, CancellationToken.None);
+            "/pasta/timer.json", """{"durationSeconds": 60, "text": "pasta is ready"}""", false, true, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        var armed = (await store.GetAsync(Home, "pasta", CancellationToken.None)).ShouldNotBeNull();
+        armed.Target.ShouldBeNull();
+        armed.Owner.ShouldBe(_fran);
+        armed.AgentId.ShouldBe("jonas");
+    }
+
+    // The household's guest has no channels of its own to ring on, so its timer needs a satellite.
+    [Fact]
+    public async Task Create_WithNoTarget_ForTheHouseholdsGuest_IsRefused()
+    {
+        var mount = BuildMount();
+
+        var result = await mount.As(GuestOf(Home)).CreateAsync(
+            "/pasta/timer.json", """{"durationSeconds": 60}""", false, true, CancellationToken.None);
 
         var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        err.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
         err.Error.Message.ShouldContain("target");
+        (await mount.Store.ListAsync(Home, CancellationToken.None)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_ForTheHouseholdsGuest_RingsOnItsHouseholdsSatellite()
+    {
+        var mount = BuildMount();
+
+        var result = await mount.As(GuestOf(Home)).CreateAsync(
+            "/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
+
+        result.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        var armed = (await mount.Store.GetAsync(Home, "pasta", CancellationToken.None)).ShouldNotBeNull();
+        armed.Owner.ShouldBeNull();
+        armed.Target.ShouldNotBeNull().Room.ShouldBe("Kitchen");
+    }
+
+    // A timer is its household's: another household's view does not list it, read it, find it or
+    // cancel it, even with the very same id in its hand.
+    [Fact]
+    public async Task ATimer_IsListedReadAndCancelledOnlyByItsHousehold()
+    {
+        var mount = BuildMount();
+        var fran = mount.As(PersonOf(_fran));
+        var ana = mount.As(PersonOf(_ana));
+        (await fran.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+
+        (await ana.GlobAsync("/", "**", CancellationToken.None)).ShouldBeOfType<FsResult<FsGlobResult>.Ok>()
+            .Value.Entries.ShouldBe(["/dismiss", "/satellites.json"]);
+        (await ana.ReadAsync("/pasta/timer.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
+        (await ana.SearchAsync("pasta", false, null, null, null, 10, 0, VfsTextSearchOutputMode.Content,
+            CancellationToken.None)).ShouldBeOfType<FsResult<FsSearchResult>.Ok>().Value.TotalMatches.ShouldBe(0);
+        (await ana.DeleteAsync("/pasta", CancellationToken.None)).ShouldBeOfType<FsResult<FsRemoveResult>.Err>();
+        (await mount.Store.GetAsync(Home, "pasta", CancellationToken.None)).ShouldNotBeNull();
+    }
+
+    // Ids are the model's to choose, so two households' "pasta" is the ordinary case, not a clash.
+    [Fact]
+    public async Task TwoHouseholds_EachArmATimerOfTheSameId()
+    {
+        var mount = BuildMount();
+        var fran = mount.As(PersonOf(_fran));
+        var ana = mount.As(PersonOf(_ana));
+
+        (await fran.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        (await ana.CreateAsync("/pasta/timer.json", PastaSpec.Replace("300", "600"), false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+
+        (await fran.ReadAsync("/pasta/status.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("\"remainingSeconds\": 300");
+        (await ana.ReadAsync("/pasta/status.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("\"remainingSeconds\": 600");
+    }
+
+    // A call the agent signed for nobody has no household, so there are no timers for it to see or
+    // set: it is refused rather than shown somebody's.
+    [Fact]
+    public async Task ACallActingForNobody_IsRefused()
+    {
+        var mount = BuildMount();
+
+        (await mount.Server.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        (await mount.Server.GlobAsync("/", "**", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        (await mount.Server.ExecAsync("/", "./dismiss", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.PermissionDenied);
+        (await mount.Store.ListAsync(Home, CancellationToken.None)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Exec_Dismiss_SilencesOnlyTheCallersHousehold()
+    {
+        var mount = BuildMount();
+        var homeRinging = (FakeDismisser)mount.Voices.Households[Home].Dismisser;
+        var neighboursRinging = (FakeDismisser)mount.Voices.Households[Neighbours].Dismisser;
+        homeRinging.Ringing.Add(new DismissedAlert("pasta", AnnounceKind.Timer));
+        neighboursRinging.Ringing.Add(new DismissedAlert("tea", AnnounceKind.Timer));
+        mount.Alerts.Ringing[Neighbours] = [new DismissedAlert("bread", AnnounceKind.Timer)];
+
+        var result = (await mount.As(PersonOf(_fran)).ExecAsync("/", "./dismiss", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.Stdout.ShouldContain("timer \"pasta\"");
+        result.Stdout.ShouldNotContain("tea");
+        result.Stdout.ShouldNotContain("bread");
+        neighboursRinging.Ringing.ShouldHaveSingleItem();
+        mount.Alerts.Ringing.ShouldContainKey(Neighbours);
+    }
+
+    // What rings on a person's channels is stopped by the same ./dismiss as a satellite's ring: one
+    // call silences everything the household has ringing, wherever it rings.
+    [Fact]
+    public async Task Exec_Dismiss_StopsWhatTheHouseholdHasRingingOnChannels()
+    {
+        var mount = BuildMount();
+        mount.Alerts.Ringing[Home] = [new DismissedAlert("bread is ready", AnnounceKind.Timer)];
+
+        var result = (await mount.As(PersonOf(_fran)).ExecAsync("/", "./dismiss", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.Stdout.ShouldContain("timer \"bread is ready\"");
+        mount.Alerts.Ringing.ShouldNotContainKey(Home);
+    }
+
+    // A household with no voice server connected may still have timers ringing on its channels, and
+    // a dismiss that stopped them did its whole task.
+    [Fact]
+    public async Task Exec_Dismiss_WithTheVoiceServerOffline_StillStopsWhatRingsOnChannels()
+    {
+        var mount = BuildMount();
+        mount.Voices.Households.Remove(Home);
+        mount.Alerts.Ringing[Home] = [new DismissedAlert("bread is ready", AnnounceKind.Timer)];
+
+        var result = (await mount.As(PersonOf(_fran)).ExecAsync("/", "./dismiss", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        result.ExitCode.ShouldBe(0);
+        result.Stdout.ShouldContain("timer \"bread is ready\"");
+    }
+
+    // Where a timer can ring is the household's own: the satellites its voice server answers for,
+    // read per call, since a prompt is fetched for nobody and shared by every household.
+    [Fact]
+    public async Task Read_Satellites_ListsTheCallersHouseholdsSatellites()
+    {
+        var mount = BuildMount();
+        mount.Voices.Households[Neighbours] = (new FakeDismisser(), new EmptyCatalog());
+
+        var home = (await mount.As(PersonOf(_fran)).ReadAsync("/satellites.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
+        var neighbours = (await mount.As(PersonOf(_ana)).ReadAsync("/satellites.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
+
+        home.ShouldContain("kitchen-01");
+        home.ShouldContain("Kitchen");
+        neighbours.ShouldNotContain("kitchen-01");
+    }
+
+    // A household whose voice server is not connected has nowhere to ring but its people's channels.
+    [Fact]
+    public async Task Read_Satellites_WithTheVoiceServerOffline_ListsNone()
+    {
+        var mount = BuildMount();
+        mount.Voices.Households.Remove(Neighbours);
+
+        var content = (await mount.As(PersonOf(_ana)).ReadAsync("/satellites.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
+
+        content.ShouldNotContain("kitchen-01");
+        content.ShouldContain("not connected");
     }
 
     [Fact]
@@ -193,7 +438,7 @@ public class TimerFileSystemJourneyTests
         err.Error.ErrorCode.ShouldBe(ToolError.Codes.NotFound);
         err.Error.Message.ShouldContain("kitchen-01");
         err.Error.Message.ShouldContain("Kitchen");
-        (await store.ListAsync()).ShouldBeEmpty();
+        (await store.ListAsync(Home)).ShouldBeEmpty();
     }
 
     [Fact]
@@ -228,14 +473,15 @@ public class TimerFileSystemJourneyTests
         var err = result.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
         err.Error.ErrorCode.ShouldBe(ToolError.Codes.InvalidArgument);
         err.Error.Message.ShouldContain("text");
-        (await store.ListAsync()).ShouldBeEmpty();
+        (await store.ListAsync(Home)).ShouldBeEmpty();
     }
 
     [Fact]
     public async Task Create_HubUnreachable_ReturnsRetryableUnavailableAndDoesNotArm()
     {
-        var store = new InMemoryTimerStore();
-        var fs = new TimerFileSystem(store, new FakeTimeProvider(), new FakeDismisser(), new UnreachableCatalog());
+        var mount = BuildMount();
+        mount.Voices.Households[Home] = (new FakeDismisser(), new UnreachableCatalog());
+        var (fs, store) = (mount.As(PersonOf(_fran)), mount.Store);
 
         var result = await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
 
@@ -246,14 +492,15 @@ public class TimerFileSystemJourneyTests
         err.Error.Retryable.ShouldBeTrue();
         err.Error.Message.ShouldContain("voice hub");
         err.Error.Message.ShouldContain("not armed");
-        (await store.ListAsync()).ShouldBeEmpty();
+        (await store.ListAsync(Home)).ShouldBeEmpty();
     }
 
     [Fact]
     public async Task Exec_Dismiss_HubUnreachable_ReturnsRetryableUnavailable()
     {
-        var fs = new TimerFileSystem(
-            new InMemoryTimerStore(), new FakeTimeProvider(), new UnreachableDismisser(), new FakeSatelliteCatalog());
+        var mount = BuildMount();
+        mount.Voices.Households[Home] = (new UnreachableDismisser(), new FakeSatelliteCatalog());
+        var fs = mount.As(PersonOf(_fran));
 
         var result = await fs.ExecAsync("/", "./dismiss", null, CancellationToken.None);
 
@@ -457,7 +704,7 @@ public class TimerFileSystemJourneyTests
             .ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error.Message.ShouldContain("executable-only");
         (await fs.DeleteAsync("/dismiss", CancellationToken.None))
             .ShouldBeOfType<FsResult<FsRemoveResult>.Err>().Error.Message.ShouldContain("executable-only");
-        (await store.ListAsync(CancellationToken.None)).ShouldBeEmpty();
+        (await store.ListAsync(Home, CancellationToken.None)).ShouldBeEmpty();
     }
 
     [Fact]
@@ -509,11 +756,7 @@ public class TimerFileSystemJourneyTests
     [Fact]
     public async Task Search_PathologicalRegex_ReturnsTimeoutEnvelope()
     {
-        var time = new FakeTimeProvider(new DateTimeOffset(2026, 7, 2, 10, 0, 0, TimeSpan.Zero));
-        time.SetLocalTimeZone(_madrid);
-        var fs = new TimerFileSystem(
-            new InMemoryTimerStore(), time, new FakeDismisser(), new FakeSatelliteCatalog(),
-            regexMatchTimeout: TimeSpan.FromMilliseconds(1));
+        var fs = BuildMount(regexMatchTimeout: TimeSpan.FromMilliseconds(1)).As(PersonOf(_fran));
         var spec = PastaSpec.Replace("pasta is ready", new string('a', 60), StringComparison.Ordinal);
         await fs.CreateAsync("/pasta/timer.json", spec, false, true, CancellationToken.None);
 
