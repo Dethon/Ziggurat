@@ -10,3 +10,4 @@
 - [ ] `/agent` lists and switches among the household's agents for that chat
 - [ ] The home's jack and jonas bots keep working from its configuration
 - [ ] An unlinked person on the shared bot can only link
+- [ ] A household-migration step seeds the home's jack and jonas bots into its keys section

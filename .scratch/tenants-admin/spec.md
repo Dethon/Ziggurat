@@ -186,9 +186,11 @@ Five seams:
 3. **The dashboard (existing E2E).** The operator creates a household, gets the owner's link,
    suspends it; pages filter by household. Prior art: the dashboard E2E tests.
 4. **Suspension (existing agent and channel seams).** A suspended household's sessions, turns, fires
-   and tunnels refused, with a message where a person waits.
+   and tunnels refused, with a message where a person waits. Prior art: `SessionCheckTests`,
+   `ChatMonitorAssertionTests`, `ChatMonitorDelegationTests`, and 4a's tunnel round-trip tests.
 5. **The smoke tier (existing).** A fresh household onboarded end to end on a real stack: created,
-   owner signed in, key set (a probe against a stub), agent named, a reply.
+   owner signed in, key set (a probe against a stub), agent named, a reply. Prior art:
+   `StackSmokeTests`.
 
 ## Out of Scope
 
@@ -200,8 +202,10 @@ Five seams:
 
 ## Further Notes
 
-- Phase 4c of the multi-tenant plan (`.scratch/multi-tenant/plan.md`, "Tenants decisions"), after
-  4a (`.scratch/tenants-tunnel/`) and 4b (`.scratch/tenants-config/`). It branches from
-  `web-identity` and merges back into it; master then takes every phase together.
-- The admin pages follow the chat client's UI rules (`.claude/rules/blazor-client-ui.md`): icons are
-  inline SVG.
+- Phase 4c of the multi-tenant plan ("Tenants decisions"), after 4a (the tunnel) and 4b (household
+  configuration). It branches from `web-identity` and merges back into it; master then takes every
+  phase together. The glossary's Households section names its terms.
+- ADRs it touches: *The two browser clients stay separate* (0008) is kept — the owner's admin area
+  is part of the chat client and the operator's household list part of the dashboard; neither
+  borrows from the other.
+- The admin pages follow the chat client's UI rules: icons are drawn inline, never typed.

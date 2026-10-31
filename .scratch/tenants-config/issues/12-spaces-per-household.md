@@ -10,3 +10,4 @@
 - [ ] The hub refuses a space of another household
 - [ ] A space opens on its default agent
 - [ ] A new household has one default space
+- [ ] A household-migration step seeds the home household's spaces from the chat client's list

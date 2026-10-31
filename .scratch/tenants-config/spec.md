@@ -214,6 +214,10 @@ does not. Lemonade's use is counted per household.
   the deployment, agents from today's definitions, spaces from the chat client's list, the jack and
   jonas bots) and re-key every shared store into the home household. Like the existing steps they
   move only what is still unmoved, so a rerun changes nothing, and `--dry-run` writes nothing.
+- Each change that moves or re-keys data brings its own migration step, so no change leaves the
+  home household's existing data unreachable: the agents and settings with the per-household
+  agents, each store with its re-keying, the roll-ups with the per-household metrics, the spaces and
+  the bots with theirs. A final end-to-end run over a copy of real data proves them together.
 
 ## Testing Decisions
 
@@ -238,9 +242,9 @@ Seven seams:
    and `/agent`, a timer alert on a person's channels with dismiss everywhere, spaces per household in
    the hub. Prior art: `TelegramBotServiceTests`, the hub pipeline tests.
 6. **The household migration (existing).** Against seeded stores: shared stores re-keyed, the home
-   configuration seeded, a rerun changing nothing.
+   configuration seeded, a rerun changing nothing. Prior art: `HouseholdMigrationCommandTests`.
 7. **The smoke tier (existing).** On a real stack, a reply from the home household's agent paid by
-   its key and a household-scoped store.
+   its key and a household-scoped store. Prior art: `StackSmokeTests`.
 
 ## Out of Scope
 
@@ -252,7 +256,19 @@ Seven seams:
 
 ## Further Notes
 
-- Phase 4b of the multi-tenant plan (`.scratch/multi-tenant/plan.md`, "Tenants decisions"), after
-  4a (`.scratch/tenants-tunnel/`). It branches from `web-identity` and merges back into it.
+- Phase 4b of the multi-tenant plan ("Tenants decisions"), after 4a (the tunnel). It branches from
+  `web-identity` and merges back into it. The glossary's Households section names its terms:
+  household, household configuration, shared server, agent template.
+- ADRs it touches:
+  - *A prompt claim is declared beside its prose* (0031): kept; a document's claims sit in its own
+    header, beside its prose.
+  - *A skill is loaded by the model and shipped by the server whose tools it teaches* (0039): kept;
+    servers ship their skills as documents.
+  - *Behaviour is evaluated against a real model* (0030): kept; the agents it evaluates are the
+    eval's own copies, not any household's.
+  - *Recall embeds locally with no cross-provider fallback* (0019): kept; embeddings stay on the
+    shared Lemonade and are counted per household.
+  - *The speech typist talks to Lemonade directly* (0026): kept; its use does not pass through the
+    stack and is not counted.
 - Deploying it needs the master key in `.env` for the accounts service and one run of the household
   migration's new steps.

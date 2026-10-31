@@ -9,4 +9,4 @@
 - [ ] An outpost mounts, jails and executes through its tunnel, and is gone when the tunnel closes
 - [ ] An outpost refuses an unsigned call
 - [ ] The outposts' shared secret is gone from compose and `.env` (conformance)
-- [ ] The outpost rules and docs describe the tunnel
+- [ ] The outpost rules, docs and the glossary's outpost entries describe the tunnel
