@@ -35,6 +35,16 @@ public record ChannelAlertStoppedNotification
     public required string AlertId { get; init; }
 }
 
+// What a channel's server raised about an alert, as the agent reads it off the channel: one to
+// ring, or one it stopped.
+[PublicAPI]
+public abstract record AlertSignal
+{
+    public sealed record Ring(ChannelAlertNotification Alert) : AlertSignal;
+
+    public sealed record Stop(string AlertId) : AlertSignal;
+}
+
 // An alert offered to its person on a channel. Answered "dismissed" when they dismissed it there;
 // "no_answer" when it could not be shown, or was settled or called off before they did.
 [PublicAPI]

@@ -392,7 +392,13 @@ public sealed class TimerFileSystem(
         }
         catch (VoiceHubUnavailableException) when (onChannels.Count == 0)
         {
-            return HubUnavailable<FsExecResult>("nothing was dismissed");
+            // A household with no voice server lands here every time nothing rings, and the first
+            // half of the sentence is its whole answer; a household whose server is down learns the
+            // satellites could not be reached.
+            return HubUnavailable<FsExecResult>(
+                "nothing ringing on a satellite was dismissed; nothing is ringing on the household's "
+                + "chat clients or Telegram",
+                "A household with no satellites has nothing more to silence.");
         }
         catch (VoiceHubUnavailableException)
         {
