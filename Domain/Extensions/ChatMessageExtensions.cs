@@ -21,6 +21,7 @@ public static class ChatMessageExtensions
     private const string AttachmentChannelIdKey = "AttachmentChannelId";
     private const string SandboxPathsKey = "SandboxPaths";
     private const string LandingFailuresKey = "LandingFailures";
+    private const string OfflineServersKey = "OfflineServers";
 
     extension(ChatMessage message)
     {
@@ -282,6 +283,17 @@ public static class ChatMessageExtensions
 
         public void SetLandingFailures(IReadOnlyList<string>? fileNames) =>
             SetList(message, LandingFailuresKey, fileNames);
+
+        // The household's servers that were not connected when this turn started, by the names the
+        // agent's definition gives them. Set by the agent on every turn it runs, so a message run
+        // again after one came back loses the name rather than keeping it.
+        public IReadOnlyList<string>? GetOfflineServers() => GetList<string>(message, OfflineServersKey);
+
+        public void SetOfflineServers(IReadOnlyList<string> serverNames)
+        {
+            message.AdditionalProperties?.Remove(OfflineServersKey);
+            SetList(message, OfflineServersKey, serverNames);
+        }
     }
 
     // The three list-valued properties are read and written the same way: the list itself on the
