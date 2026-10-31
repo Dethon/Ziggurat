@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using Accounts.Configuration;
 using Accounts.Store;
 using Domain.DTOs.Household;
 using Microsoft.EntityFrameworkCore;
@@ -122,6 +123,46 @@ public sealed class HouseholdConfigSeedTests
         answered!.Bots.ShouldBe([new HouseholdTelegramBot(home, "jack", "1001:jack-token")]);
     }
 
+    // Keys are credentials, each its own: a household that saved some before the migration ran — the
+    // operator setting Idealista's first — is given the ones it lacks and keeps every one it holds, a
+    // bot by the agent it is bound to. Seeded again, nothing is left to give, and nothing is saved.
+    [Fact]
+    public async Task AKeysSectionTheHouseholdSaved_IsGivenOnlyTheKeysItLacks()
+    {
+        await using var server = await StartAsync();
+        var home = await HomeAsync(server);
+        var store = server.Service<HouseholdConfigStore>();
+        var own = HouseholdSections.KeysSchema.Write(new KeysSection
+        {
+            Idealista = new IdealistaKeys("idealista-own", "secret-own"),
+            TelegramBots = new Dictionary<string, TelegramBotKey> { ["jonas"] = new("2002:jonas-own") }
+        });
+        (await store.SaveAsync(home, HouseholdSections.KeysSchema, own, CancellationToken.None)).ShouldBeOfType<SectionSave.Saved>();
+        var seeded = new JsonObject
+        {
+            ["idealista"] = new JsonObject { ["apiKey"] = "idealista-old", ["secret"] = "secret-old" },
+            ["telegramBots"] = new JsonObject
+            {
+                ["jack"] = new JsonObject { ["token"] = "1001:jack-old" }, ["jonas"] = new JsonObject { ["token"] = "1002:jonas-old" }
+            }
+        };
+
+        var given = await SeedAsync(server, home, seeded, dryRun: false, section: "keys");
+        var stored = await StoredKeysAsync(server);
+        var again = await SeedAsync(server, home, seeded, dryRun: false, section: "keys");
+
+        given.StatusCode.ShouldBe(HttpStatusCode.OK, await given.Content.ReadAsStringAsync());
+        var first = (await given.Content.ReadFromJsonAsync<JsonObject>())!;
+        first["saved"]!.GetValue<bool>().ShouldBeTrue();
+        first["kept"]!.AsArray().Select(k => k!.GetValue<string>()).ShouldBe(["idealista", "telegramBots/jonas"]);
+        var keys = (await store.ReadAsync(home, HouseholdSections.KeysSchema, CancellationToken.None))!;
+        keys.Idealista.ShouldBe(new IdealistaKeys("idealista-own", "secret-own"));
+        keys.TelegramBots.Select(b => (b.Key, b.Value.Token))
+            .ShouldBe([("jack", "1001:jack-old"), ("jonas", "2002:jonas-own")], ignoreOrder: true);
+        (await again.Content.ReadFromJsonAsync<JsonObject>())!["alreadySaved"]!.GetValue<bool>().ShouldBeTrue();
+        (await StoredKeysAsync(server)).ShouldBe(stored);
+    }
+
     // A stack with no master key can seal nothing: a secret seeded there is refused, dry run or not,
     // and says why, rather than failing as a fault.
     [Theory]
@@ -159,6 +200,13 @@ public sealed class HouseholdConfigSeedTests
     {
         await using var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
         return await db.Tenants.Where(t => t.IsHome).Select(t => t.Id).SingleAsync();
+    }
+
+    // The stored keys as they stand, sealed: a save seals every secret afresh, so this changes with any save.
+    private static async Task<string> StoredKeysAsync(AccountsServer server)
+    {
+        await using var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        return (await db.HouseholdSections.SingleAsync(s => s.Section == HouseholdSections.Keys)).Document;
     }
 
     private static async Task<int> SectionsAsync(AccountsServer server)

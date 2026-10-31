@@ -591,16 +591,18 @@ services:
 
   # One-shot, by hand, on the deploy that brings accounts: carries the retired identity map's people
   # into the home household as accounts, and what was filed under their names — memories, remembered
-  # logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids,
-  # and the chat client's spaces into the household's configuration.
+  # logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids;
+  # seeds the home's configuration (settings, agents, features, the chat client's spaces, its keys);
+  # and moves every shared store into the home household.
   # Under a profile, so `up` never starts it. Put the people in ./volumes/household-migration/people.json
   # and HOUSEHOLD_MIGRATION_SECRET in .env (then `docker compose up -d accounts`), and run
-  #   docker compose --profile migrate run --rm -T household-migration \
+  #   ... | docker compose --profile migrate run --rm -T household-migration \
   #     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run] \
-  #     --telegram-bots - < home-bots.json
-  # where home-bots.json, kept outside the volume, is { "jack": { "token": "..." }, "jonas": { ... } },
-  # the two bot tokens .env held before the shared bot, which go into the home's keys section.
-  # Running it again changes nothing. The steps are .scratch/accounts/spec.md's Further Notes.
+  #     --home-keys -
+  # piping in, never from a file in the volume, the home's keys as .env held them before households:
+  # { "telegramBots": { "jack": { "token": BOTS__0 }, "jonas": { "token": BOTS__1 } },
+  #   "idealista": { "apiKey": IDEALISTA__APIKEY, "secret": IDEALISTA__SECRET } }.
+  # Running it again changes nothing. The steps are .scratch/tenants-config/deploy.md.
   household-migration:
     image: household-migration:latest
     profiles: ["migrate"]
