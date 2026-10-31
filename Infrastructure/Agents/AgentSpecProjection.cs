@@ -58,6 +58,9 @@ internal static class AgentSpecProjection
                     address, server => deployment.Names(server) ? credentials.For(server) : null))
             ],
             TenantId = tenantId,
+            // Who pays was settled where the household was read: a household that cannot pay never
+            // reaches here.
+            Key = household?.Payer?.Key,
             TimeZone = household?.TimeZone,
             WithheldServers = household?.WithheldServers ?? [],
             UsesOutposts = definition.UsesOutposts,
@@ -123,6 +126,8 @@ internal static class AgentSpecProjection
             // The parent's household, whose servers the worker reaches as its parent does, and whose
             // day its prompt names.
             TenantId = spawn.TenantId,
+            // And on its key: a worker's calls are its parent household's as much as its parent's are.
+            Key = spawn.Key,
             TimeZone = spawn.TimeZone,
             WithheldServers = spawn.WithheldServers ?? [],
             // Two yeses, and neither alone is enough. The parent's is the ceiling — a subagent

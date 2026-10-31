@@ -26,4 +26,7 @@ internal sealed class EveryHouseholdIn(TimeZoneInfo zone) : IHouseholdConfigurat
 
     public Task<HouseholdAgentNames> AgentNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         throw new NotSupportedException("a shared server's stand-in lists no agents");
+
+    public Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<HouseholdMembers>>([]);
 }

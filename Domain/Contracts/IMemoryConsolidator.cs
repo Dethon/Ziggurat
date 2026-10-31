@@ -2,13 +2,14 @@ using Domain.DTOs;
 
 namespace Domain.Contracts;
 
+// The payer is the household whose person the night's dreaming is for, on its key.
 public interface IMemoryConsolidator
 {
     Task<Consolidation> ConsolidateAsync(
-        IReadOnlyList<MemoryEntry> memories, CancellationToken ct);
+        IReadOnlyList<MemoryEntry> memories, ModelPayer payer, CancellationToken ct);
 
     Task<PersonalityProfile> SynthesizeProfileAsync(
-        string userId, IReadOnlyList<MemoryEntry> memories, CancellationToken ct);
+        string userId, IReadOnlyList<MemoryEntry> memories, ModelPayer payer, CancellationToken ct);
 }
 
 // What one pass decided, and the sets within which it may be applied. A decision's sources have
