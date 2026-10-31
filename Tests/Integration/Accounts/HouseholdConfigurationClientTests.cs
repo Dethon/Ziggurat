@@ -131,6 +131,21 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
         await Should.ThrowAsync<InvalidOperationException>(() => notTheAgent.ForAgentAsync(household, CancellationToken.None));
     }
 
+    // Dreaming's walk: every household and its people, asked with the agent's own token.
+    [Fact]
+    public async Task TheAgent_ReadsEveryHouseholdsPeopleWithItsOwnToken()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Luis");
+        await using var agent = Client(server, Agent, HouseholdConfigurationClient.AgentToken(McpTestSecret.CallTokens));
+        await using var notTheAgent = Client(server, Agent);
+
+        var people = await agent.PeopleAsync(CancellationToken.None);
+
+        people.ShouldContain(h => h.HouseholdId == household && h.People.SequenceEqual(new[] { person }));
+        await Should.ThrowAsync<InvalidOperationException>(() => notTheAgent.PeopleAsync(CancellationToken.None));
+    }
+
     [Fact]
     public async Task AProofOfAnotherHousehold_IsRefusedAndNothingIsKeptUnderTheExpectedOne()
     {

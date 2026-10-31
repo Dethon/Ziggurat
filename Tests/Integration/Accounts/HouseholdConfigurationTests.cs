@@ -395,6 +395,35 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         config.IsHome.ShouldBeTrue();
     }
 
+    // Dreaming has no call behind it: the agent walks every household and its people, each on that
+    // household's key, so it is answered every household at once — the one that has nobody yet too —
+    // proving with its own token that it is the agent, and no other caller is answered at all.
+    [Fact]
+    public async Task TheAgent_IsAnsweredEveryHouseholdAndItsPeople_OnlyWithATokenOfItsOwn()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var ana = await server.SeedMemberAsync("Ana");
+        var (casa, luis) = await server.SeedHouseholdAsync("Casa", "Luis");
+        var empty = await server.SeedHouseholdAsync("Vacía");
+
+        var people = await AskAsync<HouseholdPeople>(server, Agent, HouseholdConfigProtocol.PeopleView,
+            new HouseholdConfigQuery(CallToken: AgentToken()));
+        var unsigned = await PostAsync(server, Agent, HouseholdConfigProtocol.PeopleView, new HouseholdConfigQuery());
+        var naming = await PostAsync(server, Agent, HouseholdConfigProtocol.PeopleView, new HouseholdConfigQuery(casa, AgentToken()));
+        var another = await PostAsync(server, Telegram, HouseholdConfigProtocol.PeopleView, new HouseholdConfigQuery(CallToken: AgentToken()));
+
+        people.Households.Select(h => (h.HouseholdId, People: string.Join(",", h.People.Order())))
+            .ShouldBe([
+                (fran.TenantId, string.Join(",", new[] { fran.UserId, ana }.Order())),
+                (casa, luis),
+                (empty, "")
+            ], ignoreOrder: true);
+        (await RefusalAsync(unsigned, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+        (await RefusalAsync(naming, HttpStatusCode.BadRequest)).Reason.ShouldBe(HouseholdConfigRefusal.BadQuery);
+        another.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
     // The Telegram server polls every bot from its start, so it is answered every household's at once.
     [Fact]
     public async Task TheTelegramServer_IsAnsweredEveryHouseholdsBots()

@@ -1,5 +1,7 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Infrastructure.Memory;
 using Microsoft.Extensions.Logging;
@@ -15,7 +17,11 @@ public class MemoryDreamingServiceTests
     private readonly Mock<IMemoryConsolidator> _consolidator = new();
     private readonly Mock<IEmbeddingService> _embeddingService = new();
     private readonly Mock<IMetricsPublisher> _metricsPublisher = new();
+    private readonly Mock<IHouseholdConfiguration> _households = new();
+    private readonly Mock<IAgentDefinitionProvider> _agents = new();
     private readonly MemoryDreamingOptions _options = new();
+    private readonly List<HouseholdMembers> _walk = [];
+    private readonly Dictionary<string, HouseholdAgents> _householdAgents = [];
     private readonly MemoryDreamingService _service;
     private readonly IReadOnlyCollection<string> _warnings;
 
@@ -28,11 +34,11 @@ public class MemoryDreamingServiceTests
             .ReturnsAsync((MemoryEntry m, CancellationToken _) => m);
 
         _consolidator
-            .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Consolidation.Empty);
 
         _consolidator
-            .Setup(c => c.SynthesizeProfileAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.SynthesizeProfileAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new PersonalityProfile
             {
                 UserId = "user1",
@@ -47,6 +53,10 @@ public class MemoryDreamingServiceTests
         _metricsPublisher
             .Setup(p => p.Publish(It.IsAny<MetricEvent>()));
 
+        _households.Setup(h => h.PeopleAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => _walk);
+        _agents.Setup(a => a.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string? household, CancellationToken _) => _householdAgents[household!]);
+
         var logs = CapturingLoggerProvider.ForLevel(LogLevel.Warning);
         _warnings = logs.Messages;
 
@@ -57,7 +67,9 @@ public class MemoryDreamingServiceTests
             _metricsPublisher.Object,
             Mock.Of<ICronValidator>(),
             LoggerFactory.Create(builder => builder.AddProvider(logs)).CreateLogger<MemoryDreamingService>(),
-            _options);
+            _options,
+            _households.Object,
+            _agents.Object);
     }
 
     [Fact]
@@ -75,12 +87,12 @@ public class MemoryDreamingServiceTests
             .ReturnsAsync(memories);
 
         _consolidator
-            .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .Callback(() => callOrder.Add("consolidate"))
             .ReturnsAsync(Consolidation.Empty);
 
         _consolidator
-            .Setup(c => c.SynthesizeProfileAsync("user1", It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .Setup(c => c.SynthesizeProfileAsync("user1", It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .Callback(() => callOrder.Add("synthesize"))
             .ReturnsAsync(new PersonalityProfile
             {
@@ -89,7 +101,7 @@ public class MemoryDreamingServiceTests
                 LastUpdated = _now
             });
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         callOrder.Count.ShouldBe(2);
         callOrder[0].ShouldBe("consolidate");
@@ -110,7 +122,7 @@ public class MemoryDreamingServiceTests
             .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MemoryEntry> { oldFact, recentFact, oldInstruction });
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         // Old fact should be decayed: 0.8 * 0.9 = 0.72
         _store.Verify(s => s.UpdateImportanceAsync("user1", "old_fact", 0.72, It.IsAny<CancellationToken>()), Times.Once);
@@ -133,7 +145,7 @@ public class MemoryDreamingServiceTests
             .Setup(s => s.GetByUserIdAsync("user1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MemoryEntry> { lowImportance });
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.UpdateImportanceAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<double>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -157,7 +169,7 @@ public class MemoryDreamingServiceTests
             Tags: ["merged"]);
 
         _consolidator
-            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Unvetted(mergeDecision))
             .ReturnsAsync(Consolidation.Empty);
 
@@ -166,7 +178,7 @@ public class MemoryDreamingServiceTests
             .Setup(e => e.GenerateEmbeddingAsync("Combined fact about user", It.IsAny<CancellationToken>()))
             .ReturnsAsync(embedding);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.StoreAsync(
             It.Is<MemoryEntry>(m =>
@@ -204,11 +216,11 @@ public class MemoryDreamingServiceTests
             Tags: ["merged"]);
 
         _consolidator
-            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Unvetted(mergeDecision))
             .ReturnsAsync(Consolidation.Empty);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.StoreAsync(
             It.Is<MemoryEntry>(m => m.Content == "Combined fact about user"),
@@ -231,11 +243,11 @@ public class MemoryDreamingServiceTests
             .ReturnsAsync(new List<MemoryEntry> { oldMemory, newMemory });
 
         _consolidator
-            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Unvetted(new MergeDecision(SourceIds: ["Mem_Old", "Mem_New"], Action: MergeAction.SupersedeOlder)))
             .ReturnsAsync(Consolidation.Empty);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.DeleteAsync("user1", "mem_old", It.IsAny<CancellationToken>()), Times.Once);
         _store.Verify(s => s.DeleteAsync("user1", "mem_new", It.IsAny<CancellationToken>()), Times.Never);
@@ -253,7 +265,7 @@ public class MemoryDreamingServiceTests
             .ReturnsAsync(new List<MemoryEntry> { m1 });
 
         _consolidator
-            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Unvetted(new MergeDecision(
                 SourceIds: ["mem_1", "mem_invented"],
                 Action: MergeAction.Merge,
@@ -263,7 +275,7 @@ public class MemoryDreamingServiceTests
                 Tags: [])))
             .ReturnsAsync(Consolidation.Empty);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Never);
         _store.Verify(s => s.DeleteAsync("user1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -282,7 +294,7 @@ public class MemoryDreamingServiceTests
             .ReturnsAsync(new List<MemoryEntry> { m1 });
 
         _consolidator
-            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Unvetted(new MergeDecision(
                 SourceIds: ["mem_1", "mem_invented"],
                 Action: MergeAction.Merge,
@@ -292,7 +304,7 @@ public class MemoryDreamingServiceTests
                 Tags: [])))
             .ReturnsAsync(Consolidation.Empty);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _warnings.ShouldContain(message => message.Contains("mem_invented", StringComparison.Ordinal));
     }
@@ -312,11 +324,11 @@ public class MemoryDreamingServiceTests
             Action: MergeAction.SupersedeOlder);
 
         _consolidator
-            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Unvetted(supersedeDecision))
             .ReturnsAsync(Consolidation.Empty);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.DeleteAsync("user1", "old", It.IsAny<CancellationToken>()), Times.Once);
 
@@ -350,14 +362,14 @@ public class MemoryDreamingServiceTests
             .ReturnsAsync(afterSecondMerge);
 
         _consolidator
-            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Unvetted(new MergeDecision(["m1", "m2"], MergeAction.Merge, "merged", MemoryCategory.Fact, 0.85, [])))
             .ReturnsAsync(Unvetted(new MergeDecision(["merged1", "m3"], MergeAction.Merge, "merged again", MemoryCategory.Fact, 0.9, [])))
             .ReturnsAsync(Consolidation.Empty);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
-        _consolidator.Verify(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()),
+        _consolidator.Verify(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()),
             Times.Exactly(3));
         _store.Verify(s => s.StoreAsync(It.Is<MemoryEntry>(m => m.Content == "merged"), It.IsAny<CancellationToken>()), Times.Once);
         _store.Verify(s => s.StoreAsync(It.Is<MemoryEntry>(m => m.Content == "merged again"), It.IsAny<CancellationToken>()), Times.Once);
@@ -379,15 +391,15 @@ public class MemoryDreamingServiceTests
         // Consolidator never returns empty — only the bound should stop the loop.
         // Use fresh (valid) source IDs on every pass by referencing the ones the store returns.
         _consolidator
-            .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<MemoryEntry> list, CancellationToken _) =>
+            .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<MemoryEntry> list, ModelPayer _, CancellationToken _) =>
                 list.Count >= 2
                     ? Unvetted(new MergeDecision([list[0].Id, list[1].Id], MergeAction.Merge, "x", MemoryCategory.Fact, 0.8, []))
                     : Consolidation.Empty);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
-        _consolidator.Verify(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()),
+        _consolidator.Verify(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()),
             Times.AtMost(_options.MaxMergePasses));
     }
 
@@ -406,7 +418,7 @@ public class MemoryDreamingServiceTests
             .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
             .Callback<MetricEvent>(evt => published = evt);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         published.ShouldNotBeNull();
         published.ShouldBeOfType<MemoryDreamingEvent>();
@@ -426,11 +438,11 @@ public class MemoryDreamingServiceTests
             .Setup(s => s.DeleteProfileAsync("user1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.DeleteProfileAsync("user1", It.IsAny<CancellationToken>()), Times.Once);
         _consolidator.Verify(
-            c => c.SynthesizeProfileAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()),
+            c => c.SynthesizeProfileAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _store.Verify(s => s.SaveProfileAsync(It.IsAny<PersonalityProfile>(), It.IsAny<CancellationToken>()), Times.Never);
     }
@@ -450,7 +462,7 @@ public class MemoryDreamingServiceTests
             .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
             .Callback<MetricEvent>(evt => published = evt);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         var dreamingEvent = published.ShouldBeOfType<MemoryDreamingEvent>();
         dreamingEvent.UserId.ShouldBe("user1");
@@ -481,6 +493,7 @@ public class MemoryDreamingServiceTests
         _store
             .Setup(s => s.GetByUserIdAsync(ana, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<MemoryEntry> { anaMemory });
+        InHousehold(Home, isHome: true, key: null, fran, ana);
 
         var service = new MemoryDreamingService(
             _store.Object,
@@ -489,15 +502,82 @@ public class MemoryDreamingServiceTests
             _metricsPublisher.Object,
             cron.Object,
             NullLogger<MemoryDreamingService>.Instance,
-            _options);
+            _options,
+            _households.Object,
+            _agents.Object);
 
         await service.StartAsync(CancellationToken.None);
         await service.ExecuteTask!;
 
         _consolidator.Verify(c => c.SynthesizeProfileAsync(
-            fran, It.Is<IReadOnlyList<MemoryEntry>>(m => m.Single().Id == "mem_fran"), It.IsAny<CancellationToken>()), Times.Once);
+            fran, It.Is<IReadOnlyList<MemoryEntry>>(m => m.Single().Id == "mem_fran"), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Once);
         _consolidator.Verify(c => c.SynthesizeProfileAsync(
-            ana, It.Is<IReadOnlyList<MemoryEntry>>(m => m.Single().Id == "mem_ana"), It.IsAny<CancellationToken>()), Times.Once);
+            ana, It.Is<IReadOnlyList<MemoryEntry>>(m => m.Single().Id == "mem_ana"), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A night's dreaming walks every household and its people: each person is dreamt for on their
+    // household's key — the home's on the deployment's — and counted under it; a household of its own
+    // that set no key is asked nothing, and a person the store names who is in no household is left alone.
+    [Fact]
+    public async Task RunDreamingAsync_EachHouseholdsPeople_AreDreamtForOnItsKeyAndCountedUnderIt()
+    {
+        var published = new List<MetricEvent>();
+        _metricsPublisher.Setup(p => p.Publish(It.IsAny<MetricEvent>())).Callback<MetricEvent>(published.Add);
+        string[] people = ["fran", "luis", "eva", "stranger"];
+        foreach (var person in people)
+        {
+            _store.Setup(s => s.GetByUserIdAsync(person, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<MemoryEntry> { MakeMemory($"mem_{person}", person, MemoryCategory.Fact, 0.9, _now, _now) });
+        }
+
+        _store.Setup(s => s.GetAllUserIdsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(people);
+        InHousehold(Home, isHome: true, key: "homes-own-key", "fran", "nobody-with-memories");
+        InHousehold(Casa, isHome: false, key: "casa-key", "luis");
+        InHousehold(Keyless, isHome: false, key: null, "eva");
+
+        await _service.RunDreamingAsync(_now, CancellationToken.None);
+
+        _consolidator.Verify(c => c.SynthesizeProfileAsync(
+            "fran", It.IsAny<IReadOnlyList<MemoryEntry>>(), new ModelPayer(Home, null), It.IsAny<CancellationToken>()), Times.Once);
+        _consolidator.Verify(c => c.SynthesizeProfileAsync(
+            "luis", It.IsAny<IReadOnlyList<MemoryEntry>>(), new ModelPayer(Casa, new ModelKey("casa-key")), It.IsAny<CancellationToken>()),
+            Times.Once);
+        _consolidator.Verify(c => c.ConsolidateAsync(
+            It.IsAny<IReadOnlyList<MemoryEntry>>(), new ModelPayer(Casa, new ModelKey("casa-key")), It.IsAny<CancellationToken>()), Times.Once);
+        foreach (var unpaid in new[] { "eva", "stranger" })
+        {
+            _consolidator.Verify(c => c.SynthesizeProfileAsync(
+                unpaid, It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Never);
+            _store.Verify(s => s.GetByUserIdAsync(unpaid, It.IsAny<CancellationToken>()), Times.Never);
+        }
+        published.OfType<MemoryDreamingEvent>().Select(e => (e.UserId, e.TenantId))
+            .ShouldBe([("fran", Home), ("luis", Casa)], ignoreOrder: true);
+    }
+
+    // A merge embeds its text on the shared Lemonade, which is counted as the household's use.
+    [Fact]
+    public async Task RunDreamingForUserAsync_AMerge_CountsItsEmbeddingUnderTheHousehold()
+    {
+        var published = new List<MetricEvent>();
+        _metricsPublisher.Setup(p => p.Publish(It.IsAny<MetricEvent>())).Callback<MetricEvent>(published.Add);
+        var memories = new List<MemoryEntry>
+        {
+            MakeMemory("mem_1", "fran", MemoryCategory.Fact, 0.8, _now, _now),
+            MakeMemory("mem_2", "fran", MemoryCategory.Fact, 0.8, _now, _now)
+        };
+        _store.Setup(s => s.GetByUserIdAsync("fran", It.IsAny<CancellationToken>())).ReturnsAsync(memories);
+        _consolidator
+            .Setup(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Consolidation(
+                [new MergeDecision(["mem_1", "mem_2"], MergeAction.Merge, "Merged")],
+                [new HashSet<string> { "mem_1", "mem_2" }]));
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([0.1f]);
+
+        await _service.RunDreamingForUserAsync("fran", _now, new ModelPayer(Casa, new ModelKey("casa-key")), CancellationToken.None);
+
+        published.OfType<LemonadeUsageEvent>().ShouldNotBeEmpty();
+        published.OfType<LemonadeUsageEvent>().ShouldAllBe(e => e.TenantId == Casa);
     }
 
     [Fact]
@@ -519,6 +599,7 @@ public class MemoryDreamingServiceTests
         _store
             .Setup(s => s.DeleteProfileAsync("orphan", It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+        InHousehold(Home, isHome: true, key: null, "orphan");
 
         var service = new MemoryDreamingService(
             _store.Object,
@@ -527,7 +608,9 @@ public class MemoryDreamingServiceTests
             _metricsPublisher.Object,
             cron.Object,
             NullLogger<MemoryDreamingService>.Instance,
-            _options);
+            _options,
+            _households.Object,
+            _agents.Object);
 
         await service.StartAsync(CancellationToken.None);
         await service.ExecuteTask!;
@@ -545,7 +628,7 @@ public class MemoryDreamingServiceTests
                 MakeMemory("survivor", "user1", MemoryCategory.Fact, 0.8, _now.AddDays(-5), _now.AddDays(-5))
             });
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.DeleteProfileAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
         _store.Verify(s => s.SaveProfileAsync(It.IsAny<PersonalityProfile>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -573,7 +656,7 @@ public class MemoryDreamingServiceTests
             .ReturnsAsync(new List<MemoryEntry> { madrid, sister, brother, valencia });
 
         _consolidator
-            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Vetted(
                 [new MergeDecision(["mem_sister", "mem_valencia"], MergeAction.Merge, "Her sister lives in Valencia", MemoryCategory.Relationship, 0.8, [])],
                 ["mem_madrid", "mem_valencia"], ["mem_sister", "mem_brother"]))
@@ -584,7 +667,7 @@ public class MemoryDreamingServiceTests
             .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
             .Callback<MetricEvent>(evt => published = evt);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Never);
         _store.Verify(s => s.DeleteAsync("user1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -605,13 +688,13 @@ public class MemoryDreamingServiceTests
             .ReturnsAsync(new List<MemoryEntry> { madrid, valencia });
 
         _consolidator
-            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Vetted(
                 [new MergeDecision(["mem_madrid", "mem_valencia"], MergeAction.SupersedeOlder)],
                 ["mem_madrid", "mem_valencia"]))
             .ReturnsAsync(Consolidation.Empty);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.DeleteAsync("user1", "mem_madrid", It.IsAny<CancellationToken>()), Times.Once);
         _store.Verify(s => s.DeleteAsync("user1", "mem_valencia", It.IsAny<CancellationToken>()), Times.Never);
@@ -635,7 +718,7 @@ public class MemoryDreamingServiceTests
 
         var blank = new MergeDecision(["mem_1", "mem_2"], MergeAction.Merge, mergedContent, MemoryCategory.Fact, 0.8, []);
         _consolidator
-            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<CancellationToken>()))
+            .SetupSequence(c => c.ConsolidateAsync(It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(vetted ? Vetted([blank], ["mem_1", "mem_2"]) : Unvetted(blank))
             .ReturnsAsync(Consolidation.Empty);
 
@@ -644,7 +727,7 @@ public class MemoryDreamingServiceTests
             .Setup(p => p.Publish(It.IsAny<MetricEvent>()))
             .Callback<MetricEvent>(evt => published = evt);
 
-        await _service.RunDreamingForUserAsync("user1", _now, CancellationToken.None);
+        await _service.RunDreamingForUserAsync("user1", _now, ModelPayer.Deployment, CancellationToken.None);
 
         _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Never);
         _store.Verify(s => s.DeleteAsync("user1", It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -665,4 +748,22 @@ public class MemoryDreamingServiceTests
             CreatedAt = createdAt,
             LastAccessedAt = lastAccessedAt
         };
+
+    private const string Home = "fedcba9876543210fedcba9876543210";
+    private const string Casa = "0123456789abcdef0123456789abcdef";
+    private const string Keyless = "00112233445566778899aabbccddeeff";
+
+    // A household of the walk, with its people, read by the agent as the accounts service answers it.
+    private void InHousehold(string household, bool isHome, string? key, params string[] people)
+    {
+        _walk.Add(new HouseholdMembers(household, people));
+        _householdAgents[household] = new HouseholdAgents
+        {
+            HouseholdId = household,
+            Agents = [],
+            Configuration = new AgentHouseholdConfig(
+                household, isHome, new HouseholdSettings { Name = household, TimeZone = "UTC" }, new AgentsSection(),
+                new FeaturesSection(), new SpacesSection(), key)
+        };
+    }
 }

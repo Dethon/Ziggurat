@@ -23,4 +23,7 @@ internal sealed class EveryHouseholdIn(TimeZoneInfo zone) : IHouseholdConfigurat
 
     public Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<HouseholdTelegramBot>>([]);
+
+    public Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<HouseholdMembers>>([]);
 }

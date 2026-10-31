@@ -72,6 +72,14 @@ public sealed class HouseholdConfigurationClient(
         KeptAsync(HouseholdConfigProtocol.TelegramBotsView, EveryHousehold, async () =>
             (await AskAsync<HouseholdTelegramBots>(HouseholdConfigProtocol.TelegramBotsView, new HouseholdConfigQuery(), ct)).Bots, ct);
 
+    public async Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct)
+    {
+        var token = agentToken?.Invoke()
+                    ?? throw new InvalidOperationException("only the agent reads every household's people, with a token of its own");
+        return (await AskAsync<HouseholdPeople>(HouseholdConfigProtocol.PeopleView, new HouseholdConfigQuery(CallToken: token), ct))
+            .Households;
+    }
+
     // This client's handler alone: the multiplexer is the host's, and another listener on the channel
     // is somebody else's to remove.
     public async ValueTask DisposeAsync()

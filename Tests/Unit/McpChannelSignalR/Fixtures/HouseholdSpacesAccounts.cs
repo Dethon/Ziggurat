@@ -33,6 +33,9 @@ public sealed class HouseholdSpacesAccounts : IHouseholdConfiguration
     public Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct) =>
         throw new NotSupportedException("the hub reads the spaces view alone");
 
+    public Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct) =>
+        throw new NotSupportedException("the hub reads the spaces view alone");
+
     private static HouseholdConfigRefusedException Refused(string detail) =>
         new(new HouseholdConfigRefused(HouseholdConfigRefusal.Unproven, detail));
 }

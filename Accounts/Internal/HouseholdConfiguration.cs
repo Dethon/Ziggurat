@@ -48,6 +48,21 @@ public static class HouseholdConfiguration
         MapShared(routes, HouseholdConfigProtocol.IdealistaView, async (store, household, ct) =>
             (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).Idealista);
 
+        // Every household and its people, asked with no household: the agent's dreaming walks them, with
+        // nobody's call behind it. No secret is in it.
+        routes.MapPost(Path + HouseholdConfigProtocol.PeopleView, async (
+            HttpContext http, HouseholdConfigQuery query, HouseholdProofs proofs, HouseholdConfigStore store, CancellationToken ct) =>
+        {
+            if (InternalCallers.Reading(http, HouseholdConfigProtocol.PeopleView).Count == 0)
+            {
+                return InternalCallers.NotYours;
+            }
+
+            return await proofs.AgentItselfAsync(query, ct) is { } refused
+                ? Results.Json(refused.Refusal, statusCode: refused.Status)
+                : Results.Ok(new HouseholdPeople(await store.PeopleAsync(ct)));
+        });
+
         // Every household's bots, asked with no household: the Telegram server polls them from its
         // start, before any call could prove one. A household whose secrets do not open is left out
         // rather than taking every other household's bots down with it.
