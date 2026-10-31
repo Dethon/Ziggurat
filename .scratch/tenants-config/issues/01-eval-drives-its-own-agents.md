@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately once 4a is merged)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The eval stack builds every agent from the copies under the tests
-- [ ] The unarmed eval harness tests and the prompt snapshots pass unchanged
+- [x] The eval stack builds every agent from the copies under the tests
+- [x] The unarmed eval harness tests and the prompt snapshots pass unchanged
