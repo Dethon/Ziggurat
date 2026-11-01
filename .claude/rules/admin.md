@@ -539,3 +539,12 @@ Suspension's seam 1 is `HouseholdSuspensionAdminTests` (the route, the home refu
 `ChatMonitorDelegationTests` over `MonitorTestMocks.Households(suspended, from)` — a household suspended
 from its n-th asking, so a conversation already running is refused from its next message — and
 `TunnelRelayTests` (its tunnels closed `Suspended`, another household's left open).
+
+Seam 5 is `StackSmokeTests.AHouseholdTheOperatorCreates_IsAnsweredByTheAgentItsOwnerNamed_UntilItIsSuspended` on
+the smoke stack (`scripts/smoke-stack.sh`): the operator's create and suspend through the dashboard's host,
+the owner signed in by `mint-session --user` from the create answer's `UserId`, the OpenRouter key and the
+agent's name through the main host's household routes, every call with the admin header. The stack's
+accounts service has a master key made for its smoke state and its `KEYPROBES__*` at `smoke-keys`, a stub
+answering 200 to everything (`DockerCompose/docker-compose.override.smoke.yml`), so the key set is the
+deployment's own, read from the agent's user secrets, and only the turn reaches OpenRouter. Each run makes
+its own household and leaves it suspended; `down` removes it.
