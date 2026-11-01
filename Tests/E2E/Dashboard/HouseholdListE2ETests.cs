@@ -60,7 +60,7 @@ public class HouseholdListE2ETests(DashboardAdminE2EFixture fixture)
         await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync("Bea");
     }
 
-    // Suspended from its row, the household's people are told so wherever the deployment's check stands
+    // Suspended from its row, once confirmed, the household's people are told so wherever the deployment's check stands
     // — here the dashboard's own host, which would otherwise refuse them for not being the operator — and
     // resumed from the same row, they are only that again. The home has no button: it is the operator's.
     [Fact]
@@ -79,7 +79,13 @@ public class HouseholdListE2ETests(DashboardAdminE2EFixture fixture)
         (await Row(page, "Home").GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Suspend Home" }).CountAsync())
             .ShouldBe(0, "the home is the operator's own");
 
+        // Suspending stops everything a household does, so the row asks first, and keeping it running
+        // leaves it running.
         await suspend.ClickAsync();
+        await row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Keep it running" }).ClickAsync();
+        await Assertions.Expect(row).ToContainTextAsync("running");
+        await suspend.ClickAsync();
+        await row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Suspend Casa Gil now" }).ClickAsync();
 
         await Assertions.Expect(row).ToContainTextAsync("suspended since");
         await Assertions.Expect(page.GetByRole(AriaRole.Alert)).ToHaveCountAsync(0);

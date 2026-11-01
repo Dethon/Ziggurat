@@ -106,11 +106,21 @@
                         {
                             <span>running</span>
                             @* The home is the operator's own: suspended, nothing would be left to resume it from. *@
-                            @if (!household.IsHome)
+                            @if (!household.IsHome && _confirmingSuspend == household.Id)
+                            {
+                                @* Suspending stops every turn, fire and server of the household at once, so it is asked first. *@
+                                <span class="confirm">Suspend @household.Name? Nothing of theirs runs until you resume it.</span>
+                                <button type="button" disabled="@_state.Busy"
+                                        @onclick="() => _confirmingSuspend = null">Keep it running</button>
+                                <button type="button" class="danger" disabled="@_state.Busy"
+                                        aria-label="@($"Suspend {household.Name} now")"
+                                        @onclick="() => SuspendAsync(household.Id)">Suspend</button>
+                            }
+                            else if (!household.IsHome)
                             {
                                 <button type="button" class="danger" disabled="@_state.Busy"
                                         aria-label="@($"Suspend {household.Name}")"
-                                        @onclick="() => Effect.SetSuspensionAsync(household.Id, true)">Suspend</button>
+                                        @onclick="() => _confirmingSuspend = household.Id">Suspend</button>
                             }
                         }
                     </span>
@@ -129,6 +139,7 @@
     private IDisposable? _subscription;
     private string _name = "";
     private string _ownerName = "";
+    private string? _confirmingSuspend;
 
     protected override async Task OnInitializedAsync()
     {
@@ -140,6 +151,12 @@
             StateHasChanged();
         }));
         await Effect.LoadAsync();
+    }
+
+    private async Task SuspendAsync(string householdId)
+    {
+        _confirmingSuspend = null;
+        await Effect.SetSuspensionAsync(householdId, true);
     }
 
     private async Task CreateAsync()
