@@ -7,5 +7,5 @@ namespace Domain.Contracts;
 public interface IMemoryExtractor
 {
     Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
-        IReadOnlyList<ChatMessage> contextWindow, string userId, ModelPayer payer, CancellationToken ct);
+        IReadOnlyList<ChatMessage> contextWindow, string userId, string? agentId, ModelPayer payer, CancellationToken ct);
 }

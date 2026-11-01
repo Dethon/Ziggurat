@@ -70,7 +70,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
                 [new ChatMessage(ChatRole.User,
                     "I'm a senior Python developer at Google. I prefer dark mode and use Vim keybindings. " +
                     "I'm currently learning Rust and working on a distributed cache project.")],
-                "test_user", ModelPayer.Deployment, ct)),
+                "test_user", null, ModelPayer.Deployment, ct)),
             candidates => candidates.Count > 0);
 
         result.ShouldNotBeEmpty(LlmAttempt.Explain(
@@ -95,7 +95,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
 
         var result = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User, "Hello, how are you?")],
-            "test_user", ModelPayer.Deployment, ct));
+            "test_user", null, ModelPayer.Deployment, ct));
 
         result.Count.ShouldBeLessThanOrEqualTo(1);
     }

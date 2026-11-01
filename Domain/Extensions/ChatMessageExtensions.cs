@@ -10,6 +10,7 @@ public static class ChatMessageExtensions
 {
     private const string SenderIdKey = "SenderId";
     private const string AccountIdKey = "AccountId";
+    private const string AgentIdKey = "AgentId";
     private const string TimestampKey = "Timestamp";
     private const string MemoryContextKey = "MemoryContext";
     private const string LocationKey = "Location";
@@ -63,6 +64,22 @@ public static class ChatMessageExtensions
         {
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[AccountIdKey] = accountId;
+        }
+
+        // The agent a request no agent's publisher sends is made for (memory's extraction), so its
+        // usage is billed to that agent rather than to none.
+        public string? GetAgentId() =>
+            message.AdditionalProperties?.GetValueOrDefault(AgentIdKey) switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+
+        public void SetAgentId(string agentId)
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[AgentIdKey] = agentId;
         }
 
         public string? GetLocation()

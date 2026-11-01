@@ -59,7 +59,7 @@ public class OpenRouterMemoryExtractor(
     }
 
     public async Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
-        IReadOnlyList<ChatMessage> contextWindow, string userId, ModelPayer payer, CancellationToken ct)
+        IReadOnlyList<ChatMessage> contextWindow, string userId, string? agentId, ModelPayer payer, CancellationToken ct)
     {
         if (contextWindow.Count == 0)
         {
@@ -76,6 +76,10 @@ public class OpenRouterMemoryExtractor(
         var userMessage = new ChatMessage(ChatRole.User, userPrompt);
         userMessage.SetSenderId(userId);
         userMessage.SetAccountId(userId);
+        if (agentId is not null)
+        {
+            userMessage.SetAgentId(agentId);
+        }
 
         var messages = new List<ChatMessage> { userMessage };
 

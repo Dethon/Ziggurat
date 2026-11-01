@@ -240,7 +240,7 @@ public class MemoryExtractionWorker(
             return Extraction.Gated;
         }
 
-        return await ExtractWithRetryAsync(window, request.UserId, payer, ct);
+        return await ExtractWithRetryAsync(window, request.UserId, request.AgentId, payer, ct);
     }
 
     private static MemoryJudgmentContext Context(MemoryExtractionRequest request, string? agentName, ModelPayer payer) =>
@@ -257,13 +257,13 @@ public class MemoryExtractionWorker(
     }
 
     private async Task<Extraction> ExtractWithRetryAsync(
-        IReadOnlyList<ChatMessage> window, string userId, ModelPayer payer, CancellationToken ct)
+        IReadOnlyList<ChatMessage> window, string userId, string? agentId, ModelPayer payer, CancellationToken ct)
     {
         for (var attempt = 0; attempt <= options.MaxRetries; attempt++)
         {
             try
             {
-                return Extraction.Of(await extractor.ExtractAsync(window, userId, payer, ct), window);
+                return Extraction.Of(await extractor.ExtractAsync(window, userId, agentId, payer, ct), window);
             }
             catch (Exception ex) when (attempt < options.MaxRetries)
             {

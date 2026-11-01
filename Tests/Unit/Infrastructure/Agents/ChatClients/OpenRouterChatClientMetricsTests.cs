@@ -78,6 +78,19 @@ public class OpenRouterChatClientMetricsTests : IDisposable
         (await UsageOf(new ChatMessage(ChatRole.User, "nobody"))).UserId.ShouldBeNull();
     }
 
+    // Memory's extraction is made for one agent's conversation but no agent's publisher sends it, so
+    // the request names the agent itself: an owner's usage by agent showed it as "unknown".
+    [Fact]
+    public async Task GetStreamingResponseAsync_ARequestNamingItsAgent_BillsThatAgent()
+    {
+        var memory = new ChatMessage(ChatRole.User, "extract");
+        memory.SetAccountId("acc-bob");
+        memory.SetAgentId("jonas");
+
+        (await UsageOf(memory)).AgentId.ShouldBe("jonas");
+        (await UsageOf(new ChatMessage(ChatRole.User, "nobody"))).AgentId.ShouldBeNull();
+    }
+
     private async Task<TokenUsageEvent> UsageOf(ChatMessage message)
     {
         _innerClient

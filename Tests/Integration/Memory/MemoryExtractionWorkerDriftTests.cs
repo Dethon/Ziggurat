@@ -41,9 +41,10 @@ public class MemoryExtractionWorkerDriftTests(MemorySearchFixture redisFixture)
         extractor.Setup(e => e.ExtractAsync(
                 It.IsAny<IReadOnlyList<ChatMessage>>(),
                 It.IsAny<string>(),
+                It.IsAny<string?>(),
                 It.IsAny<ModelPayer>(),
                 It.IsAny<CancellationToken>()))
-            .Callback<IReadOnlyList<ChatMessage>, string, ModelPayer, CancellationToken>((w, _, _, _) => capturedWindow = w)
+            .Callback<IReadOnlyList<ChatMessage>, string, string?, ModelPayer, CancellationToken>((w, _, _, _, _) => capturedWindow = w)
             .ReturnsAsync([]);
 
         var embedding = new Mock<IEmbeddingService>();

@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Extensions;
 using Infrastructure.Memory;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -51,7 +52,7 @@ public class OpenRouterMemoryExtractorTests
 
         var result = await _extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User, "Hello, I work at Contoso")],
-            "user1", ModelPayer.Deployment, CancellationToken.None);
+            "user1", null, ModelPayer.Deployment, CancellationToken.None);
 
         result.Count.ShouldBe(1);
         result[0].Content.ShouldBe("Works at Contoso");
@@ -73,7 +74,7 @@ public class OpenRouterMemoryExtractorTests
 
         var result = await _extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User, "Just saying hi")],
-            "user1", ModelPayer.Deployment, CancellationToken.None);
+            "user1", null, ModelPayer.Deployment, CancellationToken.None);
         result.ShouldBeEmpty();
     }
 
@@ -100,7 +101,7 @@ public class OpenRouterMemoryExtractorTests
 
         var result = await _extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User, "I'm a senior Python developer at Google and I prefer dark mode")],
-            "user1", ModelPayer.Deployment, CancellationToken.None);
+            "user1", null, ModelPayer.Deployment, CancellationToken.None);
 
         result.Count.ShouldBe(2);
         result[0].Category.ShouldBe(MemoryCategory.Fact);
@@ -130,7 +131,7 @@ public class OpenRouterMemoryExtractorTests
 
         var result = await _extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User, "I prefer dark mode and use Vim keybindings")],
-            "user1", ModelPayer.Deployment, CancellationToken.None);
+            "user1", null, ModelPayer.Deployment, CancellationToken.None);
 
         result.Count.ShouldBe(1);
         result[0].Content.ShouldBe("Uses Vim keybindings");
@@ -153,7 +154,7 @@ public class OpenRouterMemoryExtractorTests
             .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates": []}""")));
 
         await _extractor.ExtractAsync(
-            [new ChatMessage(ChatRole.User, "Hello")], "user1", ModelPayer.Deployment, CancellationToken.None);
+            [new ChatMessage(ChatRole.User, "Hello")], "user1", null, ModelPayer.Deployment, CancellationToken.None);
 
         var schema = capturedOptions.ShouldNotBeNull().ResponseFormat
             .ShouldBeOfType<ChatResponseFormatJson>().Schema.ShouldNotBeNull();
@@ -180,8 +181,28 @@ public class OpenRouterMemoryExtractorTests
 
         var result = await _extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User, "Hello")],
-            "user1", ModelPayer.Deployment, CancellationToken.None);
+            "user1", null, ModelPayer.Deployment, CancellationToken.None);
         result.ShouldBeEmpty();
+    }
+
+    // The request names whom it is billed to, account and agent, since no agent's publisher sends it.
+    [Fact]
+    public async Task ExtractAsync_NamesTheAccountAndTheAgentItIsBilledTo()
+    {
+        IEnumerable<ChatMessage>? capturedMessages = null;
+        _chatClient.Setup(c => c.GetResponseAsync(
+            It.IsAny<IEnumerable<ChatMessage>>(),
+            It.IsAny<ChatOptions>(),
+            It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ChatMessage>, ChatOptions?, CancellationToken>((msgs, _, _) => capturedMessages = msgs)
+            .ReturnsAsync(new ChatResponse(new ChatMessage(ChatRole.Assistant, """{"candidates": []}""")));
+
+        await _extractor.ExtractAsync(
+            [new ChatMessage(ChatRole.User, "Hello")],
+            "user1", "jonas", ModelPayer.Deployment, CancellationToken.None);
+
+        var request = capturedMessages.ShouldNotBeNull().Last();
+        (request.GetAccountId(), request.GetAgentId()).ShouldBe(("user1", "jonas"));
     }
 
     [Fact]
@@ -207,7 +228,7 @@ public class OpenRouterMemoryExtractorTests
 
         await _extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User, "Hello")],
-            "user1", ModelPayer.Deployment, CancellationToken.None);
+            "user1", null, ModelPayer.Deployment, CancellationToken.None);
 
         capturedMessages.ShouldNotBeNull();
         var userMsg = capturedMessages.Last();
@@ -219,7 +240,7 @@ public class OpenRouterMemoryExtractorTests
     {
         var result = await _extractor.ExtractAsync(
             [],
-            "user1", ModelPayer.Deployment, CancellationToken.None);
+            "user1", null, ModelPayer.Deployment, CancellationToken.None);
 
         result.ShouldBeEmpty();
         _chatClient.Verify(
@@ -250,7 +271,7 @@ public class OpenRouterMemoryExtractorTests
             new(ChatRole.User, "cold")
         };
 
-        await _extractor.ExtractAsync(window, "user1", ModelPayer.Deployment, CancellationToken.None);
+        await _extractor.ExtractAsync(window, "user1", null, ModelPayer.Deployment, CancellationToken.None);
 
         capturedUserPrompt.ShouldNotBeNull();
         var promptText = capturedUserPrompt.Text;

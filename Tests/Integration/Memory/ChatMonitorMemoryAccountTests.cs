@@ -199,7 +199,7 @@ public class ChatMonitorMemoryAccountTests(MemorySearchFixture redisFixture)
         public int Calls => Volatile.Read(ref _calls);
 
         public Task<IReadOnlyList<ExtractionCandidate>> ExtractAsync(
-            IReadOnlyList<ChatMessage> contextWindow, string userId, ModelPayer payer, CancellationToken ct)
+            IReadOnlyList<ChatMessage> contextWindow, string userId, string? agentId, ModelPayer payer, CancellationToken ct)
         {
             Interlocked.Increment(ref _calls);
             return Task.FromResult<IReadOnlyList<ExtractionCandidate>>(
