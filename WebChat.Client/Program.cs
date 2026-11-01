@@ -76,5 +76,6 @@ _ = app.Services.GetRequiredService<DictationEffect>();
 _ = app.Services.GetRequiredService<TopicRenameEffect>();
 _ = app.Services.GetRequiredService<TopicShareEffect>();
 _ = app.Services.GetRequiredService<HouseholdSettingsEffect>();
+_ = app.Services.GetRequiredService<HouseholdAgentsEffect>();
 
 await app.RunAsync();

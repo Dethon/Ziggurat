@@ -1,3 +1,4 @@
+using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
 using WebChat.Client.Models;
 
@@ -9,4 +10,16 @@ public interface IAdminService
     Task<AdminAnswer<HouseholdSettings>> GetSettingsAsync();
 
     Task<AdminAnswer<HouseholdSettings>> SaveSettingsAsync(HouseholdSettings settings);
+
+    Task<AdminAnswer<AdminAgents>> GetAgentsAsync();
+
+    Task<AdminAnswer<AdminAgents>> SaveAgentAsync(string agentId, AgentEdit edit);
+
+    Task<AdminAnswer<AdminAgents>> AddAgentAsync(AgentAddition addition);
+
+    Task<AdminAnswer<AdminAgents>> RemoveAgentAsync(string agentId);
+
+    Task<AdminAnswer<IReadOnlyList<AdminAgentVersion>>> GetAgentVersionsAsync(string agentId);
+
+    Task<AdminAnswer<AdminAgents>> RestoreAgentVersionAsync(string agentId, string versionId);
 }

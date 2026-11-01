@@ -7,10 +7,11 @@ namespace WebChat.Client.Layout;
 public static class AdminArea
 {
     public const string Settings = "/admin/settings";
+    public const string Agents = "/admin/agents";
 
     public const string Home = Settings;
 
-    public static IReadOnlyList<(string Path, string Label)> Pages { get; } = [(Settings, "Settings")];
+    public static IReadOnlyList<(string Path, string Label)> Pages { get; } = [(Settings, "Settings"), (Agents, "Agents")];
 
     // Into the admin area and back out by a full load, never an in-app navigation: the chat page
     // starts its live connection once per load, and coming back to it in-app — the browser's back
