@@ -14,10 +14,12 @@ public static class TestPort
 
     // A thousand-wide band was thought to be far more than a run holds, until the full eval tier
     // walked it to its end: seven servers per run, every scenario retried, and nothing given back.
-    // The band stays a thousand; what makes it enough is fixtures releasing their ports on
-    // dispose, so the walk only has to cover what is running at once.
+    // What makes a band enough is fixtures releasing their ports on dispose, so the walk only has
+    // to cover what is running at once — but a score of older fixtures still hold theirs for the
+    // run, and the admin phase's accounts tests took a full run past a thousand, so the band is
+    // three thousand wide.
     private static readonly PortPool _pool =
-        new(Math.Max(1024, EphemeralRangeStart - 1000), EphemeralRangeStart, IsFree);
+        new(Math.Max(1024, EphemeralRangeStart - 3000), EphemeralRangeStart, IsFree);
 
     public static int GetAvailable() => _pool.Get();
 
