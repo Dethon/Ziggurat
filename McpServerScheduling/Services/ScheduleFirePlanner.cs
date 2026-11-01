@@ -31,7 +31,10 @@ public static class ScheduleFirePlanner
             // acts for its person only if the two still agree with what it signed.
             schedule.Delegation is { } token
                 ? new FireDelegation(token, ScheduleDelegation.Of(schedule).Description)
-                : null), defaultDeliverTo);
+                : null,
+            // Whose schedule it is, so a suspended household's fire is refused even when no delegation
+            // stands behind it.
+            HouseholdId: schedule.TenantId is { Length: > 0 } household ? household : null), defaultDeliverTo);
 
         return new FirePlan(payload, nextRun, DeleteAfterFire: schedule.CronExpression is null);
     }

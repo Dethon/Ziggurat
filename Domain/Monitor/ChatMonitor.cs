@@ -61,6 +61,10 @@ public class ChatMonitor(
     // A turn or a fire of a household the operator suspended, refused as it arrived.
     public const string HouseholdSuspendedErrorType = "HouseholdSuspended";
 
+    // A turn or a fire refused because whether its household runs, or its person is still let in,
+    // could not be read just now: neither is ever taken for granted.
+    public const string StandingUnreadableErrorType = "StandingUnreadable";
+
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger, topics);
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
 
