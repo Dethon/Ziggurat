@@ -51,6 +51,9 @@ public class ChatMonitor(
     // A turn of a household that set no OpenRouter key, refused before its agent was asked anything.
     public const string HouseholdWithoutKeyErrorType = "HouseholdWithoutKey";
 
+    // A turn or a fire of a household the operator suspended, refused as it arrived.
+    public const string HouseholdSuspendedErrorType = "HouseholdSuspended";
+
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger, topics);
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
 
@@ -146,7 +149,7 @@ public class ChatMonitor(
     {
         await using var conversation = new ConversationGroup(
             agentKey, channels, agentFactory, _targetResolver, threadResolver, metricsPublisher, memoryRecallHook,
-            skillPreloader, assertions, delegations, logger);
+            skillPreloader, assertions, delegations, agentDefinitions, logger);
 
         await foreach (var turnUpdate in conversation.RunAsync(group, group.Complete, ct).WithCancellation(ct))
         {

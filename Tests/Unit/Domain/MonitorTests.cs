@@ -6,6 +6,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
@@ -412,6 +413,28 @@ internal static class MonitorTestMocks
     public static ChatThreadResolver CreateThreadResolver()
     {
         return new ChatThreadResolver();
+    }
+
+    // The households' agents as the agent reads them, the one named suspended from its asking number
+    // `from` on (counted from 1) — so a household can be suspended between two of its messages — and
+    // every other household running.
+    public static IAgentDefinitionProvider Households(string suspended, int from = 1)
+    {
+        var asked = 0;
+        var provider = new Mock<IAgentDefinitionProvider>();
+        provider
+            .Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string? household, CancellationToken _) => new HouseholdAgents
+            {
+                HouseholdId = household,
+                Agents = [],
+                Configuration = new AgentHouseholdConfig(
+                    household ?? "home", household is null, new HouseholdSettings { Name = "Casa", TimeZone = "UTC" },
+                    new AgentsSection(), new FeaturesSection(),
+                    new SpacesSection(), null,
+                    Suspended: household == suspended && Interlocked.Increment(ref asked) >= from)
+            });
+        return provider.Object;
     }
 }
 
