@@ -26,6 +26,7 @@ public static class AdminApi
         var deployment = accounts.MapGroup(Relative(AdminProtocol.Operator));
 
         HouseholdSettingsAdmin.Map(household);
+        HouseholdAgentsAdmin.Map(household);
         AdminLog.Map(household, deployment);
     }
 
