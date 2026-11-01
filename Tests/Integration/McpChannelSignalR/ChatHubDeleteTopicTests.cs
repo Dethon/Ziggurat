@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -110,6 +111,6 @@ public sealed class ChatHubDeleteTopicTests : IClassFixture<RedisFixture>, IDisp
     {
         using var content = new MemoryStream("bytes"u8.ToArray());
         return await _store.SaveAsync(
-            conversationId, "default", fileName, "image/png", content, CancellationToken.None);
+            new AgentKey(conversationId), "default", fileName, "image/png", content, CancellationToken.None);
     }
 }

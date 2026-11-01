@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -173,6 +174,6 @@ public sealed class ChatHubAttachmentTests : IDisposable
     private async Task<AttachmentReference> StoreAsync(string spaceSlug)
     {
         using var content = new MemoryStream("bytes"u8.ToArray());
-        return await _store.SaveAsync("7:42", spaceSlug, "photo.png", "image/png", content, CancellationToken.None);
+        return await _store.SaveAsync(new AgentKey("7:42"), spaceSlug, "photo.png", "image/png", content, CancellationToken.None);
     }
 }
