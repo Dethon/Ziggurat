@@ -16,7 +16,7 @@ else
         }
         @if (Status.CheckedAt is { } checkedAt)
         {
-            <span class="admin-key-checked">checked @checkedAt.ToLocalTime().ToString("g")</span>
+            <span class="admin-key-checked">checked @AdminTime.Of(checkedAt)</span>
         }
         @if (Status.Reason is { } reason)
         {

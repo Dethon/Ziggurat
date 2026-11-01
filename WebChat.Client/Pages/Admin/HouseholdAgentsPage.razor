@@ -92,7 +92,7 @@
                                         <div>
                                             <strong>@version.Name</strong>
                                             <span class="admin-field-hint">
-                                                replaced @version.ReplacedAt.ToLocalTime().ToString("g")@(version.ReplacedBy.Length > 0 ? $" by {version.ReplacedBy}" : "")
+                                                replaced @AdminTime.Of(version.ReplacedAt)@(version.ReplacedBy.Length > 0 ? $" by {version.ReplacedBy}" : "")
                                             </span>
                                             <p class="admin-version-instructions">@(version.CustomInstructions ?? "No custom instructions.")</p>
                                         </div>

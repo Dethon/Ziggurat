@@ -61,8 +61,8 @@
 
                 @foreach (var credential in server.Credentials)
                 {
-                    <div class="admin-actions" role="group" aria-label="Credential minted @credential.MintedAt.ToLocalTime().ToString("g")">
-                        <span>Credential minted @credential.MintedAt.ToLocalTime().ToString("g")@(credential.InUse ? " · in use" : "")</span>
+                    <div class="admin-actions" role="group" aria-label="Credential minted @AdminTime.Of(credential.MintedAt)">
+                        <span>Credential minted @AdminTime.Of(credential.MintedAt)@(credential.InUse ? " · in use" : "")</span>
                         <button type="button" class="admin-secondary" @onclick="() => _confirming = credential.Id">Revoke</button>
                     </div>
                     @if (_confirming == credential.Id)
@@ -130,7 +130,7 @@
 
     private static string StateOf(AdminServer server) => server.Connection switch
     {
-        ServerConnection.Connected => $"Connected since {server.ConnectedSince?.ToLocalTime().ToString("g")}",
+        ServerConnection.Connected => $"Connected since {(server.ConnectedSince is { } since ? AdminTime.Of(since) : "")}",
         ServerConnection.Offline => "Offline",
         _ => "State unknown: the deployment could not be asked just now"
     };

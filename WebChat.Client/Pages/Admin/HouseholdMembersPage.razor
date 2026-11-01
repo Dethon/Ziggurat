@@ -25,7 +25,7 @@
     @if (_state.Minted is { } minted)
     {
         <div class="admin-minted" role="region" aria-label="New link">
-            <p>@minted.What, good once until @minted.Link.ExpiresAt.ToLocalTime().ToString("g"). Send it to them: it is not shown again.</p>
+            <p>@minted.What, good once until @AdminTime.Of(minted.Link.ExpiresAt). Send it to them: it is not shown again.</p>
             <p><a class="admin-minted-link" data-member-link href="@minted.Link.Url">@minted.Link.Url</a></p>
             @if (minted.Link.TelegramLink is { } telegramLink)
             {
