@@ -15,8 +15,10 @@ public sealed class MetricsHubBinder(
     MetricFamilyTable families,
     MetricsStore metricsStore,
     HealthStore healthStore,
-    ILogger<MetricsHubBinder> logger)
+    ILogger<MetricsHubBinder> logger,
+    HouseholdFilter? households = null)
 {
+    private readonly HouseholdFilter _households = households ?? new HouseholdFilter();
     private readonly List<IDisposable> _subscriptions = [];
     private Queue<Func<Task>>? _held;
     private int _holdDepth;
@@ -73,6 +75,8 @@ public sealed class MetricsHubBinder(
         }
     }
 
+    // The hub sends every household's pushes, so one for a household the pages are not showing is
+    // dropped — asked as it is applied, so one held while the filter changed is asked of the new one.
     private Func<T, Task> OnPush<T>(Func<T, bool> alreadyCaughtUp, Func<T, Task> apply) =>
         evt =>
         {
@@ -80,12 +84,19 @@ public sealed class MetricsHubBinder(
             {
                 // The dedupe question is asked on release, once the snapshot has written the list
                 // this event may already be in.
-                held.Enqueue(() => alreadyCaughtUp(evt) ? Task.CompletedTask : apply(evt));
+                held.Enqueue(() => alreadyCaughtUp(evt) || !Shown(evt) ? Task.CompletedTask : apply(evt));
                 return Task.CompletedTask;
             }
 
-            return apply(evt);
+            return Shown(evt) ? apply(evt) : Task.CompletedTask;
         };
+
+    private bool Shown<T>(T evt) => _households.Admits(evt switch
+    {
+        MetricEvent metric => metric.TenantId,
+        ServiceHealthUpdate health => health.Household,
+        _ => null
+    });
 
     // Record value equality compares a list or a dictionary member by reference, and the snapshot's
     // copy of an event is deserialized separately from the hub's — so for the three event types
