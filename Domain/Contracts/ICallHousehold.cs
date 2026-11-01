@@ -17,6 +17,9 @@ public interface ICallHousehold
 
     // None when the household has set no Idealista keys.
     Task<IdealistaKeys?> IdealistaKeysAsync(CancellationToken ct);
+
+    // The agents the household runs, under their names: what the schedules mount shows it.
+    Task<HouseholdAgentNames> AgentNamesAsync(CancellationToken ct);
 }
 
 public static class CallHouseholds

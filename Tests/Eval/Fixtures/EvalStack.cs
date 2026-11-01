@@ -8,6 +8,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Household;
 using Domain.DTOs.Tunnel;
 using Domain.DTOs.Voice;
 using Domain.Security.Signing;
@@ -464,16 +465,13 @@ public sealed class EvalStack : IAsyncDisposable
         });
         builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
         // A stack with no accounts service: the eval household's schedules are read in the zone the
-        // pinned clock is in, as the home's are on the deployment.
-        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(Clock.LocalTimeZone)));
+        // pinned clock is in, as the home's are on the deployment, and its agents — the directories
+        // under /schedules — are the shipped agents, as the home's are, so a scenario that schedules
+        // work writes into the same directory a deployment would.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(
+            Clock.LocalTimeZone, [.. shipped.Agents.Select(a => new HouseholdAgentName(a.Id, a.Name, a.Description))])));
 
         var endpoint = await StartAsync(builder, port);
-
-        // What the channel registration does in production, on a stack that dials no channels: the
-        // agent directories under /schedules are the shipped agents, so a scenario that schedules
-        // work writes into the same directory a deployment would.
-        _servers[^1].Services.GetRequiredService<IMutableAgentCatalog>().Replace(
-            [.. shipped.Agents.Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description))]);
 
         return endpoint;
     }

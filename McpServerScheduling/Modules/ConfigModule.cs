@@ -28,7 +28,6 @@ public static class ConfigModule
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<ScheduleFileSystem>()
-            .AddSingleton<ScheduleSetupSummary>()
             .AddHostedService<ScheduleDispatcherService>()
             // Each household's settings, for the zone its schedules are read and fired in: asked with
             // this server's own credential, and dropped when a save is announced on its Redis.
