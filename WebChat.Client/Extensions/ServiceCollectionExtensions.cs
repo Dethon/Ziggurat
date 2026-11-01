@@ -1,6 +1,7 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Services;
 using WebChat.Client.State;
+using WebChat.Client.State.Admin;
 using WebChat.Client.State.AgentActivity;
 using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Alert;
@@ -45,6 +46,17 @@ public static class ServiceCollectionExtensions
 
             services.AddScoped<ConfigService>();
             services.AddScoped<IConfigService>(sp => sp.GetRequiredService<ConfigService>());
+
+            return services;
+        }
+
+        // The household's admin area: its client of the admin API, its pages' stores and their effects.
+        // Apart from the chat's own stores and effects, which run with no admin area at all.
+        public IServiceCollection AddWebChatAdmin()
+        {
+            services.AddScoped<IAdminService, AdminService>();
+            services.AddScoped<HouseholdSettingsStore>();
+            services.AddScoped<HouseholdSettingsEffect>();
 
             return services;
         }

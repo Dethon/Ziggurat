@@ -1,0 +1,21 @@
+@using WebChat.Client.State.Admin
+
+@* What an admin page says after asking the admin API, drawn the same way on every page: a saved
+   change as a status, anything else as an alert, with the rules' problems listed. *@
+<div class="admin-notice admin-notice-@Notice.Kind.ToString().ToLowerInvariant()"
+     role="@(Notice.Kind == AdminNoticeKind.Saved ? "status" : "alert")">
+    <p>@Notice.Message</p>
+    @if (Notice.Problems is { Count: > 0 } problems)
+    {
+        <ul>
+            @foreach (var problem in problems)
+            {
+                <li>@problem</li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public AdminNotice Notice { get; set; } = default!;
+}

@@ -42,6 +42,7 @@ builder.Services.AddScoped<IAccountService, AccountService>();
 
 builder.Services.AddWebChatStores();
 builder.Services.AddWebChatEffects();
+builder.Services.AddWebChatAdmin();
 
 builder.Services.AddScoped<TopicStreams>();
 builder.Services.AddScoped<IStreamingService, StreamingService>();
@@ -74,5 +75,6 @@ _ = app.Services.GetRequiredService<AttachmentEffect>();
 _ = app.Services.GetRequiredService<DictationEffect>();
 _ = app.Services.GetRequiredService<TopicRenameEffect>();
 _ = app.Services.GetRequiredService<TopicShareEffect>();
+_ = app.Services.GetRequiredService<HouseholdSettingsEffect>();
 
 await app.RunAsync();
