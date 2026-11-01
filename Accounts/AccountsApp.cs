@@ -1,3 +1,4 @@
+using Accounts.Admin;
 using Accounts.Announcements;
 using Accounts.Configuration;
 using Accounts.Internal;
@@ -11,6 +12,7 @@ using Accounts.Settings;
 using Accounts.Signing;
 using Accounts.Store;
 using Accounts.Tunnels;
+using Domain.Security;
 using Domain.Security.Signing;
 using Microsoft.AspNetCore.DataProtection;
 
@@ -33,6 +35,13 @@ public static class AccountsApp
             .AddSingleton<PageGuard>()
             .AddSingleton<AccountPage>()
             .AddSingleton<MembersPage>()
+            .AddSingleton<AdminLog>()
+            // The admin API believes the assertion the proxy's session check signed for the admin
+            // channel, which is this service's own: verified against its own keys, on its own clock,
+            // with the skew every verifier forgives.
+            .AddSingleton(sp => new AssertionVerifier(
+                sp.GetRequiredService<SigningKeyStore>(), clock.Time, settings.Mcp.TokenVerification,
+                sp.GetService<ILogger<AssertionVerifier>>()))
             // Host-only and under /accounts, unlike the session cookie: it is this service's alone,
             // and a sibling host under the parent domain never receives it. Not marked Secure:
             // TLS ends at the proxy, so no request here is https, and antiforgery refuses to issue
@@ -85,6 +94,7 @@ public static class AccountsApp
 
     public static WebApplication MapAccounts(this WebApplication app)
     {
+        AdminApi.UseGate(app);
         var accounts = app.MapGroup(PathBase);
         SessionCheck.Map(accounts);
         SignedInPerson.Map(accounts);
@@ -92,6 +102,7 @@ public static class AccountsApp
         AccountPage.Map(accounts);
         MembersPage.Map(accounts);
         PasskeyEndpoints.Map(accounts);
+        AdminApi.Map(accounts);
         InternalApi.Map(accounts);
         return app;
     }

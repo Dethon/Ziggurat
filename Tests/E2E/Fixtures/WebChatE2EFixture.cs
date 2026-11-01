@@ -62,7 +62,12 @@ public class WebChatE2EFixture : E2EFixtureBase
     // Every page of the chat client is behind the session check, so a test's page carries its
     // user's session before it opens anything: the account for that index, made on first asking,
     // signed in by a minted session rather than a passkey ceremony.
-    public async Task<IPage> CreateSignedInPageAsync(int userIndex, bool hasTouch = false, bool isMobile = false)
+    public async Task<IPage> CreateSignedInPageAsync(int userIndex, bool hasTouch = false, bool isMobile = false) =>
+        await CreatePageSignedInAsync(await Stack.SessionForAsync(userIndex), hasTouch, isMobile);
+
+    // A page signed in by a session the test minted itself, for a person the stack's users are not —
+    // an owner, say, since every one of them is a member.
+    public async Task<IPage> CreatePageSignedInAsync(string session, bool hasTouch = false, bool isMobile = false)
     {
         var page = await CreatePageAsync(hasTouch, isMobile);
         await page.Context.AddCookiesAsync(
@@ -70,7 +75,7 @@ public class WebChatE2EFixture : E2EFixtureBase
             new Cookie
             {
                 Name = SessionCookieName,
-                Value = await Stack.SessionForAsync(userIndex),
+                Value = session,
                 Url = Stack.WebChatUrl,
                 HttpOnly = true,
                 SameSite = SameSiteAttribute.Lax

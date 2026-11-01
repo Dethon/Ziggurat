@@ -152,6 +152,7 @@ assertion to hand on, reads it there too.
 | Sugary `/api` (`Person.SignedInAsync`, in `SugaryApp`'s gate) | `SugaryChannel.ChannelId` | 401 | verified once per request, the `Person` kept in `HttpContext.Items` for the routes' binders |
 | Dashboard, everything served (`OperatorGate`) | `AppChannels.Dashboard` | 401 | 403 without the `operator` role |
 | `/api/agents*` (`AgentApi`, after the secret) | `AppChannels.SexyTime` | 401 | the secret alone opens nothing |
+| The accounts service's admin API, `/accounts/admin/*` (`AdminApi`'s gate) | `AppChannels.Admin` | 401 | verified against the service's own keys; 403 without the root's role or the admin client's header (`.claude/rules/admin.md`) |
 
 The channel is what keeps an assertion signed for one route from opening another: each Caddy
 `forward_auth` names its block's (`?channel=`), the session check signs it, the app checks it.

@@ -36,6 +36,9 @@ public static class Icons
         + "2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 "
         + "0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z");
 
+    // The household: the admin area's entry, offered to its owners.
+    public static readonly IconGlyph House = Filled("M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8Z");
+
     // Lemonade's own mark — the lemon body and the leaf from its logo.svg, on the 32-unit grid it
     // was drawn on and in its own colours, so a person who knows the app recognises it. The glow
     // filters are left out; at 14px they were only blur. The gradient ids carry the wrapper's

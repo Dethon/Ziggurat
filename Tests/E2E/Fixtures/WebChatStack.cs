@@ -9,6 +9,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
+using Domain.Security;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
@@ -551,10 +552,10 @@ internal sealed partial class WebChatStack
         // DockerCompose/caddy/Caddyfile's main host, minus TLS: the chat client, its hub and the
         // hub's upload and dictation endpoints ask the accounts service's session check first and
         // carry the person on in its headers; sign-in and the agent API do not.
-        static string Checked(string matcher, string upstream) =>
+        static string Checked(string matcher, string upstream, string channel = ChannelIds.SignalR) =>
             $"    handle {matcher}{{\n" +
             "        forward_auth accounts:8080 {\n" +
-            "            uri /accounts/verify?channel=signalr\n" +
+            $"            uri /accounts/verify?channel={channel}\n" +
             "            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion\n" +
             "        }\n" +
             $"        reverse_proxy {upstream}\n" +
@@ -575,6 +576,9 @@ internal sealed partial class WebChatStack
             "    handle /accounts/internal/* {\n" +
             "        respond 404\n" +
             "    }\n" +
+            // The admin area's API, behind the session check for the admin channel and before the
+            // accounts service's unchecked pages, mirroring DockerCompose/caddy/Caddyfile.
+            Checked("/accounts/admin/* ", "accounts:8080", AppChannels.Admin) +
             "    handle /accounts/* {\n" +
             "        reverse_proxy accounts:8080\n" +
             "    }\n" +

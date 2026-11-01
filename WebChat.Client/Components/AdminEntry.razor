@@ -1,0 +1,24 @@
+@inherits StoreSubscriberComponent
+@inject UserIdentityStore Store
+@inject NavigationManager Navigation
+
+@* The household's admin area, offered to its owners alone: a member is never shown the way in, and
+   the admin API refuses them whatever they type. *@
+@if (_isOwner)
+{
+    <a class="admin-entry" href="@AdminArea.Home" title="Household settings" aria-label="Household settings"
+       @onclick="Open" @onclick:preventDefault>
+        <Icon Glyph="Icons.House" />
+    </a>
+}
+
+@code {
+    private bool _isOwner;
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state.SignedIn?.IsOwner == true, owner => _isOwner = owner);
+    }
+
+    private void Open() => AdminArea.Enter(Navigation, AdminArea.Home);
+}
