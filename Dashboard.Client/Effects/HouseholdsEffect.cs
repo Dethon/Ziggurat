@@ -27,6 +27,29 @@ public sealed class HouseholdsEffect(HouseholdsAdminService admin, HouseholdsSto
     public Task MintOwnerRecoveryAsync(string householdId, string userId) =>
         MintAsync(() => admin.MintOwnerRecoveryAsync(householdId, userId));
 
+    // The list is read again either way, so the row says what the household is now; a suspension that
+    // stood with a caveat says it.
+    public async Task SetSuspensionAsync(string householdId, bool suspended)
+    {
+        store.SetBusy(true);
+        try
+        {
+            var answer = await admin.SetSuspensionAsync(householdId, suspended);
+            store.SetNotice(answer switch
+            {
+                HouseholdsAnswer<AdminSaved<HouseholdSuspension>>.Answered { Value.Warning: { } warning } =>
+                    new HouseholdsNotice(warning, []),
+                HouseholdsAnswer<AdminSaved<HouseholdSuspension>>.Answered => null,
+                var other => NoticeOf(other)
+            });
+            await LoadAsync();
+        }
+        finally
+        {
+            store.SetBusy(false);
+        }
+    }
+
     private async Task MintAsync(Func<Task<HouseholdsAnswer<OwnerLink>>> mint)
     {
         store.SetBusy(true);

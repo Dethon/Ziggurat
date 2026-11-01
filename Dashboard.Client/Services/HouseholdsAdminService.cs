@@ -44,6 +44,14 @@ public sealed class HouseholdsAdminService(HttpClient http)
             new HttpRequestMessage(HttpMethod.Post, AdminProtocol.OwnerRecovery(householdId, userId)),
             async content => (await content.ReadFromJsonAsync<AdminSaved<OwnerLink>>())!.Value);
 
+    public Task<HouseholdsAnswer<AdminSaved<HouseholdSuspension>>> SetSuspensionAsync(string householdId, bool suspended) =>
+        SendAsync(
+            new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Suspension(householdId))
+            {
+                Content = JsonContent.Create(new HouseholdSuspension(suspended))
+            },
+            async content => (await content.ReadFromJsonAsync<AdminSaved<HouseholdSuspension>>())!);
+
     private async Task<HouseholdsAnswer<T>> SendAsync<T>(HttpRequestMessage request, Func<HttpContent, Task<T>> read)
     {
         request.Headers.Add(AdminProtocol.RequestHeader, AdminProtocol.RequestHeaderValue);

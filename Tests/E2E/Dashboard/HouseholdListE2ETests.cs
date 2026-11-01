@@ -60,6 +60,42 @@ public class HouseholdListE2ETests(DashboardAdminE2EFixture fixture)
         await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync("Bea");
     }
 
+    // Suspended from its row, the household's people are told so wherever the deployment's check stands
+    // — here the dashboard's own host, which would otherwise refuse them for not being the operator — and
+    // resumed from the same row, they are only that again. The home has no button: it is the operator's.
+    [Fact]
+    public async Task TheOperator_SuspendsAHouseholdFromItsRow_ItsPeopleAreToldSo_AndResumesIt()
+    {
+        var (page, _) = await fixture.CreateOperatorPageAsync();
+        await OpenAsync(page);
+        await page.GetByLabel("Household name").FillAsync("Casa Gil");
+        await page.GetByLabel("Owner's name").FillAsync("Eva");
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Create household" }).ClickAsync();
+        await WaitForLinkAsync(page);
+        var row = Row(page, "Casa Gil");
+        var eva = await fixture.OwnerSessionAsync(page, "Casa Gil");
+        var suspend = row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Suspend Casa Gil" });
+        await Assertions.Expect(suspend).ToBeVisibleAsync();
+        (await Row(page, "Home").GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Suspend Home" }).CountAsync())
+            .ShouldBe(0, "the home is the operator's own");
+
+        await suspend.ClickAsync();
+
+        await Assertions.Expect(row).ToContainTextAsync("suspended since");
+        await Assertions.Expect(page.GetByRole(AriaRole.Alert)).ToHaveCountAsync(0);
+        var (status, body) = await fixture.OpenAsAsync(eva);
+        status.ShouldBe(HttpStatusCode.Forbidden);
+        body.ShouldContain("Household suspended");
+        body.ShouldContain(global::Accounts.Sessions.SessionCheck.SuspendedNotice);
+
+        await row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Resume Casa Gil" }).ClickAsync();
+
+        await Assertions.Expect(row).ToContainTextAsync("running");
+        var (resumedStatus, resumedBody) = await fixture.OpenAsAsync(eva);
+        resumedStatus.ShouldBe(HttpStatusCode.Forbidden);
+        resumedBody.ShouldNotContain("Household suspended", customMessage: "resumed, she is refused only for not being the operator");
+    }
+
     // The dashboard's host lets in the operator's session alone: an owner of the home household is
     // refused before anything of the dashboard is served.
     [Fact]

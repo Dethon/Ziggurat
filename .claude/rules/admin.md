@@ -36,6 +36,7 @@ paths:
   - "WebChat.Client/State/Effects/HouseholdMembersEffect.cs"
   - "Tests/Integration/Accounts/HouseholdMembersAdminTests.cs"
   - "Tests/E2E/WebChat/HouseholdMembersE2ETests.cs"
+  - "Tests/Integration/Accounts/HouseholdSuspensionAdminTests.cs"
 ---
 
 # The admin API and the admin area
@@ -89,8 +90,8 @@ order:
    else **403** with an `AdminRefusal`.
 
 Every admin answer is `Cache-Control: no-store`. The session's liveness is the session check's: it ran
-on this very request (forward_auth), so the assertion is seconds old; suspension (09) and disabled
-members (04) are refused there, not here.
+on this very request (forward_auth), so the assertion is seconds old; a suspended household (below) and
+disabled members (04) are refused there, not here.
 
 ## Answers
 
@@ -307,8 +308,24 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
   container command: a stolen dashboard session must not become a passkey).
 - Both mints are recorded on the household they are for, the link never in the summary. A link is in
   the answer alone; the page holds it in its state until "Done" or the page is left, and never asks again.
-- **09 adds suspension here**: its routes under `/operator/households/{householdId}/…`, its state as a
-  field of `HouseholdListEntry`, and its button in the list's row.
+- **Suspension** (`HouseholdSuspensionAdmin`): **`PUT /operator/households/{householdId}/suspension`**
+  `HouseholdSuspension { suspended }` sets `Tenant.SuspendedAt` (kept when already suspended, cleared on
+  resume), answered `AdminSaved<HouseholdSuspension { suspended, since }>`; the home is 400 (the
+  operator's own: nothing would be left to resume it from), no such household 404. Recorded as
+  "Suspended the household" / "Resumed the household" only when it changed; it is announced every time
+  (asking again is the retry): `HouseholdConfigSaved(id, HouseholdConfigProtocol.SuspensionSection)` so
+  every reader of the household's configuration drops what it kept, and on suspending
+  `HouseholdSuspended(id)` on `TunnelCredentialProtocol.SuspendedChannel` so the relay closes its open
+  tunnels; not told stands with `NotToldWarning`. **Nothing is deleted.** Each place that lets a
+  household in reads the row: the session check (`.claude/rules/accounts.md`), the agent's view
+  (`AgentHouseholdConfig.Suspended`, refused per message in `ConversationGroup`, `.claude/rules/channels.md`),
+  the tunnel verify (`TunnelCredentialRefusal.Suspended`) and a household server's back-call
+  (`TunnelCredentialStore.LiveAsync` answers none). The list's `HouseholdListEntry.SuspendedAt` and the
+  row's Status cell (Suspend / Resume, none for the home) are the dashboard's.
+- **Not stopped by it**: the owner's own `/accounts/*` pages (account, members) read their own cookie,
+  not the session check; dreaming still consolidates a suspended household's memories on its key once a
+  night (the `people` view says nothing of suspension). Resolutions (Telegram, voice) and the hub's
+  session refresh still answer, so a turn reaches the agent, which says why it was refused.
 
 ## The admin area (chat client)
 
@@ -369,4 +386,15 @@ secret). The owner's link enrolling a passkey into the new household is a ceremo
 signed in by `mint-link --operator` and `mint-session` (`CreateOperatorPageAsync`, which also answers
 the home's id), anybody else by `CreatePersonPageAsync(name, role)`, and the relay's listing a stub
 whose servers a test sets with `Connect(householdId, server)`. Its stack is its own, so a test may
-create, change and suspend households freely; the fixture is the one 08 and 09 extend.
+create, change and suspend households freely; the fixture is the one 08 and 09 extend. Its accounts
+service announces on the fixture's Redis; `OwnerSessionAsync(operatorPage, householdName)` mints a session
+for the owner of a household the operator created (found through the operator's page's own list), and
+`OpenAsAsync(session, path)` asks the host as that person's browser would over HTTP — the base fixture keeps
+one page open at a time, so a second person cannot have a page beside the operator's.
+
+Suspension's seam 1 is `HouseholdSuspensionAdminTests` (the route, the home refused, the announcements on a
+`RedisFixture`, the tunnel verify and back-call, the agent's reader seeing it and resuming) beside
+`SessionCheckTests` (the notice and the 403); seam 4 is `ChatMonitorAssertionTests` and
+`ChatMonitorDelegationTests` over `MonitorTestMocks.Households(suspended, from)` — a household suspended
+from its n-th asking, so a conversation already running is refused from its next message — and
+`TunnelRelayTests` (its tunnels closed `Suspended`, another household's left open).

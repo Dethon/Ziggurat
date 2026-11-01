@@ -50,7 +50,8 @@ public static class HouseholdListAdmin
             [.. people[household.Id].Where(u => u.Role == Role.Owner).Select(Person)],
             [.. people[household.Id].Where(u => u.Role != Role.Owner).Select(Person)],
             servers?.Select(s => new HouseholdConnectedServer(s.ServerName, s.OpenedAt)).ToList(),
-            lastSeen.TryGetValue(household.Id, out var seen) ? seen : null)).ToList());
+            lastSeen.TryGetValue(household.Id, out var seen) ? seen : null,
+            household.SuspendedAt)).ToList());
     }
 
     private static async Task<IResult> CreateAsync(
