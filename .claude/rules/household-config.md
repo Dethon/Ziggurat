@@ -221,7 +221,8 @@ Every model call made for a household goes out on its own OpenRouter key and is 
   agent is read under `Account(TenantId, UserId)`.
 - **Dreaming** walks the `people` view: each household's people the store keeps memory for, on the
   household's key, its events and the merge's embeddings counted under it. A household that cannot
-  pay or be read is not dreamt for that night; a user id in no household is left alone (one warning).
+  pay or be read is not dreamt for that night, nor one suspended, nor a member its view lists as
+  disabled; a user id in no household is left alone (one warning).
 - **Housekeeping stays the deployment's**: the keep-alive and model capabilities.
 - **A shared server's Jev** (the voice approval reader, the web search modal judge) holds no
   household's key, so `JudgmentCaller.For(context)` names the call's household for the figures and

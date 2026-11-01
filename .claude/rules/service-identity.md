@@ -300,10 +300,16 @@ whether the household still lets the agent act for that person: `IAccountStandin
 kept a minute and dropped when accounts announces `HouseholdConfigProtocol.PeopleChanged`). A member an
 owner disabled is refused before anything is built: logged, an `ErrorEvent` `AccountDisabled`
 (`ChatMonitor.AccountDisabledErrorType`) under their household, and `ConversationGroup.DisabledAnswer`
-then `StreamComplete` on the channel. A standing that cannot be read refuses the turn as an
-`AssertionRefused` `StandingUnreadable` — the turn could not be built without that view anyway. The guest
-and nobody are never asked about. A monitor built with no `IAccountStanding` (a test harness) asks
-nobody; the agent's host registers it in `AddAgent`.
+then `StreamComplete` on the channel. Before that the household itself is asked whether it runs
+(`.claude/rules/channels.md`, "A suspended household starts nothing"). A standing or a suspension that
+cannot be read refuses the turn as `StandingUnreadable` (`ChatMonitor.StandingUnreadableErrorType`) with
+`ConversationGroup.UncheckedAnswer` — "could not be checked right now", never "suspended" or
+"disabled", which may not be so, and never let through: the turn could not be built without that view
+anyway. One `StandingRefusal` (`Suspended`, `Disabled`, `Unchecked`) answers both checks and one
+`RefuseByStandingAsync` reports it, for a turn and a fire alike. The guest and nobody are never asked
+about their standing (the guest's household is asked whether it runs). A monitor built with no
+`IAccountStanding` or no `IAgentDefinitionProvider` (a test harness) asks nobody that question; the
+agent's host registers both in `AddAgent`.
 
 **Not checked**: a chat command (`/clear`, `/cancel`, a channel's cancel) is no turn and acts for
 nobody. A message with `Origin` set — a schedule's fire, a login wake, a watch, a download — carries
@@ -407,22 +413,38 @@ description says. It answers `FireAdmission.Delegated(identity)` — the message
 `Undelegated(refusal)`: the principal is dropped and the turn runs as nobody. A refusal (a token that
 does not verify, `NamesNoPerson`, `WrongKind`, `DigestMismatch`, `NotThisFire`, `NotDelegable` for a
 download carrying one) is logged at warning and published as `DelegationRefused`; a fire carrying
-none is ordinary and says nothing. A monitor built with no verifier believes no delegation. A delegation
-that verifies but names a member an owner has since disabled is refused the same way, as
-`AccountDisabled` (or `StandingUnreadable` when their standing cannot be read) — the same household
-check a person's turn gets (Channels and the agent, "Disabled members") — so their schedules, watches and
-login wakes fire as nobody; nothing about the delegation is spent, and once they are re-enabled it acts
-for them again. Fire
-timing is not checked: nothing in a fire says when it was due, so the digest's timing only catches a
-store edited under a server that still tells the truth about it. `run_now` fires a schedule as its
-delegation says, whoever asked for it.
+none is ordinary and says nothing. A monitor built with no verifier believes no delegation.
+
+**Then the household decides whether it runs at all** — the same check a person's turn gets (Channels
+and the agent, "Disabled members"), and refused, not run as nobody, since nobody is waiting to be
+told and a fire as nobody still says its prompt, wherever it delivers, on the home's agent:
+
+- **A suspended household's fire starts nothing**, delegated or not: the households asked are the one
+  its server keeps the object under — `ChannelMessage.HouseholdId`, a schedule's `TenantId` stamped by
+  `ScheduleFirePlanner` through `Fire.HouseholdId` — and the delegation's person's. A watch's fire names
+  none: Home Assistant is a channel only as the home's server (`IOwnChannelServers`), and the home cannot
+  be suspended. A login wake's household is its delegation's.
+- **A disabled member's fire starts nothing** (`AccountDisabled` under their household): story 10's
+  "have schedules fire for them" is what disabling stops, so their schedules, watches and login wakes
+  do not run as anybody. Nothing about the delegation is spent, and once they are re-enabled it acts for
+  them again.
+- **A standing or a suspension that cannot be read** refuses the fire as `StandingUnreadable`.
+- Only the object's integrity refusals above (`DigestMismatch`, `WrongKind`, a forged token, …) still
+  run as nobody: those say the object is not what was signed, not that its household stopped it.
+
+A refused fire was emitted all the same, so its server advances a cron and deletes a one-shot as if it
+ran. Fire timing is not checked: nothing in a fire says when it was due, so the digest's timing only
+catches a store edited under a server that still tells the truth about it. `run_now` fires a schedule
+as its delegation says, whoever asked for it.
 
 **Delegations hold against an honest server.** The signature bounds *what* a fire does as the person,
 never *whether* or *when* it comes: a misbehaving server could keep a delegation it stored for an
 object since deleted or overwritten and fire it again (the delegation still names that object doing
 exactly that), at any time, since no due time is checked; and an edit or a move is signed over the
 content the server answered the agent's read with just before the write, so a server lying there gets
-a delegation for its own words with the turn's edit on top.
+a delegation for its own words with the turn's edit on top. The household a fire names is the server's
+word too, and is believed only to refuse: a lying server could have its own fire refused, or leave the
+household out of an undelegated one, which then runs as nobody as it could anyway.
 
 **The commands** (`Agent/Commands/AgentCommand.cs`, System.CommandLine, detected in `Program` before
 anything builds and run instead of the agent): `rotate-signing-key` (a new key signs from the next
