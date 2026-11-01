@@ -75,35 +75,38 @@ public class ChatMonitorDelegationTests
     }
 
     // A delegation lives as long as its schedule, so one signed before an owner disabled its person
-    // still verifies: the household's word decides, and a disabled member's schedule fires as nobody.
+    // still verifies: the household's word decides. A disabled member's schedule does not fire at all —
+    // as nobody it would still say its prompt, to wherever it delivers, on the home's agent — and the
+    // delegation is left as it is, so it acts for them again once they are re-enabled.
     [Fact]
-    public async Task ADisabledMembersFire_ActsForNobody_AndIsReported()
+    public async Task ADisabledMembersFire_StartsNoTurn_AndIsReported()
     {
         var run = new Run(standing: new FakeAccountStanding(_fran));
         run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
 
         await run.MonitorAsync();
 
-        run.Factory.Created.ShouldHaveSingleItem().Account.ShouldBeNull();
-        var context = run.TurnContext();
-        context.Identity.ShouldBeNull();
-        context.Principal.ShouldBeNull();
+        run.Factory.Created.ShouldBeEmpty();
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        run.Channel.SentReplies.ShouldBeEmpty();
         var error = run.Errors.ShouldHaveSingleItem();
-        error.ErrorType.ShouldBe(ChatMonitor.DelegationRefusedErrorType);
-        error.Message.ShouldContain(ConversationGroup.AccountDisabled);
+        error.ErrorType.ShouldBe(ChatMonitor.AccountDisabledErrorType);
+        error.TenantId.ShouldBe(Household);
+        error.Message.ShouldNotBeNull().ShouldContain(_fran.UserId);
     }
 
+    // A standing that cannot be read is never good standing, for a fire as for a turn.
     [Fact]
-    public async Task AFireWhosePersonsStandingCannotBeRead_ActsForNobody()
+    public async Task AFireWhosePersonsStandingCannotBeRead_StartsNoTurn()
     {
         var run = new Run(standing: new FakeAccountStanding { Unreadable = true });
         run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
 
         await run.MonitorAsync();
 
-        run.Factory.Created.ShouldHaveSingleItem().Account.ShouldBeNull();
-        run.TurnContext().Identity.ShouldBeNull();
-        run.Errors.ShouldHaveSingleItem().Message.ShouldContain(ConversationGroup.StandingUnreadable);
+        run.Factory.Created.ShouldBeEmpty();
+        run.Channel.SentReplies.ShouldBeEmpty();
+        run.Errors.ShouldHaveSingleItem().ErrorType.ShouldBe(ChatMonitor.StandingUnreadableErrorType);
     }
 
     // Re-enabled, the same delegation acts for them again: nothing about it was spent or dropped.
@@ -135,6 +138,42 @@ public class ChatMonitorDelegationTests
         var refused = run.Errors.ShouldHaveSingleItem();
         refused.ErrorType.ShouldBe(ChatMonitor.HouseholdSuspendedErrorType);
         refused.TenantId.ShouldBe(Household);
+    }
+
+    // Every fire of a suspended household starts nothing, not only one a delegation stands behind: a
+    // schedule written for nobody, or whose delegation no longer holds, names its household too.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnUndelegatedFireOfASuspendedHousehold_StartsNoTurn(bool forged)
+    {
+        var what = global::Domain.Tools.Scheduling.Vfs.ScheduleDelegation.Of(_schedule);
+        var run = new Run(households: MonitorTestMocks.Households(suspended: Household));
+        run.Channel.WriteUnsigned(Fire(forged
+            ? new FireDelegation(TestDelegations.Forged(_fran, ChannelIds.SignalR, what), what.Description)
+            : null) with
+        { HouseholdId = Household });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Channel.SentReplies.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.HouseholdSuspendedErrorType);
+        refused.TenantId.ShouldBe(Household);
+    }
+
+    // Whether the fire's household is suspended could not be asked: it is not taken to run.
+    [Fact]
+    public async Task AFireWhoseHouseholdCannotBeRead_StartsNoTurn()
+    {
+        var run = new Run(households: MonitorTestMocks.UnreadableHouseholds());
+        run.Channel.WriteUnsigned(Fire(null) with { HouseholdId = Household });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Errors.ShouldHaveSingleItem().ErrorType.ShouldBe(ChatMonitor.StandingUnreadableErrorType);
     }
 
     // A finished download reports back to whoever asked without acting as them, whatever it carries.

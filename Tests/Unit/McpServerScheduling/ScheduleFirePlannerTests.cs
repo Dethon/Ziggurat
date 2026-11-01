@@ -22,6 +22,20 @@ public class ScheduleFirePlannerTests
         plan.Payload.Origin!.ScheduleId.ShouldBe("n");
     }
 
+    // The household the schedule is kept under rides the fire, so the agent refuses every fire of a
+    // suspended household, whatever its delegation says; one kept under none names none.
+    [Theory]
+    [InlineData("fedcba9876543210fedcba9876543210", "fedcba9876543210fedcba9876543210")]
+    [InlineData("", null)]
+    public void Plan_CarriesTheSchedulesHousehold(string tenantId, string? expected)
+    {
+        var s = new Schedule { Id = "n", TenantId = tenantId, AgentId = "jonas", Prompt = "p", CronExpression = "0 8 * * *" };
+
+        var plan = ScheduleFirePlanner.Plan(s, defaultDeliverTo: ["signalr"], nextRun: null, now: DateTimeOffset.UtcNow);
+
+        plan.Payload.HouseholdId.ShouldBe(expected);
+    }
+
     // The fire runs as whoever wrote the schedule, as their turn's channel vouched for them.
     [Fact]
     public void Plan_CarriesTheWritersPrincipal()
