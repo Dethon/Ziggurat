@@ -1,6 +1,7 @@
 using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
+using Domain.Security;
 using Domain.Security.Signing;
 
 namespace Accounts.Signing;
@@ -18,6 +19,11 @@ public sealed class Assertions(SigningKeyStore keys, AccountsSettings settings, 
     // A signed-in session's person, naming the session, which is how the chat hub asks for them again.
     public string Of(SessionIdentity session, string channel) =>
         Sign(IdentityClaims.Person(session.UserId, session.TenantId, channel, session.Roles) with { SessionId = session.SessionId });
+
+    // A person this service already verified, signed again for another route it asks on their behalf:
+    // the admin API's owner, for the Observability host's usage route (AppChannels.Usage).
+    public string Of(ForwardedAccount person, string channel) =>
+        Sign(IdentityClaims.Person(person.UserId, person.TenantId, channel, person.Roles) with { SessionId = person.SessionId });
 
     // Somebody in the household who is nobody's account, vouched for as exactly that.
     public string OfGuest(string tenantId, string channel) => Sign(IdentityClaims.Guest(tenantId, channel));

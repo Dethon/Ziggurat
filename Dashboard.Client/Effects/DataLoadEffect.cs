@@ -27,7 +27,13 @@ public sealed class DataLoadEffect(MetricFamilyTable families, OverviewFigures o
 
         displayed.ToList().ForEach(family => family.SetDateRange(from, to));
         overview.SetDateRange(from, to);
+        await ReloadAsync();
+    }
 
+    // Everything read again over the ranges each family and the summary already hold: what a change
+    // of household (HouseholdFilter) asks, since the pages' time choices stay where they were.
+    public async Task ReloadAsync()
+    {
         var requests = new Func<Task>[]
         {
             overview.LoadSummaryAsync,
