@@ -15,12 +15,28 @@ services:
     networks:
       - jackbot
 
+  # What the accounts service's key probes ask instead of OpenRouter, Idealista and Telegram: every
+  # path answered 200, so every key an owner saves here is working, and no key is ever sent to a
+  # provider to be checked. What a key buys in a turn is the provider's: the agent's model calls
+  # still go to OpenRouter. Nothing ships it.
+  smoke-keys:
+    image: caddy:2.11.7-alpine
+    container_name: smoke-keys
+    command: ["caddy", "respond", "--listen", ":8080", "--body", "{}"]
+    restart: "no"
+    networks:
+      - jackbot
+
   redis:
     volumes: ["./volumes/smoke/redis:/data"]
   accounts-volume:
     volumes: ["./volumes/smoke/accounts:/data"]
   accounts:
     volumes: ["./volumes/smoke/accounts:/data"]
+    environment:
+      KEYPROBES__OPENROUTERURL: http://smoke-keys:8080/
+      KEYPROBES__IDEALISTAURL: http://smoke-keys:8080/
+      KEYPROBES__TELEGRAMURL: http://smoke-keys:8080/
   mcp-sugary-volume:
     volumes: ["./volumes/smoke/sugary:/data"]
   mcp-sugary:
