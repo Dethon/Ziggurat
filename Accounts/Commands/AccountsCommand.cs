@@ -53,6 +53,10 @@ public static class AccountsCommand
     public const string SetHouseholdConfig = "set-household-config";
     public const string RewrapHouseholdKeys = "rewrap-household-keys";
 
+    // Asking for the verbs is a command too, so the operator typing it beside the running service is
+    // answered rather than starting a second server on its port.
+    private static readonly string[] _help = ["--help", "-h", "help"];
+
     private const string Usage =
         $"usage: {MintLink} --operator [--name <display name>] | {MintLink} --user <id> | {MintSession} --user <id>"
         + $" | {CreateUser} --name <display name> [--role owner|member] | {RotateSigningKey} | {RetireSigningKeys}"
@@ -64,12 +68,19 @@ public static class AccountsCommand
     public static bool IsCommand(IReadOnlyList<string> args) =>
         args is [MintLink or MintSession or CreateUser or RotateSigningKey or RetireSigningKeys
             or MintTunnelCredential or ListTunnelCredentials or RevokeTunnelCredential
-            or GetHouseholdConfig or SetHouseholdConfig or RewrapHouseholdKeys, ..];
+            or GetHouseholdConfig or SetHouseholdConfig or RewrapHouseholdKeys, ..]
+        || args is [var only] && _help.Contains(only);
 
     public static async Task<int> RunAsync(
         IReadOnlyList<string> args, AccountsSettings settings, AccountsClock clock, TextReader input, TextWriter output,
         CancellationToken ct)
     {
+        if (args is [var asked] && _help.Contains(asked))
+        {
+            await output.WriteLineAsync(Usage);
+            return 0;
+        }
+
         // The keys are files beside the store, not rows in it: nothing here needs the database.
         switch (args)
         {
