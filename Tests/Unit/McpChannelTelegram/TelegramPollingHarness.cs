@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Infrastructure.Clients.Accounts;
@@ -127,6 +128,20 @@ internal sealed class TelegramPollingHarness : IDisposable
 
     // Any other bot's client, made the first time a token is connected: a household's bot a test saves.
     public ConcurrentDictionary<string, Mock<ITelegramBotClient>> OtherBots { get; } = new();
+
+    // The household's jack, on the model a test says: what a file sent to it is checked against.
+    public void HouseholdRunsJackOn(string model) =>
+        Households.Agents[FakeTelegramAccounts.Household] = new AgentsSection
+        {
+            Agents =
+            [
+                new HouseholdAgent
+                {
+                    Id = AgentId,
+                    Definition = new AgentDefinition { Id = AgentId, Name = "Jack", Model = model, McpServerEndpoints = [] }
+                }
+            ]
+        };
 
     // The server stopped and started again over the same stores, which the next run drives.
     public void Restart()

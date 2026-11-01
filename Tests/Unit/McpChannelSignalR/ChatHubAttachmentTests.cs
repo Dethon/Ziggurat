@@ -64,7 +64,7 @@ public sealed class ChatHubAttachmentTests : IDisposable
             _streamService,
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
-            new Mock<IAgentCatalog>().Object,
+            new MutableAgentCatalog(),
             new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             _attachments,
