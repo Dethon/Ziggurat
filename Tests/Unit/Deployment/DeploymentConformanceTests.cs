@@ -534,7 +534,7 @@ public class DeploymentConformanceTests
             .ShouldBe(
                 [
                     InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Agent,
-                    InternalCallers.Idealista, InternalCallers.Scheduling, InternalCallers.Sugary
+                    InternalCallers.Idealista, InternalCallers.Scheduling, InternalCallers.Sugary, InternalCallers.Timers
                 ],
                 ignoreOrder: true);
     }

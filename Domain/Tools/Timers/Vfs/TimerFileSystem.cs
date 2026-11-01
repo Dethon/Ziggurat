@@ -29,6 +29,9 @@ public sealed class TimerFileSystem(
     private Account? _owner;
     private string? _agentId;
 
+    // The household as the call proved it, whose zone a timer's firing time is shown in.
+    private ICallHousehold? _householdOfCall;
+
     // A shallow copy with the caller swapped, as ScheduleFileSystem does: the copy carries every
     // dependency this mount was built with, and the store is shared by reference.
     public override FileSystemBackendBase For(FileSystemCaller caller)
@@ -39,6 +42,7 @@ public sealed class TimerFileSystem(
             : null;
         view._owner = Principal.Of(caller.Conversation)?.Account;
         view._agentId = caller.Conversation?.AgentId;
+        view._householdOfCall = caller.Household;
         return view;
     }
 
@@ -174,7 +178,7 @@ public sealed class TimerFileSystem(
                 content = RenderSpec(t);
                 break;
             case TimerNodeKind.StatusFile when await GetTimerAsync(node, ct) is { } t:
-                content = RenderStatus(t);
+                content = RenderStatus(t, await _householdOfCall.ZoneAsync(timeProvider.LocalTimeZone, ct));
                 break;
             case TimerNodeKind.DismissFile:
                 return ExecutableOnly<FsReadResult>(path, TimerPath.DismissFileName);
@@ -549,19 +553,20 @@ public sealed class TimerFileSystem(
         target = t.Target
     }, _json);
 
-    private string RenderStatus(ArmedTimer t)
+    private string RenderStatus(ArmedTimer t, TimeZoneInfo zone)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         return JsonSerializer.Serialize(new
         {
             remainingSeconds = Math.Max(0, (int)Math.Ceiling((t.FiresAtUtc - now).TotalSeconds)),
-            firesAt = ToZone(t.FiresAtUtc)
+            firesAt = ToZone(t.FiresAtUtc, zone)
         }, _json);
     }
 
-    // Stored times are UTC; render them in the operating zone so the LLM reads local wall-clock.
-    private DateTimeOffset ToZone(DateTime utc) =>
-        TimeZoneInfo.ConvertTime(new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)), timeProvider.LocalTimeZone);
+    // Stored times are UTC; render them in the calling household's zone (the server's for a call that
+    // proves none) so the model reads the household's wall clock.
+    private static DateTimeOffset ToZone(DateTime utc, TimeZoneInfo zone) =>
+        TimeZoneInfo.ConvertTime(new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)), zone);
 
     private async Task<ArmedTimer?> GetTimerAsync(TimerNode node, CancellationToken ct) =>
         node.TimerId is null || _household is null ? null : await store.GetAsync(_household, node.TimerId, ct);
