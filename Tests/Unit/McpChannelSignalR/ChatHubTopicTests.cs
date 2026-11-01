@@ -86,7 +86,7 @@ public sealed class ChatHubTopicTests : IDisposable
         // about the cursor fails inside the live-stream reporting that runs after it.
         _store.Setup(s => s.GetTopicPageAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TopicViewer>(), It.IsAny<string?>(), It.IsAny<int>(),
-                It.IsAny<bool>()))
+                It.IsAny<bool>(), It.IsAny<IReadOnlyList<string>?>()))
             .ReturnsAsync(new TopicPage([], null));
     }
 
@@ -154,7 +154,7 @@ public sealed class ChatHubTopicTests : IDisposable
     [Fact]
     public async Task GetTopicPage_WithNoPageSizeAsked_UsesTheConfiguredOne()
     {
-        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), null, 2, false))
+        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), null, 2, false, It.IsAny<IReadOnlyList<string>?>()))
             .ReturnsAsync(new TopicPage([], "42"));
 
         var page = await _hub.GetTopicPage("jack", "kitchen");
@@ -167,7 +167,7 @@ public sealed class ChatHubTopicTests : IDisposable
     [Fact]
     public async Task GetTopicPage_SaysWhichOfItsTopicsHaveAReplyInFlight()
     {
-        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), null, 2, false))
+        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), null, 2, false, It.IsAny<IReadOnlyList<string>?>()))
             .ReturnsAsync(new TopicPage([Topic("busy"), Topic("quiet")], null));
         _streamService.GetOrCreateStream("busy", "prompt", "fran", CancellationToken.None);
 
@@ -184,7 +184,7 @@ public sealed class ChatHubTopicTests : IDisposable
     {
         await _hub.GetTopicPage("jack", "kitchen", cursor: "1700", pageSize: 5);
 
-        _store.Verify(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), "1700", 5, false), Times.Once);
+        _store.Verify(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), "1700", 5, false, It.IsAny<IReadOnlyList<string>?>()), Times.Once);
     }
 
     // The delete used to succeed and say nothing, so a second tab kept showing a row for a

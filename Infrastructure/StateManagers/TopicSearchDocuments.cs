@@ -97,7 +97,7 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
     // is the last hit's score and identity, and the next page starts right below that hit. The
     // range is deliberately both sides of the archive cutoff — search is the way into the archive.
     public async Task<IReadOnlyList<TopicSearchHit>> SearchAsync(
-        string household, string agentId, string spaceSlug, string query, string? cursor, int pageSize)
+        string household, string agentId, IReadOnlyList<string> spaceSlugs, string query, string? cursor, int pageSize)
     {
         var terms = Terms(query);
         if (terms.Length == 0 || !await EnsureIndexAsync())
@@ -107,7 +107,7 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
 
         if (ParseCursor(cursor) is not { } from)
         {
-            return await RunAsync(household, agentId, spaceSlug, terms, "-inf +inf", pageSize);
+            return await RunAsync(household, agentId, spaceSlugs, terms, "-inf +inf", pageSize);
         }
 
         // The cursor's own score is read again inclusively and cut by hit identity, because the
@@ -115,20 +115,20 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
         // bound loses whatever the page break split off the run.
         var score = from.Score.ToString(CultureInfo.InvariantCulture);
         var tied = AfterCursor(
-            await RunAsync(household, agentId, spaceSlug, terms, $"{score} {score}", MaxTiedHits),
+            await RunAsync(household, agentId, spaceSlugs, terms, $"{score} {score}", MaxTiedHits),
             from.Member);
 
         var page = tied.Take(pageSize).ToList();
         return page.Count < pageSize
-            ? [.. page, .. await RunAsync(household, agentId, spaceSlug, terms, $"-inf ({score}", pageSize - page.Count)]
+            ? [.. page, .. await RunAsync(household, agentId, spaceSlugs, terms, $"-inf ({score}", pageSize - page.Count)]
             : page;
     }
 
     private async Task<List<TopicSearchHit>> RunAsync(
-        string household, string agentId, string spaceSlug, string terms, string range, int take)
+        string household, string agentId, IReadOnlyList<string> spaceSlugs, string terms, string range, int take)
     {
         var search = new Query(
-                $"@household:{{{Tag(household)}}} @agentId:{{{Tag(agentId)}}} @space:{{{Tag(spaceSlug)}}} "
+                $"@household:{{{Tag(household)}}} @agentId:{{{Tag(agentId)}}} @space:{{{string.Join(" | ", spaceSlugs.Select(Tag))}}} "
                 + $"@score:[{range}] (@name|text:({terms}))")
             .SetSortBy("score", ascending: false)
             .Limit(0, take)
