@@ -21,11 +21,17 @@ public sealed class FakeKeyProviders : IAsyncDisposable
     private WebApplication _app = null!;
     private int _port;
 
-    public string OpenRouterUrl => $"http://127.0.0.1:{_port}/api/v1/";
+    public string OpenRouterUrl => OpenRouterUrlOn("127.0.0.1");
 
-    public string IdealistaUrl => $"http://127.0.0.1:{_port}/";
+    public string IdealistaUrl => RootOn("127.0.0.1");
 
-    public string TelegramUrl => $"http://127.0.0.1:{_port}/";
+    public string TelegramUrl => RootOn("127.0.0.1");
+
+    // As a container reaches this process (the host's gateway, by the name it is given): OpenRouter's
+    // API, and the root Idealista's and Telegram's are under.
+    public string OpenRouterUrlOn(string host) => $"{RootOn(host)}api/v1/";
+
+    public string RootOn(string host) => $"http://{host}:{_port}/";
 
     // Every key a provider was asked about, in order (Idealista's by its API key).
     public IReadOnlyList<string> Asked => [.. _asked];
@@ -37,12 +43,13 @@ public sealed class FakeKeyProviders : IAsyncDisposable
     // Never answers this key: the request is held until the asker gives up on it.
     public void Stall(string key) => _answers[key] = Stalled;
 
-    public static async Task<FakeKeyProviders> StartAsync()
+    // On every address when a container asks it, which reaches this process through the host's gateway.
+    public static async Task<FakeKeyProviders> StartAsync(bool forContainers = false)
     {
         var fake = new FakeKeyProviders { _port = TestPort.GetAvailable() };
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, fake._port));
+        builder.WebHost.UseKestrel(options => options.Listen(forContainers ? IPAddress.Any : IPAddress.Loopback, fake._port));
         fake._app = builder.Build();
 
         // Each takes more than the context, so none is read as a bare RequestDelegate whose IResult is dropped.

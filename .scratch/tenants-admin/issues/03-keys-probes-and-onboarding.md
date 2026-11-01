@@ -4,10 +4,19 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A rejected key is not saved and the owner is told why
-- [ ] A key saved while its provider is unreachable shows as unchecked with a warning
-- [ ] No API answer ever contains a saved key
-- [ ] A key failing in a turn shows as rejected
-- [ ] An owner with no OpenRouter key lands on the keys page
+- [x] A rejected key is not saved and the owner is told why
+- [x] A key saved while its provider is unreachable shows as unchecked with a warning
+- [x] No API answer ever contains a saved key
+- [x] A key failing in a turn shows as rejected
+- [x] An owner with no OpenRouter key lands on the keys page
+
+Notes: the state is a table beside the keys section (`HouseholdKeyChecks`), not fields in it, and the
+turn's refusal reaches accounts on an internal route the agent proves as its own view; both reasons
+are in `.claude/rules/admin.md` ("Keys and probes"). The E2E stack runs every person in the home
+household and has no master key, so `HouseholdKeysE2ETests` submits only a rejected key and shows the
+landing by answering the keys read as a keyless household's; saving, unchecked keys and the turn side
+are seam 1 (`KeysAdminTests`, `MultiAgentFactoryHouseholdTests`). For 10: the smoke stack needs
+`HOUSEHOLDCONFIG__MASTERKEY` set before a key can be saved, and `KEYPROBES__OPENROUTERURL` (with
+`IDEALISTAURL`, `TELEGRAMURL`) pointed at its stub. Keys cannot be removed from the page (no route).
