@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Microsoft.Extensions.Logging;
@@ -16,14 +15,12 @@ namespace Domain.Monitor;
 // still showing it stops; nothing could show it, and the server is told at once rather than holding
 // it as ringing; or nobody dismissed it for as long as a satellite rings a timer, and it rings out
 // everywhere. No turn is run and no model is asked.
-public sealed class AlertRelay(IReadOnlyList<IAlertChannel> channels, ILogger<AlertRelay> logger, TimeProvider time)
+public sealed class AlertRelay(
+    IReadOnlyList<IAlertChannel> channels, IRingingAlerts ringing, ILogger<AlertRelay> logger, TimeProvider time)
 {
     // As long as a satellite rings a timer — twelve rounds ten seconds apart — so a timer rings for
     // the same time wherever it rings, and an offer held open on a channel is never held for good.
     public static readonly TimeSpan RingWindow = TimeSpan.FromMinutes(2);
-
-    // The alerts ringing now, by id, each with what its origin stopping it cancels.
-    private readonly ConcurrentDictionary<string, CancellationTokenSource> _ringing = new();
 
     public Task RunAsync(CancellationToken ct) =>
         Task.WhenAll(channels.Select(origin => ListenAsync(origin, ct)));
@@ -39,8 +36,8 @@ public sealed class AlertRelay(IReadOnlyList<IAlertChannel> channels, ILogger<Al
                     case AlertSignal.Ring ring:
                         _ = RingAsync(origin, ring.Alert, ct);
                         break;
-                    case AlertSignal.Stop stop when _ringing.TryGetValue(stop.AlertId, out var stopped):
-                        await stopped.CancelAsync();
+                    case AlertSignal.Stop stop:
+                        await ringing.StopAsync(stop.AlertId);
                         break;
                 }
             }
@@ -52,15 +49,14 @@ public sealed class AlertRelay(IReadOnlyList<IAlertChannel> channels, ILogger<Al
 
     private async Task RingAsync(IAlertChannel origin, ChannelAlertNotification alert, CancellationToken ct)
     {
-        using var stopped = new CancellationTokenSource();
-        if (!_ringing.TryAdd(alert.AlertId, stopped))
+        if (ringing.Begin(alert.AlertId) is not { } stopped)
         {
             return;
         }
 
         try
         {
-            using var offering = CancellationTokenSource.CreateLinkedTokenSource(ct, stopped.Token);
+            using var offering = CancellationTokenSource.CreateLinkedTokenSource(ct, stopped);
             var dismissedOn = await FirstDismissalAsync(origin, alert, offering.Token);
             if (ct.IsCancellationRequested)
             {
@@ -81,7 +77,7 @@ public sealed class AlertRelay(IReadOnlyList<IAlertChannel> channels, ILogger<Al
         }
         finally
         {
-            _ringing.TryRemove(alert.AlertId, out _);
+            ringing.End(alert.AlertId);
         }
     }
 

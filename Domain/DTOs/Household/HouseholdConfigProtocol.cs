@@ -64,7 +64,8 @@ public static class HouseholdConfigProtocol
 public sealed record HouseholdConfigQuery(
     string? HouseholdId = null, string? CallToken = null, string? Assertion = null, string? Delegation = null);
 
-// The agent's view of one household.
+// Many sections at once, with the model key unsealed, where a shared server is handed its own section
+// alone: the agent builds the household's agents from them and pays for their models.
 [PublicAPI]
 public sealed record AgentHouseholdConfig(
     string HouseholdId,

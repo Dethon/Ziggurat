@@ -10,6 +10,7 @@ using Domain.Security;
 using Domain.Security.Signing;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Clients.Channels;
+using Infrastructure.Timers;
 using Mcp.Hosting;
 using McpServerTimers.Modules;
 using McpServerTimers.Settings;
@@ -58,7 +59,7 @@ public sealed class ChannelAlertsTests : IAsyncLifetime
             await ConnectAsync("signalr", webchat.Endpoint),
             await ConnectAsync("telegram", telegram.Endpoint)
         };
-        _ = new AlertRelay(connections, NullLogger<AlertRelay>.Instance, TimeProvider.System).RunAsync(_stopping.Token);
+        _ = new AlertRelay(connections, new RingingAlerts(), NullLogger<AlertRelay>.Instance, TimeProvider.System).RunAsync(_stopping.Token);
 
         // The timers server raises a ring only for an agent polling as it fires (gate-on-live).
         await Eventually.Until(

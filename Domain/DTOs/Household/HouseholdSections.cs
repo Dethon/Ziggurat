@@ -37,7 +37,7 @@ public static partial class HouseholdSections
     public static SectionSchema? Named(string name) => All.FirstOrDefault(s => s.Name == name);
 
     // An agent's id rides in Redis keys, URLs and a Telegram chat's choice, so it is a slug.
-    public static bool IsAgentId(string? id) => id is { Length: > 0 and <= 64 } && AgentId().IsMatch(id);
+    public static bool IsAgentId(string? id) => id is { Length: > 0 and <= 64 } && Slugs.IsValid(id);
 
     private static IEnumerable<string> SettingsProblems(HouseholdSettings settings)
     {
@@ -163,9 +163,6 @@ public static partial class HouseholdSections
             yield return $"space slug {slug} is used more than once";
         }
     }
-
-    [GeneratedRegex("^[a-z0-9]+(-[a-z0-9]+)*$", RegexOptions.CultureInvariant)]
-    private static partial Regex AgentId();
 
     [GeneratedRegex("^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$", RegexOptions.CultureInvariant)]
     private static partial Regex LanguageTag();

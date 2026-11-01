@@ -1,3 +1,6 @@
+using Domain.Contracts;
+using Domain.DTOs.Metrics;
+using Domain.Metrics;
 using Domain.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -20,6 +23,8 @@ namespace Mcp.Hosting;
 // the first caller passed.
 internal static class CallToolErrorFilter
 {
+    public const string ToolCallFailedErrorType = "ToolCallFailed";
+
     internal static IMcpServerBuilder AddCallToolErrorFilter(
         this IMcpServerBuilder builder,
         Func<Exception, CallToolResult>? errorResult)
@@ -52,12 +57,34 @@ internal static class CallToolErrorFilter
                     context.Services?.GetService<ILoggerFactory>()
                         ?.CreateLogger(typeof(CallToolErrorFilter))
                         .LogError(ex, "Error in {ToolName} tool", context.Params?.Name);
+                    Report(context, ex);
                     // A server that passed no error result still answers the envelope. The four
                     // channel servers pass none, and used to hand a model a bare exception message:
                     // no code, no retryability, nothing about what to do next.
                     return errorResult?.Invoke(ex) ?? Envelope(ex);
                 }
             }));
+    }
+
+    // A shared server answers every household, so its failure is counted under the household the
+    // verified call acted for; a call for nobody is the deployment's own. Only the gate's verified
+    // identity is read: a household written into the _meta would bill another's feed. A host that
+    // publishes no metrics reports nothing, and an own server's report is restamped by its relay.
+    private static void Report(RequestContext<CallToolRequestParams> context, Exception ex)
+    {
+        if (context.Services?.GetService<IMetricsPublisher>() is not { } metrics)
+        {
+            return;
+        }
+
+        var household = context.Identity is { IsNobody: false, TenantId.Length: > 0 } identity ? identity.TenantId : null;
+        var audience = context.Services.GetService<CallTokenGate>()?.Audience;
+        metrics.ForHousehold(household).Publish(new ErrorEvent
+        {
+            Service = audience is { Length: > 0 } ? audience : "mcp",
+            ErrorType = ToolCallFailedErrorType,
+            Message = $"{context.Params?.Name ?? "a tool"}: {ex.Message}"
+        });
     }
 
     private static CallToolResult Envelope(Exception ex) => new()
