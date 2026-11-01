@@ -1,4 +1,3 @@
-using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.State.Hub;
@@ -29,7 +28,7 @@ public sealed class HubEventBinder(IHubEventDispatcher hubEventDispatcher) : IHu
                 "OnAlertSettled", hubEventDispatcher.HandleAlertSettled),
             connection.On<UserMessageNotification>(
                 "OnUserMessage", hubEventDispatcher.HandleUserMessage),
-            connection.On<IReadOnlyList<AgentCatalogEntry>>(
+            connection.On<AgentsUpdatedNotification>(
                 "OnAgentsUpdated", hubEventDispatcher.HandleAgentsUpdated)
         ]);
     }

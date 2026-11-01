@@ -98,15 +98,17 @@ public sealed record HouseholdAgents
         };
     }
 
-    // The household's agents as a person picks among them (the shared Telegram bot's /agent): the very
-    // ones its turns run, by id and name, an entry this build cannot build left out as it is there.
+    // The household's agents as a person picks among them (the shared Telegram bot's /agent, the chat
+    // client's picker): the very ones its turns run, an entry this build cannot build left out as it is
+    // there.
     public static HouseholdAgentNames Names(AgentsSection section)
     {
         var (entries, defaultAgent) = Entries(section);
         return new HouseholdAgentNames(defaultAgent,
         [
             .. entries.Select(entry => Definition(entry, new SharedServers())).OfType<AgentDefinition>()
-                .Select(definition => new HouseholdAgentName(definition.Id, definition.Name))
+                .Select(definition => new HouseholdAgentName(
+                    definition.Id, definition.Name, definition.Description, definition.Model, definition.ReasoningEffort))
         ]);
     }
 

@@ -96,7 +96,9 @@ shared transcription client); `Mcp.Hosting` must never make that choice on a ser
   nine servers that offer the agent things to call. Being a tool server and being a channel server
   are independent, so a dual-role server calls `AddToolServer` and then `AddChannelServer`.
 - **The error filter is one shared registration, installed at most once.** A cancelled call
-  propagates as the abort it is; anything else is logged and becomes the caller's error result.
+  propagates as the abort it is; anything else is logged, reported as a `ToolCallFailed`
+  `ErrorEvent` under the verified call's household (`.claude/rules/observability.md`, "Households"),
+  and becomes the caller's error result.
   **Who is calling travels as data, never as an ambient**: a tool reads the call's
   `ConversationContext` through the one accessor over the call, `Mcp.Hosting/CallTurn.cs`
   (`call.Turn`, and `call.TryScope` for a per-turn cache), and hands on what it needs. Its principal

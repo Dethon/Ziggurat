@@ -9,6 +9,7 @@ using Accounts.Signing;
 using Accounts.Store;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
+using Domain.Prompts;
 using Domain.Security;
 using Domain.Security.Sealing;
 using Domain.Security.Signing;
@@ -193,7 +194,6 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         { Telegram, HouseholdConfigProtocol.AgentView },
         { Telegram, HouseholdConfigProtocol.IdealistaView },
         { SignalR, HouseholdConfigProtocol.TelegramBotsView },
-        { SignalR, HouseholdConfigProtocol.AgentNamesView },
         { Scheduling, HouseholdConfigProtocol.AgentNamesView },
         { Agent, HouseholdConfigProtocol.IdealistaView },
         { Agent, HouseholdConfigProtocol.TelegramBotsView }
@@ -364,10 +364,39 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
 
         agents.HouseholdId.ShouldBe(named);
         agents.Section.DefaultAgent.ShouldBe("chef");
-        agents.Section.Agents.ShouldBe([new HouseholdAgentName("chef", "Chef"), new HouseholdAgentName("sweet", "Dulce")]);
+        agents.Section.Agents.Select(a => (a.Id, a.Name)).ShouldBe([("chef", "Chef"), ("sweet", "Dulce")]);
         raw.ShouldNotContain("Cook.");
         starting.Section.DefaultAgent.ShouldBe("jonas");
         starting.Section.Agents.Select(a => a.Id).ShouldBe(["jonas", "sugary"]);
+    }
+
+    // The chat client's picker is its household's agents: the chat hub reads them on the assertion of
+    // the connection's person on its own channel, each with what the picker shows of it — its name,
+    // its description, the model and effort it runs on — and none of its custom instructions.
+    [Fact]
+    public async Task TheChatHub_ReadsTheAgentsOfThePersonsHouseholdAsThePickerShowsThem()
+    {
+        await using var server = await StartAsync();
+        var household = await server.SeedHouseholdAsync("Casa");
+        await SetAsync(server, household, HouseholdSections.Agents, """
+            { "agents": [ { "id": "chef", "template": "jonas", "name": "Chef", "customInstructions": "Cook." } ] }
+            """);
+        var assertions = server.Service<Assertions>();
+        var jonas = AgentTemplates.Named(AgentTemplates.Jonas)!;
+
+        var agents = await AskAsync<HouseholdConfigAnswer<HouseholdAgentNames>>(server, SignalR, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "signalr")));
+        var onTelegram = await PostAsync(server, SignalR, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "telegram")));
+        var raw = await RawAsync(server, SignalR, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "signalr")));
+
+        agents.HouseholdId.ShouldBe(household);
+        agents.Section.Agents.ShouldBe([
+            new HouseholdAgentName("chef", "Chef", jonas.Description, jonas.Model, jonas.ReasoningEffort)
+        ]);
+        raw.ShouldNotContain("Cook.");
+        (await RefusalAsync(onTelegram, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
     }
 
     // The agent signs every proof there is, so it names the household itself — for a turn, the
