@@ -232,7 +232,7 @@ bridge. A new back-call, or a server that comes to need one, names its server he
   "http://mcp-scheduling:8080/mcp"]`. `AddAgent` refuses an endpoint that is neither an http(s) URL nor
   a server's name, and `ServerAddress.FromUrl` refuses anything that is not http(s) with a host, so the
   two can never be confused.
-- The projection makes it `McpServerEndpoint.OwnServer(name)` (`NamesOwnServer`, no credential). The
+- The projection makes it `McpServerEndpoint.OwnServer(name)` (`NamesOwnServer`, no credential). Every reader of a configured endpoint — the projection, the channel host, the key commands — reads it through `McpServerEndpoint.Of(address, credential)`, and every dial builds its client through `McpClientManager.TransportFor` (`McpEndpointTransport` outside Infrastructure): nothing else tests `IsServerName` on an endpoint or presents a credential by hand. The
   agent's household travels as data: `ConversationGroup` passes the verified identity's tenant — a
   person's or **the guest's** — to `IAgentFactory.Create(..., tenantId)`; it lands on
   `AgentSpec.TenantId`, and a worker takes its parent's through `SpawnContext.TenantId`.
@@ -310,7 +310,7 @@ ask every channel endpoint for the delegations it keeps (`.claude/rules/service-
 named by its server name — Home Assistant's watches, once it runs in the kit — exists only inside its
 tunnel, so `CommandServers` asks the agent `GET /internal/tunnels/home/{name}` (`ConnectedServers.Home`:
 the home household, which the call token's audience names, or 404 when that tunnel is not open) and
-dials its `/mcp` at `/internal/tunnels/home/{name}/mcp`, which `TunnelForwarder.ForwardHomeAsync` sends
+dials its `/mcp` at `/internal/tunnels/home/{name}/mcp` (`McpServerEndpoint.ThroughAgent`: that route, the agent API's secret, calls signed for the server's synthetic address), which `TunnelForwarder.ForwardHomeAsync` sends
 down the home's tunnel on the `mcp` tag (whose pool presents the tunnel credential; the command's
 `Authorization` is withheld), both behind `AGENTAPI__SHAREDSECRET` like the listing. A home server whose
 tunnel is closed is a server that could not be asked, so retiring keys wants the home's kit servers

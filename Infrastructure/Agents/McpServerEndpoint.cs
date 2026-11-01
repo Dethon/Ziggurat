@@ -82,6 +82,12 @@ public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
     public static McpServerEndpoint OwnServer(string serverName) =>
         new(serverName, McpEndpointOrigin.Configured) { NamesOwnServer = true };
 
+    // A household's server reached from outside the agent's process — the agent's key commands, which
+    // hold no tunnel — through the running agent's own route down that tunnel (`route`), presenting the
+    // agent API's secret there, while its calls are still signed for the server itself.
+    public static McpServerEndpoint ThroughAgent(Uri route, ServerAddress server, string agentApiSecret) =>
+        Configured(route.ToString(), agentApiSecret) with { Server = server };
+
     // A household's server through its open tunnel. Its address is a URL on the synthetic name, which
     // the client never resolves: every connection it makes is a stream of the tunnel.
     public static McpServerEndpoint Relayed(
