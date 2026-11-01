@@ -75,20 +75,13 @@ public sealed class RelayedCalls(
             return;
         }
 
-        await forwarder.ForwardAsync(context, household, server, TunnelProtocol.McpTag, rest, _withheld, UnreachableAsync);
+        await forwarder.ForwardAsync(context, household, server, TunnelProtocol.McpTag, rest, _withheld, TunnelForwarder.UnreachableAsync);
     }
 
     private bool Presents(HttpRequest request, string caller) =>
         caller.Length > 0
         && credentials.For(ServerAddress.Named(caller)) is { } credential
         && SharedSecret.Matches(request.Headers.Authorization.ToString(), credential);
-
-    // A gateway's answer, so the caller can tell its target being offline from the target refusing.
-    private static async Task UnreachableAsync(HttpContext context, string reason)
-    {
-        context.Response.StatusCode = StatusCodes.Status502BadGateway;
-        await context.Response.WriteAsync(reason, context.RequestAborted);
-    }
 
     private async Task RefuseAsync(HttpContext context, int status, string caller, string server, string reason)
     {

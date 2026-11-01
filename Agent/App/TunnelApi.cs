@@ -30,12 +30,6 @@ public static class TunnelApi
                 ? Results.Ok(new HomeServer(open.TenantId, open.ServerName))
                 : Results.NotFound());
         group.Map(ConnectedServers.HomeMcpRoute, (string serverName, HttpContext http, TunnelForwarder forwarder) =>
-            forwarder.ForwardHomeAsync(http, serverName, TunnelProtocol.McpTag, "/mcp", ["Authorization"], OfflineAsync));
-    }
-
-    private static Task OfflineAsync(HttpContext http, string reason)
-    {
-        http.Response.StatusCode = StatusCodes.Status502BadGateway;
-        return http.Response.WriteAsync(reason);
+            forwarder.ForwardHomeAsync(http, serverName, TunnelProtocol.McpTag, "/mcp", ["Authorization"], TunnelForwarder.UnreachableAsync));
     }
 }
