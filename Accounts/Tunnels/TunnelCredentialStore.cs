@@ -110,12 +110,33 @@ public sealed class TunnelCredentialStore(
         ];
     }
 
-    // Revoking one already revoked tells the listeners again, so running the command once more is
-    // the retry when they could not be told the first time.
-    public async Task<RevokedTunnelCredential?> RevokeAsync(string id, CancellationToken ct)
+    // One household's credentials not revoked, by server name and when minted: what its owners see.
+    public async Task<IReadOnlyList<ListedTunnelCredential>> LiveOfAsync(string tenantId, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
-        if (await db.TunnelCredentials.SingleOrDefaultAsync(t => t.Id == id, ct) is not { } row)
+        var rows = await db.TunnelCredentials.AsNoTracking()
+            .Where(t => t.TenantId == tenantId && t.RevokedAt == null)
+            .ToListAsync(ct);
+        return
+        [
+            .. rows
+                .OrderBy(t => t.ServerName, StringComparer.Ordinal)
+                .ThenBy(t => t.CreatedAt)
+                .Select(t => new ListedTunnelCredential(t.Id, t.TenantId, t.ServerName, t.CreatedAt, t.RevokedAt))
+        ];
+    }
+
+    // Revoking one already revoked tells the listeners again, so running the command once more is
+    // the retry when they could not be told the first time.
+    public Task<RevokedTunnelCredential?> RevokeAsync(string id, CancellationToken ct) => RevokeAsync(id, tenantId: null, ct);
+
+    // The same, for a credential of that household alone: an owner's revoke names an id, and an id of
+    // another household's is nobody's to them.
+    public async Task<RevokedTunnelCredential?> RevokeAsync(string id, string? tenantId, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        if (await db.TunnelCredentials.SingleOrDefaultAsync(t => t.Id == id && (tenantId == null || t.TenantId == tenantId), ct)
+            is not { } row)
         {
             return null;
         }

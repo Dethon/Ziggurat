@@ -68,6 +68,13 @@ public static class AdminProtocol
 
     public static string MemberRecovery(string userId) => $"{Member(userId)}/recovery";
 
+    // The household's own servers (AdminServers): a tunnel credential minted for a server by name, and
+    // one revoked, which closes the tunnel it opened.
+    public const string Servers = Household + "/servers";
+
+    public static string RevokeServerCredential(string credentialId) =>
+        $"{Servers}/credentials/{Uri.EscapeDataString(credentialId)}/revoke";
+
     // Every admin request carries this header with this value. A cross-site form cannot set a
     // header, and a cross-origin script that does is preflighted, which nothing here answers: so a
     // request carrying it came from a page on the host the API is served on.

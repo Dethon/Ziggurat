@@ -43,4 +43,11 @@ public interface IAdminService
     Task<AdminAnswer<AdminMembers>> EnableMemberAsync(string userId);
 
     Task<AdminAnswer<MemberLink>> MintMemberRecoveryAsync(string userId);
+
+    // The household's own servers; a minted credential is in its answer alone, never read back.
+    Task<AdminAnswer<AdminServers>> GetServersAsync();
+
+    Task<AdminAnswer<MintedServerCredential>> AddServerAsync(ServerAddition addition);
+
+    Task<AdminAnswer<AdminServers>> RevokeServerCredentialAsync(string credentialId);
 }
