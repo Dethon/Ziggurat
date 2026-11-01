@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Shouldly;
@@ -32,9 +33,7 @@ public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
         var link = await minted.Locator("[data-member-link]").GetAttributeAsync("href");
         link.ShouldNotBeNull().ShouldMatch(Enrollment().ToString());
         await Assertions.Expect(minted.Locator("[data-telegram-start], [data-telegram-link]")).ToHaveCountAsync(1);
-        var enrollment = await fixture.CreatePageAsync();
-        await enrollment.GotoAsync(link!);
-        await Assertions.Expect(enrollment.Locator("body")).ToContainTextAsync($"Invitee {tag}");
+        await ExpectEnrollmentForAsync(page, link, $"Invitee {tag}");
 
         await page.ReloadAsync();
         await Assertions.Expect(page.GetByRole(AriaRole.Heading, new PageGetByRoleOptions { Name = "Invite someone" }))
@@ -50,8 +49,7 @@ public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
         var tag = Guid.NewGuid().ToString("N")[..4];
         var name = $"Member {tag}";
         var memberSession = await SessionOfAsync(name, "member");
-        var member = await fixture.CreatePageSignedInAsync(memberSession);
-        (await MeAsync(member)).ShouldBe(200);
+        (await MeAsync(memberSession)).ShouldBe(HttpStatusCode.OK);
         var page = await MembersPageAsync(await SessionOfAsync($"Owner {tag}", "owner"));
         var row = page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = name });
         await Assertions.Expect(row).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
@@ -65,19 +63,17 @@ public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");
         await Assertions.Expect(row).ToContainTextAsync("disabled");
         await Assertions.Expect(row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Recovery link" })).ToHaveCountAsync(0);
-        (await MeAsync(member)).ShouldBe(401);
+        (await MeAsync(memberSession)).ShouldBe(HttpStatusCode.Unauthorized);
 
         await row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Re-enable" }).ClickAsync();
         await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");
         await Assertions.Expect(row).Not.ToContainTextAsync("disabled");
-        (await MeAsync(member)).ShouldBe(401);
+        (await MeAsync(memberSession)).ShouldBe(HttpStatusCode.Unauthorized, "a re-enabled member signs in again");
 
         await row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Recovery link" }).ClickAsync();
         var minted = page.GetByRole(AriaRole.Region, new PageGetByRoleOptions { Name = "New link" });
         await Assertions.Expect(minted).ToContainTextAsync($"A recovery link for {name}");
-        var recovery = await fixture.CreatePageAsync();
-        await recovery.GotoAsync((await minted.Locator("[data-member-link]").GetAttributeAsync("href"))!);
-        await Assertions.Expect(recovery.Locator("body")).ToContainTextAsync(name);
+        await ExpectEnrollmentForAsync(page, await minted.Locator("[data-member-link]").GetAttributeAsync("href"), name);
 
         await page.ReloadAsync();
         row = page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = name });
@@ -95,9 +91,25 @@ public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
         return page;
     }
 
-    // Who the session the page carries is, as the chat client asks on loading: 401 once it is ended.
-    private async Task<int> MeAsync(IPage page) =>
-        (await page.APIRequest.GetAsync(new Uri(new Uri(fixture.WebChatUrl), "/accounts/me").ToString())).Status;
+    // Who a session is, as the chat client asks on loading: 401 once it is ended. Asked apart from the
+    // owner's browser, which holds one page at a time and the owner's cookie.
+    private async Task<HttpStatusCode> MeAsync(string session)
+    {
+        using var client = new HttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri(new Uri(fixture.WebChatUrl), "/accounts/me"));
+        request.Headers.Add("Cookie", $"{WebChatE2EFixture.SessionCookieName}={session}");
+        request.Headers.Add("Accept", "application/json");
+        return (await client.SendAsync(request)).StatusCode;
+    }
+
+    // The link opens the enrollment page for the person it names, in a tab beside the owner's.
+    private static async Task ExpectEnrollmentForAsync(IPage owner, string? link, string name)
+    {
+        var tab = await owner.Context.NewPageAsync();
+        await tab.GotoAsync(link.ShouldNotBeNull());
+        await Assertions.Expect(tab.Locator("body")).ToContainTextAsync(name);
+        await tab.CloseAsync();
+    }
 
     private async Task<string> SessionOfAsync(string name, string role)
     {
