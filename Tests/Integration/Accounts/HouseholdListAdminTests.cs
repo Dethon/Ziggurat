@@ -126,7 +126,8 @@ public class HouseholdListAdminTests(RedisFixture redis) : IClassFixture<RedisFi
         var households = await ListAsync(admin);
 
         var listed = households.Single(h => h.Id == casa);
-        listed.Owners.ShouldBe([new HouseholdPerson(ana, "Ana", false), new HouseholdPerson(marta, "Marta", false)]);
+        // Seeded at one instant, so the order among them is the ids', which are random.
+        listed.Owners.ShouldBe([new HouseholdPerson(ana, "Ana", false), new HouseholdPerson(marta, "Marta", false)], ignoreOrder: true);
         listed.Members.ShouldBe([new HouseholdPerson(luis, "Luis", false)]);
         listed.LastSeenAt.ShouldBe(started.AddHours(1));
         var home = households.Single(h => h.IsHome);
