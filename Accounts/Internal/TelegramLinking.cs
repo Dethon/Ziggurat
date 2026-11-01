@@ -24,7 +24,8 @@ public sealed record TelegramOfAccount(long TelegramId);
 // What the Telegram bot asks with its own credential (InternalApi), and nobody else (InternalCallers). Each answer is a status the bot
 // tells its person apart by: 404 is a code nothing open goes by (or a sender or group nothing links),
 // 409 a Telegram or a group that is somebody else's already, 403 the operator asking for a passkey
-// link their Telegram must not hand out.
+// link their Telegram must not hand out, and SuspendedHouseholdAnswer a code or a person of a household
+// the operator suspended.
 public static class TelegramLinking
 {
     public const string Path = "/telegram";
@@ -43,6 +44,7 @@ public static class TelegramLinking
                         redeemed.Outcome == StartOutcome.Invited ? "invited" : "linked",
                         person.TenantId, person.Id, person.DisplayName, assertions.Of(person, TelegramLinks.Channel))),
                 { Outcome: StartOutcome.TelegramTaken } => Results.Conflict(),
+                { Outcome: StartOutcome.Suspended } => IdentityResolution.Suspended,
                 _ => Results.NotFound()
             });
 
@@ -51,6 +53,7 @@ public static class TelegramLinking
             {
                 { Outcome: WebLinkOutcome.Minted, Link: { } link } => Results.Ok(new TelegramWebLink(link.Url, link.ExpiresAt)),
                 { Outcome: WebLinkOutcome.Operator } => Results.StatusCode(StatusCodes.Status403Forbidden),
+                { Outcome: WebLinkOutcome.Suspended } => IdentityResolution.Suspended,
                 _ => Results.NotFound()
             });
 

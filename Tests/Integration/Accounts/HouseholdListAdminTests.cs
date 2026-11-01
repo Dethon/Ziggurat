@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Accounts.Members;
 using Accounts.Store;
 using Domain.DTOs;
 using Domain.DTOs.Admin;
@@ -208,6 +209,25 @@ public class HouseholdListAdminTests(RedisFixture redis) : IClassFixture<RedisFi
             .ShouldBe(HttpStatusCode.BadRequest);
         (await admin.PostAsync(AdminProtocol.OwnerRecovery(fran.TenantId, ana))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await admin.PostAsync(AdminProtocol.OwnerRecovery("nobody", ana))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await ChangesAsync(admin, household: null)).ShouldBeEmpty();
+    }
+
+    // An owner another owner disabled is let in nowhere until re-enabled, so a link for them would be
+    // a dead one: refused, and nothing recorded.
+    [Fact]
+    public async Task ARecoveryLinkForADisabledOwner_IsRefused_AndRecordsNothing()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (casa, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await server.SeedPersonAsync(casa, "Luis", Role.Owner);
+        await server.Service<MemberStore>().DisableAsync(casa, ana, CancellationToken.None);
+        var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
+
+        var refused = await admin.PostAsync(AdminProtocol.OwnerRecovery(casa, ana));
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldContain("disabled");
         (await ChangesAsync(admin, household: null)).ShouldBeEmpty();
     }
 

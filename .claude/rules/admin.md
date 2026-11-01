@@ -106,7 +106,10 @@ order:
    naming a person — else **401**. Never the plain `X-Ziggurat-*` headers and never the session cookie:
    the gate does not read the cookie at all. The channel is the admin API's own, so an assertion signed
    for the hub, Sugary, the dashboard or SexyTime opens nothing here, and only the accounts service ever
-   receives an `admin` one (the proxy copies it onto the request it hands this service).
+   receives an `admin` one (the proxy copies it onto the request it hands this service). That holds
+   only because no host routes the session check itself: `/accounts/verify*` is `respond 404` wherever
+   `/accounts/*` reaches this service ("The proxy"), or a same-origin script could ask it for an
+   `admin` assertion with the cookie and read it out of the answer's headers.
 3. **The root's role**: `owner` (`ForwardedAccount.OwnerRole`) for `/household`, `operator` for `/operator`,
    else **403** with an `AdminRefusal`.
 
@@ -264,7 +267,11 @@ out left as it is) and `POST .../{userId}/disable` / `.../enable`, each answerin
   owner manages nothing, so demoting the last enabled one beside a disabled one is refused too.
 - **The operator** is never disabled nor minted a recovery link by an owner (403): their account is the
   deployment's way onto its dashboard and back in, which the container's command keeps.
-- **A disabled member** is minted no recovery link (400: it would open nothing until re-enabled).
+- **A disabled member** is minted no recovery link (400: it would open nothing until re-enabled) — by
+  any way one is minted, since `LinkStore.MintRecoveryAsync` itself answers a `RecoveryMint` (`Minted`,
+  `Nobody` or `Disabled`) for every recovery it is named a person for: this route, the old members page
+  (400 with a notice), the operator's owner recovery (400) and `mint-link --user` (exit 1, "is disabled")
+  each say why rather than hand out a dead link.
 - **Disabling** (`MemberStore.DisableAsync`, one transaction) sets `User.DisabledAt` and revokes every
   session the member holds; nothing else of theirs is touched. Every store that vouches for a person reads
   the column (`.claude/rules/accounts.md`, "Disabled members"), and the change is announced on
@@ -410,6 +417,15 @@ admin assertion over the dashboard's), proxied to `accounts:8080`, after its own
 refusal; the owners' routes there fall to the dashboard and are refused. `DashboardAdminE2EFixture`
 mirrors that host.
 
+**The session check is never routed.** Every host that routes `/accounts/*` to this service (main,
+SexyTime's, Sugary's) answers `handle /accounts/verify*` with `respond 404`, beside and after its
+`/accounts/internal/*` refusal: through the unchecked `/accounts/*` a same-origin script could ask
+`/accounts/verify?channel=admin` (or any channel) with the cookie and read a ten-minute assertion out of
+the answer's headers. `forward_auth` asks `accounts:8080` on the compose network and never comes this
+way; nothing in the clients calls it. The dashboard's host routes no `/accounts/*`, so the path falls to
+the dashboard there. `DeploymentConformanceTests.TheSessionCheck_IsAnswered404OnEveryHostThatRoutesTheAccountsService`;
+`WebChatStack` mirrors the refusal.
+
 ## The household list (dashboard)
 
 The operator's households, from the dashboard (`HouseholdListAdmin`, `/households` in `Dashboard.Client`):
@@ -437,8 +453,9 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
   templates (`HouseholdAgents.Starting`), so its first turn has agents.
 - **`POST /operator/households/{householdId}/owners/{userId}/recovery`** mints a recovery link for an
   owner of any household, answered `AdminSaved<OwnerLink>`: 404 for nobody of that id in that household,
-  400 for a member (their owners mint theirs) or the operator (their way back is their account page or the
-  container command: a stolen dashboard session must not become a passkey).
+  400 for a member (their owners mint theirs), the operator (their way back is their account page or the
+  container command: a stolen dashboard session must not become a passkey) or an owner another owner
+  disabled (`RecoveryMint.Disabled`: the link would open nothing until they are re-enabled).
 - Both mints are recorded on the household they are for, the link never in the summary. A link is in
   the answer alone; the page holds it in its state until "Done" or the page is left, and never asks again.
 - **Suspension** (`HouseholdSuspensionAdmin`): **`PUT /operator/households/{householdId}/suspension`**
@@ -450,15 +467,29 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
   every reader of the household's configuration drops what it kept, and on suspending
   `HouseholdSuspended(id)` on `TunnelCredentialProtocol.SuspendedChannel` so the relay closes its open
   tunnels; not told stands with `NotToldWarning`. **Nothing is deleted.** Each place that lets a
-  household in reads the row: the session check (`.claude/rules/accounts.md`), the agent's view
-  (`AgentHouseholdConfig.Suspended`, refused per message in `ConversationGroup`, `.claude/rules/channels.md`),
-  the tunnel verify (`TunnelCredentialRefusal.Suspended`) and a household server's back-call
-  (`TunnelCredentialStore.LiveAsync` answers none). The list's `HouseholdListEntry.SuspendedAt` and the
-  row's Status cell (Suspend / Resume, none for the home) are the dashboard's.
-- **Not stopped by it**: the owner's own `/accounts/*` pages (account, members) read their own cookie,
-  not the session check; dreaming still consolidates a suspended household's memories on its key once a
-  night (the `people` view says nothing of suspension). Resolutions (Telegram, voice) and the hub's
-  session refresh still answer, so a turn reaches the agent, which says why it was refused.
+  household in reads the row:
+  - the session check, and the account and members pages, which read their own cookie (`PageGuard`
+    answers `SessionCheck.Suspended` before anything else, so no invite, recovery link, group code,
+    passkey or profile change), `.claude/rules/accounts.md`;
+  - the channels' ways in — `resolve`, the guest, the Telegram `start` (nothing spent) and `web-link` —
+    answer `SuspendedHouseholdAnswer` (423), neither a person nor nobody, so no channel vouches for its
+    people and the bot tells them why (`TelegramGate.SuspendedAnswer`);
+  - the agent's view (`AgentHouseholdConfig.Suspended`), refused per message in `ConversationGroup` —
+    every turn, and every fire whether delegated or not, by the household its server keeps the object
+    under (`ChannelMessage.HouseholdId`, a schedule's `TenantId`) as well as its person's
+    (`.claude/rules/channels.md`);
+  - dreaming, which skips the household (`MemoryDreamingService` reads `Suspended` off the same view it
+    reads the key from);
+  - the tunnel verify (`TunnelCredentialRefusal.Suspended`) and a household server's back-call
+    (`TunnelCredentialStore.LiveAsync` answers none).
+
+  The list's `HouseholdListEntry.SuspendedAt` and the row's Status cell (Suspend / Resume, none for the
+  home) are the dashboard's.
+- **Not stopped by it, deliberately**: the chat hub's per-turn session refresh still answers, so an open
+  chat client's turn reaches the agent, which answers `SuspendedAnswer` — a refused refresh would end the
+  stream "signed out", the wrong words. `/accounts/me` still names the person. A refused fire has been
+  emitted all the same, so the scheduler advances a cron and deletes a one-shot as if it ran: a one-shot
+  due while its household is suspended is gone when it is resumed.
 
 ## The admin area (chat client)
 

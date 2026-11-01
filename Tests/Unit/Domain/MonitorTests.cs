@@ -448,6 +448,16 @@ internal static class MonitorTestMocks
             });
         return provider.Object;
     }
+
+    // The households' agents as the agent reads them while the accounts service cannot answer.
+    public static IAgentDefinitionProvider UnreadableHouseholds()
+    {
+        var provider = new Mock<IAgentDefinitionProvider>();
+        provider
+            .Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("the accounts service is down"));
+        return provider.Object;
+    }
 }
 
 public class ChatMonitorTests

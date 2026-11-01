@@ -26,6 +26,11 @@ public record ChannelMessage
     // conversation group frames it as a report around Content once the delegation was checked.
     public string? FireReport { get; init; }
 
+    // The household a fire's server says its object is kept under (ChannelMessageNotification.HouseholdId):
+    // the conversation group refuses the fire while that household is suspended, and believes it for
+    // nothing else.
+    public string? HouseholdId { get; init; }
+
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     public string? Location { get; init; }

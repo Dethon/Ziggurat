@@ -26,6 +26,8 @@ public static class HouseholdMembersAdmin
     private static readonly AdminRefusal _lastOwner = new(
         "The household's last owner stays an enabled owner: make someone else an owner first.", []);
 
+    private static readonly AdminRefusal _disabledLink = new("A disabled member's link would open nothing: re-enable them first.", []);
+
     private static readonly AdminRefusal _operator = new(
         "The operator's account is the deployment's: they manage it with the accounts container's command.", []);
 
@@ -123,7 +125,7 @@ public static class HouseholdMembersAdmin
 
         // Not for the operator, as on the members page: their way back in is the container command,
         // and an owner who could mint them a link could take the deployment's dashboard. Not for a
-        // disabled member either: their link would open nothing until they are re-enabled.
+        // disabled member either, which the link store refuses for every way a link is minted.
         household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.MemberRecoveryRoute), async (
             AdminCaller caller, string userId, HttpContext http, MemberStore store, LinkStore links, AdminLog log,
             CancellationToken ct) =>
@@ -134,13 +136,18 @@ public static class HouseholdMembersAdmin
                     return Results.NotFound(_nobody);
                 case { IsOperator: true }:
                     return Results.Json(_operator, statusCode: StatusCodes.Status403Forbidden);
-                case { Disabled: true }:
-                    return Results.BadRequest(new AdminRefusal("A disabled member's link would open nothing: re-enable them first.", []));
             }
 
-            var link = (await links.MintRecoveryAsync(caller.HouseholdId, caller.UserId, userId, ct))!;
-            await log.RecordAsync(http, caller, $"Minted a recovery link for member {userId}", ct);
-            return Results.Ok(new AdminSaved<MemberLink>(new MemberLink(link.Url.ToString(), link.ExpiresAt)));
+            switch (await links.MintRecoveryAsync(caller.HouseholdId, caller.UserId, userId, ct))
+            {
+                case RecoveryMint.Minted { Link: var link }:
+                    await log.RecordAsync(http, caller, $"Minted a recovery link for member {userId}", ct);
+                    return Results.Ok(new AdminSaved<MemberLink>(new MemberLink(link.Url.ToString(), link.ExpiresAt)));
+                case RecoveryMint.Disabled:
+                    return Results.BadRequest(_disabledLink);
+                default:
+                    return Results.NotFound(_nobody);
+            }
         });
     }
 

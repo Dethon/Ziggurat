@@ -1,6 +1,7 @@
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelTelegram.McpTools;
+using McpChannelTelegram.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Shouldly;
@@ -49,6 +50,36 @@ public class TelegramBotServiceApprovalTests : IDisposable
         approval.IsCompleted.ShouldBeFalse();
         _harness.BotClient.Verify(b => b.SendRequest(
             It.Is<AnswerCallbackQueryRequest>(r => r.Text == "This approval isn't yours"),
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        await _harness.TapAsync(TelegramPollingHarness.AliceId, "tool_approve");
+        (await approval.WaitAsync(TimeSpan.FromSeconds(5))).ShouldBe("approved");
+    }
+
+    // A tap from somebody whose household is suspended answers nothing — they are told why, and the
+    // approval waits on for the person it was put to.
+    [Fact]
+    public async Task ASuspendedHouseholdsTap_IsToldSo_AndLeavesTheApprovalPending()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage(
+                "/delete it", username: "alice", userId: TelegramPollingHarness.AliceId)
+        });
+        await _harness.RunAsync();
+        _harness.Accounts.Link(TelegramPollingHarness.BobId, "bob", "household-casa");
+        _harness.Accounts.Suspend("household-casa");
+
+        var approval = RequestApprovalTool.RunAsync(
+            "100:100", ApprovalMode.Request, ARequest, PersonsTurn("alice"), _services);
+
+        await _harness.TapAsync(TelegramPollingHarness.BobId, "tool_approve");
+        await Eventually.Settle();
+        approval.IsCompleted.ShouldBeFalse();
+        _harness.BotClient.Verify(b => b.SendRequest(
+            It.Is<AnswerCallbackQueryRequest>(r => r.Text == TelegramGate.SuspendedAnswer),
             It.IsAny<CancellationToken>()), Times.Once);
 
         await _harness.TapAsync(TelegramPollingHarness.AliceId, "tool_approve");

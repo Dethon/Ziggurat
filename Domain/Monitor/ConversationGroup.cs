@@ -56,10 +56,10 @@ internal sealed class ConversationGroup(
     internal const string DisabledAnswer =
         "Your account in this household is disabled, so this message was not answered. Ask the household's owner.";
 
-    // Why a turn or a fire did not act for the person it named: the household disabled them, or their
-    // standing could not be read just now, which is never taken for good standing.
-    internal const string AccountDisabled = ChatMonitor.AccountDisabledErrorType;
-    internal const string StandingUnreadable = "StandingUnreadable";
+    // What a person is told when whether their household runs, or still lets them in, could not be read
+    // just now: never that it is suspended or that they are disabled, which may not be so.
+    internal const string UncheckedAnswer =
+        "Whether your household lets this message through could not be checked right now, so it was not answered. Try again in a moment.";
 
     // What a person whose household set no OpenRouter key is told: nothing was asked of any model, and
     // nothing will be until a key is added, which they cannot do from here.
@@ -407,7 +407,9 @@ internal sealed class ConversationGroup(
     //
     // A fire, a login wake and a watch carry no assertion — nobody sent them at that moment. They act
     // for the person a delegation the agent signed names, when it holds for this very fire, and for
-    // nobody otherwise; either way the fire runs, since nobody is waiting on it to be refused.
+    // nobody otherwise.
+    //
+    // Either way the household is asked next whether it lets the message through (StandingRefusalAsync).
     //
     // On the group token, not the pump's: a /cancel arriving behind this message must not drop it
     // half-checked rather than through the teardown drain that names it.
@@ -420,18 +422,11 @@ internal sealed class ConversationGroup(
 
         switch (await assertions.VerifyTurnAsync(x.Message.Assertion, x.Channel.ChannelId, _groupCt))
         {
-            case TurnAdmission.Admitted { Identity: var identity } when await SuspendedAsync(identity.TenantId):
-                await RefuseSuspendedAsync(x.Channel, x.Message, identity.TenantId);
-                return null;
             case TurnAdmission.Admitted { Identity: var identity }:
-                switch (await StandingRefusalAsync(identity))
+                if (await StandingRefusalAsync([identity.TenantId], identity) is { } refusal)
                 {
-                    case AccountDisabled:
-                        await RefuseDisabledAsync(x.Channel, x.Message, identity.Account!);
-                        return null;
-                    case { } unreadable:
-                        await RefuseAsync(x.Channel, x.Message, unreadable);
-                        return null;
+                    await RefuseByStandingAsync(x.Channel, x.Message, refusal);
+                    return null;
                 }
 
                 var named = x.Message.Principal ?? new Principal(x.Message.ChannelId, x.Message.Sender);
@@ -449,22 +444,20 @@ internal sealed class ConversationGroup(
     // channel, account and all, or there is none, and the turn acts for nobody. What it asks is checked
     // as it came, and only then framed with what its server reported beside it (FireReports).
     //
-    // A fire acting for a person of a suspended household starts nothing; one acting for nobody is no
-    // household's, and runs as it always does.
+    // A fire of a suspended household starts nothing, whether a delegation stands behind it or not: the
+    // household its server keeps the object under (HouseholdId, believed for this alone) is asked as well
+    // as its person's. Nor does a disabled member's: as nobody it would still say its prompt, wherever it
+    // delivers, on the home's agent. A fire naming no household and acting for nobody runs as it always did.
     private async Task<AdmittedTurn?> AdmitFireAsync(IChannelConnection channel, ChannelMessage fire)
     {
         var admission = delegations is null
             ? new FireAdmission.Undelegated(null)
             : await delegations.VerifyFireAsync(fire, _groupCt);
-        if (admission is FireAdmission.Delegated { Identity: var person } && await SuspendedAsync(person.TenantId))
+        var person = admission is FireAdmission.Delegated { Identity: var delegated } ? delegated : null;
+        if (await StandingRefusalAsync([fire.HouseholdId, person?.TenantId], person) is { } refusal)
         {
-            await RefuseSuspendedAsync(channel, fire, person.TenantId);
+            await RefuseByStandingAsync(channel, fire, refusal);
             return null;
-        }
-
-        if (admission is FireAdmission.Delegated { Identity: var delegated } && await StandingRefusalAsync(delegated) is { } refusal)
-        {
-            admission = new FireAdmission.Undelegated(refusal);
         }
 
         var framed = fire with { Content = FireReports.Frame(fire.Content, fire.FireReport), FireReport = null };
@@ -490,45 +483,113 @@ internal sealed class ConversationGroup(
         return new AdmittedTurn(channel, framed with { Principal = null }, null);
     }
 
-    // An assertion or a delegation says who a turn is for as of when it was signed — an assertion
-    // Telegram kept for minutes, a delegation as old as its schedule — so the household is asked
-    // whether that person is still one the agent acts for. The guest and nobody are nobody an owner
-    // can disable. Null when the turn may act for its person.
-    private async Task<string?> StandingRefusalAsync(IdentityClaims identity)
+    // Why a household would not have the agent act on a message whose sender or delegation was believed:
+    // the operator suspended it, an owner disabled the person, or either could not be read just now.
+    private abstract record StandingRefusal(string HouseholdId)
     {
-        if (standing is null || identity.Account is not { } account)
+        public sealed record Suspended(string HouseholdId) : StandingRefusal(HouseholdId);
+
+        public sealed record Disabled(Account Account) : StandingRefusal(Account.TenantId);
+
+        public sealed record Unchecked(string HouseholdId) : StandingRefusal(HouseholdId);
+    }
+
+    // An assertion or a delegation says who a message is for as of when it was signed — an assertion
+    // Telegram kept for minutes, a delegation as old as its schedule — so the households it names are
+    // asked, for every message rather than when the group's agent is built (a group outlives its turns,
+    // so a household suspended mid-conversation has its next message refused), whether they run, and the
+    // person's whether it still lets the agent act for them. The guest and nobody are nobody an owner can
+    // disable. Each answer is the reader's, kept a minute and dropped the moment accounts announces a
+    // change. One that cannot be read refuses as unchecked — never as suspended or disabled, which it
+    // may not be, and never let through: the turn could not be built without that view anyway. Null
+    // when the message may go on.
+    private async Task<StandingRefusal?> StandingRefusalAsync(IReadOnlyList<string?> householdIds, IdentityClaims? person)
+    {
+        foreach (var householdId in householdIds.OfType<string>().Where(h => h.Length > 0).Distinct())
+        {
+            if (await SuspensionRefusalAsync(householdId) is { } refusal)
+            {
+                return refusal;
+            }
+        }
+
+        return person?.Account is { } account ? await DisablingRefusalAsync(account) : null;
+    }
+
+    // A host with no households' provider suspends nobody, as it has none of their defaults.
+    private async Task<StandingRefusal?> SuspensionRefusalAsync(string householdId)
+    {
+        if (households is null)
         {
             return null;
         }
 
         try
         {
-            return await standing.StandingAsync(account, _groupCt) == AccountStanding.Disabled ? AccountDisabled : null;
+            return (await households.ForHouseholdAsync(householdId, _groupCt)).Suspended
+                ? new StandingRefusal.Suspended(householdId)
+                : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !_groupCt.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Could not read whether household {Household} is suspended", householdId);
+            return new StandingRefusal.Unchecked(householdId);
+        }
+    }
+
+    // A monitor built with no standing (a test harness) asks nobody; the agent's host registers it.
+    private async Task<StandingRefusal?> DisablingRefusalAsync(Account account)
+    {
+        if (standing is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await standing.StandingAsync(account, _groupCt) == AccountStanding.Disabled
+                ? new StandingRefusal.Disabled(account)
+                : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !_groupCt.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read whether account {UserId} of household {Household} is enabled",
                 account.UserId, account.TenantId);
-            return StandingUnreadable;
+            return new StandingRefusal.Unchecked(account.TenantId);
         }
     }
 
-    // Who they are was believed, so the errors feed names them under their household, and they are
-    // told the way a failed turn ends.
-    private async Task RefuseDisabledAsync(IChannelConnection channel, ChannelMessage message, Account account)
+    // Who it was for was believed, so the errors feed names the household and why, and a person waiting
+    // is told the way a failed turn ends; a fire has nobody waiting, so the feed is where it is said.
+    // Nothing is built, recalled or minted.
+    private async Task RefuseByStandingAsync(IChannelConnection channel, ChannelMessage message, StandingRefusal refusal)
     {
-        logger.LogWarning(
-            "Refused a turn on {ChannelId} for conversation {ConversationId}: account {UserId} of household {Household} is disabled",
-            channel.ChannelId, message.ConversationId, account.UserId, account.TenantId);
-        metricsPublisher.ForHousehold(account.TenantId).Publish(new ErrorEvent
+        var (errorType, why, answer) = refusal switch
+        {
+            StandingRefusal.Suspended =>
+                (ChatMonitor.HouseholdSuspendedErrorType, $"household {refusal.HouseholdId} is suspended", SuspendedAnswer),
+            StandingRefusal.Disabled { Account: var account } =>
+                (ChatMonitor.AccountDisabledErrorType, $"account {account.UserId} is disabled", DisabledAnswer),
+            _ => (ChatMonitor.StandingUnreadableErrorType,
+                $"whether household {refusal.HouseholdId} lets it through could not be read", UncheckedAnswer)
+        };
+        var what = message.Origin is null ? "turn" : $"{message.Origin.Kind} fire";
+        // A suspended household's crons keep firing until it is resumed, which is the operator's doing,
+        // not a fault.
+        logger.Log(refusal is StandingRefusal.Suspended ? LogLevel.Information : LogLevel.Warning,
+            "Refused a {What} on {ChannelId} for conversation {ConversationId}: {Why}",
+            what, channel.ChannelId, message.ConversationId, why);
+        metricsPublisher.ForHousehold(refusal.HouseholdId).Publish(new ErrorEvent
         {
             Service = "agent",
-            ErrorType = ChatMonitor.AccountDisabledErrorType,
-            Message = $"A turn on {channel.ChannelId} for conversation {message.ConversationId} was refused: " +
-                      $"account {account.UserId} is disabled"
+            ErrorType = errorType,
+            Message = $"A {what} on {channel.ChannelId} for conversation {message.ConversationId} was refused: {why}"
         });
 
-        await AnswerRefusedAsync(channel, message, DisabledAnswer);
+        if (message.Origin is null)
+        {
+            await AnswerRefusedAsync(channel, message, answer);
+        }
     }
 
     // Reported where an operator looks, and answered on the channel the way a failed turn ends —
@@ -568,50 +629,6 @@ internal sealed class ConversationGroup(
         if (x.Message.Origin is null)
         {
             await AnswerRefusedAsync(x.Channel, x.Message, WithoutKeyAnswer);
-        }
-    }
-
-    // Asked of every message rather than when the group's agent is built, since a group outlives any one
-    // turn: a household suspended mid-conversation has its next message refused. The answer is the
-    // reader's, kept a minute and dropped the moment the suspension is announced. A household that
-    // cannot be read just now is let through, as routing lets it: the agent's build decides on a fresh
-    // group, and an outage must not tell every household it is suspended.
-    private async Task<bool> SuspendedAsync(string? householdId)
-    {
-        if (households is null || string.IsNullOrEmpty(householdId))
-        {
-            return false;
-        }
-
-        try
-        {
-            return (await households.ForHouseholdAsync(householdId, _groupCt)).Suspended;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !_groupCt.IsCancellationRequested)
-        {
-            logger.LogWarning(ex, "Could not read whether household {Household} is suspended; its message is let through",
-                householdId);
-            return false;
-        }
-    }
-
-    // Reported as the household's, and answered where a person waits; a fire has nobody waiting.
-    private async Task RefuseSuspendedAsync(IChannelConnection channel, ChannelMessage message, string householdId)
-    {
-        logger.LogInformation(
-            "Refused a {Kind} on {ChannelId} for conversation {ConversationId}: household {Household} is suspended",
-            message.Origin is null ? "turn" : "fire", channel.ChannelId, message.ConversationId, householdId);
-        metricsPublisher.ForHousehold(householdId).Publish(new ErrorEvent
-        {
-            Service = "agent",
-            ErrorType = ChatMonitor.HouseholdSuspendedErrorType,
-            Message = $"A {(message.Origin is null ? "turn" : $"{message.Origin.Kind} fire")} on {channel.ChannelId} " +
-                      $"for conversation {message.ConversationId} was refused: household {householdId} is suspended"
-        });
-
-        if (message.Origin is null)
-        {
-            await AnswerRefusedAsync(channel, message, SuspendedAnswer);
         }
     }
 
