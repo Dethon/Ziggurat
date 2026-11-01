@@ -4,8 +4,11 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A server added in the admin area connects with the credential shown once
-- [ ] Its state, connection time and tools are shown while connected, and offline after it stops
-- [ ] Revoking disconnects it at once and it cannot reconnect
+- [x] A server added in the admin area connects with the credential shown once
+- [x] Its state, connection time and tools are shown while connected, and offline after it stops
+- [x] Revoking disconnects it at once and it cannot reconnect
+
+Owners mint outposts here too (`outpost-<NAME>`, labelled as one in the list). The admin revoke is
+household-scoped (`TunnelCredentialStore.RevokeAsync(id, tenantId)`); the command's stays id-only.
