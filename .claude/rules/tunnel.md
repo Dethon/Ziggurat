@@ -294,7 +294,9 @@ broken. Shared servers' URL endpoints keep ADR 0027's rule: retried, then fatal.
 
 `docker exec agent dotnet Agent.dll list-household-servers --household <tenantId>` prints each open
 tunnel of that household: its name, `connected since <OpenedAt:u>`, its generation, and the tools it
-lists **through its tunnel now** (`TunnelListing`, ten seconds at most, "did not answer" past that).
+lists **through its tunnel now** (`TunnelListing`, ten seconds at most, "did not answer" past that);
+the listing also carries the id of the credential each tunnel was opened with (`ConnectedServer.CredentialId`),
+which the owners' servers page marks as in use (`.claude/rules/admin.md`, "Own servers").
 The registry lives in the serving process alone, so the command asks it at `GET
 /internal/tunnels/{tenantId}` (`ConnectedServers.Path`), under `/internal` (never routed by the
 proxy) and behind `AGENTAPI__SHAREDSECRET`, which the command reads from the same environment.
