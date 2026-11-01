@@ -103,6 +103,11 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
     public Task<AdminAnswer<AdminServers>> RevokeServerCredentialAsync(string credentialId) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.RevokeServerCredential(credentialId)), SavedAsync<AdminServers>);
 
+    public Task<AdminAnswer<AdminUsage>> GetUsageAsync(string? month) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get,
+                month is null ? AdminProtocol.Usage : $"{AdminProtocol.Usage}?month={Uri.EscapeDataString(month)}"),
+            async content => new AdminAnswer<AdminUsage>.Answered((await content.ReadFromJsonAsync<AdminUsage>())!));
+
     private static async Task<AdminAnswer<T>.Answered> SavedAsync<T>(HttpContent content)
     {
         var saved = (await content.ReadFromJsonAsync<AdminSaved<T>>())!;
