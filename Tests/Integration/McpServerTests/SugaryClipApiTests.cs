@@ -334,7 +334,9 @@ public class SugaryClipApiTests
         Skip.If(TestClips.Missing is not null, TestClips.Missing);
         await using var server = await SugaryServer.StartAsync();
         var agent = await server.AgentAsync();
-        await agent.RegisterAgentsAsync([Sugary("text/only", accepts: [])], CancellationToken.None);
+        AgentCatalogEntry[] registered = [Sugary("text/only", accepts: [])];
+        await agent.RegisterAgentsAsync(registered, CancellationToken.None);
+        server.HouseholdRuns(registered);
         var app = await server.SignedInAsync();
 
         var refused = await app.PostAsync("/api/estimates", Form("", clip: await TestClips.Silent()));
@@ -345,7 +347,9 @@ public class SugaryClipApiTests
             "Describe it in words instead, or count it by hand.");
         StoredFiles(server).ShouldBeEmpty();
 
-        await agent.RegisterAgentsAsync([Sugary("sees/pictures", accepts: [AttachmentKind.Image])], CancellationToken.None);
+        AgentCatalogEntry[] seesPictures = [Sugary("sees/pictures", accepts: [AttachmentKind.Image])];
+        await agent.RegisterAgentsAsync(seesPictures, CancellationToken.None);
+        server.HouseholdRuns(seesPictures);
         var answer = app.PostAsync("/api/estimates", Form("", clip: await TestClips.Silent()));
         var turn = await NextTurnAsync(agent);
         turn.Attachments.ShouldNotBeNull().ShouldContain(a => a.MediaType == "video/mp4");

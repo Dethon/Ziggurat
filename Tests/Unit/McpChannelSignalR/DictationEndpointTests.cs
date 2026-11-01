@@ -111,7 +111,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         await PostAsync(ticket.Token, Space, Wav(1024));
 
         Directory.Exists(_root).ShouldBeFalse();
-        _tickets.MintUpload("topic-1", new ConversationIdentity(7, 42), Space).Token.ShouldNotBeNullOrWhiteSpace();
+        _tickets.MintUpload("topic-1", "jonas", new ConversationIdentity(7, 42), Space).Token.ShouldNotBeNullOrWhiteSpace();
     }
 
     // Every other refusal here answers in words, and the browser puts whatever the server said in

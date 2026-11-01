@@ -9,19 +9,27 @@ namespace McpChannelSignalR.Attachments;
 // by the topic's own reckoning.
 public interface IConversationLiveness
 {
-    Task<bool> IsAliveAsync(string conversationId, CancellationToken ct);
+    Task<bool> IsAliveAsync(AgentKey conversation, CancellationToken ct);
 }
 
-// An upload is scoped to a topic, never to an agent, so the store cannot spell the one history key
-// a conversation has — aliveness is any registered agent still holding it. An empty catalog
-// answers alive: right after a restart nothing has registered yet, and deleting on ignorance is
-// the one wrong the sweep must not do; the files go on the next tick instead.
-public sealed class AgentConversationLiveness(IAgentCatalog catalog, IThreadStateStore store)
+// A file names the agent whose conversation it was kept for, so aliveness is that one history:
+// the catalogue the agent registers here is the home's agents, no list of a household's, and a
+// household's own agent may go by an id the home lacks. A file kept before files named their agent
+// was the home's, as every conversation then was, so it is alive while any registered agent still
+// holds it — and an empty catalogue answers alive: right after a restart nothing has registered
+// yet, and deleting on ignorance is the one wrong the sweep must not do; the files go on the next
+// tick instead.
+public sealed class AgentConversationLiveness(IAgentCatalog home, IThreadStateStore store)
     : IConversationLiveness
 {
-    public async Task<bool> IsAliveAsync(string conversationId, CancellationToken ct)
+    public async Task<bool> IsAliveAsync(AgentKey conversation, CancellationToken ct)
     {
-        var agents = catalog.GetAll();
+        if (conversation.AgentId is not null)
+        {
+            return await store.ExistsAsync(conversation.ToString(), ct);
+        }
+
+        var agents = home.GetAll();
         if (agents.Count == 0)
         {
             return true;
@@ -29,7 +37,7 @@ public sealed class AgentConversationLiveness(IAgentCatalog catalog, IThreadStat
 
         foreach (var agent in agents)
         {
-            if (await store.ExistsAsync(new AgentKey(conversationId, agent.Id).ToString(), ct))
+            if (await store.ExistsAsync(new AgentKey(conversation.ConversationId, agent.Id).ToString(), ct))
             {
                 return true;
             }
