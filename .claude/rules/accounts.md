@@ -90,6 +90,7 @@ clearing the column:
   page, the admin API, the operator's owner recovery and `mint-link --user` each refuse a dead link and say why.
 - **Dreaming** skips them: the `people` view still lists them, and the walk drops each household's
   `DisabledPeople` off the agent view it reads for the household's key. Their memories are kept as they are.
+  Extraction skips them too (`MemoryExtractionWorker`, the same view), for a turn admitted before they were disabled.
 
 ## The session check
 
