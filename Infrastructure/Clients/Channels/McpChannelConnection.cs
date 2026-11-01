@@ -265,9 +265,8 @@ public sealed class McpChannelConnection(
         // and displace each other's waiter, which the inbox retires with an instant empty batch.
         await StopPumpAsync();
 
-        var transport = McpClientManager.TransportOf(endpoint);
         var client = await McpClient.CreateAsync(
-            McpClientManager.Signed(transport, McpClientManager.ServerOf(endpoint), callTokens),
+            McpClientManager.TransportFor(endpoint, callTokens),
             new McpClientOptions
             {
                 ClientInfo = new Implementation

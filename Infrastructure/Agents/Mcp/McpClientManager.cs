@@ -141,7 +141,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         var clients = await Task.WhenAll(endpoints.Select(async endpoint =>
         {
             Task<McpClient> dial() => McpClient.CreateAsync(
-                Signed(TransportOf(endpoint), ServerOf(endpoint), callTokens),
+                TransportFor(endpoint, callTokens),
                 new McpClientOptions
                 {
                     ClientInfo = new Implementation { Name = name, Description = description, Version = "1.0.0" },
@@ -203,6 +203,13 @@ internal sealed class McpClientManager : IAsyncDisposable
     // and every one checks it — an outpost against the keys its tunnel delivered. A
     // manager built without tokens — a probe of what a server offers, which calls nothing — sends
     // none, and a gated server refuses its tool calls.
+    // The one way the agent's processes talk to a server an endpoint names: its transport — the
+    // endpoint's own credential, or its tunnel's client — signing every call for the server it reaches.
+    // The agent's sessions, its channel connections and its key commands (McpEndpointTransport) all
+    // dial through it.
+    internal static IClientTransport TransportFor(McpServerEndpoint endpoint, CallTokens? callTokens) =>
+        Signed(TransportOf(endpoint), ServerOf(endpoint), callTokens);
+
     internal static IClientTransport Signed(IClientTransport transport, ServerAddress server, CallTokens? callTokens) =>
         callTokens is null ? transport : new SigningClientTransport(transport, callTokens, TokenAudiences.CallTo(server));
 
