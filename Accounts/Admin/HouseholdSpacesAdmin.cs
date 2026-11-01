@@ -53,18 +53,15 @@ public static class HouseholdSpacesAdmin
                 return Results.BadRequest(new AdminRefusal("The spaces were not saved.", problems));
             }
 
-            switch (await store.SaveAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, HouseholdSections.SpacesSchema.Write(sent), ct))
-            {
-                case SectionSave.Invalid invalid:
-                    return Results.BadRequest(new AdminRefusal("The spaces were not saved.", invalid.Problems));
-                case SectionSave.Saved saved:
+            return await AdminSections.AnswerAsync(
+                await store.SaveAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, HouseholdSections.SpacesSchema.Write(sent), ct),
+                "The spaces were not saved.",
+                async saved =>
+                {
                     var after = (await store.ReadAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, ct))!;
                     await log.RecordAsync(http, caller, Summary(before, after), ct);
-                    return Results.Ok(new AdminSaved<AdminSpaces>(
-                        Answer(after, agents), saved.NotTold is null ? null : HouseholdSettingsAdmin.NotToldWarning));
-                default:
-                    return Results.NotFound();
-            }
+                    return Results.Ok(new AdminSaved<AdminSpaces>(Answer(after, agents), AdminSections.Warning(saved)));
+                });
         });
     }
 
@@ -113,13 +110,9 @@ public static class HouseholdSpacesAdmin
     }
 
     private static IReadOnlyList<string> Changed(HouseholdSpace before, HouseholdSpace after) =>
-    [
-        .. new (string Field, bool Changed)[]
-        {
+        AdminLog.Changed(
             ("name", before.Name != after.Name),
             ("colour", before.AccentColor != after.AccentColor),
             ("default agent", before.DefaultAgent != after.DefaultAgent),
-            ("order", before.Order != after.Order)
-        }.Where(f => f.Changed).Select(f => f.Field)
-    ];
+            ("order", before.Order != after.Order));
 }

@@ -23,7 +23,7 @@ public static class HouseholdAgentsAdmin
     public static void Map(RouteGroupBuilder household)
     {
         var agents = AdminApi.Under(AdminProtocol.Household, AdminProtocol.Agents);
-        var agent = $"{agents}/{{agentId}}";
+        var agent = AdminApi.Under(AdminProtocol.Household, AdminProtocol.AgentRoute);
 
         household.MapGet(agents, async (AdminCaller caller, HouseholdConfigStore store, AccountsSettings settings, CancellationToken ct) =>
             await SectionAsync(store, caller, ct) is { } section ? Results.Ok(Answer(section, settings)) : Results.NotFound());
@@ -113,13 +113,13 @@ public static class HouseholdAgentsAdmin
             return result;
         });
 
-        household.MapGet($"{agent}/versions", async (
+        household.MapGet(AdminApi.Under(AdminProtocol.Household, AdminProtocol.AgentVersionsRoute), async (
             AdminCaller caller, string agentId, HouseholdConfigStore store, AgentVersions versions, CancellationToken ct) =>
             await SectionAsync(store, caller, ct) is { } section && section.Agents.Any(a => a.Id == agentId)
                 ? Results.Ok(await versions.ListAsync(caller.HouseholdId, agentId, ct))
                 : Results.NotFound(_noSuchAgent));
 
-        household.MapPost($"{agent}/versions/{{versionId}}/restore", async (
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.RestoreAgentVersionRoute), async (
             AdminCaller caller, string agentId, string versionId, HttpContext http, HouseholdConfigStore store, AdminLog log,
             AgentVersions versions, AccountsSettings settings, CancellationToken ct) =>
             await versions.FindAsync(caller.HouseholdId, agentId, versionId, ct) is { } version
@@ -159,10 +159,7 @@ public static class HouseholdAgentsAdmin
         }
 
         var before = Shown(entry);
-        var changed = new (string Field, bool Changed)[]
-        {
-            ("name", before.Name != name), ("custom instructions", before.CustomInstructions != instructions)
-        }.Where(f => f.Changed).Select(f => f.Field).ToList();
+        var changed = AdminLog.Changed(("name", before.Name != name), ("custom instructions", before.CustomInstructions != instructions));
         if (changed.Count == 0)
         {
             return Results.Ok(new AdminSaved<AdminAgents>(Answer(section, settings)));
@@ -185,18 +182,15 @@ public static class HouseholdAgentsAdmin
         HttpContext http, AdminCaller caller, HouseholdConfigStore store, AdminLog log, AccountsSettings settings,
         AgentsSection section, string summary, CancellationToken ct)
     {
-        switch (await store.SaveAsync(caller.HouseholdId, HouseholdSections.AgentsSchema, HouseholdSections.AgentsSchema.Write(section), ct))
-        {
-            case SectionSave.Invalid invalid:
-                return Results.BadRequest(new AdminRefusal("The agents were not saved.", invalid.Problems));
-            case SectionSave.Saved saved:
+        return await AdminSections.AnswerAsync(
+            await store.SaveAsync(caller.HouseholdId, HouseholdSections.AgentsSchema, HouseholdSections.AgentsSchema.Write(section), ct),
+            "The agents were not saved.",
+            async saved =>
+            {
                 await log.RecordAsync(http, caller, summary, ct);
                 var after = (await SectionAsync(store, caller, ct))!;
-                return Results.Ok(new AdminSaved<AdminAgents>(
-                    Answer(after, settings), saved.NotTold is null ? null : HouseholdSettingsAdmin.NotToldWarning));
-            default:
-                return Results.NotFound();
-        }
+                return Results.Ok(new AdminSaved<AdminAgents>(Answer(after, settings), AdminSections.Warning(saved)));
+            });
     }
 
     private static bool Stood(IResult result) => result is IStatusCodeHttpResult { StatusCode: StatusCodes.Status200OK };

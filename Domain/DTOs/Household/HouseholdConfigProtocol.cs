@@ -52,7 +52,7 @@ public static class HouseholdConfigProtocol
 
     // What a save announcement names when the household was suspended or resumed rather than a section
     // saved: no section is called this, and every reader drops what it kept of the household either way.
-    public const string SuspensionSection = "suspension";
+    public const string SuspensionChanged = "suspension";
 
     // The channel the agent's own token for the configuration names: it acts for nobody, and names
     // its household in the query (the agent is the one caller that may).
@@ -164,6 +164,6 @@ public enum HouseholdConfigRefusal
 }
 
 // Published on HouseholdConfigProtocol.SavedChannel when a section is saved, and when the household is
-// suspended or resumed (HouseholdConfigProtocol.SuspensionSection), which its readers must see as soon.
+// suspended or resumed (HouseholdConfigProtocol.SuspensionChanged), which its readers must see as soon.
 [PublicAPI]
 public sealed record HouseholdConfigSaved(string HouseholdId, string Section);

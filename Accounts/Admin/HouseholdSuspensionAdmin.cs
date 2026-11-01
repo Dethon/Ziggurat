@@ -70,7 +70,7 @@ public static class HouseholdSuspensionAdmin
     private static async Task<string?> TellAsync(RedisAnnouncer announcer, string householdId, bool suspended, CancellationToken ct)
     {
         var readers = await announcer.AnnounceAsync(HouseholdConfigProtocol.SavedChannel,
-            new HouseholdConfigSaved(householdId, HouseholdConfigProtocol.SuspensionSection), ct);
+            new HouseholdConfigSaved(householdId, HouseholdConfigProtocol.SuspensionChanged), ct);
         var relay = suspended
             ? await announcer.AnnounceAsync(TunnelCredentialProtocol.SuspendedChannel, new HouseholdSuspended(householdId), ct)
             : null;
