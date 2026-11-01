@@ -45,6 +45,25 @@ public class EvalStackTests
             .ShouldBe(["http://127.0.0.1:5001/mcp"]);
     }
 
+    // The deployment's shared servers are named apart from any agent, and the agent refuses to start
+    // naming one it holds no credential for: each points at the stack where the stack hosts it, and one
+    // it does not host is not named at all.
+    [Fact]
+    public void Rehosted_TheSharedServers_PointAtTheStack_AndTheUnhostedOnesAreDropped()
+    {
+        var shipped = _shipped with
+        {
+            SharedServers = new SharedServers
+            {
+                Scheduling = "http://mcp-scheduling:8080/mcp", Idealista = "http://mcp-idealista:8080/mcp"
+            }
+        };
+        var hosted = new Dictionary<string, string>(_hosted) { ["mcp-scheduling"] = "http://127.0.0.1:5003/mcp" };
+
+        EvalStack.Rehosted(shipped, hosted).SharedServers
+            .ShouldBe(new SharedServers { Scheduling = "http://127.0.0.1:5003/mcp" });
+    }
+
     [Fact]
     public void Alone_TheScenariosAgent_LosesItsWorkers_AndNobodyElseDoes()
     {
