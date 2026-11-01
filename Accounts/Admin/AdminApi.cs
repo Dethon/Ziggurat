@@ -27,6 +27,7 @@ public static class AdminApi
 
         HouseholdSettingsAdmin.Map(household);
         AdminLog.Map(household, deployment);
+        HouseholdListAdmin.Map(deployment);
     }
 
     // A route's path inside its group, from the one spelling in AdminProtocol.
