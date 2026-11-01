@@ -288,7 +288,7 @@ public sealed class ChatHub(
         }
 
         return attachmentService.MintUpload(
-            topicId, session.Identity, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+            topicId, session.AgentId, session.Identity, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
     }
 
     // Minted when the transcript renders an attachment, not published: one upload store serves
@@ -297,8 +297,8 @@ public sealed class ChatHub(
     // topic any registered agent holds it under.
     public async Task<AttachmentDownload?> CreateAttachmentDownload(string attachmentId)
     {
-        if (attachmentService.ConversationOf(attachmentId) is { } conversationId
-            && ConversationIdentity.Parse(conversationId) is { } conversation)
+        if (attachmentService.ConversationOf(attachmentId) is { } held
+            && ConversationIdentity.Parse(held.ConversationId) is { } conversation)
         {
             var holders = await Task.WhenAll((catalog.GetAll() ?? []).Select(agent =>
                 threadStore.GetTopicByChatIdAndThreadIdAsync(agent.Id, conversation.ChatId, conversation.ThreadId)));
