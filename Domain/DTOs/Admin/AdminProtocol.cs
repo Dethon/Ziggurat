@@ -68,6 +68,11 @@ public static class AdminProtocol
 
     public static string MemberRecovery(string userId) => $"{Member(userId)}/recovery";
 
+    // The household's features (the features section, whole) and its chat-client spaces (AdminSpaces
+    // read, the spaces section saved whole).
+    public const string Features = Household + "/features";
+    public const string Spaces = Household + "/spaces";
+
     // The household's own servers (AdminServers): a tunnel credential minted for a server by name, and
     // one revoked, which closes the tunnel it opened.
     public const string Servers = Household + "/servers";

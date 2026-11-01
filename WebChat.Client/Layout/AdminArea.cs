@@ -10,12 +10,17 @@ public static class AdminArea
     public const string Keys = "/admin/keys";
     public const string Agents = "/admin/agents";
     public const string Members = "/admin/members";
+    public const string Features = "/admin/features";
+    public const string Spaces = "/admin/spaces";
     public const string Servers = "/admin/servers";
 
     public const string Home = Settings;
 
     public static IReadOnlyList<(string Path, string Label)> Pages { get; } =
-        [(Settings, "Settings"), (Keys, "Keys"), (Agents, "Agents"), (Members, "Members"), (Servers, "Servers")];
+    [
+        (Settings, "Settings"), (Keys, "Keys"), (Agents, "Agents"), (Members, "Members"),
+        (Features, "Features"), (Spaces, "Spaces"), (Servers, "Servers")
+    ];
 
     // Whether the page showing is one of the area's own.
     public static bool Contains(NavigationManager navigation) =>

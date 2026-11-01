@@ -191,6 +191,45 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         filtered.ShouldNotContain(t => t.TopicId == "t-s2");
     }
 
+    // The default space lists a removed space's topics beside its own (SpaceListing): one page over
+    // both orderings by last write, paged across them as one list.
+    [Fact]
+    public async Task GetTopicPageAsync_AlsoListingAnotherSpace_PagesBothAsOneListByLastWrite()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        foreach (var (topicId, slug) in new[] { ("t-m-0", "default"), ("t-m-1", "attic"), ("t-m-2", "default"), ("t-m-3", "attic") })
+        {
+            clock.Advance(TimeSpan.FromMinutes(1));
+            await store.SaveTopicAsync(new TopicMetadata(topicId, 320, 0, "agent-merge", topicId, clock.GetUtcNow(), clock.GetUtcNow(),
+                SpaceSlug: slug, TenantId: "home"));
+        }
+
+        var first = await store.GetTopicPageAsync("agent-merge", "default", Anyone, null, 3, alsoSpaces: ["attic"]);
+        var second = await store.GetTopicPageAsync("agent-merge", "default", Anyone, first.NextCursor, 3, alsoSpaces: ["attic"]);
+
+        first.Topics.Select(t => t.TopicId).ShouldBe(["t-m-3", "t-m-2", "t-m-1"]);
+        second.Topics.Select(t => t.TopicId).ShouldBe(["t-m-0"]);
+        second.NextCursor.ShouldBeNull();
+        (await store.GetTopicPageAsync("agent-merge", "default", Anyone, null, 10)).Topics.Select(t => t.TopicId)
+            .ShouldBe(["t-m-2", "t-m-0"], "a space alone lists its own");
+    }
+
+    // Every slug the household's topics are kept under, whichever agent's: how the hub finds the
+    // spaces a household removed that still hold topics.
+    [Fact]
+    public async Task SpacesHoldingTopicsAsync_NamesEverySpaceTheHouseholdsTopicsAreIn()
+    {
+        var store = NewStore();
+        var household = Guid.NewGuid().ToString("N");
+        var now = DateTimeOffset.UtcNow;
+        await store.SaveTopicAsync(new TopicMetadata("t-held-1", 330, 0, "agent-held", "One", now, now, SpaceSlug: "attic", TenantId: household));
+        await store.SaveTopicAsync(new TopicMetadata("t-held-2", 331, 0, "agent-held-too", "Two", now, now, SpaceSlug: "default", TenantId: household));
+        await store.SaveTopicAsync(new TopicMetadata("t-held-3", 332, 0, "agent-held", "Away", now, now, SpaceSlug: "cellar", TenantId: "away"));
+
+        (await store.SpacesHoldingTopicsAsync(household)).ShouldBe(["attic", "default"], ignoreOrder: true);
+    }
+
     [Fact]
     public async Task GetHistoryAsync_ProjectsTheStoredConversation()
     {
