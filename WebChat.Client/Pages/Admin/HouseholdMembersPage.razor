@@ -1,0 +1,193 @@
+@page "/admin/members"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.Admin
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdMembersStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household members</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-members-heading">
+    <h1 id="admin-members-heading">Members</h1>
+    <p class="admin-lede">
+        Who is in the household, who manages it and who sees every conversation. A disabled member keeps
+        everything of theirs, but cannot sign in, is not recognised on Telegram or by voice, and their
+        schedules run as nobody until you re-enable them.
+    </p>
+
+    @if (_state.Notice is { } notice)
+    {
+        <AdminNoticeView Notice="notice" />
+    }
+
+    @if (_state.Minted is { } minted)
+    {
+        <div class="admin-minted" role="region" aria-label="New link">
+            <p>@minted.What, good once until @minted.Link.ExpiresAt.ToLocalTime().ToString("g"). Send it to them: it is not shown again.</p>
+            <p><a class="admin-minted-link" data-member-link href="@minted.Link.Url">@minted.Link.Url</a></p>
+            @if (minted.Link.TelegramLink is { } telegramLink)
+            {
+                <p>Or, for someone who only uses Telegram, open it there: <a data-telegram-link href="@telegramLink">@telegramLink</a></p>
+            }
+            else if (minted.Link.TelegramStart is { } telegramStart)
+            {
+                <p>Or, for someone who only uses Telegram, send the deployment's bot <code data-telegram-start>@telegramStart</code> from it.</p>
+            }
+        </div>
+    }
+
+    @if (_state.Members is { } members)
+    {
+        @foreach (var member in members.Members)
+        {
+            var draft = Draft(member);
+            <article class="admin-member" aria-label="@member.DisplayName">
+                <header class="admin-agent-header">
+                    <h2>@member.DisplayName</h2>
+                    <span class="admin-agent-meta">
+                        @(member.Role == AdminMember.Owner ? "Owner" : "Member")@(member.IsOperator ? " · runs the deployment" : "")
+                        @if (member.Disabled)
+                        {
+                            <span class="admin-member-disabled">· disabled</span>
+                        }
+                    </span>
+                </header>
+                <form class="admin-form" @onsubmit="() => Save(member.Id)">
+                    <label class="admin-field">
+                        <span class="admin-field-label">Role</span>
+                        <select name="role" @bind="draft.Role">
+                            <option value="@AdminMember.Member">Member</option>
+                            <option value="@AdminMember.Owner">Owner</option>
+                        </select>
+                    </label>
+                    <label class="admin-check">
+                        <input type="checkbox" name="seesAll" @bind="draft.SeesAll" />
+                        <span>Sees all conversations</span>
+                    </label>
+                    <div class="admin-actions">
+                        @if (!member.IsOperator && !member.Disabled)
+                        {
+                            <button type="button" class="admin-secondary" disabled="@_state.Saving"
+                                    @onclick="() => Recover(member)">Recovery link</button>
+                        }
+                        @if (member.Disabled)
+                        {
+                            <button type="button" class="admin-secondary" disabled="@_state.Saving"
+                                    @onclick="() => Enable(member.Id)">Re-enable</button>
+                        }
+                        else if (!member.IsOperator)
+                        {
+                            <button type="button" class="admin-secondary" @onclick="() => _confirming = member.Id">Disable</button>
+                        }
+                        <button type="submit" class="admin-save" disabled="@_state.Saving">@(_state.Saving ? "Saving" : "Save")</button>
+                    </div>
+                </form>
+
+                @if (_confirming == member.Id)
+                {
+                    <div class="admin-confirm" role="group" aria-label="Disable @member.DisplayName">
+                        <p>
+                            Disable @member.DisplayName? They are signed out everywhere, and cannot sign in, use Telegram or be
+                            recognised by voice until you re-enable them. Nothing of theirs is deleted.
+                        </p>
+                        <div class="admin-actions">
+                            <button type="button" class="admin-secondary" @onclick="() => _confirming = null">Keep them</button>
+                            <button type="button" class="admin-save" @onclick="() => Disable(member.Id)">Disable @member.DisplayName</button>
+                        </div>
+                    </div>
+                }
+            </article>
+        }
+
+        <form class="admin-form admin-agent-add" @onsubmit="Invite" aria-labelledby="admin-invite-heading">
+            <h2 id="admin-invite-heading">Invite someone</h2>
+            <p class="admin-field-hint">
+                The link works once, for a week, and creates them with the name and role you give here — by passkey
+                in a browser, or in Telegram.
+            </p>
+            <label class="admin-field">
+                <span class="admin-field-label">Display name</span>
+                <input name="inviteName" @bind="_inviteName" @bind:event="oninput" maxlength="@MemberInvite.DisplayNameLength" autocomplete="off" />
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Role</span>
+                <select name="inviteRole" @bind="_inviteRole">
+                    <option value="@AdminMember.Member">Member</option>
+                    <option value="@AdminMember.Owner">Owner</option>
+                </select>
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@_state.Saving">Create invite</button>
+            </div>
+        </form>
+    }
+    else if (_state.Notice is null)
+    {
+        <p class="admin-status">Loading the household's members</p>
+    }
+</section>
+
+@code {
+    private HouseholdMembersState _state = HouseholdMembersState.Initial;
+    private readonly Dictionary<string, MemberDraft> _drafts = [];
+    private string? _confirming;
+    private string _inviteName = "";
+    private string _inviteRole = AdminMember.Member;
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The fields take what the admin API answered — on opening and after every change — and are the
+        // owner's to edit in between.
+        Subscribe(Store.StateObservable, state => state.Members, members =>
+        {
+            if (members is null)
+            {
+                return;
+            }
+
+            _drafts.Clear();
+            foreach (var member in members.Members)
+            {
+                _drafts[member.Id] = new MemberDraft { Role = member.Role, SeesAll = member.SeesAll };
+            }
+
+            _confirming = null;
+        });
+        Subscribe(Store.StateObservable, state => state.Minted, minted =>
+        {
+            if (minted is not null)
+            {
+                _inviteName = "";
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdMembers());
+    }
+
+    private MemberDraft Draft(AdminMember member) =>
+        _drafts.TryGetValue(member.Id, out var draft)
+            ? draft
+            : _drafts[member.Id] = new MemberDraft { Role = member.Role, SeesAll = member.SeesAll };
+
+    private void Save(string userId)
+    {
+        var draft = _drafts[userId];
+        Dispatcher.Dispatch(new SaveHouseholdMember(userId, new MemberEdit(draft.Role, draft.SeesAll)));
+    }
+
+    private void Recover(AdminMember member) => Dispatcher.Dispatch(new MintMemberRecovery(member.Id, member.DisplayName));
+
+    private void Disable(string userId) => Dispatcher.Dispatch(new DisableHouseholdMember(userId));
+
+    private void Enable(string userId) => Dispatcher.Dispatch(new EnableHouseholdMember(userId));
+
+    private void Invite() => Dispatcher.Dispatch(new InviteHouseholdMember(new MemberInvite(_inviteName.Trim(), _inviteRole)));
+
+    private sealed class MemberDraft
+    {
+        public string Role { get; set; } = AdminMember.Member;
+        public bool SeesAll { get; set; }
+    }
+}

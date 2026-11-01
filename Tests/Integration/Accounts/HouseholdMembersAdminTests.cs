@@ -184,8 +184,8 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
         var disabling = await PostAsync(admin, AdminProtocol.DisableMember(ana));
         var demoting = await admin.PutAsync(AdminProtocol.Member(ana), new MemberEdit(Role: AdminMember.Member));
 
-        disabling.StatusCode.ShouldBe(HttpStatusCode.Conflict);
-        demoting.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        disabling.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        demoting.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await ChangesAsync(admin)).ShouldBeEmpty();
     }
 
@@ -200,7 +200,7 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
         (await PostAsync(admin, AdminProtocol.DisableMember(laura))).StatusCode.ShouldBe(HttpStatusCode.OK);
 
         (await admin.PutAsync(AdminProtocol.Member(fran.UserId), new MemberEdit(Role: AdminMember.Member))).StatusCode
-            .ShouldBe(HttpStatusCode.Conflict);
+            .ShouldBe(HttpStatusCode.BadRequest);
     }
 
     // The operator's account is the deployment's way onto its dashboard: an owner who could disable
@@ -264,7 +264,7 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
         var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
         await PostAsync(admin, AdminProtocol.DisableMember(laura));
 
-        (await PostAsync(admin, AdminProtocol.MemberRecovery(laura))).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await PostAsync(admin, AdminProtocol.MemberRecovery(laura))).StatusCode.ShouldBe(HttpStatusCode.BadRequest);
     }
 
     // The chat hub asks for a fresh assertion for every turn, signed with the member's roles as they

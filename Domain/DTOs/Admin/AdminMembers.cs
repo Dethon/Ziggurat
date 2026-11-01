@@ -18,7 +18,11 @@ public sealed record AdminMember(string Id, string DisplayName, string Role, boo
 
 // Somebody new, created with this name and role when they redeem the invite.
 [PublicAPI]
-public sealed record MemberInvite(string DisplayName, string Role);
+public sealed record MemberInvite(string DisplayName, string Role)
+{
+    // The accounts service's own limit on a display name, the one a person's profile is held to.
+    public const int DisplayNameLength = 200;
+}
 
 // What an owner changes of a member: their role, whether they see every conversation, or both. A
 // field left out is left as it is.
