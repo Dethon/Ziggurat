@@ -208,6 +208,19 @@ public sealed partial class AccountsServer : IAsyncDisposable
         return (household.Id, user.Id);
     }
 
+    // Somebody in a household besides the home one, as an owner's invite will write them.
+    public async Task<string> SeedPersonAsync(string tenantId, string name, Role role = Role.Member)
+    {
+        await using var db = await Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        var person = new User
+        {
+            Id = Tokens.NewId(), TenantId = tenantId, DisplayName = name, Role = role, CreatedAt = Clock.GetUtcNow()
+        };
+        db.Users.Add(person);
+        await db.SaveChangesAsync();
+        return person.Id;
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _app.StopAsync();
@@ -226,6 +239,9 @@ public sealed partial class AccountsServer : IAsyncDisposable
 
         public Task<HttpResponseMessage> PutAsync(string path, object body) =>
             SendAsync(new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(body) });
+
+        public Task<HttpResponseMessage> PostAsync(string path, object? body = null) =>
+            SendAsync(new HttpRequestMessage(HttpMethod.Post, path) { Content = body is null ? null : JsonContent.Create(body) });
 
         public async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, bool withAdminHeader = true)
         {

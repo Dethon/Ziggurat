@@ -185,6 +185,40 @@ namespace Accounts.Store.Migrations
                     b.ToTable("HouseholdDataKeys");
                 });
 
+            modelBuilder.Entity("Accounts.Store.HouseholdKeyCheck", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64);
+
+                    b.Property<DateTime>("CheckedAt");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(100);
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300);
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16);
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("HouseholdKeyChecks");
+                });
+
             modelBuilder.Entity("Accounts.Store.HouseholdSection", b =>
                 {
                     b.Property<string>("Id")
@@ -466,6 +500,15 @@ namespace Accounts.Store.Migrations
                 });
 
             modelBuilder.Entity("Accounts.Store.HouseholdDataKey", b =>
+                {
+                    b.HasOne("Accounts.Store.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Accounts.Store.HouseholdKeyCheck", b =>
                 {
                     b.HasOne("Accounts.Store.Tenant", null)
                         .WithMany()

@@ -37,10 +37,24 @@ public record AccountsSettings
     // Households' configuration: the master key their data keys are wrapped with.
     public HouseholdConfigSettings HouseholdConfig { get; init; } = new();
 
+    // Where a household's keys are checked before they are saved, and how long each provider is
+    // given to answer. Generic (appsettings.json): a test stack points them at a stub.
+    public KeyProbeSettings KeyProbes { get; init; } = new();
+
     // Where the agent publishes the keys its call tokens verify with: a shared server proves which
     // household it asks about with the call token it was handed, and the agent proves it is the agent
     // with one of its own. Per deployment (AGENTKEYSURL in compose); the default is compose's value.
     public string AgentKeysUrl { get; init; } = DefaultAgentKeysUrl;
+
+    // Where the agent answers on the deployment's network: its relay knows which of a household's
+    // own servers are connected now (ConnectedServers.Path), asked with the credential the agent
+    // presents here, CALLERS__agent, which is the agent API's own secret. Per deployment (AGENTURL in
+    // compose); the default is compose's value.
+    public string AgentUrl { get; init; } = DefaultAgentUrl;
+
+    // How long the operator's household list waits on the agent's listing before it shows the
+    // servers as unknown: the relay asks each server for its tools, up to ten seconds.
+    public TimeSpan AgentListingTimeout { get; init; } = TimeSpan.FromSeconds(15);
 
     // What the admin API holds an owner's changes to beyond the sections' own rules.
     public AdminSettings Admin { get; init; } = new();
@@ -62,6 +76,8 @@ public record AccountsSettings
     public VerifierPolicy Mcp { get; init; } = new();
 
     public const string DefaultAgentKeysUrl = "http://agent:8080/internal/jwks";
+
+    public const string DefaultAgentUrl = "http://agent:8080";
 
     public Uri PublicBase => new(PublicBaseUrl.TrimEnd('/') + "/");
 
@@ -128,6 +144,21 @@ public record HouseholdConfigSettings
     // section with a secret cannot be saved and a sealed one cannot be read — which is what a stack
     // with no household secrets runs on. Losing it loses every household's secrets.
     public string MasterKey { get; init; } = "";
+}
+
+public record KeyProbeSettings
+{
+    // OpenRouter's API, whose key route answers the key's own metadata and bills nothing.
+    public string OpenRouterUrl { get; init; } = "https://openrouter.ai/api/v1/";
+
+    // Idealista's API, whose token exchange is what its search does first with the pair.
+    public string IdealistaUrl { get; init; } = "https://api.idealista.com/";
+
+    // Telegram's Bot API, whose getMe answers the bot a token belongs to.
+    public string TelegramUrl { get; init; } = "https://api.telegram.org/";
+
+    // A provider that has not answered by then could not be asked: the key is saved unchecked.
+    public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(10);
 }
 
 public record RedisSettings

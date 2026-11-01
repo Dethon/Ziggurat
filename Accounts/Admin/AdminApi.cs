@@ -26,9 +26,11 @@ public static class AdminApi
         var deployment = accounts.MapGroup(Relative(AdminProtocol.Operator));
 
         HouseholdSettingsAdmin.Map(household);
+        KeysAdmin.Map(household);
         HouseholdAgentsAdmin.Map(household);
         HouseholdMembersAdmin.Map(household);
         AdminLog.Map(household, deployment);
+        HouseholdListAdmin.Map(deployment);
     }
 
     // A route's path inside its group, from the one spelling in AdminProtocol.
