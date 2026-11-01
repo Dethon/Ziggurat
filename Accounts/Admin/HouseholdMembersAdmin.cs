@@ -89,7 +89,7 @@ public static class HouseholdMembersAdmin
 
             if (role is { } changedRole && await store.ChangeRoleAsync(caller.HouseholdId, userId, changedRole, ct) == RoleChange.LastOwner)
             {
-                return Results.Conflict(_lastOwner);
+                return Results.BadRequest(_lastOwner);
             }
 
             if (edit.SeesAll is { } seesAll)
@@ -118,7 +118,7 @@ public static class HouseholdMembersAdmin
                 case Disabling.Operator:
                     return Results.Json(_operator, statusCode: StatusCodes.Status403Forbidden);
                 case Disabling.LastOwner:
-                    return Results.Conflict(_lastOwner);
+                    return Results.BadRequest(_lastOwner);
             }
 
             return await AnnouncedAsync(http, caller, store, log, announcer, $"Disabled member {userId}", ct);
@@ -145,7 +145,7 @@ public static class HouseholdMembersAdmin
                 case { IsOperator: true }:
                     return Results.Json(_operator, statusCode: StatusCodes.Status403Forbidden);
                 case { Disabled: true }:
-                    return Results.Conflict(new AdminRefusal("A disabled member's link would open nothing: re-enable them first.", []));
+                    return Results.BadRequest(new AdminRefusal("A disabled member's link would open nothing: re-enable them first.", []));
             }
 
             var link = (await links.MintRecoveryAsync(caller.HouseholdId, caller.UserId, userId, ct))!;

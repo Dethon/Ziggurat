@@ -3298,6 +3298,48 @@ select:focus:not(:focus-visible) {
     background: var(--error-bg);
 }
 
+.admin-member {
+    margin-top: 1.5rem;
+    padding: 1.25rem;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.admin-member-disabled {
+    color: var(--warning);
+}
+
+.admin-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+}
+
+.admin-check input {
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--accent);
+}
+
+.admin-minted {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--accent);
+    background: var(--accent-subtle);
+}
+
+.admin-minted p {
+    margin: 0 0 0.5rem;
+    overflow-wrap: anywhere;
+}
+
+.admin-minted p:last-child {
+    margin-bottom: 0;
+}
+
 @media (max-width: 480px) {
     .admin-entry {
         width: 36px;

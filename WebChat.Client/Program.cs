@@ -77,5 +77,6 @@ _ = app.Services.GetRequiredService<TopicRenameEffect>();
 _ = app.Services.GetRequiredService<TopicShareEffect>();
 _ = app.Services.GetRequiredService<HouseholdSettingsEffect>();
 _ = app.Services.GetRequiredService<HouseholdAgentsEffect>();
+_ = app.Services.GetRequiredService<HouseholdMembersEffect>();
 
 await app.RunAsync();
