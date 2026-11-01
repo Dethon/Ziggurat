@@ -43,6 +43,10 @@ public partial class DashboardAdminE2EFixture : E2EFixtureBase
 
     public string DashboardUrl { get; private set; } = "";
 
+    // The stack's Redis from this process, where a test publishes metric events as the deployment's
+    // services do (`metrics:events`), for the Observability host to roll up and push.
+    public string RedisConnectionString { get; private set; } = "";
+
     protected override async Task BuildImagesAsync(CancellationToken ct)
     {
         var solutionRoot = TestHelpers.FindSolutionRoot();
@@ -94,6 +98,7 @@ public partial class DashboardAdminE2EFixture : E2EFixtureBase
             .Build();
 
         await Task.WhenAll(_redis.StartAsync(ct), _accounts.StartAsync(ct));
+        RedisConnectionString = $"{_redis.Hostname}:{_redis.GetMappedPublicPort(6379)},password={RedisPassword}";
 
         var probe = TestAssertions.Of(
             new Account("e2e-household", "e2e-operator"), AppChannels.Dashboard, ["owner", ForwardedAccount.OperatorRole]);

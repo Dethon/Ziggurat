@@ -40,6 +40,7 @@ builder.Services.AddSingleton<SkillsStore>();
 builder.Services.AddSingleton<WebStore>();
 builder.Services.AddSingleton<HouseholdsStore>();
 
+builder.Services.AddScoped<HouseholdFilter>();
 builder.Services.AddScoped<MetricsApiService>();
 builder.Services.AddScoped<HouseholdsAdminService>();
 builder.Services.AddScoped<HouseholdsEffect>();
