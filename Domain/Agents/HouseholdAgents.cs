@@ -42,6 +42,9 @@ public sealed record HouseholdAgents
     // pays). Null for agents no household's configuration gave.
     public AgentHouseholdConfig? Configuration { get; init; }
 
+    // The operator suspended the household: none of its turns or fires is run until it is resumed.
+    public bool Suspended => Configuration?.Suspended == true;
+
     // Who pays for its model calls: the home household's, like those of agents no household's
     // configuration gave, go out on the deployment's own key, and any other household's on its own.
     // Null for a household of its own that set none: it pays for nothing, so its turns are refused —

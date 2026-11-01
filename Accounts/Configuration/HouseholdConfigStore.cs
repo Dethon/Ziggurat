@@ -8,7 +8,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Accounts.Configuration;
 
-public sealed record ConfiguredHousehold(string Id, string Name, bool IsHome);
+// Suspended: the operator stopped it (Tenant.SuspendedAt), which the agent's view says.
+public sealed record ConfiguredHousehold(string Id, string Name, bool IsHome, bool Suspended = false);
 
 public abstract record SectionSave
 {
@@ -34,7 +35,7 @@ public sealed class HouseholdConfigStore(
         await using var db = await contexts.CreateDbContextAsync(ct);
         return await db.Tenants.AsNoTracking()
             .Where(t => t.Id == householdId)
-            .Select(t => new ConfiguredHousehold(t.Id, t.Name, t.IsHome))
+            .Select(t => new ConfiguredHousehold(t.Id, t.Name, t.IsHome, t.SuspendedAt != null))
             .SingleOrDefaultAsync(ct);
     }
 
@@ -43,7 +44,7 @@ public sealed class HouseholdConfigStore(
         await using var db = await contexts.CreateDbContextAsync(ct);
         return await db.Tenants.AsNoTracking()
             .Where(t => t.IsHome)
-            .Select(t => new ConfiguredHousehold(t.Id, t.Name, t.IsHome))
+            .Select(t => new ConfiguredHousehold(t.Id, t.Name, t.IsHome, t.SuspendedAt != null))
             .SingleOrDefaultAsync(ct);
     }
 

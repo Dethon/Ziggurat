@@ -119,6 +119,24 @@ public class ChatMonitorDelegationTests
         run.TurnContext().Identity.ShouldNotBeNull().Account.ShouldBe(_fran);
     }
 
+    // A suspended household's schedules and watches still fire on their servers, and start nothing:
+    // nobody waits on a fire to be told, so the errors feed is where it is said.
+    [Fact]
+    public async Task AFireOfASuspendedHousehold_StartsNoTurn_AndIsReported()
+    {
+        var run = new Run(households: MonitorTestMocks.Households(suspended: Household));
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        run.Channel.SentReplies.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.HouseholdSuspendedErrorType);
+        refused.TenantId.ShouldBe(Household);
+    }
+
     // A finished download reports back to whoever asked without acting as them, whatever it carries.
     [Fact]
     public async Task ADownloadsFire_ActsForNobody_WhateverItCarries()
@@ -177,10 +195,12 @@ public class ChatMonitorDelegationTests
     {
         private readonly List<MetricEvent> _published = [];
         private readonly IAccountStanding? _standing;
+        private readonly IAgentDefinitionProvider? _households;
 
-        public Run(string channel = "scheduling", IAccountStanding? standing = null)
+        public Run(string channel = "scheduling", IAccountStanding? standing = null, IAgentDefinitionProvider? households = null)
         {
             _standing = standing;
+            _households = households;
             Channel = new FakeChannelConnection { ChannelId = channel };
             Agent = new FakeAiAgent();
             Factory = MonitorTestMocks.CreateAgentFactory(Agent);
@@ -224,7 +244,8 @@ public class ChatMonitorDelegationTests
                 NullLogger<ChatMonitor>.Instance,
                 MonitorTestMocks.Assertions,
                 delegations: TestDelegations.Verifier(),
-                standing: _standing);
+                standing: _standing,
+                agentDefinitions: _households);
 
             await monitor.Monitor(CancellationToken.None);
         }

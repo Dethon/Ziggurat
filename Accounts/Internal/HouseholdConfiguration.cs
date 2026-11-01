@@ -42,7 +42,8 @@ public static class HouseholdConfiguration
                     await SectionAsync(store, household, HouseholdSections.FeaturesSchema, ct),
                     await SectionAsync(store, household, HouseholdSections.SpacesSchema, ct),
                     (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).OpenRouter?.ApiKey,
-                    await members.DisabledAsync(household.Id, ct)), ct);
+                    await members.DisabledAsync(household.Id, ct),
+                    household.Suspended), ct);
         });
 
         MapShared(routes, HouseholdConfigProtocol.SettingsView, (store, household, ct) =>
