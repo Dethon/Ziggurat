@@ -18,7 +18,8 @@ public static class AssertionVerifierRegistration
     public static IServiceCollection AddAssertionVerifier(
         this IServiceCollection services, string jwksUrl, TokenVerificationSettings verification)
     {
-        services.AddHttpClient(ClientName, http => http.Timeout = TimeSpan.FromSeconds(5));
+        // The fetch's bound is the cache's own (KeysFetchTimeout), the same on every verifying host.
+        services.AddHttpClient(ClientName);
         services.TryAddSingleton(TimeProvider.System);
         // A client per fetch, from the factory, so a handler the factory has rotated is never kept
         // for the life of the host.
