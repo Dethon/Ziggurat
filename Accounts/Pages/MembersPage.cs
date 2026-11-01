@@ -109,9 +109,15 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
                 StatusCodes.Status403Forbidden, ct);
         }
 
-        var link = (await links.MintRecoveryAsync(viewer.TenantId, viewer.UserId, userId, ct))!;
-        return await RenderAsync(http, viewer, Issued($"A recovery link for {person.DisplayName}", link.Url, link.ExpiresAt),
-            StatusCodes.Status200OK, ct);
+        return await links.MintRecoveryAsync(viewer.TenantId, viewer.UserId, userId, ct) switch
+        {
+            RecoveryMint.Minted { Link: var link } => await RenderAsync(http, viewer,
+                Issued($"A recovery link for {person.DisplayName}", link.Url, link.ExpiresAt), StatusCodes.Status200OK, ct),
+            RecoveryMint.Disabled => await RenderAsync(http, viewer,
+                $"<p class=\"notice\">{AccountsPages.Encode(person.DisplayName)} is disabled, so a link would open nothing until they are re-enabled.</p>",
+                StatusCodes.Status400BadRequest, ct),
+            _ => await RenderAsync(http, viewer, NobodyNotice, StatusCodes.Status404NotFound, ct)
+        };
     }
 
     private async Task<IResult> ChangeRoleAsync(HttpContext http, string userId, CancellationToken ct)

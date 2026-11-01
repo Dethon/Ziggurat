@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 using Accounts.Links;
+using Accounts.Members;
 using Accounts.Store;
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
@@ -106,6 +107,25 @@ public partial class MembersPageTests
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         var link = LinkIn(await response.Content.ReadAsStringAsync());
         (await (await server.Client().GetAsync(link)).Content.ReadAsStringAsync()).ShouldContain("Laura");
+    }
+
+    // A disabled member's link would open nothing until they are re-enabled, so none is minted: the
+    // old page refuses it as the admin API does.
+    [Fact]
+    public async Task ADisabledMember_IsMintedNoRecoveryLink()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var owner = server.SignedIn(await server.MintSessionAsync(fran.UserId));
+        var laura = await server.SeedMemberAsync("Laura");
+        await server.Service<MemberStore>().DisableAsync(fran.TenantId, laura, CancellationToken.None);
+
+        var response = await owner.PostAsync(Members, $"{Members}/{laura}/recovery");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).ShouldContain("disabled");
+        await using var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        (await db.Links.CountAsync(l => l.UserId == laura)).ShouldBe(0);
     }
 
     // The operator's own way back in is the container command: an owner who could mint them a

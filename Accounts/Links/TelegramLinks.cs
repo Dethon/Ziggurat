@@ -140,7 +140,9 @@ public sealed class TelegramLinks(IDbContextFactory<AccountsDbContext> contexts,
             return new WebLink(WebLinkOutcome.Operator);
         }
 
-        return new WebLink(WebLinkOutcome.Minted, await links.MintRecoveryAsync(person.TenantId, person.Id, person.Id, ct));
+        return await links.MintRecoveryAsync(person.TenantId, person.Id, person.Id, ct) is RecoveryMint.Minted { Link: var link }
+            ? new WebLink(WebLinkOutcome.Minted, link)
+            : new WebLink(WebLinkOutcome.NotLinked);
     }
 
     public async Task<GroupBinding> BindGroupAsync(long chatId, string code, CancellationToken ct)

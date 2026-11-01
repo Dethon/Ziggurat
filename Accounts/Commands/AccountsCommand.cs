@@ -143,14 +143,19 @@ public static class AccountsCommand
 
     private static async Task<int> RecoveryAsync(LinkStore links, string userId, TextWriter output, CancellationToken ct)
     {
-        if (await links.MintRecoveryAsync(userId, ct) is not { } link)
+        switch (await links.MintRecoveryAsync(userId, ct))
         {
-            await output.WriteLineAsync($"no link was minted: there is no user {userId}.");
-            return 1;
+            case RecoveryMint.Minted { Link: var link }:
+                await WriteAsync(link, output);
+                return 0;
+            case RecoveryMint.Disabled:
+                await output.WriteLineAsync(
+                    $"no link was minted: user {userId} is disabled, so it would open nothing until an owner re-enables them.");
+                return 1;
+            default:
+                await output.WriteLineAsync($"no link was minted: there is no user {userId}.");
+                return 1;
         }
-
-        await WriteAsync(link, output);
-        return 0;
     }
 
     private static async Task<int> SessionAsync(SessionStore sessions, string userId, TextWriter output, CancellationToken ct)
