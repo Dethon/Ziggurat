@@ -31,6 +31,7 @@ public static class TunnelProtocol
     public const string Replaced = "Replaced";
     public const string Restarting = "Restarting";
     public const string Revoked = nameof(TunnelCredentialRefusal.Revoked);
+    public const string Suspended = nameof(TunnelCredentialRefusal.Suspended);
 
     public static JsonSerializerOptions SerializerOptions { get; } = new(JsonSerializerDefaults.Web);
 }

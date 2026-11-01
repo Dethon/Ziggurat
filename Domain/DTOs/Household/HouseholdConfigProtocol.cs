@@ -41,6 +41,10 @@ public static class HouseholdConfigProtocol
     // lifetime is what bounds a missed one.
     public const string SavedChannel = "accounts:household-config:saved";
 
+    // What a save announcement names when the household was suspended or resumed rather than a section
+    // saved: no section is called this, and every reader drops what it kept of the household either way.
+    public const string SuspensionSection = "suspension";
+
     // The channel the agent's own token for the configuration names: it acts for nobody, and names
     // its household in the query (the agent is the one caller that may).
     public const string AgentTokenChannel = "household-config";
@@ -65,7 +69,8 @@ public sealed record HouseholdConfigQuery(
     string? HouseholdId = null, string? CallToken = null, string? Assertion = null, string? Delegation = null);
 
 // Many sections at once, with the model key unsealed, where a shared server is handed its own section
-// alone: the agent builds the household's agents from them and pays for their models.
+// alone: the agent builds the household's agents from them and pays for their models. Suspended is the
+// operator's word that the household runs nothing: the agent refuses its turns and fires by it.
 [PublicAPI]
 public sealed record AgentHouseholdConfig(
     string HouseholdId,
@@ -74,14 +79,16 @@ public sealed record AgentHouseholdConfig(
     AgentsSection Agents,
     FeaturesSection Features,
     SpacesSection Spaces,
-    string? OpenRouterApiKey)
+    string? OpenRouterApiKey,
+    bool Suspended = false)
 {
     // The key goes over the wire in clear, as the agent needs it; printed — a log line, an assertion's
     // message, the HouseholdAgents built from it — it says only whether there is one.
     private bool PrintMembers(StringBuilder builder)
     {
         builder.Append($"HouseholdId = {HouseholdId}, IsHome = {IsHome}, Settings = {Settings}, Agents = {Agents}, ");
-        builder.Append($"Features = {Features}, Spaces = {Spaces}, OpenRouterApiKey = {(OpenRouterApiKey is null ? "none" : "[set]")}");
+        builder.Append($"Features = {Features}, Spaces = {Spaces}, OpenRouterApiKey = {(OpenRouterApiKey is null ? "none" : "[set]")}, ");
+        builder.Append($"Suspended = {Suspended}");
         return true;
     }
 }
@@ -144,6 +151,7 @@ public enum HouseholdConfigRefusal
     SecretsUnavailable
 }
 
-// Published on HouseholdConfigProtocol.SavedChannel when a section is saved.
+// Published on HouseholdConfigProtocol.SavedChannel when a section is saved, and when the household is
+// suspended or resumed (HouseholdConfigProtocol.SuspensionSection), which its readers must see as soon.
 [PublicAPI]
 public sealed record HouseholdConfigSaved(string HouseholdId, string Section);

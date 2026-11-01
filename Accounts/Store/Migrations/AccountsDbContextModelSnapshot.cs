@@ -346,6 +346,8 @@ namespace Accounts.Store.Migrations
                         .IsRequired()
                         .HasMaxLength(200);
 
+                    b.Property<DateTime?>("SuspendedAt");
+
                     b.HasKey("Id");
 
                     b.ToTable("Tenants");
