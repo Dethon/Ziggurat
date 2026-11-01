@@ -1,5 +1,6 @@
 using Accounts.Admin;
 using Accounts.People;
+using Domain.DTOs.Admin;
 using Domain.DTOs.Tunnel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
@@ -30,6 +31,7 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
     public DbSet<HouseholdDataKey> HouseholdDataKeys => Set<HouseholdDataKey>();
     public DbSet<AdminChange> AdminChanges => Set<AdminChange>();
     public DbSet<HouseholdKeyCheck> HouseholdKeyChecks => Set<HouseholdKeyCheck>();
+    public DbSet<AgentVersion> AgentVersions => Set<AgentVersion>();
 
     // An instant is kept as UTC, because not every provider has an offset type and SQLite cannot
     // order or compare the text of one.
@@ -146,6 +148,17 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
         change.HasIndex(c => new { c.TenantId, c.At });
         change.HasOne<Tenant>().WithMany().HasForeignKey(c => c.TenantId).OnDelete(DeleteBehavior.Restrict);
         change.HasOne<User>().WithMany().HasForeignKey(c => c.ActorUserId).OnDelete(DeleteBehavior.Restrict);
+
+        var version = modelBuilder.Entity<AgentVersion>();
+        version.Property(v => v.Id).HasMaxLength(IdLength);
+        version.Property(v => v.TenantId).HasMaxLength(IdLength);
+        version.Property(v => v.AgentId).HasMaxLength(64);
+        version.Property(v => v.Name).HasMaxLength(AdminAgent.NameLength);
+        version.Property(v => v.ReplacedBy).HasMaxLength(IdLength);
+        // An agent's versions are read newest first.
+        version.HasIndex(v => new { v.TenantId, v.AgentId, v.ReplacedAt });
+        version.HasOne<Tenant>().WithMany().HasForeignKey(v => v.TenantId).OnDelete(DeleteBehavior.Restrict);
+        version.HasOne<User>().WithMany().HasForeignKey(v => v.ReplacedBy).OnDelete(DeleteBehavior.Restrict);
     }
 
     private sealed class UtcConverter() : ValueConverter<DateTimeOffset, DateTime>(

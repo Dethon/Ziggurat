@@ -53,6 +53,40 @@ namespace Accounts.Store.Migrations
                     b.ToTable("AdminChanges");
                 });
 
+            modelBuilder.Entity("Accounts.Store.AgentVersion", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64);
+
+                    b.Property<string>("AgentId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<string>("CustomInstructions");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100);
+
+                    b.Property<DateTime>("ReplacedAt");
+
+                    b.Property<string>("ReplacedBy")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReplacedBy");
+
+                    b.HasIndex("TenantId", "AgentId", "ReplacedAt");
+
+                    b.ToTable("AgentVersions");
+                });
+
             modelBuilder.Entity("Accounts.Store.BoundChat", b =>
                 {
                     b.Property<string>("Id")
@@ -420,6 +454,21 @@ namespace Accounts.Store.Migrations
                     b.HasOne("Accounts.Store.User", null)
                         .WithMany()
                         .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Accounts.Store.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Accounts.Store.AgentVersion", b =>
+                {
+                    b.HasOne("Accounts.Store.User", null)
+                        .WithMany()
+                        .HasForeignKey("ReplacedBy")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 

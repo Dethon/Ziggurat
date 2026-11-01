@@ -213,11 +213,13 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
 
         (await stack.TopicsAsync(stack.Home, agent.Id)).ShouldContain(t => t.Name.StartsWith(tag));
 
-        // The roll-ups name an agent by its name (AgentSpec.MetricsAgentId), so the reply's own call is
-        // the configured agent's on its configured model; the deployment's own scope holds none of the
-        // turn's calls, though its key paid for them.
+        // The roll-ups key an agent by its id, which a household's rename leaves alone, and carry the
+        // name it goes by (AgentSpec.MetricsAgentName), so the reply's own call is the configured
+        // agent's on its configured model; the deployment's own scope holds none of the turn's calls,
+        // though its key paid for them.
         await Eventually.Until(async () => (await UsageAsync(stack.Home, since))
-                .Any(u => u.AgentId == agent.Name && u.Model == agent.Model && u.Sender == stack.MemberName),
+                .Any(u => u.AgentId == agent.Id && u.AgentName == agent.Name && u.Model == agent.Model
+                          && u.Sender == stack.MemberName),
             $"{agent.Name}'s reply on {agent.Model} counted under the home household");
         (await UsageAsync(MetricKeys.Deployment, since))
             .ShouldNotContain(u => u.Sender == stack.MemberName || u.AgentId == agent.Name || u.AgentId == agent.Id);

@@ -1,0 +1,175 @@
+@page "/households"
+@using Dashboard.Client.State.Households
+@using Domain.DTOs.Admin
+@implements IDisposable
+@inject HouseholdsStore Store
+@inject HouseholdsEffect Effect
+
+<div class="households-page">
+    <header class="page-header">
+        <h2>Households</h2>
+    </header>
+
+    <section class="section">
+        <h3>New household</h3>
+        <form class="new-household" @onsubmit="CreateAsync">
+            <label>
+                <span>Household name</span>
+                <input @bind="_name" @bind:event="oninput" maxlength="200" />
+            </label>
+            <label>
+                <span>Owner's name</span>
+                <input @bind="_ownerName" @bind:event="oninput" maxlength="200" />
+            </label>
+            <button type="submit" disabled="@_state.Busy">Create household</button>
+        </form>
+    </section>
+
+    @if (_state.Notice is { } notice)
+    {
+        <div class="notice" role="alert">
+            <p>@notice.Message</p>
+            @if (notice.Problems.Count > 0)
+            {
+                <ul>
+                    @foreach (var problem in notice.Problems)
+                    {
+                        <li>@problem</li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+
+    @if (_state.ShownLink is { } link)
+    {
+        <section class="minted-link" role="status">
+            <p>
+                <strong>@link.DisplayName</strong>'s passkey link, shown this once: send it to them. It works once,
+                until @link.ExpiresAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm").
+            </p>
+            <input readonly aria-label="Owner's passkey link" value="@link.Url" />
+            <button type="button" class="quiet" @onclick="Store.ForgetLink">Done</button>
+        </section>
+    }
+
+    <section class="section">
+        <h3>Every household</h3>
+        <div class="events-table" role="table" aria-label="Households">
+            <div class="table-header" role="row">
+                <span role="columnheader">Household</span>
+                <span role="columnheader">Owners</span>
+                <span role="columnheader">Members</span>
+                <span role="columnheader">Connected servers</span>
+                <span role="columnheader">Last seen</span>
+            </div>
+            @foreach (var household in _state.Households)
+            {
+                <div class="table-row" role="row" aria-label="@household.Name">
+                    <span role="cell" class="household-name">
+                        @household.Name
+                        @if (household.IsHome)
+                        {
+                            <span class="tag">home</span>
+                        }
+                    </span>
+                    <span role="cell" class="owners">
+                        @foreach (var owner in household.Owners)
+                        {
+                            <span class="owner">
+                                @owner.DisplayName
+                                @if (!owner.IsOperator)
+                                {
+                                    <button type="button" class="quiet" disabled="@_state.Busy"
+                                            aria-label="@($"Recovery link for {owner.DisplayName}")"
+                                            title="Mint a recovery link"
+                                            @onclick="() => Effect.MintOwnerRecoveryAsync(household.Id, owner.UserId)">
+                                        <Icon Glyph="Icons.Key" Size="1em" />
+                                    </button>
+                                }
+                            </span>
+                        }
+                    </span>
+                    <span role="cell">@string.Join(", ", household.Members.Select(m => m.DisplayName))</span>
+                    <span role="cell">@Servers(household)</span>
+                    <span role="cell">@(household.LastSeenAt?.ToLocalTime().ToString("dd/MM HH:mm") ?? "never")</span>
+                </div>
+            }
+            @if (_state.Loaded && _state.Households.Count == 0)
+            {
+                <p class="no-data">No households</p>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private HouseholdsState _state = new();
+    private IDisposable? _subscription;
+    private string _name = "";
+    private string _ownerName = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // A link is shown once: leaving the page and coming back does not bring it back.
+        Store.ForgetLink();
+        _subscription = Store.StateObservable.Subscribe(s => InvokeAsync(() =>
+        {
+            _state = s;
+            StateHasChanged();
+        }));
+        await Effect.LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        await Effect.CreateAsync(_name, _ownerName);
+        if (Store.State is { ShownLink: not null, Notice: null })
+        {
+            _name = "";
+            _ownerName = "";
+        }
+    }
+
+    private static string Servers(HouseholdListEntry household) =>
+        household.ConnectedServers switch
+        {
+            null => "unknown",
+            [] => "none",
+            var servers => string.Join(", ", servers.Select(s => $"{s.Name} (since {s.ConnectedSince.ToLocalTime():dd/MM HH:mm})"))
+        };
+
+    public void Dispose() => _subscription?.Dispose();
+}
+
+<style>
+    .households-page { display: flex; flex-direction: column; gap: 1.5rem; }
+    .page-header h2 { font-size: 1.4rem; font-weight: 600; }
+    .section h3 { font-size: 1rem; margin-bottom: 0.8rem; color: var(--text-secondary); }
+    .new-household { display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: flex-end; }
+    .new-household label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: var(--text-secondary); }
+    .households-page input { background: var(--bg-card); color: var(--text-primary); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 0.45rem 0.6rem; font-size: 0.85rem; min-width: 14rem; }
+    .households-page button { background: rgba(0, 210, 255, 0.15); color: var(--accent-blue); border: 1px solid rgba(0, 210, 255, 0.3); border-radius: 6px; padding: 0.45rem 0.8rem; font-size: 0.85rem; cursor: pointer; }
+    .households-page button:disabled { opacity: 0.5; cursor: default; }
+    .households-page button.quiet { background: none; border: none; padding: 0.1rem 0.3rem; color: var(--text-secondary); }
+    .households-page button.quiet:hover { color: var(--accent-blue); }
+    .notice { background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.3); color: var(--accent-red); border-radius: 6px; padding: 0.6rem 0.8rem; font-size: 0.85rem; }
+    .notice ul { margin: 0.4rem 0 0 1.2rem; }
+    .minted-link { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; background: rgba(74, 222, 128, 0.08); border: 1px solid rgba(74, 222, 128, 0.3); border-radius: 6px; padding: 0.7rem 0.9rem; font-size: 0.85rem; }
+    .minted-link p { flex-basis: 100%; }
+    .minted-link input { flex: 1; font-family: monospace; }
+    .events-table { display: flex; flex-direction: column; gap: 2px; }
+    .table-header, .table-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 100px; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; align-items: center; }
+    .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
+    .table-row { background: var(--bg-card); border-radius: 4px; }
+    .owner { display: inline-flex; align-items: center; margin-right: 0.6rem; }
+    .tag { font-size: 0.68rem; color: var(--accent-purple); margin-left: 0.3rem; }
+    .no-data { color: var(--text-secondary); font-size: 0.85rem; }
+
+    @@media (max-width: 768px) {
+        .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .table-header, .table-row { font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 560px; }
+        .households-page input { min-width: 0; width: 100%; }
+        .new-household label { flex-basis: 100%; }
+    }
+</style>

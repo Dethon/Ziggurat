@@ -31,6 +31,24 @@ public static class AdminProtocol
     // saved without it being shown; a key too short to spare them shows none.
     public const int KeyCharactersShown = 4;
     public const int ShortestKeyShown = 12;
+    // The operator's household list: GET lists every household, POST creates one with its owner.
+    public const string Households = Operator + "/households";
+
+    // A recovery link for one owner of one household, minted by the operator.
+    public const string OwnerRecoveryRoute = Households + "/{householdId}/owners/{userId}/recovery";
+
+    public static string OwnerRecovery(string householdId, string userId) =>
+        $"{Households}/{Uri.EscapeDataString(householdId)}/owners/{Uri.EscapeDataString(userId)}/recovery";
+
+    // The household's agents (AdminAgents): each one's name and custom instructions, its last few
+    // versions and a restore of one, an agent added from a shipped template, one removed.
+    public const string Agents = Household + "/agents";
+
+    public static string Agent(string agentId) => $"{Agents}/{agentId}";
+
+    public static string AgentVersions(string agentId) => $"{Agent(agentId)}/versions";
+
+    public static string RestoreAgentVersion(string agentId, string versionId) => $"{AgentVersions(agentId)}/{versionId}/restore";
 
     // Every admin request carries this header with this value. A cross-site form cannot set a
     // header, and a cross-origin script that does is preflighted, which nothing here answers: so a
@@ -95,3 +113,31 @@ public sealed record KeyStatus(KeyState State, string LastCharacters, DateTimeOf
 
 [PublicAPI]
 public sealed record TelegramBotStatus(string AgentId, KeyStatus Key);
+// A household the operator creates: its name and the display name of the owner it starts with.
+[PublicAPI]
+public sealed record NewHousehold(string Name, string OwnerName);
+
+// A link that enrolls a passkey for one owner of a household — the owner a new household starts
+// with, or one the operator recovers. Shown once, in the answer that minted it: only its hash is kept.
+[PublicAPI]
+public sealed record OwnerLink(string HouseholdId, string UserId, string DisplayName, string Url, DateTimeOffset ExpiresAt);
+
+// One household as the operator's list shows it: its people by role, the servers connected to the
+// agent's relay now (null when the agent could not be asked), and when any of its people's sessions
+// was last seen by the session check (null when none ever was).
+[PublicAPI]
+public sealed record HouseholdListEntry(
+    string Id,
+    string Name,
+    bool IsHome,
+    DateTimeOffset CreatedAt,
+    IReadOnlyList<HouseholdPerson> Owners,
+    IReadOnlyList<HouseholdPerson> Members,
+    IReadOnlyList<HouseholdConnectedServer>? ConnectedServers,
+    DateTimeOffset? LastSeenAt);
+
+[PublicAPI]
+public sealed record HouseholdPerson(string UserId, string DisplayName, bool IsOperator);
+
+[PublicAPI]
+public sealed record HouseholdConnectedServer(string Name, DateTimeOffset ConnectedSince);
