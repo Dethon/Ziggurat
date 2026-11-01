@@ -18,7 +18,8 @@ public sealed record AgentSpec
     public required string DisplayName { get; init; }
     public required string PromptName { get; init; }
     public required string Description { get; init; }
-    public required string MetricsAgentId { get; init; }
+    // What the agent's figures are shown under; they are keyed by AgentId, which a rename leaves alone.
+    public required string MetricsAgentName { get; init; }
     public required string RoutingSessionId { get; init; }
     public required string ConversationId { get; init; }
     public required string UserId { get; init; }
