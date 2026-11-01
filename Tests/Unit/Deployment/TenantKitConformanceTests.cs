@@ -67,6 +67,15 @@ public class TenantKitConformanceTests
             .ShouldBeEmpty("a value in git is a value everyone can read");
     }
 
+    // The printer is the site's own: its address comes from the kit's .env and is required, never the
+    // printer server's appsettings default, which is the home's printer on the home's LAN.
+    [Fact]
+    public void TheKitsPrinter_IsTheSitesOwnFromItsEnv()
+    {
+        Kit.Service("mcp-printer").Environment.GetValueOrDefault("PRINTERURI")
+            .ShouldStartWith("${PRINTER_URI:?");
+    }
+
     [Fact]
     public void NoKitService_TakesTheWholeSecretsFile()
     {

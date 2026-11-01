@@ -6,7 +6,9 @@
 # under the smoke stack's ./volumes/smoke, which the script's down removes. The script starts web
 # search with its browser, the vault, the library, the sandbox and the printer, and the kit's Redis:
 # never voice, Home Assistant's server, Home Assistant or Music Assistant, which reach satellites, the
-# home and the LAN, nor qBittorrent and Jackett.
+# home and the LAN, nor qBittorrent and Jackett. The printer prints to a stand-in on the kit's own
+# network (smoke-printer: CUPS's ippeveprinter, which takes a job and keeps it as a file), never to the
+# site's printer.
 x-hub-here: &hub-here
   extra_hosts:
     - "${DEPLOYMENT_HOST}:host-gateway"
@@ -49,4 +51,26 @@ services:
   mcp-printer:
     <<: *hub-here
     volumes: [*hub-ca]
-    environment: *hub-ca-env
+    environment:
+      <<: *hub-ca-env
+      PRINTERURI: ipp://smoke-printer.local:8631/ipp/print
+      # The stand-in cannot type an octet-stream text job as a real printer does, so the smoke kit
+      # names its documents text; it prints text alone.
+      DOCUMENTFORMAT: text/plain
+
+  # A printer that prints nothing: it answers IPP as a printer does and keeps each job under /jobs.
+  # It refuses a request whose Host is not its own name, which beside its DNS-SD daemon is
+  # <hostname>.local, so it is reached by that alias.
+  # ippeveprinter will not start without a DNS-SD daemon even told to advertise nothing (-r off), so
+  # one runs beside it, on the kit's bridge network alone.
+  smoke-printer:
+    hostname: smoke-printer
+    build:
+      dockerfile_inline: |
+        FROM debian:bookworm-slim
+        RUN apt-get update && apt-get install -y --no-install-recommends cups-ipp-utils avahi-daemon dbus \
+            && rm -rf /var/lib/apt/lists/* && mkdir -p /jobs /run/dbus
+    entrypoint: ["sh", "-c", "dbus-daemon --system && avahi-daemon -D --no-chroot && sleep 1 && exec ippeveprinter -p 8631 -r off -k -d /jobs -f text/plain,image/jpeg,image/pwg-raster,image/urf,application/vnd.hp-pcl,application/octet-stream 'Smoke Printer'"]
+    networks:
+      kit:
+        aliases: [smoke-printer.local]
