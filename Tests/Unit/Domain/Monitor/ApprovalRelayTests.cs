@@ -140,6 +140,27 @@ public class ApprovalRelayTests
         (await answered).ShouldBe(ToolApprovalResult.Approved);
     }
 
+    // Channels that cannot show the question — not connected, or offering no approval tool — answer
+    // at once, and an async method answering null at once hands back the runtime's one cached task:
+    // the relay must tell them apart by channel, not by task, or the question fails instead of
+    // waiting for the person where they were asked.
+    [Fact]
+    public async Task TwoOffersAnsweredAtOnce_LeaveTheQuestionToTheAnchor()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram") { NotConnected = true };
+        var voice = new ApprovalChannel("voice") { NotConnected = true };
+
+        var answered = Relay(webchat, telegram, voice)
+            .RequestApprovalAsync(Ask(PersonsTurn("signalr", _fran)), CancellationToken.None);
+        await Eventually.Until(() => webchat.Asked.Count == 1, "the anchor to be asked");
+        await Eventually.Settle();
+        answered.IsCompleted.ShouldBeFalse();
+        webchat.Answer(ToolApprovalResult.Approved);
+
+        (await answered).ShouldBe(ToolApprovalResult.Approved);
+    }
+
     // A question the anchor could not show anyone — no live session, no satellite — is not a
     // refusal while the person can be reached elsewhere; they are given a while to answer there.
     [Fact]
@@ -233,6 +254,9 @@ internal sealed class ApprovalChannel(string channelId) : IChannelConnection
 
     public Exception? OfferFailure { get; init; }
 
+    // Answers an offer as McpChannelConnection does with no client: null, before anything is awaited.
+    public bool NotConnected { get; init; }
+
     public string ChannelId => channelId;
     public bool AttachOnly => false;
     public bool HostsReviewCopies => false;
@@ -252,7 +276,12 @@ internal sealed class ApprovalChannel(string channelId) : IChannelConnection
         WaitAsync(_asked, ask, ct);
 
     public Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
-        OfferFailure is null ? WaitAsync(_offered, ask, ct) : Task.FromException<ToolApprovalResult?>(OfferFailure);
+        NotConnected ? NotOfferedAsync()
+        : OfferFailure is null ? WaitAsync(_offered, ask, ct) : Task.FromException<ToolApprovalResult?>(OfferFailure);
+
+#pragma warning disable CS1998 // answers before awaiting anything, as the real connection does
+    private static async Task<ToolApprovalResult?> NotOfferedAsync() => null;
+#pragma warning restore CS1998
 
     public Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct)
     {
