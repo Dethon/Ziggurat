@@ -42,6 +42,16 @@ public record AccountsSettings
     // with one of its own. Per deployment (AGENTKEYSURL in compose); the default is compose's value.
     public string AgentKeysUrl { get; init; } = DefaultAgentKeysUrl;
 
+    // Where the agent answers on the deployment's network: its relay knows which of a household's
+    // own servers are connected now (ConnectedServers.Path), asked with the credential the agent
+    // presents here, CALLERS__agent, which is the agent API's own secret. Per deployment (AGENTURL in
+    // compose); the default is compose's value.
+    public string AgentUrl { get; init; } = DefaultAgentUrl;
+
+    // How long the operator's household list waits on the agent's listing before it shows the
+    // servers as unknown: the relay asks each server for its tools, up to ten seconds.
+    public TimeSpan AgentListingTimeout { get; init; } = TimeSpan.FromSeconds(15);
+
     // How long an invite or recovery link stays redeemable.
     public int LinkLifetimeDays { get; init; } = 7;
 
@@ -59,6 +69,8 @@ public record AccountsSettings
     public VerifierPolicy Mcp { get; init; } = new();
 
     public const string DefaultAgentKeysUrl = "http://agent:8080/internal/jwks";
+
+    public const string DefaultAgentUrl = "http://agent:8080";
 
     public Uri PublicBase => new(PublicBaseUrl.TrimEnd('/') + "/");
 

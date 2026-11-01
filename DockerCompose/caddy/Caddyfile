@@ -112,6 +112,22 @@ assistants-dashboard.herfluffness.com {
         copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
     }
 
+    # Never the accounts service's internal API, as on every host that reaches the service.
+    handle /accounts/internal/* {
+        respond 404
+    }
+
+    # The household list's admin API, the operator's routes alone: past the operator's check above,
+    # asked again for the admin channel, whose assertion copy_headers sets over the dashboard's and is
+    # the one thing the accounts service believes. The owners' routes are the chat client's.
+    handle /accounts/admin/operator/* {
+        forward_auth accounts:8080 {
+            uri /accounts/verify?channel=admin
+            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion
+        }
+        reverse_proxy accounts:8080
+    }
+
     handle {
         reverse_proxy observability:8080
     }
