@@ -41,6 +41,18 @@ public class SugaryFileSystemTests
 
     // A month has a doses file when a dose was taken in it, whether or not a meal was, and a meal
     // month without doses has none.
+    // Served per session, before any call names a household, so it names no zone: her times are read
+    // in her household's, which the README she is told to read first names.
+    [Fact]
+    public void TheMountsDescription_NamesNoZone_AndSendsHerToTheReadmeForIt()
+    {
+        var description = new SugaryFileSystem(
+            Mock.Of<ISugaryLog>(), TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"), Mock.Of<ITableEngine>()).DescribeMount;
+
+        description.ShouldNotContain("Europe/Madrid");
+        description.ShouldContain("local time");
+    }
+
     [Fact]
     public async Task DoseMonths_AreListedBesideMealMonths()
     {

@@ -44,6 +44,7 @@ public static class InternalCallers
     public const string Idealista = "mcp-idealista";
     public const string Scheduling = "mcp-scheduling";
     public const string Sugary = "mcp-sugary";
+    public const string Timers = "mcp-timers";
 
     // Sugary's channel (SugaryChannel.ChannelId), spelled again: this service references no server.
     public const string SugaryChannel = "sugary";
@@ -68,6 +69,7 @@ public static class InternalCallers
         [Idealista] = [HouseholdConfigProtocol.IdealistaView],
         [Scheduling] = [HouseholdConfigProtocol.SettingsView, HouseholdConfigProtocol.AgentNamesView],
         [Sugary] = [HouseholdConfigProtocol.SettingsView, HouseholdConfigProtocol.AgentNamesView],
+        [Timers] = [HouseholdConfigProtocol.SettingsView],
         [SignalR] = [HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AgentNamesView],
         [Telegram] = [HouseholdConfigProtocol.TelegramBotsView, HouseholdConfigProtocol.AgentNamesView]
     };

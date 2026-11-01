@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs.Tunnel;
 using Domain.Prompts;
 using Domain.Tools.Timers.Vfs;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Relay;
 using Infrastructure.Clients.Voice;
 using Infrastructure.Timers;
@@ -52,7 +53,11 @@ public static class ConfigModule
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<IHouseholdVoices>(),
                 sp.GetRequiredService<IChannelAlerts>()))
-            .AddHostedService<TimerFireService>();
+            .AddHostedService<TimerFireService>()
+            // Each household's settings, for the zone a timer's firing time is shown in: asked with
+            // this server's own credential on the call's token. No Redis here, so a saved zone reaches
+            // it when its kept answer runs out.
+            .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret);
 
         services
             .AddToolServer(settings, ToolResponse.Create)

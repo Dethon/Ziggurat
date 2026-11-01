@@ -57,7 +57,7 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
         + "a day), and README.md, which explains every column — read it before reading a number. Ask with "
         + "query: tables meals, items, doses, dose_meals, exercise, foods, periods and day_notes, every month at once. "
         + "A table is not read as text; a command in the sandbox reads the files with duckdb or polars. "
-        + $"Times are on the home's clock ({serverZone.Id}), each with a `<column>_local` wall time beside it.";
+        + "Times are instants, each with a `<column>_local` wall time beside it in local time (README.md names the zone).";
 
     public override string DescribeRead =>
         "Read README.md, which explains every table and column of her carb log. The tables are Parquet "

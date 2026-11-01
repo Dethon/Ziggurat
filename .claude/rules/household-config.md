@@ -105,7 +105,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 | View | Caller (`CALLERS__<name>`) | Answer | Secrets unsealed |
 |---|---|---|---|
 | `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces, `disabledPeople` (the user ids of members an owner disabled, which the agent acts for no more), and `suspended` (the operator suspended it: the agent refuses its turns and fires, `.claude/rules/admin.md`) | the OpenRouter key |
-| `settings` | `mcp-scheduling`, `mcp-sugary` | `HouseholdConfigAnswer<HouseholdSettings>` | none |
+| `settings` | `mcp-scheduling`, `mcp-sugary`, `mcp-timers` | `HouseholdConfigAnswer<HouseholdSettings>` | none |
 | `agent-names` (call token) | `mcp-scheduling` | as below: the household's agents, which its `/schedules` directories are (`.claude/rules/scheduling.md`) | none |
 | `idealista` | `mcp-idealista` | `HouseholdConfigAnswer<IdealistaKeys?>` | Idealista's two |
 | `spaces` | `mcp-channel-signalr` | `HouseholdConfigAnswer<SpacesSection>` | none |
@@ -284,7 +284,8 @@ client per key pair, so each account's token is its own; no keys is an `authenti
 nothing is searched — the deployment holds no Idealista key at all, so on the deploy that removed
 `IDEALISTA__*` from `.env` the operator puts the home's keys into its `keys` section with
 `set-household-config`, and until then the home's searches say none is set); scheduling reads and fires in the
-household's zone; Sugary reads her times and her calendar's days in it. `CallHouseholdConformanceTests`
+household's zone; Sugary reads her times and her calendar's days in it; timers show when a timer fires in
+it (`status.json`'s `firesAt`). `CallHouseholdConformanceTests`
 fails on tool code (a server's tool types, `Domain/Tools`) naming the reader or a proof, on a call
 token's proof built anywhere but the accessor, and on the verified token read past it.
 - `HouseholdConfigRefusedException` for a refusal, `HttpRequestException` for an outage or a 503: a
