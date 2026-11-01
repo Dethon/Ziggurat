@@ -1,6 +1,7 @@
 using Domain.DTOs.Channel;
 using Domain.Security;
 using Domain.Security.Signing;
+using McpChannelTelegram.Services;
 using Shouldly;
 using Telegram.Bot.Types;
 
@@ -287,6 +288,45 @@ public class TelegramBotServiceAccountsTests : IDisposable
 
         _harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("can't check who you are right now");
         (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Content.ShouldBe("/hello again");
+    }
+
+    // A suspended household's person is told so — not taken for a stranger and asked for an invite —
+    // and gets no turn, and the answer is not kept: their first message once it is resumed is theirs.
+    [Fact]
+    public async Task ASuspendedHouseholdsSender_IsToldSoAndGetsNoTurnUntilItIsResumed()
+    {
+        _harness.Accounts.Suspend();
+        await _harness.ReceiveAsync();
+        _harness.EnqueueSequence(
+            (TimeSpan.Zero, [Update(TelegramPollingHarness.TextMessage("/hello"))]),
+            (TimeSpan.Zero, [Update(TelegramPollingHarness.TextMessage("/hello again"))]));
+        _harness.OnBatch(1, () => _harness.Accounts.Resume());
+
+        await _harness.RunAsync();
+
+        _harness.Sent.ShouldHaveSingleItem().Text.ShouldBe(TelegramGate.SuspendedAnswer);
+        (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Content.ShouldBe("/hello again");
+    }
+
+    // Neither of the ways in a suspended household's people have opens anything: an invite is not
+    // spent, so it still opens once the household is resumed, and no link onto the web is minted.
+    [Fact]
+    public async Task ASuspendedHouseholdsInviteAndWebLink_AreRefusedAsSuspended()
+    {
+        var invite = _harness.Accounts.Invite("Carol");
+        _harness.Accounts.Suspend();
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(
+            Update(TelegramPollingHarness.TextMessage($"/start {invite}", username: "carol", userId: Carol)),
+            Update(TelegramPollingHarness.TextMessage("/web")));
+
+        await _harness.RunAsync();
+
+        _harness.Sent.Select(m => m.Text).ShouldBe([TelegramGate.SuspendedAnswer, TelegramGate.SuspendedAnswer]);
+        _harness.Accounts.WebLinksMinted.ShouldBe(0);
+        _harness.Accounts.Resume();
+        (await _harness.Accounts.RedeemStartAsync(Carol, invite, CancellationToken.None)).Outcome
+            .ShouldBe(TelegramStartOutcome.Invited, "the invite is still open");
     }
 
     // A person's link rarely changes, so the bot asks about them once in a while rather than on every

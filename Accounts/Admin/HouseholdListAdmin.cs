@@ -104,13 +104,17 @@ public static class HouseholdListAdmin
             }
         }
 
-        if (await links.MintRecoveryAsync(householdId, caller.UserId, userId, ct) is not { } minted)
+        switch (await links.MintRecoveryAsync(householdId, caller.UserId, userId, ct))
         {
-            return Results.NotFound(new AdminRefusal("That household has nobody by that id.", []));
+            case RecoveryMint.Minted { Link: var minted }:
+                await log.RecordAsync(http, caller, householdId, "Minted a recovery link for an owner", ct);
+                return Results.Ok(new AdminSaved<OwnerLink>(LinkOf(minted)));
+            case RecoveryMint.Disabled:
+                return Results.BadRequest(new AdminRefusal(
+                    "That owner is disabled, so a link would open nothing until another owner of their household re-enables them.", []));
+            default:
+                return Results.NotFound(new AdminRefusal("That household has nobody by that id.", []));
         }
-
-        await log.RecordAsync(http, caller, householdId, "Minted a recovery link for an owner", ct);
-        return Results.Ok(new AdminSaved<OwnerLink>(LinkOf(minted)));
     }
 
     private static HouseholdPerson Person(User user) => new(user.Id, user.DisplayName, user.IsOperator);

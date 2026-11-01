@@ -193,10 +193,10 @@ public class ChatMonitorAssertionTests
         run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
     }
 
-    // A standing the agent cannot read is never good standing: the turn could not be built without
-    // the same view anyway.
+    // A standing the agent cannot read is never good standing — the turn could not be built without
+    // the same view anyway — and the person is told it could not be checked, not that it was refused.
     [Fact]
-    public async Task ATurnWhosePersonsStandingCannotBeRead_IsRefused()
+    public async Task ATurnWhosePersonsStandingCannotBeRead_IsRefusedAsUnchecked()
     {
         var run = new Run(standing: new FakeAccountStanding { Unreadable = true });
         run.Channel.WriteMessage(Message() with { Assertion = TestAssertions.Of(_fran, ChatChannel) });
@@ -205,9 +205,30 @@ public class ChatMonitorAssertionTests
 
         run.Factory.Created.ShouldBeEmpty();
         var refused = run.Errors.ShouldHaveSingleItem();
-        refused.ErrorType.ShouldBe(ChatMonitor.AssertionRefusedErrorType);
-        refused.Message.ShouldNotBeNull().ShouldContain(ConversationGroup.StandingUnreadable);
-        run.Channel.SentReplies.Select(r => r.ContentType).ShouldBe([ReplyContentType.Error, ReplyContentType.StreamComplete]);
+        refused.ErrorType.ShouldBe(ChatMonitor.StandingUnreadableErrorType);
+        refused.TenantId.ShouldBe(Household);
+        run.Channel.SentReplies.Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, ConversationGroup.UncheckedAnswer), (ReplyContentType.StreamComplete, "")]);
+    }
+
+    // Whether the household is suspended is read the same way, and refused the same way when it cannot
+    // be: neither let through as running nor told it is suspended, which it may not be.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ATurnWhoseHouseholdCannotBeRead_IsRefusedAsUnchecked_NeverAsSuspended(bool guest)
+    {
+        var run = new Run("voice", households: MonitorTestMocks.UnreadableHouseholds());
+        run.Channel.WriteMessage(Message("voice") with
+        {
+            Assertion = guest ? TestAssertions.OfGuest(Household, "voice") : TestAssertions.Of(_fran, "voice")
+        });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Errors.ShouldHaveSingleItem().ErrorType.ShouldBe(ChatMonitor.StandingUnreadableErrorType);
+        run.Channel.SentReplies.Select(r => r.Content).ShouldBe([ConversationGroup.UncheckedAnswer, ""]);
     }
 
     // The guest is nobody an owner can disable, and the others in the household are unaffected.

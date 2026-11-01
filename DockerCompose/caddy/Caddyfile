@@ -73,6 +73,12 @@ assistants.herfluffness.com {
         respond 404
     }
 
+    # The session check is forward_auth's, asked on the compose network: from a browser it would hand
+    # whoever holds the cookie a signed assertion for any channel named, the admin API's included.
+    handle /accounts/verify* {
+        respond 404
+    }
+
     # The admin API the chat client's admin area calls same-origin: behind the session check for the
     # admin channel, whose assertion is the one thing the accounts service believes about who a change
     # is from. After the internal API's refusal and before /accounts/*, which is never checked.
@@ -173,6 +179,11 @@ sexy.herfluffness.com {
         respond 404
     }
 
+    # As on the main host: the session check is forward_auth's, never a browser's.
+    handle /accounts/verify* {
+        respond 404
+    }
+
     # The admin API is the main host's chat client's; nothing here calls it, so it is refused rather
     # than handed to the accounts service past no session check.
     handle /accounts/admin/* {
@@ -206,6 +217,11 @@ sugary.herfluffness.com {
 
     # As on the main host: who holds which identity is asked on the compose network, never here.
     handle /accounts/internal/* {
+        respond 404
+    }
+
+    # As on the main host: the session check is forward_auth's, never a browser's.
+    handle /accounts/verify* {
         respond 404
     }
 

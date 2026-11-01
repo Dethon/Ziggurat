@@ -113,7 +113,7 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
         var laura = await LinkedMemberAsync(server, fran.TenantId, "Laura");
         var lauras = await server.MintSessionAsync(laura);
         var lauraSession = await SessionIdAsync(server, lauras);
-        var recovery = (await server.Service<LinkStore>().MintRecoveryAsync(laura, CancellationToken.None))!;
+        var recovery = ((RecoveryMint.Minted)await server.Service<LinkStore>().MintRecoveryAsync(laura, CancellationToken.None)).Link;
         var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
         await using var reader = Reader(server);
         var standing = new HouseholdAccountStanding(reader);

@@ -51,16 +51,7 @@ public static class SessionCheck
             // script gets a 403 it can tell apart from being signed out.
             if (identity.HouseholdSuspended)
             {
-                return ForwardedRequest.From(http.Request).IsPage
-                    ? AccountsPages.Page(http, "Household suspended",
-                        $"""
-                         <main>
-                           <h1>Household suspended</h1>
-                           <p class="notice">{SuspendedNotice}</p>
-                         </main>
-                         """,
-                        StatusCodes.Status403Forbidden)
-                    : Results.Text(SuspendedNotice, statusCode: StatusCodes.Status403Forbidden);
+                return Suspended(http, ForwardedRequest.From(http.Request).IsPage);
             }
 
             if (role is not null && !identity.Roles.Contains(role))
@@ -74,6 +65,21 @@ public static class SessionCheck
             http.Response.Headers[AssertionHeader] = assertions.Of(identity, channel);
             return Results.Ok();
         });
+
+    // What a suspended household's person gets wherever they are let in nowhere: here, and on the
+    // account and members pages, which read their own cookie (PageGuard). A page in words a person
+    // reads; a script's call as plain text it can show them.
+    public static IResult Suspended(HttpContext http, bool page) =>
+        page
+            ? AccountsPages.Page(http, "Household suspended",
+                $"""
+                 <main>
+                   <h1>Household suspended</h1>
+                   <p class="notice">{SuspendedNotice}</p>
+                 </main>
+                 """,
+                StatusCodes.Status403Forbidden)
+            : Results.Text(SuspendedNotice, statusCode: StatusCodes.Status403Forbidden);
 }
 
 // The request the proxy is asking about, as forward_auth describes it in its forwarded headers.

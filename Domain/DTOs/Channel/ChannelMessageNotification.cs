@@ -35,6 +35,12 @@ public record ChannelMessageNotification
     // word, never the instruction: Content is what the fire asks, the part a delegation covers, and
     // the agent frames this as a report beside it (FireReports). Null on everything else.
     public string? FireReport { get; init; }
+    // The household a fire's object is kept under, as the server raising it says: a schedule's
+    // TenantId. Believed only to refuse — a suspended household's fire starts nothing, whatever its
+    // delegation says — never to act for anybody. Null on a person's own message, on a fire whose
+    // server keeps no household (a watch: the home's Home Assistant, which cannot be suspended), and on
+    // a download.
+    public string? HouseholdId { get; init; }
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     // Optional originating room for room-aware prompts. Part of the shared channel protocol but
