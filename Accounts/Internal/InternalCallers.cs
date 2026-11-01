@@ -64,7 +64,7 @@ public static class InternalCallers
     // shared server the one section it serves with, its secrets unsealed for it alone.
     private static readonly Dictionary<string, string[]> _views = new(StringComparer.Ordinal)
     {
-        [Agent] = [HouseholdConfigProtocol.AgentView, HouseholdConfigProtocol.PeopleView],
+        [Agent] = [HouseholdConfigProtocol.AgentView, HouseholdConfigProtocol.PeopleView, HouseholdConfigProtocol.OpenRouterKeyRefused],
         [Idealista] = [HouseholdConfigProtocol.IdealistaView],
         [Scheduling] = [HouseholdConfigProtocol.SettingsView],
         [Sugary] = [HouseholdConfigProtocol.SettingsView],

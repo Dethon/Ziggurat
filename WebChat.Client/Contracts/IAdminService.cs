@@ -11,6 +11,15 @@ public interface IAdminService
 
     Task<AdminAnswer<HouseholdSettings>> SaveSettingsAsync(HouseholdSettings settings);
 
+    // The household's keys as their states and last characters; each key is saved on its own and
+    // never read back.
+    Task<AdminAnswer<HouseholdKeys>> GetKeysAsync();
+
+    Task<AdminAnswer<HouseholdKeys>> SaveOpenRouterKeyAsync(OpenRouterKey key);
+
+    Task<AdminAnswer<HouseholdKeys>> SaveIdealistaKeysAsync(IdealistaKeys keys);
+
+    Task<AdminAnswer<HouseholdKeys>> SaveTelegramBotAsync(string agentId, TelegramBotKey bot);
     Task<AdminAnswer<AdminAgents>> GetAgentsAsync();
 
     Task<AdminAnswer<AdminAgents>> SaveAgentAsync(string agentId, AgentEdit edit);
@@ -22,4 +31,16 @@ public interface IAdminService
     Task<AdminAnswer<IReadOnlyList<AdminAgentVersion>>> GetAgentVersionsAsync(string agentId);
 
     Task<AdminAnswer<AdminAgents>> RestoreAgentVersionAsync(string agentId, string versionId);
+
+    Task<AdminAnswer<AdminMembers>> GetMembersAsync();
+
+    Task<AdminAnswer<MemberLink>> InviteMemberAsync(MemberInvite invite);
+
+    Task<AdminAnswer<AdminMembers>> SaveMemberAsync(string userId, MemberEdit edit);
+
+    Task<AdminAnswer<AdminMembers>> DisableMemberAsync(string userId);
+
+    Task<AdminAnswer<AdminMembers>> EnableMemberAsync(string userId);
+
+    Task<AdminAnswer<MemberLink>> MintMemberRecoveryAsync(string userId);
 }

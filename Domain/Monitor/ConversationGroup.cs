@@ -37,6 +37,7 @@ internal sealed class ConversationGroup(
     ISkillPreloader? skillPreloader,
     AssertionVerifier assertions,
     DelegationVerifier? delegations,
+    IAccountStanding? standing,
     // Whether the household a message acts for is suspended, asked of every message as it arrives.
     // Optional as the households' defaults are: a host with none suspends nobody.
     IAgentDefinitionProvider? households,
@@ -49,6 +50,16 @@ internal sealed class ConversationGroup(
     // What a person whose turn was refused is told. Who they are is the one thing the agent could
     // not believe, so it says no more than that; the reason is on the errors feed.
     internal const string RefusedTurnAnswer = "This message could not be verified as yours, so it was not answered.";
+
+    // What a member an owner disabled is told: who they are was believed, and the household says the
+    // agent acts for them no more. Whoever disabled them can say why.
+    internal const string DisabledAnswer =
+        "Your account in this household is disabled, so this message was not answered. Ask the household's owner.";
+
+    // Why a turn or a fire did not act for the person it named: the household disabled them, or their
+    // standing could not be read just now, which is never taken for good standing.
+    internal const string AccountDisabled = "AccountDisabled";
+    internal const string StandingUnreadable = "StandingUnreadable";
 
     // What a person whose household set no OpenRouter key is told: nothing was asked of any model, and
     // nothing will be until a key is added, which they cannot do from here.
@@ -413,6 +424,16 @@ internal sealed class ConversationGroup(
                 await RefuseSuspendedAsync(x.Channel, x.Message, identity.TenantId);
                 return null;
             case TurnAdmission.Admitted { Identity: var identity }:
+                switch (await StandingRefusalAsync(identity))
+                {
+                    case AccountDisabled:
+                        await RefuseDisabledAsync(x.Channel, x.Message, identity.Account!);
+                        return null;
+                    case { } unreadable:
+                        await RefuseAsync(x.Channel, x.Message, unreadable);
+                        return null;
+                }
+
                 var named = x.Message.Principal ?? new Principal(x.Message.ChannelId, x.Message.Sender);
                 return new AdmittedTurn(
                     x.Channel, x.Message with { Principal = named with { Account = identity.Account } }, identity);
@@ -435,12 +456,20 @@ internal sealed class ConversationGroup(
         var admission = delegations is null
             ? new FireAdmission.Undelegated(null)
             : await delegations.VerifyFireAsync(fire, _groupCt);
+        if (admission is FireAdmission.Delegated { Identity: var person } && await SuspendedAsync(person.TenantId))
+        {
+            await RefuseSuspendedAsync(channel, fire, person.TenantId);
+            return null;
+        }
+
+        if (admission is FireAdmission.Delegated { Identity: var delegated } && await StandingRefusalAsync(delegated) is { } refusal)
+        {
+            admission = new FireAdmission.Undelegated(refusal);
+        }
+
         var framed = fire with { Content = FireReports.Frame(fire.Content, fire.FireReport), FireReport = null };
         switch (admission)
         {
-            case FireAdmission.Delegated { Identity: var identity } when await SuspendedAsync(identity.TenantId):
-                await RefuseSuspendedAsync(channel, fire, identity.TenantId);
-                return null;
             case FireAdmission.Delegated { Identity: var identity }:
                 return new AdmittedTurn(channel,
                     framed with { Principal = new Principal(identity.ChannelId, identity.Subject, identity.Account) },
@@ -459,6 +488,47 @@ internal sealed class ConversationGroup(
         }
 
         return new AdmittedTurn(channel, framed with { Principal = null }, null);
+    }
+
+    // An assertion or a delegation says who a turn is for as of when it was signed — an assertion
+    // Telegram kept for minutes, a delegation as old as its schedule — so the household is asked
+    // whether that person is still one the agent acts for. The guest and nobody are nobody an owner
+    // can disable. Null when the turn may act for its person.
+    private async Task<string?> StandingRefusalAsync(IdentityClaims identity)
+    {
+        if (standing is null || identity.Account is not { } account)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await standing.StandingAsync(account, _groupCt) == AccountStanding.Disabled ? AccountDisabled : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !_groupCt.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Could not read whether account {UserId} of household {Household} is enabled",
+                account.UserId, account.TenantId);
+            return StandingUnreadable;
+        }
+    }
+
+    // Who they are was believed, so the errors feed names them under their household, and they are
+    // told the way a failed turn ends.
+    private async Task RefuseDisabledAsync(IChannelConnection channel, ChannelMessage message, Account account)
+    {
+        logger.LogWarning(
+            "Refused a turn on {ChannelId} for conversation {ConversationId}: account {UserId} of household {Household} is disabled",
+            channel.ChannelId, message.ConversationId, account.UserId, account.TenantId);
+        metricsPublisher.ForHousehold(account.TenantId).Publish(new ErrorEvent
+        {
+            Service = "agent",
+            ErrorType = ChatMonitor.AccountDisabledErrorType,
+            Message = $"A turn on {channel.ChannelId} for conversation {message.ConversationId} was refused: " +
+                      $"account {account.UserId} is disabled"
+        });
+
+        await AnswerRefusedAsync(channel, message, DisabledAnswer);
     }
 
     // Reported where an operator looks, and answered on the channel the way a failed turn ends —

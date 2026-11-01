@@ -36,7 +36,11 @@ public class ChatMonitor(
     IConversationFactory? topics = null,
     // The households' agents, whose default answers a message its channel has none for. Optional as
     // the defaults are: with none, such a message is refused when the agent is built.
-    IAgentDefinitionProvider? agentDefinitions = null)
+    IAgentDefinitionProvider? agentDefinitions = null,
+    // Whether the household still lets the agent act for the person a turn's assertion or a fire's
+    // delegation names: an owner may have disabled them since either was signed. Optional as the
+    // verifier is, for a harness with no households; the agent's own host registers it.
+    IAccountStanding? standing = null)
 {
     // A person's turn whose assertion was not believed, on the errors feed beside the servers'
     // CallTokenRefused: a channel server that misbehaves, an accounts service the agent cannot
@@ -47,6 +51,9 @@ public class ChatMonitor(
     // retired or lost (redelegate), an object changed outside the turns that wrote it, or a server
     // presenting what it was never given.
     public const string DelegationRefusedErrorType = "DelegationRefused";
+
+    // A turn of a member an owner disabled, refused before anything was built for it.
+    public const string AccountDisabledErrorType = "AccountDisabled";
 
     // A turn of a household that set no OpenRouter key, refused before its agent was asked anything.
     public const string HouseholdWithoutKeyErrorType = "HouseholdWithoutKey";
@@ -149,7 +156,7 @@ public class ChatMonitor(
     {
         await using var conversation = new ConversationGroup(
             agentKey, channels, agentFactory, _targetResolver, threadResolver, metricsPublisher, memoryRecallHook,
-            skillPreloader, assertions, delegations, agentDefinitions, logger);
+            skillPreloader, assertions, delegations, standing, agentDefinitions, logger);
 
         await foreach (var turnUpdate in conversation.RunAsync(group, group.Complete, ct).WithCancellation(ct))
         {

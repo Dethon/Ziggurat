@@ -39,6 +39,11 @@ public sealed class User
 
     public bool SeesAllConversations { get; set; }
     public DateTimeOffset CreatedAt { get; init; }
+
+    // When an owner disabled them; none while they are enabled. A disabled person is kept with
+    // everything of theirs — passkeys, links, their Telegram, their voice profile, their memories and
+    // topics — and none of it answers for them until an owner re-enables them.
+    public DateTimeOffset? DisabledAt { get; set; }
 }
 
 // A passkey. Revoked rather than deleted, so a session can still say which passkey began it.
@@ -195,6 +200,23 @@ public sealed class AdminChange
     public required string Route { get; init; }
     public required string Summary { get; init; }
     public DateTimeOffset At { get; init; }
+}
+// What a provider last said of one of a household's keys: working, rejected (on saving, or in use),
+// or unchecked (saved while the provider could not be asked). Kept beside the keys section rather
+// than in it, because it is this service's observation, not the owner's configuration: a re-probe is
+// not a save to announce to every reader, and the operator's get and set never carry it. Which key
+// it was said of is its fingerprint (a SHA-256 of the key, as a session's token is kept), so a key
+// replaced by the operator's command, which asks nobody, reads as unchecked rather than as its
+// predecessor's state.
+public sealed class HouseholdKeyCheck
+{
+    public required string Id { get; init; }
+    public required string TenantId { get; init; }
+    public required string Key { get; init; }
+    public required string Fingerprint { get; set; }
+    public required string State { get; set; }
+    public DateTimeOffset CheckedAt { get; set; }
+    public string? Reason { get; set; }
 }
 
 // A name and custom instructions one of a household's agents had before an owner's change replaced

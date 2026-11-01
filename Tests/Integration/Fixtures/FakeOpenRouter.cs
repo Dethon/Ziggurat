@@ -38,6 +38,7 @@ public sealed class FakeOpenRouter : IAsyncDisposable
 
     private readonly ConcurrentQueue<Request> _requests = new();
     private readonly ConcurrentQueue<string> _scripted = new();
+    private volatile int _refusing;
     private WebApplication _app = null!;
     private int _port;
 
@@ -78,6 +79,10 @@ public sealed class FakeOpenRouter : IAsyncDisposable
             """;
     }
 
+    // Answers every request from now on with this status and OpenRouter's error body, as it answers a
+    // key it does not take (401) or one out of credit (402).
+    public void Refuse(HttpStatusCode status) => _refusing = (int)status;
+
     public static async Task<FakeOpenRouter> StartAsync()
     {
         var fake = new FakeOpenRouter { _port = TestPort.GetAvailable() };
@@ -89,6 +94,15 @@ public sealed class FakeOpenRouter : IAsyncDisposable
             using var reader = new StreamReader(http.Request.Body);
             var body = JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();
             fake._requests.Enqueue(new Request(http.Request.Path, http.Request.Headers.Authorization.ToString(), body));
+            if (fake._refusing != 0)
+            {
+                http.Response.StatusCode = fake._refusing;
+                http.Response.ContentType = "application/json";
+                await http.Response.WriteAsync(
+                    $$$"""{"error":{"message":"No auth credentials found","code":{{{fake._refusing}}}}}""", Encoding.UTF8);
+                return;
+            }
+
             http.Response.ContentType = "text/event-stream";
             await http.Response.WriteAsync(fake._scripted.TryDequeue(out var scripted) ? scripted : Reply, Encoding.UTF8);
         });
