@@ -25,9 +25,6 @@ public record MetricsSummary(
     long MemoriesMerged = 0,
     long MemoriesDecayed = 0);
 
-// What a household asked of the shared Lemonade over a range, each in its own unit.
-public record LemonadeUsage(double TranscribedSeconds, long SpokenCharacters, long Embeddings);
-
 // Every read takes the household it is for: a household's id, MetricKeys.Deployment for the events no
 // household's turn made, or null for everybody's together — what the dashboard showed before
 // households, and still shows until it can pick one.
@@ -172,6 +169,28 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         (await TotalsAsync(from, to, null))
             .GroupBy(t => t.Scope)
             .ToDictionary(g => g.Key, g => Lemonade(g.SelectMany(t => t.Entries)));
+
+    // One household's tokens and cost per agent (labelled as the dashboard labels them) and per
+    // person (the name their turns carried), costliest first, beside its Lemonade use: what its owner
+    // reads in the admin area.
+    public async Task<HouseholdUsage> GetHouseholdUsageAsync(string household, DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, from, to, household);
+        var agent = AgentLabels(events, "unknown");
+        return new HouseholdUsage(
+            Lines(events, agent),
+            Lines(events, e => e.Sender),
+            await GetLemonadeUsageAsync(from, to, household));
+    }
+
+    private static IReadOnlyList<UsageLine> Lines(IEnumerable<TokenUsageEvent> events, Func<TokenUsageEvent, string> by) =>
+        events
+            .GroupBy(by)
+            .Select(g => new UsageLine(g.Key, g.Sum(e => (long)e.InputTokens + e.OutputTokens), g.Sum(e => e.Cost)))
+            .OrderByDescending(l => l.Cost)
+            .ThenByDescending(l => l.Tokens)
+            .ThenBy(l => l.Name, StringComparer.Ordinal)
+            .ToList();
 
     public async Task<Dictionary<string, long>> GetTokenBreakdownAsync(
         string prefix, DateOnly from, DateOnly to, string? household = null)

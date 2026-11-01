@@ -49,6 +49,11 @@ paths:
   - "WebChat.Client/State/Effects/HouseholdServersEffect.cs"
   - "Tests/Integration/Accounts/HouseholdServersAdminTests.cs"
   - "Tests/E2E/WebChat/HouseholdServersE2ETests.cs"
+  - "WebChat.Client/State/Effects/HouseholdUsageEffect.cs"
+  - "Tests/Integration/Accounts/HouseholdUsageAdminTests.cs"
+  - "Tests/E2E/WebChat/HouseholdUsageE2ETests.cs"
+  - "Tests/E2E/Dashboard/DashboardHouseholdFilterE2ETests.cs"
+  - "Dashboard.Client/Components/HouseholdPicker.razor"
 ---
 
 # The admin API and the admin area
@@ -74,7 +79,7 @@ routes like any owner. Today's routes: `GET`/`PUT /household/settings` (`Househo
 `GET`/`PUT /household/features` (`FeaturesSection`) and `/household/spaces` (`AdminSpaces` read, `SpacesSection` saved; "Features and spaces"),
 `GET /household/keys` (`HouseholdKeys`) and `PUT /household/keys/openrouter` (`OpenRouterKey`),
 `/household/keys/idealista` (`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`) ("Keys and probes"),
-`GET /household/changes?limit=` (the household's change log), the agents, members and own servers routes (below), `GET /operator/changes?household=&limit=`
+`GET /household/changes?limit=` (the household's change log), the agents, members, own servers and usage routes (below), `GET /operator/changes?household=&limit=`
 (every household's, or one's), and the household list's (below): `GET`/`POST /operator/households` and
 `POST /operator/households/{householdId}/owners/{userId}/recovery`. A route is mapped in `AdminApi.Map` into one of the two groups, with its
 path inside the group from `AdminApi.Under(root, AdminProtocol.X)`, and reads its caller as a bound
@@ -346,6 +351,40 @@ and the agent's relay (`ConnectedServersClient`, the household list's client) (`
   confirmation, New credential, and the add form. A minted credential is shown in a `New credential` region
   until the next change or a reload, never again; the effect asks the list again after a mint.
 
+## Usage
+
+`GET /household/usage?month=yyyy-MM` (`AdminProtocol.Usage`, `HouseholdUsageAdmin`) answers `AdminUsage
+{ month, agents, people, lemonade }`: the caller's household's tokens and cost per agent and per person
+(`UsageLine { name, tokens, cost }`, costliest first) and its Lemonade use (`LemonadeUsage { transcribedSeconds,
+spokenCharacters, embeddings }`). A month is its UTC days, first to last (the metrics are kept by UTC day);
+none named is the current one on `AccountsClock`; anything but `yyyy-MM` is 400. A read: nothing is recorded.
+
+- **The figures are the Observability host's**, which this service otherwise never reads: `HouseholdUsageClient`
+  asks its usage route (`HouseholdUsage.Path`, `/api/usage?from=&to=`) at `AccountsSettings.ObservabilityUrl`
+  (`OBSERVABILITYURL` in compose, `http://observability:8080` by default) within `UsageTimeout` (appsettings,
+  10 s). The host could not be asked — down, refusing, slow — is **503** `AdminRefusal`
+  (`HouseholdUsageAdmin.UnavailableMessage`), which the page shows as "could not be read", never as a month
+  with nothing used.
+- **The credential is an assertion this service signs** (`Assertions.Of(ForwardedAccount, channel)`) for the
+  owner the gate verified, re-signed for **`AppChannels.Usage`** (`usage`), a channel no proxy block names, so
+  no browser is ever handed one and the admin assertion — the accounts service's alone — is never passed on.
+  The host already verifies this service's keys (`OperatorGate`), so no secret exists for it.
+- **The household is the assertion's**: the host's gate admits that one path for a `usage` assertion with the
+  `owner` role (401 for none or another channel's, 403 for a member's), keeps the owner for the route
+  (`UsageOwner`), and the route reads no `?household=`; every other path stays the operator's on the
+  dashboard's channel, so a usage assertion opens none of them (`.claude/rules/observability.md`).
+- **Per person is the name the turns carried** (`TokenUsageEvent.Sender`: the chat's display name, Telegram's
+  username), the dashboard's "User" dimension; per agent is by id under its latest name, as the dashboard labels
+  agents (`MetricsQueryService.AgentLabels`).
+- **History is a month deep**: daily roll-ups expire thirty days after they were written, so an earlier month
+  shows only its days still kept; the page says so.
+- **The page** is `/admin/usage` (`HouseholdUsagePage`, `HouseholdUsageStore`, `HouseholdUsageEffect`): a month
+  input, a "Per agent" and a "Per person" table (`Components/Admin/UsageTable`), and a "Speech and memory"
+  region. Figures that could not be read are cleared, never left on show under another month.
+
+The operator reads every household's figures on the dashboard's own pages, through its household filter
+(`HouseholdPicker`, `.claude/rules/observability.md`), not through this route.
+
 ## The proxy
 
 `DockerCompose/caddy/Caddyfile`'s main host routes `handle /accounts/admin/*` to `accounts:8080` behind
@@ -483,6 +522,16 @@ service announces on the fixture's Redis; `OwnerSessionAsync(operatorPage, house
 for the owner of a household the operator created (found through the operator's page's own list), and
 `OpenAsAsync(session, path)` asks the host as that person's browser would over HTTP — the base fixture keeps
 one page open at a time, so a second person cannot have a page beside the operator's.
+
+Usage's seam 1 is `HouseholdUsageAdminTests`: the accounts service and the Observability host's shipped gate and
+API in process (`AddOperatorGate` over the accounts server's own JWKS, `MetricsQueryService` on a `RedisFixture`,
+both on the accounts clock, the host's port taken first since accounts is told it), roll-ups written by
+`MetricsCollectorService.ProcessEventAsync` for two households: each owner reads their own and never the other's,
+a `?household=` naming another is ignored, the route refuses every assertion but an owner's usage one, and a
+host nobody answers on is 503. Seam 2 is `HouseholdUsageE2ETests`: the E2E stack runs no Observability host, so
+the real read is the unavailable notice, and a month's figures are shown by answering the page's read
+(`page.RouteAsync`). Seam 3 is `DashboardHouseholdFilterE2ETests` on `DashboardAdminE2EFixture`, which publishes
+events on its Redis (`RedisConnectionString`, `metrics:events`).
 
 Suspension's seam 1 is `HouseholdSuspensionAdminTests` (the route, the home refused, the announcements on a
 `RedisFixture`, the tunnel verify and back-call, the agent's reader seeing it and resuming) beside

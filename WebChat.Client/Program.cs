@@ -83,5 +83,6 @@ _ = app.Services.GetRequiredService<HouseholdMembersEffect>();
 _ = app.Services.GetRequiredService<HouseholdFeaturesEffect>();
 _ = app.Services.GetRequiredService<HouseholdSpacesEffect>();
 _ = app.Services.GetRequiredService<HouseholdServersEffect>();
+_ = app.Services.GetRequiredService<HouseholdUsageEffect>();
 
 await app.RunAsync();

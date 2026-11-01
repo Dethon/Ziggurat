@@ -3439,6 +3439,63 @@ select:focus:not(:focus-visible) {
     margin-bottom: 0;
 }
 
+.admin-usage-month {
+    max-width: 14rem;
+    margin-bottom: 1rem;
+}
+
+.admin-usage-table {
+    width: 100%;
+    margin-top: 1.5rem;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+.admin-usage-table caption {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding-bottom: 0.5rem;
+}
+
+.admin-usage-table th,
+.admin-usage-table td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    overflow-wrap: anywhere;
+}
+
+.admin-usage-table thead th {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.admin-usage-table tbody th {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.admin-usage-table .admin-usage-figure {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.admin-usage-none {
+    color: var(--text-muted);
+}
+
+.admin-usage-lemonade h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+}
+
+.admin-usage-lemonade ul {
+    margin: 0;
+    padding-left: 1.25rem;
+}
+
 @media (max-width: 480px) {
     .admin-entry {
         width: 36px;

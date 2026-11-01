@@ -158,5 +158,9 @@ public static class MetricsApiEndpoints
 
         api.MapGet("/lemonade/by-household", async (MetricsQueryService query, MetricDateRange range) =>
             await query.GetLemonadeByHouseholdAsync(range.From, range.To));
+
+        // An owner's household alone, the one the gate verified (OperatorGate): no ?household= is read.
+        app.MapGet(HouseholdUsage.Path, async (MetricsQueryService query, UsageOwner owner, MetricDateRange range) =>
+            await query.GetHouseholdUsageAsync(owner.HouseholdId, range.From, range.To));
     }
 }

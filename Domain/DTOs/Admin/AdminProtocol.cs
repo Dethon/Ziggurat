@@ -80,6 +80,9 @@ public static class AdminProtocol
     public static string RevokeServerCredential(string credentialId) =>
         $"{Servers}/credentials/{Uri.EscapeDataString(credentialId)}/revoke";
 
+    // The household's usage over a month (AdminUsage), ?month=yyyy-MM, the current one when none is named.
+    public const string Usage = Household + "/usage";
+
     // Every admin request carries this header with this value. A cross-site form cannot set a
     // header, and a cross-origin script that does is preflighted, which nothing here answers: so a
     // request carrying it came from a page on the host the API is served on.
