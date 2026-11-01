@@ -77,7 +77,7 @@ then:
 - **Asks the accounts service on every open** (`TunnelCredentialClient`, `POST
   /accounts/internal/tunnels/verify`, as `CALLERS__agent` with `AGENTAPI__SHAREDSECRET`). A 404 is a
   refusal with its reason; any other failure is the service's, not the credential's.
-- **Refused** (`Unknown`, `Revoked`, `AnotherServer`): closed `PolicyViolation` with the reason as the
+- **Refused** (`Unknown`, `Revoked`, `AnotherServer`, `Suspended`): closed `PolicyViolation` with the reason as the
   close description, logged at warning, and published as an `ErrorEvent` (`Service` `agent`,
   `ErrorType` `TunnelRefused`, the claimed name and the reason — **never the credential**). No
   credential at all is `Unknown` without asking.
@@ -92,7 +92,10 @@ How a tunnel ends, as the close description the server reads: a refusal's reason
 opening of the same server); `Revoked` (`TunnelRevocationListener` heard the accounts service's
 `accounts:tunnel-credentials:revoked` on the agent's Redis and closed the tunnel that credential
 opened — it is removed from the registry first, so nothing reaches the server while the close is on
-its way); `Restarting` (the agent is stopping: every tunnel is closed `EndpointUnavailable` so the
+its way); `Suspended` (the same listener heard `accounts:households:suspended` and closed every open
+tunnel of that household, outposts included, the same way — its servers' next opens are refused
+`Suspended` until the operator resumes it, and then come back by themselves on the same credentials);
+`Restarting` (the agent is stopping: every tunnel is closed `EndpointUnavailable` so the
 agent's shutdown is not held open and servers come back with backoff).
 
 ## The server's end

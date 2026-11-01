@@ -104,7 +104,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 
 | View | Caller (`CALLERS__<name>`) | Answer | Secrets unsealed |
 |---|---|---|---|
-| `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces | the OpenRouter key |
+| `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces, and `suspended` (the operator suspended it: the agent refuses its turns and fires, `.claude/rules/admin.md`) | the OpenRouter key |
 | `settings` | `mcp-scheduling`, `mcp-sugary` | `HouseholdConfigAnswer<HouseholdSettings>` | none |
 | `idealista` | `mcp-idealista` | `HouseholdConfigAnswer<IdealistaKeys?>` | Idealista's two |
 | `spaces` | `mcp-channel-signalr` | `HouseholdConfigAnswer<SpacesSection>` | none |
@@ -230,7 +230,8 @@ Every model call made for a household goes out on its own OpenRouter key and is 
 ## Saves are announced; readers keep briefly
 
 A save publishes `HouseholdConfigSaved { householdId, section }` on Redis's
-`accounts:household-config:saved` (`RedisAnnouncer`, the same lazily opened connection that
+`accounts:household-config:saved` (and so does a suspension or a resumption, naming
+`HouseholdConfigProtocol.SuspensionSection`, which is no section: the readers drop the household either way) (`RedisAnnouncer`, the same lazily opened connection that
 announces tunnel revocations). The save stands if nobody could be told; the command says so and
 exits 1.
 
