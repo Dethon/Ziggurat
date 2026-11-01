@@ -28,6 +28,8 @@ public static class AdminApi
         HouseholdSettingsAdmin.Map(household);
         KeysAdmin.Map(household);
         HouseholdAgentsAdmin.Map(household);
+        HouseholdFeaturesAdmin.Map(household);
+        HouseholdSpacesAdmin.Map(household);
         AdminLog.Map(household, deployment);
         HouseholdListAdmin.Map(deployment);
     }

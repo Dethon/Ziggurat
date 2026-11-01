@@ -90,6 +90,14 @@ public static class HouseholdAgentsAdmin
                     $"{Shown(removing).Name} answers by default, so it stays: rename it or change its instructions instead.", []));
             }
 
+            // A space opening on an agent the household no longer has would open on whatever came first.
+            if (await store.ReadAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, ct) is { } spaces
+                && spaces.Spaces.FirstOrDefault(s => s.DefaultAgent == agentId) is { } space)
+            {
+                return Results.BadRequest(new AdminRefusal(
+                    $"The {space.Name} space opens on {Shown(removing).Name}, so it stays: pick another agent for that space first.", []));
+            }
+
             if (section.Agents.Count == 1)
             {
                 return Results.BadRequest(new AdminRefusal("A household keeps at least one agent.", []));
