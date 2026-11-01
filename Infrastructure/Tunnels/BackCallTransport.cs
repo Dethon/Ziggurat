@@ -81,7 +81,10 @@ internal sealed class BackCallTransport : IConnectionListenerFactory, IConnectio
 
         public override IDuplexPipe Transport { get; set; }
 
-        public override void Abort(ConnectionAbortedException abortReason) => _stream.Reset(abortReason.Message);
+        // Kestrel passes no reason when it ends a connection whose tunnel already closed under it, as
+        // its own socket transport allows; the throw would land in the tunnel's close callbacks.
+        public override void Abort(ConnectionAbortedException? abortReason) =>
+            _stream.Reset(abortReason?.Message ?? "the connection was aborted");
 
         public override async ValueTask DisposeAsync()
         {

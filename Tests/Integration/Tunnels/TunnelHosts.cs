@@ -21,6 +21,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using StackExchange.Redis;
 using Tests.Integration.Fixtures;
@@ -83,7 +84,9 @@ internal sealed class RelayHost : IAsyncDisposable
         IReadOnlyDictionary<string, string>? sharedServers = null,
         // Served over TLS with this certificate and its chain, as the proxy serves the tunnel's route:
         // a hub the servers reach at wss://.
-        HubCertificate? certificate = null)
+        HubCertificate? certificate = null,
+        // Where the relay's logs go besides the console, for a test reading what an operator would see.
+        ILoggerProvider? logs = null)
     {
         // Picked ahead rather than bound on port 0: the shared Lemonade's stand-in is this host itself,
         // named in the back-call settings before it listens.
@@ -91,6 +94,11 @@ internal sealed class RelayHost : IAsyncDisposable
         var bridge = new VfsBridge(TimeProvider.System, new VfsBridgeSettings());
         var reached = new ConcurrentQueue<ReachedTarget>();
         var builder = WebApplication.CreateBuilder();
+        if (logs is not null)
+        {
+            builder.Logging.AddProvider(logs);
+        }
+
         builder.WebHost.UseKestrel(options => options.Listen(on ?? IPAddress.Loopback, listening, listen =>
         {
             if (certificate is not null)
