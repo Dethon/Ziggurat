@@ -52,6 +52,9 @@ public record TopicRemoved(string TopicId) : IAction;
 
 public record SetAgents(IReadOnlyList<AgentCatalogEntry> Agents) : IAction;
 
+// The hub said agents may have changed; what they are is asked of it again (InitializationEffect).
+public record AgentsUpdated : IAction;
+
 // Picked is false when the client chose for the person (a space opening on its own agent), which is
 // then not remembered as their pick.
 public record SelectAgent(string AgentId, bool Picked = true) : IAction;

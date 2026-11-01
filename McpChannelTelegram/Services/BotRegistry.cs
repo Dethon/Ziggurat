@@ -104,7 +104,6 @@ public sealed class BotRegistry
                     ? only
                     : null;
 
-    // A household's bot bound to one of its agents.
     public TelegramBot? Of(string householdId, string agentId) =>
         _households.Select(h => h.Bot).FirstOrDefault(bot => bot.HouseholdId == householdId && bot.AgentId == agentId);
 

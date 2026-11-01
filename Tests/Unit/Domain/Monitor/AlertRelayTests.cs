@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Monitor;
+using Infrastructure.Timers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 
@@ -26,7 +27,7 @@ public class AlertRelayTests
     private (Task Running, CancellationTokenSource Stop) Run(params AlertChannel[] channels)
     {
         var stop = new CancellationTokenSource();
-        var running = new AlertRelay(channels, NullLogger<AlertRelay>.Instance, _clock).RunAsync(stop.Token);
+        var running = new AlertRelay(channels, new RingingAlerts(), NullLogger<AlertRelay>.Instance, _clock).RunAsync(stop.Token);
         return (running, stop);
     }
 

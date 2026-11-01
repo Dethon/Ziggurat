@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using ModelContextProtocol.Server;
 
 namespace McpChannelSignalR.McpTools;
@@ -13,8 +14,9 @@ public sealed class RegisterAgentsTool(IMutableAgentCatalog catalog, IHubNotific
     public string McpRun([Description("Agents available to WebChat")] IReadOnlyList<AgentCatalogEntry> agents)
     {
         catalog.Replace(agents);
-        // best-effort UI refresh; a client-push failure must not block registration
-        _ = hubSender.SendAsync("OnAgentsUpdated", agents);
+        // Best-effort UI refresh; a client-push failure must not block registration. These are the
+        // home's agents, so a browser is told to ask for its own household's, never sent them.
+        _ = hubSender.SendAsync("OnAgentsUpdated", new AgentsUpdatedNotification());
         return $"registered {agents.Count} agents";
     }
 }

@@ -226,6 +226,39 @@ public sealed class InitializationEffectTests : IDisposable
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
     }
 
+    // The agent registering again tells a browser only that agents may have changed, since every
+    // household is shown its own: the client asks for its household's again and shows that answer.
+    [Fact]
+    public async Task AgentsUpdated_AsksForTheHouseholdsAgentsAgain()
+    {
+        _topicService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        await _effect.HandleInitializeAsync();
+
+        _agentService.Agents = [_agentOne, _agentTwo];
+        _dispatcher.Dispatch(new AgentsUpdated());
+
+        await TestChat.Eventually(() => _topicsStore.State.Agents.Count == 2);
+    }
+
+    // Opened in the not-live window, the nudge finishes what first load could not, as the list it
+    // once carried did.
+    [Fact]
+    public async Task HandleInitializeAsync_TheCatalogWasNotLive_ALaterAgentsUpdatedCompletesInitialization()
+    {
+        _topicService.WithSpace("default");
+        _agentService.NotLive = true;
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        await _effect.HandleInitializeAsync();
+
+        _agentService.NotLive = false;
+        _agentService.Agents = [_agentOne];
+        _dispatcher.Dispatch(new AgentsUpdated());
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
+    }
+
     // Nothing broadcasts SetAgents on its own — the agent has to re-register for that. The
     // client cannot wait on that; the next connection epoch has to retry the fetch itself, or
     // the sidebar stays empty until a manual reload.
