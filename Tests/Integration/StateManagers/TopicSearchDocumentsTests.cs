@@ -155,6 +155,19 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         found.Topics.ShouldBeEmpty();
     }
 
+    // The default space's search finds a removed space's topics as its list shows them.
+    [Fact]
+    public async Task SearchTopicsAsync_AlsoSearchingAnotherSpace_FindsItsConversations()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(Topic("t-attic", 731, "Quince jelly") with { SpaceSlug = "attic" });
+        await store.SaveTopicAsync(Topic("t-main", 732, "Quince paste"));
+
+        var found = await store.SearchTopicsAsync(_agentId, "default", Anyone, "quince", null, 10, alsoSpaces: ["attic"]);
+
+        found.Topics.Select(t => t.TopicId).ShouldBe(["t-attic", "t-main"], ignoreOrder: true);
+    }
+
     // A conversation found by something said in it rather than by what it is called.
     [Fact]
     public async Task SearchTopicsAsync_MatchesWhatWasSaidInTheConversation()

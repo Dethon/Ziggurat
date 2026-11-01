@@ -36,6 +36,14 @@ paths:
   - "WebChat.Client/State/Effects/HouseholdMembersEffect.cs"
   - "Tests/Integration/Accounts/HouseholdMembersAdminTests.cs"
   - "Tests/E2E/WebChat/HouseholdMembersE2ETests.cs"
+  - "Accounts/Admin/HouseholdFeaturesAdmin.cs"
+  - "Accounts/Admin/HouseholdSpacesAdmin.cs"
+  - "Domain/DTOs/Household/SpaceListing.cs"
+  - "WebChat.Client/State/Effects/HouseholdFeaturesEffect.cs"
+  - "WebChat.Client/State/Effects/HouseholdSpacesEffect.cs"
+  - "Tests/Integration/Accounts/HouseholdFeaturesAdminTests.cs"
+  - "Tests/Integration/Accounts/HouseholdSpacesAdminTests.cs"
+  - "Tests/E2E/WebChat/HouseholdSpacesE2ETests.cs"
   - "Tests/Integration/Accounts/HouseholdSuspensionAdminTests.cs"
   - "Accounts/Tunnels/TunnelCredentialStore.cs"
   - "WebChat.Client/State/Effects/HouseholdServersEffect.cs"
@@ -68,6 +76,7 @@ clients read. Two roots, and nothing else under `/accounts/admin`:
 
 The operator is also an owner of the home household and manages the home through the household
 routes like any owner. Today's routes: `GET`/`PUT /household/settings` (`HouseholdSettings`),
+`GET`/`PUT /household/features` (`FeaturesSection`) and `/household/spaces` (`AdminSpaces` read, `SpacesSection` saved; "Features and spaces"),
 `GET /household/keys` (`HouseholdKeys`) and `PUT /household/keys/openrouter` (`OpenRouterKey`),
 `/household/keys/idealista` (`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`) ("Keys and probes"),
 `GET /household/changes?limit=` (the household's change log), the agents, members, own servers and usage routes (below), `GET /operator/changes?household=&limit=`
@@ -210,9 +219,11 @@ customInstructions }`); `GET /household/agents/{agentId}/versions` (`AdminAgentV
   does not ship is refused.
 - **Removing** the default agent is refused ("answers by default, so it stays: rename it…") — nothing
   else names which agent answers a message that names none — and so is removing the last agent, since a
-  section with none reads as the two starting templates again. A space's default agent or a Telegram bot
-  bound to a removed agent's id is not checked: the keys section is sealed, and an id freed by a removal
-  is the next one an addition of that template takes.
+  section with none reads as the two starting templates again. So is removing the agent a space opens on
+  ("The Kitchen space opens on Chef, so it stays: pick another agent for that space first"), refused rather
+  than cleared so the removal stays one save of one section. A Telegram bot bound to a removed agent's id
+  is not checked: the keys section is sealed, and an id freed by a removal is the next one an addition of
+  that template takes.
 - **Versions** are the name and instructions a change replaced (an edit's or a restore's, so a restore is
   undone the same way), the last `Admin:AgentVersionsKept` (5) per agent, by whom and when, written after
   the save stood and dropped with the agent. **A table, not the section**: no turn reads history, and the
@@ -269,6 +280,38 @@ out left as it is) and `POST .../{userId}/disable` / `.../enable`, each answerin
   behind a confirmation (not offered for the operator) or Re-enable, and the invite form. A minted link
   is shown in a `New link` region until the next change or a reload, never again. The E2E test makes its
   own people (`create-user`) and changes only them.
+
+## Features and spaces
+
+- **Features** (`HouseholdFeaturesAdmin`): `GET`/`PUT /household/features` reads and saves the features
+  section whole (a `JsonObject`, as the settings route takes, so an unknown feature is refused in the
+  section's own words), answered `AdminSaved<FeaturesSection>`, recorded as "Changed the scheduling, memory
+  features" — names, never on or off. The save is announced, so the household's next turn is built
+  without what was turned off (`HouseholdAgents.Offered`, `.claude/rules/household-config.md`); the turn
+  side is proven at `HouseholdAgentSource` over the agent's own reader (`HouseholdFeaturesAdminTests`).
+- **Spaces** (`HouseholdSpacesAdmin`): `GET /household/spaces` answers `AdminSpaces { spaces, agents }` — the
+  spaces in their order (`SpaceListing.Ordered`, the hub's) and the household's agents a space may open on
+  (`HouseholdAgents.Names`: the ones its turns run, under their names), so the page needs one load. `PUT`
+  takes the spaces section whole (`SpacesSection`, names trimmed), answered `AdminSaved<AdminSpaces>`.
+  Beyond the section's rules: **the default space** (`default`) is never removed while the household has it
+  — a removed space's topics are listed there, alarms push there and the chat's own address opens it —
+  only renamed, recoloured and reordered; a name is at most `AdminSpaces.NameLength` (100); a space opens on
+  one of the household's agents or on none. A slug is set when a space is added and never edited: a new
+  slug is a new space, and the old one's topics go to the default space. Recorded per space by slug:
+  "Added space kitchen; removed space attic; changed space default's name, colour, default agent, order".
+- **A removed space's topics are not moved** (`.claude/rules/channels.md`, "Spaces"): they stay under
+  their slug and the default space lists, searches and hears them, read side, so a removal is one save
+  and a space added back under its slug has its conversations again.
+- **A removed space's phones** (`push:space@{tenant}:{slug}`) are left as they are: nothing pushes to a
+  space nobody can join (a reply's push goes to the space its session joined), the set is never read
+  again, and each phone subscribes in whatever space its app opens next — a removed slug opens the
+  household's first — while unsubscribing still clears it from every space's set.
+- **The pages** are `/admin/features` (`HouseholdFeaturesPage`: one checkbox per feature, saved together)
+  and `/admin/spaces` (`HouseholdSpacesPage`: one article per space with its name, colour, the agent it
+  opens on, Move up / Move down and Remove — not offered for the default space — and a form adding one by
+  its address and name; every change is the page's until "Save spaces" sends the list in its new order).
+  The E2E test (`HouseholdSpacesE2ETests`) adds a tagged space to the home, finds it in the chat with its
+  name, colour and agent, edits and removes it; it opens the features page and never saves it.
 
 ## Own servers
 
