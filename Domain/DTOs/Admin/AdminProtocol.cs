@@ -50,6 +50,11 @@ public static class AdminProtocol
 
     public static string RestoreAgentVersion(string agentId, string versionId) => $"{AgentVersions(agentId)}/{versionId}/restore";
 
+    // The household's features (the features section, whole) and its chat-client spaces (AdminSpaces
+    // read, the spaces section saved whole).
+    public const string Features = Household + "/features";
+    public const string Spaces = Household + "/spaces";
+
     // Every admin request carries this header with this value. A cross-site form cannot set a
     // header, and a cross-origin script that does is preflighted, which nothing here answers: so a
     // request carrying it came from a page on the host the API is served on.
