@@ -8,4 +8,7 @@ public interface IAccountService
     Task<SignedInPerson?> GetSignedInAsync();
 
     void SendToSignIn();
+
+    // A full load of this very page, so the proxy's session check says what it is now.
+    void Reload();
 }

@@ -25,4 +25,6 @@ public sealed class AccountService(HttpClient httpClient, NavigationManager navi
     // A full load, so the proxy and the accounts service see the request; sign-in comes back here.
     public void SendToSignIn() =>
         navigation.NavigateTo($"/accounts/sign-in?returnUrl={Uri.EscapeDataString(navigation.Uri)}", forceLoad: true);
+
+    public void Reload() => navigation.NavigateTo(navigation.Uri, forceLoad: true);
 }

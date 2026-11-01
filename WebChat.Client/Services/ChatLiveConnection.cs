@@ -255,6 +255,14 @@ public sealed class ChatLiveConnection(
     {
         _connectionEventDispatcher.HandleClosed(exception);
 
+        // Refused by the hub's session check, which no rebuild gets past: the page goes to the
+        // proxy instead (HubSessionRefused).
+        if (HubRefusal.Is(exception))
+        {
+            _connectionEventDispatcher.HandleSessionRefused();
+            return;
+        }
+
         // On mobile, the browser suspends JS when backgrounded, so SignalR's automatic
         // reconnect can't run. When the app resumes the transport may be dead and queued
         // retries fail at once, firing Closed. Wait briefly then rebuild from scratch.
@@ -264,17 +272,24 @@ public sealed class ChatLiveConnection(
 
     private async Task RebuildAsync()
     {
-        foreach (var attempt in Enumerable.Range(1, MaxRebuildAttempts))
+        foreach (var number in Enumerable.Range(1, MaxRebuildAttempts))
         {
             await TearDownAsync();
 
-            var becameLive = await TryBecomeLiveAsync();
-            if (_disposed || becameLive)
+            var attempt = await TryBecomeLiveAsync();
+            if (_disposed || attempt == Attempt.Live)
             {
                 return;
             }
 
-            if (attempt < MaxRebuildAttempts)
+            if (attempt == Attempt.Refused)
+            {
+                _connectionEventDispatcher.HandleClosed(null);
+                _connectionEventDispatcher.HandleSessionRefused();
+                return;
+            }
+
+            if (number < MaxRebuildAttempts)
             {
                 await Task.Delay(_rebuildRetryDelay, timeProvider);
             }
@@ -288,7 +303,14 @@ public sealed class ChatLiveConnection(
         _connectionEventDispatcher.HandleClosed(null);
     }
 
-    private async Task<bool> TryBecomeLiveAsync()
+    private enum Attempt
+    {
+        Live,
+        Failed,
+        Refused
+    }
+
+    private async Task<Attempt> TryBecomeLiveAsync()
     {
         try
         {
@@ -297,11 +319,15 @@ public sealed class ChatLiveConnection(
             // seconds — the exact stall this rebuild exists to escape.
             using var cts = new CancellationTokenSource(_rebuildAttemptTimeout, timeProvider);
             await StartLiveConnectionAsync(cts.Token);
-            return true;
+            return Attempt.Live;
+        }
+        catch (Exception exception) when (HubRefusal.Is(exception))
+        {
+            return Attempt.Refused;
         }
         catch
         {
-            return false;
+            return Attempt.Failed;
         }
     }
 

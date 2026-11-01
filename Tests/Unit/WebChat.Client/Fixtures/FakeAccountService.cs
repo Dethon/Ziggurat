@@ -17,4 +17,8 @@ public sealed class FakeAccountService : IAccountService
             : Task.FromException<SignedInPerson?>(ThrowOnGetSignedIn);
 
     public void SendToSignIn() => SentToSignIn++;
+
+    public int Reloaded { get; private set; }
+
+    public void Reload() => Reloaded++;
 }

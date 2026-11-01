@@ -28,4 +28,9 @@ public sealed class ConnectionEventDispatcher(IDispatcher dispatcher)
     {
         dispatcher.Dispatch(new ConnectionClosed(exception?.Message));
     }
+
+    public void HandleSessionRefused()
+    {
+        dispatcher.Dispatch(new HubSessionRefused());
+    }
 }

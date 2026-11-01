@@ -12,6 +12,10 @@ public record ConnectionReconnected : IAction;
 
 public record ConnectionClosed(string? Error) : IAction;
 
+// The hub's session check answered the connection itself — signed out, or a household no longer let
+// in — which no reconnect gets past.
+public record HubSessionRefused : IAction;
+
 public sealed class ConnectionStore : IDisposable
 {
     private readonly Store<ConnectionState> _store;

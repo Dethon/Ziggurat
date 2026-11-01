@@ -1,5 +1,6 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
 
@@ -14,6 +15,7 @@ public sealed class UserIdentityEffect : IDisposable
     private readonly IAccountService _accounts;
     private readonly IDisposable _initializeRegistration;
     private readonly IDisposable _loadRegistration;
+    private readonly IDisposable _refusedRegistration;
 
     public UserIdentityEffect(Dispatcher dispatcher, IAccountService accounts, ILogger<UserIdentityEffect> logger)
     {
@@ -24,6 +26,11 @@ public sealed class UserIdentityEffect : IDisposable
             _ => LoadSignedInAsync().LogFaults(logger, nameof(Initialize)));
         _loadRegistration = dispatcher.RegisterHandler<LoadSignedIn>(
             _ => LoadSignedInAsync().LogFaults(logger, nameof(LoadSignedIn)));
+
+        // The hub's session check refused the connection, and the page sits behind the same check:
+        // loaded again, it becomes the sign-in page, the disabled account's or the suspended
+        // household's notice, whichever the proxy now says.
+        _refusedRegistration = dispatcher.RegisterHandler<HubSessionRefused>(_ => _accounts.Reload());
     }
 
     public async Task LoadSignedInAsync()
@@ -51,5 +58,6 @@ public sealed class UserIdentityEffect : IDisposable
     {
         _initializeRegistration.Dispose();
         _loadRegistration.Dispose();
+        _refusedRegistration.Dispose();
     }
 }

@@ -2,6 +2,7 @@ using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.State;
+using WebChat.Client.State.Connection;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Topics;
 using WebChat.Client.State.UserIdentity;
@@ -45,6 +46,16 @@ public sealed class UserIdentityEffectTests : IDisposable
 
         _userIdentityStore.State.SignedIn.ShouldBeNull();
         _accounts.SentToSignIn.ShouldBe(1);
+    }
+
+    // The hub's check refused the connection: the page is loaded again through the proxy, whose same
+    // check sends a signed-out person to sign in and a suspended household to its notice.
+    [Fact]
+    public void TheHubRefusingTheSession_LoadsThePageAgainThroughTheProxy()
+    {
+        _dispatcher.Dispatch(new HubSessionRefused());
+
+        _accounts.Reloaded.ShouldBe(1);
     }
 
     // Offline says nothing about the session, and a sign-in page would not load either.

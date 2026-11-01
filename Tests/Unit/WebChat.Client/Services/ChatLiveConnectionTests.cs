@@ -1,3 +1,4 @@
+using System.Net;
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -286,6 +287,63 @@ public sealed class ChatLiveConnectionTests : IDisposable
         _factory.Created.Count.ShouldBe(2);
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
     }
+
+    // The hub's session check answering the connection — signed out (401), or let in no longer
+    // (403: a suspended household) — is not a network to wait out. Retried, a signed-out page asked
+    // the accounts service once a second for as long as it stayed open, and the person sat on
+    // "Reconnecting" with no way to sign in again; the page is handed to the proxy instead, which
+    // says what it is now.
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task TheConnectionClosesRefused_ItIsNotRebuilt_AndTheRefusalIsAnnounced(HttpStatusCode status)
+    {
+        var refused = 0;
+        using var _ = _dispatcher.RegisterHandler<HubSessionRefused>(_ => refused++);
+        await _liveConnection.ConnectAsync();
+
+        await AdvanceUntilCompleteAsync(_factory.Created.Single().RaiseClosedAsync(Refusal(status)));
+
+        _factory.Created.Count.ShouldBe(1);
+        refused.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ARebuildTheHubRefuses_StopsAtTheFirstAttempt_AndTheRefusalIsAnnounced()
+    {
+        var refused = 0;
+        using var _ = _dispatcher.RegisterHandler<HubSessionRefused>(_ => refused++);
+        await _liveConnection.ConnectAsync();
+        _factory.Created.Single().State = HubConnectionState.Reconnecting;
+        _factory.CreateBehavior = () => new FakeHubConnection
+        {
+            StartBehavior = _ => Task.FromException(Refusal(HttpStatusCode.Unauthorized))
+        };
+
+        var reconnect = _liveConnection.ReconnectIfNeededAsync();
+        await AdvanceUntilCompleteAsync(reconnect);
+
+        _factory.Created.Count.ShouldBe(2);
+        refused.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, false)]
+    [InlineData(HttpStatusCode.Forbidden, false)]
+    [InlineData(HttpStatusCode.BadGateway, true)]
+    public void TheAutomaticReconnect_GivesUpOnARefusal_AndKeepsTryingOtherwise(HttpStatusCode status, bool retries)
+    {
+        var delay = new AggressiveRetryPolicy().NextRetryDelay(new RetryContext
+        {
+            PreviousRetryCount = 3,
+            RetryReason = Refusal(status)
+        });
+
+        (delay is not null).ShouldBe(retries);
+    }
+
+    private static HttpRequestException Refusal(HttpStatusCode status) =>
+        new($"Response status code does not indicate success: {(int)status}.", null, status);
 
     private static TopicChangedNotification TopicCreated(string topicId) =>
         new(TopicChangeType.Created, topicId, TestChat.Topic(topicId));
