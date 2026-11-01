@@ -11,10 +11,12 @@ public static class ConnectedServers
     public static string For(string tenantId) => $"{Path}/{Uri.EscapeDataString(tenantId)}";
 }
 
-// One open tunnel: the server's name, the opening it is on and when it opened, and the tools it
-// offered when asked through it just now — null when it did not answer the asking.
+// One open tunnel: the server's name, the opening it is on and when it opened, the tools it offered
+// when asked through it just now — null when it did not answer the asking — and the id of the
+// credential it was opened with, so an owner replacing a credential sees which one is in use.
 public sealed record ConnectedServer(
     string ServerName,
     long Generation,
     DateTimeOffset OpenedAt,
-    IReadOnlyList<string>? Tools);
+    IReadOnlyList<string>? Tools,
+    string? CredentialId = null);
