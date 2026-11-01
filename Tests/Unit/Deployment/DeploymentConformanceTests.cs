@@ -24,6 +24,7 @@ public class DeploymentConformanceTests
     private const string MainHost = "assistants.herfluffness.com";
     private const string SexyHost = "sexy.herfluffness.com";
     private const string SugaryHost = "sugary.herfluffness.com";
+    private const string DashboardHost = "assistants-dashboard.herfluffness.com";
 
     // A local stack swaps the issuer by CADDY_TLS; the deployment never sets it, so every host must
     // fall back to the Cloudflare challenge rather than to the local CA a phone would not trust.
@@ -537,14 +538,18 @@ public class DeploymentConformanceTests
     [Fact]
     public void TheDashboard_AdmitsOnlyTheOperatorsSession()
     {
-        var host = DeploymentFiles.Caddyfile().Host("assistants-dashboard.herfluffness.com");
+        var host = DeploymentFiles.Caddyfile().Host(DashboardHost);
 
         host.ForwardAuth.ShouldNotBeNull();
         host.ForwardAuth.Upstream.ShouldBe("accounts:8080");
         host.ForwardAuth.Uri.ShouldBe($"/accounts/verify?role=operator&channel={AppChannels.Dashboard}");
         host.ForwardAuth.CopiedHeaders.ShouldBe(ForwardedAccount.Headers, ignoreOrder: true);
         host.Routes.ShouldNotBeEmpty();
-        host.Routes.ShouldAllBe(r => r.Upstream == "observability:8080");
+        host.Routes.Where(r => r.Matcher is not ($"{AdminProtocol.Operator}/*" or "/accounts/internal/*"))
+            .ShouldAllBe(r => r.Upstream == "observability:8080");
+        var admin = host.Routes.Single(r => r.Matcher == $"{AdminProtocol.Operator}/*");
+        admin.Upstream.ShouldBe("accounts:8080");
+        admin.ForwardAuth.ShouldNotBeNull().Uri.ShouldBe($"/accounts/verify?channel={AppChannels.Admin}");
     }
 
     // The chat client, its hub and the hub's upload and dictation endpoints believe the person the
@@ -591,19 +596,26 @@ public class DeploymentConformanceTests
     }
 
     // The admin API believes only the assertion the session check signs for the admin channel, so it
-    // is reached on the main host through that check alone, and on no host past it: a host that does
-    // not serve the admin area refuses the path rather than hand it to the accounts service unchecked.
+    // is reached on the main host — and the operator's routes on the dashboard's, for the household
+    // list — through that check alone, and on no host past it: a host that does not serve the admin
+    // area refuses the path rather than hand it to the accounts service unchecked.
     [Fact]
     public void TheAdminApi_IsReachedThroughItsSessionCheckAlone()
     {
         var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
 
-        var main = RouteFor(DeploymentFiles.Caddyfile().Host(MainHost), AdminProtocol.Settings).ShouldNotBeNull();
-        main.Upstream.ShouldBe("accounts:8080");
-        main.ForwardAuth.ShouldNotBeNull().Uri.ShouldBe($"/accounts/verify?channel={AppChannels.Admin}");
+        foreach (var (hostName, path) in new[] { (MainHost, AdminProtocol.Settings), (DashboardHost, AdminProtocol.Households) })
+        {
+            var reached = RouteFor(DeploymentFiles.Caddyfile().Host(hostName), path).ShouldNotBeNull(hostName);
+            reached.Upstream.ShouldBe("accounts:8080", hostName);
+            reached.ForwardAuth.ShouldNotBeNull(hostName).Uri.ShouldBe($"/accounts/verify?channel={AppChannels.Admin}");
+        }
+
+        RouteFor(DeploymentFiles.Caddyfile().Host(DashboardHost), AdminProtocol.Settings)!.Upstream
+            .ShouldNotBe("accounts:8080", "the owners' routes are the chat client's");
         foreach (var host in hosts)
         {
-            foreach (var path in new[] { AdminProtocol.Settings, AdminProtocol.AllChanges })
+            foreach (var path in new[] { AdminProtocol.Settings, AdminProtocol.AllChanges, AdminProtocol.Households })
             {
                 var route = RouteFor(host, path).ShouldNotBeNull($"{host.Name} {path}");
                 if (route.Upstream == "accounts:8080")
@@ -872,6 +884,21 @@ public class DeploymentConformanceTests
 
         DeploymentFiles.Compose().Service("accounts").Environment.GetValueOrDefault("AGENTKEYSURL").ShouldBe(expected);
         AccountsSettings.DefaultAgentKeysUrl.ShouldBe(expected);
+    }
+
+    // The operator's household list shows each household's connected servers, which only the agent's
+    // relay knows: the accounts service asks the agent's listing on the compose network with the one
+    // credential the agent already presents to it, which is the agent API's own secret, so no secret
+    // exists for this alone.
+    [Fact]
+    public void TheAccountsService_AsksTheAgentsRelayWithTheAgentApisSecret()
+    {
+        var compose = DeploymentFiles.Compose();
+        var accounts = compose.Service("accounts").Environment;
+
+        accounts.GetValueOrDefault("AGENTURL").ShouldBe(AccountsSettings.DefaultAgentUrl);
+        AccountsSettings.DefaultAgentUrl.ShouldBe("http://agent:8080");
+        accounts.GetValueOrDefault("CALLERS__agent").ShouldBe(compose.Service("agent").Environment["AGENTAPI__SHAREDSECRET"]);
     }
 
     // The household import can make the operator and mint their link, so the accounts service admits

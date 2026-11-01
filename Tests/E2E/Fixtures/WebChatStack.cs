@@ -58,6 +58,7 @@ internal sealed partial class WebChatStack
     private IContainer? _mcpSugary;
     private IContainer? _accounts;
     private WebApplication? _whisper;
+    private FakeKeyProviders? _keyProviders;
     private int _caddyPort;
 
     private int _sliceIndex = -1;
@@ -401,9 +402,18 @@ internal sealed partial class WebChatStack
 
         // The accounts service, as compose wires it but for this host: its store in a tmpfs that
         // starts empty, migrated before the sign-in page answers.
+        // The providers a household's keys are checked with, answered in this process and reached
+        // through the host's gateway, so an owner's key is never put to a real provider. Started
+        // first: the accounts service is told where they are.
+        _keyProviders = await FakeKeyProviders.StartAsync(forContainers: true);
+
         _accounts = TestContainers.Container(E2EImages.Accounts.ImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("accounts")
+            .WithExtraHost("host.docker.internal", "host-gateway")
+            .WithEnvironment("KEYPROBES__OPENROUTERURL", _keyProviders.OpenRouterUrlOn("host.docker.internal"))
+            .WithEnvironment("KEYPROBES__IDEALISTAURL", _keyProviders.RootOn("host.docker.internal"))
+            .WithEnvironment("KEYPROBES__TELEGRAMURL", _keyProviders.RootOn("host.docker.internal"))
             .WithTmpfsMount("/data")
             .WithEnvironment("WEBAUTHN__RELYINGPARTYID", "localhost")
             .WithEnvironment("ALLOWEDORIGINS__0", baseUrl)
@@ -785,6 +795,7 @@ internal sealed partial class WebChatStack
     {
         await Task.WhenAll(
             _whisper is null ? Task.CompletedTask : _whisper.DisposeAsync().AsTask(),
+            _keyProviders is null ? Task.CompletedTask : _keyProviders.DisposeAsync().AsTask(),
             _caddy is null ? Task.CompletedTask : _caddy.DisposeAsync().AsTask(),
             _mcpSugary is null ? Task.CompletedTask : _mcpSugary.DisposeAsync().AsTask(),
             _accounts is null ? Task.CompletedTask : _accounts.DisposeAsync().AsTask(),

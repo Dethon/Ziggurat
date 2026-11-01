@@ -55,6 +55,24 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
         return (await MintRecoveryAsync(db, created, createdBy: null, ct), true);
     }
 
+    // A household the operator creates from the dashboard, its one owner and the owner's way in, as
+    // one change: the owner exists from now on, with no passkey until the link enrolls one, so a lost
+    // link is replaced by a recovery like any owner's. Nothing of its configuration is written: a
+    // section it never saved reads as its defaults.
+    public async Task<MintedLink> CreateHouseholdAsync(string name, string ownerName, string createdBy, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var now = clock.Time.GetUtcNow();
+        var household = new Tenant { Id = Tokens.NewId(), Name = name, CreatedAt = now };
+        var owner = new User
+        {
+            Id = Tokens.NewId(), TenantId = household.Id, DisplayName = ownerName, Role = Role.Owner, CreatedAt = now
+        };
+        db.Tenants.Add(household);
+        db.Users.Add(owner);
+        return await MintRecoveryAsync(db, owner, createdBy, ct);
+    }
+
     // The operator's command, which may recover anyone.
     public async Task<MintedLink?> MintRecoveryAsync(string userId, CancellationToken ct)
     {

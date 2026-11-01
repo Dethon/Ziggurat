@@ -1,0 +1,13 @@
+@using WebChat.Client.State.Admin
+
+@* The keys page's last outcome, said beside the form it was about. *@
+@if (State.NoticeFor == Form && State.Notice is { } notice)
+{
+    <AdminNoticeView Notice="notice" />
+}
+
+@code {
+    [Parameter, EditorRequired] public KeyForm Form { get; set; }
+
+    [Parameter, EditorRequired] public HouseholdKeysState State { get; set; } = default!;
+}

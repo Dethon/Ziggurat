@@ -16,6 +16,22 @@ paths:
   - "Tests/Integration/Accounts/AdminApiTests.cs"
   - "Tests/Integration/Accounts/HouseholdAgentsAdminTests.cs"
   - "Tests/E2E/WebChat/HouseholdAdminE2ETests.cs"
+  - "Accounts/Keys/**"
+  - "WebChat.Client/State/Effects/HouseholdKeysEffect.cs"
+  - "WebChat.Client/State/Effects/OnboardingEffect.cs"
+  - "Infrastructure/Agents/ChatClients/RefusedKeyReportingChatClient.cs"
+  - "Domain/Contracts/IHouseholdKeyReports.cs"
+  - "Tests/Integration/Accounts/KeysAdminTests.cs"
+  - "Tests/Integration/Fixtures/FakeKeyProviders.cs"
+  - "Tests/E2E/WebChat/HouseholdKeysE2ETests.cs"
+  - "Accounts/Tunnels/ConnectedServersClient.cs"
+  - "Dashboard.Client/Pages/Households.razor"
+  - "Dashboard.Client/State/Households/**"
+  - "Dashboard.Client/Effects/HouseholdsEffect.cs"
+  - "Dashboard.Client/Services/HouseholdsAdminService.cs"
+  - "Tests/Integration/Accounts/HouseholdListAdminTests.cs"
+  - "Tests/E2E/Dashboard/HouseholdListE2ETests.cs"
+  - "Tests/E2E/Fixtures/DashboardAdminE2EFixture.cs"
 ---
 
 # The admin API and the admin area
@@ -38,8 +54,11 @@ clients read. Two roots, and nothing else under `/accounts/admin`:
 
 The operator is also an owner of the home household and manages the home through the household
 routes like any owner. Today's routes: `GET`/`PUT /household/settings` (`HouseholdSettings`),
-`GET /household/changes?limit=` (the household's change log), the agents routes (below) and `GET /operator/changes?household=&limit=`
-(every household's, or one's). A route is mapped in `AdminApi.Map` into one of the two groups, with its
+`GET /household/keys` (`HouseholdKeys`) and `PUT /household/keys/openrouter` (`OpenRouterKey`),
+`/household/keys/idealista` (`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`) ("Keys and probes"),
+`GET /household/changes?limit=` (the household's change log), the agents routes (below), `GET /operator/changes?household=&limit=`
+(every household's, or one's), and the household list's (below): `GET`/`POST /operator/households` and
+`POST /operator/households/{householdId}/owners/{userId}/recovery`. A route is mapped in `AdminApi.Map` into one of the two groups, with its
 path inside the group from `AdminApi.Under(root, AdminProtocol.X)`, and reads its caller as a bound
 `AdminCaller` parameter (never null: the gate answered first).
 
@@ -102,6 +121,58 @@ Reads (`ListAsync`) are newest first, `limit` defaulting to 50 and capped at 200
 current display name. Minting something (a link, a credential) is a change and is recorded; it is never
 in the summary.
 
+## Keys and probes
+
+The keys page (`KeysAdmin`, over 4b's `keys` section) saves each key on its own route, **after its
+provider was asked** (`Accounts/Keys/KeyProbes.cs`):
+
+- **One contract, one probe per provider**: `IKeyProbe<TKey>` answering `KeyProbeOutcome.Working`,
+  `Rejected(why)` or `Unreachable(why)`. `HttpKeyProbe<TKey>` is the one-request kind: a 2xx works, the
+  probe's `Refusals` (401/403; Idealista adds 400, OAuth's `invalid_client`; Telegram 404, a token it
+  cannot read) reject, **anything else** — 5xx, 429, a timeout (`KeyProbes:Timeout`), no connection — is
+  unreachable. OpenRouter: `GET {OpenRouterUrl}key` with the key as bearer (bills nothing). Idealista:
+  its token exchange. Telegram: `getMe`, after the token is checked against the shape BotFather issues
+  (it goes into a URL path). Adding a provider is one probe and one `KeySlot`.
+- **The base URLs are settings** (`KeyProbes:OpenRouterUrl`, `IdealistaUrl`, `TelegramUrl`, `Timeout`
+  in `Accounts/appsettings.json`, the real hosts by default), so a stack points them at a stub
+  (`FakeKeyProviders`; the E2E stack's `KEYPROBES__*` at one in process through the host's gateway).
+  The probes' HTTP client (`key-probes`) has its request loggers removed: a bot's token is in the URL.
+- **A save**: the section's own rules first (a blank key is refused in their words, nobody asked), then
+  the probe — **rejected refuses the save** (400, `AdminRefusal` "The X was not saved: <why>.", nothing
+  saved or recorded); working or unreachable save through `HouseholdConfigStore.SaveAsync` (the section
+  read whole, the one key put, saved whole: the others kept, every secret sealed again), then the check
+  is stored and the change recorded ("Set the OpenRouter key" / "Replaced …", "the Idealista keys",
+  "the Telegram bot for <agent>"). Unreachable answers `AdminSaved.Warning` ("could not be asked …: it
+  shows as unchecked"), joined with the not-told warning when both apply. A bot must be bound to one of
+  the household's agents (`HouseholdAgents.Names`, the two templates for a household that saved none).
+  A stack with no master key refuses a key with `KeysAdmin.SecretsUnavailableMessage`, never a 500.
+- **State lives beside the section, not in it**: `HouseholdKeyChecks` (table `HouseholdKeyChecks`, one
+  row per household and key name — `openRouter`, `idealista`, `telegramBots/<agent>`): state, when
+  checked (`AccountsClock`), a reason, and the key's **fingerprint** (`Tokens.Hash` of the key, Idealista's
+  of its pair). Not in the section because a state change (a re-probe, a rejection in use) is not a
+  save — every save is announced and drops every reader's cache, Telegram's bots included — and the
+  operator's `get`/`set-household-config` and the seed route stay as 4b made them. A key whose
+  fingerprint is not the stored check's (the operator's command replaced it, asking nobody) reads
+  **unchecked** with no check time.
+- **Never the key**: `HouseholdKeys { paysWithDeploymentKey, openRouter, idealista, telegramBots,
+  needsOpenRouterKey }`, each a `KeyStatus { state, lastCharacters, checkedAt, reason }` —
+  `AdminProtocol.KeyCharactersShown` (4) last characters, none for a key under `ShortestKeyShown` (12),
+  Idealista's from its API key alone, never its secret. `needsOpenRouterKey` is an owner's household
+  that is not the home and has no OpenRouter key: the home's agents pay with the deployment's key.
+- **A key failing in a turn**: `RefusedKeyReportingChatClient` wraps the OpenRouter client of a turn
+  sent on a household's own key (`MultiAgentFactory.CreateChatClient` with a key and its household; never
+  the deployment's key, never the Lemonade box) and on a `ClientResultException` 401 — not a 402, which
+  is credit — calls `IHouseholdKeyReports.OpenRouterKeyRefusedAsync(household)` once per client, without
+  waiting, and rethrows. `HouseholdConfigurationClient` implements it (registered only where an agent
+  token is given): `POST /accounts/internal/household-config/openrouter-key-refused`, proven as the
+  agent's own view is (`InternalCallers`' view table, `HouseholdProofs.AgentAsync`), answered 204.
+  `KeysAdmin.InUseRejectedAsync` marks the key saved now rejected, then probes it: working heals it,
+  rejected keeps it with the provider's why, unreachable leaves it rejected. An internal route rather
+  than a Redis event: Redis messages carry no proof of who sent them, and accounts subscribes to nothing.
+- **Onboarding**: the chat client's `OnboardingEffect`, on `SignedIn`, asks an owner's keys (outside the
+  admin area only — the area signs in too) and, when `needsOpenRouterKey`, enters `AdminArea.Keys` by a
+  full load. The keys page says why there (`role="note"`).
+
 ## Agents
 
 `HouseholdAgentsAdmin` over the agents section, and `AgentVersions` beside it (`Domain/DTOs/Admin/AdminAgents.cs`):
@@ -151,11 +222,46 @@ any non-empty channel, so `admin` needed no list. The other hosts that route `/a
 Sugary's) answer `/accounts/admin/*` with `respond 404`: nothing there calls it, and their `/accounts/*`
 would otherwise hand it on unchecked. `DeploymentConformanceTests.TheAdminApi_IsReachedThroughItsSessionCheckAlone`
 holds every host to either the checked route or no route to the accounts service; the E2E stack's own
-Caddyfile (`WebChatStack`) mirrors the main host's. **For 02**, the dashboard's host gains its own
-`handle /accounts/admin/*` with a `forward_auth` for `channel=admin` inside it (the host-level
-`role=operator&channel=dashboard` check runs first; the inner one's `copy_headers` sets the admin
-assertion over it), proxied to `accounts:8080`, and the conformance test's main-host expectation widens
-to it.
+Caddyfile (`WebChatStack`) mirrors the main host's. The **dashboard's host** routes the operator's routes
+alone, `handle /accounts/admin/operator/*`, with a `forward_auth` for `channel=admin` inside it (the
+host-level `role=operator&channel=dashboard` check runs first; the inner one's `copy_headers` sets the
+admin assertion over the dashboard's), proxied to `accounts:8080`, after its own `/accounts/internal/*`
+refusal; the owners' routes there fall to the dashboard and are refused. `DashboardAdminE2EFixture`
+mirrors that host.
+
+## The household list (dashboard)
+
+The operator's households, from the dashboard (`HouseholdListAdmin`, `/households` in `Dashboard.Client`):
+
+- **`GET /operator/households`** answers every household as a `HouseholdListEntry`, the home first: its
+  owners and members (`HouseholdPerson`, the operator flagged), its **connected servers** and its
+  **last seen**. The servers are the agent's relay's, which lives in the agent's serving process alone:
+  `ConnectedServersClient` asks the agent's own listing (`GET {AgentUrl}/internal/tunnels/{householdId}`,
+  `ConnectedServers.Path`, the one `list-household-servers` reads) with `CALLERS__agent` as its bearer —
+  the credential the agent presents here, which compose feeds the agent API's own secret, so no secret
+  exists for this (`DeploymentConformanceTests.TheAccountsService_AsksTheAgentsRelayWithTheAgentApisSecret`).
+  An agent not configured, down, refusing or slower than `AgentListingTimeout` (appsettings, 15 s: the
+  relay asks each server for its tools for up to ten) leaves that household's servers **null**, shown as
+  unknown, never a failed list. Owners' pages (07) read the same client. **Last seen** is the latest
+  `Session.LastSeenAt` of any of the household's sessions — the session check's own record, at its
+  five-minute grain — so a person who only uses Telegram or voice never moves it; what a household spends
+  is the usage view's (08), read from the metrics, which this service never reads.
+- **`POST /operator/households`** `NewHousehold { name, ownerName }` creates the household (`Tenant`), its
+  one owner (a `User` with no passkey yet) and the owner's `LinkKind.Recovery` link in one `SaveChanges`
+  (`LinkStore.CreateHouseholdAsync`), answered `AdminSaved<OwnerLink>`; the name is held to the settings'
+  length and the owner's to `Profile.Read`, refused 400 in those words with nothing written. A recovery
+  rather than an invite, so the owner is listed (and recoverable) before the link is used. **Nothing of
+  its configuration is written**: a section it never saved reads as its defaults — its name from the
+  tenant row, the one default space, the default features — and a section naming no agent is the two
+  templates (`HouseholdAgents.Starting`), so its first turn has agents.
+- **`POST /operator/households/{householdId}/owners/{userId}/recovery`** mints a recovery link for an
+  owner of any household, answered `AdminSaved<OwnerLink>`: 404 for nobody of that id in that household,
+  400 for a member (their owners mint theirs) or the operator (their way back is their account page or the
+  container command: a stolen dashboard session must not become a passkey).
+- Both mints are recorded on the household they are for, the link never in the summary. A link is in
+  the answer alone; the page holds it in its state until "Done" or the page is left, and never asks again.
+- **09 adds suspension here**: its routes under `/operator/households/{householdId}/…`, its state as a
+  field of `HouseholdListEntry`, and its button in the list's row.
 
 ## The admin area (chat client)
 
@@ -195,4 +301,19 @@ reader against a real Redis (`HouseholdConfigurationClient` + `HouseholdAgentSou
 owner is made by `create-user --role owner` and signed in with `CreatePageSignedInAsync(session)`.
 **Every E2E person is in the home household, whose turns every collection runs**: an E2E test changes
 nothing a turn reads (a zone, a language, a feature, an agent, a key) of the home — only its name, put
-back — and leaves turn-visible effects to seam 1.
+back — and leaves turn-visible effects to seam 1. `HouseholdKeysE2ETests` so submits only a key the
+stub rejects, and shows the landing by answering the page's keys read as a keyless household's would
+be answered (`page.RouteAsync`); the E2E stack has no master key, so nothing there can save a key.
+Seam 1 for keys is `KeysAdminTests` against `FakeKeyProviders`; the turn side of a refused key is
+`MultiAgentFactoryHouseholdTests` (`FakeOpenRouter.Refuse`).
+
+The household list's seam 1 is `HouseholdListAdminTests`: `AccountsServer.Admin(session).PostAsync`, a
+person of another household by `SeedPersonAsync(household, name, role)`, and the agent's listing as a
+Kestrel stub behind the shared secret (`AccountsSettings.AgentUrl` at it, `Callers["agent"]` the
+secret). The owner's link enrolling a passkey into the new household is a ceremony
+(`PasskeyCeremoniesTests`). Seam 3 is `HouseholdListE2ETests` on `DashboardAdminE2EFixture` (collection
+`DashboardAdminE2E`): accounts, observability and a Caddy mirroring the dashboard's host, the operator
+signed in by `mint-link --operator` and `mint-session` (`CreateOperatorPageAsync`, which also answers
+the home's id), anybody else by `CreatePersonPageAsync(name, role)`, and the relay's listing a stub
+whose servers a test sets with `Connect(householdId, server)`. Its stack is its own, so a test may
+create, change and suspend households freely; the fixture is the one 08 and 09 extend.
