@@ -107,7 +107,9 @@ public static class PasskeyScript
             } catch (error) {
               status.textContent = error instanceof Refusal
                 ? await errorOf(error.response)
-                : error.name === 'NotAllowedError' ? 'Nothing was chosen. Try again when you are ready.' : 'That did not work: ' + error.message;
+                : error.name === 'NotAllowedError' ? 'Nothing was chosen. Try again when you are ready.'
+                : error.name === 'InvalidStateError' ? 'This device already holds a passkey for this account: add one from another device.'
+                : 'That did not work: ' + error.message;
               button.disabled = false;
             }
           });
