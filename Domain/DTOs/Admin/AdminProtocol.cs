@@ -50,6 +50,19 @@ public static class AdminProtocol
 
     public static string RestoreAgentVersion(string agentId, string versionId) => $"{AgentVersions(agentId)}/{versionId}/restore";
 
+    // The household's people (AdminMembers): an invite, a member's role and sees-all, disabling and
+    // re-enabling one, and a recovery link for one.
+    public const string Members = Household + "/members";
+    public const string MemberInvites = Members + "/invites";
+
+    public static string Member(string userId) => $"{Members}/{userId}";
+
+    public static string DisableMember(string userId) => $"{Member(userId)}/disable";
+
+    public static string EnableMember(string userId) => $"{Member(userId)}/enable";
+
+    public static string MemberRecovery(string userId) => $"{Member(userId)}/recovery";
+
     // The household's features (the features section, whole) and its chat-client spaces (AdminSpaces
     // read, the spaces section saved whole).
     public const string Features = Household + "/features";
