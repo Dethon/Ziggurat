@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Extensions;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
@@ -115,7 +116,8 @@ public sealed class MultiAgentFactory(
             sessionId: spec.RoutingSessionId,
             providerRouting: spec.ProviderRouting,
             key: spec.Key,
-            keyHousehold: spec.TenantId);
+            keyHousehold: spec.TenantId,
+            turnZone: TimeZones.Named(spec.TimeZone));
 
         // Composed from the spec this build is already running against, so the parent's values
         // reach the projection with no second source of truth for any of them.
@@ -258,7 +260,7 @@ public sealed class MultiAgentFactory(
         string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null,
         string? sessionId = null, ProviderRouting? providerRouting = null,
         HttpMessageHandler? transportHandler = null, HttpMessageHandler? lemonadeTransportHandler = null,
-        ModelKey? key = null, string? keyHousehold = null)
+        ModelKey? key = null, string? keyHousehold = null, TimeZoneInfo? turnZone = null)
     {
         var effectivePublisher = publisher ?? metricsPublisher;
         var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
@@ -285,7 +287,8 @@ public sealed class MultiAgentFactory(
             hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
             readImageStore: readImageStore,
             modelAcceptsImages: AcceptsImages,
-            modelAcceptsVideo: AcceptsVideo);
+            modelAcceptsVideo: AcceptsVideo,
+            turnZone: turnZone);
 
         // A household's own key that OpenRouter refuses is the owner's to fix, so their keys page is
         // told; the deployment's key is the operator's, and the box has a key of its own.
@@ -310,7 +313,8 @@ public sealed class MultiAgentFactory(
             readImageStore: readImageStore,
             modelAcceptsImages: AcceptsImages,
             contextWindowFor: model => LemonadeWindow(model, effectiveContext),
-            modelAcceptsVideo: AcceptsVideo);
+            modelAcceptsVideo: AcceptsVideo,
+            turnZone: turnZone);
 
         return new HostRoutingChatClient(openRouter, lemonade);
     }

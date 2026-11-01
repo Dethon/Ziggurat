@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Extensions;
 using Domain.Prompts;
 using Infrastructure.Agents;
 using Microsoft.Extensions.AI;
@@ -191,5 +192,22 @@ public sealed class MultiAgentFactoryTests
         var body = System.Text.Json.Nodes.JsonNode.Parse(handler.CapturedBody!)!.AsObject();
         body["provider"]!["sort"]!.GetValue<string>().ShouldBe("latency");
         body["session_id"]!.GetValue<string>().ShouldBe("session-1");
+    }
+
+    // The prompt tells a household's agent its day in the household's zone; the time stamped on each
+    // turn must be that zone's too, or the model is handed two clocks and answers by the turn's — a
+    // household in New York was told the deployment's evening.
+    [Fact]
+    public async Task CreateChatClient_AHouseholdZone_StampsTheTurnsTimeInIt()
+    {
+        var handler = new CapturingSseHandler();
+        var newYork = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        using var client = _sut.CreateChatClient("test-model", transportHandler: handler, turnZone: newYork);
+        var message = new ChatMessage(ChatRole.User, "hi");
+        message.SetTimestamp(new DateTimeOffset(2026, 11, 1, 22, 5, 0, TimeSpan.Zero));
+
+        await client.GetResponseAsync([message]);
+
+        handler.CapturedBody.ShouldContain("[Current time: 2026-11-01 17:05:00 -05:00]");
     }
 }

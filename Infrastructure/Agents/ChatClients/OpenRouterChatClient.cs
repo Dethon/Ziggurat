@@ -29,6 +29,7 @@ public sealed class OpenRouterChatClient : IChatClient
     private readonly Func<string, int?> _contextWindowFor;
     private readonly string _model;
     private readonly TimeProvider _timeProvider;
+    private readonly TimeZoneInfo? _turnZone;
     private readonly IAttachmentSource? _attachmentSource;
     private readonly IReadImageStore? _readImageStore;
     private readonly Func<string, bool> _modelAcceptsImages;
@@ -51,12 +52,14 @@ public sealed class OpenRouterChatClient : IChatClient
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
         int? maxRetries = null,
-        Func<string, bool>? modelAcceptsVideo = null)
+        Func<string, bool>? modelAcceptsVideo = null,
+        TimeZoneInfo? turnZone = null)
     {
         _model = model;
         _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _turnZone = turnZone;
         _attachmentSource = attachmentSource;
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
@@ -79,12 +82,14 @@ public sealed class OpenRouterChatClient : IChatClient
         IReadImageStore? readImageStore = null,
         Func<string, bool>? modelAcceptsImages = null,
         Func<string, int?>? contextWindowFor = null,
-        Func<string, bool>? modelAcceptsVideo = null)
+        Func<string, bool>? modelAcceptsVideo = null,
+        TimeZoneInfo? turnZone = null)
     {
         _model = model;
         _contextWindowFor = contextWindowFor ?? (_ => maxContextTokens);
         _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _turnZone = turnZone;
         _attachmentSource = attachmentSource;
         _readImageStore = readImageStore is null ? null : new ForgetOnceReadImageStore(readImageStore);
         _modelAcceptsImages = modelAcceptsImages ?? (_ => true);
@@ -114,7 +119,7 @@ public sealed class OpenRouterChatClient : IChatClient
         // sender, the local time, the recall block and the bytes of any attachment, and what gets
         // persisted stays as typed.
         var decorated = messages
-            .Select(x => TurnDecoration.Apply(x, _timeProvider.LocalTimeZone))
+            .Select(x => TurnDecoration.Apply(x, _turnZone ?? _timeProvider.LocalTimeZone))
             .ToList();
         // The model a per-message config patch resolved to rides this request's own options
         // (McpAgent.CreateRunOptions puts it there), so metrics stamp what the request ran on

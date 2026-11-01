@@ -494,8 +494,7 @@ public sealed class McpAgent : DisposableAgent
     // The household's zone, which its day and its bare times are read in. One this host does not know
     // reads as the host's rather than failing the turn: accounts checked the name against a zone list
     // of its own when it was saved.
-    private TimeZoneInfo Zone =>
-        _timeZone is { } id && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var found) ? found : _timeProvider.LocalTimeZone;
+    private TimeZoneInfo Zone => TimeZones.Named(_timeZone) ?? _timeProvider.LocalTimeZone;
 
     // Every section this agent has, handed to the composer as data. Nothing about the order lives
     // here any more: a section carries its own band, and what used to be a chain of Prepend and

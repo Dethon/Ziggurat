@@ -183,7 +183,10 @@ The agent builds a turn's agents from the turn's household's view (`HouseholdAge
   the Sugary app) name an agent it has.
 - **The settings fill the prompt.** The language is every agent's that pins none (an agent's own pin
   wins: nabu stays Spanish); the zone is the day's (`AgentSpec.TimeZone` → the `date` section's `zoned`
-  part, named only when it is not the host's own, so the home's prompts are the snapshots'), and the
+  part, named only when it is not the host's own, so the home's prompts are the snapshots'), the
+  zone each turn's `[Current time: …]` is stamped in (`MultiAgentFactory` hands it to the chat client
+  as `turnZone`; a stamp in the host's zone beside a prompt in the household's gave the model two
+  clocks, and it answered a New York household with Madrid's evening), and the
   zone a session reads a write's bare time in. The household's name is not in the prompt: an agent's
   name is the entry's.
 - **The features withhold.** `sharedServers` in the agent's settings (`SharedServers`) maps each

@@ -1,4 +1,5 @@
 using Domain.DTOs.Household;
+using Domain.Extensions;
 
 namespace Domain.Contracts;
 
@@ -30,7 +31,5 @@ public static class CallHouseholds
     public static async Task<TimeZoneInfo> ZoneAsync(this ICallHousehold? household, TimeZoneInfo fallback, CancellationToken ct) =>
         household is null
             ? fallback
-            : TimeZoneInfo.TryFindSystemTimeZoneById((await household.SettingsAsync(ct)).TimeZone, out var zone)
-                ? zone
-                : fallback;
+            : TimeZones.Named((await household.SettingsAsync(ct)).TimeZone) ?? fallback;
 }
