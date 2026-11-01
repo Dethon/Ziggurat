@@ -108,7 +108,7 @@ public static class HouseholdListAdmin
             return Results.NotFound(new AdminRefusal("That household has nobody by that id.", []));
         }
 
-        await log.RecordAsync(http, caller, householdId, $"Minted a recovery link for the owner {userId}", ct);
+        await log.RecordAsync(http, caller, householdId, "Minted a recovery link for an owner", ct);
         return Results.Ok(new AdminSaved<OwnerLink>(LinkOf(minted)));
     }
 
