@@ -626,8 +626,20 @@ public sealed class EvalStack : IAsyncDisposable
             SubAgents =
             [
                 .. shipped.SubAgents.Select(w => w with { McpServerEndpoints = Rewrite(w.McpServerEndpoints, hosted) })
-            ]
+            ],
+            // The deployment's shared servers too: the agent holds a credential for each it names, and
+            // only the stack's own are given one.
+            SharedServers = new SharedServers
+            {
+                Scheduling = Rehosted(shipped.SharedServers.Scheduling, hosted),
+                Timers = Rehosted(shipped.SharedServers.Timers, hosted),
+                Sugary = Rehosted(shipped.SharedServers.Sugary, hosted),
+                Idealista = Rehosted(shipped.SharedServers.Idealista, hosted)
+            }
         };
+
+    private static string? Rehosted(string? endpoint, IReadOnlyDictionary<string, string> hosted) =>
+        endpoint is null ? null : Rewrite([endpoint], hosted).FirstOrDefault();
 
     public async ValueTask DisposeAsync()
     {
