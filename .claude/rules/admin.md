@@ -32,6 +32,10 @@ paths:
   - "Tests/Integration/Accounts/HouseholdListAdminTests.cs"
   - "Tests/E2E/Dashboard/HouseholdListE2ETests.cs"
   - "Tests/E2E/Fixtures/DashboardAdminE2EFixture.cs"
+  - "Accounts/Members/MemberStore.cs"
+  - "WebChat.Client/State/Effects/HouseholdMembersEffect.cs"
+  - "Tests/Integration/Accounts/HouseholdMembersAdminTests.cs"
+  - "Tests/E2E/WebChat/HouseholdMembersE2ETests.cs"
 ---
 
 # The admin API and the admin area
@@ -213,6 +217,49 @@ customInstructions }`); `GET /household/agents/{agentId}/versions` (`AdminAgentV
   adding one from a template. The E2E test adds its own agent to the home and removes it, never touching
   the home's seeded ones.
 
+## Members
+
+`HouseholdMembersAdmin` over the members page's own stores (`MemberStore`, `LinkStore`), never a copy
+of them (`Domain/DTOs/Admin/AdminMembers.cs`): `GET /household/members` (`AdminMembers`: each
+`AdminMember` — id, display name, role `owner`/`member`, operator, sees-all, disabled); `POST
+/household/members/invites` (`MemberInvite { displayName, role }`) and `POST .../{userId}/recovery`, each
+answering `AdminSaved<MemberLink>` — the link once, never again (only its hash is kept), an invite's also
+as the bot's deep link (`TelegramLink`) or, with no bot named, `/start <token>` (`TelegramStart`), which
+the bot redeems in place of a passkey; `PUT .../{userId}` (`MemberEdit { role?, seesAll? }`, a field left
+out left as it is) and `POST .../{userId}/disable` / `.../enable`, each answering
+`AdminSaved<AdminMembers>`, the whole list. A body-less POST is fine: the path says whom.
+
+- **The last enabled owner** is neither demoted nor disabled (400): both are checked inside the one
+  `UPDATE` (`MemberStore.ChangeRoleAsync`, `DisableAsync`), counting only enabled owners — a disabled
+  owner manages nothing, so demoting the last enabled one beside a disabled one is refused too.
+- **The operator** is never disabled nor minted a recovery link by an owner (403): their account is the
+  deployment's way onto its dashboard and back in, which the container's command keeps.
+- **A disabled member** is minted no recovery link (400: it would open nothing until re-enabled).
+- **Disabling** (`MemberStore.DisableAsync`, one transaction) sets `User.DisabledAt` and revokes every
+  session the member holds; nothing else of theirs is touched. Every store that vouches for a person reads
+  the column (`.claude/rules/accounts.md`, "Disabled members"), and the change is announced on
+  `HouseholdConfigProtocol.SavedChannel` as section `PeopleChanged` so the agent drops the view that
+  lists who is disabled (`AgentHouseholdConfig.DisabledPeople`) and refuses their turns and fires from
+  their next one (`.claude/rules/service-identity.md`). Re-enabling clears the column and is announced
+  the same way; their sessions stay ended — they sign in again with a passkey they kept or a recovery
+  link — and their Telegram, voice profile, passkeys, links still in date, memories and topics answer
+  for them again. Not told, the change stands with `HouseholdMembersAdmin.NotToldWarning` (the agent
+  sees it within `Accounts:ConfigurationLifetime`).
+- **Role and sees-all reach the member's next turn**: the chat hub asks a fresh assertion for every turn
+  (`SessionRefresh`), signed with the roles as they are then, and so does every voice utterance. Two
+  things keep the old ones a while: the hub's own topic view (`TopicViewer`, its sees-all) is the
+  connection's, so a grant or a withdrawal shows in the chat client's topic list on its next load; and
+  Telegram keeps the assertion that admitted a sender for `LinkCache:Linked` (5 minutes).
+- Summaries name the member's id and what changed, never a name or any part of a link: "Invited somebody
+  as a member" / "as an owner", "Changed member <id>'s role, sees all conversations", "Disabled member
+  <id>", "Re-enabled member <id>", "Minted a recovery link for member <id>".
+- **The page** is `/admin/members` (`HouseholdMembersPage`, `HouseholdMembersStore`,
+  `HouseholdMembersEffect`): one article per person named by their display name, with a role select and
+  a sees-all checkbox saved together, Recovery link (not for the operator or the disabled), Disable
+  behind a confirmation (not offered for the operator) or Re-enable, and the invite form. A minted link
+  is shown in a `New link` region until the next change or a reload, never again. The E2E test makes its
+  own people (`create-user`) and changes only them.
+
 ## The proxy
 
 `DockerCompose/caddy/Caddyfile`'s main host routes `handle /accounts/admin/*` to `accounts:8080` behind
@@ -306,6 +353,12 @@ stub rejects, and shows the landing by answering the page's keys read as a keyle
 be answered (`page.RouteAsync`); the E2E stack has no master key, so nothing there can save a key.
 Seam 1 for keys is `KeysAdminTests` against `FakeKeyProviders`; the turn side of a refused key is
 `MultiAgentFactoryHouseholdTests` (`FakeOpenRouter.Refuse`).
+
+Members' seam 1 is `HouseholdMembersAdminTests`, which checks a disabled member is nobody on every way in
+(the session check, the session refresh, `resolve` for voice and Telegram, `web-link`, a recovery link,
+`mint-session`) and that the agent's own reader says so (`HouseholdAccountStanding` over
+`HouseholdConfigurationClient` and a real Redis); seam 4 is `ChatMonitorAssertionTests` and
+`ChatMonitorDelegationTests` with a `FakeAccountStanding`; seam 2 is `HouseholdMembersE2ETests`.
 
 The household list's seam 1 is `HouseholdListAdminTests`: `AccountsServer.Admin(session).PostAsync`, a
 person of another household by `SeedPersonAsync(household, name, role)`, and the agent's listing as a
