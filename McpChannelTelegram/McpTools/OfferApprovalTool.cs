@@ -3,7 +3,6 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using McpChannelTelegram.Services;
 using ModelContextProtocol.Server;
-using Telegram.Bot.Exceptions;
 
 namespace McpChannelTelegram.McpTools;
 
@@ -41,27 +40,8 @@ public sealed class OfferApprovalTool
         var bots = services.GetRequiredService<BotRegistry>().BotsPreferring(p.Asker.TenantId, p.AgentId);
         var (approvalId, resultTask) = router.RegisterApproval(
             Timeout.InfiniteTimeSpan, access.AnswersFor(p.Asker), cancellationToken, p.ApprovalId);
-        var shown = false;
-        foreach (var botClient in bots)
-        {
-            try
-            {
-                shown = await router.ShowInPrivateChatAsync(approvalId, p.Asker, p.Requests, botClient, access, cancellationToken);
-                break;
-            }
-            catch (ApiRequestException)
-            {
-                // A person who never opened a chat with this bot cannot be written to first; the next
-                // may have one.
-            }
-            catch (HttpRequestException)
-            {
-                // An accounts service that could not say which chat is theirs shows it to nobody.
-                break;
-            }
-        }
-
-        if (!shown)
+        if (!await PrivateChatOffer.ShowAsync(bots,
+                bot => router.ShowInPrivateChatAsync(approvalId, p.Asker, p.Requests, bot, access, cancellationToken)))
         {
             // A question that reached nobody is withdrawn as one answered elsewhere would be.
             await router.SettleAsync(approvalId, CancellationToken.None);
