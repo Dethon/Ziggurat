@@ -18,7 +18,7 @@ public sealed class TunnelListing(TunnelRegistry registry, ILogger<TunnelListing
             .Where(tunnel => tunnel.TenantId == tenantId && tunnel.IsOpen)
             .OrderBy(tunnel => tunnel.ServerName, StringComparer.Ordinal)
             .Select(async tunnel => new ConnectedServer(
-                tunnel.ServerName, tunnel.Generation, tunnel.OpenedAt, await ToolsOfAsync(tunnel, ct))));
+                tunnel.ServerName, tunnel.Generation, tunnel.OpenedAt, await ToolsOfAsync(tunnel, ct), tunnel.CredentialId)));
 
     private async Task<IReadOnlyList<string>?> ToolsOfAsync(OpenTunnel tunnel, CancellationToken ct)
     {
