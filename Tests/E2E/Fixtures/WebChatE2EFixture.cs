@@ -67,9 +67,10 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     // A page signed in by a session the test minted itself, for a person the stack's users are not —
     // an owner, say, since every one of them is a member.
-    public async Task<IPage> CreatePageSignedInAsync(string session, bool hasTouch = false, bool isMobile = false)
+    public async Task<IPage> CreatePageSignedInAsync(
+        string session, bool hasTouch = false, bool isMobile = false, bool withoutServiceWorker = false)
     {
-        var page = await CreatePageAsync(hasTouch, isMobile);
+        var page = await CreatePageAsync(hasTouch, isMobile, withoutServiceWorker);
         await page.Context.AddCookiesAsync(
         [
             new Cookie

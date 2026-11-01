@@ -29,6 +29,25 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
                 return new AdminAnswer<HouseholdSettings>.Answered(saved.Value, saved.Warning);
             });
 
+    public Task<AdminAnswer<HouseholdKeys>> GetKeysAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Keys), async content =>
+            new AdminAnswer<HouseholdKeys>.Answered((await content.ReadFromJsonAsync<HouseholdKeys>())!));
+
+    public Task<AdminAnswer<HouseholdKeys>> SaveOpenRouterKeyAsync(OpenRouterKey key) =>
+        SaveKeysAsync(AdminProtocol.OpenRouterKey, key);
+
+    public Task<AdminAnswer<HouseholdKeys>> SaveIdealistaKeysAsync(IdealistaKeys keys) =>
+        SaveKeysAsync(AdminProtocol.IdealistaKeys, keys);
+
+    public Task<AdminAnswer<HouseholdKeys>> SaveTelegramBotAsync(string agentId, TelegramBotKey bot) =>
+        SaveKeysAsync(AdminProtocol.TelegramBot(agentId), bot);
+
+    private Task<AdminAnswer<HouseholdKeys>> SaveKeysAsync<TKey>(string path, TKey key) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(key) }, async content =>
+        {
+            var saved = (await content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!;
+            return new AdminAnswer<HouseholdKeys>.Answered(saved.Value, saved.Warning);
+        });
     public Task<AdminAnswer<AdminAgents>> GetAgentsAsync() =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Agents), async content =>
             new AdminAnswer<AdminAgents>.Answered((await content.ReadFromJsonAsync<AdminAgents>())!));
