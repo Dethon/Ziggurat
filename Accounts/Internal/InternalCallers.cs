@@ -86,7 +86,7 @@ public static class InternalCallers
     {
         var presented = http.Request.Headers.Authorization.ToString();
         IReadOnlyList<string> callers = [.. settings.Callers
-            .Where(caller => CallerCredential.Matches(presented, caller.Value))
+            .Where(caller => SharedSecret.Matches(presented, caller.Value))
             .Select(caller => caller.Key)];
         http.Items[ItemKey] = callers;
         return callers;
