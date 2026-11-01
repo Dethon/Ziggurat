@@ -1,4 +1,3 @@
-using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 
 namespace WebChat.Client.State.Hub;
@@ -12,5 +11,5 @@ public interface IHubEventDispatcher
     void HandleAlertOffered(AlertOfferedNotification notification);
     void HandleAlertSettled(AlertSettledNotification notification);
     void HandleUserMessage(UserMessageNotification notification);
-    void HandleAgentsUpdated(IReadOnlyList<AgentCatalogEntry> agents);
+    void HandleAgentsUpdated(AgentsUpdatedNotification notification);
 }

@@ -638,7 +638,7 @@ internal sealed partial class WebChatStack
             "set-household-config", "--household", "home", "--section", HouseholdSections.Agents, "--file", "/tmp/agents.json");
     }
 
-    private static readonly AgentsSection Agents = new()
+    public static readonly AgentsSection Agents = new()
     {
         DefaultAgent = "test-agent",
         Agents =

@@ -23,6 +23,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly ILogger<InitializationEffect> _logger;
     private readonly IDisposable _initializeRegistration;
     private readonly IDisposable _setAgentsRegistration;
+    private readonly IDisposable _agentsUpdatedRegistration;
     private readonly IDisposable _becameLiveAgainSubscription;
     private int _awaitingAgentCatalog;
 
@@ -55,8 +56,10 @@ public sealed class InitializationEffect : IDisposable
             _ => HandleInitializeAsync().LogFaults(_logger, nameof(Initialize)));
         _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(
             action => HandleAgentCatalogArrivedAsync(action.Agents).LogFaults(_logger, nameof(SetAgents)));
+        _agentsUpdatedRegistration = dispatcher.RegisterHandler<AgentsUpdated>(
+            _ => RefetchAgentCatalogAsync().LogFaults(_logger, nameof(AgentsUpdated)));
 
-        // Nothing else retries a not-live catalog fetch on its own: a SetAgents broadcast (the
+        // Nothing else retries a not-live catalog fetch on its own: an AgentsUpdated push (the
         // agent re-registering) is one way it completes, and the next connection epoch is the
         // other — the client's own retry, not dependent on the agent process doing anything.
         _becameLiveAgainSubscription = connectionStore.BecameLiveAgain.Subscribe(
@@ -103,7 +106,7 @@ public sealed class InitializationEffect : IDisposable
         var catalog = await _agentService.GetAgentsAsync();
         if (!catalog.IsLive)
         {
-            // Nothing else retries this fetch on its own: a SetAgents broadcast (the agent
+            // Nothing else retries this fetch on its own: an AgentsUpdated push (the agent
             // re-registering) or the next connection epoch (BecameLiveAgain, below) completes
             // the initialization this load could not.
             Volatile.Write(ref _awaitingAgentCatalog, 1);
@@ -150,6 +153,16 @@ public sealed class InitializationEffect : IDisposable
 
         _dispatcher.Dispatch(new SetAgents(catalog.Value!));
         await SelectAgentAndLoadTopicsAsync(catalog.Value!);
+    }
+
+    // The agent registered again: this household's agents are asked for afresh, and their arrival is
+    // a SetAgents like any other, so it also finishes a first load that could not fetch them.
+    private async Task RefetchAgentCatalogAsync()
+    {
+        if (await _agentService.GetAgentsAsync() is { IsLive: true, Value: { } agents })
+        {
+            _dispatcher.Dispatch(new SetAgents(agents));
+        }
     }
 
     // The deferred completion is owed exactly once, to whichever path gets here first.
@@ -204,6 +217,7 @@ public sealed class InitializationEffect : IDisposable
     {
         _initializeRegistration.Dispose();
         _setAgentsRegistration.Dispose();
+        _agentsUpdatedRegistration.Dispose();
         _becameLiveAgainSubscription.Dispose();
     }
 }

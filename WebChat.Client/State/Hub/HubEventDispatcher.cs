@@ -1,4 +1,3 @@
-using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
@@ -84,10 +83,10 @@ public sealed class HubEventDispatcher(
     public void HandleAlertSettled(AlertSettledNotification notification) =>
         dispatcher.Dispatch(new AlertEnded(notification.AlertId));
 
-    public void HandleAgentsUpdated(IReadOnlyList<AgentCatalogEntry> agents)
-    {
-        dispatcher.Dispatch(new SetAgents(agents));
-    }
+    // The push names no agents, since every household is shown its own: asking the hub for this one's
+    // is a hub call, which is an effect's to make.
+    public void HandleAgentsUpdated(AgentsUpdatedNotification notification) =>
+        dispatcher.Dispatch(new AgentsUpdated());
 
     public void HandleUserMessage(UserMessageNotification notification)
     {
