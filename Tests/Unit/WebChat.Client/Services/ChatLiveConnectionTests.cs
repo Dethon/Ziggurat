@@ -298,21 +298,21 @@ public sealed class ChatLiveConnectionTests : IDisposable
     [InlineData(HttpStatusCode.Forbidden)]
     public async Task TheConnectionClosesRefused_ItIsNotRebuilt_AndTheRefusalIsAnnounced(HttpStatusCode status)
     {
-        var refused = 0;
-        using var _ = _dispatcher.RegisterHandler<HubSessionRefused>(_ => refused++);
+        var refused = new List<HubSessionRefused>();
+        using var _ = _dispatcher.RegisterHandler<HubSessionRefused>(refused.Add);
         await _liveConnection.ConnectAsync();
 
         await AdvanceUntilCompleteAsync(_factory.Created.Single().RaiseClosedAsync(Refusal(status)));
 
         _factory.Created.Count.ShouldBe(1);
-        refused.ShouldBe(1);
+        refused.ShouldBe([new HubSessionRefused(SignedOut: status == HttpStatusCode.Unauthorized)]);
     }
 
     [Fact]
     public async Task ARebuildTheHubRefuses_StopsAtTheFirstAttempt_AndTheRefusalIsAnnounced()
     {
-        var refused = 0;
-        using var _ = _dispatcher.RegisterHandler<HubSessionRefused>(_ => refused++);
+        var refused = new List<HubSessionRefused>();
+        using var _ = _dispatcher.RegisterHandler<HubSessionRefused>(refused.Add);
         await _liveConnection.ConnectAsync();
         _factory.Created.Single().State = HubConnectionState.Reconnecting;
         _factory.CreateBehavior = () => new FakeHubConnection
@@ -324,7 +324,24 @@ public sealed class ChatLiveConnectionTests : IDisposable
         await AdvanceUntilCompleteAsync(reconnect);
 
         _factory.Created.Count.ShouldBe(2);
-        refused.ShouldBe(1);
+        refused.ShouldBe([new HubSessionRefused(SignedOut: true)]);
+    }
+
+    // An installed app opens on its cached client whatever the proxy would now say, so the first
+    // connect is where a suspended household's page learns it: refused there, it is announced too.
+    [Fact]
+    public async Task TheFirstConnectRefused_IsAnnounced()
+    {
+        var refused = new List<HubSessionRefused>();
+        using var _ = _dispatcher.RegisterHandler<HubSessionRefused>(refused.Add);
+        _factory.Enqueue(new FakeHubConnection
+        {
+            StartBehavior = _ => Task.FromException(Refusal(HttpStatusCode.Forbidden))
+        });
+
+        await Should.ThrowAsync<HttpRequestException>(() => _liveConnection.ConnectAsync());
+
+        refused.ShouldBe([new HubSessionRefused(SignedOut: false)]);
     }
 
     [Theory]

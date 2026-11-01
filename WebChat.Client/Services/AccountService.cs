@@ -26,5 +26,5 @@ public sealed class AccountService(HttpClient httpClient, NavigationManager navi
     public void SendToSignIn() =>
         navigation.NavigateTo($"/accounts/sign-in?returnUrl={Uri.EscapeDataString(navigation.Uri)}", forceLoad: true);
 
-    public void Reload() => navigation.NavigateTo(navigation.Uri, forceLoad: true);
+    public void SendToNotice() => navigation.NavigateTo("/accounts/account", forceLoad: true);
 }

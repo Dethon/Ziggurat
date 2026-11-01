@@ -48,14 +48,24 @@ public sealed class UserIdentityEffectTests : IDisposable
         _accounts.SentToSignIn.ShouldBe(1);
     }
 
-    // The hub's check refused the connection: the page is loaded again through the proxy, whose same
-    // check sends a signed-out person to sign in and a suspended household to its notice.
+    // The hub's check refused the connection. Reloading the page would not say why: an installed app's
+    // service worker answers it with the cached client, and /accounts/me still names a suspended
+    // household's person. So the page goes where the accounts service says it: a signed-out person to
+    // sign in, a household no longer let in to an account page, which shows its notice first.
     [Fact]
-    public void TheHubRefusingTheSession_LoadsThePageAgainThroughTheProxy()
+    public void TheHubSigningThePersonOut_SendsThePageToSignIn()
     {
-        _dispatcher.Dispatch(new HubSessionRefused());
+        _dispatcher.Dispatch(new HubSessionRefused(SignedOut: true));
 
-        _accounts.Reloaded.ShouldBe(1);
+        (_accounts.SentToSignIn, _accounts.SentToNotice).ShouldBe((1, 0));
+    }
+
+    [Fact]
+    public void TheHubNotLettingTheHouseholdIn_SendsThePageToItsNotice()
+    {
+        _dispatcher.Dispatch(new HubSessionRefused(SignedOut: false));
+
+        (_accounts.SentToSignIn, _accounts.SentToNotice).ShouldBe((0, 1));
     }
 
     // Offline says nothing about the session, and a sign-in page would not load either.

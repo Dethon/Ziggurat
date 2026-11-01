@@ -107,7 +107,20 @@ public sealed class ChatLiveConnection(
     private static bool IsConnectionInactiveMessage(string message) =>
         message.Contains("connection is not active", StringComparison.OrdinalIgnoreCase);
 
-    public Task ConnectAsync() => StartLiveConnectionAsync(CancellationToken.None);
+    // An installed app opens on its cached client whatever the proxy would now say, so a refusal here
+    // is announced like one on a reconnect, and still thrown to the caller as the failed connect it is.
+    public async Task ConnectAsync()
+    {
+        try
+        {
+            await StartLiveConnectionAsync(CancellationToken.None);
+        }
+        catch (Exception exception) when (HubRefusal.Is(exception))
+        {
+            _connectionEventDispatcher.HandleSessionRefused(HubRefusal.IsSignedOut(exception));
+            throw;
+        }
+    }
 
     private async Task StartLiveConnectionAsync(CancellationToken cancellationToken)
     {
@@ -259,7 +272,7 @@ public sealed class ChatLiveConnection(
         // proxy instead (HubSessionRefused).
         if (HubRefusal.Is(exception))
         {
-            _connectionEventDispatcher.HandleSessionRefused();
+            _connectionEventDispatcher.HandleSessionRefused(HubRefusal.IsSignedOut(exception));
             return;
         }
 
@@ -282,10 +295,10 @@ public sealed class ChatLiveConnection(
                 return;
             }
 
-            if (attempt == Attempt.Refused)
+            if (attempt is Attempt.SignedOut or Attempt.NotLetIn)
             {
                 _connectionEventDispatcher.HandleClosed(null);
-                _connectionEventDispatcher.HandleSessionRefused();
+                _connectionEventDispatcher.HandleSessionRefused(attempt == Attempt.SignedOut);
                 return;
             }
 
@@ -307,7 +320,8 @@ public sealed class ChatLiveConnection(
     {
         Live,
         Failed,
-        Refused
+        SignedOut,
+        NotLetIn
     }
 
     private async Task<Attempt> TryBecomeLiveAsync()
@@ -323,7 +337,7 @@ public sealed class ChatLiveConnection(
         }
         catch (Exception exception) when (HubRefusal.Is(exception))
         {
-            return Attempt.Refused;
+            return HubRefusal.IsSignedOut(exception) ? Attempt.SignedOut : Attempt.NotLetIn;
         }
         catch
         {

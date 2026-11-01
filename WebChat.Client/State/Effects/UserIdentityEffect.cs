@@ -27,10 +27,22 @@ public sealed class UserIdentityEffect : IDisposable
         _loadRegistration = dispatcher.RegisterHandler<LoadSignedIn>(
             _ => LoadSignedInAsync().LogFaults(logger, nameof(LoadSignedIn)));
 
-        // The hub's session check refused the connection, and the page sits behind the same check:
-        // loaded again, it becomes the sign-in page, the disabled account's or the suspended
-        // household's notice, whichever the proxy now says.
-        _refusedRegistration = dispatcher.RegisterHandler<HubSessionRefused>(_ => _accounts.Reload());
+        // The hub's session check refused the connection. A reload would not say why — an installed
+        // app's service worker answers it with the cached client, and /accounts/me still names a
+        // suspended household's person — so the page goes to the accounts service: sign-in for a person
+        // signed out (a disabled one is told so there), an account page for a household no longer let
+        // in, which shows its notice before anything else.
+        _refusedRegistration = dispatcher.RegisterHandler<HubSessionRefused>(refused =>
+        {
+            if (refused.SignedOut)
+            {
+                _accounts.SendToSignIn();
+            }
+            else
+            {
+                _accounts.SendToNotice();
+            }
+        });
     }
 
     public async Task LoadSignedInAsync()

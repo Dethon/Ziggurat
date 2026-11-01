@@ -9,6 +9,7 @@ public interface IAccountService
 
     void SendToSignIn();
 
-    // A full load of this very page, so the proxy's session check says what it is now.
-    void Reload();
+    // A page of the accounts service, which the app's service worker passes to the network: for a
+    // household no longer let in it is that household's notice.
+    void SendToNotice();
 }
