@@ -36,6 +36,10 @@ public static class HouseholdConfigProtocol
     // then read on its own view for its key. Asked naming no household.
     public const string PeopleView = "people";
 
+    // Not a view: the agent saying OpenRouter refused a household's own key in a turn, asked as its
+    // own view is (the household named, the agent's token beside its credential) and answered 204.
+    public const string OpenRouterKeyRefused = "openrouter-key-refused";
+
     // Where a save is announced (a HouseholdConfigSaved, as JSON), so every reader drops what it
     // cached of that household. Pub/sub reaches only who is subscribed then: a reader's cache
     // lifetime is what bounds a missed one.
