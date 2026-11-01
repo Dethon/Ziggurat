@@ -62,6 +62,7 @@
                 <span role="columnheader">Members</span>
                 <span role="columnheader">Connected servers</span>
                 <span role="columnheader">Last seen</span>
+                <span role="columnheader">Status</span>
             </div>
             @foreach (var household in _state.Households)
             {
@@ -93,6 +94,26 @@
                     <span role="cell">@string.Join(", ", household.Members.Select(m => m.DisplayName))</span>
                     <span role="cell">@Servers(household)</span>
                     <span role="cell">@(household.LastSeenAt?.ToLocalTime().ToString("dd/MM HH:mm") ?? "never")</span>
+                    <span role="cell" class="status">
+                        @if (household.SuspendedAt is { } since)
+                        {
+                            <span class="suspended">suspended since @since.ToLocalTime().ToString("dd/MM HH:mm")</span>
+                            <button type="button" disabled="@_state.Busy"
+                                    aria-label="@($"Resume {household.Name}")"
+                                    @onclick="() => Effect.SetSuspensionAsync(household.Id, false)">Resume</button>
+                        }
+                        else
+                        {
+                            <span>running</span>
+                            @* The home is the operator's own: suspended, nothing would be left to resume it from. *@
+                            @if (!household.IsHome)
+                            {
+                                <button type="button" class="danger" disabled="@_state.Busy"
+                                        aria-label="@($"Suspend {household.Name}")"
+                                        @onclick="() => Effect.SetSuspensionAsync(household.Id, true)">Suspend</button>
+                            }
+                        }
+                    </span>
                 </div>
             }
             @if (_state.Loaded && _state.Households.Count == 0)
@@ -159,16 +180,19 @@
     .minted-link p { flex-basis: 100%; }
     .minted-link input { flex: 1; font-family: monospace; }
     .events-table { display: flex; flex-direction: column; gap: 2px; }
-    .table-header, .table-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 100px; gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; align-items: center; }
+    .table-header, .table-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1.4fr) minmax(0, 1.4fr) 100px minmax(0, 1.2fr); gap: 0.5rem; padding: 0.4rem 0.8rem; font-size: 0.82rem; align-items: center; }
     .table-header { background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-radius: 4px; text-transform: uppercase; font-size: 0.7rem; }
     .table-row { background: var(--bg-card); border-radius: 4px; }
     .owner { display: inline-flex; align-items: center; margin-right: 0.6rem; }
     .tag { font-size: 0.68rem; color: var(--accent-purple); margin-left: 0.3rem; }
+    .status { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+    .status .suspended { color: var(--accent-red); }
+    .households-page button.danger { background: rgba(248, 113, 113, 0.12); color: var(--accent-red); border-color: rgba(248, 113, 113, 0.3); }
     .no-data { color: var(--text-secondary); font-size: 0.85rem; }
 
     @@media (max-width: 768px) {
         .events-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-        .table-header, .table-row { font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 560px; }
+        .table-header, .table-row { font-size: 0.72rem; padding: 0.4rem 0.5rem; min-width: 680px; }
         .households-page input { min-width: 0; width: 100%; }
         .new-household label { flex-basis: 100%; }
     }

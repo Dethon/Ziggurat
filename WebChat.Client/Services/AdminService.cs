@@ -108,6 +108,17 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
         SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Spaces) { Content = JsonContent.Create(spaces) },
             SavedAsync<AdminSpaces>);
 
+    public Task<AdminAnswer<AdminServers>> GetServersAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Servers), async content =>
+            new AdminAnswer<AdminServers>.Answered((await content.ReadFromJsonAsync<AdminServers>())!));
+
+    public Task<AdminAnswer<MintedServerCredential>> AddServerAsync(ServerAddition addition) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.Servers) { Content = JsonContent.Create(addition) },
+            SavedAsync<MintedServerCredential>);
+
+    public Task<AdminAnswer<AdminServers>> RevokeServerCredentialAsync(string credentialId) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.RevokeServerCredential(credentialId)), SavedAsync<AdminServers>);
+
     private static async Task<AdminAnswer<T>.Answered> SavedAsync<T>(HttpContent content)
     {
         var saved = (await content.ReadFromJsonAsync<AdminSaved<T>>())!;

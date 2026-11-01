@@ -1,5 +1,7 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Tunnel;
 using Domain.Security;
@@ -82,6 +84,9 @@ public partial class DashboardAdminE2EFixture : E2EFixtureBase
             .WithEnvironment("SIGNING__PRIVATEKEY", TestSigningKeys.Accounts)
             .WithEnvironment("CALLERS__agent", AgentCredential)
             .WithEnvironment("AGENTURL", $"http://host.docker.internal:{agentPort}")
+            // Where a suspension is announced, as compose wires it: told to nobody, it would stand with a
+            // warning the page then shows.
+            .WithEnvironment("REDIS__CONNECTIONSTRING", $"redis:6379,password={RedisPassword}")
             .WithEnvironment("TZ", "Europe/Madrid")
             .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
@@ -155,6 +160,34 @@ public partial class DashboardAdminE2EFixture : E2EFixtureBase
     {
         var (userId, _) = Who(await AccountsAsync("create-user", "--name", name, "--role", role));
         return await CreatePageSignedInAsync((await AccountsAsync("mint-session", "--user", userId)).Trim());
+    }
+
+    // A session of an owner of a household the operator created, as they would hold after enrolling:
+    // found in the list the operator's page is answered (the page shows no ids), and minted by the
+    // accounts service's own command.
+    public async Task<string> OwnerSessionAsync(IPage operatorPage, string householdName)
+    {
+        var answer = await operatorPage.APIRequest.GetAsync($"{DashboardUrl}accounts/admin/operator/households",
+            new APIRequestContextOptions
+            {
+                Headers = new Dictionary<string, string> { [AdminProtocol.RequestHeader] = AdminProtocol.RequestHeaderValue }
+            });
+        var households = await answer.JsonAsync<List<HouseholdListEntry>>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var owner = households!.Single(h => h.Name == householdName).Owners.First();
+        return (await AccountsAsync("mint-session", "--user", owner.UserId)).Trim();
+    }
+
+    // A page of this host opened by a browser holding the session, as the browser is answered: one
+    // page is open at a time here (CreatePageAsync closes the last), so a second person is asked over
+    // HTTP while the operator's page stays open.
+    public async Task<(System.Net.HttpStatusCode Status, string Body)> OpenAsAsync(string session, string path = "")
+    {
+        using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false });
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{DashboardUrl}{path}");
+        request.Headers.Add("Cookie", $"ziggurat_session={session}");
+        request.Headers.Add("Accept", "text/html,application/xhtml+xml");
+        using var response = await http.SendAsync(request);
+        return (response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 
     // What the agent's relay will say is connected for a household from now on.

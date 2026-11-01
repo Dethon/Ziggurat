@@ -1,6 +1,7 @@
 using System.Net;
 using Accounts.Members;
 using Accounts.Sessions;
+using Domain.DTOs.Admin;
 using Domain.Security;
 using Domain.Security.Signing;
 using Shouldly;
@@ -195,5 +196,35 @@ public class SessionCheckTests
         var operatorCheck = await server.VerifyAsync(await server.MintSessionAsync(fran.UserId), role: "operator");
         operatorCheck.StatusCode.ShouldBe(HttpStatusCode.OK);
         operatorCheck.Headers.GetValues("X-Ziggurat-User").ShouldBe([fran.UserId]);
+    }
+
+    // A suspended household's people are signed in still — nothing was deleted — but let in nowhere,
+    // and told why: a page gets a notice rather than the sign-in it would only come back from, and
+    // an app's script a 403 it can tell apart from being signed out.
+    [Fact]
+    public async Task ASuspendedHouseholdsSession_GetsANoticeOnAPage_AndA403Elsewhere()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (casa, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var session = await server.MintSessionAsync(ana);
+        (await server.Admin(await server.MintSessionAsync(fran.UserId))
+            .PutAsync(AdminProtocol.Suspension(casa), new HouseholdSuspension(true))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var page = await server.VerifyAsync(session, uri: "/log", host: "sugary.example", channel: "sugary");
+        var hub = await server.VerifyAsync(session, uri: "/hubs/chat/negotiate", accept: "*/*");
+
+        page.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        page.Content.Headers.ContentType!.MediaType.ShouldBe("text/html");
+        (await page.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
+        hub.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await hub.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
+        foreach (var refused in new[] { page, hub })
+        {
+            refused.Headers.Contains(ForwardedAccount.AssertionHeader).ShouldBeFalse();
+            refused.Headers.Contains("X-Ziggurat-User").ShouldBeFalse();
+        }
+
+        (await server.VerifyAsync(await server.MintSessionAsync(fran.UserId))).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 }

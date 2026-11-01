@@ -31,8 +31,10 @@ public static class AdminApi
         HouseholdMembersAdmin.Map(household);
         HouseholdFeaturesAdmin.Map(household);
         HouseholdSpacesAdmin.Map(household);
+        HouseholdServersAdmin.Map(household);
         AdminLog.Map(household, deployment);
         HouseholdListAdmin.Map(deployment);
+        HouseholdSuspensionAdmin.Map(deployment);
     }
 
     // A route's path inside its group, from the one spelling in AdminProtocol.
