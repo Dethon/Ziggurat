@@ -293,8 +293,10 @@ stored one wherever the file says `{"sealed": true}` — so get, edit, set round
 keys. A sealed blob in a file is refused (it was sealed for elsewhere). Exit 2 for an unknown section
 or a document that is not one (each problem listed, never a value), 1 for a household that does not
 exist, secrets with no master, or readers not told. Saving `settings` also renames the tenant row.
-`--household home` names the home household, for a stack being set up that does not know its id yet
-(the smoke stack seeds the home's agents so, `scripts/smoke-stack.sh up`).
+`--household home` names the home household, for a stack being set up that does not know its id yet.
+The smoke stack does not seed by hand: `scripts/smoke-stack.sh up` runs the household migration as
+the deploy does (no keys), and the smoke tier checks what it made (`StackSmokeTests`: the home's
+agents by their seeded names, a reply's topic and usage under the home, a schedule moved into it).
 
 ## For the tickets that build on it
 
