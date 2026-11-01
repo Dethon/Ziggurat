@@ -2,16 +2,21 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Accounts.Links;
+using Accounts.Store;
 using Domain.DTOs;
 using Domain.DTOs.Admin;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.Tunnel;
 using Domain.Security;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Accounts;
+using Microsoft.EntityFrameworkCore;
 using Shouldly;
 using StackExchange.Redis;
 using Tests.Integration.Fixtures;
+using Role = Accounts.Store.Role;
 
 namespace Tests.Integration.Accounts;
 
@@ -23,11 +28,20 @@ namespace Tests.Integration.Accounts;
 public class HouseholdSuspensionAdminTests(RedisFixture redis) : IClassFixture<RedisFixture>
 {
     private const string AgentCredential = "agent-credential";
+    private const string TelegramCredential = "telegram-credential";
+    private const string VoiceCredential = "voice-credential";
+    private const long AnaTelegram = 5_550_201;
+    private const long LuisTelegram = 5_550_202;
 
     private Task<AccountsServer> StartAsync(bool withRedis = true) =>
         AccountsServer.StartAsync(s => s with
         {
-            Callers = new Dictionary<string, string> { ["agent"] = AgentCredential },
+            Callers = new Dictionary<string, string>
+            {
+                ["agent"] = AgentCredential,
+                ["mcp-channel-telegram"] = TelegramCredential,
+                ["mcp-channel-voice"] = VoiceCredential
+            },
             Redis = new() { ConnectionString = withRedis ? redis.ConnectionString : "" }
         });
 
@@ -120,6 +134,56 @@ public class HouseholdSuspensionAdminTests(RedisFixture redis) : IClassFixture<R
         refused.StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await refused.Content.ReadFromJsonAsync<TunnelCredentialRefused>())!.Reason.ShouldBe(TunnelCredentialRefusal.Suspended);
         (await GuestAsync(server, voice.Credential)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    // The channels' ways in answer a suspended household's people as suspended — neither as a person,
+    // whom a channel would vouch for, nor as nobody, whom Telegram would tell to ask for an invite — and
+    // spend nothing, so an invite still opens once the household is resumed.
+    [Fact]
+    public async Task ASuspendedHouseholdsPeople_AreAnsweredSuspendedByEveryWayIn_AndNothingIsSpent()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (casa, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var anasCode = await server.Service<LinkStore>().MintTelegramCodeAsync(casa, ana, CancellationToken.None);
+        (await TelegramAsync(server, "start", new { telegramId = AnaTelegram, code = anasCode.Code })).StatusCode
+            .ShouldBe(HttpStatusCode.OK);
+        var invite = await server.Service<LinkStore>().MintInviteAsync(casa, ana, "Luis", Role.Member, CancellationToken.None);
+        var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
+
+        await SuspendAsync(admin, casa, true);
+
+        var answers = new[]
+        {
+            await ResolveAsync(server, ChannelIds.Voice, ana, VoiceCredential),
+            await ResolveAsync(server, ChannelIds.Telegram, $"{AnaTelegram}", TelegramCredential),
+            await TelegramAsync(server, "start", new { telegramId = LuisTelegram, code = invite.Token }),
+            await TelegramAsync(server, "web-link", new { telegramId = AnaTelegram })
+        };
+        answers.ShouldAllBe(a => a.StatusCode == SuspendedHouseholdAnswer.Status);
+
+        await SuspendAsync(admin, casa, false);
+
+        (await ResolveAsync(server, ChannelIds.Voice, ana, VoiceCredential)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await TelegramAsync(server, "start", new { telegramId = LuisTelegram, code = invite.Token })).StatusCode
+            .ShouldBe(HttpStatusCode.OK);
+    }
+
+    // The admin API never suspends the home, whose guest a deployment satellite's unrecognised speaker
+    // is, and a household's own voice server is refused at its back-call while its household is
+    // suspended; but should either ever ask, no suspended household's guest is vouched for.
+    [Fact]
+    public async Task ASuspendedHouseholdsGuest_IsAnsweredSuspended()
+    {
+        await using var server = await StartAsync();
+        await server.MintOperatorAsync("Fran");
+        await using (var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync())
+        {
+            await db.Tenants.Where(t => t.IsHome)
+                .ExecuteUpdateAsync(t => t.SetProperty(x => x.SuspendedAt, server.Clock.GetUtcNow()));
+        }
+
+        (await GuestAsync(server, VoiceCredential)).StatusCode.ShouldBe(SuspendedHouseholdAnswer.Status);
     }
 
     // The relay closes the household's open tunnels when it hears of it, and every reader of its
@@ -228,6 +292,19 @@ public class HouseholdSuspensionAdminTests(RedisFixture redis) : IClassFixture<R
         {
             Content = JsonContent.Create(new { channel = "voice" })
         };
+        request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(credential));
+        return server.Client().SendAsync(request);
+    }
+
+    private static Task<HttpResponseMessage> ResolveAsync(AccountsServer server, string channel, string identity, string credential) =>
+        PostInternalAsync(server, "accounts/internal/resolve", new { channel, identity }, credential);
+
+    private static Task<HttpResponseMessage> TelegramAsync(AccountsServer server, string way, object body) =>
+        PostInternalAsync(server, $"accounts/internal/telegram/{way}", body, TelegramCredential);
+
+    private static Task<HttpResponseMessage> PostInternalAsync(AccountsServer server, string path, object body, string credential)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
         request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(credential));
         return server.Client().SendAsync(request);
     }

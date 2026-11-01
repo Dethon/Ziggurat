@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.Exceptions;
 using Domain.Security;
 
 namespace Infrastructure.Clients.Accounts;
@@ -12,7 +13,9 @@ namespace Infrastructure.Clients.Accounts;
 // bot the ways in it redeems. The service spells its requests and answers
 // for itself (it references no project here), so the wire shape is the records below and the
 // camelCase the web defaults give both ends. A refusal the service means is a status this maps to an
-// outcome; any other is a failure, thrown, so a caller never mistakes an outage for a stranger.
+// outcome — a suspended household's, SuspendedHouseholdAnswer, to HouseholdSuspendedException where the
+// answer is a person — and any other is a failure, thrown, so a caller never mistakes an outage for a
+// stranger.
 public sealed class AccountsResolverClient(HttpClient http, string credential)
     : IAccountResolver, ITelegramAccounts, ISessionAccounts
 {
@@ -30,6 +33,8 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
         {
             return null;
         }
+
+        ThrowIfSuspended(response);
 
         var answer = await ReadAsync<Answer>(response, ct);
         return new ResolvedAccount(new Account(answer.TenantId, answer.UserId), answer.DisplayName, answer.Assertion);
@@ -50,6 +55,7 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
     public async Task<ResolvedGuest> GuestAsync(string channel, CancellationToken ct)
     {
         using var response = await PostAsync(GuestPath, new GuestQuery(channel), ct);
+        ThrowIfSuspended(response);
         var guest = await ReadAsync<Guest>(response, ct);
         return new ResolvedGuest(guest.TenantId, guest.Assertion);
     }
@@ -63,6 +69,8 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
                 return new TelegramStart(TelegramStartOutcome.CodeRefused);
             case HttpStatusCode.Conflict:
                 return new TelegramStart(TelegramStartOutcome.TelegramTaken);
+            case SuspendedHouseholdAnswer.Status:
+                return new TelegramStart(TelegramStartOutcome.Suspended);
         }
 
         var started = await ReadAsync<Started>(response, ct);
@@ -80,6 +88,8 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
                 return new TelegramWebLink(TelegramWebLinkOutcome.NotLinked);
             case HttpStatusCode.Forbidden:
                 return new TelegramWebLink(TelegramWebLinkOutcome.Refused);
+            case SuspendedHouseholdAnswer.Status:
+                return new TelegramWebLink(TelegramWebLinkOutcome.Suspended);
         }
 
         var link = await ReadAsync<WebLink>(response, ct);
@@ -121,6 +131,15 @@ public sealed class AccountsResolverClient(HttpClient http, string credential)
         using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
         request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(credential));
         return await http.SendAsync(request, ct);
+    }
+
+    // An answer, and not a stranger's: the household is let in nowhere until it is resumed.
+    private static void ThrowIfSuspended(HttpResponseMessage response)
+    {
+        if (response.StatusCode == SuspendedHouseholdAnswer.Status)
+        {
+            throw new HouseholdSuspendedException();
+        }
     }
 
     private static async Task<T> ReadAsync<T>(HttpResponseMessage response, CancellationToken ct)
