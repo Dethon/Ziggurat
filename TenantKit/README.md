@@ -51,7 +51,7 @@ it is offline; nothing fails.
 
 2. **The rest of `.env`**: `DEPLOYMENT_HOST` (the deployment's main host — the hub, and where a login
    handoff's link points), `KIT_REDIS_PASSWORD`, `LOGINS__STATEKEY`, `Announce__Token`, the API keys
-   and tokens, and `PUID`/`PGID`/`RENDER_GID`/`LAN_BIND_ADDRESS`. Every line says what it is.
+   and tokens, and `PUID`/`PGID`/`RENDER_GID`/`LAN_BIND_ADDRESS`, and `PRINTER_URI` (the printer's IPP address on the LAN; the home's is `ipp://192.168.4.59:631/ipp/print`). Every line says what it is.
    `STT_MODEL` must be the deployment's: voice asks the deployment's Lemonade for that model.
 
 3. **Start it**, from the repository root (base-sdk first: every image builds from it, and `up
