@@ -255,6 +255,29 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         (await ReceiveAsync()).ShouldBeEmpty();
     }
 
+    // A conversation is kept for what was said in it. One whose first message was refused because its
+    // person was signed out or disabled since never held a message, and nobody can carry on in it as
+    // them: it is forgotten rather than left in the list empty. One that has held messages is kept.
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(4, false)]
+    public async Task ATurnRefusedAsSignedOut_ForgetsItsConversationOnlyIfItNeverHeldAMessage(long held, bool forgotten)
+    {
+        _sessionService.StartSession("topic-1", "jack", 7, 42, null);
+        _store.Setup(s => s.GetTopicAsync(Home, "jack", 7, "topic-1"))
+            .ReturnsAsync(new TopicMetadata("topic-1", 7, 42, "jack", "hello", DateTimeOffset.UnixEpoch, null)
+            {
+                MessageCount = held, OwnerId = Fran, TenantId = Home
+            });
+        var connection = await ConnectAsync(SignedIn(), out _);
+        await ReceiveAsync();
+        _accounts.Revoked.Add(Phone);
+
+        await ReadAllAsync(connection.StreamAsync<ChatStreamMessage>("SendMessage", "topic-1", "hello", null, null, null));
+
+        _store.Verify(s => s.DeleteTopicAsync(Home, "jack", 7, "topic-1"), forgotten ? Times.Once() : Times.Never());
+    }
+
     // An assertion that names no session is nobody's session to refresh: an assertion the session
     // check signed names its session, so one naming none did not come from a sign-in this connection
     // can keep being vouched for.

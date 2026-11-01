@@ -406,6 +406,7 @@ public sealed class ChatHub(
         if (vouching.Account is not { } vouched)
         {
             await AnswerUnvouchedAsync(topicId, conversationId, vouching.Refusal);
+            await ForgetIfNeverUsedAsync(session.AgentId, session.Identity.ChatId, topicId);
             await foreach (var unvouchedChunk in
                 subscription.ReadAllAsync(linkedToken).IgnoreCancellation(cancellationToken))
             {
@@ -592,6 +593,18 @@ public sealed class ChatHub(
 
     // The person a turn may carry, or what the browser is told instead.
     private sealed record Vouching(ResolvedAccount? Account, string Refusal);
+
+    // A conversation is kept for what was said in it. A first message refused because its person was
+    // signed out or disabled since leaves one that never held a message and that nobody can carry on in
+    // as them, so it is forgotten rather than left in the list empty. Its browser keeps showing the
+    // refusal it was just told; nobody else is told, since nothing was ever said there.
+    private async Task ForgetIfNeverUsedAsync(string agentId, long chatId, string topicId)
+    {
+        if (await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId) is { MessageCount: 0 })
+        {
+            await threadStore.DeleteTopicAsync(SignedIn.TenantId, agentId, chatId, topicId);
+        }
+    }
 
     private async Task AnswerUnvouchedAsync(string topicId, string conversationId, string refusal)
     {
