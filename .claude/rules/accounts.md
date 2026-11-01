@@ -51,9 +51,37 @@ The cookie is `ziggurat_session`: HttpOnly, Secure (always, since localhost coun
 
 ## The account and members pages
 
-`/accounts/account` (anyone signed in) edits the person's own display name and avatar (`POST /account/profile`, held to `People/Profile.Read`: a name of 1–200 characters, and an avatar that is empty — none — or an `http(s)` address or a path on the deployment's hosts starting with one `/`, with no whitespace, control character or `\`, since every app draws it as an image and a browser reads `//host` or `/\host` as somebody else's; `/accounts/me` and the session check read the row, and the chat hub learns the name on its next connection), lists the person's passkeys and devices, each revocable, adds a passkey (a registration for the signed-in person; no new session), mints a Telegram code on a button press rather than per view — only its hash is kept, so it is shown once — shown as `t.me/<Telegram:BotUsername>?start=<code>` or bare when no bot is named, shows `scripts/enroll-voice.sh <user id>`, and names who holds "sees all conversations", which everyone in the household may know. `/accounts/members` (owners; a member gets 403) lists the household with role, operator flag and the permission, mints invites and recovery links (shown in the POST's answer, the only time they exist in clear; an invite also as the bot's deep link, `TelegramSettings.DeepLink`, or as `/start <token>` with no bot named, for somebody who only uses Telegram), mints a group code ("Bind a Telegram group", shown once as `/bind <code>`), changes roles and grants or withdraws the permission. Every read and change is scoped to the viewer's household. The last owner cannot be demoted, checked inside the one `UPDATE` (`MemberStore.ChangeRoleAsync`) so two owners demoting each other cannot both pass. The members page mints no recovery link for the operator: their way back is the container command, and an owner who could mint one could take the dashboard.
+`/accounts/account` (anyone signed in) edits the person's own display name and avatar (`POST /account/profile`, held to `People/Profile.Read`: a name of 1–200 characters, and an avatar that is empty — none — or an `http(s)` address or a path on the deployment's hosts starting with one `/`, with no whitespace, control character or `\`, since every app draws it as an image and a browser reads `//host` or `/\host` as somebody else's; `/accounts/me` and the session check read the row, and the chat hub learns the name on its next connection), lists the person's passkeys and devices, each revocable, adds a passkey (a registration for the signed-in person; no new session), mints a Telegram code on a button press rather than per view — only its hash is kept, so it is shown once — shown as `t.me/<Telegram:BotUsername>?start=<code>` or bare when no bot is named, shows `scripts/enroll-voice.sh <user id>`, and names who holds "sees all conversations", which everyone in the household may know. `/accounts/members` (owners; a member gets 403) lists the household with role, operator flag and the permission, mints invites and recovery links (shown in the POST's answer, the only time they exist in clear; an invite also as the bot's deep link, `TelegramSettings.DeepLink`, or as `/start <token>` with no bot named, for somebody who only uses Telegram), mints a group code ("Bind a Telegram group", shown once as `/bind <code>`), changes roles and grants or withdraws the permission. Every read and change is scoped to the viewer's household. The last enabled owner cannot be demoted, checked inside the one `UPDATE` (`MemberStore.ChangeRoleAsync`) so two owners demoting each other cannot both pass; a disabled owner does not count. The members page mints no recovery link for the operator: their way back is the container command, and an owner who could mint one could take the dashboard.
 
 `/accounts/*` is not behind the proxy's session check — sign-in and enrollment open signed out — but for the admin API, `/accounts/admin/*`, which is, for a channel of its own, and believes only that check's assertion (`.claude/rules/admin.md`). So `PageGuard` reads `ziggurat_session` itself, sending a signed-out page to sign-in and back and a signed-out `/accounts/api` call a 401. Every POST, form or the add-passkey script's JSON, carries an ASP.NET antiforgery token (`RequestVerificationToken` header for the script): the Lax session cookie keeps cross-site forms out, but every host under the parent domain is the same site, and these forms decide who gets in. The antiforgery cookie, `ziggurat_antiforgery`, is host-only on `/accounts` and **not** Secure — TLS ends at the proxy, so no request here is https, and antiforgery throws rather than issue an always-secure cookie on a plain one. Data-protection keys live beside the database (`keys/` in the volume), so a restart leaves open forms valid. A form that changed something answers 303 back to its page. The pages' CSP allows `form-action 'self'`.
+
+## Disabled members
+
+An owner disables a member through the admin API (`.claude/rules/admin.md`, "Members"): `User.DisabledAt`
+set and every session they hold revoked, in one transaction (`MemberStore.DisableAsync`). Nothing else is
+deleted or spent — their passkeys, linked Telegram, voice profile, open links, memories, topics and log
+stay — because every store that vouches for a person refuses a disabled one itself, so re-enabling is
+clearing the column:
+
+- **Sessions** (`SessionStore`): none issued (`IssueAsync` — sign-in, enrollment and `mint-session`
+  alike), and `VerifyAsync`/`LiveAsync` answer nobody, so the session check (and the admin gate behind
+  it), `/accounts/me` and the chat hub's per-turn refresh refuse them even for a session that raced the
+  revocation. A re-enabled member's old sessions stay revoked.
+- **Links** (`LinkStore.FindOpenAsync`): a link naming a disabled person — recovery, a Telegram link code
+  — opens nothing (the enrollment page is 410); one still in date opens again once they are re-enabled.
+  Invites and group codes name nobody yet and are unaffected.
+- **Channel identities**: `resolve` answers 404 for them on every channel (voice falls to the household's
+  guest, Telegram to a stranger), and the Telegram calls that find a person by their Telegram
+  (`TelegramLinks.PersonAsync`: `web-link`; `TelegramIdOfAsync`: `of-account`) find nobody.
+- **The agent** is told through its view: `AgentHouseholdConfig.DisabledPeople`, announced as
+  `HouseholdConfigProtocol.PeopleChanged` on every change, so it refuses their turns and acts for nobody
+  on their delegations at once (`.claude/rules/service-identity.md`, "Disabled members"). That is what
+  covers Telegram's cache: the bot keeps the resolution that admitted a sender, assertion and all, for
+  `LinkCache:Linked` (5 minutes), and an assertion verifies for ten — so for up to five minutes the bot
+  still forwards a disabled member's messages, and the agent answers each with
+  `ConversationGroup.DisabledAnswer` rather than running it.
+- **The `people` view** (dreaming) still lists them: dreaming keeps their memories as it keeps anybody's,
+  on the household's key.
 
 ## The session check
 

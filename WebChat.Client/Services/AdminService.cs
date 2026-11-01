@@ -70,6 +70,34 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
     public Task<AdminAnswer<AdminAgents>> RestoreAgentVersionAsync(string agentId, string versionId) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.RestoreAgentVersion(agentId, versionId)), SavedAgentsAsync);
 
+    public Task<AdminAnswer<AdminMembers>> GetMembersAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Members), async content =>
+            new AdminAnswer<AdminMembers>.Answered((await content.ReadFromJsonAsync<AdminMembers>())!));
+
+    public Task<AdminAnswer<MemberLink>> InviteMemberAsync(MemberInvite invite) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.MemberInvites) { Content = JsonContent.Create(invite) },
+            SavedAsync<MemberLink>);
+
+    public Task<AdminAnswer<AdminMembers>> SaveMemberAsync(string userId, MemberEdit edit) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Member(userId)) { Content = JsonContent.Create(edit) },
+            SavedAsync<AdminMembers>);
+
+    // Body-less POSTs, as a restore is: the path says whom.
+    public Task<AdminAnswer<AdminMembers>> DisableMemberAsync(string userId) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.DisableMember(userId)), SavedAsync<AdminMembers>);
+
+    public Task<AdminAnswer<AdminMembers>> EnableMemberAsync(string userId) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.EnableMember(userId)), SavedAsync<AdminMembers>);
+
+    public Task<AdminAnswer<MemberLink>> MintMemberRecoveryAsync(string userId) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.MemberRecovery(userId)), SavedAsync<MemberLink>);
+
+    private static async Task<AdminAnswer<T>.Answered> SavedAsync<T>(HttpContent content)
+    {
+        var saved = (await content.ReadFromJsonAsync<AdminSaved<T>>())!;
+        return new AdminAnswer<T>.Answered(saved.Value, saved.Warning);
+    }
+
     private static async Task<AdminAnswer<AdminAgents>.Answered> SavedAgentsAsync(HttpContent content)
     {
         var saved = (await content.ReadFromJsonAsync<AdminSaved<AdminAgents>>())!;
