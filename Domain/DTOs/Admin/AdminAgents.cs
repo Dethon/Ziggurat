@@ -1,0 +1,42 @@
+using JetBrains.Annotations;
+
+namespace Domain.DTOs.Admin;
+
+// The household's agents as its owners manage them (.claude/rules/admin.md, "Agents"): of each, only
+// its name and custom instructions are the owner's; everything else is its template's or its seeded
+// definition's, so it is shown and never sent back. Answered as the household's turns run them — a
+// household that saved none has the two starting templates — beside the shipped templates an agent
+// can be added from and the longest custom instructions a save takes.
+[PublicAPI]
+public sealed record AdminAgents(
+    string? DefaultAgent,
+    IReadOnlyList<AdminAgent> Agents,
+    IReadOnlyList<AdminAgentTemplate> Templates,
+    int InstructionsLength);
+
+// Template is the shipped template it was made from, or null for a definition seeded for the
+// household (the home's own agents). Model is shown, never edited.
+[PublicAPI]
+public sealed record AdminAgent(
+    string Id, string Name, string? CustomInstructions, string? Template, string? Description, string Model)
+{
+    public const int NameLength = 100;
+}
+
+[PublicAPI]
+public sealed record AdminAgentTemplate(string Name, string AgentName, string? Description);
+
+// What an owner sends to change an agent: its name and its custom instructions, both whole. Nothing
+// else about an agent is theirs to send.
+[PublicAPI]
+public sealed record AgentEdit(string Name, string? CustomInstructions);
+
+// An agent added from a shipped template, under the name the owner gives it.
+[PublicAPI]
+public sealed record AgentAddition(string Template, string Name);
+
+// One of an agent's earlier versions: the name and instructions it had before a change replaced them,
+// when that change was made and by whom.
+[PublicAPI]
+public sealed record AdminAgentVersion(
+    string Id, string Name, string? CustomInstructions, DateTimeOffset ReplacedAt, string ReplacedBy);

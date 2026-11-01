@@ -107,9 +107,9 @@ public class MemoryRecallHook(
             // the scope publishes on disposal, so opening it earlier would report a recall latency
             // for a recall that never happened. The guard is a string emptiness check, so nothing
             // measurable moves.
-            var agentName = agentId is not null ? agent?.Name ?? agentId : null;
+            // Keyed by the agent's id, which a household's rename leaves alone, as its other figures are.
             using var latency = metrics.MeasureLatency(
-                LatencyStage.MemoryRecall, conversationId, agentName);
+                LatencyStage.MemoryRecall, conversationId, agentId);
 
             // Whether the user is remembered at all needs nothing from the thread, and both
             // are Redis round trips on the blocking path, so it is asked alongside the read
@@ -130,7 +130,7 @@ public class MemoryRecallHook(
                 : Task.FromResult<PersonalityProfile?>(null);
 
             var memories = await SearchMemoriesAsync(
-                metrics, userId, messageText, persisted, hasMemoriesTask, conversationId, agentName, ct);
+                metrics, userId, messageText, persisted, hasMemoriesTask, conversationId, agentId, ct);
             var profile = await profileTask;
 
             if (memories.Count > 0 || profile is not null)
@@ -174,7 +174,8 @@ public class MemoryRecallHook(
                 MemoryCount = memories.Count,
                 UserId = userId,
                 ConversationId = conversationId,
-                AgentId = agentName
+                AgentId = agentId,
+                AgentName = agentId is null ? null : agent?.Name
             });
         }
         catch (Exception ex)
@@ -196,7 +197,7 @@ public class MemoryRecallHook(
         ChatMessage[]? persisted,
         Task<bool> hasMemoriesTask,
         string? conversationId,
-        string? agentName,
+        string? agentId,
         CancellationToken ct)
     {
         // An unremembered user — one with no stored memory entries — pays neither an
@@ -215,7 +216,7 @@ public class MemoryRecallHook(
         // difference between the stage and what storage is known to cost. The scope
         // publishes on disposal, so a failed call is measured too.
         float[]? embedding;
-        using (metrics.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentName))
+        using (metrics.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentId))
         {
             embedding = await EmbedAsync(metrics, embeddingInput, userId, ct);
         }

@@ -3158,6 +3158,116 @@ select:focus:not(:focus-visible) {
     cursor: default;
 }
 
+.admin-field textarea,
+.admin-field select {
+    font: inherit;
+    padding: 0.625rem 0.75rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    min-width: 0;
+}
+
+.admin-field textarea {
+    resize: vertical;
+}
+
+.admin-field textarea:focus,
+.admin-field select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.admin-agent,
+.admin-agent-add {
+    margin-top: 1.5rem;
+    padding: 1.25rem;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.admin-agent-header h2,
+.admin-agent-add h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 1.2rem;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.admin-agent-header {
+    margin-bottom: 1rem;
+}
+
+.admin-agent-meta {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.admin-actions {
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.admin-secondary {
+    font: inherit;
+    padding: 0.625rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.admin-secondary:hover:not(:disabled) {
+    border-color: var(--accent);
+}
+
+.admin-secondary:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.admin-confirm,
+.admin-versions {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.admin-confirm p {
+    margin: 0 0 0.75rem;
+}
+
+.admin-versions ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.admin-version {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.admin-version > div {
+    min-width: 0;
+}
+
+.admin-version-instructions {
+    margin: 0.25rem 0 0;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .admin-notice {
     padding: 0.75rem 1rem;
     border-radius: 10px;

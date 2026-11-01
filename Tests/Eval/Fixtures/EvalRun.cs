@@ -44,13 +44,13 @@ public static class EvalRun
 
         // Named so the recording can tell this agent's calls from a real worker's: both are built
         // by the one factory and heard by the one observer. Both of its names — the one its
-        // metrics carry and the one its session does, which is the display name the factory
-        // composes from the definition's name and the conversation.
+        // metrics carry, which is its id, and the one its session does, which is the display name
+        // the factory composes from the definition's name and the conversation.
         var recording = new Recording
         {
             Parent = ShippedDefinition.Repository.Settings.Agents
                 .Where(agent => agent.Id == scenario.AgentId)
-                .SelectMany(agent => new[] { agent.Name, $"{agent.Name}-{conversationId}" })
+                .SelectMany(agent => new[] { agent.Id, $"{agent.Name}-{conversationId}" })
                 .ToList()
         };
         await using var stack = await EvalStack.StartAsync(

@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Http.Json;
 using Accounts.Passkeys;
 using Accounts.Sessions;
+using Domain.DTOs.Admin;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -51,6 +53,28 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         again!.Status.ShouldBe((int)HttpStatusCode.Gone);
         (await page.ContentAsync()).ShouldContain("can no longer be used");
         (await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = CreateButton }).CountAsync()).ShouldBe(0);
+    }
+
+    // The operator's household list hands back the new household's owner link; the passkey it
+    // enrolls signs its owner into that household, not the operator's.
+    [Fact]
+    public async Task ANewHouseholdsOwnerLink_EnrollsItsOwnerIntoThatHousehold()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var created = await server.Admin(await server.MintSessionAsync(fran.UserId))
+            .PostAsync(AdminProtocol.Households, new NewHousehold("Casa", "Ana"));
+        var link = (await created.Content.ReadFromJsonAsync<AdminSaved<OwnerLink>>())!.Value;
+        var (context, page) = await DeviceAsync();
+
+        await EnrollAsync(server, page, new AccountsServer.MintedLink(link.UserId, link.HouseholdId, new Uri(link.Url)));
+
+        var check = await server.VerifyAsync(await SessionOfAsync(context));
+        check.StatusCode.ShouldBe(HttpStatusCode.OK);
+        check.Headers.GetValues("X-Ziggurat-User").ShouldBe([link.UserId]);
+        check.Headers.GetValues("X-Ziggurat-Tenant").ShouldBe([link.HouseholdId]);
+        link.HouseholdId.ShouldNotBe(fran.TenantId);
+        check.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["owner"]);
     }
 
     [Fact]

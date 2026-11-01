@@ -107,7 +107,7 @@ public sealed class MultiAgentFactory(
     private DisposableAgent Build(AgentSpec spec, IToolApprovalHandler approvalHandler)
     {
         IMetricsPublisher agentPublisher = metricsPublisher is not null
-            ? new AgentMetricsPublisher(metricsPublisher, spec.MetricsAgentId, spec.TenantId)
+            ? new AgentMetricsPublisher(metricsPublisher, spec.AgentId, spec.MetricsAgentName, spec.TenantId)
             : NoOpMetricsPublisher.Instance;
 
         var chatClient = CreateChatClient(
@@ -158,7 +158,7 @@ public sealed class MultiAgentFactory(
             // before the screen existed. A worker gets it by this same line, screened on its
             // delegation prompt.
             serviceProvider?.GetService<IExecScreen>(),
-            spec.MetricsAgentId,
+            spec.AgentId,
             spec.Payer);
 
         return new McpAgent(

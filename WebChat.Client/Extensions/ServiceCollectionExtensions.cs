@@ -60,6 +60,8 @@ public static class ServiceCollectionExtensions
             services.AddScoped<HouseholdKeysStore>();
             services.AddScoped<HouseholdKeysEffect>();
             services.AddScoped<OnboardingEffect>();
+            services.AddScoped<HouseholdAgentsStore>();
+            services.AddScoped<HouseholdAgentsEffect>();
 
             return services;
         }

@@ -10,9 +10,11 @@ paths:
   - "WebChat.Client/Components/Admin/**"
   - "WebChat.Client/State/Admin/**"
   - "WebChat.Client/State/Effects/HouseholdSettingsEffect.cs"
+  - "WebChat.Client/State/Effects/HouseholdAgentsEffect.cs"
   - "WebChat.Client/Services/AdminService.cs"
   - "WebChat.Client/Contracts/IAdminService.cs"
   - "Tests/Integration/Accounts/AdminApiTests.cs"
+  - "Tests/Integration/Accounts/HouseholdAgentsAdminTests.cs"
   - "Tests/E2E/WebChat/HouseholdAdminE2ETests.cs"
   - "Accounts/Keys/**"
   - "WebChat.Client/State/Effects/HouseholdKeysEffect.cs"
@@ -22,6 +24,14 @@ paths:
   - "Tests/Integration/Accounts/KeysAdminTests.cs"
   - "Tests/Integration/Fixtures/FakeKeyProviders.cs"
   - "Tests/E2E/WebChat/HouseholdKeysE2ETests.cs"
+  - "Accounts/Tunnels/ConnectedServersClient.cs"
+  - "Dashboard.Client/Pages/Households.razor"
+  - "Dashboard.Client/State/Households/**"
+  - "Dashboard.Client/Effects/HouseholdsEffect.cs"
+  - "Dashboard.Client/Services/HouseholdsAdminService.cs"
+  - "Tests/Integration/Accounts/HouseholdListAdminTests.cs"
+  - "Tests/E2E/Dashboard/HouseholdListE2ETests.cs"
+  - "Tests/E2E/Fixtures/DashboardAdminE2EFixture.cs"
 ---
 
 # The admin API and the admin area
@@ -45,9 +55,10 @@ clients read. Two roots, and nothing else under `/accounts/admin`:
 The operator is also an owner of the home household and manages the home through the household
 routes like any owner. Today's routes: `GET`/`PUT /household/settings` (`HouseholdSettings`),
 `GET /household/keys` (`HouseholdKeys`) and `PUT /household/keys/openrouter` (`OpenRouterKey`),
-`/household/keys/idealista` (`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`),
-`GET /household/changes?limit=` (the household's change log) and `GET /operator/changes?household=&limit=`
-(every household's, or one's). A route is mapped in `AdminApi.Map` into one of the two groups, with its
+`/household/keys/idealista` (`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`) ("Keys and probes"),
+`GET /household/changes?limit=` (the household's change log), the agents routes (below), `GET /operator/changes?household=&limit=`
+(every household's, or one's), and the household list's (below): `GET`/`POST /operator/households` and
+`POST /operator/households/{householdId}/owners/{userId}/recovery`. A route is mapped in `AdminApi.Map` into one of the two groups, with its
 path inside the group from `AdminApi.Under(root, AdminProtocol.X)`, and reads its caller as a bound
 `AdminCaller` parameter (never null: the gate answered first).
 
@@ -162,6 +173,46 @@ provider was asked** (`Accounts/Keys/KeyProbes.cs`):
   admin area only — the area signs in too) and, when `needsOpenRouterKey`, enters `AdminArea.Keys` by a
   full load. The keys page says why there (`role="note"`).
 
+## Agents
+
+`HouseholdAgentsAdmin` over the agents section, and `AgentVersions` beside it (`Domain/DTOs/Admin/AdminAgents.cs`):
+`GET /household/agents` (`AdminAgents`: the default, each agent as `AdminAgent` — id, name, custom
+instructions, the template it was made from or none for a seeded definition, description and model shown,
+never edited — the shipped templates, and the instructions limit); `POST /household/agents`
+(`AgentAddition { template, name }`); `PUT`/`DELETE /household/agents/{agentId}` (`AgentEdit { name,
+customInstructions }`); `GET /household/agents/{agentId}/versions` (`AdminAgentVersion`, newest first) and
+`POST .../versions/{versionId}/restore`. Every change answers `AdminSaved<AdminAgents>`, the whole list.
+
+- **Only the name and the custom instructions are the owner's.** An edit carries those two and nothing
+  else binds (a model sent beside them is ignored). They live where the section says: a template entry's
+  `name`/`customInstructions`, a seeded definition's own `definition.name`/`definition.customInstructions`
+  (the home's jack, jonas, nabu and sugary) — so the home's agents are renamed like any other.
+- **Limits are the admin API's**, beyond the section's rules: a name 1–`AdminAgent.NameLength` (100)
+  characters, instructions at most `Admin:AgentInstructionsLength` (appsettings, 4000) — they are in every
+  turn's prompt. The operator's `set-household-config` is not held to them.
+- **A household that saved no agents** reads as the two starting templates (`HouseholdAgents.Effective`),
+  and its first change is made to those, so renaming jonas keeps sugary.
+- **An added agent** takes the template's id, or the first free `<template>-<n>`. A template this build
+  does not ship is refused.
+- **Removing** the default agent is refused ("answers by default, so it stays: rename it…") — nothing
+  else names which agent answers a message that names none — and so is removing the last agent, since a
+  section with none reads as the two starting templates again. A space's default agent or a Telegram bot
+  bound to a removed agent's id is not checked: the keys section is sealed, and an id freed by a removal
+  is the next one an addition of that template takes.
+- **Versions** are the name and instructions a change replaced (an edit's or a restore's, so a restore is
+  undone the same way), the last `Admin:AgentVersionsKept` (5) per agent, by whom and when, written after
+  the save stood and dropped with the agent. **A table, not the section**: no turn reads history, and the
+  section is what the agent is sent on every view, migrated by every step and rewritten whole by the
+  operator's command. That command writes no version.
+- Summaries name the agent's id and the fields changed ("Changed agent jonas's name, custom
+  instructions", "Added agent jonas-2 from the jonas template", "Restored a version of agent jonas",
+  "Removed agent jonas-2"), never a name or instructions.
+- **The page** is `/admin/agents` (`HouseholdAgentsPage`, `HouseholdAgentsStore`, `HouseholdAgentsEffect`):
+  one article per agent named by its saved name, its fields, its earlier versions on asking (each with
+  Restore), Remove behind a confirmation (not offered for the default or the last agent), and a form
+  adding one from a template. The E2E test adds its own agent to the home and removes it, never touching
+  the home's seeded ones.
+
 ## The proxy
 
 `DockerCompose/caddy/Caddyfile`'s main host routes `handle /accounts/admin/*` to `accounts:8080` behind
@@ -171,11 +222,46 @@ any non-empty channel, so `admin` needed no list. The other hosts that route `/a
 Sugary's) answer `/accounts/admin/*` with `respond 404`: nothing there calls it, and their `/accounts/*`
 would otherwise hand it on unchecked. `DeploymentConformanceTests.TheAdminApi_IsReachedThroughItsSessionCheckAlone`
 holds every host to either the checked route or no route to the accounts service; the E2E stack's own
-Caddyfile (`WebChatStack`) mirrors the main host's. **For 02**, the dashboard's host gains its own
-`handle /accounts/admin/*` with a `forward_auth` for `channel=admin` inside it (the host-level
-`role=operator&channel=dashboard` check runs first; the inner one's `copy_headers` sets the admin
-assertion over it), proxied to `accounts:8080`, and the conformance test's main-host expectation widens
-to it.
+Caddyfile (`WebChatStack`) mirrors the main host's. The **dashboard's host** routes the operator's routes
+alone, `handle /accounts/admin/operator/*`, with a `forward_auth` for `channel=admin` inside it (the
+host-level `role=operator&channel=dashboard` check runs first; the inner one's `copy_headers` sets the
+admin assertion over the dashboard's), proxied to `accounts:8080`, after its own `/accounts/internal/*`
+refusal; the owners' routes there fall to the dashboard and are refused. `DashboardAdminE2EFixture`
+mirrors that host.
+
+## The household list (dashboard)
+
+The operator's households, from the dashboard (`HouseholdListAdmin`, `/households` in `Dashboard.Client`):
+
+- **`GET /operator/households`** answers every household as a `HouseholdListEntry`, the home first: its
+  owners and members (`HouseholdPerson`, the operator flagged), its **connected servers** and its
+  **last seen**. The servers are the agent's relay's, which lives in the agent's serving process alone:
+  `ConnectedServersClient` asks the agent's own listing (`GET {AgentUrl}/internal/tunnels/{householdId}`,
+  `ConnectedServers.Path`, the one `list-household-servers` reads) with `CALLERS__agent` as its bearer —
+  the credential the agent presents here, which compose feeds the agent API's own secret, so no secret
+  exists for this (`DeploymentConformanceTests.TheAccountsService_AsksTheAgentsRelayWithTheAgentApisSecret`).
+  An agent not configured, down, refusing or slower than `AgentListingTimeout` (appsettings, 15 s: the
+  relay asks each server for its tools for up to ten) leaves that household's servers **null**, shown as
+  unknown, never a failed list. Owners' pages (07) read the same client. **Last seen** is the latest
+  `Session.LastSeenAt` of any of the household's sessions — the session check's own record, at its
+  five-minute grain — so a person who only uses Telegram or voice never moves it; what a household spends
+  is the usage view's (08), read from the metrics, which this service never reads.
+- **`POST /operator/households`** `NewHousehold { name, ownerName }` creates the household (`Tenant`), its
+  one owner (a `User` with no passkey yet) and the owner's `LinkKind.Recovery` link in one `SaveChanges`
+  (`LinkStore.CreateHouseholdAsync`), answered `AdminSaved<OwnerLink>`; the name is held to the settings'
+  length and the owner's to `Profile.Read`, refused 400 in those words with nothing written. A recovery
+  rather than an invite, so the owner is listed (and recoverable) before the link is used. **Nothing of
+  its configuration is written**: a section it never saved reads as its defaults — its name from the
+  tenant row, the one default space, the default features — and a section naming no agent is the two
+  templates (`HouseholdAgents.Starting`), so its first turn has agents.
+- **`POST /operator/households/{householdId}/owners/{userId}/recovery`** mints a recovery link for an
+  owner of any household, answered `AdminSaved<OwnerLink>`: 404 for nobody of that id in that household,
+  400 for a member (their owners mint theirs) or the operator (their way back is their account page or the
+  container command: a stolen dashboard session must not become a passkey).
+- Both mints are recorded on the household they are for, the link never in the summary. A link is in
+  the answer alone; the page holds it in its state until "Done" or the page is left, and never asks again.
+- **09 adds suspension here**: its routes under `/operator/households/{householdId}/…`, its state as a
+  field of `HouseholdListEntry`, and its button in the list's row.
 
 ## The admin area (chat client)
 
@@ -220,3 +306,14 @@ stub rejects, and shows the landing by answering the page's keys read as a keyle
 be answered (`page.RouteAsync`); the E2E stack has no master key, so nothing there can save a key.
 Seam 1 for keys is `KeysAdminTests` against `FakeKeyProviders`; the turn side of a refused key is
 `MultiAgentFactoryHouseholdTests` (`FakeOpenRouter.Refuse`).
+
+The household list's seam 1 is `HouseholdListAdminTests`: `AccountsServer.Admin(session).PostAsync`, a
+person of another household by `SeedPersonAsync(household, name, role)`, and the agent's listing as a
+Kestrel stub behind the shared secret (`AccountsSettings.AgentUrl` at it, `Callers["agent"]` the
+secret). The owner's link enrolling a passkey into the new household is a ceremony
+(`PasskeyCeremoniesTests`). Seam 3 is `HouseholdListE2ETests` on `DashboardAdminE2EFixture` (collection
+`DashboardAdminE2E`): accounts, observability and a Caddy mirroring the dashboard's host, the operator
+signed in by `mint-link --operator` and `mint-session` (`CreateOperatorPageAsync`, which also answers
+the home's id), anybody else by `CreatePersonPageAsync(name, role)`, and the relay's listing a stub
+whose servers a test sets with `Connect(householdId, server)`. Its stack is its own, so a test may
+create, change and suspend households freely; the fixture is the one 08 and 09 extend.
