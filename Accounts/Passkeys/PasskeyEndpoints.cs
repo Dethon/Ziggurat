@@ -14,6 +14,9 @@ public static class PasskeyEndpoints
     public const string RefusedLink = "This link can no longer be used.";
     public const string UnknownPasskey = "That passkey is not recognised here.";
 
+    public const string DisabledAccount =
+        "Your account is disabled, so it cannot sign in. Ask an owner of your household to re-enable it.";
+
     public sealed record EnrollmentOptionsRequest(string Token);
 
     public sealed record EnrollmentRequest(string Ceremony, AuthenticatorAttestationRawResponse Credential);
@@ -78,15 +81,17 @@ public static class PasskeyEndpoints
             SignInRequest request, HttpContext http, PasskeyCeremonies ceremonies, AccountsSettings settings,
             CancellationToken ct) =>
         {
-            var session = await ceremonies.FinishSignInAsync(
-                request.Ceremony, request.Credential, http.Request.Headers.UserAgent.ToString(), ct);
-            if (session is null)
+            switch (await ceremonies.FinishSignInAsync(
+                        request.Ceremony, request.Credential, http.Request.Headers.UserAgent.ToString(), ct))
             {
-                return Refused(StatusCodes.Status401Unauthorized, UnknownPasskey);
+                case SignInOutcome.SignedIn(var session):
+                    SessionCookie.Write(http.Response, settings, session.Token);
+                    return Results.Json(new { redirect = ReturnUrls.Resolve(settings, request.ReturnUrl) });
+                case SignInOutcome.Disabled:
+                    return Refused(StatusCodes.Status403Forbidden, DisabledAccount);
+                default:
+                    return Refused(StatusCodes.Status401Unauthorized, UnknownPasskey);
             }
-
-            SessionCookie.Write(http.Response, settings, session.Token);
-            return Results.Json(new { redirect = ReturnUrls.Resolve(settings, request.ReturnUrl) });
         });
     }
 
