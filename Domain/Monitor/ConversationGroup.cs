@@ -465,7 +465,7 @@ internal sealed class ConversationGroup(
         {
             case FireAdmission.Delegated { Identity: var identity }:
                 return new AdmittedTurn(channel,
-                    framed with { Principal = new Principal(identity.ChannelId, identity.Subject, identity.Account) },
+                    framed with { Principal = identity.Principal },
                     identity);
             case FireAdmission.Undelegated { Refusal: { } reason }:
                 logger.LogWarning(
