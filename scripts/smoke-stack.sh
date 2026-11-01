@@ -58,8 +58,11 @@ HOUSEHOLD_CONFIG_MASTER_KEY="$( [[ -s "$MASTER_KEY" ]] && cat "$MASTER_KEY" || t
 export HOUSEHOLD_CONFIG_MASTER_KEY
 
 # The kit, as its own project: the tracked TenantKit/.env is read for everything left out here, and
-# what is exported here wins over its empty placeholders.
-KIT=(docker compose -f TenantKit/docker-compose.yml -f TenantKit/docker-compose.override.smoke.yml
+# what is exported here wins over its empty placeholders. Its servers run as whoever runs this, who
+# makes their folders below (the vault, the media, the sandbox's): left to the kit's default user they
+# could read those folders and write nothing, as a deployment whose .env names no PUID would.
+KIT=(env PUID="$(id -u)" PGID="$(id -g)"
+     docker compose -f TenantKit/docker-compose.yml -f TenantKit/docker-compose.override.smoke.yml
      -p tenant-kit-smoke)
 [[ -e /dev/dri ]] || KIT+=(-f TenantKit/docker-compose.override.no-dri.yml)
 KIT_SERVERS=(websearch vault library sandbox printer)
