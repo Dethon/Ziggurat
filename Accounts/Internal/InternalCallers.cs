@@ -67,7 +67,7 @@ public static class InternalCallers
         [Agent] = [HouseholdConfigProtocol.AgentView, HouseholdConfigProtocol.PeopleView, HouseholdConfigProtocol.OpenRouterKeyRefused],
         [Idealista] = [HouseholdConfigProtocol.IdealistaView],
         [Scheduling] = [HouseholdConfigProtocol.SettingsView, HouseholdConfigProtocol.AgentNamesView],
-        [Sugary] = [HouseholdConfigProtocol.SettingsView],
+        [Sugary] = [HouseholdConfigProtocol.SettingsView, HouseholdConfigProtocol.AgentNamesView],
         [SignalR] = [HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AgentNamesView],
         [Telegram] = [HouseholdConfigProtocol.TelegramBotsView, HouseholdConfigProtocol.AgentNamesView]
     };

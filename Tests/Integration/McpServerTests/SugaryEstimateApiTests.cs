@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Prompts;
 using Domain.Tools.Sugary.Estimation;
@@ -400,6 +401,7 @@ public class SugaryEstimateApiTests
         await using var server = await SugaryServer.StartAsync();
         var agent = await server.AgentAsync();
         await agent.RegisterAgentsAsync([Sugary("text/only", accepts: [])], CancellationToken.None);
+        server.HouseholdAgents.Add(new HouseholdAgentName("sugary", "Sugary", Model: "text/only"));
         var app = await server.SignedInAsync();
 
         var refused = await app.PostAsync("/api/estimates", Form("paella", photos: [Photo(1, 10)]));
@@ -416,6 +418,28 @@ public class SugaryEstimateApiTests
         turn.Attachments.ShouldBeNull();
         await ReplyAsync(agent, turn, Estimate);
         (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // The sugary agent is the person's household's, on the model it runs there: the catalogue the
+    // agent registered is the home's, whose sugary may see pictures while the household's does not.
+    [Fact]
+    public async Task APhotoForTheModelTheHouseholdsSugaryRuns_IsRefusedThoughTheHomesSugarySeesIt()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        await agent.RegisterAgentsAsync(
+            [Sugary("sees/pictures", accepts: [AttachmentKind.Image]) with
+            {
+                PatchableModels = [new PatchableModel("text/only", "Text", [])]
+            }],
+            CancellationToken.None);
+        server.HouseholdAgents.Add(new HouseholdAgentName("sugary", "Sugary", Model: "text/only"));
+        var app = await server.SignedInAsync();
+
+        var refused = await app.PostAsync("/api/estimates", Form("paella", photos: [Photo(1, 10)]));
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await DetailAsync(refused)).ShouldStartWith("text/only cannot read photos");
     }
 
     // The catalogue names every agent, and only the one the app's turns are routed to is asked about.
