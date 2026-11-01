@@ -14,6 +14,7 @@
     private string? _topicId;
     private bool _isStreaming;
     private AgentCatalogEntry? _selectedAgent;
+    private StoredTopic? _topic;
     private string? _carriedReasoning;
     private string? _carriedToolCalls;
     private ElementReference _messagesArea;
@@ -34,6 +35,11 @@
                 UpdateStreamingStatus();
                 UpdateStreamingContentSubscription();
             });
+
+        // The open topic, for who started it
+        Subscribe(TopicsStore.StateObservable,
+            state => state.Topics.FirstOrDefault(t => t.TopicId == state.SelectedTopicId),
+            topic => _topic = topic);
 
         // Subscribe to selected agent
         Subscribe(TopicsStore.StateObservable,
@@ -283,7 +289,9 @@
                          ShowAvatar="@ShouldShowAvatar(index)"
                          IsOwnMessage="@IsOwnMessage(message)"
                          ShowRetry="@(message.IsError && index == _messages.Count - 1 && !_isStreaming)"
-                         OnRetry="@HandleRetry" />
+                         OnRetry="@HandleRetry"
+                         TopicOwnerId="@_topic?.OwnerId"
+                         TopicOwnerName="@_topic?.OwnerName" />
         }
 
         @if (_isStreaming && !string.IsNullOrEmpty(_topicId))

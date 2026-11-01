@@ -11,6 +11,11 @@
     [Parameter] public bool ShowRetry { get; set; }
     [Parameter] public EventCallback OnRetry { get; set; }
 
+    // The topic's owner, by the name stamped when it began: who a message is drawn as when the reader
+    // is somebody else.
+    [Parameter] public string? TopicOwnerId { get; set; }
+    [Parameter] public string? TopicOwnerName { get; set; }
+
     private bool _showReasoning;
     private bool _showToolCalls;
     private bool _copied;
@@ -36,17 +41,8 @@
         return string.IsNullOrEmpty(content) ? "" : Markdown.ToHtml(content, MarkdownPipeline);
     }
 
-    private (string? AvatarUrl, string DisplayName) GetSenderInfo()
-    {
-        if (string.IsNullOrEmpty(Message.SenderId))
-            return (null, "Anonymous");
-
-        // The account names and draws its own person; anyone else in a shared topic is the id the
-        // hub stamped until the client can ask the accounts service about them too.
-        return UserIdentityStore.State.SignedIn is { } me && me.UserId == Message.SenderId
-            ? (me.AvatarUrl, me.DisplayName)
-            : (null, Message.SenderId);
-    }
+    private (string? AvatarUrl, string DisplayName) GetSenderInfo() =>
+        SenderLabel.Of(Message.SenderId, UserIdentityStore.State.SignedIn, TopicOwnerId, TopicOwnerName);
 
     private string GetMessageClass()
     {
