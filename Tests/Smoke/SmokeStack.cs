@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using Domain.DTOs.WebChat;
 using Tests.Unit.Deployment;
 
 namespace Tests.Smoke;
@@ -33,6 +35,9 @@ public sealed partial class SmokeStack : IAsyncLifetime
     public string OperatorSession { get; private set; } = "";
     public string MemberSession { get; private set; } = "";
 
+    // The member's display name, which their turns' model calls are counted as sent by.
+    public string MemberName { get; } = $"Smoke Member {Guid.NewGuid():N}"[..19];
+
     // The home household: the member is in it, and every kit server's credential was minted for it.
     public string Home { get; private set; } = "";
 
@@ -63,7 +68,7 @@ public sealed partial class SmokeStack : IAsyncLifetime
 
         var op = await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "mint-link", "--operator", "--name", "Smoke Operator");
         OperatorSession = await SessionOfAsync(UserIn(op));
-        var member = await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "create-user", "--name", $"Smoke Member {Guid.NewGuid():N}"[..19]);
+        var member = await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "create-user", "--name", MemberName);
         MemberSession = await SessionOfAsync(UserIn(member));
         Home = HouseholdIn(member);
     }
@@ -92,6 +97,20 @@ public sealed partial class SmokeStack : IAsyncLifetime
             .Matches(await DockerAsync("exec", "agent", "dotnet", "Agent.dll", "list-household-servers", "--household", Home))
             .Select(m => m.Groups["name"].Value)
     ];
+
+    // One command to the stack's Redis, as its own container's client asks (authenticated by the
+    // container's REDISCLI_AUTH), and its answer trimmed.
+    public async Task<string> RedisAsync(params string[] command) =>
+        (await DockerAsync(["exec", "redis", "redis-cli", "--no-auth-warning", .. command])).Trim();
+
+    // Every topic the thread store keeps for a household's agent, read off its household-keyed records.
+    public async Task<IReadOnlyList<TopicMetadata>> TopicsAsync(string household, string agentId)
+    {
+        var keys = (await RedisAsync("--scan", "--pattern", $"topic@{household}:{agentId}:*"))
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var records = await Task.WhenAll(keys.Select(key => RedisAsync("GET", key)));
+        return [.. records.Select(json => JsonSerializer.Deserialize<TopicMetadata>(json)!)];
+    }
 
     public static async Task<string> DockerAsync(params string[] args)
     {

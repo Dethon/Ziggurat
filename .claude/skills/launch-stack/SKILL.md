@@ -103,7 +103,7 @@ Each `<name>` is a person's `name` in the file. The run prints a passkey link fo
 
 ## The smoke stack
 
-`scripts/smoke-stack.sh up|test|down` runs the shipped compose file and Caddyfile on this machine as project `jackbot-smoke`, from empty state under `DockerCompose/volumes/smoke` (`docker-compose.override.smoke.yml`), with local secrets and Caddy on its own CA (`CADDY_TLS=internal`). It starts every shared server an agent dials but never Telegram, so a stale copy of the deployment's data cannot fire schedules or take the bot's updates; a household's own servers are the tenant kit's and are not started, so its turns go without them. `test` runs `Category=Smoke`, which reaches Caddy at 127.0.0.1 by the deployment's hostnames.
+`scripts/smoke-stack.sh up|test|down` runs the shipped compose file and Caddyfile on this machine as project `jackbot-smoke`, from empty state under `DockerCompose/volumes/smoke` (`docker-compose.override.smoke.yml`), with local secrets and Caddy on its own CA (`CADDY_TLS=internal`). It starts every shared server an agent dials but never Telegram, so a stale copy of the deployment's data cannot fire schedules or take the bot's updates; a household's own servers are the tenant kit's and are not started, so its turns go without them. `up` also runs the household migration as the deploy does (the operator first, one person in `volumes/smoke/household-migration/people.json`, no keys, then the agent's restart and `redelegate --yes`), so the home runs its seeded agents. `test` runs `Category=Smoke`, which reaches Caddy at 127.0.0.1 by the deployment's hostnames.
 
 ## Debugging with Playwright
 
