@@ -14,9 +14,28 @@ public static class TunnelApi
     // A household's connected servers, for the operator command run beside the agent. Under /internal,
     // which the proxy never routes, and behind the agent API's secret, which the command reads from the
     // same environment: what tools a household's machines offer is nobody else's to list.
-    public static void MapConnectedServers(this IEndpointRouteBuilder app, string sharedSecret) =>
-        app.MapGroup(ConnectedServers.Path)
-            .RequireSharedSecret(sharedSecret)
-            .MapGet("/{tenantId}", (string tenantId, TunnelListing listing, HttpContext http) =>
-                listing.ListAsync(tenantId, http.RequestAborted));
+    //
+    // Beside it, the home household's servers for the agent's key commands, which ask the servers
+    // named by their server name for the delegations they keep (Home Assistant's watches): which
+    // household is the home's, and the server's /mcp forwarded down its tunnel on the mcp tag — whose
+    // pool presents the tunnel credential, the command's own Authorization withheld. The home's alone:
+    // the commands name channel endpoints, which are the home's (.claude/rules/tunnel.md).
+    public static void MapConnectedServers(this IEndpointRouteBuilder app, string sharedSecret)
+    {
+        var group = app.MapGroup(ConnectedServers.Path).RequireSharedSecret(sharedSecret);
+        group.MapGet("/{tenantId}", (string tenantId, TunnelListing listing, HttpContext http) =>
+            listing.ListAsync(tenantId, http.RequestAborted));
+        group.MapGet(ConnectedServers.HomeRoute, (string serverName, TunnelRegistry registry) =>
+            registry.FindHome(serverName) is { } open
+                ? Results.Ok(new HomeServer(open.TenantId, open.ServerName))
+                : Results.NotFound());
+        group.Map(ConnectedServers.HomeMcpRoute, (string serverName, HttpContext http, TunnelForwarder forwarder) =>
+            forwarder.ForwardHomeAsync(http, serverName, TunnelProtocol.McpTag, "/mcp", ["Authorization"], OfflineAsync));
+    }
+
+    private static Task OfflineAsync(HttpContext http, string reason)
+    {
+        http.Response.StatusCode = StatusCodes.Status502BadGateway;
+        return http.Response.WriteAsync(reason);
+    }
 }

@@ -449,7 +449,9 @@ household out of an undelegated one, which then runs as nobody as it could anywa
 **The commands** (`Agent/Commands/AgentCommand.cs`, System.CommandLine, detected in `Program` before
 anything builds and run instead of the agent): `rotate-signing-key` (a new key signs from the next
 call on; the agent and every server pick it up by themselves), `redelegate [--yes]` and
-`retire-signing-keys [--force]`. Both of the last dial every `ChannelEndpoint` as the agent does and
+`retire-signing-keys [--force]`. Both of the last dial every `ChannelEndpoint` as the agent does — a
+URL at its URL, a home server named by its server name through the running agent's relay
+(`CommandServers`, `.claude/rules/tunnel.md`) — and
 ask the servers that keep delegations through `delegations_list` / `delegations_replace`
 (`DelegationStoreTools`, `AddDelegationStore<T>`, over an `IDelegationStore`: the scheduling and
 Home Assistant servers; behind the call-token gate, signed as nobody, and stripped from every model's
