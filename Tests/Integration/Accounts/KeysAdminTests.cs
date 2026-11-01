@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using Accounts.Settings;
+using Domain.Contracts;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
+using Infrastructure.Clients.Accounts;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -15,6 +17,7 @@ namespace Tests.Integration.Accounts;
 public sealed class KeysAdminTests : IAsyncLifetime
 {
     private const string WorkingKey = "sk-or-v1-0123456789abcdef0123456789abcdef-work";
+    private const string AgentCredential = "agent-credential";
 
     private FakeKeyProviders _providers = null!;
 
@@ -247,6 +250,77 @@ public sealed class KeysAdminTests : IAsyncLifetime
         (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldContain("cannot be opened");
         (await admin.GetAsync(AdminProtocol.Keys)).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
+
+    // The agent says OpenRouter refused the household's key in a turn: it shows as rejected at once,
+    // and OpenRouter is asked again, whose answer stands — a key it refuses stays rejected.
+    [Fact]
+    public async Task AKeyTheAgentSaysFailedInATurn_ShowsAsRejected_AndIsAskedAboutAgain()
+    {
+        await using var server = await StartAsync(AdmittingTheAgent);
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        _providers.Accept(WorkingKey);
+        await admin.PutAsync(AdminProtocol.OpenRouterKey, new OpenRouterKey(WorkingKey));
+        _providers.Answer(WorkingKey, HttpStatusCode.Unauthorized);
+        server.Clock.Advance(TimeSpan.FromHours(1));
+
+        await AgentsReader(server).OpenRouterKeyRefusedAsync(household, CancellationToken.None);
+
+        var keys = (await (await admin.GetAsync(AdminProtocol.Keys)).Content.ReadFromJsonAsync<HouseholdKeys>())!;
+        keys.OpenRouter.ShouldBe(new KeyStatus(KeyState.Rejected, "work", server.Clock.GetUtcNow(), "OpenRouter refused it (401)"));
+        _providers.Asked.ShouldBe([WorkingKey, WorkingKey]);
+    }
+
+    // A refusal OpenRouter no longer gives — a key the owner topped up, a hiccup — is not left standing.
+    [Fact]
+    public async Task AKeyTheAgentSaysFailed_ThatOpenRouterTakesWhenAskedAgain_ShowsAsWorking()
+    {
+        await using var server = await StartAsync(AdmittingTheAgent);
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        _providers.Accept(WorkingKey);
+        await admin.PutAsync(AdminProtocol.OpenRouterKey, new OpenRouterKey(WorkingKey));
+
+        await AgentsReader(server).OpenRouterKeyRefusedAsync(household, CancellationToken.None);
+
+        (await (await admin.GetAsync(AdminProtocol.Keys)).Content.ReadFromJsonAsync<HouseholdKeys>())!.OpenRouter!.State
+            .ShouldBe(KeyState.Working);
+    }
+
+    // Only the agent says a key failed in use, with its own token beside its credential: anyone else
+    // asking would have every household's keys asked about at will.
+    [Fact]
+    public async Task OnlyTheAgent_SaysAKeyFailedInUse()
+    {
+        await using var server = await StartAsync(settings => settings with
+        {
+            Callers = new Dictionary<string, string> { ["agent"] = AgentCredential, ["mcp-sugary"] = "sugary-credential" }
+        });
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        _providers.Accept(WorkingKey);
+        await admin.PutAsync(AdminProtocol.OpenRouterKey, new OpenRouterKey(WorkingKey));
+        _providers.Answer(WorkingKey, HttpStatusCode.Unauthorized);
+
+        await Should.ThrowAsync<HttpRequestException>(() => Reader(server, "sugary-credential", withAgentToken: true)
+            .OpenRouterKeyRefusedAsync(household, CancellationToken.None));
+        await Should.ThrowAsync<HouseholdConfigRefusedException>(() => Reader(server, AgentCredential, withAgentToken: false)
+            .OpenRouterKeyRefusedAsync(household, CancellationToken.None));
+
+        (await (await admin.GetAsync(AdminProtocol.Keys)).Content.ReadFromJsonAsync<HouseholdKeys>())!.OpenRouter!.State
+            .ShouldBe(KeyState.Working);
+    }
+
+    private static AccountsSettings AdmittingTheAgent(AccountsSettings settings) =>
+        settings with { Callers = new Dictionary<string, string> { ["agent"] = AgentCredential } };
+
+    private static HouseholdConfigurationClient AgentsReader(AccountsServer server) =>
+        Reader(server, AgentCredential, withAgentToken: true);
+
+    private static HouseholdConfigurationClient Reader(AccountsServer server, string credential, bool withAgentToken) =>
+        new(server.Client(), credential,
+            withAgentToken ? HouseholdConfigurationClient.AgentToken(McpTestSecret.CallTokens) : () => "not-a-token",
+            redis: null, TimeProvider.System, TimeSpan.FromMinutes(1));
 
     private static async Task<IReadOnlyList<AdminChangeEntry>> ChangesAsync(AccountsServer.AdminClient admin) =>
         (await (await admin.GetAsync(AdminProtocol.HouseholdChanges)).Content.ReadFromJsonAsync<List<AdminChangeEntry>>())!;
