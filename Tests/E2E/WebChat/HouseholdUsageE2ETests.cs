@@ -22,9 +22,11 @@ public partial class HouseholdUsageE2ETests(WebChatE2EFixture fixture)
     {
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
-        var page = await fixture.CreatePageSignedInAsync(await OwnerSessionAsync($"Owner {Guid.NewGuid().ToString("N")[..4]}"));
+        // No service worker: a request it makes for the page is one page.RouteAsync never sees.
+        var page = await fixture.CreatePageSignedInAsync(
+            await OwnerSessionAsync($"Owner {Guid.NewGuid().ToString("N")[..4]}"), withoutServiceWorker: true);
         var asked = new List<string?>();
-        await page.RouteAsync(new Regex($"{Regex.Escape(AdminProtocol.Usage)}(\\?.*)?$"), async route =>
+        await page.RouteAsync(url => new Uri(url).AbsolutePath == AdminProtocol.Usage, async route =>
         {
             var month = new Uri(route.Request.Url).Query.TrimStart('?').Split('&')
                 .Select(p => p.Split('=')).Where(p => p[0] == "month").Select(p => p[1]).FirstOrDefault();
@@ -44,7 +46,8 @@ public partial class HouseholdUsageE2ETests(WebChatE2EFixture fixture)
             });
         });
 
-        await page.GotoAsync($"{fixture.WebChatUrl.TrimEnd('/')}/admin/usage");
+        // From the stack's root: the collection's own URL carries its space's slug.
+        await page.GotoAsync($"{fixture.DefaultSpaceUrl}admin/usage");
 
         var agents = page.GetByRole(AriaRole.Table, new PageGetByRoleOptions { Name = "Per agent" });
         await Assertions.Expect(agents.GetByRole(AriaRole.Row).Nth(1))
@@ -76,7 +79,7 @@ public partial class HouseholdUsageE2ETests(WebChatE2EFixture fixture)
 
         var page = await fixture.CreatePageSignedInAsync(await OwnerSessionAsync($"Owner {Guid.NewGuid().ToString("N")[..4]}"));
 
-        await page.GotoAsync($"{fixture.WebChatUrl.TrimEnd('/')}/admin/usage");
+        await page.GotoAsync($"{fixture.DefaultSpaceUrl}admin/usage");
 
         await Assertions.Expect(page.GetByRole(AriaRole.Alert))
             .ToContainTextAsync("could not be read", new LocatorAssertionsToContainTextOptions { Timeout = 60_000 });
