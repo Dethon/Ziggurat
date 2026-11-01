@@ -312,7 +312,7 @@ public sealed class ChatHub(
             holders.ToList().ForEach(RequireSees);
         }
 
-        return attachmentService.MintDownload(attachmentId, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+        return attachmentService.MintDownload(attachmentId, CurrentSpaceSlug ?? AttachmentService.SpaceDefault, SignedIn.UserId);
     }
 
     public async Task<bool> IsProcessing(string topicId)

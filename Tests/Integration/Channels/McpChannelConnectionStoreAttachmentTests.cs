@@ -55,7 +55,7 @@ public sealed class McpChannelConnectionStoreAttachmentTests : IDisposable
         var kept = await connection.StoreAttachmentAsync("11:22", _photo, [1, 2, 3], CancellationToken.None);
 
         kept.ShouldBeTrue();
-        _attachments.MintDownload(_photo.Id, "default").ShouldNotBeNull();
+        _attachments.MintDownload(_photo.Id, "default", "0123456789abcdef0123456789abcdef").ShouldNotBeNull();
         (await _attachments.ReadBytesAsync(_photo.Id, CancellationToken.None)).ShouldBe(new byte[] { 1, 2, 3 });
     }
 
@@ -76,7 +76,7 @@ public sealed class McpChannelConnectionStoreAttachmentTests : IDisposable
         var kept = await connection.StoreAttachmentAsync("-100200:-100200", photo, [1, 2, 3], CancellationToken.None);
 
         kept.ShouldBeTrue();
-        _attachments.MintDownload(photo.Id, "default").ShouldNotBeNull();
+        _attachments.MintDownload(photo.Id, "default", "0123456789abcdef0123456789abcdef").ShouldNotBeNull();
         (await _attachments.ReadBytesAsync(photo.Id, CancellationToken.None)).ShouldBe(new byte[] { 1, 2, 3 });
     }
 
@@ -111,9 +111,9 @@ public sealed class McpChannelConnectionStoreAttachmentTests : IDisposable
             "11:22", Clip("11-22/over", cap + 1), new byte[cap + 1], CancellationToken.None);
 
         atCap.ShouldBeTrue();
-        _attachments.MintDownload("11-22/clip", "default").ShouldNotBeNull();
+        _attachments.MintDownload("11-22/clip", "default", "0123456789abcdef0123456789abcdef").ShouldNotBeNull();
         over.ShouldBeFalse();
-        _attachments.MintDownload("11-22/over", "default").ShouldBeNull();
+        _attachments.MintDownload("11-22/over", "default", "0123456789abcdef0123456789abcdef").ShouldBeNull();
     }
 
     private static AttachmentReference Clip(string id, long size) => new()

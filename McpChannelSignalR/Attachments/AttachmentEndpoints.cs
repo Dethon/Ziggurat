@@ -1,4 +1,6 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
+using Domain.Security;
 using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,7 +14,7 @@ public static class AttachmentEndpoints
     public static void Map(IEndpointRouteBuilder app)
     {
         app.MapPost(AttachmentEndpointPaths.Attachments, UploadAsync).DisableAntiforgery();
-        app.MapGet($"{AttachmentEndpointPaths.Attachments}/{{conversation}}/{{attachment}}", Download);
+        app.MapGet($"{AttachmentEndpointPaths.Attachments}/{{conversation}}/{{attachment}}", DownloadAsync);
     }
 
     private static async Task<IResult> UploadAsync(
@@ -73,17 +75,33 @@ public static class AttachmentEndpoints
                 refusal.Message, statusCode: StatusCodes.Status415UnsupportedMediaType)
         };
 
-    private static IResult Download(
+    // The ticket names the person it was minted for, and only that person, as the proxy's session
+    // check signed them for the chat channel, gets the file: a copied link opens nothing for anyone else.
+    private static async Task<IResult> DownloadAsync(
+        HttpContext context,
         string conversation,
         string attachment,
         [FromQuery] string? ticket,
         AttachmentTickets tickets,
-        AttachmentStore store)
+        AttachmentStore store,
+        AssertionVerifier assertions)
     {
         var id = $"{conversation}/{attachment}";
-        if (!tickets.ResolvesDownload(ticket, id))
+        if (tickets.DownloaderOf(ticket, id) is not { } downloader)
         {
             return Results.Unauthorized();
+        }
+
+        var admission = await assertions.AdmitAsync(
+            context.Request.Headers, ChannelIds.SignalR, null, context.RequestAborted);
+        if (admission is not AppAdmission.Admitted { Person.UserId: var asker })
+        {
+            return Results.Unauthorized();
+        }
+
+        if (asker != downloader)
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
         // Ranges, because a <video> element asks for them to start playing and to seek; the ticket

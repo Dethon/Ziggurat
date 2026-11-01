@@ -37,7 +37,9 @@ public sealed class AttachmentTickets(AttachmentSettings settings, TimeProvider 
         public bool TryTakeSlot(int maximum) => Interlocked.Increment(ref _used) <= maximum;
     }
 
-    private sealed record DownloadScope(string AttachmentId, DateTimeOffset ExpiresAt);
+    // A download is the person's the hub checked could see the file, and no one else's: the ticket
+    // rides in a URL, which a page can be made to hand on.
+    private sealed record DownloadScope(string AttachmentId, string UserId, DateTimeOffset ExpiresAt);
 
     // No slot counter and no conversation: a dictation produces composer text, so it must not
     // spend one of a message's attachment slots or force a conversation into existence the way
@@ -56,12 +58,12 @@ public sealed class AttachmentTickets(AttachmentSettings settings, TimeProvider 
         return new UploadTicket(token, expiresAt);
     }
 
-    public DownloadTicket MintDownload(string attachmentId)
+    public DownloadTicket MintDownload(string attachmentId, string userId)
     {
         Prune();
         var token = NewToken();
         var expiresAt = timeProvider.GetUtcNow().AddSeconds(settings.TicketTtlSeconds);
-        _downloads[token] = new DownloadScope(attachmentId, expiresAt);
+        _downloads[token] = new DownloadScope(attachmentId, userId, expiresAt);
         return new DownloadTicket(token, expiresAt);
     }
 
@@ -99,14 +101,15 @@ public sealed class AttachmentTickets(AttachmentSettings settings, TimeProvider 
         return scope.ExpiresAt > timeProvider.GetUtcNow() && scope.SpaceSlug == spaceSlug ? scope : null;
     }
 
-    public bool ResolvesDownload(string? token, string attachmentId)
+    // The person a live ticket for this file was minted for, or null for no such ticket.
+    public string? DownloaderOf(string? token, string attachmentId)
     {
         if (string.IsNullOrWhiteSpace(token) || !_downloads.TryGetValue(token, out var scope))
         {
-            return false;
+            return null;
         }
 
-        return scope.ExpiresAt > timeProvider.GetUtcNow() && scope.AttachmentId == attachmentId;
+        return scope.ExpiresAt > timeProvider.GetUtcNow() && scope.AttachmentId == attachmentId ? scope.UserId : null;
     }
 
     private void Prune()

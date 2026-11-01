@@ -7,6 +7,7 @@ using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
+using Domain.Security;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -25,6 +26,8 @@ namespace Tests.Unit.McpChannelSignalR;
 public sealed class AttachmentEndpointTests : IAsyncLifetime
 {
     private const string TopicId = "topic-1";
+    private static readonly Account _ana = new("fedcba9876543210fedcba9876543210", "0123456789abcdef0123456789abcdef");
+    private static readonly Account _bob = new("fedcba9876543210fedcba9876543210", "abcdef0123456789abcdef0123456789");
     private static readonly ConversationIdentity _conversationId = new(7, 42);
 
     private readonly string _root = Path.Combine(
@@ -55,7 +58,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         builder.Services
             .AddSingleton(_settings)
             .AddSingleton(_tickets)
-            .AddSingleton(store);
+            .AddSingleton(store)
+            .AddSingleton(TestAssertions.Verifier());
 
         _app = builder.Build();
         AttachmentEndpoints.Map(_app);
@@ -110,8 +114,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var ticket = _tickets.MintUpload(TopicId, "jonas", _conversationId, "default");
         var reference = await UploadAndReadReferenceAsync(ticket.Token, payload, "scan.pdf", "application/pdf");
 
-        var download = _tickets.MintDownload(reference.Id);
-        var response = await _client.GetAsync($"/api/attachments/{reference.Id}?ticket={download.Token}");
+        var download = _tickets.MintDownload(reference.Id, _ana.UserId);
+        var response = await DownloadAsync($"/api/attachments/{reference.Id}?ticket={download.Token}", _ana);
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await response.Content.ReadAsByteArrayAsync()).ShouldBe(payload);
@@ -140,11 +144,10 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var payload = Enumerable.Range(0, 100).Select(i => (byte)i).ToArray();
         (await store.SaveCopyAsync("7-42/clip", new AgentKey(_conversationId.ConversationId), "default", "meal.mp4", "video/mp4",
             payload, CancellationToken.None)).ShouldBeTrue();
-        var download = _tickets.MintDownload("7-42/clip");
+        var download = _tickets.MintDownload("7-42/clip", _ana.UserId);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/attachments/7-42/clip?ticket={download.Token}");
-        request.Headers.Range = new RangeHeaderValue(10, 19);
-        var response = await _client.SendAsync(request);
+        var response = await DownloadAsync(
+            $"/api/attachments/7-42/clip?ticket={download.Token}", _ana, new RangeHeaderValue(10, 19));
 
         response.StatusCode.ShouldBe(HttpStatusCode.PartialContent);
         response.Content.Headers.ContentType?.MediaType.ShouldBe("video/mp4");
@@ -232,19 +235,49 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var reference = await UploadAndReadReferenceAsync(
             ticket.Token, "x"u8.ToArray(), "photo.png", "image/png");
 
-        var response = await _client.GetAsync($"/api/attachments/{reference.Id}");
+        var response = await DownloadAsync($"/api/attachments/{reference.Id}", _ana);
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    // A ticket is minted for the person the hub checked could see the file, and is theirs alone: a
+    // link copied out of one person's page opens nothing for anyone else, another household's
+    // operator included, and nothing for a request that names nobody.
+    [Fact]
+    public async Task ADownloadTicketPresentedBySomebodyElse_IsRefused()
+    {
+        var ticket = _tickets.MintUpload(TopicId, "jonas", _conversationId, "default");
+        var reference = await UploadAndReadReferenceAsync(ticket.Token, "x"u8.ToArray(), "photo.png", "image/png");
+        var download = _tickets.MintDownload(reference.Id, _ana.UserId);
+        var path = $"/api/attachments/{reference.Id}?ticket={download.Token}";
+
+        (await DownloadAsync(path, _bob)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await DownloadAsync(path, asWhom: null)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await DownloadAsync(path, _ana)).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
     [Fact]
     public async Task ADownloadOfAFileThatIsGone_Answers404()
     {
-        var download = _tickets.MintDownload("7-42/deadbeef");
+        var download = _tickets.MintDownload("7-42/deadbeef", _ana.UserId);
 
-        var response = await _client.GetAsync($"/api/attachments/7-42/deadbeef?ticket={download.Token}");
+        var response = await DownloadAsync($"/api/attachments/7-42/deadbeef?ticket={download.Token}", _ana);
 
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    // A download as the proxy hands it on: with the assertion the session check signed for the chat
+    // channel, or with none.
+    private async Task<HttpResponseMessage> DownloadAsync(string path, Account? asWhom, RangeHeaderValue? range = null)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.Range = range;
+        if (asWhom is not null)
+        {
+            request.Headers.Add(ForwardedAccount.AssertionHeader, TestAssertions.Of(asWhom, ChannelIds.SignalR));
+        }
+
+        return await _client.SendAsync(request);
     }
 
     private async Task<AttachmentReference> UploadAndReadReferenceAsync(

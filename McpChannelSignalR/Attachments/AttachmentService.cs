@@ -27,7 +27,7 @@ public sealed class AttachmentService(
     // Null for both refusals a caller can do nothing about: the file is gone, or it belongs to
     // another space. One upload store serves every space, so the space check is what stops a
     // minted URL from being a read over someone else's conversation.
-    public AttachmentDownload? MintDownload(string attachmentId, string requesterSpace)
+    public AttachmentDownload? MintDownload(string attachmentId, string requesterSpace, string requesterId)
     {
         var record = store.Find(attachmentId);
         if (record is null)
@@ -44,7 +44,7 @@ public sealed class AttachmentService(
             return null;
         }
 
-        var ticket = tickets.MintDownload(attachmentId);
+        var ticket = tickets.MintDownload(attachmentId, requesterId);
         return new AttachmentDownload(
             $"{AttachmentEndpointPaths.Attachments}/{attachmentId}"
             + $"?{AttachmentEndpointPaths.TicketQueryParameter}={ticket.Token}",
