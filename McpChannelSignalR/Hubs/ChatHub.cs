@@ -293,15 +293,19 @@ public sealed class ChatHub(
 
     // Minted when the transcript renders an attachment, not published: one upload store serves
     // every space, so a long-lived URL would be readable by anyone holding it. The file's
-    // conversation is held to the same rule as its topic; the file names no agent, so it is the
-    // topic any registered agent holds it under.
+    // conversation is held to the same rule as its topic, the topic the agent the file names holds
+    // it under — the registered catalogue is the home's agents, and a household's own may go by an
+    // id it lacks. A file kept before files named their agent was the home's: any of its agents.
     public async Task<AttachmentDownload?> CreateAttachmentDownload(string attachmentId)
     {
         if (attachmentService.ConversationOf(attachmentId) is { } held
             && ConversationIdentity.Parse(held.ConversationId) is { } conversation)
         {
-            var holders = await Task.WhenAll((catalog.GetAll() ?? []).Select(agent =>
-                threadStore.GetTopicByChatIdAndThreadIdAsync(agent.Id, conversation.ChatId, conversation.ThreadId)));
+            IEnumerable<string> agents = held.AgentId is { } agentId
+                ? [agentId]
+                : (catalog.GetAll() ?? []).Select(agent => agent.Id);
+            var holders = await Task.WhenAll(agents.Select(agent =>
+                threadStore.GetTopicByChatIdAndThreadIdAsync(agent, conversation.ChatId, conversation.ThreadId)));
             holders.ToList().ForEach(RequireSees);
         }
 

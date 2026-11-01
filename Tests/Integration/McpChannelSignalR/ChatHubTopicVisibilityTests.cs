@@ -298,6 +298,33 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         (await _store.GetTopicAsync(Home, _agent, 33, topic.TopicId))!.Name.ShouldBe("The kitchen's paella");
     }
 
+    // A file is downloaded only by somebody who sees the topic it was kept in, found under the agent
+    // the file names: a household's own agent may go by an id the home's registered agents lack, and
+    // asking only those found no topic, which let anyone holding the file's id mint its download.
+    [Fact]
+    public async Task AFileInAnotherPersonsPrivateTopic_UnderAnAgentTheHomeLacks_IsNotDownloaded()
+    {
+        var laura = await ConnectAsync(Laura);
+        var ownAgent = $"{_agent}-own";
+        var topicId = ConversationIdGenerator.NewTopicId();
+        var identity = ConversationIdGenerator.CreateFor(topicId);
+        await _store.SaveTopicAsync(new TopicMetadata(
+            topicId, identity.ChatId, identity.ThreadId, ownAgent, "Fran's scan", DateTimeOffset.UtcNow, null,
+            TenantId: Home, OwnerId: Fran));
+        var file = await KeepFileAsync(new AgentKey(identity.ConversationId, ownAgent));
+
+        (await Should.ThrowAsync<HubException>(() => laura.InvokeAsync<AttachmentDownload?>(
+            "CreateAttachmentDownload", file.Id))).Message.ShouldContain("No such conversation");
+    }
+
+    private async Task<AttachmentReference> KeepFileAsync(AgentKey conversation)
+    {
+        var store = new AttachmentStore(new AttachmentSettings { StoragePath = _root }, new RetentionSettings(),
+            new FakeConversationLiveness(), TimeProvider.System, NullLogger<AttachmentStore>.Instance);
+        using var content = new MemoryStream("scan"u8.ToArray());
+        return await store.SaveAsync(conversation, "default", "scan.png", "image/png", content, CancellationToken.None);
+    }
+
     // A topic nobody owns is still the household's it was recorded for — a Telegram group's copy names
     // the household the group is bound to — and no other household's.
     [Fact]
