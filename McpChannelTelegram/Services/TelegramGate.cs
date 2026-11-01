@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.Exceptions;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -23,6 +24,11 @@ public sealed partial class TelegramGate(TelegramAccess access, ITelegramAccount
 
     private const string CodeRefused =
         "That code can't be used: it has been used already, its week is up, or it was never one. ";
+
+    // What a person of a household the operator suspended is told, whatever they send: it is nothing
+    // they did, and nothing a code fixes.
+    public const string SuspendedAnswer =
+        "Your household is suspended, so I don't answer anyone in it until whoever runs this deployment resumes it.";
 
     // The account of the message's sender, or null when the message is not a turn: the gate has
     // answered it already, whether it was a way in, a refusal, or the accounts service not answering.
@@ -55,6 +61,12 @@ public sealed partial class TelegramGate(TelegramAccess access, ITelegramAccount
             }
 
             return person;
+        }
+        // Not a stranger either, and nothing is remembered: resumed, their next message is a turn.
+        catch (HouseholdSuspendedException)
+        {
+            await ReplyAsync(bot.Client, message, SuspendedAnswer, ct);
+            return null;
         }
         // An outage is not a stranger: nobody is told to ask for an invite, and nothing is
         // remembered about them, so their next message is answered as it should have been.
@@ -101,6 +113,7 @@ public sealed partial class TelegramGate(TelegramAccess access, ITelegramAccount
                 $"Linked: this Telegram is {linked.DisplayName}'s now.",
             { Outcome: TelegramStartOutcome.TelegramTaken } =>
                 "This Telegram is linked to an account already, so it can't take that code.",
+            { Outcome: TelegramStartOutcome.Suspended } => SuspendedAnswer,
             _ => CodeRefused + "Ask an owner for a new invite, or get a new code from your account page."
         };
     }
@@ -113,6 +126,7 @@ public sealed partial class TelegramGate(TelegramAccess access, ITelegramAccount
                 + $"{expiresAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)} UTC:\n{url}",
             { Outcome: TelegramWebLinkOutcome.Refused } =>
                 "The operator adds a passkey from their account page or with the accounts container's command, not through Telegram.",
+            { Outcome: TelegramWebLinkOutcome.Suspended } => SuspendedAnswer,
             _ => Unlinked
         };
 

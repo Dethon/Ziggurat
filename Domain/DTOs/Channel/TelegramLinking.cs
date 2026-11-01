@@ -14,7 +14,10 @@ public enum TelegramStartOutcome
     CodeRefused,
 
     // The Telegram that sent it is somebody's already.
-    TelegramTaken
+    TelegramTaken,
+
+    // The code is a suspended household's: nothing was spent, and it opens once it is resumed.
+    Suspended
 }
 
 // A start parameter redeemed: who the Telegram that sent it now is, where it worked.
@@ -29,7 +32,10 @@ public enum TelegramWebLinkOutcome
     NotLinked,
 
     // The person it is must not be handed one through Telegram (the operator).
-    Refused
+    Refused,
+
+    // The person's household is suspended.
+    Suspended
 }
 
 // A one-time link that adds a passkey to the account a Telegram is linked to.

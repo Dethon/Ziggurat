@@ -254,6 +254,8 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
+            households: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -314,6 +316,8 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
+            households: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -358,6 +362,8 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
+            households: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage(content: "/cancel")));
@@ -397,6 +403,8 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
+            households: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));
@@ -465,6 +473,8 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
+            households: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage() with { Content = null! }));
@@ -536,6 +546,8 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
+            households: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
         grouping.Write((channel, MonitorTestMocks.CreateChannelMessage()));

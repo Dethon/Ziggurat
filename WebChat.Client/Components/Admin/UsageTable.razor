@@ -1,0 +1,38 @@
+@using Domain.DTOs.Metrics
+@using WebChat.Client.Pages.Admin
+
+@* One breakdown of a month's usage — by agent or by person — costliest first, as the admin API ordered it. *@
+<table class="admin-usage-table">
+    <caption>@Caption</caption>
+    <thead>
+        <tr>
+            <th scope="col">@Heading</th>
+            <th scope="col" class="admin-usage-figure">Tokens</th>
+            <th scope="col" class="admin-usage-figure">Cost</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (Lines.Count == 0)
+        {
+            <tr>
+                <td colspan="3" class="admin-usage-none">Nothing used this month.</td>
+            </tr>
+        }
+        @foreach (var line in Lines)
+        {
+            <tr>
+                <th scope="row">@line.Name</th>
+                <td class="admin-usage-figure">@HouseholdUsagePage.Count(line.Tokens)</td>
+                <td class="admin-usage-figure">@HouseholdUsagePage.Cost(line.Cost)</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [Parameter, EditorRequired] public string Caption { get; set; } = "";
+
+    [Parameter, EditorRequired] public string Heading { get; set; } = "";
+
+    [Parameter, EditorRequired] public IReadOnlyList<UsageLine> Lines { get; set; } = [];
+}

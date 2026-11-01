@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.Exceptions;
 
 namespace Tests.Unit.McpChannelTelegram;
 
@@ -19,6 +20,7 @@ internal sealed class FakeTelegramAccounts : IAccountResolver, ITelegramAccounts
     private readonly ConcurrentDictionary<string, Func<long, TelegramStart>> _startCodes = new();
     private readonly ConcurrentDictionary<string, string> _groupCodes = new();
     private readonly ConcurrentDictionary<long, byte> _operators = new();
+    private readonly ConcurrentDictionary<string, byte> _suspended = new();
     private int _resolutions;
     private int _webLinks;
 
@@ -42,16 +44,22 @@ internal sealed class FakeTelegramAccounts : IAccountResolver, ITelegramAccounts
 
     public void Bind(long chatId, string household = Household) => _groups[chatId] = household;
 
+    // The operator suspended the household: its people and its codes are answered as the service
+    // answers them, suspended, and nothing of it is spent until it is resumed.
+    public void Suspend(string household = Household) => _suspended[household] = 0;
+
+    public void Resume(string household = Household) => _suspended.TryRemove(household, out _);
+
     // The first Telegram to send it becomes the person it names, unless that Telegram is somebody's.
     public string Invite(string name, string household = Household) =>
-        StartCode((code, telegramId) => _people.ContainsKey(telegramId)
+        StartCode(household, (code, telegramId) => _people.ContainsKey(telegramId)
             ? new TelegramStart(TelegramStartOutcome.TelegramTaken)
             : Spend(code, new TelegramStart(TelegramStartOutcome.Invited, Link(telegramId, name, household))));
 
     // The account page's code: links its person to the Telegram that sends it, unless that Telegram
     // is somebody else's.
     public string LinkCode(string name, string household = Household) =>
-        StartCode((code, telegramId) => _people.TryGetValue(telegramId, out var holder) && holder.DisplayName != name
+        StartCode(household, (code, telegramId) => _people.TryGetValue(telegramId, out var holder) && holder.DisplayName != name
             ? new TelegramStart(TelegramStartOutcome.TelegramTaken)
             : Spend(code, new TelegramStart(TelegramStartOutcome.Linked, Link(telegramId, name, household))));
 
@@ -66,9 +74,10 @@ internal sealed class FakeTelegramAccounts : IAccountResolver, ITelegramAccounts
     {
         ThrowIfUnreachable();
         Interlocked.Increment(ref _resolutions);
-        return Task.FromResult(channel == "telegram" && _people.TryGetValue(long.Parse(identity, CultureInfo.InvariantCulture), out var person)
-            ? person
-            : null);
+        var person = channel == "telegram" ? _people.GetValueOrDefault(long.Parse(identity, CultureInfo.InvariantCulture)) : null;
+        return person is not null && _suspended.ContainsKey(person.Account.TenantId)
+            ? throw new HouseholdSuspendedException()
+            : Task.FromResult(person);
     }
 
     public Task<ResolvedGuest> GuestAsync(string channel, CancellationToken ct) =>
@@ -85,9 +94,14 @@ internal sealed class FakeTelegramAccounts : IAccountResolver, ITelegramAccounts
     public Task<TelegramWebLink> MintWebLinkAsync(long telegramId, CancellationToken ct)
     {
         ThrowIfUnreachable();
-        if (!_people.ContainsKey(telegramId))
+        if (!_people.TryGetValue(telegramId, out var person))
         {
             return Task.FromResult(new TelegramWebLink(TelegramWebLinkOutcome.NotLinked));
+        }
+
+        if (_suspended.ContainsKey(person.Account.TenantId))
+        {
+            return Task.FromResult(new TelegramWebLink(TelegramWebLinkOutcome.Suspended));
         }
 
         if (_operators.ContainsKey(telegramId))
@@ -135,10 +149,12 @@ internal sealed class FakeTelegramAccounts : IAccountResolver, ITelegramAccounts
             .FirstOrDefault());
     }
 
-    private string StartCode(Func<string, long, TelegramStart> redeem)
+    private string StartCode(string household, Func<string, long, TelegramStart> redeem)
     {
         var code = NewCode();
-        _startCodes[code] = telegramId => redeem(code, telegramId);
+        _startCodes[code] = telegramId => _suspended.ContainsKey(household)
+            ? new TelegramStart(TelegramStartOutcome.Suspended)
+            : redeem(code, telegramId);
         return code;
     }
 

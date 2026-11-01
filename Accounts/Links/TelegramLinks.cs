@@ -18,7 +18,11 @@ public enum StartOutcome
     CodeRefused,
 
     // The Telegram that sent it is somebody else's already, or anybody's for an invite.
-    TelegramTaken
+    TelegramTaken,
+
+    // The code is its household's, which the operator suspended: nothing is spent, so it opens once
+    // the household is resumed.
+    Suspended
 }
 
 public sealed record StartRedemption(StartOutcome Outcome, User? Person = null);
@@ -30,7 +34,10 @@ public enum WebLinkOutcome
 
     // The operator's way to a new passkey is their account page or the container's command: their
     // Telegram must not be a way onto the dashboard.
-    Operator
+    Operator,
+
+    // Their household is suspended, and a link minted now would be a way in that outlasts it.
+    Suspended
 }
 
 public sealed record WebLink(WebLinkOutcome Outcome, MintedLink? Link = null);
@@ -67,6 +74,11 @@ public sealed class TelegramLinks(IDbContextFactory<AccountsDbContext> contexts,
 
         var identity = IdentityOf(telegramId);
         await using var db = await contexts.CreateDbContextAsync(ct);
+        if (await SuspendedAsync(db, link.TenantId, ct))
+        {
+            return new StartRedemption(StartOutcome.Suspended);
+        }
+
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var holder = await db.LinkedIdentities
             .Where(i => i.Channel == Channel && i.Identity == identity)
@@ -115,13 +127,15 @@ public sealed class TelegramLinks(IDbContextFactory<AccountsDbContext> contexts,
         return new StartRedemption(link.Kind == LinkKind.Invite ? StartOutcome.Invited : StartOutcome.Linked, person);
     }
 
+    // Nobody for a Telegram that a disabled member linked: it is kept, and answers again once they are
+    // re-enabled.
     public async Task<User?> PersonAsync(long telegramId, CancellationToken ct)
     {
         var identity = IdentityOf(telegramId);
         await using var db = await contexts.CreateDbContextAsync(ct);
         return await db.LinkedIdentities
             .Where(i => i.Channel == Channel && i.Identity == identity)
-            .Join(db.Users, i => i.UserId, u => u.Id, (_, u) => u)
+            .Join(db.Users.Where(u => u.DisabledAt == null), i => i.UserId, u => u.Id, (_, u) => u)
             .FirstOrDefaultAsync(ct);
     }
 
@@ -138,8 +152,21 @@ public sealed class TelegramLinks(IDbContextFactory<AccountsDbContext> contexts,
             return new WebLink(WebLinkOutcome.Operator);
         }
 
-        return new WebLink(WebLinkOutcome.Minted, await links.MintRecoveryAsync(person.TenantId, person.Id, person.Id, ct));
+        await using (var db = await contexts.CreateDbContextAsync(ct))
+        {
+            if (await SuspendedAsync(db, person.TenantId, ct))
+            {
+                return new WebLink(WebLinkOutcome.Suspended);
+            }
+        }
+
+        return await links.MintRecoveryAsync(person.TenantId, person.Id, person.Id, ct) is RecoveryMint.Minted { Link: var link }
+            ? new WebLink(WebLinkOutcome.Minted, link)
+            : new WebLink(WebLinkOutcome.NotLinked);
     }
+
+    private static Task<bool> SuspendedAsync(AccountsDbContext db, string tenantId, CancellationToken ct) =>
+        db.Tenants.AnyAsync(t => t.Id == tenantId && t.SuspendedAt != null, ct);
 
     public async Task<GroupBinding> BindGroupAsync(long chatId, string code, CancellationToken ct)
     {
@@ -191,13 +218,13 @@ public sealed class TelegramLinks(IDbContextFactory<AccountsDbContext> contexts,
     }
 
     // The Telegram a person linked, which is also their private chat with the bot; null for a person
-    // who linked none, or one the household named does not hold.
+    // who linked none, one the household named does not hold, or one an owner disabled.
     public async Task<long?> TelegramIdOfAsync(string tenantId, string userId, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
         var identity = await db.LinkedIdentities
             .Where(l => l.Channel == Channel && l.UserId == userId)
-            .Join(db.Users.Where(u => u.TenantId == tenantId), l => l.UserId, u => u.Id, (l, _) => l.Identity)
+            .Join(db.Users.Where(u => u.TenantId == tenantId && u.DisabledAt == null), l => l.UserId, u => u.Id, (l, _) => l.Identity)
             .FirstOrDefaultAsync(ct);
         return long.TryParse(identity, NumberStyles.Integer, CultureInfo.InvariantCulture, out var telegramId)
             ? telegramId

@@ -66,25 +66,32 @@ public sealed class TunnelCredentialStore(
     {
         var hash = Tokens.Hash(credential);
         await using var db = await contexts.CreateDbContextAsync(ct);
-        return await db.TunnelCredentials.AsNoTracking().SingleOrDefaultAsync(t => t.CredentialHash == hash, ct) switch
+        // What the credential is comes first; whether its household runs only for one that would open.
+        var found = await db.TunnelCredentials.AsNoTracking()
+            .Where(t => t.CredentialHash == hash)
+            .Join(db.Tenants, t => t.TenantId, h => h.Id, (row, household) => new { Row = row, Household = household })
+            .SingleOrDefaultAsync(ct);
+        return found switch
         {
             null => new TunnelVerdict.Refused(TunnelCredentialRefusal.Unknown),
-            { RevokedAt: not null } => new TunnelVerdict.Refused(TunnelCredentialRefusal.Revoked),
-            var row when row.ServerName != serverName => new TunnelVerdict.Refused(TunnelCredentialRefusal.AnotherServer),
-            var row => new TunnelVerdict.Opens(new TunnelCredentialVerified(
-                row.Id, row.TenantId, row.ServerName,
-                Home: await db.Tenants.AnyAsync(t => t.Id == row.TenantId && t.IsHome, ct)))
+            { Row.RevokedAt: not null } => new TunnelVerdict.Refused(TunnelCredentialRefusal.Revoked),
+            _ when found.Row.ServerName != serverName => new TunnelVerdict.Refused(TunnelCredentialRefusal.AnotherServer),
+            { Household.SuspendedAt: not null } => new TunnelVerdict.Refused(TunnelCredentialRefusal.Suspended),
+            _ => new TunnelVerdict.Opens(new TunnelCredentialVerified(
+                found.Row.Id, found.Row.TenantId, found.Row.ServerName, Home: found.Household.IsHome))
         };
     }
 
     // Whose live credential this is, whatever server it was minted for: what the internal API asks of
-    // a household's server whose back-call the relay showed it, and null for anything not live.
+    // a household's server whose back-call the relay showed it, and null for anything not live — a
+    // suspended household's included, whose servers ask nothing until it is resumed.
     public async Task<TunnelCredentialVerified?> LiveAsync(string credential, CancellationToken ct)
     {
         var hash = Tokens.Hash(credential);
         await using var db = await contexts.CreateDbContextAsync(ct);
         return await db.TunnelCredentials.AsNoTracking()
             .Where(t => t.CredentialHash == hash && t.RevokedAt == null)
+            .Where(t => db.Tenants.Any(h => h.Id == t.TenantId && h.SuspendedAt == null))
             .Select(t => new TunnelCredentialVerified(t.Id, t.TenantId, t.ServerName))
             .SingleOrDefaultAsync(ct);
     }
@@ -103,12 +110,33 @@ public sealed class TunnelCredentialStore(
         ];
     }
 
-    // Revoking one already revoked tells the listeners again, so running the command once more is
-    // the retry when they could not be told the first time.
-    public async Task<RevokedTunnelCredential?> RevokeAsync(string id, CancellationToken ct)
+    // One household's credentials not revoked, by server name and when minted: what its owners see.
+    public async Task<IReadOnlyList<ListedTunnelCredential>> LiveOfAsync(string tenantId, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
-        if (await db.TunnelCredentials.SingleOrDefaultAsync(t => t.Id == id, ct) is not { } row)
+        var rows = await db.TunnelCredentials.AsNoTracking()
+            .Where(t => t.TenantId == tenantId && t.RevokedAt == null)
+            .ToListAsync(ct);
+        return
+        [
+            .. rows
+                .OrderBy(t => t.ServerName, StringComparer.Ordinal)
+                .ThenBy(t => t.CreatedAt)
+                .Select(t => new ListedTunnelCredential(t.Id, t.TenantId, t.ServerName, t.CreatedAt, t.RevokedAt))
+        ];
+    }
+
+    // Revoking one already revoked tells the listeners again, so running the command once more is
+    // the retry when they could not be told the first time.
+    public Task<RevokedTunnelCredential?> RevokeAsync(string id, CancellationToken ct) => RevokeAsync(id, tenantId: null, ct);
+
+    // The same, for a credential of that household alone: an owner's revoke names an id, and an id of
+    // another household's is nobody's to them.
+    public async Task<RevokedTunnelCredential?> RevokeAsync(string id, string? tenantId, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        if (await db.TunnelCredentials.SingleOrDefaultAsync(t => t.Id == id && (tenantId == null || t.TenantId == tenantId), ct)
+            is not { } row)
         {
             return null;
         }

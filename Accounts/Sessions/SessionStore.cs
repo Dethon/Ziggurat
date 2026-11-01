@@ -9,11 +9,16 @@ public sealed record IssuedSession(string Id, string Token);
 // A signed-in browser as the account page lists it; the device is the user agent it signed in with.
 public sealed record SignedInDevice(string Id, string? Device, DateTimeOffset CreatedAt, DateTimeOffset LastSeenAt);
 
+// HouseholdSuspended: the person is signed in still — nothing of a suspended household is deleted — and
+// the session check lets them in nowhere until it is resumed.
 public sealed record SessionIdentity(
-    string SessionId, string UserId, string TenantId, IReadOnlyList<string> Roles, string DisplayName, string? AvatarUrl);
+    string SessionId, string UserId, string TenantId, IReadOnlyList<string> Roles, string DisplayName, string? AvatarUrl,
+    bool HouseholdSuspended = false);
 
 // Sessions last until revoked. Issuing one is a service of its own, apart from the ceremonies, so a
-// test stack can sign a seeded person in without a passkey (the `mint-session` command).
+// test stack can sign a seeded person in without a passkey (the `mint-session` command). A disabled
+// person is issued none and their sessions answer for nobody — disabling revokes them anyway, and the
+// check here keeps one issued in a race with the disabling from opening anything.
 public sealed class SessionStore(IDbContextFactory<AccountsDbContext> contexts, AccountsClock clock)
 {
     // The check runs on every request through the proxy, so last-seen is written at this grain
@@ -23,7 +28,7 @@ public sealed class SessionStore(IDbContextFactory<AccountsDbContext> contexts, 
     public async Task<IssuedSession?> IssueAsync(string userId, string? credentialId, string? device, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
-        if (await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct) is not { } user)
+        if (await db.Users.FirstOrDefaultAsync(u => u.Id == userId && u.DisabledAt == null, ct) is not { } user)
         {
             return null;
         }
@@ -52,7 +57,9 @@ public sealed class SessionStore(IDbContextFactory<AccountsDbContext> contexts, 
         await using var db = await contexts.CreateDbContextAsync(ct);
         var found = await db.Sessions
             .Where(s => s.TokenHash == hash && s.RevokedAt == null)
-            .Join(db.Users, s => s.UserId, u => u.Id, (session, user) => new { Session = session, User = user })
+            .Join(db.Users.Where(u => u.DisabledAt == null), s => s.UserId, u => u.Id, (session, user) => new { Session = session, User = user })
+            .Join(db.Tenants, x => x.User.TenantId, t => t.Id,
+                (x, tenant) => new { x.Session, x.User, Suspended = tenant.SuspendedAt != null })
             .SingleOrDefaultAsync(ct);
         if (found is null)
         {
@@ -68,7 +75,7 @@ public sealed class SessionStore(IDbContextFactory<AccountsDbContext> contexts, 
 
         return new SessionIdentity(
             found.Session.Id, found.User.Id, found.User.TenantId, Roles.Of(found.User), found.User.DisplayName,
-            found.User.AvatarUrl);
+            found.User.AvatarUrl, found.Suspended);
     }
 
     // A session by its id, while it lives, named by its owner as well (the ids are on the account
@@ -79,7 +86,7 @@ public sealed class SessionStore(IDbContextFactory<AccountsDbContext> contexts, 
         await using var db = await contexts.CreateDbContextAsync(ct);
         var user = await db.Sessions
             .Where(s => s.Id == sessionId && s.UserId == userId && s.RevokedAt == null)
-            .Join(db.Users, s => s.UserId, u => u.Id, (_, u) => u)
+            .Join(db.Users.Where(u => u.DisabledAt == null), s => s.UserId, u => u.Id, (_, u) => u)
             .SingleOrDefaultAsync(ct);
         return user is null
             ? null

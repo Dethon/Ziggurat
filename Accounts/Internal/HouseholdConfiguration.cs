@@ -1,4 +1,6 @@
+using Accounts.Admin;
 using Accounts.Configuration;
+using Accounts.Members;
 using Domain.Agents;
 using Domain.DTOs.Household;
 
@@ -15,7 +17,7 @@ public static class HouseholdConfiguration
     public static void Map(IEndpointRouteBuilder routes)
     {
         routes.MapPost(Path + HouseholdConfigProtocol.AgentView, async (
-            HttpContext http, HouseholdConfigQuery query, HouseholdProofs proofs, HouseholdConfigStore store,
+            HttpContext http, HouseholdConfigQuery query, HouseholdProofs proofs, HouseholdConfigStore store, MemberStore members,
             ILogger<HouseholdConfigStore> logger, CancellationToken ct) =>
         {
             if (InternalCallers.Reading(http, HouseholdConfigProtocol.AgentView).Count == 0)
@@ -39,7 +41,9 @@ public static class HouseholdConfiguration
                     await SectionAsync(store, household, HouseholdSections.AgentsSchema, ct),
                     await SectionAsync(store, household, HouseholdSections.FeaturesSchema, ct),
                     await SectionAsync(store, household, HouseholdSections.SpacesSchema, ct),
-                    (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).OpenRouter?.ApiKey), ct);
+                    (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).OpenRouter?.ApiKey,
+                    await members.DisabledAsync(household.Id, ct),
+                    household.Suspended), ct);
         });
 
         MapShared(routes, HouseholdConfigProtocol.SettingsView, (store, household, ct) =>
@@ -50,6 +54,29 @@ public static class HouseholdConfiguration
             (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).Idealista);
         MapShared(routes, HouseholdConfigProtocol.AgentNamesView, async (store, household, ct) =>
             HouseholdAgents.Names(await SectionAsync(store, household, HouseholdSections.AgentsSchema, ct)));
+
+        // OpenRouter refused a household's own key in a turn: marked rejected and asked about again
+        // (KeysAdmin), so its owner sees it on the keys page. The agent names the household as for its
+        // own view; nothing of the key travels.
+        routes.MapPost(Path + HouseholdConfigProtocol.OpenRouterKeyRefused, async (
+            HttpContext http, HouseholdConfigQuery query, HouseholdProofs proofs, KeysAdmin keys, CancellationToken ct) =>
+        {
+            if (InternalCallers.Reading(http, HouseholdConfigProtocol.OpenRouterKeyRefused).Count == 0)
+            {
+                return InternalCallers.NotYours;
+            }
+
+            switch (await proofs.AgentAsync(query, ct))
+            {
+                case HouseholdProven.Refused refused:
+                    return Results.Json(refused.Refusal, statusCode: refused.Status);
+                case HouseholdProven.Household household:
+                    await keys.InUseRejectedAsync(household.Id, ct);
+                    return Results.NoContent();
+                default:
+                    return Results.NotFound();
+            }
+        });
 
         // Every household and its people, asked with no household: the agent's dreaming walks them, with
         // nobody's call behind it. No secret is in it.

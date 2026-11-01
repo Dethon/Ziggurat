@@ -3,6 +3,7 @@ using System.Text;
 using Domain.Channels;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.Exceptions;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -200,6 +201,11 @@ public sealed class ApprovalCallbackRouter
         try
         {
             mayAnswer = await waiter.MayAnswer(callbackQuery.From.Id, cancellationToken);
+        }
+        catch (HouseholdSuspendedException)
+        {
+            await botClient.AnswerCallbackQuery(callbackQuery.Id, TelegramGate.SuspendedAnswer, cancellationToken: cancellationToken);
+            return true;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
         {

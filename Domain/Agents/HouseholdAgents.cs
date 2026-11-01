@@ -42,6 +42,9 @@ public sealed record HouseholdAgents
     // pays). Null for agents no household's configuration gave.
     public AgentHouseholdConfig? Configuration { get; init; }
 
+    // The operator suspended the household: none of its turns or fires is run until it is resumed.
+    public bool Suspended => Configuration?.Suspended == true;
+
     // Who pays for its model calls: the home household's, like those of agents no household's
     // configuration gave, go out on the deployment's own key, and any other household's on its own.
     // Null for a household of its own that set none: it pays for nothing, so its turns are refused —
@@ -112,10 +115,17 @@ public sealed record HouseholdAgents
         ]);
     }
 
-    private static (IReadOnlyList<HouseholdAgent> Entries, string? DefaultAgent) Entries(AgentsSection section) =>
-        section.Agents.Count == 0
-            ? (Starting, AgentTemplates.Jonas)
-            : (section.Agents, section.DefaultAgent);
+    // The section as the household's turns read it: one that names no agent is the starting templates
+    // with jonas answering by default. An owner's first change to such a household is made to this, so
+    // it keeps the agents it had rather than only the one changed.
+    public static AgentsSection Effective(AgentsSection section) =>
+        section.Agents.Count == 0 ? new AgentsSection { DefaultAgent = AgentTemplates.Jonas, Agents = Starting } : section;
+
+    private static (IReadOnlyList<HouseholdAgent> Entries, string? DefaultAgent) Entries(AgentsSection section)
+    {
+        var effective = Effective(section);
+        return (effective.Agents, effective.DefaultAgent);
+    }
 
     // Agents a stack names in code, offered as a household's would be with every feature on.
     public static HouseholdAgents Fixed(IReadOnlyList<AgentDefinition> agents, string? defaultAgent = null) =>

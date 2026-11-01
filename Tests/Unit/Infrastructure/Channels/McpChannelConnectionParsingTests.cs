@@ -123,6 +123,22 @@ public class McpChannelConnectionParsingTests
     }
 
     [Fact]
+    public async Task HandleChannelMessageNotification_WithAHousehold_MapsItOntoChannelMessage()
+    {
+        var conn = new McpChannelConnection("scheduling");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"sched-1","sender":"scheduler","content":"hi","householdId":"fedcba9876543210fedcba9876543210"}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.HouseholdId.ShouldBe("fedcba9876543210fedcba9876543210");
+            break;
+        }
+    }
+
+    [Fact]
     public async Task HandleChannelMessageNotification_WithConfigPatch_MapsPatchOntoChannelMessage()
     {
         var conn = new McpChannelConnection("signalr");

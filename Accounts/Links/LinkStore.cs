@@ -12,6 +12,17 @@ public sealed record IssuedLink(string Token, Uri Url, DateTimeOffset ExpiresAt)
 
 public sealed record TelegramCode(string Code, DateTimeOffset ExpiresAt);
 
+// What asking for a person's recovery link came to: the link, nobody by that id there, or a member an
+// owner disabled, whose link would open nothing until they are re-enabled.
+public abstract record RecoveryMint
+{
+    public sealed record Minted(MintedLink Link) : RecoveryMint;
+
+    public sealed record Nobody : RecoveryMint;
+
+    public sealed record Disabled : RecoveryMint;
+}
+
 // A link still waiting to be redeemed. An invite names nobody yet, so its display name and role are
 // the ones it will create the person with; any other kind is for the person it names.
 public sealed record OpenLink(string LinkId, LinkKind Kind, string TenantId, string? UserId, string DisplayName, Role? Role);
@@ -55,21 +66,50 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
         return (await MintRecoveryAsync(db, created, createdBy: null, ct), true);
     }
 
-    // The operator's command, which may recover anyone.
-    public async Task<MintedLink?> MintRecoveryAsync(string userId, CancellationToken ct)
+    // A household the operator creates from the dashboard, its one owner and the owner's way in, as
+    // one change: the owner exists from now on, with no passkey until the link enrolls one, so a lost
+    // link is replaced by a recovery like any owner's. Nothing of its configuration is written: a
+    // section it never saved reads as its defaults.
+    public async Task<MintedLink> CreateHouseholdAsync(string name, string ownerName, string createdBy, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
-        var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct);
-        return user is null ? null : await MintRecoveryAsync(db, user, createdBy: null, ct);
+        var now = clock.Time.GetUtcNow();
+        var household = new Tenant { Id = Tokens.NewId(), Name = name, CreatedAt = now };
+        var owner = new User
+        {
+            Id = Tokens.NewId(), TenantId = household.Id, DisplayName = ownerName, Role = Role.Owner, CreatedAt = now
+        };
+        db.Tenants.Add(household);
+        db.Users.Add(owner);
+        return await MintRecoveryAsync(db, owner, createdBy, ct);
     }
 
-    // An owner's, on the members page: only someone in their own household.
-    public async Task<MintedLink?> MintRecoveryAsync(string tenantId, string createdBy, string userId, CancellationToken ct)
+    // The operator's command, which may recover anyone an owner has not disabled.
+    public async Task<RecoveryMint> MintRecoveryAsync(string userId, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return await RecoverAsync(db, await db.Users.FirstOrDefaultAsync(u => u.Id == userId, ct), createdBy: null, ct);
+    }
+
+    // An owner's, from the members page or the admin API, and the operator's for another household's
+    // owner: only someone in the household named.
+    public async Task<RecoveryMint> MintRecoveryAsync(string tenantId, string createdBy, string userId, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
         var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == tenantId, ct);
-        return user is null ? null : await MintRecoveryAsync(db, user, createdBy, ct);
+        return await RecoverAsync(db, user, createdBy, ct);
     }
+
+    // Every recovery a person is named for comes through here, so a disabled member is minted none by
+    // any of them: FindOpenAsync would refuse the link until they are re-enabled, and a link that
+    // silently opens nothing is worse than being told why.
+    private async Task<RecoveryMint> RecoverAsync(AccountsDbContext db, User? user, string? createdBy, CancellationToken ct) =>
+        user switch
+        {
+            null => new RecoveryMint.Nobody(),
+            { DisabledAt: not null } => new RecoveryMint.Disabled(),
+            _ => new RecoveryMint.Minted(await MintRecoveryAsync(db, user, createdBy, ct))
+        };
 
     public async Task<IssuedLink> MintInviteAsync(
         string tenantId, string createdBy, string displayName, Role role, CancellationToken ct)
@@ -98,6 +138,9 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
 
     public Task<OpenLink?> FindOpenAsync(string token, CancellationToken ct) => FindOpenAsync(token, Enrollable, ct);
 
+    // A link naming a member an owner disabled opens nothing while they are: a recovery link would add
+    // them a way in, and a Telegram code a way to be somebody on Telegram. One still in date opens again
+    // once they are re-enabled.
     public async Task<OpenLink?> FindOpenAsync(string token, IReadOnlyCollection<LinkKind> kinds, CancellationToken ct)
     {
         var hash = Tokens.Hash(token);
@@ -108,10 +151,11 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
             .Select(l => new
             {
                 Link = l,
-                Named = db.Users.Where(u => u.Id == l.UserId).Select(u => u.DisplayName).FirstOrDefault()
+                Named = db.Users.Where(u => u.Id == l.UserId).Select(u => u.DisplayName).FirstOrDefault(),
+                Disabled = db.Users.Any(u => u.Id == l.UserId && u.DisabledAt != null)
             })
             .SingleOrDefaultAsync(ct);
-        return found is null || !kinds.Contains(found.Link.Kind)
+        return found is null || found.Disabled || !kinds.Contains(found.Link.Kind)
             ? null
             : new OpenLink(found.Link.Id, found.Link.Kind, found.Link.TenantId, found.Link.UserId,
                 found.Named ?? found.Link.DisplayName ?? "", found.Link.Role);

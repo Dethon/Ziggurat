@@ -6,6 +6,7 @@ using Dashboard.Client.Services;
 using Dashboard.Client.State.Connection;
 using Dashboard.Client.State.Errors;
 using Dashboard.Client.State.Health;
+using Dashboard.Client.State.Households;
 using Dashboard.Client.State.Latency;
 using Dashboard.Client.State.Memory;
 using Dashboard.Client.State.Metrics;
@@ -37,8 +38,12 @@ builder.Services.AddSingleton<LatencyStore>();
 builder.Services.AddSingleton<VoiceStore>();
 builder.Services.AddSingleton<SkillsStore>();
 builder.Services.AddSingleton<WebStore>();
+builder.Services.AddSingleton<HouseholdsStore>();
 
+builder.Services.AddScoped<HouseholdFilter>();
 builder.Services.AddScoped<MetricsApiService>();
+builder.Services.AddScoped<HouseholdsAdminService>();
+builder.Services.AddScoped<HouseholdsEffect>();
 builder.Services.AddScoped<LocalStorageService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IMetricsHubConnection>(sp =>

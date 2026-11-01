@@ -74,6 +74,108 @@ public class ChatMonitorDelegationTests
         error.Message.ShouldContain(nameof(TokenRefusal.UnknownKey));
     }
 
+    // A delegation lives as long as its schedule, so one signed before an owner disabled its person
+    // still verifies: the household's word decides. A disabled member's schedule does not fire at all —
+    // as nobody it would still say its prompt, to wherever it delivers, on the home's agent — and the
+    // delegation is left as it is, so it acts for them again once they are re-enabled.
+    [Fact]
+    public async Task ADisabledMembersFire_StartsNoTurn_AndIsReported()
+    {
+        var run = new Run(standing: new FakeAccountStanding(_fran));
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        run.Channel.SentReplies.ShouldBeEmpty();
+        var error = run.Errors.ShouldHaveSingleItem();
+        error.ErrorType.ShouldBe(ChatMonitor.AccountDisabledErrorType);
+        error.TenantId.ShouldBe(Household);
+        error.Message.ShouldNotBeNull().ShouldContain(_fran.UserId);
+    }
+
+    // A standing that cannot be read is never good standing, for a fire as for a turn.
+    [Fact]
+    public async Task AFireWhosePersonsStandingCannotBeRead_StartsNoTurn()
+    {
+        var run = new Run(standing: new FakeAccountStanding { Unreadable = true });
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Channel.SentReplies.ShouldBeEmpty();
+        run.Errors.ShouldHaveSingleItem().ErrorType.ShouldBe(ChatMonitor.StandingUnreadableErrorType);
+    }
+
+    // Re-enabled, the same delegation acts for them again: nothing about it was spent or dropped.
+    [Fact]
+    public async Task AnEnabledMembersFire_ActsForThem()
+    {
+        var run = new Run(standing: new FakeAccountStanding(_mallory));
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Errors.ShouldBeEmpty();
+        run.TurnContext().Identity.ShouldNotBeNull().Account.ShouldBe(_fran);
+    }
+
+    // A suspended household's schedules and watches still fire on their servers, and start nothing:
+    // nobody waits on a fire to be told, so the errors feed is where it is said.
+    [Fact]
+    public async Task AFireOfASuspendedHousehold_StartsNoTurn_AndIsReported()
+    {
+        var run = new Run(households: MonitorTestMocks.Households(suspended: Household));
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        run.Channel.SentReplies.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.HouseholdSuspendedErrorType);
+        refused.TenantId.ShouldBe(Household);
+    }
+
+    // Every fire of a suspended household starts nothing, not only one a delegation stands behind: a
+    // schedule written for nobody, or whose delegation no longer holds, names its household too.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnUndelegatedFireOfASuspendedHousehold_StartsNoTurn(bool forged)
+    {
+        var what = global::Domain.Tools.Scheduling.Vfs.ScheduleDelegation.Of(_schedule);
+        var run = new Run(households: MonitorTestMocks.Households(suspended: Household));
+        run.Channel.WriteUnsigned(Fire(forged
+            ? new FireDelegation(TestDelegations.Forged(_fran, ChannelIds.SignalR, what), what.Description)
+            : null) with
+        { HouseholdId = Household });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Channel.SentReplies.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.HouseholdSuspendedErrorType);
+        refused.TenantId.ShouldBe(Household);
+    }
+
+    // Whether the fire's household is suspended could not be asked: it is not taken to run.
+    [Fact]
+    public async Task AFireWhoseHouseholdCannotBeRead_StartsNoTurn()
+    {
+        var run = new Run(households: MonitorTestMocks.UnreadableHouseholds());
+        run.Channel.WriteUnsigned(Fire(null) with { HouseholdId = Household });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Errors.ShouldHaveSingleItem().ErrorType.ShouldBe(ChatMonitor.StandingUnreadableErrorType);
+    }
+
     // A finished download reports back to whoever asked without acting as them, whatever it carries.
     [Fact]
     public async Task ADownloadsFire_ActsForNobody_WhateverItCarries()
@@ -131,9 +233,13 @@ public class ChatMonitorDelegationTests
     private sealed class Run
     {
         private readonly List<MetricEvent> _published = [];
+        private readonly IAccountStanding? _standing;
+        private readonly IAgentDefinitionProvider? _households;
 
-        public Run(string channel = "scheduling")
+        public Run(string channel = "scheduling", IAccountStanding? standing = null, IAgentDefinitionProvider? households = null)
         {
+            _standing = standing;
+            _households = households;
             Channel = new FakeChannelConnection { ChannelId = channel };
             Agent = new FakeAiAgent();
             Factory = MonitorTestMocks.CreateAgentFactory(Agent);
@@ -176,7 +282,9 @@ public class ChatMonitorDelegationTests
                 null,
                 NullLogger<ChatMonitor>.Instance,
                 MonitorTestMocks.Assertions,
-                delegations: TestDelegations.Verifier());
+                delegations: TestDelegations.Verifier(),
+                standing: _standing,
+                agentDefinitions: _households);
 
             await monitor.Monitor(CancellationToken.None);
         }

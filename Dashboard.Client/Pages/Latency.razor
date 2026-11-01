@@ -48,7 +48,7 @@
                             <span>@evt.Stage</span>
                             <span>@(evt.Model ?? "-")</span>
                             <span>@evt.DurationMs.ToString("N0") ms</span>
-                            <span>@(evt.AgentId ?? "-")</span>
+                            <span>@(evt.AgentName ?? evt.AgentId ?? "-")</span>
                             <span>@(evt.ConversationId ?? "-")</span>
                         </div>
                     }
@@ -113,7 +113,7 @@
             "Stage" => e => e.Stage,
             "Model" => e => e.Model ?? "",
             "Duration" => e => e.DurationMs,
-            "Agent" => e => e.AgentId ?? "",
+            "Agent" => e => e.AgentName ?? e.AgentId ?? "",
             "Conversation" => e => e.ConversationId ?? "",
             _ => e => e.Timestamp
         };

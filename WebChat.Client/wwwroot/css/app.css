@@ -2992,3 +2992,518 @@ select:focus:not(:focus-visible) {
         min-width: 2.25rem;
     }
 }
+
+/* ===================================
+   Household admin area
+   =================================== */
+
+/* The way in, beside the person's face: drawn as the theme toggle is, so the header reads as one row
+   of controls. Shown to the household's owners alone. */
+.admin-entry {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    color: var(--text-secondary);
+    transition: all var(--transition-normal);
+}
+
+.admin-entry:hover {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.admin-entry svg {
+    width: 20px;
+    height: 20px;
+}
+
+.admin-heading {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 1.125rem;
+}
+
+.admin-back {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+.admin-back:hover {
+    color: var(--accent);
+}
+
+/* The chat's content area clips, since its lists scroll themselves; an admin page scrolls as a page. */
+.admin-content {
+    overflow-y: auto;
+    padding: 1.5rem 1rem 3rem;
+}
+
+.admin-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    max-width: 40rem;
+    width: 100%;
+    margin: 0 auto 1.5rem;
+}
+
+.admin-nav a {
+    padding: 0.375rem 0.875rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.admin-nav a.active {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.admin-page,
+.admin-status {
+    max-width: 40rem;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.admin-status {
+    color: var(--text-secondary);
+}
+
+.admin-section h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 1.5rem;
+    margin: 0 0 0.5rem;
+    color: var(--text-primary);
+}
+
+.admin-lede {
+    color: var(--text-secondary);
+    margin: 0 0 1.5rem;
+}
+
+.admin-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.admin-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.admin-field-label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.admin-field input {
+    font: inherit;
+    padding: 0.625rem 0.75rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    min-width: 0;
+}
+
+.admin-field input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.admin-field-hint {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.admin-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.admin-save {
+    font: inherit;
+    font-weight: 600;
+    padding: 0.625rem 1.5rem;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    transition: background var(--transition-normal);
+}
+
+.admin-save:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.admin-save:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.admin-field textarea,
+.admin-field select {
+    font: inherit;
+    padding: 0.625rem 0.75rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    min-width: 0;
+}
+
+.admin-field textarea {
+    resize: vertical;
+}
+
+.admin-field textarea:focus,
+.admin-field select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.admin-agent,
+.admin-agent-add {
+    margin-top: 1.5rem;
+    padding: 1.25rem;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.admin-agent-header h2,
+.admin-agent-add h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 1.2rem;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.admin-agent-header {
+    margin-bottom: 1rem;
+}
+
+.admin-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    cursor: pointer;
+}
+
+.admin-toggle input {
+    margin-top: 0.25rem;
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--accent);
+}
+
+.admin-toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.admin-colour {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.admin-colour input[type=color] {
+    width: 2.75rem;
+    height: 2.5rem;
+    padding: 0.125rem;
+    flex: none;
+}
+
+.admin-colour input:not([type=color]) {
+    flex: 1;
+}
+
+.admin-agent-meta {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.admin-actions {
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.admin-secondary {
+    font: inherit;
+    padding: 0.625rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.admin-secondary:hover:not(:disabled) {
+    border-color: var(--accent);
+}
+
+.admin-secondary:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.admin-confirm,
+.admin-versions {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.admin-confirm p {
+    margin: 0 0 0.75rem;
+}
+
+.admin-versions ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.admin-version {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.admin-version > div {
+    min-width: 0;
+}
+
+.admin-version-instructions {
+    margin: 0.25rem 0 0;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.admin-notice {
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.admin-notice p {
+    margin: 0;
+}
+
+.admin-notice ul {
+    margin: 0.5rem 0 0;
+    padding-left: 1.25rem;
+}
+
+.admin-notice-saved {
+    border-color: var(--success);
+}
+
+.admin-notice-warning {
+    border-color: var(--warning);
+}
+
+.admin-notice-refused,
+.admin-notice-unavailable {
+    border-color: var(--error-border);
+    background: var(--error-bg);
+}
+
+.admin-key + .admin-key {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.admin-key h2 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.admin-key-needed {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--warning);
+}
+
+.admin-key-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    margin: 0;
+    color: var(--text-secondary);
+}
+
+.admin-key-state {
+    font-weight: 600;
+}
+
+.admin-key-status-working .admin-key-state {
+    color: var(--success);
+}
+
+.admin-key-status-rejected .admin-key-state {
+    color: var(--error);
+}
+
+.admin-key-status-unchecked .admin-key-state {
+    color: var(--warning);
+}
+
+.admin-key-bots {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.admin-key-bots li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+
+.admin-key-agent {
+    font-family: monospace;
+}
+
+.admin-member {
+    margin-top: 1.5rem;
+    padding: 1.25rem;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.admin-member-disabled {
+    color: var(--warning);
+}
+
+.admin-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+}
+
+.admin-check input {
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--accent);
+}
+
+.admin-minted {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--accent);
+    background: var(--accent-subtle);
+}
+
+.admin-minted p {
+    margin: 0 0 0.5rem;
+    overflow-wrap: anywhere;
+}
+
+.admin-minted p:last-child {
+    margin-bottom: 0;
+}
+
+.admin-usage-month {
+    max-width: 14rem;
+    margin-bottom: 1rem;
+}
+
+.admin-usage-table {
+    width: 100%;
+    margin-top: 1.5rem;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+.admin-usage-table caption {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding-bottom: 0.5rem;
+}
+
+.admin-usage-table th,
+.admin-usage-table td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    overflow-wrap: anywhere;
+}
+
+.admin-usage-table thead th {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.admin-usage-table tbody th {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.admin-usage-table .admin-usage-figure {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.admin-usage-none {
+    color: var(--text-muted);
+}
+
+.admin-usage-lemonade h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+}
+
+.admin-usage-lemonade ul {
+    margin: 0;
+    padding-left: 1.25rem;
+}
+
+@media (max-width: 480px) {
+    .admin-entry {
+        width: 36px;
+        height: 36px;
+    }
+
+    .admin-entry svg {
+        width: 18px;
+        height: 18px;
+    }
+}

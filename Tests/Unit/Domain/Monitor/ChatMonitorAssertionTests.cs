@@ -166,6 +166,147 @@ public class ChatMonitorAssertionTests
         run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
     }
 
+    // An assertion signed before an owner disabled its person still verifies — Telegram keeps the one
+    // that admitted a sender for minutes — so the agent asks the household too, and acts for nobody
+    // the household disabled: the person is told, the errors feed says whose, and no agent is built.
+    [Fact]
+    public async Task ADisabledMembersTurn_IsRefusedReportedAndAnswered()
+    {
+        var run = new Run(standing: new FakeAccountStanding(_fran));
+        run.Channel.WriteMessage(Message() with
+        {
+            Principal = new Principal(ChatChannel, _fran.UserId, _fran),
+            Assertion = TestAssertions.Of(_fran, ChatChannel),
+            TurnKey = "turn-7"
+        });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.AccountDisabledErrorType);
+        refused.TenantId.ShouldBe(Household);
+        refused.Message.ShouldNotBeNull().ShouldContain(_fran.UserId);
+        run.Channel.SentReplies.Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, ConversationGroup.DisabledAnswer), (ReplyContentType.StreamComplete, "")]);
+        run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
+    }
+
+    // A standing the agent cannot read is never good standing — the turn could not be built without
+    // the same view anyway — and the person is told it could not be checked, not that it was refused.
+    [Fact]
+    public async Task ATurnWhosePersonsStandingCannotBeRead_IsRefusedAsUnchecked()
+    {
+        var run = new Run(standing: new FakeAccountStanding { Unreadable = true });
+        run.Channel.WriteMessage(Message() with { Assertion = TestAssertions.Of(_fran, ChatChannel) });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.StandingUnreadableErrorType);
+        refused.TenantId.ShouldBe(Household);
+        run.Channel.SentReplies.Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, ConversationGroup.UncheckedAnswer), (ReplyContentType.StreamComplete, "")]);
+    }
+
+    // Whether the household is suspended is read the same way, and refused the same way when it cannot
+    // be: neither let through as running nor told it is suspended, which it may not be.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ATurnWhoseHouseholdCannotBeRead_IsRefusedAsUnchecked_NeverAsSuspended(bool guest)
+    {
+        var run = new Run("voice", households: MonitorTestMocks.UnreadableHouseholds());
+        run.Channel.WriteMessage(Message("voice") with
+        {
+            Assertion = guest ? TestAssertions.OfGuest(Household, "voice") : TestAssertions.Of(_fran, "voice")
+        });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Errors.ShouldHaveSingleItem().ErrorType.ShouldBe(ChatMonitor.StandingUnreadableErrorType);
+        run.Channel.SentReplies.Select(r => r.Content).ShouldBe([ConversationGroup.UncheckedAnswer, ""]);
+    }
+
+    // The guest is nobody an owner can disable, and the others in the household are unaffected.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnotherPersonsOrTheGuestsTurn_RunsBesideADisabledMember(bool guest)
+    {
+        var channel = guest ? "voice" : ChatChannel;
+        var run = new Run(channel, standing: new FakeAccountStanding(_mallory));
+        run.Channel.WriteMessage(Message(channel) with
+        {
+            Assertion = guest ? TestAssertions.OfGuest(Household, channel) : TestAssertions.Of(_fran, channel)
+        });
+
+        await run.MonitorAsync();
+
+        run.Errors.ShouldBeEmpty();
+        run.Factory.Created.ShouldHaveSingleItem();
+    }
+
+    // The operator suspended the household: whoever sent the turn is told so where they wait, the way a
+    // failed turn ends, the errors feed says whose, and nothing is built or asked of any agent.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ATurnOfASuspendedHousehold_IsRefusedReportedAndAnswered(bool guest)
+    {
+        var run = new Run("voice", households: MonitorTestMocks.Households(suspended: Household));
+        run.Channel.WriteMessage(Message("voice") with
+        {
+            Principal = guest ? new Principal("voice", "household") : new Principal("voice", _fran.UserId, _fran),
+            Assertion = guest ? TestAssertions.OfGuest(Household, "voice") : TestAssertions.Of(_fran, "voice"),
+            TurnKey = "turn-7"
+        });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.HouseholdSuspendedErrorType);
+        refused.TenantId.ShouldBe(Household);
+        run.Channel.SentReplies.Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, ConversationGroup.SuspendedAnswer), (ReplyContentType.StreamComplete, "")]);
+        run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
+    }
+
+    // A conversation's agent is built once, on its first turn: a household suspended while it runs has
+    // its next message refused all the same, since every message is asked about as it arrives.
+    [Fact]
+    public async Task AConversationAlreadyRunning_IsRefusedFromTheMessageAfterItsHouseholdIsSuspended()
+    {
+        var run = new Run(households: MonitorTestMocks.Households(suspended: Household, from: 2));
+        run.Channel.WriteMessage(Message(content: "first") with { Assertion = TestAssertions.Of(_fran, ChatChannel) });
+        run.Channel.WriteMessage(Message(content: "second") with { Assertion = TestAssertions.Of(_fran, ChatChannel) });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldHaveSingleItem();
+        run.Agent.ReceivedMessages.ShouldHaveSingleItem().ShouldHaveSingleItem().Text.ShouldBe("first");
+        run.Errors.ShouldHaveSingleItem().ErrorType.ShouldBe(ChatMonitor.HouseholdSuspendedErrorType);
+        run.Channel.SentReplies.ShouldContain(r => r.Content == ConversationGroup.SuspendedAnswer);
+    }
+
+    // Another household's suspension is nothing to this one's turns.
+    [Fact]
+    public async Task ATurnOfAHouseholdThatRuns_IsAnswered_WhileAnotherIsSuspended()
+    {
+        var run = new Run(households: MonitorTestMocks.Households(suspended: "0123456789abcdef0123456789abcdef"));
+        run.Channel.WriteMessage(Message() with { Assertion = TestAssertions.Of(_fran, ChatChannel) });
+
+        await run.MonitorAsync();
+
+        run.Errors.ShouldBeEmpty();
+        run.Agent.ReceivedMessages.ShouldHaveSingleItem();
+    }
+
     // The guest is somebody too, but only a satellite hears one: a guest's assertion on the channel it
     // was signed for and no other.
     [Fact]
@@ -258,13 +399,18 @@ public class ChatMonitorAssertionTests
     private sealed class Run
     {
         private readonly AssertionVerifier _verifier;
+        private readonly IAccountStanding? _standing;
+        private readonly IAgentDefinitionProvider? _households;
         private readonly List<MetricEvent> _published = [];
 
         public Run(
             string channel = ChatChannel, AssertionVerifier? verifier = null, Func<CancellationToken, Task>? turnGate = null,
-            AgentResponseUpdate[]? replies = null)
+            AgentResponseUpdate[]? replies = null, IAccountStanding? standing = null,
+            IAgentDefinitionProvider? households = null)
         {
             _verifier = verifier ?? MonitorTestMocks.Assertions;
+            _standing = standing;
+            _households = households;
             Channel = new FakeChannelConnection { ChannelId = channel };
             Agent = new FakeAiAgent { TurnGate = turnGate, UpdatesToYield = replies ?? [] };
             Factory = MonitorTestMocks.CreateAgentFactory(Agent);
@@ -308,7 +454,9 @@ public class ChatMonitorAssertionTests
                 metrics.Object,
                 null,
                 NullLogger<ChatMonitor>.Instance,
-                _verifier);
+                _verifier,
+                standing: _standing,
+                agentDefinitions: _households);
 
             await monitor.Monitor(CancellationToken.None);
         }

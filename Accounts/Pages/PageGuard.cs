@@ -18,11 +18,18 @@ public sealed class PageGuard(SessionStore sessions, IAntiforgery antiforgery, A
     {
         var token = http.Request.Cookies[SessionCookie.Name];
         var viewer = string.IsNullOrEmpty(token) ? null : await sessions.VerifyAsync(token, ct);
+        var script = http.Request.Path.StartsWithSegments($"{AccountsApp.PathBase}/api");
         if (viewer is null)
         {
-            return (null, http.Request.Path.StartsWithSegments($"{AccountsApp.PathBase}/api")
-                ? Results.Unauthorized()
-                : Results.Redirect(SignInPage.Url(settings, returnTo)));
+            return (null, script ? Results.Unauthorized() : Results.Redirect(SignInPage.Url(settings, returnTo)));
+        }
+
+        // As the session check refuses it, and first, so a stale form is not what they are told: nothing
+        // of a suspended household opens until it is resumed, and an owner's invite or recovery link
+        // minted here would be a way in that outlasts the suspension.
+        if (viewer.HouseholdSuspended)
+        {
+            return (null, SessionCheck.Suspended(http, page: !script));
         }
 
         if (!await antiforgery.IsRequestValidAsync(http))

@@ -2,7 +2,9 @@ using Accounts.Links;
 using Accounts.Sessions;
 using Accounts.Store;
 using Domain.DTOs.Channel;
+using Domain.Exceptions;
 using Infrastructure.Clients.Accounts;
+using Microsoft.EntityFrameworkCore;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -183,6 +185,32 @@ public class AccountsResolverClientTests
 
         (await client.TelegramIdOfAsync(new Account(fran.TenantId, laura), CancellationToken.None)).ShouldBe(5_550_001);
         (await client.TelegramIdOfAsync(new Account(fran.TenantId, fran.UserId), CancellationToken.None)).ShouldBeNull();
+    }
+
+    // A suspended household's people are neither somebody, whom a channel would vouch for, nor nobody,
+    // whom Telegram would ask for an invite: the client says suspended, for every way in.
+    [Fact]
+    public async Task ASuspendedHouseholdsPeopleAndGuest_AreSaidToBeSuspended()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (casa, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var client = ClientFor(server, Credential);
+        var code = await server.Service<LinkStore>().MintTelegramCodeAsync(casa, ana, CancellationToken.None);
+        await client.RedeemStartAsync(5_550_001, code.Code, CancellationToken.None);
+        var invite = await server.Service<LinkStore>().MintInviteAsync(casa, ana, "Luis", Role.Member, CancellationToken.None);
+        await using (var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync())
+        {
+            await db.Tenants.ExecuteUpdateAsync(t => t.SetProperty(x => x.SuspendedAt, server.Clock.GetUtcNow()));
+        }
+
+        await Should.ThrowAsync<HouseholdSuspendedException>(() => client.ResolveAsync("voice", ana, CancellationToken.None));
+        await Should.ThrowAsync<HouseholdSuspendedException>(() => client.ResolveAsync("telegram", "5550001", CancellationToken.None));
+        await Should.ThrowAsync<HouseholdSuspendedException>(() => client.GuestAsync("voice", CancellationToken.None));
+        (await client.RedeemStartAsync(5_550_002, invite.Token, CancellationToken.None)).Outcome
+            .ShouldBe(TelegramStartOutcome.Suspended);
+        (await client.MintWebLinkAsync(5_550_001, CancellationToken.None)).Outcome.ShouldBe(TelegramWebLinkOutcome.Suspended);
+        fran.TenantId.ShouldNotBe(casa);
     }
 
     [Fact]

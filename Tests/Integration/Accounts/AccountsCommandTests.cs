@@ -3,6 +3,7 @@ using System.Net;
 using Accounts;
 using Accounts.Commands;
 using Accounts.Internal;
+using Accounts.Members;
 using Accounts.Settings;
 using Domain.Security;
 using Domain.Security.Signing;
@@ -71,6 +72,22 @@ public class AccountsCommandTests
         exit.ShouldBe(0);
         AccountsServer.MintedLink.Parse(output).UserId.ShouldBe(laura);
         output.ShouldContain("Laura");
+    }
+
+    // Their link would open nothing until an owner re-enables them, so the command says why it minted none.
+    [Fact]
+    public async Task MintLink_UserWhoIsDisabled_MintsNothing()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var laura = await server.SeedMemberAsync("Laura");
+        await server.Service<MemberStore>().DisableAsync(fran.TenantId, laura, CancellationToken.None);
+
+        var (exit, output) = await server.RunAsync("mint-link", "--user", laura);
+
+        exit.ShouldBe(1);
+        output.ShouldContain("disabled");
+        output.ShouldNotContain("http");
     }
 
     // The operator's way to add someone before the members page exists, and the test stack's way

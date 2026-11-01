@@ -24,7 +24,8 @@ public class ChatMonitorAgentRoutingTests
         ByChannel = new Dictionary<string, string> { ["voice"] = "nabu" }
     };
 
-    // Every household's default is its own: these name theirs by the household they are asked for.
+    // Every household's default is its own: these name theirs by the household they are asked for, and
+    // any other household runs with none (a household the agent cannot read refuses its turn).
     private static readonly IAgentDefinitionProvider _households = Households(new Dictionary<string, string>
     {
         ["@nobody"] = "jonas",
@@ -160,7 +161,7 @@ public class ChatMonitorAgentRoutingTests
         provider
             .Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string? household, CancellationToken _) =>
-                HouseholdAgents.Fixed([], defaults[household ?? "@nobody"]));
+                HouseholdAgents.Fixed([], defaults.GetValueOrDefault(household ?? "@nobody")));
         return provider.Object;
     }
 }

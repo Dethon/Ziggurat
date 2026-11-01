@@ -57,8 +57,10 @@ public class MemoryDreamingService(
     private Task RunDreamingAsync(CancellationToken ct) => RunDreamingAsync(DateTimeOffset.UtcNow, ct);
 
     // Each household's people the store keeps memory for, on the household's key. A household that
-    // cannot pay — its own, with no key set — or cannot be read just now is not dreamt for tonight, and
-    // a person the store names who is in no household is nobody's to pay for, so is left alone.
+    // cannot pay — its own, with no key set — or cannot be read just now is not dreamt for tonight, nor
+    // is one the operator suspended, nor a member an owner disabled: the view read for the key says
+    // both, as it does for the household's turns. A person the store names who is in no household is
+    // nobody's to pay for, so is left alone. Whoever is skipped keeps their memories as they are.
     public async Task RunDreamingAsync(DateTimeOffset now, CancellationToken ct)
     {
         var userIds = (await store.GetAllUserIdsAsync(ct)).ToHashSet(StringComparer.Ordinal);
@@ -73,16 +75,16 @@ public class MemoryDreamingService(
         foreach (var household in walk)
         {
             var people = household.People.Where(userIds.Contains).ToList();
-            if (people.Count == 0 || await PayerAsync(household.HouseholdId, ct) is not { } payer)
+            if (people.Count == 0 || await DreamableAsync(household.HouseholdId, ct) is not { } dreamable)
             {
                 continue;
             }
 
-            foreach (var userId in people)
+            foreach (var userId in people.Where(p => !dreamable.Disabled.Contains(p)))
             {
                 try
                 {
-                    await RunDreamingForUserAsync(userId, now, payer, ct);
+                    await RunDreamingForUserAsync(userId, now, dreamable.Payer, ct);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -121,17 +123,23 @@ public class MemoryDreamingService(
         }
     }
 
-    private async Task<ModelPayer?> PayerAsync(string householdId, CancellationToken ct)
+    // Who pays for the household's dreaming and whom of it not to dream for, or null for a household
+    // not dreamt for tonight.
+    private async Task<(ModelPayer Payer, IReadOnlyList<string> Disabled)?> DreamableAsync(string householdId, CancellationToken ct)
     {
         try
         {
-            if ((await agents.ForHouseholdAsync(householdId, ct)).Payer is { } payer)
+            switch (await agents.ForHouseholdAsync(householdId, ct))
             {
-                return payer with { TenantId = householdId };
+                case { Suspended: true }:
+                    logger.LogInformation("Household {Household} is suspended; its people are not dreamt for", householdId);
+                    return null;
+                case { Payer: { } payer } household:
+                    return (payer with { TenantId = householdId }, household.Configuration?.DisabledPeople ?? []);
+                default:
+                    logger.LogWarning("Household {Household} has set no OpenRouter key; its people are not dreamt for", householdId);
+                    return null;
             }
-
-            logger.LogWarning("Household {Household} has set no OpenRouter key; its people are not dreamt for", householdId);
-            return null;
         }
         catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
                                        or TaskCanceledException && !ct.IsCancellationRequested)

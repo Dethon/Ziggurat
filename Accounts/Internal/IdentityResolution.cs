@@ -54,7 +54,8 @@ public static class IdentityResolution
             }
 
             // A household's server finds its own household's people and no one else's: anyone else
-            // is nobody to it.
+            // is nobody to it. A member an owner disabled is nobody to every channel: their Telegram
+            // reaches the bot as a stranger's, and their voice is the household's guest.
             var household = InternalCallers.Household(http);
             await using var db = await contexts.CreateDbContextAsync(ct);
             var people = (_linkedIdentityChannels.Contains(query.Channel)
@@ -62,11 +63,19 @@ public static class IdentityResolution
                         .Where(i => i.Channel == query.Channel && i.Identity == query.Identity)
                         .Join(db.Users, i => i.UserId, u => u.Id, (_, u) => u)
                     : db.Users.Where(u => u.Id == query.Identity))
-                .Where(u => household == null || u.TenantId == household);
+                .Where(u => (household == null || u.TenantId == household) && u.DisabledAt == null);
 
-            return await people.FirstOrDefaultAsync(ct) is { } user
-                ? Results.Ok(new ResolvedIdentity(user.TenantId, user.Id, user.DisplayName, assertions.Of(user, query.Channel)))
-                : Results.NotFound();
+            // A suspended household's person is told so by the channel rather than vouched for, and is no
+            // stranger either: they are who they are, let in nowhere until it is resumed.
+            return await people
+                    .Select(u => new { User = u, Suspended = db.Tenants.Any(t => t.Id == u.TenantId && t.SuspendedAt != null) })
+                    .FirstOrDefaultAsync(ct) switch
+            {
+                null => Results.NotFound(),
+                { Suspended: true } => Suspended,
+                { User: var user } => Results.Ok(
+                    new ResolvedIdentity(user.TenantId, user.Id, user.DisplayName, assertions.Of(user, query.Channel)))
+            };
         });
 
         // The guest of the household whose satellite heard them: a household's server asks about its
@@ -89,7 +98,11 @@ public static class IdentityResolution
             var household = InternalCallers.Household(http);
             await using var db = await contexts.CreateDbContextAsync(ct);
             var tenant = await db.Tenants.SingleAsync(t => household == null ? t.IsHome : t.Id == household, ct);
-            return Results.Ok(new HouseholdGuest(tenant.Id, assertions.OfGuest(tenant.Id, query.Channel)));
+            return tenant.SuspendedAt is null
+                ? Results.Ok(new HouseholdGuest(tenant.Id, assertions.OfGuest(tenant.Id, query.Channel)))
+                : Suspended;
         });
     }
+
+    public static IResult Suspended => Results.StatusCode((int)SuspendedHouseholdAnswer.Status);
 }

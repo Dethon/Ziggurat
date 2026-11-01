@@ -1,3 +1,4 @@
+using Domain.DTOs.Metrics;
 using Domain.Security;
 using Domain.Security.Signing;
 using Microsoft.Extensions.Configuration.EnvironmentVariables;
@@ -50,12 +51,19 @@ public static class OperatorGate
                ?? new TokenVerificationSettings();
     }
 
+    // One path is not the operator's: the usage route (HouseholdUsage.Path), which the accounts
+    // service's admin API asks for an owner, with an assertion it signs for the usage channel — a
+    // channel no proxy block names, so no browser is ever handed one. It is held to that channel and
+    // the owner role, and the owner is kept for the route, which answers their household and no other.
+    // Everything else is held to the dashboard's channel and the operator role, as it always was.
     public static IApplicationBuilder UseOperatorGate(this IApplicationBuilder app) =>
         app.Use(async (context, next) =>
         {
+            var usage = context.Request.Path.Equals(HouseholdUsage.Path);
             var person = await context.RequestServices.GetRequiredService<AssertionVerifier>()
-                .VerifyRequestAsync(context.Request.Headers, AppChannels.Dashboard, context.RequestAborted);
-            if (person is not { IsOperator: true })
+                .VerifyRequestAsync(
+                    context.Request.Headers, usage ? AppChannels.Usage : AppChannels.Dashboard, context.RequestAborted);
+            if (person is null || !(usage ? person.IsOwner : person.IsOperator))
             {
                 context.Response.StatusCode = person is null
                     ? StatusCodes.Status401Unauthorized
@@ -63,6 +71,25 @@ public static class OperatorGate
                 return;
             }
 
+            if (usage)
+            {
+                UsageOwner.Keep(context, person);
+            }
+
             await next(context);
         });
+}
+
+// The owner the gate verified for the usage route, kept on that request alone and bound by the route
+// as a parameter: a request the gate did not admit for the usage channel binds none, and is refused.
+public sealed record UsageOwner(ForwardedAccount Person)
+{
+    private static readonly object _item = new();
+
+    public string HouseholdId => Person.TenantId;
+
+    public static ValueTask<UsageOwner?> BindAsync(HttpContext http) =>
+        ValueTask.FromResult(http.Items.TryGetValue(_item, out var owner) ? owner as UsageOwner : null);
+
+    internal static void Keep(HttpContext http, ForwardedAccount person) => http.Items[_item] = new UsageOwner(person);
 }

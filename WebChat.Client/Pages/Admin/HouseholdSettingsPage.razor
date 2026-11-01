@@ -1,0 +1,88 @@
+@page "/admin/settings"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.Household
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdSettingsStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household settings</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-settings-heading">
+    <h1 id="admin-settings-heading">Settings</h1>
+    <p class="admin-lede">
+        The household's name, the time zone its dates and schedules are read in, and the language its agents answer in.
+    </p>
+
+    @if (_state.Settings is null)
+    {
+        @if (_state.Notice is { } notice)
+        {
+            <AdminNoticeView Notice="notice" />
+        }
+        else
+        {
+            <p class="admin-status">Loading the household's settings</p>
+        }
+    }
+    else
+    {
+        <form class="admin-form" @onsubmit="Save">
+            <label class="admin-field">
+                <span class="admin-field-label">Name</span>
+                <input name="name" @bind="_name" @bind:event="oninput" maxlength="@HouseholdSettings.NameLength" autocomplete="off" />
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Time zone</span>
+                <input name="timeZone" @bind="_timeZone" @bind:event="oninput" placeholder="Europe/Madrid"
+                       spellcheck="false" autocomplete="off" />
+                <span class="admin-field-hint">An IANA zone, such as Europe/Madrid or America/New_York.</span>
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Language</span>
+                <input name="language" @bind="_language" @bind:event="oninput" placeholder="es"
+                       spellcheck="false" autocomplete="off" />
+                <span class="admin-field-hint">
+                    A tag such as es or en-GB. Left empty, the agents answer in each conversation's own language.
+                </span>
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@_state.Saving">@(_state.Saving ? "Saving" : "Save")</button>
+            </div>
+            @if (_state.Notice is { } notice)
+            {
+                <AdminNoticeView Notice="notice" />
+            }
+        </form>
+    }
+</section>
+
+@code {
+    private HouseholdSettingsState _state = HouseholdSettingsState.Initial;
+    private string _name = "";
+    private string _timeZone = "";
+    private string _language = "";
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The fields take what the admin API answered — on opening and after a save — and are the
+        // owner's to edit in between.
+        Subscribe(Store.StateObservable, state => state.Settings, settings =>
+        {
+            if (settings is not null)
+            {
+                (_name, _timeZone, _language) = (settings.Name, settings.TimeZone, settings.Language ?? "");
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdSettings());
+    }
+
+    private void Save() => Dispatcher.Dispatch(new SaveHouseholdSettings(new HouseholdSettings
+    {
+        Name = _name.Trim(),
+        TimeZone = _timeZone.Trim(),
+        Language = string.IsNullOrWhiteSpace(_language) ? null : _language.Trim()
+    }));
+}

@@ -62,6 +62,12 @@ public sealed class ChatHub(
     // absent when the service could not say.
     internal const string DisplayNameItem = "DisplayName";
 
+    // Where it keeps the space it joined last, the household's spaces as it joined it, and the removed
+    // spaces' slugs that space lists beside its own.
+    private const string SpaceSlugItem = "SpaceSlug";
+    private const string HouseholdSpacesItem = "HouseholdSpaces";
+    private const string ListedWithItem = "ListedWith";
+
     // The one answer for a topic the caller may not see, worded as for one that does not exist, so
     // naming another person's private topic tells the namer nothing about it — not even that it is.
     private const string NoSuchConversation = "No such conversation.";
@@ -77,7 +83,23 @@ public sealed class ChatHub(
     private const string NoSuchSpace = "No such space.";
 
     private string? CurrentSpaceSlug =>
-        Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
+        Context.Items.TryGetValue(SpaceSlugItem, out var slug) ? slug as string : null;
+
+    // The household's spaces as the connection last joined one of them, and the slugs of removed
+    // spaces whose topics the joined space lists beside its own (SpaceListing): both asked once as
+    // it joins, so a page costs no read of the configuration and no scan.
+    private IReadOnlyList<HouseholdSpace>? JoinedHouseholdSpaces =>
+        Context.Items.TryGetValue(HouseholdSpacesItem, out var spaces) ? spaces as IReadOnlyList<HouseholdSpace> : null;
+
+    private IReadOnlyList<string> ListedWith(string spaceSlug) =>
+        spaceSlug == CurrentSpaceSlug && Context.Items.TryGetValue(ListedWithItem, out var slugs) && slugs is IReadOnlyList<string> listed
+            ? listed
+            : [];
+
+    // Where a topic's news is heard: in its own space while the household has it, else in the
+    // default space that lists it now — nobody can join a removed one.
+    private string HeardIn(string topicSlug) =>
+        JoinedHouseholdSpaces is { } spaces ? SpaceListing.ShownIn(topicSlug, spaces) : topicSlug;
 
     // The person this connection is, set as it arrives; SignedInConnectionFilter admits no call on one
     // without it.
@@ -169,7 +191,7 @@ public sealed class ChatHub(
     // The household's spaces in the order its configuration puts them, which is the order a person
     // is shown them in.
     public async Task<IReadOnlyList<HouseholdSpace>> GetSpaces() =>
-        [.. (await HouseholdSpacesAsync(Context.ConnectionAborted)).OrderBy(s => s.Order).ThenBy(s => s.Slug, StringComparer.Ordinal)];
+        SpaceListing.Ordered(await HouseholdSpacesAsync(Context.ConnectionAborted));
 
     public async Task JoinSpace(string spaceSlug)
     {
@@ -178,11 +200,18 @@ public sealed class ChatHub(
             throw new HubException("Invalid space slug");
         }
 
-        if ((await HouseholdSpacesAsync(Context.ConnectionAborted)).All(s => s.Slug != spaceSlug))
+        var spaces = await HouseholdSpacesAsync(Context.ConnectionAborted);
+        if (spaces.All(s => s.Slug != spaceSlug))
         {
             throw new HubException(NoSuchSpace);
         }
 
+        // A removed space's topics are not moved; the default space lists them, so they are found by
+        // what the household's topics are kept under, only when that is the space joined.
+        Context.Items[HouseholdSpacesItem] = spaces;
+        Context.Items[ListedWithItem] = spaceSlug == SpaceListing.DefaultOf(spaces)
+            ? SpaceListing.ListedWith(spaceSlug, spaces, await threadStore.SpacesHoldingTopicsAsync(SignedIn.TenantId))
+            : Array.Empty<string>();
         await SwitchSpaceGroupAsync(spaceSlug);
     }
 
@@ -218,7 +247,7 @@ public sealed class ChatHub(
     // sees every topic (TopicAudience).
     private async Task SwitchSpaceGroupAsync(string spaceSlug)
     {
-        if (Context.Items.TryGetValue("SpaceSlug", out var previous) && previous is string prevSlug)
+        if (Context.Items.TryGetValue(SpaceSlugItem, out var previous) && previous is string prevSlug)
         {
             if (prevSlug == spaceSlug)
             {
@@ -229,7 +258,7 @@ public sealed class ChatHub(
                 .Select(group => Groups.RemoveFromGroupAsync(Context.ConnectionId, group)));
         }
 
-        Context.Items["SpaceSlug"] = spaceSlug;
+        Context.Items[SpaceSlugItem] = spaceSlug;
         await Task.WhenAll(TopicAudience.GroupsOf(SignedIn, spaceSlug)
             .Select(group => Groups.AddToGroupAsync(Context.ConnectionId, group)));
     }
@@ -615,7 +644,7 @@ public sealed class ChatHub(
         bool archived = false)
     {
         return WithLiveStreams(await threadStore.GetTopicPageAsync(
-            agentId, spaceSlug, Viewer, cursor, pageSize ?? retention.PageSize, archived));
+            agentId, spaceSlug, Viewer, cursor, pageSize ?? retention.PageSize, archived, ListedWith(spaceSlug)));
     }
 
     // Answered here rather than asked per topic: which replies are in flight is this process's
@@ -677,10 +706,11 @@ public sealed class ChatHub(
 
         var changed = stored with { Shared = shared };
         await threadStore.SaveTopicAsync(changed, keepTtl: true);
+        var heardIn = HeardIn(changed.SpaceSlug);
         await hubSender.SendToGroupAsync(
-            TopicAudience.Space(SignedIn.TenantId, changed.SpaceSlug),
+            TopicAudience.Space(SignedIn.TenantId, heardIn),
             "OnTopicChanged",
-            new TopicChangedNotification(TopicChangeType.Updated, topicId, changed, changed.SpaceSlug));
+            new TopicChangedNotification(TopicChangeType.Updated, topicId, changed, heardIn));
     }
 
     // On the server, so it covers conversations this client never loaded — which is every
@@ -693,7 +723,7 @@ public sealed class ChatHub(
         int? pageSize = null)
     {
         return WithLiveStreams(await threadStore.SearchTopicsAsync(
-            agentId, spaceSlug, Viewer, query, cursor, pageSize ?? retention.PageSize));
+            agentId, spaceSlug, Viewer, query, cursor, pageSize ?? retention.PageSize, ListedWith(spaceSlug)));
     }
 
     // Read state is the store's to work out: the count it would be compared against is one round
@@ -740,7 +770,7 @@ public sealed class ChatHub(
             throw new HubException(NoSuchConversation);
         }
 
-        var spaceSlug = stored?.SpaceSlug ?? CurrentSpaceSlug ?? SpaceConfig.DefaultSlug;
+        var spaceSlug = stored is not null ? HeardIn(stored.SpaceSlug) : CurrentSpaceSlug ?? SpaceConfig.DefaultSlug;
         var notification = new TopicChangedNotification(TopicChangeType.Deleted, topicId, SpaceSlug: spaceSlug);
 
         // A topic already gone is said to be gone again, and nothing else: with no topic to say

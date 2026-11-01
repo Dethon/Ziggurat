@@ -6,6 +6,7 @@ using Domain.Contracts;
 using Domain.DTOs.Household;
 using Domain.Security;
 using Domain.Security.Signing;
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -27,7 +28,7 @@ public sealed class HouseholdConfigurationClient(
     IConnectionMultiplexer? redis,
     TimeProvider clock,
     TimeSpan lifetime,
-    ILogger<HouseholdConfigurationClient>? logger = null) : IHouseholdConfiguration, IAsyncDisposable
+    ILogger<HouseholdConfigurationClient>? logger = null) : IHouseholdConfiguration, IHouseholdKeyReports, IAsyncDisposable
 {
     public const string ClientName = "accounts-household-config";
 
@@ -84,6 +85,13 @@ public sealed class HouseholdConfigurationClient(
             .Households;
     }
 
+    public async Task OpenRouterKeyRefusedAsync(string householdId, CancellationToken ct)
+    {
+        var token = agentToken?.Invoke()
+                    ?? throw new InvalidOperationException("only the agent says a household's key failed in use, with a token of its own");
+        using var response = await SendAsync(HouseholdConfigProtocol.OpenRouterKeyRefused, new HouseholdConfigQuery(householdId, token), ct);
+    }
+
     // This client's handler alone: the multiplexer is the host's, and another listener on the channel
     // is somebody else's to remove.
     public async ValueTask DisposeAsync()
@@ -132,12 +140,20 @@ public sealed class HouseholdConfigurationClient(
 
     private async Task<T> AskAsync<T>(string view, HouseholdConfigQuery query, CancellationToken ct)
     {
+        using var response = await SendAsync(view, query, ct);
+        return (await response.Content.ReadFromJsonAsync<T>(JsonSerializerOptions.Web, ct))!;
+    }
+
+    // An answer that stood, or the refusal or outage it was as an exception.
+    private async Task<HttpResponseMessage> SendAsync(string view, HouseholdConfigQuery query, CancellationToken ct)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Post, HouseholdConfigProtocol.PathOf(view).TrimStart('/'))
         {
             Content = JsonContent.Create(query)
         };
         request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(credential));
-        using var response = await http.SendAsync(request, ct);
+        var response = await http.SendAsync(request, ct);
+        using var failed = response.IsSuccessStatusCode ? null : response;
         if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound)
         {
             throw new HouseholdConfigRefusedException(await RefusalAsync(response, ct)
@@ -152,7 +168,7 @@ public sealed class HouseholdConfigurationClient(
                 null, response.StatusCode);
         }
 
-        return (await response.Content.ReadFromJsonAsync<T>(JsonSerializerOptions.Web, ct))!;
+        return response;
     }
 
     private static async Task<HouseholdConfigRefused?> RefusalAsync(HttpResponseMessage response, CancellationToken ct)

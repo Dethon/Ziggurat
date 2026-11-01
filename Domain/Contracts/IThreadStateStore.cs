@@ -27,14 +27,22 @@ public interface IThreadStateStore
     // nothing unmarks it — see ADR 0024.
     // A page holds only what the viewer may know exists, and is filled from below whatever it
     // passed over, so another person's private topics never cut a page short or end the list.
+    // alsoSpaces are other slugs listed beside the space's own as one list by last write: the default
+    // space's page carries the topics of spaces its household removed (SpaceListing).
     Task<TopicPage> GetTopicPageAsync(
-        string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false);
+        string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false,
+        IReadOnlyList<string>? alsoSpaces = null);
 
     // By what a conversation is called and by what was said in it, over both ranges at once —
     // search is the way into the archive, so a cutoff has no business in it. Paged like any
     // other list of topics, and seen through the same viewer.
     Task<TopicPage> SearchTopicsAsync(
-        string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize);
+        string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize,
+        IReadOnlyList<string>? alsoSpaces = null);
+
+    // Every slug the household's topics are kept under, whichever agent's — the spaces it has and
+    // those it removed that still hold topics.
+    Task<IReadOnlyList<string>> SpacesHoldingTopicsAsync(string tenantId);
 
     // keepTtl is for writes that are not the conversation's own: a rename must not push the purge
     // horizon back, or search returns a topic whose transcript expired months before its record.

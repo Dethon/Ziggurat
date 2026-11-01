@@ -25,9 +25,6 @@ public record MetricsSummary(
     long MemoriesMerged = 0,
     long MemoriesDecayed = 0);
 
-// What a household asked of the shared Lemonade over a range, each in its own unit.
-public record LemonadeUsage(double TranscribedSeconds, long SpokenCharacters, long Embeddings);
-
 // Every read takes the household it is for: a household's id, MetricKeys.Deployment for the events no
 // household's turn made, or null for everybody's together — what the dashboard showed before
 // households, and still shows until it can pick one.
@@ -173,6 +170,28 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
             .GroupBy(t => t.Scope)
             .ToDictionary(g => g.Key, g => Lemonade(g.SelectMany(t => t.Entries)));
 
+    // One household's tokens and cost per agent (labelled as the dashboard labels them) and per
+    // person (the name their turns carried), costliest first, beside its Lemonade use: what its owner
+    // reads in the admin area.
+    public async Task<HouseholdUsage> GetHouseholdUsageAsync(string household, DateOnly from, DateOnly to)
+    {
+        var events = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, from, to, household);
+        var agent = AgentLabels(events, "unknown");
+        return new HouseholdUsage(
+            Lines(events, agent),
+            Lines(events, e => e.Sender),
+            await GetLemonadeUsageAsync(from, to, household));
+    }
+
+    private static IReadOnlyList<UsageLine> Lines(IEnumerable<TokenUsageEvent> events, Func<TokenUsageEvent, string> by) =>
+        events
+            .GroupBy(by)
+            .Select(g => new UsageLine(g.Key, g.Sum(e => (long)e.InputTokens + e.OutputTokens), g.Sum(e => e.Cost)))
+            .OrderByDescending(l => l.Cost)
+            .ThenByDescending(l => l.Tokens)
+            .ThenBy(l => l.Name, StringComparer.Ordinal)
+            .ToList();
+
     public async Task<Dictionary<string, long>> GetTokenBreakdownAsync(
         string prefix, DateOnly from, DateOnly to, string? household = null)
     {
@@ -237,12 +256,13 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to, string? household = null)
     {
         var events = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, from, to, household);
+        var agent = AgentLabels(events, "unknown");
         return events
             .GroupBy(e => dimension switch
             {
                 TokenDimension.User => e.Sender,
                 TokenDimension.Model => e.Model,
-                TokenDimension.Agent => e.AgentId ?? "unknown",
+                TokenDimension.Agent => agent(e),
                 _ => throw new ArgumentOutOfRangeException(nameof(dimension))
             })
             .ToDictionary(
@@ -259,12 +279,13 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         TokenDimension dimension, TokenMetric metric, DateOnly from, DateOnly to, string? household = null)
     {
         var events = await GetEventsAsync<ContextTruncationEvent>(MetricKeys.Truncations, from, to, household);
+        var agent = AgentLabels(events, "unknown");
         return events
             .GroupBy(e => dimension switch
             {
                 TokenDimension.User => e.Sender,
                 TokenDimension.Model => e.Model,
-                TokenDimension.Agent => e.AgentId ?? "unknown",
+                TokenDimension.Agent => agent(e),
                 _ => throw new ArgumentOutOfRangeException(nameof(dimension))
             })
             .ToDictionary(
@@ -333,6 +354,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                 .Concat(judgments)
                 .ToList();
 
+        var agent = AgentLabels(allEvents, "unknown");
         return allEvents
             .GroupBy(e => dimension switch
             {
@@ -352,7 +374,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                     MemoryJudgmentEvent => "Judgment",
                     _ => "unknown"
                 },
-                MemoryDimension.Agent => e.AgentId ?? "unknown",
+                MemoryDimension.Agent => agent(e),
                 MemoryDimension.Outcome => (e as MemoryExtractionEvent)?.Outcome ?? "(unrecorded)",
                 _ => throw new ArgumentOutOfRangeException(nameof(dimension))
             })
@@ -417,11 +439,12 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         LatencyDimension dimension, Aggregation aggregation, DateOnly from, DateOnly to, string? household = null)
     {
         var events = await GetEventsAsync<LatencyEvent>(MetricKeys.Latency, from, to, household);
+        var agent = AgentLabels(events, "unknown");
         return events
             .GroupBy(e => dimension switch
             {
                 LatencyDimension.Stage => e.Stage.ToString(),
-                LatencyDimension.Agent => e.AgentId ?? "unknown",
+                LatencyDimension.Agent => agent(e),
                 LatencyDimension.Model => e.Model ?? "unknown",
                 _ => throw new ArgumentOutOfRangeException(nameof(dimension))
             })
@@ -507,12 +530,13 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
 
         // By skill, an event counts once per skill it preloaded and not at all when it preloaded
         // none: the question that dimension answers is "which skills arrive early".
+        var agent = AgentLabels(events, "(unknown)");
         var keyed = dimension == SkillPreloadDimension.Skill
             ? events.SelectMany(e => e.Skills.Select(skill => (Key: skill, Event: e)))
             : events.Select(e => (Key: dimension switch
             {
                 SkillPreloadDimension.Outcome => e.Outcome,
-                SkillPreloadDimension.Agent => e.AgentId ?? "(unknown)",
+                SkillPreloadDimension.Agent => agent(e),
                 SkillPreloadDimension.Channel => e.Channel ?? "(unknown)",
                 _ => throw new ArgumentOutOfRangeException(nameof(dimension))
             }, Event: e));
@@ -626,6 +650,22 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                 _ => throw new ArgumentOutOfRangeException(nameof(dimension))
             })
             .ToDictionary(g => g.Key, g => g.Count());
+    }
+
+    // An agent's figures are keyed by its id, which a household's rename leaves alone, and shown under
+    // the name its latest event went by (an event that carries none — one from before the name was
+    // carried — shows its id); two ids that go by one name each carry their id beside it, so the
+    // figures stay apart.
+    private static Func<MetricEvent, string> AgentLabels(IEnumerable<MetricEvent> events, string unknown)
+    {
+        var named = events
+            .Where(e => e.AgentId is not null)
+            .GroupBy(e => e.AgentId!)
+            .Select(g => (Id: g.Key, Name: g.Where(e => e.AgentName is not null).MaxBy(e => e.Timestamp)?.AgentName ?? g.Key))
+            .ToList();
+        var shared = named.GroupBy(a => a.Name).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        var labels = named.ToDictionary(a => a.Id, a => shared.Contains(a.Name) ? $"{a.Name} ({a.Id})" : a.Name);
+        return e => e.AgentId is { } id ? labels[id] : unknown;
     }
 
     private static IEnumerable<DateOnly> EnumerateDates(DateOnly from, DateOnly to)
