@@ -13,6 +13,7 @@ public sealed class UserIdentityEffect : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly IAccountService _accounts;
     private readonly IDisposable _initializeRegistration;
+    private readonly IDisposable _loadRegistration;
 
     public UserIdentityEffect(Dispatcher dispatcher, IAccountService accounts, ILogger<UserIdentityEffect> logger)
     {
@@ -21,6 +22,8 @@ public sealed class UserIdentityEffect : IDisposable
 
         _initializeRegistration = dispatcher.RegisterHandler<Initialize>(
             _ => LoadSignedInAsync().LogFaults(logger, nameof(Initialize)));
+        _loadRegistration = dispatcher.RegisterHandler<LoadSignedIn>(
+            _ => LoadSignedInAsync().LogFaults(logger, nameof(LoadSignedIn)));
     }
 
     public async Task LoadSignedInAsync()
@@ -44,5 +47,9 @@ public sealed class UserIdentityEffect : IDisposable
         _accounts.SendToSignIn();
     }
 
-    public void Dispose() => _initializeRegistration.Dispose();
+    public void Dispose()
+    {
+        _initializeRegistration.Dispose();
+        _loadRegistration.Dispose();
+    }
 }

@@ -178,3 +178,17 @@ public sealed class HouseholdDataKey
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? RewrappedAt { get; set; }
 }
+// One change made through the admin API: who made it (the account the admin assertion named, with
+// its own household, which for the operator is not always the one changed), the household changed,
+// the route it came on and a summary its route wrote, which never carries a secret or any part of one,
+// and when. Never updated or deleted.
+public sealed class AdminChange
+{
+    public required string Id { get; init; }
+    public required string TenantId { get; init; }
+    public required string ActorUserId { get; init; }
+    public required string ActorTenantId { get; init; }
+    public required string Route { get; init; }
+    public required string Summary { get; init; }
+    public DateTimeOffset At { get; init; }
+}

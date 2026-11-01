@@ -4,9 +4,14 @@
 
 **Blocked by:** None (can start immediately once 4b is merged)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] An owner reads and saves the household's settings from the admin area, and a turn then uses them
-- [ ] A member gets no admin area and the API refuses them; an owner of another household is refused
-- [ ] Every change is recorded with who and when
-- [ ] The proxy routes `/accounts/admin/*` behind the session check and the internal API stays refused (conformance)
+- [x] An owner reads and saves the household's settings from the admin area, and a turn then uses them
+  (`HouseholdAdminE2ETests` saves and sees them; `AdminApiTests` proves the save is announced and the
+  agents the household's next turn is built from carry the new zone and language)
+- [x] A member gets no admin area and the API refuses them; an owner of another household is refused
+  (no household route names a household: another household's owner reaches only their own)
+- [x] Every change is recorded with who and when
+- [x] The proxy routes `/accounts/admin/*` behind the session check and the internal API stays refused (conformance)
+
+The API's conventions for 02–09 are `.claude/rules/admin.md`.
