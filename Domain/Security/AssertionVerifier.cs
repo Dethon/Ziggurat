@@ -43,11 +43,6 @@ public sealed class AssertionVerifier(
             ? assertion
             : null;
 
-    // Who a request to an app behind the proxy is from, for the app's channel.
-    public Task<ForwardedAccount?> VerifyRequestAsync(
-        IDictionary<string, StringValues> headers, string channel, CancellationToken ct) =>
-        VerifyAsync(AssertionOf(headers), channel, ct);
-
     public async Task<ForwardedAccount?> VerifyAsync(string? assertion, string channel, CancellationToken ct)
     {
         var verification = await _verifier.VerifyAsync(assertion, TokenAudiences.Assertion, ct);
