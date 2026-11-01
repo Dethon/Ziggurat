@@ -115,13 +115,15 @@ public sealed class TelegramLinks(IDbContextFactory<AccountsDbContext> contexts,
         return new StartRedemption(link.Kind == LinkKind.Invite ? StartOutcome.Invited : StartOutcome.Linked, person);
     }
 
+    // Nobody for a Telegram that a disabled member linked: it is kept, and answers again once they are
+    // re-enabled.
     public async Task<User?> PersonAsync(long telegramId, CancellationToken ct)
     {
         var identity = IdentityOf(telegramId);
         await using var db = await contexts.CreateDbContextAsync(ct);
         return await db.LinkedIdentities
             .Where(i => i.Channel == Channel && i.Identity == identity)
-            .Join(db.Users, i => i.UserId, u => u.Id, (_, u) => u)
+            .Join(db.Users.Where(u => u.DisabledAt == null), i => i.UserId, u => u.Id, (_, u) => u)
             .FirstOrDefaultAsync(ct);
     }
 
@@ -191,13 +193,13 @@ public sealed class TelegramLinks(IDbContextFactory<AccountsDbContext> contexts,
     }
 
     // The Telegram a person linked, which is also their private chat with the bot; null for a person
-    // who linked none, or one the household named does not hold.
+    // who linked none, one the household named does not hold, or one an owner disabled.
     public async Task<long?> TelegramIdOfAsync(string tenantId, string userId, CancellationToken ct)
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
         var identity = await db.LinkedIdentities
             .Where(l => l.Channel == Channel && l.UserId == userId)
-            .Join(db.Users.Where(u => u.TenantId == tenantId), l => l.UserId, u => u.Id, (l, _) => l.Identity)
+            .Join(db.Users.Where(u => u.TenantId == tenantId && u.DisabledAt == null), l => l.UserId, u => u.Id, (l, _) => l.Identity)
             .FirstOrDefaultAsync(ct);
         return long.TryParse(identity, NumberStyles.Integer, CultureInfo.InvariantCulture, out var telegramId)
             ? telegramId

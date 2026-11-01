@@ -292,6 +292,18 @@ an `Error` reply (`ConversationGroup.RefusedTurnAnswer`) then `StreamComplete`, 
 `TurnKey` or a minted one — so a browser, a satellite or a waiting app request is not left waiting.
 Nothing is built, minted or recalled for it.
 
+**Disabled members.** An assertion says who a turn is for as of when it was signed, and a channel
+may hold one for minutes (Telegram's `LinkCache:Linked`), so once it verifies the group also asks
+whether the household still lets the agent act for that person: `IAccountStanding`
+(`HouseholdAccountStanding`, the turn's household's agent view, `AgentHouseholdConfig.DisabledPeople`,
+kept a minute and dropped when accounts announces `HouseholdConfigProtocol.PeopleChanged`). A member an
+owner disabled is refused before anything is built: logged, an `ErrorEvent` `AccountDisabled`
+(`ChatMonitor.AccountDisabledErrorType`) under their household, and `ConversationGroup.DisabledAnswer`
+then `StreamComplete` on the channel. A standing that cannot be read refuses the turn as an
+`AssertionRefused` `StandingUnreadable` — the turn could not be built without that view anyway. The guest
+and nobody are never asked about. A monitor built with no `IAccountStanding` (a test harness) asks
+nobody; the agent's host registers it in `AddAgent`.
+
 **Not checked**: a chat command (`/clear`, `/cancel`, a channel's cancel) is no turn and acts for
 nobody. A message with `Origin` set — a schedule's fire, a login wake, a watch, a download — carries
 no assertion and is never refused for lacking one: it acts for whoever its delegation verifies as, or
@@ -394,7 +406,12 @@ description says. It answers `FireAdmission.Delegated(identity)` — the message
 `Undelegated(refusal)`: the principal is dropped and the turn runs as nobody. A refusal (a token that
 does not verify, `NamesNoPerson`, `WrongKind`, `DigestMismatch`, `NotThisFire`, `NotDelegable` for a
 download carrying one) is logged at warning and published as `DelegationRefused`; a fire carrying
-none is ordinary and says nothing. A monitor built with no verifier believes no delegation. Fire
+none is ordinary and says nothing. A monitor built with no verifier believes no delegation. A delegation
+that verifies but names a member an owner has since disabled is refused the same way, as
+`AccountDisabled` (or `StandingUnreadable` when their standing cannot be read) — the same household
+check a person's turn gets (Channels and the agent, "Disabled members") — so their schedules, watches and
+login wakes fire as nobody; nothing about the delegation is spent, and once they are re-enabled it acts
+for them again. Fire
 timing is not checked: nothing in a fire says when it was due, so the digest's timing only catches a
 store edited under a server that still tells the truth about it. `run_now` fires a schedule as its
 delegation says, whoever asked for it.
