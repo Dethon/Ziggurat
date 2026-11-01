@@ -8,7 +8,7 @@ paths:
 
 # OpenRouter Provider Routing
 
-Each `agents[]` entry may carry a `providerRouting` object (`sort` ∈
+Each agent definition — a household's seeded one, a template's (`provider-routing:`, the same object on one line), a person's registered agent — may carry a `providerRouting` object (`sort` ∈
 `price`|`throughput`|`latency`, plus `order`, `only`, `ignore`, `allowFallbacks`,
 `preferredMinThroughput`, `preferredMaxLatency`, `maxPrice`), overriding
 `openRouter.providerRouting` **wholesale** — never field-by-field. It reaches the wire through
@@ -52,7 +52,7 @@ model suffix fighting an explicit `sort`; both are warnings, never throws, becau
 serves runtime-created agents. The advisories run at agent construction
 (`ProviderRoutingResolver.Resolve`) with no dedupe — agents are constructed per conversation
 activation, so a tripped advisory repeats for the lifetime of the config, not once per agent. A
-subagent inherits the value already resolved and trips none of its own. `MemoryModule` binds `openRouter.providerRouting` for the memory extraction
+subagent inherits the value already resolved and trips none of its own. `MemoryModule` binds `openRouter.providerRouting` for the memory extraction (each payer's client, `PaidChatClients`)
 and dreaming chat clients directly, so those two models skip the advisories entirely.
 
 **Anthropic's models are asked to cache; nobody else is.** Every other model here caches a

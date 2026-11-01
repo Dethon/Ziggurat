@@ -87,17 +87,21 @@ internal sealed class CallTokenGate
             if (context.JsonRpcMessage is JsonRpcRequest { Method: RequestMethods.ToolsCall } request)
             {
                 var services = context.Services ?? context.Server.Services!;
+                var token = TokenOf(request);
                 context.Items[CallTurn.IdentityKey] =
-                    await services.GetRequiredService<CallTokenGate>().AdmitAsync(request, services, ct);
+                    await services.GetRequiredService<CallTokenGate>().AdmitAsync(request, token, services, ct);
+                // Verified, so the call may show it on: the accounts service believes the household it
+                // names for this server alone (CallHousehold).
+                context.Items[CallTurn.VerifiedTokenKey] = token!;
             }
 
             await next(context, ct);
         }));
     }
 
-    private async Task<IdentityClaims> AdmitAsync(JsonRpcRequest request, IServiceProvider services, CancellationToken ct)
+    private async Task<IdentityClaims> AdmitAsync(JsonRpcRequest request, string? token, IServiceProvider services, CancellationToken ct)
     {
-        var verification = await _verifier.VerifyAsync(TokenOf(request), Audience, ct);
+        var verification = await _verifier.VerifyAsync(token, Audience, ct);
         if (verification.IsVerified)
         {
             return verification.Claims;

@@ -1,7 +1,7 @@
-using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State.Alert;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
@@ -75,10 +75,18 @@ public sealed class HubEventDispatcher(
     public void HandleApprovalOffered(ApprovalOfferedNotification notification) =>
         dispatcher.Dispatch(new ShowApproval(null, notification.Request));
 
-    public void HandleAgentsUpdated(IReadOnlyList<AgentCatalogEntry> agents)
-    {
-        dispatcher.Dispatch(new SetAgents(agents));
-    }
+    // A timer ringing for this person rings here whatever topic or space is open: it was set for
+    // them, not for a conversation.
+    public void HandleAlertOffered(AlertOfferedNotification notification) =>
+        dispatcher.Dispatch(new AlertRang(notification));
+
+    public void HandleAlertSettled(AlertSettledNotification notification) =>
+        dispatcher.Dispatch(new AlertEnded(notification.AlertId));
+
+    // The push names no agents, since every household is shown its own: asking the hub for this one's
+    // is a hub call, which is an effect's to make.
+    public void HandleAgentsUpdated(AgentsUpdatedNotification notification) =>
+        dispatcher.Dispatch(new AgentsUpdated());
 
     public void HandleUserMessage(UserMessageNotification notification)
     {

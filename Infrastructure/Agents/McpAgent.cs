@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
@@ -24,6 +25,7 @@ namespace Infrastructure.Agents;
 public sealed class McpAgent : DisposableAgent
 {
     private readonly string? _customInstructions;
+    private readonly string? _timeZone;
     private readonly string? _language;
     private readonly string _description;
     private readonly IReadOnlyList<AIFunction> _domainTools;
@@ -37,6 +39,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IOutposts? _outposts;
     private readonly IOwnServers? _ownServers;
     private readonly string? _tenantId;
+    private readonly ModelPayer _payer;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger<McpAgent>? _logger;
@@ -101,6 +104,7 @@ public sealed class McpAgent : DisposableAgent
     {
         _endpoints = spec.McpServerEndpoints;
         _tenantId = spec.TenantId;
+        _payer = spec.Payer;
         _ownServers = ownServers;
         _usesOutposts = spec.UsesOutposts;
         _noTools = spec.NoTools;
@@ -114,6 +118,7 @@ public sealed class McpAgent : DisposableAgent
         _description = spec.Description;
         _userId = spec.UserId;
         _customInstructions = spec.CustomInstructions;
+        _timeZone = spec.TimeZone;
         _language = spec.Language;
         _domainTools = domainTools;
         _domainPrompts = domainPrompts;
@@ -131,7 +136,7 @@ public sealed class McpAgent : DisposableAgent
         _bridge = bridge;
         _callTokens = callTokens;
         _history = new RedisChatMessageStore(stateStore, metricsPublisher, spec.ConversationId);
-        _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided, RegistryOf);
+        _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided, RegistryOf, spec.Payer);
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = spec.DisplayName,
@@ -151,6 +156,8 @@ public sealed class McpAgent : DisposableAgent
         thread is not null ? GetFileSystemRegistry(thread) : null;
 
     public override IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) => SkillsOf(thread);
+
+    public override ModelPayer Payer => _payer;
 
     public override Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
         _history.ReadAsync(thread);
@@ -484,11 +491,18 @@ public sealed class McpAgent : DisposableAgent
         return new AdditionalPropertiesDictionary { [ConversationContextMeta.OptionsKey] = conversationContext };
     }
 
+    // The household's zone, which its day and its bare times are read in. One this host does not know
+    // reads as the host's rather than failing the turn: accounts checked the name against a zone list
+    // of its own when it was saved.
+    private TimeZoneInfo Zone =>
+        _timeZone is { } id && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var found) ? found : _timeProvider.LocalTimeZone;
+
     // Every section this agent has, handed to the composer as data. Nothing about the order lives
     // here any more: a section carries its own band, and what used to be a chain of Prepend and
     // Append calls with a comment each is now the manifest those comments moved into.
     private string BuildInstructions(ThreadSession session)
     {
+        var zone = Zone;
         var assembly = PromptComposer.Compose(new PromptContext
         {
             AgentId = _agentId,
@@ -501,7 +515,10 @@ public sealed class McpAgent : DisposableAgent
             Skills = session.Skills,
             CustomInstructions = _customInstructions,
             Language = _language,
-            Now = _timeProvider.GetLocalNow()
+            Now = TimeZoneInfo.ConvertTime(_timeProvider.GetUtcNow(), zone),
+            // Named only where it is not the host's own: the home's agents read the prompt they always
+            // read, and a household elsewhere is told whose eight o'clock it is.
+            TimeZone = zone.Id == _timeProvider.LocalTimeZone.Id ? null : zone.Id
         });
 
         ReportPromptWarnings(assembly);
@@ -604,7 +621,10 @@ public sealed class McpAgent : DisposableAgent
                 .CreateAsync(composed.Endpoints, _name, _userId, _description,
                              _domainTools, _filesystemEnabledTools, _loggerFactory,
                              ct, _promptCache, _readImages, _bridge, _noTools, _withheldTools, _callTokens,
-                             _timeProvider.LocalTimeZone);
+                             // A write's bare time is read in the household's zone, as the server
+                             // that keeps the schedule reads it, so the delegation describes the same
+                             // instant the server will fire at.
+                             Zone);
 
             // Asked about by name later, when the model tries a path on a machine that is not here.
             OutpostEndpoints.DeclareUnreachable(

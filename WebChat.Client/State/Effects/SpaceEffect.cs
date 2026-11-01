@@ -14,7 +14,6 @@ public sealed class SpaceEffect : IDisposable
     private readonly Dispatcher _dispatcher;
     private readonly ITopicService _topicService;
     private readonly ConnectionStore _connectionStore;
-    private readonly IConfigService _configService;
     private readonly NavigationManager _navigationManager;
     private readonly IPushSubscriptionService _pushNotificationService;
     private readonly ILogger<SpaceEffect> _logger;
@@ -25,7 +24,6 @@ public sealed class SpaceEffect : IDisposable
         Dispatcher dispatcher,
         ITopicService topicService,
         ConnectionStore connectionStore,
-        IConfigService configService,
         NavigationManager navigationManager,
         IPushSubscriptionService pushNotificationService,
         ILogger<SpaceEffect> logger)
@@ -33,7 +31,6 @@ public sealed class SpaceEffect : IDisposable
         _dispatcher = dispatcher;
         _topicService = topicService;
         _connectionStore = connectionStore;
-        _configService = configService;
         _navigationManager = navigationManager;
         _pushNotificationService = pushNotificationService;
         _logger = logger;
@@ -52,8 +49,6 @@ public sealed class SpaceEffect : IDisposable
             return;
         }
 
-        var space = await _configService.GetSpaceAsync(slug);
-
         // Before the hub is up this is the first navigation rather than a switch the user made
         // mid-session: InitializationEffect joins the slug the SelectSpace reducer has already
         // stored and validates it, so there is nothing to do and nothing to say here.
@@ -62,10 +57,21 @@ public sealed class SpaceEffect : IDisposable
             return;
         }
 
-        if (space is null)
+        // The household's spaces are the hub's to say. Not live is the same failure as a join that
+        // could not be made, below, and is said the same way.
+        var spaces = await _topicService.GetSpacesAsync();
+        if (!spaces.IsLive)
+        {
+            _previousSlug = previousSlug;
+            _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
+
+        var household = spaces.Value ?? [];
+        if (household.FirstOrDefault(s => s.Slug == slug) is not { } space)
         {
             _dispatcher.Dispatch(new InvalidSpace());
-            _navigationManager.NavigateTo("/", replace: true);
+            _navigationManager.NavigateTo(SpaceAgent.PathOf(household.FirstOrDefault()), replace: true);
             return;
         }
 
@@ -88,7 +94,7 @@ public sealed class SpaceEffect : IDisposable
 
         _dispatcher.Dispatch(new TopicsLoaded([]));
         _dispatcher.Dispatch(new ClearAllMessages());
-        _dispatcher.Dispatch(new SpaceValidated(slug, space.Name, space.AccentColor));
+        _dispatcher.Dispatch(new SpaceValidated(slug, space.Name, space.AccentColor, space.DefaultAgent));
     }
 
     public void Dispose()

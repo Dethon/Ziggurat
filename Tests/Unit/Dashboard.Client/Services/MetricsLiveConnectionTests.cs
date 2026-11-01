@@ -486,6 +486,22 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _healthStore.State.Services.ShouldContain(s => s.Service == "agent" && s.IsHealthy);
     }
 
+    // Two households' voice servers beat under one service name; a tile is the service of one of
+    // them, so the second push is a second tile rather than the first one repainted.
+    [Fact]
+    public async Task HealthPushes_OfOneServiceFromTwoHouseholds_AreTwoTiles()
+    {
+        await ConnectAsync();
+        var at = new DateTimeOffset(2026, 3, 24, 12, 0, 0, TimeSpan.Zero);
+
+        await _hub.RaiseAsync("OnHealthUpdate", new ServiceHealthUpdate("mcp-channel-voice", true, at, "home"));
+        await _hub.RaiseAsync("OnHealthUpdate", new ServiceHealthUpdate("mcp-channel-voice", false, at, "other"));
+
+        _healthStore.State.Services.Where(s => s.Service == "mcp-channel-voice")
+            .Select(s => (s.Household, s.IsHealthy))
+            .ShouldBe([("home", true), ("other", false)], ignoreOrder: true);
+    }
+
     // A close with no Reconnecting before it: the server disallowed automatic reconnect, or the
     // transport was never configured for it. The comment that nothing needs to handle Closed used
     // to be the whole defense; without a restart the module sat dead while the indicator still read

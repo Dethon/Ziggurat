@@ -36,10 +36,8 @@ public class SubAgentTests(RedisFixture redisFixture)
 
     private static MultiAgentFactory CreateFactory(OpenRouterConfig config)
     {
-        var registryOptions = Options.Create(new AgentRegistryOptions { Agents = [] });
-        var monitor = new OptionsMonitorStub<AgentRegistryOptions>(registryOptions.Value);
         var customAgentRegistry = new CustomAgentRegistry();
-        var definitionProvider = new AgentDefinitionProvider(monitor, customAgentRegistry);
+        var definitionProvider = FixedHouseholdAgents.Provider(customAgentRegistry);
         var domainToolRegistry = new DomainToolRegistry([]);
         return new MultiAgentFactory(
             null!,

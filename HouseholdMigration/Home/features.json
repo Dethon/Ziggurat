@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "scheduling": true,
+  "timers": true,
+  "sugary": true,
+  "idealista": true,
+  "memory": true,
+  "workers": true
+}

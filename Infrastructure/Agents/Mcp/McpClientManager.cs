@@ -256,12 +256,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         McpPromptCache? promptCache,
         CancellationToken ct)
     {
-        var userContext = PromptManifest.Bind(
-            PromptManifest.UserContext,
-            $"## User Context\n" +
-            $"Conversation created by user: '{userId}'\n" +
-            $"Use this userId/username for all user-scoped operations. unless you get more " +
-            $"updated information in the user's message");
+        var userContext = PromptManifest.Bind(PromptManifest.UserContext, UserContextPrompt.Build(userId));
         var perClient = await Task.WhenAll(clients
             .Where(c => c.Client.ServerCapabilities.Prompts is not null)
             .Select(c => promptCache is null

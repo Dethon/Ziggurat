@@ -51,18 +51,26 @@ public sealed class MultiAgentFactory(
     private static ILemonadeModelSource LemonadeModelsOf(IServiceProvider? serviceProvider) =>
         serviceProvider?.GetService<ILemonadeModelSource>() ?? FixedLemonadeModelSource.None;
 
-    public DisposableAgent Create(
+    public async Task<DisposableAgent> CreateAsync(
         AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
-        string? tenantId = null)
+        string? tenantId = null, CancellationToken ct = default)
     {
-        // A person's custom agents are registered under their account's id, so a turn that names
-        // the account finds them by it and not by its sender, which may be the account's display name.
-        var agents = definitionProvider.GetAll(account?.UserId ?? userId);
+        // The household the turn is for runs its own agents (a turn acting for nobody runs the home's).
+        // A person's custom agents are registered under their account — household and person — so a
+        // turn finds them by the account it acts for, never by its sender, which may be the account's
+        // display name or anything a channel reports. A turn acting for no account sees the
+        // household's agents alone.
+        var householdId = tenantId ?? account?.TenantId;
+        var household = await definitionProvider.ForHouseholdAsync(householdId, ct);
+        // Before anything is built, so a household that cannot pay is asked nothing: not its agents'
+        // servers, and no model.
+        _ = household.Payer ?? throw new HouseholdWithoutKeyException(household.HouseholdId ?? householdId ?? "");
+        var agents = await definitionProvider.GetAllAsync(householdId, account, ct);
 
         // By id or not at all. Falling back to the first configured agent read routing off the
         // order of a display catalogue, so a request that named nobody was answered by whichever
         // assistant happened to be listed first. Who answers a message that names no agent is
-        // decided from configuration before the message is grouped (AgentDefaults).
+        // decided before the message is grouped (AgentDefaults, then the household's default).
         var definition = string.IsNullOrEmpty(agentId)
             ? null
             : agents.FirstOrDefault(a => a.Id == agentId);
@@ -72,7 +80,15 @@ public sealed class MultiAgentFactory(
                 ? "No agent id was supplied and no default agent is configured for the channel."
                 : $"No agent found for identifier '{agentId}'.");
 
-        return CreateFromDefinition(agentKey, userId, definition, approvalHandler, tenantId ?? account?.TenantId);
+        // Only the household's own agents' endpoints present a deployment credential: they are its
+        // configuration's, which its owner cannot point anywhere, where a person's registered agent
+        // names whatever its registration said.
+        var deployment = new DeploymentEndpoints(household.Agents.SelectMany(a => a.McpServerEndpoints));
+        var spec = AgentSpecProjection.ForAgent(
+            definition, agentKey, userId, openRouterConfig, _patchableModels,
+            LemonadeHostAddress, _credentials, deployment, _logger, householdId, household);
+
+        return Build(spec, approvalHandler);
     }
 
     public DisposableAgent CreateSubAgent(
@@ -86,37 +102,25 @@ public sealed class MultiAgentFactory(
         return Build(spec, approvalHandler);
     }
 
-    private DisposableAgent CreateFromDefinition(
-        AgentKey agentKey, string userId, AgentDefinition definition, IToolApprovalHandler approvalHandler,
-        string? tenantId)
-    {
-        // Asked without a user, the provider lists the built-in agents alone: the deployment's own.
-        var deployment = new DeploymentEndpoints(definitionProvider.GetAll().SelectMany(a => a.McpServerEndpoints));
-        var spec = AgentSpecProjection.ForAgent(
-            definition, agentKey, userId, openRouterConfig, _patchableModels,
-            LemonadeHostAddress, _credentials, deployment, _logger, tenantId);
-
-        return Build(spec, approvalHandler);
-    }
-
     // Everything that differs between an agent and a subagent was resolved by the projection,
     // so nothing here asks which one it is building.
     private DisposableAgent Build(AgentSpec spec, IToolApprovalHandler approvalHandler)
     {
         IMetricsPublisher agentPublisher = metricsPublisher is not null
-            ? new AgentMetricsPublisher(metricsPublisher, spec.MetricsAgentId)
+            ? new AgentMetricsPublisher(metricsPublisher, spec.MetricsAgentId, spec.TenantId)
             : NoOpMetricsPublisher.Instance;
 
         var chatClient = CreateChatClient(
             spec.Model, agentPublisher, spec.MaxContextTokens,
             sessionId: spec.RoutingSessionId,
-            providerRouting: spec.ProviderRouting);
+            providerRouting: spec.ProviderRouting,
+            key: spec.Key);
 
         // Composed from the spec this build is already running against, so the parent's values
         // reach the projection with no second source of truth for any of them.
         var spawn = new SpawnContext(
             spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts,
-            spec.Model, spec.ProviderRouting, spec.TenantId);
+            spec.Model, spec.ProviderRouting, spec.TenantId, spec.WithheldServers, spec.TimeZone, spec.Key);
 
         // The spawner is absent in every deployment, so the factory builds its own workers; when
         // one is registered it stands in for them whole, which is the only way a scenario about
@@ -153,7 +157,8 @@ public sealed class MultiAgentFactory(
             // before the screen existed. A worker gets it by this same line, screened on its
             // delegation prompt.
             serviceProvider?.GetService<IExecScreen>(),
-            spec.MetricsAgentId);
+            spec.MetricsAgentId,
+            spec.Payer);
 
         return new McpAgent(
             spec,
@@ -246,10 +251,13 @@ public sealed class MultiAgentFactory(
     // The OpenRouter client is built exactly as before. With a Lemonade chat host configured it is
     // one side of a routing client, the other being a client for the box; without one it is the
     // whole client, and no turn can reach a Lemonade model because none is ever whitelisted.
+    // It is sent with the household's own key, or the deployment's where none is given (the home's
+    // agents and anything built for nobody); the box is the deployment's, on its own key.
     internal IChatClient CreateChatClient(
         string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null,
         string? sessionId = null, ProviderRouting? providerRouting = null,
-        HttpMessageHandler? transportHandler = null, HttpMessageHandler? lemonadeTransportHandler = null)
+        HttpMessageHandler? transportHandler = null, HttpMessageHandler? lemonadeTransportHandler = null,
+        ModelKey? key = null)
     {
         var effectivePublisher = publisher ?? metricsPublisher;
         var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
@@ -265,7 +273,7 @@ public sealed class MultiAgentFactory(
 
         var openRouter = new OpenRouterChatClient(
             openRouterConfig.ApiUrl,
-            openRouterConfig.ApiKey,
+            key?.Reveal() ?? openRouterConfig.ApiKey,
             model,
             effectiveContext,
             effectivePublisher,
@@ -308,9 +316,4 @@ public record OpenRouterConfig
     public IReadOnlyList<string>? PatchableModelIds { get; init; }
     public int HydrationDepthMessages { get; init; } = AttachmentHydration.DefaultDepthMessages;
     public long MaxInlineImageBytes { get; init; } = ReadImageSupport.DefaultMaxBytes;
-}
-
-public sealed class AgentRegistryOptions
-{
-    public AgentDefinition[] Agents { get; set; } = [];
 }

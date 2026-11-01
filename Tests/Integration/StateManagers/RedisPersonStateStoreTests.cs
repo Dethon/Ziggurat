@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using Domain.Contracts;
+using Domain.Security.Sealing;
 using Infrastructure.StateManagers;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -12,7 +12,7 @@ public class RedisPersonStateStoreTests(RedisFixture redis) : IClassFixture<Redi
         """{"cookies":[{"name":"sid","value":"s3cr3t-session","domain":".bank.example"}],"origins":[]}""",
         [new SiteLogin("bank.example", ["bank.example", "login.example"], DateTimeOffset.UnixEpoch, null)]);
 
-    private static byte[] NewKey() => RandomNumberGenerator.GetBytes(RedisPersonStateStore.KeyBytes);
+    private static SealingKey NewKey() => SealingKey.Generate();
 
     private static string Person() => $"fran-{Guid.NewGuid():N}";
 
@@ -31,6 +31,26 @@ public class RedisPersonStateStoreTests(RedisFixture redis) : IClassFixture<Redi
         login.Domains.ShouldBe(["bank.example", "login.example"]);
         login.HandedOffAt.ShouldBe(DateTimeOffset.UnixEpoch);
         login.LastUsedAt.ShouldBeNull();
+    }
+
+    // A record the browse server wrote before sealing moved into Domain, under key bytes 0..31 for the
+    // user id "user-fran": the tenant kit's move copies records as they are, so it must still load.
+    [Fact]
+    public async Task ARecordSavedBeforeSealingMoved_StillLoads()
+    {
+        const string blob =
+            "AvImA0QBABqZwbNSZABi8s/zuQjXmlfCvLMtAIDyumDBbfsrenslYQJoxK9w6tGsDBJfu2t2tSKi6qdgxe8XFtCr0hpLGJpvVtJx"
+            + "CAYCV1P3pnXTQn1iMSjP8S25BocmYV6oBs2zo7qXqXQHtuD2yav4YVUc6GWQJpL0gzm0ufAe9TELzivABdrXyFRej1Uqw+bNJaQJ"
+            + "8NR5BBmJshSHg9NdkqzQ7EPxt3OYedF9aBTiTC0QrKNmx6MnYRzhCTulM4b1w/5D1SSFgjhcbD3qk8kOPqMEHOTgIhmMzbk9J7+g"
+            + "jsOYgxAwEN+Pybjlen1WfL3UD5C9S3/eXZ1puIWu36DPwLhwhyZm2zHEBlb2bnkLCp+SgvkLbb3Cz6/f1c7rGxHmsu8tm04n15Zk"
+            + "+7BlGs7rvtbBTAxDid9QiIpKWTtTGgJG5lXbSTkr0BC3EEsEZ05ryjJaBoKPtdSfwEPnQIrtyKjB";
+        await redis.Connection.GetDatabase().StringSetAsync("websearch:person:user-fran", Convert.FromBase64String(blob));
+        var key = SealingKey.Import(Enumerable.Range(0, 32).Select(i => (byte)i).ToArray());
+
+        var loaded = (await new RedisPersonStateStore(redis.Connection, key).LoadAsync("user-fran")).ShouldNotBeNull();
+
+        loaded.StorageState.ShouldBe(_state.StorageState);
+        loaded.Logins.ShouldHaveSingleItem().Domains.ShouldBe(["bank.example", "login.example"]);
     }
 
     // The first format listed bare domains rather than logins and was never deployed: such a
@@ -113,20 +133,5 @@ public class RedisPersonStateStoreTests(RedisFixture redis) : IClassFixture<Redi
 
         await Should.ThrowAsync<PersonStateUnreadableException>(() =>
             new RedisPersonStateStore(redis.Connection, key).LoadAsync(ana));
-    }
-
-    [Theory]
-    [InlineData("not base64!")]
-    [InlineData("c2hvcnQ=")]
-    public void AMalformedKey_FailsNamingTheSetting(string configured)
-    {
-        Should.Throw<InvalidOperationException>(() => RedisPersonStateStore.ParseKey(configured, "Logins:StateKey"))
-            .Message.ShouldContain("Logins:StateKey");
-    }
-
-    [Fact]
-    public void AnEmptyKey_IsRememberingOff()
-    {
-        RedisPersonStateStore.ParseKey("", "Logins:StateKey").ShouldBeNull();
     }
 }

@@ -2162,6 +2162,71 @@ select:focus:not(:focus-visible) {
    Approval Modal
    =================================== */
 
+/* A ringing timer: above everything, approvals included, until it is dismissed. */
+.alert-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    backdrop-filter: blur(4px);
+    animation: modalFadeIn 0.2s ease-out;
+}
+
+.alert-modal {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-color);
+    max-width: 420px;
+    width: 90%;
+    padding: 2rem 1.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    text-align: center;
+    animation: modalSlideIn 0.25s ease-out;
+}
+
+.alert-modal h3 {
+    margin: 0;
+}
+
+.alert-modal-icon {
+    color: var(--accent);
+    animation: alertSway 1.5s ease-in-out infinite;
+}
+
+.alert-modal-text {
+    margin: 0;
+    font-size: 1.25rem;
+    overflow-wrap: anywhere;
+}
+
+.btn-dismiss-alert {
+    margin-top: 0.5rem;
+    min-width: 10rem;
+    min-height: 44px;
+    font-size: 1.05rem;
+}
+
+@keyframes alertSway {
+    0%, 100% { transform: rotate(0deg); }
+    20% { transform: rotate(-14deg); }
+    40% { transform: rotate(12deg); }
+    60% { transform: rotate(-8deg); }
+    80% { transform: rotate(4deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .alert-modal-icon {
+        animation: none;
+    }
+}
+
 .approval-modal-overlay {
     position: fixed;
     top: 0;

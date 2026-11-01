@@ -215,8 +215,9 @@ bridge. A new back-call, or a server that comes to need one, names its server he
   (`HttpMetricSink`, the feed's JSON) instead of publishing onto Redis (`AddMetricsPublishing(name,
   feed)`), so voice opens no Redis connection at all; the relay reads the event (64 KiB at most, a
   `MetricEvent` or 400) and publishes it through its own publisher with `Origin` set to the server's
-  synthetic address. Two households' servers of one service still share a heartbeat's `Service` on
-  the dashboard's roster; telling them apart there is 4b's.
+  synthetic address and `TenantId` to the tunnel's household, both over whatever the server said.
+  The dashboard keys roll-ups and heartbeats by that household (`.claude/rules/observability.md`,
+  "Households"), so two households' servers of one service are two tiles.
 - **Tested at the round trip** (`BackCallGatewayTests`: each back-call through a real server's port and
   a real relay, reading what the target saw; `SandboxOverTunnelE2ETests`: the sandbox image tunnelled,
   a command's `cat` and `>` on another mount through its bridge back-call).
@@ -387,27 +388,35 @@ validates satellites on the household's voice server (`.claude/rules/timers.md`)
   (`mcp-timers` → `voice` under `/api/voice`), checked on the path Kestrel normalised. A missing or
   wrong credential is 401, anything off the list 403; both are logged and published as an
   `ErrorEvent` (`RelayedCallRefused`), and neither forwards a byte.
+- **Every request names its household** (`X-Ziggurat-Household`, `RelayedCallProtocol.HouseholdHeader`)
+  and reaches that household's server of the name alone (`TunnelForwarder.ForwardAsync`, over
+  `TunnelRegistry.Find`) — another household's of the same name is never reached instead, and a
+  request naming none is refused 403 like one off the list, never sent to the home's. A caller on the
+  list is a shared server, which serves every household and so may act for any of them; it names the
+  household from what it holds — the timers server, the household the verified call that armed the
+  timer named (`.claude/rules/timers.md`). The relay believes that as it believes the caller's name:
+  on its own credential. A proof signed by the agent (the delegation a timer's write could carry) would
+  be the stronger check, and is not built.
 - **Forwarded on the `mcp` tag**, whose pool presents the household server's tunnel credential
-  (`RelayHandler`), with the caller's name and the deployment's `X-Announce-Token` withheld: nothing
-  of the deployment's reaches a household. A tunnelled server's endpoints beside `/mcp` recognise the
+  (`RelayHandler`), with the caller's name, the household it named and the deployment's
+  `X-Announce-Token` withheld: nothing of the deployment's reaches a household. A tunnelled server's endpoints beside `/mcp` recognise the
   relay by `RelayCredential` (registered by `AddTunnel` while tunnelled): voice's `VoiceHubAuth` lets
   it through, so the kit's voice never holds the deployment's announce token.
-- **Offline is a gateway's answer**: the home household's tunnel not open, or closing under the call,
+- **Offline is a gateway's answer**: the named household's tunnel not open, or closing under the call,
   is **502 with the reason** in the body. `VoiceHubHttp` reads 502/504 as the hub being unreachable
   (`VoiceHubUnavailableException`), so a timer's create fails with `TransientDependency`, "the voice
   hub is unreachable, so the timer was not armed", and its fire is logged as not rung.
 
-### Which household: the home one, in this phase
+### Which household
 
-Nothing in a browse link — nor in a timer's ring — names a household. In this phase only the home
-household runs servers, so **a request that names none is for the home household's server of that
-name** (`TunnelRegistry.FindHome`, by `HouseholdServerNames` and `OpenTunnel.IsHome`, as a channel endpoint
-named by server name is); none open is answered as unreachable with the reason, and another
-household's server of that name is never a fallback. Once a second household runs servers (4b) the
-request must name its household: web search knows it where the link is minted (`web_login`'s call
-token carries the person's account), and the timers server knows it where a timer is created. The
-cookie's `Path=/browse` must then become per household too, or one household's server would be sent
-another's view key.
+A shared server's call names it (above): a timer's ring, dismiss and validation reach the voice server
+of the household the timer is for. Nothing in a browse link names a household yet, so **a browse
+page is for the home household's web search** (`TunnelRegistry.FindHome`, by `HouseholdServerNames`
+and `OpenTunnel.IsHome`, as a channel endpoint named by server name is); none open is answered as
+unreachable with the reason, and another household's server of that name is never a fallback. Once a
+second household runs a web search the link must name its household too — web search knows it where
+the link is minted (`web_login`'s call token carries the person's account) — and the cookie's
+`Path=/browse` must become per household, or one household's server would be sent another's view key.
 
 ## Outposts are tunnels too
 

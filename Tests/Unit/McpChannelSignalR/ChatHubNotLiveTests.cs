@@ -50,6 +50,7 @@ public class ChatHubNotLiveTests
             new RetentionSettings(),
             new DictationSettings(),
             new VouchingAccounts(),
+            new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
             Context = new SignedInCaller()
@@ -119,6 +120,7 @@ public class ChatHubNotLiveTests
             new RetentionSettings(),
             new DictationSettings(),
             new VouchingAccounts(),
+            new HouseholdSpacesAccounts(),
             factory.CreateLogger<ChatHub>())
         {
             Context = new SignedInCaller()

@@ -5,12 +5,15 @@ using Microsoft.Extensions.Logging;
 
 namespace McpServerTimers.Services;
 
-// Polls the timer store once per second and rings each due timer as an insistent timer alert —
-// no HTTP hop, no LLM in the fire path. Timers use a fixed tighter cadence than alarms and skip
-// the volume ramp (a kitchen countdown must be heard on round 1; the ramp is for wake-up alarms).
+// Polls the timer store once per second and rings each due timer as an insistent timer alert — on
+// its household's satellites through its voice server when it names some, else on its owner's
+// channels through the agent. No LLM in the fire path. Timers use a fixed tighter cadence than
+// alarms and skip the volume ramp (a kitchen countdown must be heard on round 1; the ramp is for
+// wake-up alarms).
 public sealed class TimerFireService(
     ITimerStore store,
-    IInsistentAnnouncer announcer,
+    IHouseholdVoices voices,
+    IChannelAlerts alerts,
     TimeProvider time,
     ILogger<TimerFireService> logger) : BackgroundService
 {
@@ -55,9 +58,15 @@ public sealed class TimerFireService(
     {
         try
         {
-            await announcer.StartAsync(new AnnounceRequest
+            if (armed.Target is not { } target)
             {
-                Target = armed.Target,
+                await RingOnChannelsAsync(armed, ct);
+                return;
+            }
+
+            await voices.For(armed.TenantId).Announcer.StartAsync(new AnnounceRequest
+            {
+                Target = target,
                 Text = armed.Text ?? $"{armed.Id} timer",
                 Kind = AnnounceKind.Timer,
                 Insistent = _timerRing
@@ -75,6 +84,20 @@ public sealed class TimerFireService(
             // unavailable, a raw timeout from an in-process implementation) must not unwind the
             // poll loop — only real shutdown (ct cancelled) propagates.
             logger.LogWarning(ex, "Timer {TimerId} failed to ring", armed.Id);
+        }
+    }
+
+    // The same accepted trade as a satellite's: one attempt, and an agent that was not listening to
+    // take it is a timer that did not ring.
+    private async Task RingOnChannelsAsync(ArmedTimer armed, CancellationToken ct)
+    {
+        if (await alerts.RingAsync(armed, ct))
+        {
+            logger.LogInformation("Timer {TimerId} fired on its owner's channels", armed.Id);
+        }
+        else
+        {
+            logger.LogWarning("Timer {TimerId} failed to ring: no agent was listening to ring it on its owner's channels", armed.Id);
         }
     }
 }

@@ -3,8 +3,11 @@ paths:
   - "McpServerHomeAssistant/**"
   - "Domain/Tools/HomeAssistant/**"
   - "Domain/Prompts/HomeAssistantPrompt.cs"
+  - "Domain/Prompts/Sections/home_assistant_guide.md"
   - "Domain/Prompts/HomeWatchesSkill.cs"
   - "Domain/Prompts/HomeAssistantSkill.cs"
+  - "Domain/Prompts/Skills/home-watches.md"
+  - "Domain/Prompts/Skills/home-assistant.md"
   - "Domain/Prompts/HomeAssistantSetupSummary.cs"
 ---
 

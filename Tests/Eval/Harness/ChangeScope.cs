@@ -3,9 +3,16 @@ using Domain.Prompts;
 namespace Tests.Eval.Harness;
 
 // Which scenarios a diff is worth running. A claim is declared beside the prose that teaches it
-// (ADR-0031), so the file that spells a claim's id is the file whose edit can break the claim,
+// (ADR-0031), so the file that declares a claim is the file whose edit can break the claim,
 // and every scenario that tests the claim — citing, guarding, judging, or conditionally — is
 // the diff's. A scenario file that changed runs whole: its scenarios are what changed.
+//
+// A prompt document — a section's or a skill's (Domain/Prompts/Sections, Domain/Prompts/Skills) —
+// declares its claims in its header, read with the parser the manifest reads it with, so an edit
+// anywhere in the document — its words, a part, a claim's statement — selects every claim it
+// declares, and an id its words merely mention is not one. Code declares a claim by spelling its id
+// as a string, which is how a claim handle's file, or a claim declared beside generated prose, is
+// found.
 //
 // Nothing else selects. A tool description, a fixture, a harness edit or the agent definition
 // have no claims to be read through, and a tier that guessed at them would be a full pass that
@@ -15,6 +22,7 @@ public static class ChangeScope
 {
     private const string ScenarioFiles = "Tests/Eval/Scenarios/";
     private const string TestFiles = "Tests/";
+    private const string DocumentExtension = ".md";
 
     public static IReadOnlyList<Scenario> Select(
         IReadOnlyList<string> changed, Func<string, string?> read,
@@ -28,8 +36,7 @@ public static class ChangeScope
         // Only the prompt's own files declare: the ledger tests and the dumps spell ids too.
         var declared = contents
             .Where(file => !file.Path.StartsWith(TestFiles, StringComparison.Ordinal))
-            .SelectMany(file => claims.Where(claim => file.Content!.Contains($"\"{claim.Id}\"")))
-            .Select(claim => claim.Id)
+            .SelectMany(file => Declared(file.Path, file.Content!, claims))
             .ToHashSet();
 
         var named = contents
@@ -39,6 +46,26 @@ public static class ChangeScope
         return [.. suite.Where(scenario =>
             Tests(scenario).Any(declared.Contains)
             || named.Any(file => file.Content!.Contains($"\"{scenario.Name}\"")))];
+    }
+
+    private static IEnumerable<string> Declared(string path, string content, IReadOnlyList<PromptClaim> claims)
+    {
+        if (!path.EndsWith(DocumentExtension, StringComparison.Ordinal))
+        {
+            return claims.Where(claim => content.Contains($"\"{claim.Id}\"")).Select(claim => claim.Id);
+        }
+
+        try
+        {
+            var header = PromptDocument.Parse(path, content).Claims.Select(claim => claim.Id).ToHashSet();
+            return claims.Where(claim => header.Contains(claim.Id)).Select(claim => claim.Id);
+        }
+        catch (FormatException)
+        {
+            // Not a prompt document, or one mid-edit that no manifest could load either — and a
+            // run of it would fail before its first scenario.
+            return [];
+        }
     }
 
     // Every claim a scenario is evidence about, the way the coverage test counts them.

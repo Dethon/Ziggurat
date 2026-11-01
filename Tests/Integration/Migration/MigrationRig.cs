@@ -1,10 +1,15 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
+using Domain.Security;
+using Domain.Security.Sealing;
+using Domain.Security.Signing;
 using HouseholdMigration;
+using Infrastructure.Clients.Accounts;
 using McpServerSugary.Store;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,9 +27,12 @@ public sealed class MigrationRig : IAsyncDisposable
 {
     public const string Credential = "migration-credential";
     private const string TelegramCredential = "telegram-credential";
+    private const string IdealistaCredential = "idealista-credential";
+    private const string SignalRCredential = "signalr-credential";
+    private const string AgentCredential = "agent-credential";
 
     // The browse server's key: what the old records were sealed with and the new ones will be.
-    public static readonly byte[] StateKey = RandomNumberGenerator.GetBytes(32);
+    public static readonly SealingKey StateKey = SealingKey.Generate();
 
     private readonly ServiceProvider _sugary;
 
@@ -37,7 +45,7 @@ public sealed class MigrationRig : IAsyncDisposable
         {
             RedisConnectionString = redis,
             Accounts = new AccountsEndpoint { BaseUrl = accounts.Address.ToString(), Credential = Credential },
-            Logins = new LoginsSettings { StateKey = Convert.ToBase64String(StateKey) },
+            Logins = new LoginsSettings { StateKey = Convert.ToBase64String(StateKey.Export()) },
             SugaryDatabasePath = Path.Combine(directory, "sugary", "sugary.db"),
             VoicesPath = Path.Combine(directory, "voices"),
             MemoryDimension = memoryDimension
@@ -62,7 +70,8 @@ public sealed class MigrationRig : IAsyncDisposable
         {
             Callers = new Dictionary<string, string>
             {
-                ["household-migration"] = Credential, ["mcp-channel-telegram"] = TelegramCredential
+                ["household-migration"] = Credential, ["mcp-channel-telegram"] = TelegramCredential,
+                ["mcp-idealista"] = IdealistaCredential, ["mcp-channel-signalr"] = SignalRCredential, ["agent"] = AgentCredential
             }
         });
         var directory = Path.Combine(Path.GetTempPath(), "household-migration-tests", Guid.NewGuid().ToString("N"));
@@ -75,13 +84,17 @@ public sealed class MigrationRig : IAsyncDisposable
     }
 
     // The run as the operator types it: the people's file, then the arguments.
-    public async Task<(int Exit, string Output)> RunAsync(object people, params string[] args)
+    public Task<(int Exit, string Output)> RunAsync(object people, params string[] args) => RunAsync(people, null, args);
+
+    // The same, with what the operator pipes into it on its input.
+    public async Task<(int Exit, string Output)> RunAsync(object people, string? input, params string[] args)
     {
         var file = Path.Combine(Directory, $"people-{Guid.NewGuid():N}.json");
         await File.WriteAllTextAsync(file, JsonSerializer.Serialize(new { people }));
         await using var output = new StringWriter();
+        using var piped = new StringReader(input ?? "");
         var exit = await HouseholdMigrationCommand.RunAsync(
-            ["--people", file, .. args], Settings, output, CancellationToken.None);
+            ["--people", file, .. args], Settings, output, CancellationToken.None, piped);
         return (exit, output.ToString());
     }
 
@@ -99,12 +112,50 @@ public sealed class MigrationRig : IAsyncDisposable
         return new Account(resolved["tenantId"]!.GetValue<string>(), resolved["userId"]!.GetValue<string>());
     }
 
+    // The household the accounts service made as it first started, which the run imports into.
+    public async Task<string> HomeHouseholdAsync()
+    {
+        await using var db = await Accounts
+            .Service<IDbContextFactory<global::Accounts.Store.AccountsDbContext>>().CreateDbContextAsync();
+        return await db.Tenants.Where(t => t.IsHome).Select(t => t.Id).SingleAsync();
+    }
+
     // What the account's own session is told about them.
     public async Task<JsonObject> MeAsync(Account account)
     {
         var page = Accounts.SignedIn(await Accounts.MintSessionAsync(account.UserId));
         return JsonNode.Parse(await (await page.GetAsync("/accounts/me")).Content.ReadAsStringAsync())!.AsObject();
     }
+
+    // The household's configuration as each of its readers asks for it: the agent with its own token,
+    // the Telegram server for every household's bots, Idealista on a call made for a person, and the
+    // chat client's hub on a signed-in person's assertion.
+    public HouseholdConfigurationClient Reader(ConfigurationReader reader) => reader switch
+    {
+        ConfigurationReader.Agent => new HouseholdConfigurationClient(Accounts.Client(), AgentCredential,
+            HouseholdConfigurationClient.AgentToken(McpTestSecret.CallTokens), null, TimeProvider.System, TimeSpan.Zero),
+        ConfigurationReader.Telegram => Client(TelegramCredential),
+        ConfigurationReader.Idealista => Client(IdealistaCredential),
+        _ => Client(SignalRCredential)
+    };
+
+    // What Idealista is handed with a call the agent made for the person.
+    public static HouseholdProof IdealistaCall(Account person) =>
+        HouseholdProof.OfCallToken(McpTestSecret.CallTokens.For(
+            IdentityClaims.Person(person.UserId, person.TenantId, "signalr", ["owner"]),
+            TokenAudiences.CallTo(ServerAddress.Named("mcp-idealista"))));
+
+    // What the hub proves the household with: the person's signed-in assertion for the chat client.
+    public async Task<HouseholdProof> SignedInAsync(Account person)
+    {
+        await using var db = await Accounts
+            .Service<IDbContextFactory<global::Accounts.Store.AccountsDbContext>>().CreateDbContextAsync();
+        var user = await db.Users.SingleAsync(u => u.Id == person.UserId);
+        return HouseholdProof.OfAssertion(Accounts.Service<global::Accounts.Signing.Assertions>().Of(user, "signalr"));
+    }
+
+    private HouseholdConfigurationClient Client(string credential) =>
+        new(Accounts.Client(), credential, null, null, TimeProvider.System, TimeSpan.Zero);
 
     public async ValueTask DisposeAsync()
     {
@@ -113,4 +164,12 @@ public sealed class MigrationRig : IAsyncDisposable
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         System.IO.Directory.Delete(Directory, recursive: true);
     }
+}
+
+public enum ConfigurationReader
+{
+    Agent,
+    Telegram,
+    Idealista,
+    ChatClient
 }

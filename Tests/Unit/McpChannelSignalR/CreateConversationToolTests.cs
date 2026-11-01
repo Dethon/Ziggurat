@@ -113,7 +113,7 @@ public class CreateConversationToolTests
         _sessionService.GetTopicIdByConversationId("11:22").ShouldBe(topic.TopicId);
         _streamService.GetStreamState(topic.TopicId).ShouldNotBeNull().CurrentPrompt.ShouldBe("a plate of paella");
         _hubSender.Verify(s => s.SendToGroupAsync(
-            "space:default", "OnTopicChanged",
+            "space:home:default:user:fran", "OnTopicChanged",
             It.Is<TopicChangedNotification>(n => n.TopicId == topic.TopicId && n.ChangeType == TopicChangeType.Created),
             It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -136,7 +136,7 @@ public class CreateConversationToolTests
         _streamService.GetStreamState(topicId).ShouldNotBeNull().BufferedMessages
             .ShouldContain(m => m.Content == "about 300 g" && m.UserMessage != null);
         _hubSender.Verify(s => s.SendToGroupAsync(
-            "space:default", "OnStreamStarted",
+            "space:home:default:user:fran", "OnStreamStarted",
             It.Is<StreamStartedNotification>(n => n.TopicId == topicId),
             It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -167,10 +167,12 @@ public class CreateConversationToolTests
         _topics.Saved.ShouldBeEmpty();
     }
 
+    // Sugary's turns are the person's, so the copy is theirs: its news is for their own connections.
     private Task<string> ShowAsync(string conversationId, string prompt) =>
         CreateConversationTool.McpRun(
             "sugary", "Meal estimate", "sugary-app", _services,
-            initialPrompt: prompt, address: null, existingConversationId: conversationId);
+            initialPrompt: prompt, address: null, existingConversationId: conversationId,
+            principal: new Principal("sugary", "fran", new Account("home", "fran")));
 
     // The two calls the factory makes of the thread store, kept in memory.
     private sealed class TopicTable

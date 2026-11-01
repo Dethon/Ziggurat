@@ -25,6 +25,20 @@ public class DeploymentFilesTests
         compose.Service("lemonade").Devices.ShouldContain("/dev/dri:/dev/dri");
     }
 
+    // The build context's filter, run against the real file: what it drops and what it puts back.
+    [Fact]
+    public void TheDockerIgnore_DropsWhatItNames_AndKeepsWhatItPutsBack()
+    {
+        var ignore = DeploymentFiles.DockerIgnore();
+
+        ignore.Excludes("README.md").ShouldBeTrue();
+        ignore.Excludes("docs/adr/0031-a-prompt-claim-is-declared-beside-its-prose.md").ShouldBeTrue();
+        ignore.Excludes("Agent/bin/Debug/Agent.dll").ShouldBeTrue("a directory pattern drops what is under it");
+        ignore.Excludes("Domain/Prompts/PromptManifest.cs").ShouldBeFalse();
+        DockerIgnore.Parse("**/*.md\n!Keep/*.md").Excludes("Keep/kept.md").ShouldBeFalse();
+        DockerIgnore.Parse("!Keep/*.md\n**/*.md").Excludes("Keep/kept.md").ShouldBeTrue("the last match decides");
+    }
+
     // A service names its networks as a list or as a map; one naming none is on compose's default
     // network, and one on the host's network is on none of them.
     [Fact]

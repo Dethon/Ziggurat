@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
 using Domain.Exceptions;
@@ -9,15 +10,37 @@ using Domain.Tools.FileSystem;
 
 namespace Domain.Tools.Timers.Vfs;
 
-// Hub-local countdown timers as a VFS: create /<id>/timer.json to arm, read status.json for time
-// left, delete the directory to cancel. Timers are immutable (delete and recreate) and fire once.
-// /dismiss (exec) silences every alert currently ringing — alarms and timers alike — so "stop
-// the alarm" works from any room or channel, not just by waking a targeted satellite.
+// A household's countdown timers as a VFS: create /<id>/timer.json to arm, read status.json for
+// time left, delete the directory to cancel. Timers are immutable (delete and recreate) and fire
+// once. /dismiss (exec) silences every alert the household has ringing — alarms and timers alike,
+// on its satellites and on its people's channels — so "stop the alarm" works from any room or
+// channel, not just by waking a targeted satellite.
 public sealed class TimerFileSystem(
-    ITimerStore store, TimeProvider timeProvider, IAlertDismisser dismisser,
-    ISatelliteCatalog satellites, TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
+    ITimerStore store, TimeProvider timeProvider, IHouseholdVoices voices,
+    IChannelAlerts alerts, TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
 {
     public const string Name = "timers";
+
+    // Whose timers this view sees and sets: the household the call's token named — a person's or
+    // its guest's — and, for a person, their account and the agent their turn runs on, which a
+    // timer with no satellite target rings for. Null on the server's own instance and for a call
+    // acting for nobody, which is refused rather than shown somebody's timers.
+    private string? _household;
+    private Account? _owner;
+    private string? _agentId;
+
+    // A shallow copy with the caller swapped, as ScheduleFileSystem does: the copy carries every
+    // dependency this mount was built with, and the store is shared by reference.
+    public override FileSystemBackendBase For(FileSystemCaller caller)
+    {
+        var view = (TimerFileSystem)MemberwiseClone();
+        view._household = caller.Conversation?.Identity is { IsNobody: false, TenantId.Length: > 0 } identity
+            ? identity.TenantId
+            : null;
+        view._owner = Principal.Of(caller.Conversation)?.Account;
+        view._agentId = caller.Conversation?.AgentId;
+        return view;
+    }
 
     public override string FilesystemName => Name;
 
@@ -33,10 +56,11 @@ public sealed class TimerFileSystem(
     // skill for a calendar alarm's snooze and for a media restart. The skill's own description is
     // the trigger; this line only says where the shape lives.
     public override string DescribeMount =>
-        "Short countdown timers that ring on the voice satellites: each is a directory "
-        + "/timers/<id> holding its timer.json and a read-only status.json (remainingSeconds, "
-        + "firesAt), and the action ./dismiss at /timers silences whatever is ringing (alarms and timers) "
-        + "from any room or channel. The file's shape and the target rules are in the "
+        "Short countdown timers that ring on the household's voice satellites, or on the person's chat "
+        + "client and Telegram: each is a directory /timers/<id> holding its timer.json and a read-only "
+        + "status.json (remainingSeconds, firesAt); /timers/satellites.json lists the satellites a timer "
+        + "can ring on, and the action ./dismiss at /timers silences whatever is ringing (alarms and "
+        + "timers) from any room or channel. The file's shape and the target rules are in the "
         + "`countdown-timers` skill, not here. Use the HA alarms calendar for clock-time "
         + "alarms/reminders, not timers.";
 
@@ -50,7 +74,7 @@ public sealed class TimerFileSystem(
 
     public override string DescribeInfo => "Get info about a timer filesystem path";
 
-    public override string DescribeRead => "Read a timer filesystem file (timer.json/status.json)";
+    public override string DescribeRead => "Read a timer filesystem file (timer.json/status.json/satellites.json)";
 
     public override string DescribeSearch =>
         "Searches timer.json content across timers. Scope with path (a single timer); omit to "
@@ -58,13 +82,13 @@ public sealed class TimerFileSystem(
         + "outputMode (content|filesOnly) like the other filesystems.";
 
     public override string DescribeCreate =>
-        "Arm a timer: fs_create /<descriptive-id>/timer.json with JSON {durationSeconds, text?, target}";
+        "Arm a timer: fs_create /<descriptive-id>/timer.json with JSON {durationSeconds, text?, target?}";
 
     public override string DescribeDelete => "Cancel a timer by deleting its directory /<timerId>";
 
     public override string DescribeExec =>
         $"Silence every alert currently ringing: exec ./{TimerPath.DismissFileName} at the timers "
-        + "root. One call covers every satellite and both kinds, whatever set the alert off, so "
+        + "root. One call covers every satellite, every chat client and Telegram, and both kinds, whatever set the alert off, so "
         + "it is the whole of a silencing request — run it once and answer; there is no calendar "
         + "or home entity to visit afterwards. Not a shell — anything else returns exit 127.";
 
@@ -85,8 +109,13 @@ public sealed class TimerFileSystem(
             return new FsResult<FsGlobResult>.Err(invalidPattern);
         }
 
+        if (_household is not { } household)
+        {
+            return Nobody<FsGlobResult>();
+        }
+
         var (dirsOnly, matches) = scope;
-        var all = await store.ListAsync(ct);
+        var all = await store.ListAsync(household, ct);
 
         var dirs = all.Select(t => t.Id).Where(matches).Select(id => $"/{id}/");
         if (dirsOnly)
@@ -99,7 +128,7 @@ public sealed class TimerFileSystem(
                 $"{t.Id}/{TimerPath.TimerFileName}",
                 $"{t.Id}/{TimerPath.StatusFileName}"
             })
-            .Concat([TimerPath.DismissFileName])
+            .Concat([TimerPath.DismissFileName, TimerPath.SatellitesFileName])
             .Where(matches)
             .Select(p => $"/{p}");
         return Glob(
@@ -110,6 +139,11 @@ public sealed class TimerFileSystem(
 
     public override async Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
+        if (_household is null)
+        {
+            return Nobody<FsInfoResult>();
+        }
+
         var node = TimerPath.Parse(path);
         var exists = await NodeExistsAsync(node, ct);
         var isDir = node.Kind is TimerNodeKind.Root or TimerNodeKind.TimerDir;
@@ -124,10 +158,18 @@ public sealed class TimerFileSystem(
 
     public override async Task<FsResult<FsReadResult>> ReadAsync(string path, int? offset, int? limit, CancellationToken ct)
     {
+        if (_household is not { } household)
+        {
+            return Nobody<FsReadResult>();
+        }
+
         var node = TimerPath.Parse(path);
         string content;
         switch (node.Kind)
         {
+            case TimerNodeKind.SatellitesFile:
+                content = await RenderSatellitesAsync(household, ct);
+                break;
             case TimerNodeKind.TimerFile when await GetTimerAsync(node, ct) is { } t:
                 content = RenderSpec(t);
                 break;
@@ -153,6 +195,11 @@ public sealed class TimerFileSystem(
         string? directoryPath, string? filePattern, int maxResults, int contextLines,
         VfsTextSearchOutputMode outputMode, CancellationToken ct)
     {
+        if (_household is not { } household)
+        {
+            return Nobody<FsSearchResult>();
+        }
+
         var scope = path ?? directoryPath;
 
         if (!CompileFilePattern(filePattern).TryGetValue(out var admits, out var patternError))
@@ -163,7 +210,7 @@ public sealed class TimerFileSystem(
         // timer.json is the only searchable file per timer, so a filePattern either includes it
         // (search the scoped timers) or excludes it entirely (nothing to search).
         var scoped = admits(TimerPath.TimerFileName)
-            ? await ScopeTimersAsync(scope, ct)
+            ? await ScopeTimersAsync(household, scope, ct)
             : [];
 
         return await SearchNodesAsync(
@@ -185,10 +232,20 @@ public sealed class TimerFileSystem(
     public override async Task<FsResult<FsCreateResult>> CreateAsync(
         string path, string content, bool overwrite, bool createDirectories, CancellationToken ct)
     {
+        if (_household is not { } household)
+        {
+            return Nobody<FsCreateResult>();
+        }
+
         var node = TimerPath.Parse(path);
         if (node.Kind == TimerNodeKind.DismissFile)
         {
             return ExecutableOnly<FsCreateResult>(path, TimerPath.DismissFileName);
+        }
+
+        if (node.Kind == TimerNodeKind.SatellitesFile)
+        {
+            return ReadOnly<FsCreateResult>(path);
         }
 
         // A timer directory holds one writable file, so a body written to /<id> can only mean it.
@@ -205,7 +262,7 @@ public sealed class TimerFileSystem(
         }
 
         // Timers are immutable: create always rejects an existing id regardless of `overwrite`.
-        if (await store.GetAsync(node.TimerId, ct) is not null)
+        if (await store.GetAsync(household, node.TimerId, ct) is not null)
         {
             return new FsResult<FsCreateResult>.Err(
                 Error(ToolError.Codes.AlreadyExists, $"Timer '{node.TimerId}' already exists"));
@@ -220,11 +277,15 @@ public sealed class TimerFileSystem(
         ToolErrorResult? validation;
         try
         {
-            validation = await ValidateSpec(spec!, ct);
+            validation = await ValidateSpec(household, spec!, ct);
         }
         catch (VoiceHubUnavailableException)
         {
-            return HubUnavailable<FsCreateResult>("the timer was not armed");
+            // A household whose voice server is not connected can still have the timer on its
+            // person's channels, and the refusal is where the model learns that it may.
+            return HubUnavailable<FsCreateResult>("the timer was not armed", _owner is null
+                ? null
+                : "Or leave target out to ring it on the person's chat client and Telegram instead.");
         }
         if (validation is not null)
         {
@@ -235,8 +296,11 @@ public sealed class TimerFileSystem(
         await store.ArmAsync(new ArmedTimer
         {
             Id = node.TimerId,
+            TenantId = household,
+            Owner = _owner,
+            AgentId = _agentId,
             Text = spec!.Text,
-            Target = spec.Target!,
+            Target = spec.Target,
             DurationSeconds = spec.DurationSeconds!.Value,
             CreatedAtUtc = now,
             FiresAtUtc = now.AddSeconds(spec.DurationSeconds.Value)
@@ -254,10 +318,20 @@ public sealed class TimerFileSystem(
 
     public override async Task<FsResult<FsRemoveResult>> DeleteAsync(string path, CancellationToken ct)
     {
+        if (_household is not { } household)
+        {
+            return Nobody<FsRemoveResult>();
+        }
+
         var node = TimerPath.Parse(path);
         if (node.Kind == TimerNodeKind.DismissFile)
         {
             return ExecutableOnly<FsRemoveResult>(path, TimerPath.DismissFileName);
+        }
+
+        if (node.Kind == TimerNodeKind.SatellitesFile)
+        {
+            return ReadOnly<FsRemoveResult>(path);
         }
         if (node.Kind != TimerNodeKind.TimerDir)
         {
@@ -267,7 +341,7 @@ public sealed class TimerFileSystem(
                 : NotFound<FsRemoveResult>(path);
         }
 
-        return await store.CancelAsync(node.TimerId!, ct)
+        return await store.CancelAsync(household, node.TimerId!, ct)
             ? new FsResult<FsRemoveResult>.Ok(new FsRemoveResult
             {
                 Status = "deleted", Message = "cancelled", OriginalPath = path, TrashPath = ""
@@ -277,6 +351,11 @@ public sealed class TimerFileSystem(
 
     public override async Task<FsResult<FsExecResult>> ExecAsync(string path, string command, int? timeoutSeconds, CancellationToken ct)
     {
+        if (_household is not { } household)
+        {
+            return Nobody<FsExecResult>();
+        }
+
         var node = TimerPath.Parse(path);
         if (node.Kind is not (TimerNodeKind.Root or TimerNodeKind.DismissFile))
         {
@@ -303,14 +382,27 @@ public sealed class TimerFileSystem(
                 path);
         }
 
+        // What rings on the household's people's channels is stopped whether or not its voice server
+        // can be reached: a household with none still has timers, and those are the whole of it.
+        var onChannels = await alerts.StopAllAsync(household, ct);
         IReadOnlyList<DismissedAlert> dismissed;
         try
         {
-            dismissed = await dismisser.DismissAllAsync(ct);
+            dismissed = [.. await voices.For(household).Dismisser.DismissAllAsync(ct), .. onChannels];
+        }
+        catch (VoiceHubUnavailableException) when (onChannels.Count == 0)
+        {
+            // A household with no voice server lands here every time nothing rings, and the first
+            // half of the sentence is its whole answer; a household whose server is down learns the
+            // satellites could not be reached.
+            return HubUnavailable<FsExecResult>(
+                "nothing ringing on a satellite was dismissed; nothing is ringing on the household's "
+                + "chat clients or Telegram",
+                "A household with no satellites has nothing more to silence.");
         }
         catch (VoiceHubUnavailableException)
         {
-            return HubUnavailable<FsExecResult>("nothing was dismissed");
+            dismissed = onChannels;
         }
         // Both lines end the same way on purpose. "nothing is ringing" alone reads as a failure
         // to find the alert rather than as the silence itself, and a model that cannot tell those
@@ -355,7 +447,7 @@ public sealed class TimerFileSystem(
     // HA alarms calendar, which survives restarts and escalates.
     public const int MaxDurationSeconds = 4 * 60 * 60;
 
-    private async Task<ToolErrorResult?> ValidateSpec(SpecDto spec, CancellationToken ct)
+    private async Task<ToolErrorResult?> ValidateSpec(string household, SpecDto spec, CancellationToken ct)
     {
         if (spec.DurationSeconds is not > 0)
         {
@@ -377,16 +469,30 @@ public sealed class TimerFileSystem(
                 "text must not be blank — omit it to auto-name the timer");
         }
 
+        // No target rings the timer on its owner's channels, which needs an owner: the household's
+        // guest has no chat client or Telegram of its own to ring on.
         var target = spec.Target;
-        if (target is null
-            || (target.SatelliteId is null
-                && target.SatelliteIds is not { Count: > 0 }
-                && target.Room is null
-                && target.All != true))
+        if (target is null)
+        {
+            return _owner is null
+                ? Error(ToolError.Codes.InvalidArgument,
+                    "target is required for a turn acting for no account: a timer with no target rings on "
+                    + "its owner's chat client and Telegram, and the household's guest has none. Give it a "
+                    + "target: {satelliteId | satelliteIds | room | all}")
+                : null;
+        }
+
+        if (target.SatelliteId is null
+            && target.SatelliteIds is not { Count: > 0 }
+            && target.Room is null
+            && target.All != true)
         {
             return Error(ToolError.Codes.InvalidArgument,
-                "target is required: {satelliteId | satelliteIds | room | all}");
+                "target must name satellites: {satelliteId | satelliteIds | room | all}, or be left out "
+                + "to ring on the person's chat client and Telegram");
         }
+
+        var satellites = voices.For(household).Satellites;
 
         // A target the announcer can't resolve arms a timer that never rings: by fire time the
         // timer has already been claimed out of the store and the failure is only logged. Reject
@@ -413,6 +519,29 @@ public sealed class TimerFileSystem(
     private static string Describe(IReadOnlyList<SatelliteDescriptor> roster) =>
         string.Join(", ", roster.Select(s => $"{s.Id} (room \"{s.Room}\")"));
 
+    // The household's satellites as its voice server answers for them now. One that is not connected
+    // has nowhere to ring a timer but its people's channels, and says so rather than failing a read.
+    private async Task<string> RenderSatellitesAsync(string household, CancellationToken ct)
+    {
+        try
+        {
+            var roster = await voices.For(household).Satellites.GetAllAsync(ct);
+            return JsonSerializer.Serialize(new
+            {
+                satellites = roster.Select(s => new { id = s.Id, room = s.Room })
+            }, _json);
+        }
+        catch (VoiceHubUnavailableException)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                satellites = Array.Empty<object>(),
+                note = "the household's voice server is not connected, so no satellite can ring now; "
+                       + "a timer with no target rings on the person's chat client and Telegram"
+            }, _json);
+        }
+    }
+
     private string RenderSpec(ArmedTimer t) => JsonSerializer.Serialize(new
     {
         durationSeconds = t.DurationSeconds,
@@ -435,19 +564,19 @@ public sealed class TimerFileSystem(
         TimeZoneInfo.ConvertTime(new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)), timeProvider.LocalTimeZone);
 
     private async Task<ArmedTimer?> GetTimerAsync(TimerNode node, CancellationToken ct) =>
-        node.TimerId is null ? null : await store.GetAsync(node.TimerId, ct);
+        node.TimerId is null || _household is null ? null : await store.GetAsync(_household, node.TimerId, ct);
 
     private async Task<bool> NodeExistsAsync(TimerNode node, CancellationToken ct) => node.Kind switch
     {
-        TimerNodeKind.Root or TimerNodeKind.DismissFile => true,
+        TimerNodeKind.Root or TimerNodeKind.DismissFile or TimerNodeKind.SatellitesFile => true,
         TimerNodeKind.TimerDir or TimerNodeKind.TimerFile or TimerNodeKind.StatusFile =>
             await GetTimerAsync(node, ct) is not null,
         _ => false
     };
 
-    private async Task<IReadOnlyList<ArmedTimer>> ScopeTimersAsync(string? scope, CancellationToken ct)
+    private async Task<IReadOnlyList<ArmedTimer>> ScopeTimersAsync(string household, string? scope, CancellationToken ct)
     {
-        var all = await store.ListAsync(ct);
+        var all = await store.ListAsync(household, ct);
         if (string.IsNullOrWhiteSpace(scope))
         {
             return all;
@@ -470,11 +599,18 @@ public sealed class TimerFileSystem(
             Truncated = false, TimedOut = false, DurationMs = 0, Cwd = cwd
         });
 
-    private static FsResult<T> HubUnavailable<T>(string consequence) where T : class =>
+    private const string ForNobody =
+        "This call acts for nobody, so it has no household and no timers: /timers answers for the "
+        + "household of the person or guest whose turn it is.";
+
+    private static FsResult<T> Nobody<T>() where T : class => Fail<T>(ToolError.Codes.PermissionDenied, ForNobody);
+
+    private static FsResult<T> HubUnavailable<T>(string consequence, string? otherwise = null) where T : class =>
         new FsResult<T>.Err(Error(
             ToolError.Codes.TransientDependency,
             $"The voice hub is unreachable, so {consequence}.",
-            "The hub is what reaches the satellites; the same call works once it answers again."));
+            "The hub is what reaches the satellites; the same call works once it answers again."
+            + (otherwise is null ? "" : " " + otherwise)));
 
     private static ToolErrorResult Error(string code, string message, string? hint = null) =>
         new() { ErrorCode = code, Message = message, Hint = hint };

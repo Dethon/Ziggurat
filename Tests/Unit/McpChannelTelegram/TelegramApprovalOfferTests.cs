@@ -23,7 +23,7 @@ public class TelegramApprovalOfferTests : IDisposable
 
     public TelegramApprovalOfferTests()
     {
-        _harness.BotRegistry.RegisterChatAgent(TelegramPollingHarness.FamilyGroup, TelegramPollingHarness.AgentId);
+        _harness.BotRegistry.RegisterChat(TelegramPollingHarness.FamilyGroup, _harness.Bot);
         _harness.Accounts.Bind(TelegramPollingHarness.FamilyGroup);
         _services = new ServiceCollection()
             .AddSingleton(_harness.BotRegistry)

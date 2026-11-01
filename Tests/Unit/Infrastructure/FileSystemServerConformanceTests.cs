@@ -231,8 +231,8 @@ public class FileSystemServerConformanceTests
         new Dictionary<string, FileSystemBackendBase>
         {
             ["timers"] = new TimerFileSystem(
-                Mock.Of<ITimerStore>(), TimeProvider.System, Mock.Of<IAlertDismisser>(),
-                Mock.Of<ISatelliteCatalog>()),
+                Mock.Of<ITimerStore>(), TimeProvider.System, Mock.Of<IHouseholdVoices>(),
+                Mock.Of<IChannelAlerts>()),
             ["schedules"] = new ScheduleFileSystem(
                 Mock.Of<IScheduleStore>(), Mock.Of<IAgentCatalog>(), Mock.Of<ICronValidator>(),
                 TimeProvider.System),

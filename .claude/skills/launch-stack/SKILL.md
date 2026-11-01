@@ -73,23 +73,29 @@ The agent signs every tool call, and the delegations a schedule's fire, a watch'
 
 ## Migrating into the home household
 
-The deploy that brings accounts runs `household-migration` once, by hand: it makes the retired identity map's people accounts and moves what was under their names — memories, remembered logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids. It is under the `migrate` profile, so no `up` starts it. The steps, in order, are `.scratch/accounts/spec.md`'s Further Notes; in short:
+The deploy that brings accounts and household configuration runs `household-migration` once, by hand: it makes the retired identity map's people accounts and moves what was under their names — memories, remembered logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids, seeds the home household's configuration (its settings, agents, features, spaces, and its keys: jack's and jonas's bots and Idealista's pair from the old `.env`), and moves every shared store — topics, spaces' phones, schedules, the dashboard's roll-ups — into the home household. It is under the `migrate` profile, so no `up` starts it. The deploy, in order, with what is broken until the run, is `.scratch/tenants-config/deploy.md` (which slots into `.scratch/accounts/spec.md`'s Further Notes); in short:
 
 ```bash
 # people.json: { "people": [ { "name", "telegram", "telegramId", "webChat", "voice", "oldNames": [] }, ... ] }
 #   name/telegram/webChat/voice are prod's IDENTITY__PEOPLE__<n>__* values; telegramId the numeric id.
 mkdir -p DockerCompose/volumes/household-migration && cp people.json DockerCompose/volumes/household-migration/
-# HOUSEHOLD_MIGRATION_SECRET=<openssl rand -hex 32> in DockerCompose/.env, then:
+# In DockerCompose/.env: HOUSEHOLD_CONFIG_MASTER_KEY=<openssl rand -base64 32> (keep a copy), TELEGRAM_SHARED_BOT_TOKEN,
+# HOUSEHOLD_MIGRATION_SECRET=<openssl rand -hex 32>; the old BOTS__0/1__BOTTOKEN and IDEALISTA__* stay until the run. Then:
 docker compose -f DockerCompose/docker-compose.yml -p jackbot up -d accounts
-docker compose -f DockerCompose/docker-compose.yml -p jackbot --profile migrate run --rm household-migration \
-  --people /input/people.json --operator <name> --owner <name> --sugary <name> --dry-run   # then without --dry-run
+# The home's keys, piped from the old .env (never a command line, never a file in the volume):
+set -a; . <(grep -E '^(BOTS__[01]__BOTTOKEN|IDEALISTA__(APIKEY|SECRET))=' DockerCompose/.env); set +a
+home_keys() { jq -n '{ telegramBots: { jack: { token: env.BOTS__0__BOTTOKEN }, jonas: { token: env.BOTS__1__BOTTOKEN } },
+                       idealista: { apiKey: env.IDEALISTA__APIKEY, secret: env.IDEALISTA__SECRET } }'; }
+home_keys | docker compose -f DockerCompose/docker-compose.yml -p jackbot --profile migrate run --rm -T household-migration \
+  --people /input/people.json --operator <name> --owner <name> --sugary <name> --home-keys - --dry-run   # then without --dry-run
+docker compose -f DockerCompose/docker-compose.yml -p jackbot restart agent   # conversations keep the agent they were built with
 docker compose -f DockerCompose/docker-compose.yml -p jackbot restart mcp-channel-voice tse-extractor   # before the home moved into the kit
-# empty HOUSEHOLD_MIGRATION_SECRET again, and `up -d accounts`
+# delete BOTS__0/1__BOTTOKEN and IDEALISTA__* from .env, empty HOUSEHOLD_MIGRATION_SECRET again, and `up -d accounts`
 ```
 
 The migration runs before the home moves into the tenant kit: the voice profiles and remembered logins it renames are still the deployment's then (`./volumes/voices`, the deployment's Redis), and the move carries them over afterwards (`TenantKit/README.md`, "Moving the home onto the tunnel").
 
-Each `<name>` is a person's `name` in the file. The run prints a passkey link for each person it created; running it again changes nothing and says so. A bucket of memories under a name nobody is listed with is named in the output: add the name to its person's `oldNames` and run again. `.claude/rules/household-migration.md` has what each step does.
+Each `<name>` is a person's `name` in the file. The run prints a passkey link for each person it created; running it again changes nothing and says so. A bucket of memories under a name nobody is listed with is named in the output: add the name to its person's `oldNames` and run again. `--home-keys` takes either half of the keys and never the OpenRouter key (the home pays with the deployment's); a keys section saved by hand before the run keeps what it holds and is given the rest. `-T` is what lets compose pass the pipe through. `.claude/rules/household-migration.md` has what each step does.
 
 ## The Sugary app
 
@@ -97,7 +103,7 @@ Each `<name>` is a person's `name` in the file. The run prints a passkey link fo
 
 ## The smoke stack
 
-`scripts/smoke-stack.sh up|test|down` runs the shipped compose file and Caddyfile on this machine as project `jackbot-smoke`, from empty state under `DockerCompose/volumes/smoke` (`docker-compose.override.smoke.yml`), with local secrets and Caddy on its own CA (`CADDY_TLS=internal`). It starts every shared server an agent dials but never Telegram, so a stale copy of the deployment's data cannot fire schedules or take the bot's updates; a household's own servers are the tenant kit's and are not started, so its turns go without them. `test` runs `Category=Smoke`, which reaches Caddy at 127.0.0.1 by the deployment's hostnames.
+`scripts/smoke-stack.sh up|test|down` runs the shipped compose file and Caddyfile on this machine as project `jackbot-smoke`, from empty state under `DockerCompose/volumes/smoke` (`docker-compose.override.smoke.yml`), with local secrets and Caddy on its own CA (`CADDY_TLS=internal`). It starts every shared server an agent dials but never Telegram, so a stale copy of the deployment's data cannot fire schedules or take the bot's updates; a household's own servers are the tenant kit's and are not started, so its turns go without them. `up` also runs the household migration as the deploy does (the operator first, one person in `volumes/smoke/household-migration/people.json`, no keys, then the agent's restart and `redelegate --yes`), so the home runs its seeded agents. `test` runs `Category=Smoke`, which reaches Caddy at 127.0.0.1 by the deployment's hostnames.
 
 ## Debugging with Playwright
 

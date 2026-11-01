@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -77,7 +78,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
     // on it, which is both deterministic and instant.
     public ArmedClock Clock { get; } = new();
 
-    public FakeConfigService ConfigService { get; } = new FakeConfigService().WithSpace("default");
+    public FakeConfigService ConfigService { get; } = new();
 
     public FakeLocalStorageService LocalStorage { get; } = new();
 
@@ -178,6 +179,9 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         connection.Answer("GetTopicPage", new TopicPage([], null));
         connection.Answer("GetHistory", (IReadOnlyList<ChatHistoryMessage>)[]);
         connection.Answer("GetAgents", (IReadOnlyList<AgentCatalogEntry>)[]);
+        // A household that saved no spaces has the one default space, and a test's hearth beside it.
+        connection.Answer("GetSpaces", (IReadOnlyList<HouseholdSpace>)
+            [HouseholdSpace.Default, HouseholdSpace.Default with { Slug = "hearth", Name = "Hearth", Order = 1 }]);
         connection.Answer("GetStreamState", (object?)null);
         connection.Answer("GetPendingApprovalForTopic", (object?)null);
         connection.Answer("StartSession", true);

@@ -3,9 +3,12 @@ using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.Tunnel;
+using Domain.Metrics;
 using Domain.Security;
 using Domain.Security.Signing;
+using Infrastructure.StateManagers;
 using McpServerSugary.Channel;
 using Microsoft.Playwright;
 using Shouldly;
@@ -27,6 +30,9 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
 {
     private const string SomebodyElse = "91eb477ecd34251c52fd4493523a0334";
     private const string ProtocolVersion = "2026-07-28";
+
+    // The schedule scripts/smoke-stack.sh up writes as it was kept before households.
+    private const string BeforeHouseholds = "smoke-before-households";
 
     [SkippableFact]
     public async Task ASignedOutPage_IsSentToSignInAndBack()
@@ -174,25 +180,85 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     }
 
     // One conversation the whole way: a signed-in browser through Caddy to the chat client, its hub,
-    // the agent and a real model, and the reply back.
+    // the home household's agent by the name its configuration gives it and a real model, and the reply
+    // back — then the conversation's topic listed by the hub and kept under the home, and the reply's
+    // model calls counted under the home, whose turns the deployment's key pays for.
     [SkippableFact]
-    public async Task ASignedInPerson_GetsAReplyThroughTheProxy()
+    public async Task ASignedInPerson_GetsAReplyFromTheHomesAgent_ItsTopicAndItsUsageUnderTheHome()
     {
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
-        await InChatAsync(agent: null, async page =>
+        var since = DateTimeOffset.UtcNow;
+        var tag = $"Smoke {Guid.NewGuid().ToString("N")[..4]}";
+        var agent = HomeAgents().Single(a => a.Id == "jonas");
+
+        await InChatAsync(agent.Name, async page =>
         {
-            await SayAsync(page, $"Smoke {Guid.NewGuid().ToString("N")[..4]}: reply with one short sentence.");
+            await SayAsync(page, $"{tag}: reply with one short sentence.");
 
             // Whatever comes back first, then that it is no error: a turn the agent refuses — its
-            // assertion did not verify, a server refused its call token — is answered too, as an error
-            // message with text in it.
+            // assertion did not verify, a server refused its call token, the household has no key to
+            // pay with — is answered too, as an error message with text in it.
             await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
                 .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 180_000 });
             await Assertions.Expect(page.Locator(".chat-message.error")).ToHaveCountAsync(0);
             await Assertions.Expect(page.Locator(".chat-message.assistant:not(.error) .message-content").First)
                 .Not.ToBeEmptyAsync();
+
+            // A page opened again holds nothing but what the hub lists for the person's household.
+            await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+            await Assertions.Expect(page.Locator(".topic-item", new PageLocatorOptions { HasText = tag }))
+                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
         });
+
+        (await stack.TopicsAsync(stack.Home, agent.Id)).ShouldContain(t => t.Name.StartsWith(tag));
+
+        // The roll-ups name an agent by its name (AgentSpec.MetricsAgentId), so the reply's own call is
+        // the configured agent's on its configured model; the deployment's own scope holds none of the
+        // turn's calls, though its key paid for them.
+        await Eventually.Until(async () => (await UsageAsync(stack.Home, since))
+                .Any(u => u.AgentId == agent.Name && u.Model == agent.Model && u.Sender == stack.MemberName),
+            $"{agent.Name}'s reply on {agent.Model} counted under the home household");
+        (await UsageAsync(MetricKeys.Deployment, since))
+            .ShouldNotContain(u => u.Sender == stack.MemberName || u.AgentId == agent.Name || u.AgentId == agent.Id);
+    }
+
+    // The chat client offers the home household's agents by the names its configuration gives them —
+    // jack and nabu exist only where the migration seeded the home's agents, since a household that
+    // saved none runs the two templates.
+    [SkippableFact]
+    public async Task TheChatClient_OffersTheHomesAgents_ByTheNamesTheMigrationSeeded()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        await InChatAsync(agent: null, async page =>
+        {
+            var offered = page.Locator(".agent-seg");
+            await Assertions.Expect(offered).ToHaveCountAsync(HomeAgents().Count);
+            foreach (var (_, name, _) in HomeAgents())
+            {
+                await Assertions.Expect(offered.Filter(new LocatorFilterOptions { HasText = name })).ToHaveCountAsync(1);
+            }
+        });
+    }
+
+    // A schedule kept as it was before households is the home's after the migration: moved into the
+    // home's own keys, due there, and offered as its writer by the agent's redelegate — which reads it
+    // through the scheduling server, as every fire and listing does, and saves its delegation back.
+    [SkippableFact]
+    public async Task AScheduleFromBeforeHouseholds_IsKeptUnderTheHome_AndDelegatedAsItsWriter()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        (await stack.RedisAsync("SISMEMBER", RedisScheduleStore.HouseholdSetKey(stack.Home), BeforeHouseholds)).ShouldBe("1");
+        (await stack.RedisAsync("ZSCORE", RedisScheduleStore.DueSetKey, RedisScheduleStore.DueMember(stack.Home, BeforeHouseholds)))
+            .ShouldNotBeEmpty();
+        var schedule = JsonNode.Parse(await stack.RedisAsync("GET", RedisScheduleStore.ScheduleKey(stack.Home, BeforeHouseholds)))!;
+        schedule["Delegation"]!.GetValue<string>().ShouldNotBeNullOrEmpty();
+        schedule["CreatedBy"]!["Account"]!["TenantId"]!.GetValue<string>().ShouldBe(stack.Home);
+
+        (await stack.RedisAsync("EXISTS", $"schedule:{BeforeHouseholds}")).ShouldBe("0");
+        (await stack.RedisAsync("SISMEMBER", "schedules", BeforeHouseholds)).ShouldBe("0");
     }
 
     // The same conversation through a household's own server: the agent reads a note from the kit's
@@ -543,6 +609,29 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             ["Mcp-Name"] = "fs_info"
         }, call.ToJsonString());
         return $"{(int)answer.Status} {answer.Body}";
+    }
+
+    // The home's agents as the household migration seeds them (HouseholdMigration/Home/agents.json),
+    // each a whole definition.
+    private static IReadOnlyList<(string Id, string Name, string Model)> HomeAgents() =>
+    [
+        .. JsonNode.Parse(File.ReadAllText(Path.Combine(TestHelpers.FindSolutionRoot(), "HouseholdMigration", "Home", "agents.json")))!
+            ["agents"]!.AsArray()
+            .Select(entry => entry!["definition"]!)
+            .Select(definition => (definition["id"]!.GetValue<string>(), definition["name"]!.GetValue<string>(),
+                definition["model"]!.GetValue<string>()))
+    ];
+
+    // The model calls the dashboard's read API counts under a scope (a household's id, or the
+    // deployment's own) since a moment, asked through the proxy as the operator.
+    private async Task<IReadOnlyList<TokenUsageEvent>> UsageAsync(string scope, DateTimeOffset since)
+    {
+        var response = await SendAsync(HttpMethod.Get, stack.DashboardHost,
+            $"/api/metrics/tokens?household={scope}&from={since.UtcDateTime:yyyy-MM-dd}", stack.OperatorSession);
+        response.EnsureSuccessStatusCode();
+        var events = JsonSerializer.Deserialize<List<TokenUsageEvent>>(
+            await response.Content.ReadAsStringAsync(), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        return [.. events.Where(e => e.Timestamp >= since)];
     }
 
     private static async Task<string> AgentApiSecretAsync() =>

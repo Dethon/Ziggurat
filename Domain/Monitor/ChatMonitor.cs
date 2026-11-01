@@ -33,7 +33,10 @@ public class ChatMonitor(
     DelegationVerifier? delegations = null,
     // Where the agent mints a fire's topic when only an attach-only channel delivers it. Optional
     // for the hosts that keep no topic store; the agent's own host registers one.
-    IConversationFactory? topics = null)
+    IConversationFactory? topics = null,
+    // The households' agents, whose default answers a message its channel has none for. Optional as
+    // the defaults are: with none, such a message is refused when the agent is built.
+    IAgentDefinitionProvider? agentDefinitions = null)
 {
     // A person's turn whose assertion was not believed, on the errors feed beside the servers'
     // CallTokenRefused: a channel server that misbehaves, an accounts service the agent cannot
@@ -45,6 +48,9 @@ public class ChatMonitor(
     // presenting what it was never given.
     public const string DelegationRefusedErrorType = "DelegationRefused";
 
+    // A turn of a household that set no OpenRouter key, refused before its agent was asked anything.
+    public const string HouseholdWithoutKeyErrorType = "HouseholdWithoutKey";
+
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger, topics);
     private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
 
@@ -53,7 +59,8 @@ public class ChatMonitor(
         try
         {
             var merged = channels
-                .Select(ch => ch.Messages.Select(m => (Channel: ch, Message: RouteToAgent(m))))
+                .Select(ch => ch.Messages.Select(async ValueTask<(IChannelConnection Channel, ChannelMessage Message)> (m, ct) =>
+                    (ch, await RouteToAgentAsync(m, ct))))
                 .Merge(cancellationToken);
 
             var groups = merged
@@ -95,10 +102,42 @@ public class ChatMonitor(
     // agent built for it, the conversation context stamped on the message and the memory written
     // from it. Resolving it later would let a message that named no agent group apart from one
     // that named the same agent explicitly, running two agents over one conversation.
-    private ChannelMessage RouteToAgent(ChannelMessage message) =>
-        string.IsNullOrEmpty(message.AgentId) && agentDefaults?.For(message.ChannelId) is { } fallback
-            ? message with { AgentId = fallback }
-            : message;
+    //
+    // The household is the one the message's channel says it acts for, believed only for this: the
+    // agent is then built for the household its verified identity names, and an id that household
+    // has no agent by is refused there.
+    private async ValueTask<ChannelMessage> RouteToAgentAsync(ChannelMessage message, CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(message.AgentId))
+        {
+            return message;
+        }
+
+        var routed = agentDefaults?.For(message.ChannelId) ?? await HouseholdDefaultAsync(message, ct);
+        return routed is null ? message : message with { AgentId = routed };
+    }
+
+    // A household the agent cannot read just now routes nothing: the message is refused as one with
+    // no default, which the person is told, rather than taking the monitor down with it.
+    private async Task<string?> HouseholdDefaultAsync(ChannelMessage message, CancellationToken ct)
+    {
+        if (agentDefinitions is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return (await agentDefinitions.ForHouseholdAsync(message.Principal?.Account?.TenantId, ct)).DefaultAgent;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+                                       or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Could not read the default agent of the household of {ConversationId}",
+                message.ConversationId);
+            return null;
+        }
+    }
 
     private async IAsyncEnumerable<bool> ProcessChatThread(
         AgentKey agentKey,

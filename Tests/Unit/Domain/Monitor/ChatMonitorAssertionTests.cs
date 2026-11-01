@@ -2,10 +2,13 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Monitor;
 using Domain.Security;
 using Domain.Security.Signing;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -85,6 +88,24 @@ public class ChatMonitorAssertionTests
         run.Factory.Created.ShouldHaveSingleItem().TenantId.ShouldBe(Household);
     }
 
+    // What the turn cost the household in time is its own: the dashboard reads the first reply's
+    // latency per household as it reads the agent's tokens.
+    [Fact]
+    public async Task ATurnsFirstReplyLatency_CountsAgainstTheHouseholdItsAssertionNames()
+    {
+        var run = new Run(replies: [new AgentResponseUpdate { Contents = [new TextContent("hola")] }]);
+        run.Channel.WriteMessage(Message() with
+        {
+            Principal = new Principal(ChatChannel, _fran.UserId, _fran),
+            Assertion = TestAssertions.Of(_fran, ChatChannel)
+        });
+
+        await run.MonitorAsync();
+
+        run.Published.OfType<LatencyEvent>().Where(e => e.Stage == LatencyStage.FirstReply)
+            .ShouldHaveSingleItem().TenantId.ShouldBe(Household);
+    }
+
     public static TheoryData<string, string?> Unbelievable => new()
     {
         { "Missing", null },
@@ -117,6 +138,31 @@ public class ChatMonitorAssertionTests
         // Answered as a failed turn ends, so whoever waits on the channel is not left waiting.
         run.Channel.SentReplies.Select(r => r.ContentType)
             .ShouldBe([ReplyContentType.Error, ReplyContentType.StreamComplete]);
+        run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
+    }
+
+    // A household of its own that set no OpenRouter key pays for nothing: the person is told so on the
+    // channel, the way a failed turn ends, the errors feed says whose, and nothing is asked of its agent.
+    [Fact]
+    public async Task ATurnOfAHouseholdWithNoKey_IsRefusedReportedAndAnswered()
+    {
+        var run = new Run();
+        run.Factory.Refusal = new HouseholdWithoutKeyException(Household);
+        run.Channel.WriteMessage(Message() with
+        {
+            Principal = new Principal(ChatChannel, _fran.UserId, _fran),
+            Assertion = TestAssertions.Of(_fran, ChatChannel),
+            TurnKey = "turn-7"
+        });
+
+        await run.MonitorAsync();
+
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.HouseholdWithoutKeyErrorType);
+        refused.TenantId.ShouldBe(Household);
+        run.Channel.SentReplies.Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, ConversationGroup.WithoutKeyAnswer), (ReplyContentType.StreamComplete, "")]);
         run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
     }
 
@@ -214,11 +260,13 @@ public class ChatMonitorAssertionTests
         private readonly AssertionVerifier _verifier;
         private readonly List<MetricEvent> _published = [];
 
-        public Run(string channel = ChatChannel, AssertionVerifier? verifier = null, Func<CancellationToken, Task>? turnGate = null)
+        public Run(
+            string channel = ChatChannel, AssertionVerifier? verifier = null, Func<CancellationToken, Task>? turnGate = null,
+            AgentResponseUpdate[]? replies = null)
         {
             _verifier = verifier ?? MonitorTestMocks.Assertions;
             Channel = new FakeChannelConnection { ChannelId = channel };
-            Agent = new FakeAiAgent { TurnGate = turnGate };
+            Agent = new FakeAiAgent { TurnGate = turnGate, UpdatesToYield = replies ?? [] };
             Factory = MonitorTestMocks.CreateAgentFactory(Agent);
         }
 
@@ -228,13 +276,15 @@ public class ChatMonitorAssertionTests
 
         public FakeAgentFactory Factory { get; }
 
-        public IReadOnlyList<ErrorEvent> Errors
+        public IReadOnlyList<ErrorEvent> Errors => [.. Published.OfType<ErrorEvent>()];
+
+        public IReadOnlyList<MetricEvent> Published
         {
             get
             {
                 lock (_published)
                 {
-                    return [.. _published.OfType<ErrorEvent>()];
+                    return [.. _published];
                 }
             }
         }

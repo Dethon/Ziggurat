@@ -1,6 +1,8 @@
 using Domain.Contracts;
 using Domain.Security;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 
 namespace Infrastructure.Clients.Accounts;
 
@@ -18,6 +20,10 @@ public record AccountsClientConfig
     // Where the service publishes the keys its assertions verify with: per deployment, so compose
     // sets it (ACCOUNTS__JWKSURL); the default is compose's own value.
     public string JwksUrl { get; init; } = AssertionVerifier.DefaultJwksUrl;
+
+    // How long a view of a household's configuration is kept when no save of it is announced: the
+    // bound on a missed announcement, since a heard one drops it at once. A generic tunable.
+    public TimeSpan ConfigurationLifetime { get; init; } = TimeSpan.FromMinutes(1);
 }
 
 public static class AccountsClientRegistration
@@ -39,5 +45,30 @@ public static class AccountsClientRegistration
             .AddSingleton<IAccountResolver>(sp => sp.GetRequiredService<AccountsResolverClient>())
             .AddSingleton<ITelegramAccounts>(sp => sp.GetRequiredService<AccountsResolverClient>())
             .AddSingleton<ISessionAccounts>(sp => sp.GetRequiredService<AccountsResolverClient>());
+    }
+
+    // A household's configuration as this host may read it, asked with its own credential: the
+    // agent's CALLERS__agent one with a token of its own (agentToken, HouseholdConfigurationClient.AgentToken),
+    // a shared server its own /mcp credential and no token. Saves are heard on the host's Redis
+    // (its IConnectionMultiplexer) when it registers one; without, a view is kept for its lifetime alone.
+    public static IServiceCollection AddHouseholdConfiguration(
+        this IServiceCollection services, AccountsClientConfig config, string credential,
+        Func<IServiceProvider, Func<string>>? agentToken = null)
+    {
+        services.AddHttpClient(HouseholdConfigurationClient.ClientName, http =>
+        {
+            http.BaseAddress = new Uri(config.BaseUrl.TrimEnd('/') + "/");
+            http.Timeout = config.RequestTimeout;
+        });
+        return services
+            .AddSingleton(sp => new HouseholdConfigurationClient(
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(HouseholdConfigurationClient.ClientName),
+                credential,
+                agentToken?.Invoke(sp),
+                sp.GetService<IConnectionMultiplexer>(),
+                TimeProvider.System,
+                config.ConfigurationLifetime,
+                sp.GetService<ILogger<HouseholdConfigurationClient>>()))
+            .AddSingleton<IHouseholdConfiguration>(sp => sp.GetRequiredService<HouseholdConfigurationClient>());
     }
 }

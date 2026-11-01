@@ -21,7 +21,6 @@ public sealed class SpaceEffectTests : IDisposable
     private readonly ConnectionStore _connectionStore;
     private readonly ToastStore _toastStore;
     private readonly FakeTopicService _topicService;
-    private readonly FakeConfigService _configService;
     private readonly FakeNavigationManager _navigationManager = new();
     private readonly FakePushSubscriptionService _pushService = new();
     private readonly RecordingLogger<SpaceEffect> _logger = new();
@@ -36,13 +35,11 @@ public sealed class SpaceEffectTests : IDisposable
         _toastStore = new ToastStore(_dispatcher);
         _dispatcher.Dispatch(new ConnectionConnected());
         _topicService = new FakeTopicService(_calls);
-        _configService = new FakeConfigService(_calls);
 
         _effect = new SpaceEffect(
             _dispatcher,
             _topicService,
             _connectionStore,
-            _configService,
             _navigationManager,
             _pushService,
             _logger);
@@ -51,7 +48,7 @@ public sealed class SpaceEffectTests : IDisposable
     [Fact]
     public async Task HandleSelectSpaceAsync_KnownSpace_JoinsItAndMovesThePushSubscription()
     {
-        _configService.WithSpace("other", name: "Other", accentColor: "#445566");
+        _topicService.WithSpace("other", name: "Other", accentColor: "#445566");
         GivenLoadedTopicsAndMessages();
 
         await _effect.HandleSelectSpaceAsync("other");
@@ -90,7 +87,7 @@ public sealed class SpaceEffectTests : IDisposable
     [Fact]
     public async Task HandleSelectSpaceAsync_JoinThatCouldNotBeMade_RaisesOneToastAndKeepsTheSidebar()
     {
-        _configService.WithSpace("other", name: "Other", accentColor: "#445566");
+        _topicService.WithSpace("other", name: "Other", accentColor: "#445566");
         GivenLoadedTopicsAndMessages();
         _topicService.NotLive = true;
 
@@ -105,7 +102,7 @@ public sealed class SpaceEffectTests : IDisposable
     [Fact]
     public async Task HandleSelectSpaceAsync_AfterAJoinThatCouldNotBeMade_TheNextAttemptRetriesIt()
     {
-        _configService.WithSpace("other", name: "Other");
+        _topicService.WithSpace("other", name: "Other");
         _topicService.NotLive = true;
         await _effect.HandleSelectSpaceAsync("other");
 
@@ -121,7 +118,7 @@ public sealed class SpaceEffectTests : IDisposable
     [Fact]
     public async Task HandleSelectSpaceAsync_KnownSpaceWhileDisconnected_LeavesInitialisationToDoItSilently()
     {
-        _configService.WithSpace("other", name: "Other");
+        _topicService.WithSpace("other", name: "Other");
         _dispatcher.Dispatch(new ConnectionClosed(null));
 
         await _effect.HandleSelectSpaceAsync("other");
@@ -133,7 +130,7 @@ public sealed class SpaceEffectTests : IDisposable
     [Fact]
     public async Task HandleSelectSpaceAsync_SameSlugAsBefore_DoesNothing()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
 
         await _effect.HandleSelectSpaceAsync("default");
 
@@ -144,7 +141,7 @@ public sealed class SpaceEffectTests : IDisposable
     [Fact]
     public async Task HandleSelectSpaceAsync_PushResubscribeFails_StillFinishesTheTransition()
     {
-        _configService.WithSpace("other", name: "Other");
+        _topicService.WithSpace("other", name: "Other");
         _pushService.ThrowOnResubscribe = new InvalidOperationException("no push channel");
 
         await _effect.HandleSelectSpaceAsync("other");
@@ -155,7 +152,7 @@ public sealed class SpaceEffectTests : IDisposable
     [Fact]
     public async Task Dispatch_SelectSpace_RunsTheSameWork()
     {
-        _configService.WithSpace("other", name: "Other");
+        _topicService.WithSpace("other", name: "Other");
 
         _dispatcher.Dispatch(new SelectSpace("other"));
 
@@ -166,7 +163,7 @@ public sealed class SpaceEffectTests : IDisposable
     [Fact]
     public async Task Dispatch_SelectSpace_FaultIsLoggedRatherThanDiscarded()
     {
-        _configService.ThrowOnGetSpace = new InvalidOperationException("space lookup failed");
+        _topicService.ThrowOnGetSpaces = new InvalidOperationException("space lookup failed");
 
         _dispatcher.Dispatch(new SelectSpace("other"));
 

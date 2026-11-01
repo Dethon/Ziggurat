@@ -10,6 +10,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Tunnel;
 using Domain.DTOs.Voice;
+using Domain.Security.Signing;
 using Domain.Tools.FileSystem.Bridge;
 using Domain.Tools.Memory;
 using Domain.Tools.Timers.Vfs;
@@ -48,10 +49,10 @@ using WebSearchSettings = McpServerWebSearch.Settings.McpSettings;
 namespace Tests.Eval.Fixtures;
 
 // Everything one scenario runs against: the real MCP servers in process, the outermost externals
-// faked, and the agent built by the real factory from the shipped definition in
-// Agent/appsettings.json. Only the configured endpoint urls are rewritten — reconstructing the
-// wiring here would test a composition no deployment uses, which is the failure ADR-0030 exists
-// to prevent.
+// faked, and the agent built by the real factory from the shipped settings in
+// Agent/appsettings.json, driving the eval's own copies of today's agents (TestAgents). Only the
+// configured endpoint urls are rewritten — reconstructing the wiring here would test a composition
+// no deployment uses, which is the failure ADR-0030 exists to prevent.
 public sealed class EvalStack : IAsyncDisposable
 {
     // The satellites a scenario's voice turn can come from and ring on. Two rooms, because a
@@ -201,7 +202,7 @@ public sealed class EvalStack : IAsyncDisposable
 
     // The compose hosts a run of this agent can reach: its own servers, and its workers' when it
     // has any. By host name, the way Rewrite matches an endpoint to the server standing in for it.
-    public static IReadOnlyList<string> Dialled(AgentSettings settings, string agentId)
+    public static IReadOnlyList<string> Dialled(TestAgentSettings settings, string agentId)
     {
         var agent = settings.Agents.Single(a => a.Id == agentId);
         var workers = agent.EnabledFeatures.Any(feature =>
@@ -227,7 +228,7 @@ public sealed class EvalStack : IAsyncDisposable
 
     // Where each household server the definitions name is reached in this stack: the server it hosts
     // in that server's place, dialled directly — the eval runs no tunnel.
-    public static InProcessOwnServers OwnServers(AgentSettings settings, IReadOnlyDictionary<string, string> hosted) =>
+    public static InProcessOwnServers OwnServers(TestAgentSettings settings, IReadOnlyDictionary<string, string> hosted) =>
         new(settings.Agents.SelectMany(a => a.McpServerEndpoints)
             .Concat(settings.SubAgents.SelectMany(w => w.McpServerEndpoints))
             .Where(TunnelCredentialProtocol.IsServerName)
@@ -269,8 +270,15 @@ public sealed class EvalStack : IAsyncDisposable
     // Through the server's own create path, with the same JSON a model would write. Writing into
     // the store directly would arm a timer the server itself could not have produced, and a
     // scenario about changing a running timer would then be reading a state that never occurs.
-    private async Task ArmAsync(TimerFileSystem timers, Scenario scenario)
+    // Armed as the eval account, as its turn's call would be: a timer is its household's, and the
+    // turn finds only its own household's.
+    private async Task ArmAsync(TimerFileSystem server, Scenario scenario)
     {
+        var timers = server.For(new FileSystemCaller(
+            new ConversationContext(scenario.AgentId, "eval:arm", EvalRun.UserId, new ReplyTarget("signalr", "eval:arm"),
+                Principal: new Principal("signalr", EvalRun.UserId, EvalRun.Account),
+                Identity: IdentityClaims.Person(EvalRun.UserId, EvalRun.Tenant, "signalr", [])),
+            null));
         foreach (var seed in scenario.Armed.OrderByDescending(a => a.RunningFor))
         {
             Clock.SetUtcNow(scenario.Instant - seed.RunningFor);
@@ -422,7 +430,11 @@ public sealed class EvalStack : IAsyncDisposable
         var port = TestPort.GetAvailable();
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services.ConfigureSugary(EvalSugaryLog.Settings(_sugaryPath));
+        var settings = EvalSugaryLog.Settings(_sugaryPath);
+        builder.Services.ConfigureSugary(settings);
+        // No accounts service: her household keeps the home's zone, as on the deployment.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
+            new EveryHouseholdIn(McpServerSugary.Modules.ConfigModule.HomeZone(settings))));
 
         var endpoint = await StartAsync(builder, port);
         await EvalSugaryLog.SeedAsync(_servers[^1].Services);
@@ -434,7 +446,7 @@ public sealed class EvalStack : IAsyncDisposable
     // than a per-run prefix, so the slate is wiped on the way in: a schedule left behind by the
     // previous run would show up in this one's listing and count against its ceiling.
     private async Task<string> StartSchedulingAsync(
-        AgentSettings shipped, string redisConnectionString)
+        TestAgentSettings shipped, string redisConnectionString)
     {
         await ClearSchedulesAsync(redisConnectionString);
 
@@ -451,6 +463,9 @@ public sealed class EvalStack : IAsyncDisposable
             Mcp = McpTestSecret.Gate
         });
         builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
+        // A stack with no accounts service: the eval household's schedules are read in the zone the
+        // pinned clock is in, as the home's are on the deployment.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(Clock.LocalTimeZone)));
 
         var endpoint = await StartAsync(builder, port);
 
@@ -467,10 +482,19 @@ public sealed class EvalStack : IAsyncDisposable
     {
         await using var connection = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
         var database = connection.GetDatabase();
-        var ids = await database.SetMembersAsync("schedules");
+        var server = connection.GetServer(connection.GetEndPoints()[0]);
 
-        await Task.WhenAll(ids.Select(id => database.KeyDeleteAsync($"schedule:{id}")));
-        await database.KeyDeleteAsync(["schedules", "schedules:due"]);
+        // Every household's: a schedule is kept under the household that wrote it (RedisScheduleStore).
+        List<RedisKey> keys = [RedisScheduleStore.DueSetKey];
+        foreach (var pattern in (string[])["schedule@*", "schedules@*"])
+        {
+            await foreach (var key in server.KeysAsync(database.Database, pattern))
+            {
+                keys.Add(key);
+            }
+        }
+
+        await database.KeyDeleteAsync([.. keys]);
     }
 
     private async Task<string> StartAsync(WebApplicationBuilder builder, int port)
@@ -492,7 +516,7 @@ public sealed class EvalStack : IAsyncDisposable
     // deployment secret is the one every server this stack hosts is gated behind, and the agent
     // signs with the suite's key.
     // Bound once per process, so an edit to the file mid-pass reaches no stack of it.
-    private static AgentSettings ShippedSettings(string redisConnectionString) =>
+    private static TestAgentSettings ShippedSettings(string redisConnectionString) =>
         EvalModel.FromEnvironment(ShippedDefinition.Repository.Settings) with
         {
             Redis = new RedisConfiguration { ConnectionString = redisConnectionString },
@@ -506,7 +530,7 @@ public sealed class EvalStack : IAsyncDisposable
     // The agent itself, built by the real factory. Only the configured endpoint urls are rewritten,
     // to the servers this stack hosts.
     private void BuildAgentServices(
-        AgentSettings shipped, Recording recording, Scenario scenario,
+        TestAgentSettings shipped, Recording recording, Scenario scenario,
         IReadOnlyDictionary<string, string> hosted)
     {
         var settings = scenario.Workers == WorkerMode.None
@@ -516,6 +540,9 @@ public sealed class EvalStack : IAsyncDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAgent(settings);
+        // The eval's own copies of today's agents, as every household's: a pass measures today's
+        // definitions, whatever any household's configuration says.
+        services.AddSingleton<IHouseholdAgentSource>(settings.Households);
         services.AddSubAgents(settings.SubAgents);
         services.AddSingleton<IToolInvocationObserver>(recording);
         // Registered after the agent's own publisher so it wins the resolution: what the chat
@@ -571,7 +598,7 @@ public sealed class EvalStack : IAsyncDisposable
     // One agent without the feature that gives it workers: no tool to call them with and no
     // section telling it they exist. Everything else about it, and everything about every other
     // agent, is the shipped definition.
-    public static AgentSettings Alone(AgentSettings settings, string agentId) =>
+    public static TestAgentSettings Alone(TestAgentSettings settings, string agentId) =>
         settings with
         {
             Agents =
@@ -591,7 +618,7 @@ public sealed class EvalStack : IAsyncDisposable
 
     // A worker's endpoints as much as an agent's. A canned worker dials nothing and never
     // noticed; one that really runs dials what its own profile names.
-    public static AgentSettings Rehosted(AgentSettings shipped, IReadOnlyDictionary<string, string> hosted) =>
+    public static TestAgentSettings Rehosted(TestAgentSettings shipped, IReadOnlyDictionary<string, string> hosted) =>
         shipped with
         {
             Agents =

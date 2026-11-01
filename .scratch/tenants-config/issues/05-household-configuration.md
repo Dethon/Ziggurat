@@ -4,11 +4,16 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A section saved under an old schema version is read migrated forward
-- [ ] A secret is readable only by the server its section belongs to, and never in the store in the clear
-- [ ] A caller cannot ask for another household's configuration than its verified call's
-- [ ] A save publishes an invalidation that drops a cached entry
-- [ ] Rotating the master key rewraps data keys and every secret still opens
-- [ ] The master key is a placeholder in `.env` wired to the accounts service alone (conformance)
+- [x] A section saved under an old schema version is read migrated forward
+- [x] A secret is readable only by the server its section belongs to, and never in the store in the clear
+- [x] A caller cannot ask for another household's configuration than its verified call's
+- [x] A save publishes an invalidation that drops a cached entry
+- [x] Rotating the master key rewraps data keys and every secret still opens
+- [x] The master key is a placeholder in `.env` wired to the accounts service alone (conformance)
+
+Contracts: `.claude/rules/household-config.md`. Tests: `HouseholdConfigurationTests` (seam 1),
+`HouseholdConfigurationClientTests` (the reader's cache against a real Redis), and the master key and
+`AGENTKEYSURL` in `DeploymentConformanceTests`. The agent proves itself with a token of its own beside
+`CALLERS__agent`, so the secret SexyTime's server shares opens no household's OpenRouter key.

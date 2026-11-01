@@ -18,4 +18,4 @@ if (args is [HomeStateMove.Verb, .. var move])
 
 var settings = configuration.Get<MigrationSettings>() ?? new MigrationSettings();
 
-return await HouseholdMigrationCommand.RunAsync(args, settings, Console.Out, CancellationToken.None);
+return await HouseholdMigrationCommand.RunAsync(args, settings, Console.Out, CancellationToken.None, Console.In);

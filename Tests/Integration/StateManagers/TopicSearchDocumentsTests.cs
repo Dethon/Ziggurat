@@ -28,6 +28,22 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
             },
             time ?? TimeProvider.System);
 
+    // A search is the searcher's household's: another household's topic saying the same words, in a
+    // space of the same name and with the same agent, is never a hit, shared or not.
+    [Fact]
+    public async Task SearchTopicsAsync_ReturnsOnlyTheSearchersHouseholdsTopics()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(Topic("t-ours", 790, "Damson gin"));
+        await store.SaveTopicAsync(Topic("t-away", 791, "Damson gin") with { TenantId = "away", Shared = true });
+
+        var found = await store.SearchTopicsAsync(_agentId, "default", Anyone, "damson", null, 10);
+        var foundAway = await store.SearchTopicsAsync(_agentId, "default", new TopicViewer("laura", "away"), "damson", null, 10);
+
+        found.Topics.Select(t => t.TopicId).ShouldBe(["t-ours"]);
+        foundAway.Topics.Select(t => t.TopicId).ShouldBe(["t-away"]);
+    }
+
     [Fact]
     public async Task SearchTopicsAsync_MatchesTheTopicName()
     {
@@ -164,7 +180,7 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         var store = NewStore();
         await store.SaveTopicAsync(Topic("t-keepdoc", 780, "Quince jelly"));
         var db = redis.Connection.GetDatabase();
-        var docKey = $"topicdoc:{_agentId}:780:t-keepdoc";
+        var docKey = $"topicdoc@home:{_agentId}:780:t-keepdoc";
         await db.KeyExpireAsync(docKey, TimeSpan.FromDays(10));
 
         await store.SaveTopicAsync(Topic("t-keepdoc", 780, "Quince jelly renamed"), keepTtl: true);
@@ -182,20 +198,21 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         var store = NewStore();
         await store.SaveTopicAsync(Topic("t-gone", 760, "Rhubarb crumble"));
 
-        await store.DeleteTopicAsync(_agentId, 760, "t-gone");
+        await store.DeleteTopicAsync("home", _agentId, 760, "t-gone");
 
         (await store.SearchTopicsAsync(_agentId, "default", Anyone, "rhubarb", null, 10)).Topics.ShouldBeEmpty();
     }
 
     private static readonly TopicViewer AsFran = new("fran", "home");
 
-    // Every topic these tests write is nobody's unless a test owns it, and nobody's is everyone's.
+    // Every topic these tests write is nobody's unless a test owns it, and a topic nobody owns is its
+    // household's.
     private static readonly TopicViewer Anyone = new("anyone", "home");
 
     private TopicMetadata Topic(string topicId, long chatId, string name, DateTimeOffset? at = null)
     {
         var when = at ?? DateTimeOffset.UtcNow;
-        return new TopicMetadata(topicId, chatId, 0, _agentId, name, when, when);
+        return new TopicMetadata(topicId, chatId, 0, _agentId, name, when, when, TenantId: "home");
     }
 
     private string HistoryKey(long chatId) =>

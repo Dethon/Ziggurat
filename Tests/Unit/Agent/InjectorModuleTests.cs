@@ -1,10 +1,12 @@
 using System.Text.Json.Nodes;
+using Agent.App;
 using Agent.Modules;
 using Agent.Settings;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Judgments;
+using Domain.Monitor;
 using Domain.Security;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
@@ -60,12 +62,9 @@ public class InjectorModuleTests
     {
         var settings = Settings(openRouterKey: "key") with
         {
-            Agents = [new AgentDefinition
-            {
-                Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["http://mcp-vault:8080/mcp"]
-            }],
+            SharedServers = new SharedServers { Scheduling = "http://mcp-scheduling:8080/mcp" },
             ChannelEndpoints = [new ChannelEndpoint { ChannelId = "signalr", Endpoint = "http://mcp-channel-signalr:8080/mcp" }],
-            Mcp = new McpGateSettings { Secrets = new() { ["mcp-vault"] = "vault-secret" } }
+            Mcp = new McpGateSettings { Secrets = new() { ["mcp-scheduling"] = "scheduling-secret" } }
         };
 
         Should.Throw<InvalidOperationException>(() => new ServiceCollection().AddLogging().AddAgent(settings))
@@ -120,7 +119,7 @@ public class InjectorModuleTests
     {
         var settings = Settings(openRouterKey: "key") with
         {
-            Agents = [new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["vault"] }]
+            SubAgents = [new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = ["vault"] }]
         };
 
         Should.NotThrow(() => new ServiceCollection().AddLogging().AddAgent(settings));
@@ -143,6 +142,22 @@ public class InjectorModuleTests
         provider.GetRequiredService<IOwnServers>().ShouldBeOfType<RelayedOwnServers>();
         provider.GetRequiredService<IOwnChannelServers>().ShouldBeOfType<RelayedOwnServers>();
         services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(TunnelRevocationListener));
+    }
+
+    // A timer with no satellite is rung on its person's channels by the agent, which alone holds
+    // them: the deployment's composition runs one alert relay over its channel connections.
+    [Fact]
+    public void ConfigureAgents_RingsAlertsOverItsChannelConnections()
+    {
+        var settings = Settings(openRouterKey: "key") with { Signing = TestSigningKeys.Settings(TestSigningKeys.Agent) };
+        var services = new ServiceCollection().AddLogging();
+        services.ConfigureAgents(settings, new CommandLineParams(), new ConfigurationBuilder().Build());
+        services.RemoveAll<IMetricsPublisher>();
+        services.AddSingleton<IMetricsPublisher>(new RecordingMetricsPublisher());
+        using var provider = services.BuildServiceProvider();
+
+        provider.GetRequiredService<AlertRelay>().ShouldNotBeNull();
+        services.ShouldContain(d => d.ServiceType == typeof(IHostedService) && d.ImplementationType == typeof(AlertRinging));
     }
 
     // An outpost is one of the household's tunnels, so the deployment's outposts are the relay's.
@@ -208,7 +223,6 @@ public class InjectorModuleTests
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = OpenRouterUrl, ApiKey = openRouterKey },
         Redis = new RedisConfiguration { ConnectionString = "localhost:1" },
-        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
-        Agents = []
+        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" }
     };
 }

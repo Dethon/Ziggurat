@@ -13,18 +13,28 @@ if (!builder.Environment.IsProduction())
 var app = builder.Build();
 app.UseBlazorFrameworkFiles();
 
-app.MapGet("/manifest.webmanifest", (string? slug, IConfiguration config) =>
+// The household's spaces are the hub's to say, never this host's, which reads no header and knows
+// nobody: the page that learned its space names it here (manifestHelper), and what it names is held
+// to the shapes a space's configuration takes. A page with nothing to name gets the default space's.
+app.MapGet("/manifest.webmanifest", (string? slug, string? name, string? color) =>
 {
-    var spaces = config.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
-    var space = spaces.FirstOrDefault(s => s.Slug == slug);
-    var startUrl = string.IsNullOrEmpty(slug) || slug == "default" ? "/" : $"/{slug}";
-    var (name, shortName) = WebManifestNaming.Resolve(space);
-    var themeColor = space?.AccentColor ?? "#1a1a2e";
+    // Longer than any space's name a person would install under; a longer one is no name here.
+    const int maxName = 100;
+    var spaceSlug = SpaceConfig.IsValidSlug(slug) ? slug! : SpaceConfig.DefaultSlug;
+    var accent = SpaceConfig.IsValidHexColor(color) ? color : null;
+    // Before the page has heard from the hub it knows its slug alone: the app is still that space's
+    // (its start, id and scope), under the deployment's name until the page names it.
+    var named = name is { Length: > 0 and <= maxName }
+        ? new SpaceConfig(spaceSlug, name, accent ?? SpaceConfig.DefaultAccentColor)
+        : null;
+    var startUrl = spaceSlug == SpaceConfig.DefaultSlug ? "/" : $"/{spaceSlug}";
+    var (manifestName, shortName) = WebManifestNaming.Resolve(named);
+    var themeColor = accent ?? "#1a1a2e";
 
-    var iconColor = Uri.EscapeDataString(space?.AccentColor ?? SpaceConfig.DefaultAccentColor);
+    var iconColor = Uri.EscapeDataString(accent ?? SpaceConfig.DefaultAccentColor);
     var manifest = new
     {
-        name,
+        name = manifestName,
         short_name = shortName,
         start_url = startUrl,
         id = startUrl,
@@ -57,24 +67,13 @@ app.MapGet("/api/config", (IConfiguration config) => new AppConfig(
     config["AgentUrl"] ?? throw new InvalidOperationException("AgentUrl is not configured"),
     config["WebPush:PublicKey"]));
 
-app.MapGet("/api/spaces/{slug}", (string slug, IConfiguration config) =>
-{
-    if (!SpaceConfig.IsValidSlug(slug))
-    {
-        return Results.NotFound();
-    }
-
-    var spaces = config.GetSection("Spaces").Get<SpaceConfig[]>() ?? [];
-    var space = spaces.FirstOrDefault(s => s.Slug == slug);
-    return space is not null ? Results.Ok(space) : Results.NotFound();
-});
-
 app.MapFallbackToFile("index.html");
 
 await app.RunAsync();
 
 namespace WebChat
 {
+
     [UsedImplicitly]
     internal record AppConfig(string AgentUrl, string? VapidPublicKey);
 }

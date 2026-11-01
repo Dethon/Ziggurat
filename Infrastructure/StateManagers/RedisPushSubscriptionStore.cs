@@ -1,19 +1,27 @@
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using StackExchange.Redis;
 
 namespace Infrastructure.StateManagers;
 
+// A person's phones under `push:subs:{userId}` and each endpoint's owner under `push:ep:{endpoint}`,
+// both per person; a household's space under `push:space@{tenantId}:{slug}`. The '@' keeps the space
+// sets apart from the shape before households (`push:space:{slug}`), so the household migration's
+// pattern for what is still unmoved can never match a household's.
 public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : IPushSubscriptionStore
 {
     private const string KeyPrefix = "push:subs:";
     private const string EndpointPrefix = "push:ep:";
-    private const string SpacePrefix = "push:space:";
+    private const string SpacePrefix = "push:space@";
 
-    public async Task SaveAsync(string userId, PushSubscriptionDto subscription, string spaceSlug = "default",
+    public static string SpaceKey(string tenantId, string spaceSlug) => $"{SpacePrefix}{tenantId}:{spaceSlug}";
+
+    public async Task SaveAsync(Account person, PushSubscriptionDto subscription, string spaceSlug = "default",
         string? replacingEndpoint = null, CancellationToken ct = default)
     {
+        var userId = person.UserId;
         var db = redis.GetDatabase();
         var endpointIndexKey = $"{EndpointPrefix}{subscription.Endpoint}";
 
@@ -30,6 +38,10 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
             if (previousOwner.ToString() != userId)
             {
                 await db.HashDeleteAsync($"{KeyPrefix}{previousOwner}", subscription.Endpoint);
+
+                // The spaces it was in were its last owner's household's, which may not be this one's:
+                // left there, a push to that household's space would reach this person's phone.
+                await RemoveFromAllSpaceSetsAsync(db, subscription.Endpoint);
             }
         }
 
@@ -37,7 +49,7 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
 
         await db.HashSetAsync($"{KeyPrefix}{userId}", subscription.Endpoint, value);
         await db.StringSetAsync(endpointIndexKey, userId);
-        await db.SetAddAsync($"{SpacePrefix}{spaceSlug}", subscription.Endpoint);
+        await db.SetAddAsync(SpaceKey(person.TenantId, spaceSlug), subscription.Endpoint);
     }
 
     private async Task TransferSpaceMembershipsAsync(IDatabase db, string oldEndpoint, string newEndpoint)
@@ -120,10 +132,11 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
     }
 
     public async Task<IReadOnlyList<(string UserId, PushSubscriptionDto Subscription)>> GetBySpaceAsync(
-        string spaceSlug, CancellationToken ct = default)
+        string tenantId, string spaceSlug, CancellationToken ct = default)
     {
         var db = redis.GetDatabase();
-        var endpoints = await db.SetMembersAsync($"{SpacePrefix}{spaceSlug}");
+        var space = SpaceKey(tenantId, spaceSlug);
+        var endpoints = await db.SetMembersAsync(space);
         var results = new List<(string, PushSubscriptionDto)>();
 
         foreach (var endpointValue in endpoints)
@@ -135,7 +148,7 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
             if (!userId.HasValue)
             {
                 // Self-healing: stale index entry — remove from space set
-                await db.SetRemoveAsync($"{SpacePrefix}{spaceSlug}", endpoint);
+                await db.SetRemoveAsync(space, endpoint);
                 continue;
             }
 
@@ -143,7 +156,7 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
             if (!hashValue.HasValue)
             {
                 // Self-healing: stale index entries — clean up both
-                await db.SetRemoveAsync($"{SpacePrefix}{spaceSlug}", endpoint);
+                await db.SetRemoveAsync(space, endpoint);
                 await db.KeyDeleteAsync($"{EndpointPrefix}{endpoint}");
                 continue;
             }

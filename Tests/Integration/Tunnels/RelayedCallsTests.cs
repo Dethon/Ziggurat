@@ -1,5 +1,6 @@
 using System.Net;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Tunnel;
 using Domain.DTOs.Voice;
@@ -22,10 +23,10 @@ namespace Tests.Integration.Tunnels;
 
 // A shared deployment server reaching a household's own: the timers server, wired as it ships with
 // its hub address the relay's endpoint on the agent, rings, dismisses and validates satellites on the
-// household's voice server, which is real and reached through its tunnel alone. Both ends present
-// only what they already hold — the timers server its own /mcp credential, which the agent holds to
-// dial it; the relay the voice server's tunnel credential — and the relay lets the caller reach that
-// API and nothing else.
+// voice server of the household a timer was armed for, which is real and reached through its tunnel
+// alone. Both ends present only what they already hold — the timers server its own /mcp credential,
+// which the agent holds to dial it; the relay the voice server's tunnel credential — and the relay
+// lets the caller reach that API, of the household the request names, and nothing else.
 public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>, IAsyncLifetime
 {
     private const string AgentCredential = "agent-credential";
@@ -68,10 +69,8 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
     {
         await using var voice = await StartVoiceAsync();
         await using var timers = TimersServer();
-        var files = timers.GetRequiredService<TimerFileSystem>();
-        var ringing = new TimerFireService(
-            timers.GetRequiredService<ITimerStore>(), timers.GetRequiredService<IInsistentAnnouncer>(), _clock,
-            NullLogger<TimerFireService>.Instance);
+        var files = As(timers, _household);
+        var ringing = FireLoop(timers);
         await ringing.StartAsync(CancellationToken.None);
 
         var created = await files.CreateAsync("/pasta/timer.json",
@@ -94,7 +93,7 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
         await using var voice = await StartVoiceAsync();
         await using var timers = TimersServer();
 
-        var created = await timers.GetRequiredService<TimerFileSystem>().CreateAsync("/pasta/timer.json",
+        var created = await As(timers, _household).CreateAsync("/pasta/timer.json",
             """{"durationSeconds": 2, "target": {"room": "Attic"}}""", false, true, CancellationToken.None);
 
         var error = created.ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error;
@@ -107,28 +106,31 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
     {
         await using var timers = TimersServer();
 
-        var created = await timers.GetRequiredService<TimerFileSystem>().CreateAsync("/pasta/timer.json",
+        var created = await As(timers, _household).CreateAsync("/pasta/timer.json",
             """{"durationSeconds": 2, "target": {"room": "Kitchen"}}""", false, true, CancellationToken.None);
 
         var error = created.ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error;
         error.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
         error.Message.ShouldContain("unreachable");
-        (await timers.GetRequiredService<ITimerStore>().ListAsync(CancellationToken.None)).ShouldBeEmpty();
+        (await timers.GetRequiredService<ITimerStore>().ListAsync(_household, CancellationToken.None)).ShouldBeEmpty();
     }
 
-    public static TheoryData<string, string?, string, string, HttpStatusCode> Refused => new()
+    public static TheoryData<string, string?, string, string, bool, HttpStatusCode> Refused => new()
     {
-        { "no credential", null, HouseholdServerNames.Voice, "api/voice/dismiss", HttpStatusCode.Unauthorized },
-        { "another server's credential", "not-the-timers-secret", HouseholdServerNames.Voice, "api/voice/dismiss", HttpStatusCode.Unauthorized },
-        { "another household server", TimersCredential, "vault", "api/voice/dismiss", HttpStatusCode.Forbidden },
-        { "the voice server's mcp", TimersCredential, HouseholdServerNames.Voice, "mcp", HttpStatusCode.Forbidden },
-        { "a path out of the api", TimersCredential, HouseholdServerNames.Voice, "api/voice/../../mcp", HttpStatusCode.Forbidden }
+        { "no credential", null, HouseholdServerNames.Voice, "api/voice/dismiss", true, HttpStatusCode.Unauthorized },
+        { "another server's credential", "not-the-timers-secret", HouseholdServerNames.Voice, "api/voice/dismiss", true, HttpStatusCode.Unauthorized },
+        { "another household server", TimersCredential, "vault", "api/voice/dismiss", true, HttpStatusCode.Forbidden },
+        { "the voice server's mcp", TimersCredential, HouseholdServerNames.Voice, "mcp", true, HttpStatusCode.Forbidden },
+        { "a path out of the api", TimersCredential, HouseholdServerNames.Voice, "api/voice/../../mcp", true, HttpStatusCode.Forbidden },
+        // A household's server is always one household's, so a call that does not say whose is for
+        // nobody's — never the home's by default.
+        { "no household named", TimersCredential, HouseholdServerNames.Voice, "api/voice/dismiss", false, HttpStatusCode.Forbidden }
     };
 
     [Theory]
     [MemberData(nameof(Refused))]
     public async Task ACallTheRelayDoesNotLetThrough_IsRefusedAndNeverReachesTheServer(
-        string what, string? credential, string server, string path, HttpStatusCode refusal)
+        string what, string? credential, string server, string path, bool namesTheHousehold, HttpStatusCode refusal)
     {
         await using var voice = await StartVoiceAsync();
         voice.Alerts.Register(new AlertHandle(new CancellationTokenSource(), ["kitchen-01"], "pasta", AnnounceKind.Timer));
@@ -140,21 +142,51 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
             request.Headers.Add("Authorization", SharedSecret.Header(credential));
         }
 
+        if (namesTheHousehold)
+        {
+            request.Headers.Add(RelayedCallProtocol.HouseholdHeader, _household);
+        }
+
         var answer = await caller.SendAsync(request);
 
         answer.StatusCode.ShouldBe(refusal, what);
         voice.Alerts.Acknowledge("kitchen-01").ShouldHaveSingleItem();
     }
 
-    // A timer names no household: it rings on the home household's voice server, and another
-    // household's server of the same name is never the one it reaches.
+    // A timer is its household's, and rings on that household's voice server: with two households'
+    // servers of the same name connected, each timer reaches its own and never the other.
+    [Fact]
+    public async Task ATimer_RingsOnItsOwnHouseholdsVoiceServerAndNoOther()
+    {
+        var neighbours = await _accounts.SeedHouseholdAsync("Neighbours");
+        await using var home = await StartVoiceAsync();
+        await using var elsewhere = await StartVoiceAsync(neighbours);
+        await using var timers = TimersServer();
+        var ringing = FireLoop(timers);
+        await ringing.StartAsync(CancellationToken.None);
+
+        (await As(timers, neighbours).CreateAsync("/pasta/timer.json",
+                """{"durationSeconds": 2, "text": "pasta is ready", "target": {"room": "Kitchen"}}""", false, true,
+                CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        await AdvanceUntilAsync(() => elsewhere.Rings > 0, "the neighbours' timer to ring on their kitchen's satellite");
+        var dismissed = (await As(timers, neighbours).ExecAsync("/", "./dismiss", null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsExecResult>.Ok>().Value;
+
+        dismissed.Stdout.ShouldContain("timer \"pasta is ready\"");
+        home.Rings.ShouldBe(0);
+        await ringing.StopAsync(CancellationToken.None);
+    }
+
+    // The household's own voice server being offline is the household's alone: another household's
+    // server of the same name, connected, is never reached instead.
     [Fact]
     public async Task ATimerWithOnlyAnotherHouseholdsVoiceConnected_FailsSayingTheHubIsUnreachable()
     {
         await using var elsewhere = await StartVoiceAsync(await _accounts.SeedHouseholdAsync("Neighbours"));
         await using var timers = TimersServer();
 
-        var created = await timers.GetRequiredService<TimerFileSystem>().CreateAsync("/pasta/timer.json",
+        var created = await As(timers, _household).CreateAsync("/pasta/timer.json",
             """{"durationSeconds": 2, "target": {"room": "Kitchen"}}""", false, true, CancellationToken.None);
 
         created.ShouldBeOfType<FsResult<FsCreateResult>.Err>().Error.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency);
@@ -169,6 +201,18 @@ public class RelayedCallsTests(RedisFixture redis) : IClassFixture<RedisFixture>
             () => _relay.Registry.Find(household, HouseholdServerNames.Voice) is not null, "voice's tunnel opens");
         return voice;
     }
+
+    // The mount as a person of the household sees it, which is how the registrar hands it every call.
+    private static TimerFileSystem As(ServiceProvider timers, string household) =>
+        (TimerFileSystem)timers.GetRequiredService<TimerFileSystem>().For(new FileSystemCaller(
+            new ConversationContext("jonas", "conv-1", "fran", new ReplyTarget("signalr", "conv-1"),
+                Principal: new Principal("signalr", "f1", new Account(household, "f1")),
+                Identity: IdentityClaims.Person("f1", household, "signalr", [])),
+            null));
+
+    private TimerFireService FireLoop(ServiceProvider timers) => new(
+        timers.GetRequiredService<ITimerStore>(), timers.GetRequiredService<IHouseholdVoices>(),
+        timers.GetRequiredService<IChannelAlerts>(), _clock, NullLogger<TimerFireService>.Instance);
 
     // The timers server as it ships, told its hub is the relay's endpoint for the voice server, its
     // own credential and the name the agent dials it at; on a clock the test drives.

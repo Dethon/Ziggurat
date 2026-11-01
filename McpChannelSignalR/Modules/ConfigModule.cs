@@ -42,6 +42,7 @@ public static class ConfigModule
             .AddSingleton<ISessionService>(sp => sp.GetRequiredService<SessionService>())
             .AddSingleton<ApprovalService>()
             .AddSingleton<IApprovalService>(sp => sp.GetRequiredService<ApprovalService>())
+            .AddSingleton<AlertService>()
             .AddSingleton<IHubNotificationSender, SignalRHubNotificationSender>()
             .AddSingleton<IPushSubscriptionStore, RedisPushSubscriptionStore>()
             .AddSingleton(settings.Attachments)
@@ -49,6 +50,8 @@ public static class ConfigModule
             .AddSingleton(settings.Dictation)
             .AddLemonadeTranscription(settings.Dictation.Transcription)
             .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret)
+            // The household's spaces, asked with this server's own credential and its person's assertion.
+            .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret)
             .AddAssertionVerifier(settings.Accounts.JwksUrl, settings.Mcp.TokenVerification)
             .AddSingleton<AttachmentTickets>()
             .AddSingleton<IConversationLiveness, AgentConversationLiveness>()
@@ -82,6 +85,8 @@ public static class ConfigModule
             .WithTools<RequestApprovalTool>()
             .WithTools<OfferApprovalTool>()
             .WithTools<SettleApprovalTool>()
+            .WithTools<OfferAlertTool>()
+            .WithTools<SettleAlertTool>()
             .WithTools<CreateConversationTool>()
             // This server's own register_agents, not the shared catalog-writing one: registration
             // here also broadcasts OnAgentsUpdated so WebChat refreshes live.

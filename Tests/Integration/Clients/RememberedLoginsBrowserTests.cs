@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Domain.Contracts;
 using Domain.Judgments;
+using Domain.Security.Sealing;
 using Infrastructure.Clients.Browser;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -79,7 +80,7 @@ public class RememberedLoginsBrowserTests(IsolatedSessionBrowserFixture fixture,
         await lease.CompleteAsync(hosts, remember);
     }
 
-    private RedisPersonStateStore Store(byte[] key) => new(redis.Connection, key);
+    private RedisPersonStateStore Store(byte[] key) => new(redis.Connection, SealingKey.Import(key));
 
     private static string Site() => $"https://remembered-{Guid.NewGuid():N}.test";
 

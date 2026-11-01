@@ -21,6 +21,8 @@ using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Shouldly;
 
+using Tests.Unit.McpChannelSignalR.Fixtures;
+
 namespace Tests.Unit.McpChannelSignalR;
 
 // The hub knows its person from the proxy: the assertion the session check signs, copied onto every
@@ -75,6 +77,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
                 NullLogger<ApprovalService>.Instance))
             .AddSingleton(new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast))
             .AddSingleton<ISessionAccounts>(_accounts)
+            .AddSingleton<IHouseholdConfiguration>(new HouseholdSpacesAccounts())
             .AddSingleton(new Mock<IAgentCatalog>().Object)
             .AddSingleton(_store.Object)
             .AddSingleton(_pushStore.Object)
@@ -300,7 +303,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         await connection.InvokeAsync("SubscribePush", subscription);
         await connection.InvokeAsync("UnsubscribePush", "https://push.example/1");
 
-        _pushStore.Verify(s => s.SaveAsync(Fran, subscription, It.IsAny<string>(), null, It.IsAny<CancellationToken>()));
+        _pushStore.Verify(s => s.SaveAsync(new Account(Home, Fran), subscription, It.IsAny<string>(), null, It.IsAny<CancellationToken>()));
         _pushStore.Verify(s => s.RemoveAsync(Fran, "https://push.example/1", It.IsAny<CancellationToken>()));
     }
 
