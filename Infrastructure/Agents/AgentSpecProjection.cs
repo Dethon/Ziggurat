@@ -54,7 +54,7 @@ internal static class AgentSpecProjection
             // credential: its tunnel's client presents the tunnel's own (OwnServerEndpoints).
             McpServerEndpoints =
             [
-                .. definition.McpServerEndpoints.Select(address => EndpointOf(
+                .. definition.McpServerEndpoints.Select(address => McpServerEndpoint.Of(
                     address, server => deployment.Names(server) ? credentials.For(server) : null))
             ],
             TenantId = tenantId,
@@ -121,7 +121,7 @@ internal static class AgentSpecProjection
             [
                 .. definition.McpServerEndpoints
                     .Where(address => !SharedServers.Names(spawn.WithheldServers ?? [], address))
-                    .Select(address => EndpointOf(address, credentials.For))
+                    .Select(address => McpServerEndpoint.Of(address, credentials.For))
             ],
             // The parent's household, whose servers the worker reaches as its parent does, and whose
             // day its prompt names.
@@ -206,11 +206,4 @@ internal static class AgentSpecProjection
             .Select(p => p[1])
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
-
-    // A definition's endpoint: a household server's name, or a URL presenting what `credential` hands
-    // the server it reaches — nothing for an address that is no server's.
-    private static McpServerEndpoint EndpointOf(string address, Func<ServerAddress, string?> credential) =>
-        TunnelCredentialProtocol.IsServerName(address)
-            ? McpServerEndpoint.OwnServer(address)
-            : McpServerEndpoint.Configured(address, ServerAddress.FromUrl(address) is { } server ? credential(server) : null);
 }
