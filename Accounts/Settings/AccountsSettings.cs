@@ -56,6 +56,15 @@ public record AccountsSettings
     // servers as unknown: the relay asks each server for its tools, up to ten seconds.
     public TimeSpan AgentListingTimeout { get; init; } = TimeSpan.FromSeconds(15);
 
+    // Where the Observability host answers on the deployment's network: an owner's usage is read
+    // from its usage route, asked with an assertion this service signs for the owner, so no secret
+    // exists for this. Per deployment (OBSERVABILITYURL in compose); the default is compose's value.
+    public string ObservabilityUrl { get; init; } = DefaultObservabilityUrl;
+
+    // How long the usage page waits on the Observability host before it says the figures could not
+    // be read: a month's read walks thirty-one days of roll-ups.
+    public TimeSpan UsageTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
     // What the admin API holds an owner's changes to beyond the sections' own rules.
     public AdminSettings Admin { get; init; } = new();
 
@@ -78,6 +87,8 @@ public record AccountsSettings
     public const string DefaultAgentKeysUrl = "http://agent:8080/internal/jwks";
 
     public const string DefaultAgentUrl = "http://agent:8080";
+
+    public const string DefaultObservabilityUrl = "http://observability:8080";
 
     public Uri PublicBase => new(PublicBaseUrl.TrimEnd('/') + "/");
 
