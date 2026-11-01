@@ -17,6 +17,16 @@ public static class AdminProtocol
     public const string HouseholdChanges = Household + "/changes";
     public const string AllChanges = Operator + "/changes";
 
+    // The household's agents (AdminAgents): each one's name and custom instructions, its last few
+    // versions and a restore of one, an agent added from a shipped template, one removed.
+    public const string Agents = Household + "/agents";
+
+    public static string Agent(string agentId) => $"{Agents}/{agentId}";
+
+    public static string AgentVersions(string agentId) => $"{Agent(agentId)}/versions";
+
+    public static string RestoreAgentVersion(string agentId, string versionId) => $"{AgentVersions(agentId)}/{versionId}/restore";
+
     // Every admin request carries this header with this value. A cross-site form cannot set a
     // header, and a cross-origin script that does is preflighted, which nothing here answers: so a
     // request carrying it came from a page on the host the API is served on.

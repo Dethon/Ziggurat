@@ -42,6 +42,9 @@ public record AccountsSettings
     // with one of its own. Per deployment (AGENTKEYSURL in compose); the default is compose's value.
     public string AgentKeysUrl { get; init; } = DefaultAgentKeysUrl;
 
+    // What the admin API holds an owner's changes to beyond the sections' own rules.
+    public AdminSettings Admin { get; init; } = new();
+
     // How long an invite or recovery link stays redeemable.
     public int LinkLifetimeDays { get; init; } = 7;
 
@@ -106,6 +109,16 @@ public record AccountsSettings
 public record VerifierPolicy
 {
     public TokenVerificationSettings TokenVerification { get; init; } = new();
+}
+
+public record AdminSettings
+{
+    // The longest custom instructions an owner may give an agent, in characters: they go into every
+    // turn's prompt, paid for on every call. The operator's set-household-config is not held to it.
+    public int AgentInstructionsLength { get; init; } = 4000;
+
+    // How many of an agent's earlier names and instructions are kept for an owner to restore.
+    public int AgentVersionsKept { get; init; } = 5;
 }
 
 public record HouseholdConfigSettings
