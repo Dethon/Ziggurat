@@ -4,8 +4,14 @@
 
 **Blocked by:** 02, 03, 05, 09
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A household created on a fresh smoke stack gets a reply from its named agent
-- [ ] Suspending it refuses its next turn
-- [ ] The smoke suite passes on a fresh `scripts/smoke-stack.sh up`
+- [x] A household created on a fresh smoke stack gets a reply from its named agent
+- [x] Suspending it refuses its next turn
+- [x] The smoke suite passes on a fresh `scripts/smoke-stack.sh up`
+
+Done: `StackSmokeTests.AHouseholdTheOperatorCreates_IsAnsweredByTheAgentItsOwnerNamed_UntilItIsSuspended`. The owner is
+signed in by `mint-session --user` (a passkey ceremony needs an authenticator; the link's enrolment is
+`PasskeyCeremoniesTests`'). The household's OpenRouter key is the deployment's own, read from the agent's user
+secrets on this machine, so the probe is the stub's (`smoke-keys`) and the one turn is real. Smoke 23/23 on a
+fresh `up`.
