@@ -574,7 +574,10 @@ internal sealed class ConversationGroup(
                 $"whether household {refusal.HouseholdId} lets it through could not be read", UncheckedAnswer)
         };
         var what = message.Origin is null ? "turn" : $"{message.Origin.Kind} fire";
-        logger.LogWarning("Refused a {What} on {ChannelId} for conversation {ConversationId}: {Why}",
+        // A suspended household's crons keep firing until it is resumed, which is the operator's doing,
+        // not a fault.
+        logger.Log(refusal is StandingRefusal.Suspended ? LogLevel.Information : LogLevel.Warning,
+            "Refused a {What} on {ChannelId} for conversation {ConversationId}: {Why}",
             what, channel.ChannelId, message.ConversationId, why);
         metricsPublisher.ForHousehold(refusal.HouseholdId).Publish(new ErrorEvent
         {
