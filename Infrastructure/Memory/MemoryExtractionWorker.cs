@@ -134,20 +134,30 @@ public class MemoryExtractionWorker(
     // Who pays for the extraction: the request's household, on its key (the home's on the deployment's;
     // a request naming none, too). None for a household of its own that set no key — its turns are
     // refused, so this is one whose key went away after the turn — or one the configuration could not
-    // answer for just now: the turn's memory is lost rather than paid for on somebody else's key.
+    // answer for just now: the turn's memory is lost rather than paid for on somebody else's key. None
+    // either for a household suspended, or a person disabled, after their turn was admitted: both stop
+    // every model call made for them, as dreaming skips them off the same view.
     private async Task<ModelPayer?> PayerAsync(MemoryExtractionRequest request, IMetricsPublisher metrics, CancellationToken ct)
     {
         try
         {
-            var household = await agentDefinitionProvider.ForHouseholdAsync(request.TenantId, ct);
-            if (household.Payer is { } payer)
+            switch (await agentDefinitionProvider.ForHouseholdAsync(request.TenantId, ct))
             {
-                return payer with { TenantId = request.TenantId };
+                case { Suspended: true }:
+                    logger.LogInformation("Household {Household} is suspended; nothing is extracted for user {UserId}",
+                        request.TenantId, request.UserId);
+                    return null;
+                case { Configuration.DisabledPeople: { } disabled } when disabled.Contains(request.UserId):
+                    logger.LogInformation("User {UserId} is disabled in household {Household}; nothing is extracted",
+                        request.UserId, request.TenantId);
+                    return null;
+                case { Payer: { } payer }:
+                    return payer with { TenantId = request.TenantId };
+                default:
+                    logger.LogWarning("Household {Household} has set no OpenRouter key; nothing is extracted for user {UserId}",
+                        request.TenantId, request.UserId);
+                    return null;
             }
-
-            logger.LogWarning("Household {Household} has set no OpenRouter key; nothing is extracted for user {UserId}",
-                request.TenantId, request.UserId);
-            return null;
         }
         catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
                                        or TaskCanceledException && !ct.IsCancellationRequested)

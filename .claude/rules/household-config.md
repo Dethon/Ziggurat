@@ -218,7 +218,8 @@ Every model call made for a household goes out on its own OpenRouter key and is 
   client sending a call reveals it, into the call's header.
 - **Extraction** reads the request's household (`MemoryExtractionRequest.TenantId`) before the gate:
   no key, or a household the configuration cannot answer for just now (a `failed` extraction and an
-  error under the household), extracts nothing rather than pay on another's key. A person's custom
+  error under the household), extracts nothing rather than pay on another's key; nor for a household
+  suspended, or a person disabled, after their turn was admitted (dreaming's rule, off the same view). A person's custom
   agent is read under `Account(TenantId, UserId)`.
 - **Dreaming** walks the `people` view: each household's people the store keeps memory for, on the
   household's key, its events and the merge's embeddings counted under it. A household that cannot
