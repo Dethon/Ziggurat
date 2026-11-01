@@ -57,8 +57,12 @@ public sealed class ApprovalRelay(
                     break;
                 }
 
-                var (channel, task) = waiting.Single(w => w.Task == done);
-                waiting.RemoveAll(w => w.Task == done);
+                // By position, never by task alone: an offer answered before it awaited anything is
+                // the runtime's one cached task for its answer, so two channels that could not show
+                // the question hand back the same task.
+                var finished = waiting.FindIndex(w => w.Task == done);
+                var (channel, task) = waiting[finished];
+                waiting.RemoveAt(finished);
                 var answer = AnswerOf(channel, task);
                 if (answer is { } result)
                 {

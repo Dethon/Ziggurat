@@ -138,6 +138,29 @@ public class AlertRelayTests
         timers.Settled.ShouldHaveSingleItem().ShouldBe((pasta.AlertId, true));
         await stop.CancelAsync();
     }
+
+    // Two channels that cannot show it — not connected, or offering no alert tool — answer at once,
+    // and an async method answering false at once hands back the runtime's one cached task: the
+    // relay must tell them apart by channel, not by task, or the person's open chat client is never
+    // given the chance to ring.
+    [Fact]
+    public async Task TwoChannelsAnsweringAtOnce_LeaveTheAlertToTheOneShowingIt()
+    {
+        var timers = new AlertChannel("timers");
+        var webchat = new AlertChannel("signalr");
+        var telegram = new AlertChannel("telegram") { NotConnected = true };
+        var voice = new AlertChannel("voice") { NotConnected = true };
+        var (_, stop) = Run(timers, webchat, telegram, voice);
+        var pasta = Pasta();
+
+        timers.Raise(new AlertSignal.Ring(pasta));
+        await Eventually.Until(() => webchat.Offered.Count == 1, "the chat client's offer to go out");
+        webchat.Dismiss();
+
+        await Eventually.Until(() => timers.Settled.Count == 1, "the timers server to be told");
+        timers.Settled.ShouldHaveSingleItem().ShouldBe((pasta.AlertId, true));
+        await stop.CancelAsync();
+    }
 }
 
 // A channel whose part the test plays: what its server raises, and what its person does with an
@@ -153,6 +176,9 @@ internal sealed class AlertChannel(string channelId) : IAlertChannel
     private volatile bool _calledOff;
 
     public Exception? OfferFailure { get; init; }
+
+    // Answers as McpChannelConnection does with no client: false, before anything is awaited.
+    public bool NotConnected { get; init; }
 
     public string ChannelId => channelId;
 
@@ -172,6 +198,11 @@ internal sealed class AlertChannel(string channelId) : IAlertChannel
 
     public async Task<bool> OfferAlertAsync(ChannelAlertNotification alert, CancellationToken ct)
     {
+        if (NotConnected)
+        {
+            return false;
+        }
+
         lock (_gate)
         {
             _offered.Add(alert);
