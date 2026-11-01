@@ -29,6 +29,25 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
                 return new AdminAnswer<HouseholdSettings>.Answered(saved.Value, saved.Warning);
             });
 
+    public Task<AdminAnswer<HouseholdKeys>> GetKeysAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Keys), async content =>
+            new AdminAnswer<HouseholdKeys>.Answered((await content.ReadFromJsonAsync<HouseholdKeys>())!));
+
+    public Task<AdminAnswer<HouseholdKeys>> SaveOpenRouterKeyAsync(OpenRouterKey key) =>
+        SaveKeysAsync(AdminProtocol.OpenRouterKey, key);
+
+    public Task<AdminAnswer<HouseholdKeys>> SaveIdealistaKeysAsync(IdealistaKeys keys) =>
+        SaveKeysAsync(AdminProtocol.IdealistaKeys, keys);
+
+    public Task<AdminAnswer<HouseholdKeys>> SaveTelegramBotAsync(string agentId, TelegramBotKey bot) =>
+        SaveKeysAsync(AdminProtocol.TelegramBot(agentId), bot);
+
+    private Task<AdminAnswer<HouseholdKeys>> SaveKeysAsync<TKey>(string path, TKey key) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(key) }, async content =>
+        {
+            var saved = (await content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!;
+            return new AdminAnswer<HouseholdKeys>.Answered(saved.Value, saved.Warning);
+        });
     public Task<AdminAnswer<AdminAgents>> GetAgentsAsync() =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Agents), async content =>
             new AdminAnswer<AdminAgents>.Answered((await content.ReadFromJsonAsync<AdminAgents>())!));
@@ -50,6 +69,34 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
     // A body-less POST: the restore says which version in its path alone.
     public Task<AdminAnswer<AdminAgents>> RestoreAgentVersionAsync(string agentId, string versionId) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.RestoreAgentVersion(agentId, versionId)), SavedAgentsAsync);
+
+    public Task<AdminAnswer<AdminMembers>> GetMembersAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Members), async content =>
+            new AdminAnswer<AdminMembers>.Answered((await content.ReadFromJsonAsync<AdminMembers>())!));
+
+    public Task<AdminAnswer<MemberLink>> InviteMemberAsync(MemberInvite invite) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.MemberInvites) { Content = JsonContent.Create(invite) },
+            SavedAsync<MemberLink>);
+
+    public Task<AdminAnswer<AdminMembers>> SaveMemberAsync(string userId, MemberEdit edit) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Member(userId)) { Content = JsonContent.Create(edit) },
+            SavedAsync<AdminMembers>);
+
+    // Body-less POSTs, as a restore is: the path says whom.
+    public Task<AdminAnswer<AdminMembers>> DisableMemberAsync(string userId) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.DisableMember(userId)), SavedAsync<AdminMembers>);
+
+    public Task<AdminAnswer<AdminMembers>> EnableMemberAsync(string userId) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.EnableMember(userId)), SavedAsync<AdminMembers>);
+
+    public Task<AdminAnswer<MemberLink>> MintMemberRecoveryAsync(string userId) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.MemberRecovery(userId)), SavedAsync<MemberLink>);
+
+    private static async Task<AdminAnswer<T>.Answered> SavedAsync<T>(HttpContent content)
+    {
+        var saved = (await content.ReadFromJsonAsync<AdminSaved<T>>())!;
+        return new AdminAnswer<T>.Answered(saved.Value, saved.Warning);
+    }
 
     private static async Task<AdminAnswer<AdminAgents>.Answered> SavedAgentsAsync(HttpContent content)
     {

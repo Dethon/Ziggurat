@@ -57,8 +57,13 @@ public static class ServiceCollectionExtensions
             services.AddScoped<IAdminService, AdminService>();
             services.AddScoped<HouseholdSettingsStore>();
             services.AddScoped<HouseholdSettingsEffect>();
+            services.AddScoped<HouseholdKeysStore>();
+            services.AddScoped<HouseholdKeysEffect>();
+            services.AddScoped<OnboardingEffect>();
             services.AddScoped<HouseholdAgentsStore>();
             services.AddScoped<HouseholdAgentsEffect>();
+            services.AddScoped<HouseholdMembersStore>();
+            services.AddScoped<HouseholdMembersEffect>();
 
             return services;
         }

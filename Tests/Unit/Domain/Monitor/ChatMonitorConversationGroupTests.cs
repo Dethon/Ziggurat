@@ -254,6 +254,7 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
             households: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
@@ -315,6 +316,7 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
             households: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
@@ -360,6 +362,7 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
             households: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
@@ -400,6 +403,7 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
             households: null,
             logger.Object);
         var grouping = new FakeGrouping(new AgentKey("conv-1"));
@@ -469,6 +473,7 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
             households: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);
@@ -541,6 +546,7 @@ public class ChatMonitorConversationGroupTests
             skillPreloader: null,
             TestAssertions.Verifier(),
             delegations: null,
+            standing: null,
             households: null,
             logger.Object);
         var grouping = new FakeGrouping(agentKey);

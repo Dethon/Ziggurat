@@ -74,6 +74,51 @@ public class ChatMonitorDelegationTests
         error.Message.ShouldContain(nameof(TokenRefusal.UnknownKey));
     }
 
+    // A delegation lives as long as its schedule, so one signed before an owner disabled its person
+    // still verifies: the household's word decides, and a disabled member's schedule fires as nobody.
+    [Fact]
+    public async Task ADisabledMembersFire_ActsForNobody_AndIsReported()
+    {
+        var run = new Run(standing: new FakeAccountStanding(_fran));
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldHaveSingleItem().Account.ShouldBeNull();
+        var context = run.TurnContext();
+        context.Identity.ShouldBeNull();
+        context.Principal.ShouldBeNull();
+        var error = run.Errors.ShouldHaveSingleItem();
+        error.ErrorType.ShouldBe(ChatMonitor.DelegationRefusedErrorType);
+        error.Message.ShouldContain(ConversationGroup.AccountDisabled);
+    }
+
+    [Fact]
+    public async Task AFireWhosePersonsStandingCannotBeRead_ActsForNobody()
+    {
+        var run = new Run(standing: new FakeAccountStanding { Unreadable = true });
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldHaveSingleItem().Account.ShouldBeNull();
+        run.TurnContext().Identity.ShouldBeNull();
+        run.Errors.ShouldHaveSingleItem().Message.ShouldContain(ConversationGroup.StandingUnreadable);
+    }
+
+    // Re-enabled, the same delegation acts for them again: nothing about it was spent or dropped.
+    [Fact]
+    public async Task AnEnabledMembersFire_ActsForThem()
+    {
+        var run = new Run(standing: new FakeAccountStanding(_mallory));
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Errors.ShouldBeEmpty();
+        run.TurnContext().Identity.ShouldNotBeNull().Account.ShouldBe(_fran);
+    }
+
     // A suspended household's schedules and watches still fire on their servers, and start nothing:
     // nobody waits on a fire to be told, so the errors feed is where it is said.
     [Fact]
@@ -149,10 +194,12 @@ public class ChatMonitorDelegationTests
     private sealed class Run
     {
         private readonly List<MetricEvent> _published = [];
+        private readonly IAccountStanding? _standing;
         private readonly IAgentDefinitionProvider? _households;
 
-        public Run(string channel = "scheduling", IAgentDefinitionProvider? households = null)
+        public Run(string channel = "scheduling", IAccountStanding? standing = null, IAgentDefinitionProvider? households = null)
         {
+            _standing = standing;
             _households = households;
             Channel = new FakeChannelConnection { ChannelId = channel };
             Agent = new FakeAiAgent();
@@ -197,6 +244,7 @@ public class ChatMonitorDelegationTests
                 NullLogger<ChatMonitor>.Instance,
                 MonitorTestMocks.Assertions,
                 delegations: TestDelegations.Verifier(),
+                standing: _standing,
                 agentDefinitions: _households);
 
             await monitor.Monitor(CancellationToken.None);

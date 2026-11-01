@@ -3298,6 +3298,110 @@ select:focus:not(:focus-visible) {
     background: var(--error-bg);
 }
 
+.admin-key + .admin-key {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.admin-key h2 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.admin-key-needed {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--warning);
+}
+
+.admin-key-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    margin: 0;
+    color: var(--text-secondary);
+}
+
+.admin-key-state {
+    font-weight: 600;
+}
+
+.admin-key-status-working .admin-key-state {
+    color: var(--success);
+}
+
+.admin-key-status-rejected .admin-key-state {
+    color: var(--error);
+}
+
+.admin-key-status-unchecked .admin-key-state {
+    color: var(--warning);
+}
+
+.admin-key-bots {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.admin-key-bots li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+
+.admin-key-agent {
+    font-family: monospace;
+}
+
+.admin-member {
+    margin-top: 1.5rem;
+    padding: 1.25rem;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.admin-member-disabled {
+    color: var(--warning);
+}
+
+.admin-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+}
+
+.admin-check input {
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--accent);
+}
+
+.admin-minted {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--accent);
+    background: var(--accent-subtle);
+}
+
+.admin-minted p {
+    margin: 0 0 0.5rem;
+    overflow-wrap: anywhere;
+}
+
+.admin-minted p:last-child {
+    margin-bottom: 0;
+}
+
 @media (max-width: 480px) {
     .admin-entry {
         width: 36px;

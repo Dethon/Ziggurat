@@ -364,6 +364,18 @@ internal sealed class FakeChannelConnection : IChannelConnection
     // the monitor's side, and the only way to fault a real ChatMonitor from outside it.
 }
 
+// The household's word on who the agent may act for, as its agent view would say it: the accounts
+// listed are disabled, everyone else is in good standing, and a standing that cannot be read throws.
+internal sealed class FakeAccountStanding(params Account[] disabled) : IAccountStanding
+{
+    public bool Unreadable { get; init; }
+
+    public Task<AccountStanding> StandingAsync(Account account, CancellationToken ct) =>
+        Unreadable
+            ? throw new HttpRequestException("the accounts service could not be reached")
+            : Task.FromResult(disabled.Contains(account) ? AccountStanding.Disabled : AccountStanding.Active);
+}
+
 internal static class MonitorTestMocks
 {
     // The household a guest's assertion names when a test's message names no account.

@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Accounts.Store.Migrations
 {
     [DbContext(typeof(AccountsDbContext))]
-    [Migration("20261101023223_HouseholdSuspension")]
-    partial class HouseholdSuspension
+    [Migration("20261101022152_MemberDisabling")]
+    partial class MemberDisabling
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -188,6 +188,40 @@ namespace Accounts.Store.Migrations
                     b.ToTable("HouseholdDataKeys");
                 });
 
+            modelBuilder.Entity("Accounts.Store.HouseholdKeyCheck", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64);
+
+                    b.Property<DateTime>("CheckedAt");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(100);
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(300);
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(16);
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Key")
+                        .IsUnique();
+
+                    b.ToTable("HouseholdKeyChecks");
+                });
+
             modelBuilder.Entity("Accounts.Store.HouseholdSection", b =>
                 {
                     b.Property<string>("Id")
@@ -349,8 +383,6 @@ namespace Accounts.Store.Migrations
                         .IsRequired()
                         .HasMaxLength(200);
 
-                    b.Property<DateTime?>("SuspendedAt");
-
                     b.HasKey("Id");
 
                     b.ToTable("Tenants");
@@ -396,6 +428,8 @@ namespace Accounts.Store.Migrations
                         .HasMaxLength(2000);
 
                     b.Property<DateTime>("CreatedAt");
+
+                    b.Property<DateTime?>("DisabledAt");
 
                     b.Property<string>("DisplayName")
                         .IsRequired()
@@ -469,6 +503,15 @@ namespace Accounts.Store.Migrations
                 });
 
             modelBuilder.Entity("Accounts.Store.HouseholdDataKey", b =>
+                {
+                    b.HasOne("Accounts.Store.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Accounts.Store.HouseholdKeyCheck", b =>
                 {
                     b.HasOne("Accounts.Store.Tenant", null)
                         .WithMany()
