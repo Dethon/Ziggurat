@@ -72,15 +72,15 @@ public static class AdminApi
             return;
         }
 
-        var person = await http.RequestServices.GetRequiredService<AssertionVerifier>()
-            .VerifyRequestAsync(http.Request.Headers, AppChannels.Admin, http.RequestAborted);
-        if (person is null)
+        var admission = await http.RequestServices.GetRequiredService<AssertionVerifier>()
+            .AdmitAsync(http.Request.Headers, AppChannels.Admin, allowed, http.RequestAborted);
+        if (admission is AppAdmission.SignedOut)
         {
             await Results.Unauthorized().ExecuteAsync(http);
             return;
         }
 
-        if (!allowed(person))
+        if (admission is not AppAdmission.Admitted { Person: var person })
         {
             var refusal = path.StartsWithSegments(AdminProtocol.Household)
                 ? "Only the household's owners manage it."
