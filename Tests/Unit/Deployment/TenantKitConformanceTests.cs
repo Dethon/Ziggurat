@@ -22,6 +22,30 @@ public class TenantKitConformanceTests
     private static IReadOnlyList<ComposeService> TunnelledServers =>
         [.. Kit.Services.Values.Where(s => s.Environment.ContainsKey("MCP__TUNNEL__SERVERNAME"))];
 
+    // The smoke kit is the kit with its override laid over it, and compose refuses the whole project —
+    // every service, not just the one asked for — when a service no profile holds back depends on one a
+    // profile does: `scripts/smoke-stack.sh up` then starts no kit at all. A profile the override adds
+    // (voice's, for `smoke-stack.sh voice`) takes everything that needs it into a profile too.
+    [Fact]
+    public void TheSmokeKit_StartsNothingThatDependsOnAServiceAProfileHoldsBack()
+    {
+        var kit = DeploymentFiles.KitCompose();
+        var smoke = DeploymentFiles.KitCompose("docker-compose.override.smoke.yml");
+        IReadOnlyList<string> ProfilesOf(string name) =>
+            smoke.Services.TryGetValue(name, out var over) && over.Profiles.Count > 0
+                ? over.Profiles
+                : kit.Services.TryGetValue(name, out var service) ? service.Profiles : [];
+        var services = kit.Services.Keys.Union(smoke.Services.Keys);
+
+        services
+            .Where(name => ProfilesOf(name).Count == 0)
+            .SelectMany(name => kit.Services.GetValueOrDefault(name)?.DependsOn
+                .Concat(smoke.Services.GetValueOrDefault(name)?.DependsOn ?? [])
+                .Where(needed => ProfilesOf(needed).Count > 0)
+                .Select(needed => $"{name} -> {needed} ({string.Join(",", ProfilesOf(needed))})") ?? [])
+            .ShouldBeEmpty();
+    }
+
     [Fact]
     public void TheKit_ReadsNothingButItsOwnPlaceholders()
     {

@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Conversations;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Settings;
@@ -15,8 +16,8 @@ public sealed class AttachmentService(
 {
     public AttachmentLimits Limits { get; } = settings.Limits;
 
-    public UploadTicket MintUpload(string topicId, ConversationIdentity conversation, string? spaceSlug) =>
-        tickets.MintUpload(topicId, conversation, spaceSlug);
+    public UploadTicket MintUpload(string topicId, string agentId, ConversationIdentity conversation, string? spaceSlug) =>
+        tickets.MintUpload(topicId, agentId, conversation, spaceSlug);
 
     public AttachmentTickets.UploadScope? ResolveUploadScope(string token, string topicId) =>
         tickets.ResolveUpload(token, topicId);
@@ -55,7 +56,7 @@ public sealed class AttachmentService(
     // what this chat can show — and a channel's clip besides, under a cap of its own, since the
     // review shows what a video model was sent. Null when kept; otherwise why not.
     public async Task<string?> KeepCopyAsync(
-        string conversationId, string? spaceSlug, string attachmentId, string fileName, string mediaType,
+        AgentKey conversation, string? spaceSlug, string attachmentId, string fileName, string mediaType,
         byte[] bytes, CancellationToken ct)
     {
         if (CopyRefusal(fileName, mediaType, bytes.LongLength) is { } refusal)
@@ -63,10 +64,10 @@ public sealed class AttachmentService(
             return refusal;
         }
 
-        return await store.SaveCopyAsync(attachmentId, conversationId, spaceSlug ?? SpaceDefault, fileName, mediaType, bytes, ct)
+        return await store.SaveCopyAsync(attachmentId, conversation, spaceSlug ?? SpaceDefault, fileName, mediaType, bytes, ct)
             ? null
             : $"Attachment '{attachmentId}' cannot be kept here: its id names no file this store could hold for " +
-              $"conversation '{conversationId}', or one it already holds.";
+              $"conversation '{conversation.ConversationId}', or one it already holds.";
     }
 
     private string? CopyRefusal(string fileName, string mediaType, long sizeBytes) =>
@@ -81,9 +82,10 @@ public sealed class AttachmentService(
 
     public void DeleteConversation(string conversationId) => store.DeleteConversation(conversationId);
 
-    // The conversation a kept file belongs to, so a download is minted only for someone who may see
-    // that conversation's topic.
-    public string? ConversationOf(string attachmentId) => store.Find(attachmentId)?.ConversationId;
+    // The conversation a kept file belongs to and the agent holding it, so a download is minted only
+    // for someone who may see that conversation's topic. No agent for a file kept before files named
+    // theirs, which was the home's.
+    public AgentKey? ConversationOf(string attachmentId) => store.Find(attachmentId)?.Conversation;
 
     public const string SpaceDefault = "default";
 }

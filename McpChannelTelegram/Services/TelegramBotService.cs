@@ -1,6 +1,8 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Mcp.Hosting;
 using McpChannelTelegram.Settings;
 using Telegram.Bot;
@@ -25,7 +27,7 @@ public sealed class TelegramBotService : BackgroundService
     private readonly BotRegistry _botRegistry;
     private readonly ChannelNotificationEmitter _notificationEmitter;
     private readonly ApprovalCallbackRouter _approvalCallbackRouter;
-    private readonly IAgentCatalog _agentCatalog;
+    private readonly HouseholdAgentCatalogue _agents;
     private readonly VoiceNoteDictation _dictation;
     private readonly TelegramGate _gate;
     private readonly ChatAgents _chatAgents;
@@ -52,7 +54,7 @@ public sealed class TelegramBotService : BackgroundService
         _botRegistry = botRegistry;
         _notificationEmitter = notificationEmitter;
         _approvalCallbackRouter = approvalCallbackRouter;
-        _agentCatalog = agentCatalog;
+        _agents = new HouseholdAgentCatalogue(households, agentCatalog);
         _dictation = dictation;
         _gate = gate;
         _chatAgents = chatAgents;
@@ -257,7 +259,7 @@ public sealed class TelegramBotService : BackgroundService
 
         _botRegistry.RegisterChat(chatId, bot);
 
-        var turnStops = await ReportRefusalsAsync(agentId, botClient, first, intake, cancellationToken);
+        var turnStops = await ReportRefusalsAsync(agentId, person, botClient, first, intake, cancellationToken);
 
         // Nothing survived, or the model cannot read what did, so the reply is the whole response.
         if (turnStops || (content.Length == 0 && voice is null && intake.Attachments.Count == 0))
@@ -327,6 +329,25 @@ public sealed class TelegramBotService : BackgroundService
     // Every turn asks, so a person's Telegram conversations sit among their topics in the chat
     // client. The bot names the chat and says whether it is a group's; whose the copy is, and where
     // it goes, is the review host's to decide (ADR 0046).
+    // The agent a message goes to, as the sender's household runs it, read on the sender's own
+    // assertion; none when the household's agents cannot be read just now, which is as silent as a
+    // catalogue that has not been registered yet.
+    private async Task<AgentCatalogEntry?> AgentOfAsync(ResolvedAccount person, string? agentId, CancellationToken ct)
+    {
+        try
+        {
+            return await _agents.AgentAsync(
+                person.Account.TenantId, HouseholdProof.OfAssertion(person.Assertion), agentId, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException or TaskCanceledException
+                                   && !ct.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex, "Could not read the agents of household {Household}; attachments are not checked",
+                person.Account.TenantId);
+            return null;
+        }
+    }
+
     private static ReviewCopy ReviewOf(Chat chat, ResolvedAccount person) =>
         chat.Type == ChatType.Private
             ? new ReviewCopy { Title = $"Telegram: {person.DisplayName}" }
@@ -339,19 +360,21 @@ public sealed class TelegramBotService : BackgroundService
     // an answer that silently ignores the question is worse than no answer.
     private async Task<bool> ReportRefusalsAsync(
         string? agentId,
+        ResolvedAccount person,
         ITelegramBotClient botClient,
         Message first,
         Intake intake,
         CancellationToken cancellationToken)
     {
-        // The same resolution WebChat asks, from the same catalogue shape, so the two channels
-        // cannot disagree about which model is refusing. Permissive wherever the catalogue is
-        // silent — a cold start, or a blip at the provider, must not remove the feature. Telegram
-        // has no per-message model override, so the model a turn runs on is the agent's default; a
-        // shared bot's chat that picked no agent names none, and is as silent.
+        // The same resolution WebChat asks, of the agent as the sender's household runs it
+        // (HouseholdAgentCatalogue), so the two channels cannot disagree about which model is
+        // refusing. Permissive wherever the catalogue is silent — a cold start, or a blip at the
+        // provider, must not remove the feature. Telegram has no per-message model override, so the
+        // model a turn runs on is the agent's default; a shared bot's chat that picked no agent is
+        // the household's default agent.
         var capabilityRefusal = intake.Attachments.Count > 0
             ? AttachmentCapability.Refusal(
-                agentId is null ? null : _agentCatalog.Get(agentId), null, intake.Attachments.Select(a => a.MediaType))
+                await AgentOfAsync(person, agentId, cancellationToken), null, intake.Attachments.Select(a => a.MediaType))
             : null;
 
         var reasons = intake.Refusals

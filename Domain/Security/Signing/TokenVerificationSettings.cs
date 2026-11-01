@@ -22,4 +22,9 @@ public sealed record TokenVerificationSettings
     // freshly rotated key is picked up within it, long enough that a stream of made-up ids cannot
     // turn into a stream of requests to the issuer.
     public TimeSpan KeysRefetchInterval { get; init; } = TimeSpan.FromSeconds(10);
+
+    // The longest one fetch of the issuer's keys may take. Every check the copy cannot answer waits on
+    // the one fetch in flight, so an issuer that takes the connection and never answers would hold
+    // them all for as long as the host's HTTP client allows — 100 seconds by default.
+    public TimeSpan KeysFetchTimeout { get; init; } = TimeSpan.FromSeconds(5);
 }

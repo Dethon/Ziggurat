@@ -47,15 +47,9 @@ public static class TopicMintingApi
                 AgentId = request.AgentId,
                 TopicName = request.TopicName,
                 Sender = request.Sender,
-                Principal = PrincipalOf(identity),
+                Principal = identity.Principal,
                 GuestTenantId = identity.IsGuest ? identity.TenantId : null
             }, http.RequestAborted);
             return Results.Json(new TopicMinted(creation.Topic.TopicId, creation.Identity.ConversationId));
         });
-
-    // A person owns the topic their conversation opens; the guest's has no account, so the
-    // household shares it.
-    private static Principal PrincipalOf(IdentityClaims identity) => identity.IsGuest
-        ? new Principal(identity.ChannelId, IdentityClaims.GuestSubject)
-        : new Principal(identity.ChannelId, identity.Subject, identity.Account);
 }

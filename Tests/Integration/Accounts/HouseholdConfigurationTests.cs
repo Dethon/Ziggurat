@@ -32,6 +32,8 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
     private const string Scheduling = "scheduling-credential";
     private const string SignalR = "signalr-credential";
     private const string Telegram = "telegram-credential";
+    private const string Sugary = "sugary-credential";
+    private const string Timers = "timers-credential";
 
     private const string OpenRouterKey = "sk-or-v1-household-openrouter-key";
     private const string IdealistaKey = "idealista-api-key-of-the-household";
@@ -56,7 +58,9 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
                 ["mcp-idealista"] = Idealista,
                 ["mcp-scheduling"] = Scheduling,
                 ["mcp-channel-signalr"] = SignalR,
-                ["mcp-channel-telegram"] = Telegram
+                ["mcp-channel-telegram"] = Telegram,
+                ["mcp-sugary"] = Sugary,
+                ["mcp-timers"] = Timers
             },
             Redis = new() { ConnectionString = redis.ConnectionString },
             HouseholdConfig = new() { MasterKey = masterKey ?? AccountsServer.MasterKey }
@@ -183,6 +187,45 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
             .ShouldBe([new HouseholdTelegramBot(household, "jack", JackToken)]);
         bots.ShouldNotContain(OpenRouterKey);
         bots.ShouldNotContain(IdealistaKey);
+    }
+
+    // The timers server shows when a timer fires on the calling household's clock, so it reads that
+    // household's settings on the call token it was called with, for its own audience alone.
+    [Fact]
+    public async Task TheTimersServer_ReadsTheSettingsOfTheHouseholdItsCallTokenNames()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(server, household, HouseholdSections.Settings, """{ "name": "Casa", "timeZone": "America/New_York" }""");
+
+        var answered = await AskAsync<HouseholdConfigAnswer<HouseholdSettings>>(server, Timers, HouseholdConfigProtocol.SettingsView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-timers", household, person)));
+        var anotherServers = await PostAsync(server, Timers, HouseholdConfigProtocol.SettingsView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-scheduling", household, person)));
+
+        answered.Section.TimeZone.ShouldBe("America/New_York");
+        (await RefusalAsync(anotherServers, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+    }
+
+    // Sugary checks what the person's sugary agent reads before a photo is sent, so it reads the agents
+    // of the person's household on the assertion its request carried, as the chat hub does on its own.
+    [Fact]
+    public async Task Sugary_ReadsTheAgentsOfThePersonsHouseholdOnItsOwnChannel()
+    {
+        await using var server = await StartAsync();
+        var household = await server.SeedHouseholdAsync("Casa");
+        await SetAsync(server, household, HouseholdSections.Agents, """
+            { "agents": [ { "id": "sugary", "template": "sugary", "name": "Sugary" } ] }
+            """);
+        var assertions = server.Service<Assertions>();
+
+        var agents = await AskAsync<HouseholdConfigAnswer<HouseholdAgentNames>>(server, Sugary, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "sugary")));
+        var onTheHub = await PostAsync(server, Sugary, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "signalr")));
+
+        agents.Section.Agents.ShouldHaveSingleItem().Id.ShouldBe("sugary");
+        (await RefusalAsync(onTheHub, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
     }
 
     public static TheoryData<string, string> AnotherServersViews => new()

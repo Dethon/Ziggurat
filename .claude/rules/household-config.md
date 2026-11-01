@@ -105,12 +105,12 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 | View | Caller (`CALLERS__<name>`) | Answer | Secrets unsealed |
 |---|---|---|---|
 | `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces, `disabledPeople` (the user ids of members an owner disabled, which the agent acts for no more), and `suspended` (the operator suspended it: the agent refuses its turns and fires, `.claude/rules/admin.md`) | the OpenRouter key |
-| `settings` | `mcp-scheduling`, `mcp-sugary` | `HouseholdConfigAnswer<HouseholdSettings>` | none |
+| `settings` | `mcp-scheduling`, `mcp-sugary`, `mcp-timers` | `HouseholdConfigAnswer<HouseholdSettings>` | none |
 | `agent-names` (call token) | `mcp-scheduling` | as below: the household's agents, which its `/schedules` directories are (`.claude/rules/scheduling.md`) | none |
 | `idealista` | `mcp-idealista` | `HouseholdConfigAnswer<IdealistaKeys?>` | Idealista's two |
 | `spaces` | `mcp-channel-signalr` | `HouseholdConfigAnswer<SpacesSection>` | none |
 | `telegram-bots` | `mcp-channel-telegram` | `HouseholdTelegramBots`: every household's bots | the bots' tokens |
-| `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr` | `HouseholdConfigAnswer<HouseholdAgentNames>`: each agent's id, name, description, model and reasoning effort, and the default (`HouseholdAgents.Names`, the entries its turns are built from: the two templates for a household that saved none, an unshipped template left out; never custom instructions), proven by the person's assertion on the asker's channel | none |
+| `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr`, `mcp-sugary` | `HouseholdConfigAnswer<HouseholdAgentNames>`: each agent's id, name, description, model and reasoning effort, and the default (`HouseholdAgents.Names`, the entries its turns are built from: the two templates for a household that saved none, an unshipped template left out; never custom instructions), proven by the person's assertion on the asker's channel | none |
 | `people` | `agent` | `HouseholdPeople`: every household and its people's user ids | none |
 | `openrouter-key-refused` | `agent` | 204: not a view, the agent saying OpenRouter refused the household's own key in a turn (4c, `.claude/rules/admin.md`, "Keys and probes"); proven as `agent` is | none |
 
@@ -218,7 +218,8 @@ Every model call made for a household goes out on its own OpenRouter key and is 
   client sending a call reveals it, into the call's header.
 - **Extraction** reads the request's household (`MemoryExtractionRequest.TenantId`) before the gate:
   no key, or a household the configuration cannot answer for just now (a `failed` extraction and an
-  error under the household), extracts nothing rather than pay on another's key. A person's custom
+  error under the household), extracts nothing rather than pay on another's key; nor for a household
+  suspended, or a person disabled, after their turn was admitted (dreaming's rule, off the same view). A person's custom
   agent is read under `Account(TenantId, UserId)`.
 - **Dreaming** walks the `people` view: each household's people the store keeps memory for, on the
   household's key, its events and the merge's embeddings counted under it. A household that cannot
@@ -283,7 +284,8 @@ client per key pair, so each account's token is its own; no keys is an `authenti
 nothing is searched — the deployment holds no Idealista key at all, so on the deploy that removed
 `IDEALISTA__*` from `.env` the operator puts the home's keys into its `keys` section with
 `set-household-config`, and until then the home's searches say none is set); scheduling reads and fires in the
-household's zone; Sugary reads her times and her calendar's days in it. `CallHouseholdConformanceTests`
+household's zone; Sugary reads her times and her calendar's days in it; timers show when a timer fires in
+it (`status.json`'s `firesAt`). `CallHouseholdConformanceTests`
 fails on tool code (a server's tool types, `Domain/Tools`) naming the reader or a proof, on a call
 token's proof built anywhere but the accessor, and on the verified token read past it.
 - `HouseholdConfigRefusedException` for a refusal, `HttpRequestException` for an outage or a 503: a

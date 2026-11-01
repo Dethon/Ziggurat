@@ -483,9 +483,15 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
     under (`ChannelMessage.HouseholdId`, a schedule's `TenantId`) as well as its person's
     (`.claude/rules/channels.md`);
   - dreaming, which skips the household (`MemoryDreamingService` reads `Suspended` off the same view it
-    reads the key from);
+    reads the key from), and memory extraction, which asks nothing for a turn admitted before the
+    suspension (`MemoryExtractionWorker`, the same view; a member disabled since their turn likewise);
   - the tunnel verify (`TunnelCredentialRefusal.Suspended`) and a household server's back-call
     (`TunnelCredentialStore.LiveAsync` answers none).
+
+  Each reads the column in a query of its own shape, so nothing gathers them but a list:
+  `SuspensionCoverageTests` places every route the accounts service maps, by path, with how it refuses
+  a suspended household or why it need not, and fails on a route it does not place — a new way in
+  says what suspension does to it before it ships.
 
   The list's `HouseholdListEntry.SuspendedAt` and the row's Status cell (Suspend / Resume, none for the
   home) are the dashboard's.

@@ -44,6 +44,7 @@ public static class InternalCallers
     public const string Idealista = "mcp-idealista";
     public const string Scheduling = "mcp-scheduling";
     public const string Sugary = "mcp-sugary";
+    public const string Timers = "mcp-timers";
 
     // Sugary's channel (SugaryChannel.ChannelId), spelled again: this service references no server.
     public const string SugaryChannel = "sugary";
@@ -67,7 +68,8 @@ public static class InternalCallers
         [Agent] = [HouseholdConfigProtocol.AgentView, HouseholdConfigProtocol.PeopleView, HouseholdConfigProtocol.OpenRouterKeyRefused],
         [Idealista] = [HouseholdConfigProtocol.IdealistaView],
         [Scheduling] = [HouseholdConfigProtocol.SettingsView, HouseholdConfigProtocol.AgentNamesView],
-        [Sugary] = [HouseholdConfigProtocol.SettingsView],
+        [Sugary] = [HouseholdConfigProtocol.SettingsView, HouseholdConfigProtocol.AgentNamesView],
+        [Timers] = [HouseholdConfigProtocol.SettingsView],
         [SignalR] = [HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AgentNamesView],
         [Telegram] = [HouseholdConfigProtocol.TelegramBotsView, HouseholdConfigProtocol.AgentNamesView]
     };
@@ -86,7 +88,7 @@ public static class InternalCallers
     {
         var presented = http.Request.Headers.Authorization.ToString();
         IReadOnlyList<string> callers = [.. settings.Callers
-            .Where(caller => CallerCredential.Matches(presented, caller.Value))
+            .Where(caller => SharedSecret.Matches(presented, caller.Value))
             .Select(caller => caller.Key)];
         http.Items[ItemKey] = callers;
         return callers;

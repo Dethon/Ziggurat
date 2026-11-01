@@ -662,6 +662,18 @@ A shipped agent definition a household's agent starts from; a household changes 
 custom instructions.
 _Avoid_: default agent, base agent, preset
 
+**App admission**:
+Whether an app behind the proxy lets a request in, decided once for every app: the person the
+accounts service's assertion names for the app's channel, refused as signed out without one and as
+forbidden when the person lacks what the app asks. Each app only says how it answers each.
+_Avoid_: auth middleware, gate (for the decision), login check
+
+**Household agent catalogue**:
+A household's agents as a channel shows and checks them for a person of it: the household's own
+agents on the models it runs them on, with what the deployment decides about models. The catalogue
+the agent registers with its channels is the home's agents, never a household's list.
+_Avoid_: agent catalog (for a household's), registered catalogue (for a household's), agent list
+
 ## Outposts
 
 **Outpost**:

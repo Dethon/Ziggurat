@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
@@ -25,7 +26,7 @@ public static class LabelEndpoints
 
     // Read rather than bound, as the estimate's form is; a turn of the person the proxy named.
     private static async Task<IResult> ReadLabelAsync(
-        HttpRequest request, Person person, SugaryChannel channel, UploadStore uploads, IAgentCatalog catalog,
+        HttpRequest request, Person person, SugaryChannel channel, UploadStore uploads, HouseholdAgentCatalogue agents,
         SugarySettings settings, ILoggerFactory loggers, CancellationToken ct)
     {
         if (!request.HasFormContentType)
@@ -39,7 +40,7 @@ public static class LabelEndpoints
             return Problem(StatusCodes.Status400BadRequest, "Attach a photo of the label.");
         }
 
-        var agent = catalog.Get(settings.Agent);
+        var agent = await SugaryAgent.OfAsync(person, agents, settings, loggers.CreateLogger("McpServerSugary.App.Labels"), ct);
         if (NotSwitchable(agent, settings.LabelModel))
         {
             return Problem(StatusCodes.Status502BadGateway,

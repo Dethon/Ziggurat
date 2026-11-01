@@ -83,7 +83,7 @@ internal static class AgentPromptFixture
     // A server's own skills in the order its registration lists them (the home's watches first).
     private static readonly IReadOnlyList<PromptSkill> _servedInOrder =
     [
-        .. new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.For("Europe/Madrid"), SandboxSkill.For("/sandbox", "home/sandbox_user", servesMounts: true), CountdownTimersSkill.Text, SugarySkill.Text }
+        .. new[] { HomeWatchesSkill.Text, HomeAssistantSkill.Text, ObsidianVaultSkill.Text, WebBrowsingSkill.Text, SchedulingSkill.Text, SandboxSkill.For("/sandbox", "home/sandbox_user", servesMounts: true), CountdownTimersSkill.Text, SugarySkill.Text }
             .Select(text => PromptManifest.BindSkill(text.Name, text.Description, text.Body))
     ];
 

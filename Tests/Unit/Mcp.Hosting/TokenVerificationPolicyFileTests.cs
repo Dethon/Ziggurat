@@ -36,6 +36,7 @@ public class TokenVerificationPolicyFileTests
         configBuilder.Build()["mcp:tokenVerification:clockSkew"].ShouldBe("00:00:30");
         settings.Mcp.TokenVerification.ClockSkew.ShouldBe(TimeSpan.FromSeconds(30));
         settings.Mcp.TokenVerification.KeysLifetime.ShouldBe(TimeSpan.FromMinutes(10));
+        settings.Mcp.TokenVerification.KeysFetchTimeout.ShouldBe(TimeSpan.FromSeconds(5));
     }
 
     [Fact]

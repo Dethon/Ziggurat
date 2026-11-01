@@ -116,7 +116,10 @@ not as whatever its claims would make it. The `TokenRefusal` is the reason a gat
 
 `JwksCache` fetches when first asked, answers from its copy for `KeysLifetime` (10 min), fetches
 again for a key id the copy lacks — how a rotated key is picked up without a restart — but never
-twice within `KeysRefetchInterval` (10 s), one fetch at a time. A failed fetch keeps the copy there
+twice within `KeysRefetchInterval` (10 s), one fetch at a time, each bounded by `KeysFetchTimeout`
+(5 s) inside the cache rather than by the host's `HttpClient` — every check the copy cannot answer
+waits on that one fetch, so an issuer that takes the connection and never answers is
+`KeysUnavailable` within the bound on every host alike. A failed fetch keeps the copy there
 was. The agent verifies its own delegations against its `SigningKeyStore` directly, which is also an
 `IVerificationKeys`.
 
@@ -142,9 +145,13 @@ assertion must name the app's channel and a person — a guest assertion is nobo
 answers a `ForwardedAccount` built from the signed claims, or null, logging a refusal other than
 `Missing` at warning (`KeysUnavailable` there means the accounts service is unreachable and every
 signed-in person is being turned away). `ForwardedAccount.From`, which read the plain three, is gone.
-Each app asks `VerifyRequestAsync(request.Headers, channel)`, which reads the one header through
-`AssertionVerifier.AssertionOf` — none, or two values, is no assertion — and Sugary, which keeps the
-assertion to hand on, reads it there too.
+Each app asks **`AdmitAsync(request.Headers, channel, may, ct)`**, the one decision all five share
+(`AppAdmission`: `Admitted(person, assertion)`, `SignedOut` (401), `Forbidden(person)` (403) for a person
+`may` turns away — the role the app asks for), and says only how it answers each: the hub's
+`HubException`, Sugary's `Person` (which keeps the assertion to hand on), the dashboard's status, the agent
+API's 401 and its typed owner (`AgentApiOwner`), the admin API's refusal body. It reads the one header
+through `AssertionVerifier.AssertionOf` — none, or two values, is no assertion. `AppAdmissionTests` pins
+the decision once.
 
 | App | Channel it holds the assertion to | Signed out | Else |
 |---|---|---|---|
@@ -223,7 +230,7 @@ credential by, which the server binds as `MCP__AUDIENCE` (`CallTokenGate` takes 
   arrival, so a long command or a held approval runs to its end. The gate's clock is the wall clock
   unless a test registers one under `CallTokenGate.ClockKey`.
 - **`CallTurn.Turn`** is the `_meta` context with its `Principal` and its `Identity` replaced by the
-  token's (the identity the agent wrote there is for its own signing, never a server's belief): a person
+  token's (the identity the agent wrote there is for its own signing, never a server's belief) — `IdentityClaims.Principal`, the one rule every reader of a verified identity uses (the call, a fire's delegated person, a minted topic's owner): a person
   is `Principal(chn, sub, Account(tid, sub))` — the channel's own name for them is not signed, so it
   is not kept — the guest `Principal(chn, "guest")`, nobody none. `call.Identity` is the verified
   claims themselves. `Principal.Of` is the context's `Principal` and nothing else: the `UserId` the
@@ -477,7 +484,7 @@ agent's `McpFileSystemBackend` and signing transport), `WatchDelegationTests` (t
 Assistant server over the eval's fake home, fired through its callback and read off an agent channel
 connection), `WebLoginHandoffTests` (Done and the voice link wake; a forged token and another
 conversation refused), `RedelegationTests` (lost key, no writer, rotation and the retirement guard)
-and `ChatMonitorDelegationTests` (the monitor's admission, a download, the error feed).
+and `ChatMonitorDelegationTests` (the monitor's admission, a download, the error feed), and `DelegationVerifierTests`, the verifier built directly with one row per answer it gives.
 `TestDelegations` signs with the suite's agent key, forges with the accounts one, and checks a fire
 as the conversation group does.
 

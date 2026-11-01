@@ -6,7 +6,8 @@ namespace Domain.Security.Signing;
 // call, so a host hands in `ct => http.GetStringAsync(jwksUrl, ct)` over its own HttpClient.
 //
 // One fetch at a time: a gate is asked by many calls at once, and every call that the copy cannot
-// answer waits for the one fetch in flight rather than starting its own.
+// answer waits for the one fetch in flight rather than starting its own. So the fetch is bounded here
+// (KeysFetchTimeout), once for every host, rather than by whatever HTTP client each host hands in.
 public sealed class JwksCache(
     Func<CancellationToken, Task<string>> fetch,
     TimeProvider clock,
@@ -60,7 +61,9 @@ public sealed class JwksCache(
         _attemptedAt = now;
         try
         {
-            _copy = new Copy(Read(await fetch(ct)), now);
+            using var bound = new CancellationTokenSource(_settings.KeysFetchTimeout, clock);
+            using var fetching = CancellationTokenSource.CreateLinkedTokenSource(ct, bound.Token);
+            _copy = new Copy(Read(await fetch(fetching.Token)), now);
             _failure = null;
         }
         // Abandoned by the caller, not failed: a long poll the agent dropped to reconnect learned

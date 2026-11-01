@@ -77,6 +77,11 @@ services:
       kit:
         aliases: [smoke-printer.local]
 
+  # The smoke stack never runs Home Assistant, and the kit's server for it waits on voice, which runs
+  # only under the voice profile: held back by a profile of its own, or compose refuses the whole kit.
+  mcp-homeassistant:
+    profiles: [home]
+
   mcp-channel-voice:
     profiles: [voice]
     <<: *hub-here

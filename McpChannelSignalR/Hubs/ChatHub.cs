@@ -34,6 +34,9 @@ public sealed class ChatHub(
     IHouseholdConfiguration households,
     ILogger<ChatHub> logger) : Hub
 {
+    // The connection's household's agents, as the household runs them on the deployment's models.
+    private readonly HouseholdAgentCatalogue _agents = new(households, catalog);
+
     // What the browser is told when the emit reached nobody. The message may still be sitting in a
     // buffer for an agent that comes back, so this says the turn cannot be answered now rather
     // than claiming it was thrown away.
@@ -117,8 +120,8 @@ public sealed class ChatHub(
 
     // The connection's household's agents, as its configuration names them, on the deployment's models
     // as the agent registered them (AgentCatalogBuilder.ForHousehold): never another household's.
-    public async Task<IReadOnlyList<AgentCatalogEntry>> GetAgents() =>
-        AgentCatalogBuilder.ForHousehold(await HouseholdAgentsAsync(Context.ConnectionAborted), catalog.GetAll() ?? []);
+    public Task<IReadOnlyList<AgentCatalogEntry>> GetAgents() =>
+        HouseholdViewAsync(_agents.AgentsAsync, "agents", UnvouchedAgentsError, Context.ConnectionAborted);
 
     public async Task<bool> ValidateAgent(string agentId) =>
         (await HouseholdAgentsAsync(Context.ConnectionAborted)).Agents.Any(agent => agent.Id == agentId);
@@ -288,20 +291,24 @@ public sealed class ChatHub(
         }
 
         return attachmentService.MintUpload(
-            topicId, session.Identity, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+            topicId, session.AgentId, session.Identity, CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
     }
 
     // Minted when the transcript renders an attachment, not published: one upload store serves
     // every space, so a long-lived URL would be readable by anyone holding it. The file's
-    // conversation is held to the same rule as its topic; the file names no agent, so it is the
-    // topic any registered agent holds it under.
+    // conversation is held to the same rule as its topic, the topic the agent the file names holds
+    // it under — the registered catalogue is the home's agents, and a household's own may go by an
+    // id it lacks. A file kept before files named their agent was the home's: any of its agents.
     public async Task<AttachmentDownload?> CreateAttachmentDownload(string attachmentId)
     {
-        if (attachmentService.ConversationOf(attachmentId) is { } conversationId
-            && ConversationIdentity.Parse(conversationId) is { } conversation)
+        if (attachmentService.ConversationOf(attachmentId) is { } held
+            && ConversationIdentity.Parse(held.ConversationId) is { } conversation)
         {
-            var holders = await Task.WhenAll((catalog.GetAll() ?? []).Select(agent =>
-                threadStore.GetTopicByChatIdAndThreadIdAsync(agent.Id, conversation.ChatId, conversation.ThreadId)));
+            IEnumerable<string> agents = held.AgentId is { } agentId
+                ? [agentId]
+                : (catalog.GetAll() ?? []).Select(agent => agent.Id);
+            var holders = await Task.WhenAll(agents.Select(agent =>
+                threadStore.GetTopicByChatIdAndThreadIdAsync(agent, conversation.ChatId, conversation.ThreadId)));
             holders.ToList().ForEach(RequireSees);
         }
 
@@ -381,7 +388,7 @@ public sealed class ChatHub(
         // between picking a file and sending it: no turn is created, no agent is woken, and no
         // browser is shown a message that was never taken. The answer goes out on the same
         // stream-error path an undeliverable message uses, so every browser sees the same end.
-        if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
+        if (await CapabilityRefusalAsync(session.AgentId, configPatch, attachments, cancellationToken) is { } refused)
         {
             await AnswerRefusedAsync(topicId, conversationId, refused);
             await foreach (var refusalChunk in
@@ -470,7 +477,7 @@ public sealed class ChatHub(
         var userId = SignedIn.UserId;
         var conversationId = session.Identity.ConversationId;
 
-        if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
+        if (await CapabilityRefusalAsync(session.AgentId, configPatch, attachments, Context.ConnectionAborted) is { } refused)
         {
             await AnswerRefusedAsync(topicId, conversationId, refused);
             return true;
@@ -518,21 +525,27 @@ public sealed class ChatHub(
     }
 
     // The composer already blocks this case; this is the guard for the race where the model
-    // changed between picking a file and sending it. The agent does not check a third time.
-    private string? CapabilityRefusal(
+    // changed between picking a file and sending it. The agent does not check a third time. The agent
+    // is the connection's household's, on the model it runs there (AgentCatalogBuilder.ForHousehold):
+    // the catalogue the agent registered is the home's agents, and a household's own agent is not one
+    // of them to be sent anything.
+    private async Task<string?> CapabilityRefusalAsync(
         string? agentId,
         AgentConfigPatch? configPatch,
-        IReadOnlyList<AttachmentReference>? attachments)
+        IReadOnlyList<AttachmentReference>? attachments,
+        CancellationToken ct)
     {
         if (attachments is not { Count: > 0 })
         {
             return null;
         }
 
-        return AttachmentCapability.Refusal(
-            agentId is null ? null : catalog.Get(agentId),
-            configPatch?.Model,
-            attachments.Select(a => a.MediaType));
+        var agent = agentId is null
+            ? null
+            : await HouseholdViewAsync(
+                (household, proof, token) => _agents.AgentAsync(household, proof, agentId, token),
+                "agents", UnvouchedAgentsError, ct);
+        return AttachmentCapability.Refusal(agent, configPatch?.Model, attachments.Select(a => a.MediaType));
     }
 
     private async Task AnswerRefusedAsync(string topicId, string conversationId, string refusal)

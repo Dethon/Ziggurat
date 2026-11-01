@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Household;
 using Domain.DTOs.Voice;
 using Domain.Exceptions;
 using Domain.Security.Signing;
@@ -164,6 +165,34 @@ public class TimerFileSystemJourneyTests
 
         created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>().Value.FilePath.ShouldEndWith("/pasta/timer.json");
         (await store.GetAsync(Home, "pasta", CancellationToken.None)).ShouldNotBeNull();
+    }
+
+    // A household away from the server's zone reads when its timer fires on its own clock: the call's
+    // household names its zone, as the schedules mount reads its schedules in it.
+    [Fact]
+    public async Task AStatus_ShowsWhenTheTimerFires_InTheCallingHouseholdsZone()
+    {
+        var mount = BuildMount();
+        var fs = mount.As(PersonOf(_fran) with { Household = new ZonedHousehold(Home, "America/New_York") });
+        await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None);
+
+        var status = (await fs.ReadAsync("/pasta/status.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value;
+
+        status.Content.ShouldContain("-04:00"); // EDT on 2 July, not Madrid's +02:00
+    }
+
+    private sealed class ZonedHousehold(string id, string zone) : ICallHousehold
+    {
+        public string Id => id;
+
+        public Task<HouseholdSettings> SettingsAsync(CancellationToken ct) =>
+            Task.FromResult(new HouseholdSettings { Name = "Casa", TimeZone = zone });
+
+        public Task<IdealistaKeys?> IdealistaKeysAsync(CancellationToken ct) => Task.FromResult<IdealistaKeys?>(null);
+
+        public Task<HouseholdAgentNames> AgentNamesAsync(CancellationToken ct) =>
+            Task.FromResult(new HouseholdAgentNames(null, []));
     }
 
     [Fact]

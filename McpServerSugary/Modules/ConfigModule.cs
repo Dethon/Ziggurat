@@ -47,6 +47,8 @@ public static class ConfigModule
             .AddSingleton<MutableAgentCatalog>()
             .AddSingleton<IAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
             .AddSingleton<IMutableAgentCatalog>(sp => sp.GetRequiredService<MutableAgentCatalog>())
+            // The sugary agent as the person's household runs it, on the models the agent registered.
+            .AddSingleton<HouseholdAgentCatalogue>()
             .AddSingleton<AgentTurns>()
             .AddSingleton<OpenEstimates>()
             .AddSingleton<SugaryChannel>()

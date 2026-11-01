@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Domain.Agents;
 using Domain.DTOs.Channel;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Services;
@@ -37,9 +38,10 @@ public sealed class StoreAttachmentTool
 
         // The topic's space, as an upload takes its ticket's: a review copy is minted in the default
         // space, but a topic moved elsewhere keeps its files beside it.
-        var space = services.GetRequiredService<SessionService>().GetSessionByConversationId(conversationId)?.SpaceSlug;
+        // Under the agent the topic's session holds it by, as an upload is.
+        var session = services.GetRequiredService<SessionService>().GetSessionByConversationId(conversationId);
         var refusal = await services.GetRequiredService<AttachmentService>().KeepCopyAsync(
-            conversationId, space, attachmentId, fileName, mediaType, bytes, cancellationToken);
+            new AgentKey(conversationId, session?.AgentId), session?.SpaceSlug, attachmentId, fileName, mediaType, bytes, cancellationToken);
         return refusal is null ? "ok" : throw new McpException(refusal);
     }
 }

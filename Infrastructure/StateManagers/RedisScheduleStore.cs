@@ -10,7 +10,10 @@ namespace Infrastructure.StateManagers;
 // (`schedule:{id}`, `schedules`), so the household migration's pattern for what is still unmoved can
 // never match a household's schedule. What is due is one set for the deployment's one dispatcher,
 // its members `{tenantId}:{id}` — a household id is hex, so the first ':' ends it.
-public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : IScheduleStore
+//
+// A one-shot's horizon is counted on the store's clock — the server's TimeProvider, which a stack with
+// a pinned clock replaces — never the wall's, so a one-shot due on the pinned day is still there to read.
+public sealed class RedisScheduleStore(IConnectionMultiplexer redis, TimeProvider? clock = null) : IScheduleStore
 {
     public const string DueSetKey = "schedules-due";
     private const string HouseholdSetPrefix = "schedules@";
@@ -43,7 +46,8 @@ public sealed class RedisScheduleStore(IConnectionMultiplexer redis) : ISchedule
 
         if (schedule.CronExpression is null && schedule.RunAt.HasValue)
         {
-            _ = transaction.KeyExpireAsync(key, schedule.RunAt.Value.Add(_oneShotBuffer) - DateTime.UtcNow);
+            _ = transaction.KeyExpireAsync(
+                key, schedule.RunAt.Value.Add(_oneShotBuffer) - (clock ?? TimeProvider.System).GetUtcNow().UtcDateTime);
         }
 
         await transaction.ExecuteAsync();
