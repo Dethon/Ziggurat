@@ -284,7 +284,9 @@ token's proof built anywhere but the accessor, and on the verified token read pa
 
 ## Operator commands
 
-Until the admin area (4c): `get-household-config --household <id> --section <name>` prints the
+The admin area (4c, `.claude/rules/admin.md`) saves through the same `HouseholdConfigStore.SaveAsync` and
+schema as these commands, section by section as its pages come (the settings first), so neither can
+save what the other would refuse. `get-household-config --household <id> --section <name>` prints the
 section at its current shape with every secret as `{"sealed": true}`; `set-household-config
 --household <id> --section <name> --file <path|->` (`-` is the input: `docker exec -i accounts dotnet
 Accounts.dll set-household-config ... --file - < keys.json`, so no secret sits in a file in the

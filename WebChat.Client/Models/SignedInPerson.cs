@@ -17,4 +17,7 @@ public record SignedInPerson(
     public TopicViewer? Viewer => TenantId is null
         ? null
         : new TopicViewer(UserId, TenantId, Roles?.Contains(ForwardedAccount.SeesAllRole) == true);
+
+    // Whether the household's admin area is offered: the admin API refuses anyone else regardless.
+    public bool IsOwner => Roles?.Contains(ForwardedAccount.OwnerRole) == true;
 }

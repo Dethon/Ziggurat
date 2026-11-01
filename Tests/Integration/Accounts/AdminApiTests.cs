@@ -178,6 +178,21 @@ public class AdminApiTests(RedisFixture redis) : IClassFixture<RedisFixture>
         (await HomeSettingsAsync(server)).Name.ShouldBe("Home");
     }
 
+    // What a cross-site form could send is no save, even carrying everything else a save carries.
+    [Fact]
+    public async Task AWriteThatIsNotJson_IsRefused_AndChangesNothing()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var form = new FormUrlEncodedContent([KeyValuePair.Create("name", "Casa"), KeyValuePair.Create("timeZone", "UTC")]);
+
+        var refused = await server.Admin(await server.MintSessionAsync(fran.UserId))
+            .SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Settings) { Content = form });
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.UnsupportedMediaType);
+        (await HomeSettingsAsync(server)).Name.ShouldBe("Home");
+    }
+
     [Fact]
     public async Task AnOwner_IsRefusedTheOperatorsRoutes_AndTheOperatorIsAnswered()
     {
