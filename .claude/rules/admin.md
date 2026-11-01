@@ -488,6 +488,11 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
   - the tunnel verify (`TunnelCredentialRefusal.Suspended`) and a household server's back-call
     (`TunnelCredentialStore.LiveAsync` answers none).
 
+  Each reads the column in a query of its own shape, so nothing gathers them but a list:
+  `SuspensionCoverageTests` places every route the accounts service maps, by path, with how it refuses
+  a suspended household or why it need not, and fails on a route it does not place — a new way in
+  says what suspension does to it before it ships.
+
   The list's `HouseholdListEntry.SuspendedAt` and the row's Status cell (Suspend / Resume, none for the
   home) are the dashboard's.
 - **Not stopped by it, deliberately**: the chat hub's per-turn session refresh still answers, so an open
