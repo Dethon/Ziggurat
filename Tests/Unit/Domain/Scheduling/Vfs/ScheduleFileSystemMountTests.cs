@@ -11,18 +11,19 @@ namespace Tests.Unit.Domain.Scheduling.Vfs;
 // per-operation descriptions, so everything the model is told about this mount comes from one file.
 public class ScheduleFileSystemMountTests
 {
-    // The blurb is a second copy of the timing contract, and it contradicted the engine on both
-    // halves: ComputeNextRunAt evaluates cron against TimeProvider.LocalTimeZone, not UTC, and ToUtc
-    // reads a zoneless runAt as wall clock in that same zone rather than rejecting it. Reading the
-    // zone off the injected provider is what makes the two agree by construction.
+    // The blurb is a second copy of the timing contract, and it once contradicted the engine on both
+    // halves: cron is evaluated in a zone, not UTC, and a zoneless runAt is read as wall clock in that
+    // same zone rather than rejected. The zone is the calling household's, and the description is
+    // served before any call names one, so it says local time and names no zone.
     [Fact]
-    public void DescribeMount_NamesTheZoneTheEngineComputesIn()
+    public void DescribeMount_SaysLocalTimeAndNamesNoZone()
     {
         var madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
 
         var description = Backend(madrid).DescribeMount;
 
-        description.ShouldContain(madrid.Id);
+        description.ShouldNotContain(madrid.Id);
+        description.ShouldContain("local time");
         description.ShouldNotContain("UTC cron");
         description.ShouldNotContain("MUST include a time zone");
     }

@@ -46,7 +46,7 @@ public static class ConfigModule
             .AddFileSystemResource<ScheduleFileSystem>()
             // The skill that teaches this server's files ships beside them, in the zone the
             // server reads cron and runAt in.
-            .AddSkills(SchedulingSkill.For(TimeZoneInfo.Local.Id))
+            .AddSkills(SchedulingSkill.Text)
             .WithPrompts<McpSystemPrompt>();
 
         return services;
