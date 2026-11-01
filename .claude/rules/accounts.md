@@ -68,7 +68,10 @@ clearing the column:
 - **Sessions** (`SessionStore`): none issued (`IssueAsync` — sign-in, enrollment and `mint-session`
   alike), and `VerifyAsync`/`LiveAsync` answer nobody, so the session check (and the admin gate behind
   it), `/accounts/me` and the chat hub's per-turn refresh refuse them even for a session that raced the
-  revocation. A re-enabled member's old sessions stay revoked.
+  revocation. A re-enabled member's old sessions stay revoked. A disabled member signing in with their
+  passkey is told so (`PasskeyEndpoints.DisabledAccount`, 403) — only after the signature verified, so that
+  a person is disabled is said to whoever holds their passkey alone; anything else refused still reads as
+  an unknown passkey (`SignInOutcome`).
 - **Links** (`LinkStore.FindOpenAsync`): a link naming a disabled person — recovery, a Telegram link code
   — opens nothing (the enrollment page is 410); one still in date opens again once they are re-enabled.
   Invites and group codes name nobody yet and are unaffected.

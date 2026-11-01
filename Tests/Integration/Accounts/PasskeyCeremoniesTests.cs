@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Accounts.Members;
 using Accounts.Passkeys;
 using Accounts.Sessions;
 using Domain.DTOs.Admin;
@@ -159,6 +160,28 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in").ToString());
         await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = SignInButton }).ClickAsync();
         await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync("not recognised");
+        (await context.CookiesAsync()).ShouldNotContain(c => c.Name == SessionCookie.Name);
+    }
+
+    // A member an owner disabled still holds a working passkey, and proves it by signing; they are told
+    // why they are not let in rather than that the passkey is unknown — which only somebody holding it
+    // can learn — and no session is issued.
+    [Fact]
+    public async Task ADisabledMembersPasskey_IsToldTheyAreDisabled_AndSignsNothingIn()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        await server.MintOperatorAsync("Fran");
+        var laura = AccountsServer.MintedLink.Parse(
+            (await server.RunAsync("mint-link", "--user", await server.SeedMemberAsync("Laura"))).Output);
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, laura);
+        await context.ClearCookiesAsync();
+
+        await server.Service<MemberStore>().DisableAsync(laura.TenantId, laura.UserId, CancellationToken.None);
+        await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in").ToString());
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = SignInButton }).ClickAsync();
+
+        await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync(PasskeyEndpoints.DisabledAccount);
         (await context.CookiesAsync()).ShouldNotContain(c => c.Name == SessionCookie.Name);
     }
 

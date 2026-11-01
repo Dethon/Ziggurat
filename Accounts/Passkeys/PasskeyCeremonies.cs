@@ -183,12 +183,12 @@ public sealed class PasskeyCeremonies(
         return new BegunCeremony(ceremonies.Hold(new SignIn(options)), options.ToJson());
     }
 
-    public async Task<IssuedSession?> FinishSignInAsync(
+    public async Task<SignInOutcome> FinishSignInAsync(
         string ceremonyId, AuthenticatorAssertionRawResponse answer, string? device, CancellationToken ct)
     {
         if (ceremonies.Take<SignIn>(ceremonyId) is not { } signIn)
         {
-            return null;
+            return new SignInOutcome.Refused();
         }
 
         var credentialId = WebEncoders.Base64UrlEncode(answer.RawId);
@@ -196,7 +196,7 @@ public sealed class PasskeyCeremonies(
         if (await db.Credentials.FirstOrDefaultAsync(c => c.CredentialId == credentialId && c.RevokedAt == null, ct)
             is not { } credential)
         {
-            return null;
+            return new SignInOutcome.Refused();
         }
 
         VerifyAssertionResult verified;
@@ -214,12 +214,28 @@ public sealed class PasskeyCeremonies(
         }
         catch (Fido2VerificationException)
         {
-            return null;
+            return new SignInOutcome.Refused();
         }
 
         credential.SignCount = verified.SignCount;
         credential.LastUsedAt = clock.Time.GetUtcNow();
         await db.SaveChangesAsync(ct);
-        return await sessions.IssueAsync(credential.UserId, credential.Id, device, ct);
+        // Told apart only now, past the signature: that a person is disabled is said to whoever holds
+        // their passkey, and to nobody else.
+        return await sessions.IssueAsync(credential.UserId, credential.Id, device, ct) is { } session
+            ? new SignInOutcome.SignedIn(session)
+            : await db.Users.AnyAsync(u => u.Id == credential.UserId && u.DisabledAt != null, ct)
+                ? new SignInOutcome.Disabled()
+                : new SignInOutcome.Refused();
     }
+}
+
+// How a sign-in ended: a session, a person an owner disabled, or anything else refused alike.
+public abstract record SignInOutcome
+{
+    public sealed record SignedIn(IssuedSession Session) : SignInOutcome;
+
+    public sealed record Disabled : SignInOutcome;
+
+    public sealed record Refused : SignInOutcome;
 }
