@@ -35,29 +35,8 @@ public sealed class HouseholdFeaturesEffect : IDisposable
     public async Task SaveAsync(FeaturesSection features) =>
         Settle(await _admin.SaveFeaturesAsync(features), answered => new HouseholdFeaturesSaved(answered.Value, answered.Warning));
 
-    private void Settle(AdminAnswer<FeaturesSection> answer, Func<AdminAnswer<FeaturesSection>.Answered, IAction> outcome)
-    {
-        switch (answer)
-        {
-            case AdminAnswer<FeaturesSection>.Answered answered:
-                _dispatcher.Dispatch(outcome(answered));
-                break;
-            case AdminAnswer<FeaturesSection>.SignedOut:
-                _accounts.SendToSignIn();
-                break;
-            case AdminAnswer<FeaturesSection>.Refused refused:
-                _dispatcher.Dispatch(new HouseholdFeaturesNotSaved(
-                    new AdminNotice(AdminNoticeKind.Refused, refused.Refusal.Message, refused.Refusal.Problems)));
-                break;
-            case AdminAnswer<FeaturesSection>.NotAllowed notAllowed:
-                _dispatcher.Dispatch(new HouseholdFeaturesNotSaved(new AdminNotice(AdminNoticeKind.Unavailable, notAllowed.Message)));
-                break;
-            default:
-                _dispatcher.Dispatch(new HouseholdFeaturesNotSaved(
-                    new AdminNotice(AdminNoticeKind.Unavailable, AdminNotice.UnreachableMessage)));
-                break;
-        }
-    }
+    private void Settle(AdminAnswer<FeaturesSection> answer, Func<AdminAnswer<FeaturesSection>.Answered, IAction> outcome) =>
+        _dispatcher.Settle(_accounts, answer, outcome, notice => new HouseholdFeaturesNotSaved(notice));
 
     public void Dispose()
     {

@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.Security;
+using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;

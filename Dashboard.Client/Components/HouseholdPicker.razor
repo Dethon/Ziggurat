@@ -1,6 +1,7 @@
 @using Dashboard.Client.Effects
 @using Dashboard.Client.Metrics
 @using Domain.DTOs.Admin
+@using System.Text.Json
 @using Domain.Metrics
 @implements IDisposable
 @inject HouseholdFilter Households
@@ -8,6 +9,7 @@
 @inject HouseholdsAdminService Admin
 @inject DataLoadEffect DataLoad
 @inject NavigationManager Navigation
+@inject ILogger<HouseholdPicker> Logger
 
 @* Which household every metric page shows. The choices are the households something was rolled up
    for, named as the household list names them (an id where the list could not be asked), and the
@@ -38,8 +40,8 @@
         var scopes = Api.GetHouseholdsAsync();
         var listed = Admin.ListAsync();
         // Neither read failing takes the picker away: what one answered is still worth choosing from.
-        var known = await Settle(scopes) ?? [];
-        var households = await Settle(listed) is HouseholdsAnswer<IReadOnlyList<HouseholdListEntry>>.Answered answered
+        var known = await Settle(scopes, "which households have metrics") ?? [];
+        var households = await Settle(listed, "the household list") is HouseholdsAnswer<IReadOnlyList<HouseholdListEntry>>.Answered answered
             ? answered.Value
             : [];
         _options = known.Concat(households.Select(h => h.Id))
@@ -61,14 +63,17 @@
         await DataLoad.ReloadAsync();
     }
 
-    private static async Task<T?> Settle<T>(Task<T> read)
+    // A read that could not be made or understood: no connection, a timeout, or a body that is not
+    // what was asked for. Anything else is a fault, and is left to surface as one.
+    private async Task<T?> Settle<T>(Task<T> read, string what)
     {
         try
         {
             return await read;
         }
-        catch
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or NotSupportedException or TaskCanceledException)
         {
+            Logger.LogWarning(ex, "The household picker could not read {What}; it offers what the other read answered", what);
             return default;
         }
     }

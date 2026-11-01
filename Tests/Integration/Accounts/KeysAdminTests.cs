@@ -235,7 +235,8 @@ public sealed class KeysAdminTests : IAsyncLifetime
         changes.ShouldAllBe(c => c.Route == $"PUT {AdminProtocol.OpenRouterKey}");
     }
 
-    // A stack with no master key keeps no secrets: a key is refused with why, never a failure.
+    // A stack with no master key keeps no secrets: a key is refused with why, as the deployment's
+    // unavailability (503, as a read is) rather than the request's fault, and never a 500.
     [Fact]
     public async Task OnAStackWithNoMasterKey_AKeyIsRefused_WithWhy()
     {
@@ -246,7 +247,7 @@ public sealed class KeysAdminTests : IAsyncLifetime
 
         var refused = await admin.PutAsync(AdminProtocol.OpenRouterKey, new OpenRouterKey(WorkingKey));
 
-        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        refused.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
         (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldContain("cannot be opened");
         (await admin.GetAsync(AdminProtocol.Keys)).StatusCode.ShouldBe(HttpStatusCode.OK);
     }

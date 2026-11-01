@@ -23,11 +23,7 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
 
     public Task<AdminAnswer<HouseholdSettings>> SaveSettingsAsync(HouseholdSettings settings) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Settings) { Content = JsonContent.Create(settings) },
-            async content =>
-            {
-                var saved = (await content.ReadFromJsonAsync<AdminSaved<HouseholdSettings>>())!;
-                return new AdminAnswer<HouseholdSettings>.Answered(saved.Value, saved.Warning);
-            });
+            SavedAsync<HouseholdSettings>);
 
     public Task<AdminAnswer<HouseholdKeys>> GetKeysAsync() =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Keys), async content =>
@@ -43,23 +39,20 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
         SaveKeysAsync(AdminProtocol.TelegramBot(agentId), bot);
 
     private Task<AdminAnswer<HouseholdKeys>> SaveKeysAsync<TKey>(string path, TKey key) =>
-        SendAsync(new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(key) }, async content =>
-        {
-            var saved = (await content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!;
-            return new AdminAnswer<HouseholdKeys>.Answered(saved.Value, saved.Warning);
-        });
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(key) }, SavedAsync<HouseholdKeys>);
+
     public Task<AdminAnswer<AdminAgents>> GetAgentsAsync() =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Agents), async content =>
             new AdminAnswer<AdminAgents>.Answered((await content.ReadFromJsonAsync<AdminAgents>())!));
 
     public Task<AdminAnswer<AdminAgents>> SaveAgentAsync(string agentId, AgentEdit edit) =>
-        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Agent(agentId)) { Content = JsonContent.Create(edit) }, SavedAgentsAsync);
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Agent(agentId)) { Content = JsonContent.Create(edit) }, SavedAsync<AdminAgents>);
 
     public Task<AdminAnswer<AdminAgents>> AddAgentAsync(AgentAddition addition) =>
-        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.Agents) { Content = JsonContent.Create(addition) }, SavedAgentsAsync);
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.Agents) { Content = JsonContent.Create(addition) }, SavedAsync<AdminAgents>);
 
     public Task<AdminAnswer<AdminAgents>> RemoveAgentAsync(string agentId) =>
-        SendAsync(new HttpRequestMessage(HttpMethod.Delete, AdminProtocol.Agent(agentId)), SavedAgentsAsync);
+        SendAsync(new HttpRequestMessage(HttpMethod.Delete, AdminProtocol.Agent(agentId)), SavedAsync<AdminAgents>);
 
     public Task<AdminAnswer<IReadOnlyList<AdminAgentVersion>>> GetAgentVersionsAsync(string agentId) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.AgentVersions(agentId)), async content =>
@@ -68,7 +61,7 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
 
     // A body-less POST: the restore says which version in its path alone.
     public Task<AdminAnswer<AdminAgents>> RestoreAgentVersionAsync(string agentId, string versionId) =>
-        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.RestoreAgentVersion(agentId, versionId)), SavedAgentsAsync);
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.RestoreAgentVersion(agentId, versionId)), SavedAsync<AdminAgents>);
 
     public Task<AdminAnswer<AdminMembers>> GetMembersAsync() =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Members), async content =>
@@ -130,12 +123,6 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
         return new AdminAnswer<T>.Answered(saved.Value, saved.Warning);
     }
 
-    private static async Task<AdminAnswer<AdminAgents>.Answered> SavedAgentsAsync(HttpContent content)
-    {
-        var saved = (await content.ReadFromJsonAsync<AdminSaved<AdminAgents>>())!;
-        return new AdminAnswer<AdminAgents>.Answered(saved.Value, saved.Warning);
-    }
-
     private async Task<AdminAnswer<T>> SendAsync<T>(
         HttpRequestMessage request, Func<HttpContent, Task<AdminAnswer<T>.Answered>> read)
     {
@@ -150,6 +137,7 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
                 HttpStatusCode.Unauthorized => new AdminAnswer<T>.SignedOut(),
                 HttpStatusCode.Forbidden => new AdminAnswer<T>.NotAllowed((await RefusalAsync(response))?.Message ?? NotAllowedMessage),
                 HttpStatusCode.BadRequest when await RefusalAsync(response) is { } refusal => new AdminAnswer<T>.Refused(refusal),
+                HttpStatusCode.ServiceUnavailable => new AdminAnswer<T>.Unreachable((await RefusalAsync(response))?.Message),
                 _ => new AdminAnswer<T>.Unreachable()
             };
         }

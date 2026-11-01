@@ -24,6 +24,7 @@ public static class AdminProtocol
     public const string OpenRouterKey = Keys + "/openrouter";
     public const string IdealistaKeys = Keys + "/idealista";
     public const string TelegramBots = Keys + "/telegram";
+    public const string TelegramBotRoute = TelegramBots + "/{agentId}";
 
     public static string TelegramBot(string agentId) => $"{TelegramBots}/{Uri.EscapeDataString(agentId)}";
 
@@ -48,19 +49,27 @@ public static class AdminProtocol
     // The household's agents (AdminAgents): each one's name and custom instructions, its last few
     // versions and a restore of one, an agent added from a shipped template, one removed.
     public const string Agents = Household + "/agents";
+    public const string AgentRoute = Agents + "/{agentId}";
+    public const string AgentVersionsRoute = AgentRoute + "/versions";
+    public const string RestoreAgentVersionRoute = AgentVersionsRoute + "/{versionId}/restore";
 
-    public static string Agent(string agentId) => $"{Agents}/{agentId}";
+    public static string Agent(string agentId) => $"{Agents}/{Uri.EscapeDataString(agentId)}";
 
     public static string AgentVersions(string agentId) => $"{Agent(agentId)}/versions";
 
-    public static string RestoreAgentVersion(string agentId, string versionId) => $"{AgentVersions(agentId)}/{versionId}/restore";
+    public static string RestoreAgentVersion(string agentId, string versionId) =>
+        $"{AgentVersions(agentId)}/{Uri.EscapeDataString(versionId)}/restore";
 
     // The household's people (AdminMembers): an invite, a member's role and sees-all, disabling and
     // re-enabling one, and a recovery link for one.
     public const string Members = Household + "/members";
     public const string MemberInvites = Members + "/invites";
+    public const string MemberRoute = Members + "/{userId}";
+    public const string DisableMemberRoute = MemberRoute + "/disable";
+    public const string EnableMemberRoute = MemberRoute + "/enable";
+    public const string MemberRecoveryRoute = MemberRoute + "/recovery";
 
-    public static string Member(string userId) => $"{Members}/{userId}";
+    public static string Member(string userId) => $"{Members}/{Uri.EscapeDataString(userId)}";
 
     public static string DisableMember(string userId) => $"{Member(userId)}/disable";
 
@@ -76,6 +85,7 @@ public static class AdminProtocol
     // The household's own servers (AdminServers): a tunnel credential minted for a server by name, and
     // one revoked, which closes the tunnel it opened.
     public const string Servers = Household + "/servers";
+    public const string RevokeServerCredentialRoute = Servers + "/credentials/{credentialId}/revoke";
 
     public static string RevokeServerCredential(string credentialId) =>
         $"{Servers}/credentials/{Uri.EscapeDataString(credentialId)}/revoke";
