@@ -74,6 +74,51 @@ public class ChatMonitorDelegationTests
         error.Message.ShouldContain(nameof(TokenRefusal.UnknownKey));
     }
 
+    // A delegation lives as long as its schedule, so one signed before an owner disabled its person
+    // still verifies: the household's word decides, and a disabled member's schedule fires as nobody.
+    [Fact]
+    public async Task ADisabledMembersFire_ActsForNobody_AndIsReported()
+    {
+        var run = new Run(standing: new FakeAccountStanding(_fran));
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldHaveSingleItem().Account.ShouldBeNull();
+        var context = run.TurnContext();
+        context.Identity.ShouldBeNull();
+        context.Principal.ShouldBeNull();
+        var error = run.Errors.ShouldHaveSingleItem();
+        error.ErrorType.ShouldBe(ChatMonitor.DelegationRefusedErrorType);
+        error.Message.ShouldContain(ConversationGroup.AccountDisabled);
+    }
+
+    [Fact]
+    public async Task AFireWhosePersonsStandingCannotBeRead_ActsForNobody()
+    {
+        var run = new Run(standing: new FakeAccountStanding { Unreadable = true });
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldHaveSingleItem().Account.ShouldBeNull();
+        run.TurnContext().Identity.ShouldBeNull();
+        run.Errors.ShouldHaveSingleItem().Message.ShouldContain(ConversationGroup.StandingUnreadable);
+    }
+
+    // Re-enabled, the same delegation acts for them again: nothing about it was spent or dropped.
+    [Fact]
+    public async Task AnEnabledMembersFire_ActsForThem()
+    {
+        var run = new Run(standing: new FakeAccountStanding(_mallory));
+        run.Channel.WriteUnsigned(Fire(TestDelegations.OfSchedule(_fran, ChannelIds.SignalR, _schedule)));
+
+        await run.MonitorAsync();
+
+        run.Errors.ShouldBeEmpty();
+        run.TurnContext().Identity.ShouldNotBeNull().Account.ShouldBe(_fran);
+    }
+
     // A finished download reports back to whoever asked without acting as them, whatever it carries.
     [Fact]
     public async Task ADownloadsFire_ActsForNobody_WhateverItCarries()
@@ -131,9 +176,11 @@ public class ChatMonitorDelegationTests
     private sealed class Run
     {
         private readonly List<MetricEvent> _published = [];
+        private readonly IAccountStanding? _standing;
 
-        public Run(string channel = "scheduling")
+        public Run(string channel = "scheduling", IAccountStanding? standing = null)
         {
+            _standing = standing;
             Channel = new FakeChannelConnection { ChannelId = channel };
             Agent = new FakeAiAgent();
             Factory = MonitorTestMocks.CreateAgentFactory(Agent);
@@ -176,7 +223,8 @@ public class ChatMonitorDelegationTests
                 null,
                 NullLogger<ChatMonitor>.Instance,
                 MonitorTestMocks.Assertions,
-                delegations: TestDelegations.Verifier());
+                delegations: TestDelegations.Verifier(),
+                standing: _standing);
 
             await monitor.Monitor(CancellationToken.None);
         }

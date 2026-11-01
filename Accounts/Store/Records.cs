@@ -35,6 +35,11 @@ public sealed class User
 
     public bool SeesAllConversations { get; set; }
     public DateTimeOffset CreatedAt { get; init; }
+
+    // When an owner disabled them; none while they are enabled. A disabled person is kept with
+    // everything of theirs — passkeys, links, their Telegram, their voice profile, their memories and
+    // topics — and none of it answers for them until an owner re-enables them.
+    public DateTimeOffset? DisabledAt { get; set; }
 }
 
 // A passkey. Revoked rather than deleted, so a session can still say which passkey began it.
