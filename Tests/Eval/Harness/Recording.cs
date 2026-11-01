@@ -28,7 +28,7 @@ public sealed class Recording : IToolInvocationObserver, IMetricsPublisher
 
     // The agent the scenario's turn is addressed to, under every name it is heard by, set by the
     // run that built it. Two names, because two things speak for it: a call and a turn name the
-    // agent as its metrics do ("Jonas"), and a preload — published by the judge's own client —
+    // agent as its metrics do (its id, "jonas"), and a preload — published by the judge's own client —
     // names it as its session does ("Jonas-<conversation>"). With real workers the same observer
     // hears the worker too, and everything a scenario declares — the permitted set, the ceiling,
     // the prompt the dump shows — is about this agent alone. Empty where nobody named one: then

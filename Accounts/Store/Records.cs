@@ -192,3 +192,18 @@ public sealed class AdminChange
     public required string Summary { get; init; }
     public DateTimeOffset At { get; init; }
 }
+
+// A name and custom instructions one of a household's agents had before an owner's change replaced
+// them, kept so the owner can put them back: the admin API keeps the last few per agent and drops
+// them with the agent. Not configuration — no turn reads it — so it is kept beside the agents
+// section rather than in it.
+public sealed class AgentVersion
+{
+    public required string Id { get; init; }
+    public required string TenantId { get; init; }
+    public required string AgentId { get; init; }
+    public required string Name { get; init; }
+    public string? CustomInstructions { get; init; }
+    public required string ReplacedBy { get; init; }
+    public DateTimeOffset ReplacedAt { get; init; }
+}
