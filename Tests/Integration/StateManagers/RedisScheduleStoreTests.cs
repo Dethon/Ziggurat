@@ -25,6 +25,30 @@ public class RedisScheduleStoreTests(RedisFixture fixture) : IClassFixture<Redis
         }
     }
 
+    // A one-shot is kept until an hour after it is due, counted on the store's own clock: a stack
+    // whose clock is pinned (the eval's, months behind the wall) writes one-shots that are due on its
+    // day, and a horizon read off the wall clock had them expire before anything could read them.
+    [Fact]
+    public async Task CreateAsync_AOneShot_ExpiresAnHourAfterItIsDue_OnTheStoresClock()
+    {
+        var pinned = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(
+            new DateTimeOffset(2026, 8, 17, 18, 0, 0, TimeSpan.Zero));
+        var store = new RedisScheduleStore(fixture.Connection, pinned);
+        var oneShot = CreateTestSchedule() with
+        {
+            CronExpression = null,
+            RunAt = pinned.GetUtcNow().UtcDateTime.AddHours(1),
+            NextRunAt = null
+        };
+        _createdIds.Add((_home, oneShot.Id));
+
+        await store.CreateAsync(oneShot);
+
+        var ttl = await fixture.Connection.GetDatabase().KeyTimeToLiveAsync(RedisScheduleStore.ScheduleKey(_home, oneShot.Id));
+        ttl.ShouldNotBeNull();
+        ttl.Value.ShouldBeInRange(TimeSpan.FromMinutes(119), TimeSpan.FromMinutes(120));
+    }
+
     // Every household keeps its own: a list, a read and a delete name the household, so one never
     // answers with another's schedule, even under the same id.
     [Fact]
