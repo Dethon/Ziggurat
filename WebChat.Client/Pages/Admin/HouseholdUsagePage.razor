@@ -21,7 +21,7 @@
 
     <label class="admin-field admin-usage-month">
         <span class="admin-field-label">Month</span>
-        <input type="month" name="month" value="@_month" @onchange="PickAsync" />
+        <input type="month" name="month" value="@_month" @oninput="Pick" />
     </label>
 
     @if (_state.Notice is { } notice)
@@ -67,15 +67,15 @@
         Dispatcher.Dispatch(new LoadHouseholdUsage(null));
     }
 
-    private Task PickAsync(ChangeEventArgs change)
+    // A month input holds no value until a whole month is in it, so a half-typed one asks for nothing.
+    // Read as typed, not bound: Blazor binds a month input to a DateTime, and the API's month is yyyy-MM.
+    private void Pick(ChangeEventArgs change)
     {
         if (change.Value is string { Length: > 0 } month)
         {
             _month = month;
             Dispatcher.Dispatch(new LoadHouseholdUsage(month));
         }
-
-        return Task.CompletedTask;
     }
 
     internal static string Count(long value) => value.ToString("N0", CultureInfo.InvariantCulture);
