@@ -30,6 +30,15 @@ public sealed class TunnelForwarder(IHttpForwarder forwarder, TunnelRegistry reg
         VersionPolicy = HttpVersionPolicy.RequestVersionExact
     };
 
+    // A gateway's answer to an exchange whose server is offline — its tunnel not open, or closed under
+    // it — with the reason as the body, so a caller can tell its target being offline from the target
+    // refusing. What every forward but a person's page answers.
+    public static async Task UnreachableAsync(HttpContext context, string reason)
+    {
+        context.Response.StatusCode = StatusCodes.Status502BadGateway;
+        await context.Response.WriteAsync(reason, context.RequestAborted);
+    }
+
     // To the home household's server of that name (TunnelRegistry.FindHome). With none open, or one
     // whose tunnel closed before its answer began, `offline` answers the exchange with the reason.
     public Task ForwardHomeAsync(
