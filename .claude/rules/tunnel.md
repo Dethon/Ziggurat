@@ -152,7 +152,7 @@ server name)**. Each `OpenTunnel` is one connection generation in ADR 0012's sen
   `Client` — an `HttpClient` whose every connection is a stream of this tunnel to the server's `mcp`
   listener, which presents the credential, sends rotated keys first, and refuses with
   `HttpRequestException("<name> went offline: its tunnel closed")` once the tunnel is gone.
-- `Find(tenantId, serverName)`, `Open` (a snapshot), and `WatchAsync(ct)`: every open tunnel as a
+- `Find(tenantId, serverName)` (an open tunnel or none — one closing on its way out is none, so no caller checks `IsOpen` again), `Open` (a snapshot), and `WatchAsync(ct)`: every open tunnel as a
   `TunnelOpened`, then every `TunnelOpened` / `TunnelClosed(tunnel, reason)` as it happens, with
   nothing missed between the two. A replacement publishes the old one's `TunnelClosed(Replaced)`
   before the new one's `TunnelOpened`.
