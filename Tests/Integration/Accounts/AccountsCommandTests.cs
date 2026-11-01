@@ -17,6 +17,24 @@ namespace Tests.Integration.Accounts;
 // every passkey, a recovery link for anyone, and a session for a seeded person.
 public class AccountsCommandTests
 {
+    // Asking for help is a command, not a start: the operator typing it beside the running service
+    // gets the verbs, never a second web server failing to bind the service's port.
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("-h")]
+    [InlineData("help")]
+    public async Task AskingForHelp_PrintsTheVerbsInsteadOfStartingTheService(string asking)
+    {
+        AccountsCommand.IsCommand([asking]).ShouldBeTrue();
+        await using var server = await AccountsServer.StartAsync();
+
+        var (exit, output) = await server.RunAsync(asking);
+
+        exit.ShouldBe(0);
+        output.ShouldContain("mint-link --operator");
+        output.ShouldContain("revoke-tunnel-credential --id <id>");
+    }
+
     [Fact]
     public async Task MintLink_Operator_CreatesTheOperatorOnceAndRecoversThemAfter()
     {
