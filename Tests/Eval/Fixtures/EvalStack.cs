@@ -256,6 +256,9 @@ public sealed class EvalStack : IAsyncDisposable
         // replaced at the transport rather than at the adapter: the adapters, their token header
         // and their failure mapping are production code a scenario is entitled to exercise.
         builder.Services.Replace(ServiceDescriptor.Singleton(_ => (TimeProvider)Clock));
+        // No accounts service: the eval household's timers are shown in the pinned clock's zone, as
+        // its schedules are read in it.
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(Clock.LocalTimeZone)));
         builder.Services.AddHttpClient(VoiceHubHttp.ClientName, client =>
             {
                 client.BaseAddress = new Uri("http://voice-hub.eval/");
