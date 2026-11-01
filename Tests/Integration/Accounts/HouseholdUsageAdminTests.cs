@@ -55,6 +55,24 @@ public class HouseholdUsageAdminTests(RedisFixture redis) : IClassFixture<RedisF
         usage.Lemonade.ShouldBe(new LemonadeUsage(12.5, 300, 4));
     }
 
+    // A person is one line under their account whatever name their turns went by — renamed since, or
+    // a memory call that carried only their id — and the line shows the name the household knows them
+    // by now. A call from before accounts were carried stays under its name.
+    [Fact]
+    public async Task APersonsUsage_IsOneLineUnderTheirAccount_ShownByTheirNameNow()
+    {
+        await using var stack = await UsageStack.StartAsync(redis);
+        var (casa, ana) = await stack.Accounts.SeedHouseholdAsync("Casa", "Ana");
+        await stack.SeedAsync(
+            Tokens(casa, "jonas", "Jonas", "Ana Before", 100, 20, 0.30m) with { UserId = ana },
+            Tokens(casa, "jonas", "Jonas", ana, 5, 1, 0.01m) with { UserId = ana },
+            Tokens(casa, "jonas", "Jonas", "Luis", 50, 10, 0.10m));
+
+        var usage = await stack.UsageAsync(ana, "2026-10");
+
+        usage.People.ShouldBe([new UsageLine("Ana", 126, 0.31m, ana), new UsageLine("Luis", 60, 0.10m)]);
+    }
+
     // Each owner reads their own household, whoever asks for what: the admin route takes no household,
     // and the Observability route believes the household its assertion names over anything the query
     // string says.

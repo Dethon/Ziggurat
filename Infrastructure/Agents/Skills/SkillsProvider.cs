@@ -153,7 +153,8 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
                     {
                         Caller = new JudgmentCaller(request.GetTurnModel(), request.GetSenderId(), context.Agent.Name)
                         {
-                            Payer = _payer
+                            Payer = _payer,
+                            UserId = request.GetAccountId()
                         },
                         Reader = SkillPreloadReads.ReaderOver(_registryOf(context.Session))
                     },

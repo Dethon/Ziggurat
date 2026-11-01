@@ -238,7 +238,8 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             {
                 Caller = new JudgmentCaller(asking?.GetTurnModel(), asking?.GetSenderId(), _agentId, _conversationId)
                 {
-                    Payer = _payer
+                    Payer = _payer,
+                    UserId = asking?.GetAccountId()
                 }
             },
             ct);

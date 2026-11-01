@@ -81,6 +81,38 @@ public class MetricsQueryServiceGroupingTests
             ignoreOrder: true);
     }
 
+    // A person's figures are keyed by their account, so a rename — or a call billed under their id
+    // alone, as memory's are — does not split them, and shown under the latest name their turns
+    // carried; two people going by one name are told apart by their ids, and a call from before
+    // accounts were carried stays under its name.
+    [Fact]
+    public async Task GetTokenGroupedAsync_ByUser_KeepsAPersonTogetherAcrossARename_UnderTheirLatestName()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        var morning = new DateTimeOffset(2026, 3, 15, 9, 0, 0, TimeSpan.Zero);
+        SetupSortedSet("metrics:tokens:deployment:2026-03-15",
+        [
+            Person(100, "acc-ana", "Ana", morning),
+            Person(200, "acc-ana", "Ana María", morning.AddHours(2)),
+            Person(40, "acc-ana", "acc-ana", morning.AddHours(3)),
+            Person(5, "acc-luis", "Luis", morning),
+            Person(3, "acc-other", "Luis", morning),
+            Person(7, null, "bob", morning)
+        ]);
+
+        var result = await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, date, date);
+
+        result.ShouldBe(new Dictionary<string, decimal>
+        {
+            ["Ana María"] = 340m, ["Luis (acc-luis)"] = 5m, ["Luis (acc-other)"] = 3m, ["bob"] = 7m
+        }, ignoreOrder: true);
+    }
+
+    private static TokenUsageEvent Person(int tokens, string? userId, string sender, DateTimeOffset at) => new()
+    {
+        Sender = sender, UserId = userId, Model = "m", InputTokens = tokens, OutputTokens = 0, Cost = 0m, Timestamp = at
+    };
+
     private static TokenUsageEvent Usage(int tokens, string agentId, string? agentName, DateTimeOffset at) => new()
     {
         Sender = "alice", Model = "m", InputTokens = tokens, OutputTokens = 0, Cost = 0m,

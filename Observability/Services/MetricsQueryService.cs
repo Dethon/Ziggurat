@@ -171,22 +171,24 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
             .ToDictionary(g => g.Key, g => Lemonade(g.SelectMany(t => t.Entries)));
 
     // One household's tokens and cost per agent (labelled as the dashboard labels them) and per
-    // person (the name their turns carried), costliest first, beside its Lemonade use: what its owner
-    // reads in the admin area.
+    // person (by account, under the latest name their turns carried), costliest first, beside its
+    // Lemonade use: what its owner reads in the admin area.
     public async Task<HouseholdUsage> GetHouseholdUsageAsync(string household, DateOnly from, DateOnly to)
     {
         var events = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, from, to, household);
         var agent = AgentLabels(events, "unknown");
+        var person = PersonLabels(events, e => e.UserId, e => e.Sender);
         return new HouseholdUsage(
-            Lines(events, agent),
-            Lines(events, e => e.Sender),
+            Lines(events, e => (agent(e), null)),
+            Lines(events, e => (person(e), e.UserId)),
             await GetLemonadeUsageAsync(from, to, household));
     }
 
-    private static IReadOnlyList<UsageLine> Lines(IEnumerable<TokenUsageEvent> events, Func<TokenUsageEvent, string> by) =>
+    private static IReadOnlyList<UsageLine> Lines(
+        IEnumerable<TokenUsageEvent> events, Func<TokenUsageEvent, (string Name, string? Id)> by) =>
         events
             .GroupBy(by)
-            .Select(g => new UsageLine(g.Key, g.Sum(e => (long)e.InputTokens + e.OutputTokens), g.Sum(e => e.Cost)))
+            .Select(g => new UsageLine(g.Key.Name, g.Sum(e => (long)e.InputTokens + e.OutputTokens), g.Sum(e => e.Cost), g.Key.Id))
             .OrderByDescending(l => l.Cost)
             .ThenByDescending(l => l.Tokens)
             .ThenBy(l => l.Name, StringComparer.Ordinal)
@@ -257,10 +259,11 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     {
         var events = await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, from, to, household);
         var agent = AgentLabels(events, "unknown");
+        var person = PersonLabels(events, e => e.UserId, e => e.Sender);
         return events
             .GroupBy(e => dimension switch
             {
-                TokenDimension.User => e.Sender,
+                TokenDimension.User => person(e),
                 TokenDimension.Model => e.Model,
                 TokenDimension.Agent => agent(e),
                 _ => throw new ArgumentOutOfRangeException(nameof(dimension))
@@ -280,10 +283,11 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     {
         var events = await GetEventsAsync<ContextTruncationEvent>(MetricKeys.Truncations, from, to, household);
         var agent = AgentLabels(events, "unknown");
+        var person = PersonLabels(events, e => e.UserId, e => e.Sender);
         return events
             .GroupBy(e => dimension switch
             {
-                TokenDimension.User => e.Sender,
+                TokenDimension.User => person(e),
                 TokenDimension.Model => e.Model,
                 TokenDimension.Agent => agent(e),
                 _ => throw new ArgumentOutOfRangeException(nameof(dimension))
@@ -656,6 +660,25 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
     // the name its latest event went by (an event that carries none — one from before the name was
     // carried — shows its id); two ids that go by one name each carry their id beside it, so the
     // figures stay apart.
+    // A person is keyed by their account, so a rename does not split their figures, and labelled with
+    // the latest name their calls went by — never their id where any name was carried, since a memory
+    // call names only the id. Two accounts going by one name each show `name (id)`. A call from before
+    // accounts were carried is keyed and labelled by its name.
+    private static Func<T, string> PersonLabels<T>(
+        IReadOnlyCollection<T> events, Func<T, string?> userId, Func<T, string> sender) where T : MetricEvent
+    {
+        var named = events
+            .Where(e => userId(e) is not null)
+            .GroupBy(e => userId(e)!)
+            .Select(g => (Id: g.Key, Name: g.Where(e => sender(e) != g.Key).MaxBy(e => e.Timestamp) is { } latest
+                ? sender(latest)
+                : g.Key))
+            .ToList();
+        var shared = named.GroupBy(p => p.Name).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+        var labels = named.ToDictionary(p => p.Id, p => shared.Contains(p.Name) ? $"{p.Name} ({p.Id})" : p.Name);
+        return e => userId(e) is { } id ? labels[id] : sender(e);
+    }
+
     private static Func<MetricEvent, string> AgentLabels(IEnumerable<MetricEvent> events, string unknown)
     {
         var named = events

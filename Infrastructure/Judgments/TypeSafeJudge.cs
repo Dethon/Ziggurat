@@ -150,6 +150,7 @@ public sealed class TypeSafeJudge : IJudge
             {
                 TenantId = caller.Payer.TenantId,
                 Sender = caller.Sender ?? "unknown",
+                UserId = caller.UserId,
                 AgentId = caller.AgentId,
                 ConversationId = caller.ConversationId,
                 Model = judgment.Model,

@@ -119,10 +119,11 @@ public class TypeSafeJudgeTests
         var judge = Judge(new ScriptedHandler(_ => Ok(Answered)), metrics: metrics);
 
         await judge.JudgeAsync(
-            AChoiceAndTwoNouls(new JudgmentCaller("openai/gpt-5.6-luna", "alice", "jonas", "conv-1")),
+            AChoiceAndTwoNouls(new JudgmentCaller("openai/gpt-5.6-luna", "alice", "jonas", "conv-1") { UserId = "acc-alice" }),
             CancellationToken.None);
 
         var usage = metrics.Published.OfType<TokenUsageEvent>().ShouldHaveSingleItem();
+        usage.UserId.ShouldBe("acc-alice");
         usage.Model.ShouldBe("typesafe/jev-1.14-20261014");
         usage.InputTokens.ShouldBe(372);
         usage.OutputTokens.ShouldBe(59);

@@ -58,6 +58,43 @@ public class OpenRouterChatClientMetricsTests : IDisposable
         captured.OutputTokens.ShouldBe(50);
     }
 
+    // A turn's usage is billed to the account it acts for, beside the name it went by, so a person's
+    // figures stay one series whatever they are called; a request no turn is behind (memory's) names
+    // the account it is for itself.
+    [Fact]
+    public async Task GetStreamingResponseAsync_ATurnActingForAnAccount_BillsItByItsId()
+    {
+        var turn = new ChatMessage(ChatRole.User, "hello");
+        turn.SetSenderId("Alice");
+        turn.SetConversationContext(new ConversationContext(
+            "jonas", "1:2", "acc-alice", new ReplyTarget("signalr", "1:2"),
+            Principal: new Principal("signalr", "acc-alice", new Account("home", "acc-alice"))));
+        var memory = new ChatMessage(ChatRole.User, "extract");
+        memory.SetSenderId("acc-bob");
+        memory.SetAccountId("acc-bob");
+
+        (await UsageOf(turn)).ShouldSatisfyAllConditions(e => e.UserId.ShouldBe("acc-alice"), e => e.Sender.ShouldBe("Alice"));
+        (await UsageOf(memory)).UserId.ShouldBe("acc-bob");
+        (await UsageOf(new ChatMessage(ChatRole.User, "nobody"))).UserId.ShouldBeNull();
+    }
+
+    private async Task<TokenUsageEvent> UsageOf(ChatMessage message)
+    {
+        _innerClient
+            .Setup(c => c.GetStreamingResponseAsync(
+                It.IsAny<IEnumerable<ChatMessage>>(), It.IsAny<ChatOptions?>(), It.IsAny<CancellationToken>()))
+            .Returns(new List<ChatResponseUpdate>
+            {
+                new() { Role = ChatRole.Assistant, Contents = [new UsageContent(new UsageDetails { InputTokenCount = 1, OutputTokenCount = 1 })] }
+            }.ToAsyncEnumerable());
+        TokenUsageEvent? captured = null;
+        _publisher.Setup(p => p.Publish(It.IsAny<MetricEvent>())).Callback<MetricEvent>(e => captured = e as TokenUsageEvent ?? captured);
+
+        await _sut.GetStreamingResponseAsync([message]).ToListAsync();
+
+        return captured.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task GetStreamingResponseAsync_WithoutSender_PublishesWithUnknownSender()
     {

@@ -66,6 +66,25 @@ public class MetricsCollectorServiceTests
                 ("tokens:byModel:gpt-4", 150)
             ]),
         new HashIncrementCase(
+            "TokenUsageOfAnAccount",
+            new TokenUsageEvent
+            {
+                Sender = "Alice",
+                UserId = "acc-alice",
+                Model = "gpt-4",
+                InputTokens = 100,
+                OutputTokens = 50,
+                Cost = 0.0025m,
+                Timestamp = _fixedTimestamp
+            },
+            [
+                ("tokens:input", 100),
+                ("tokens:output", 50),
+                ("tokens:cost", 25),
+                ("tokens:byUser:acc-alice", 150),
+                ("tokens:byModel:gpt-4", 150)
+            ]),
+        new HashIncrementCase(
             "MemoryRecall",
             new MemoryRecallEvent
             {
