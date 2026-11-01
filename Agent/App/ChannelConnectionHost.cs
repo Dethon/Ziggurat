@@ -65,16 +65,14 @@ public class ChannelConnectionHost(
             .Where(c => endpointMap.ContainsKey(c.ChannelId))
             .Select(conn =>
             {
-                var endpoint = endpointMap[conn.ChannelId];
-                if (TunnelCredentialProtocol.IsServerName(endpoint))
+                var endpoint = McpServerEndpoint.Of(endpointMap[conn.ChannelId], server => credentials?.For(server));
+                if (endpoint.NamesOwnServer)
                 {
-                    return FollowAsync(conn, endpoint, stoppingToken);
+                    return FollowAsync(conn, endpoint.Address, stoppingToken);
                 }
 
-                logger.LogInformation("Running channel {ChannelId} against {Endpoint}", conn.ChannelId, endpoint);
-                return conn.RunAsync(
-                    McpServerEndpoint.Configured(
-                        endpoint, ServerAddress.FromUrl(endpoint) is { } server ? credentials?.For(server) : null), agentCatalog, stoppingToken);
+                logger.LogInformation("Running channel {ChannelId} against {Endpoint}", conn.ChannelId, endpoint.Address);
+                return conn.RunAsync(endpoint, agentCatalog, stoppingToken);
             });
 
         await Task.WhenAll(runs);

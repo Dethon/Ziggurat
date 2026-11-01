@@ -1,3 +1,4 @@
+using Domain.DTOs.Tunnel;
 using Domain.Security;
 
 namespace Infrastructure.Agents;
@@ -60,6 +61,15 @@ public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
     // Cancelled once that tunnel has closed, which is the one thing that says a call failing on it
     // failed because the server went offline. Never cancelled for an endpoint not on a tunnel.
     public CancellationToken Offline { get; private init; }
+
+    // An endpoint as the deployment's settings write it — an agent definition's, a channel's — read the
+    // one way every caller reads one: a household server's bare name (TunnelCredentialProtocol.IsServerName),
+    // or a URL presenting what `credential` hands the server it reaches. An address that is neither
+    // presents nothing, and its dial is what refuses it.
+    public static McpServerEndpoint Of(string address, Func<ServerAddress, string?> credential) =>
+        TunnelCredentialProtocol.IsServerName(address)
+            ? OwnServer(address)
+            : Configured(address, ServerAddress.FromUrl(address) is { } server ? credential(server) : null);
 
     public static McpServerEndpoint Configured(string address, string? secret = null) =>
         new(address, McpEndpointOrigin.Configured) { Secret = secret };
