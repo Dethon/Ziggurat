@@ -39,11 +39,13 @@ public sealed class TunnelRegistry
         }
     }
 
+    // A household's server of that name, while its tunnel is open: one whose socket has closed and
+    // that is still on its way out is no tunnel to reach it through, so no caller checks again.
     public OpenTunnel? Find(string tenantId, string serverName)
     {
         lock (_lock)
         {
-            return _open.GetValueOrDefault((tenantId, serverName));
+            return _open.GetValueOrDefault((tenantId, serverName)) is { IsOpen: true } open ? open : null;
         }
     }
 

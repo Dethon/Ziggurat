@@ -1,24 +1,44 @@
+using Domain.Security;
 using Infrastructure.Agents;
 using Shouldly;
 
 namespace Tests.Unit.Infrastructure.Agents;
 
-// A secret that is set to nothing is no secret. The dial presents whatever the endpoint carries, so
-// the endpoint is the one place that says so — an empty one must not go out as a bare "Bearer ".
-public class McpServerEndpointTests
+// An endpoint as the deployment's settings write it — an agent definition's, a channel's — read once:
+// a bare server name is a household's own server, reached through its tunnel and presenting nothing; a
+// URL presents the credential the deployment holds for the server it reaches; anything else presents
+// nothing, and its dial is what refuses it.
+public sealed class McpServerEndpointTests
 {
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    public void AnUnsetSecret_IsNoSecret_WhereverTheEndpointCameFrom(string? unset)
+    private static string? Credentials(ServerAddress server) => server.Name == "mcp-vault" ? "vault-secret" : null;
+
+    [Fact]
+    public void AServerName_IsAHouseholdsOwnServer_PresentingNothing()
     {
-        McpServerEndpoint.Configured("http://mcp-vault:8080/mcp", unset).Secret.ShouldBeNull();
-        McpServerEndpoint.Dynamic("http://192.168.1.20:8099/mcp", unset).Secret.ShouldBeNull();
+        var endpoint = McpServerEndpoint.Of("vault", Credentials);
+
+        endpoint.NamesOwnServer.ShouldBeTrue();
+        endpoint.Secret.ShouldBeNull();
+        endpoint.Origin.ShouldBe(McpEndpointOrigin.Configured);
     }
 
     [Fact]
-    public void ASetSecret_IsCarriedAsGiven()
+    public void AUrl_PresentsTheCredentialForTheServerItReaches()
     {
-        McpServerEndpoint.Dynamic("http://192.168.1.20:8099/mcp", "s3cret").Secret.ShouldBe("s3cret");
+        var endpoint = McpServerEndpoint.Of("http://mcp-vault:8080/mcp", Credentials);
+
+        endpoint.NamesOwnServer.ShouldBeFalse();
+        endpoint.Secret.ShouldBe("vault-secret");
+        endpoint.Server.ShouldBe(ServerAddress.FromUrl("http://mcp-vault:8080/mcp"));
+    }
+
+    [Fact]
+    public void AnAddressThatIsNeither_PresentsNothing()
+    {
+        var endpoint = McpServerEndpoint.Of("not a url", Credentials);
+
+        endpoint.NamesOwnServer.ShouldBeFalse();
+        endpoint.Secret.ShouldBeNull();
+        endpoint.Server.ShouldBeNull();
     }
 }
