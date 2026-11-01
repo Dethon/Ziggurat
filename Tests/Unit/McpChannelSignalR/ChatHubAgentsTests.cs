@@ -2,6 +2,7 @@ using System.Text.Json;
 using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
@@ -124,6 +125,40 @@ public sealed class ChatHubAgentsTests : IAsyncLifetime
 
         jack.ShouldBeFalse();
         jonas.ShouldBeTrue();
+    }
+
+    // What a file sent to an agent is checked against is that agent as the connection's household
+    // runs it: an agent the home's registered catalogue lacks is no unknown agent that may be sent
+    // anything, but the household's, on its model, which the deployment says what it reads.
+    [Fact]
+    public async Task AFileSentToAHouseholdsOwnAgent_IsCheckedAgainstWhatThatAgentsModelReads()
+    {
+        _households.SavedAgents[Away] = new AgentsSection
+        {
+            Agents = [new HouseholdAgent { Id = "chef", Template = AgentTemplates.Jonas, Name = "Chef" }]
+        };
+        var connection = await ConnectAsync(Away);
+        var topicId = ConversationIdGenerator.NewTopicId();
+        var identity = ConversationIdGenerator.CreateFor(topicId);
+        (await connection.InvokeAsync<bool>("StartSession", "chef", topicId, identity.ChatId, identity.ThreadId, "Scan"))
+            .ShouldBeTrue();
+        AttachmentReference scan = new() { Id = "7-42/scan", FileName = "scan.pdf", MediaType = "application/pdf", SizeBytes = 4 };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var answered = new List<ChatStreamMessage>();
+        try
+        {
+            await foreach (var chunk in connection.StreamAsync<ChatStreamMessage>(
+                               "SendMessage", topicId, "read this", null, null, new[] { scan }, cts.Token))
+            {
+                answered.Add(chunk);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        answered.ShouldContain(chunk => (chunk.Content ?? chunk.Error ?? "").Contains("cannot read"));
     }
 
     // An entry as the browser reads it: its lists come back as other collections than they were sent as.
