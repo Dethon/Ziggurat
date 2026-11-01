@@ -75,6 +75,7 @@ public class OpenRouterMemoryExtractor(
 
         var userMessage = new ChatMessage(ChatRole.User, userPrompt);
         userMessage.SetSenderId(userId);
+        userMessage.SetAccountId(userId);
 
         var messages = new List<ChatMessage> { userMessage };
 

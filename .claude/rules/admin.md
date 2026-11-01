@@ -389,9 +389,13 @@ none named is the current one on `AccountsClock`; anything but `yyyy-MM` is 400.
   `owner` role (401 for none or another channel's, 403 for a member's), keeps the owner for the route
   (`UsageOwner`), and the route reads no `?household=`; every other path stays the operator's on the
   dashboard's channel, so a usage assertion opens none of them (`.claude/rules/observability.md`).
-- **Per person is the name the turns carried** (`TokenUsageEvent.Sender`: the chat's display name, Telegram's
-  username), the dashboard's "User" dimension; per agent is by id under its latest name, as the dashboard labels
-  agents (`MetricsQueryService.AgentLabels`).
+- **Per person is by account** (`TokenUsageEvent.UserId`, the account a call was billed to), so a rename or a
+  memory call naming only the id does not split a person; the Observability host labels each with the latest
+  name their calls carried (`MetricsQueryService.PersonLabels`) and answers the id beside it (`UsageLine.Id`),
+  and this route replaces that with the member's display name now (`MemberStore.ListAsync`), so a rename shows
+  over the whole month. A call with no account (from before accounts were carried, the guest) is a line under
+  its `Sender` with no id. Per agent is by id under its latest name, as the dashboard labels agents
+  (`MetricsQueryService.AgentLabels`).
 - **History is a month deep**: daily roll-ups expire thirty days after they were written, so an earlier month
   shows only its days still kept; the page says so.
 - **The page** is `/admin/usage` (`HouseholdUsagePage`, `HouseholdUsageStore`, `HouseholdUsageEffect`): a month

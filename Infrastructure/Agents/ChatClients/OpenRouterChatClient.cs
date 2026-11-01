@@ -140,9 +140,9 @@ public sealed class OpenRouterChatClient : IChatClient
             ct,
             inputs);
 
-        var sender = transformedMessages
-            .LastOrDefault(m => m.Role == ChatRole.User)
-            ?.GetSenderId();
+        var asking = transformedMessages.LastOrDefault(m => m.Role == ChatRole.User);
+        var sender = asking?.GetSenderId();
+        var account = asking?.GetAccountId();
 
         // Decided for this turn rather than at construction, and from the model the turn runs on:
         // a model a person switched to for one turn may hold less than the agent's own does.
@@ -158,6 +158,7 @@ public sealed class OpenRouterChatClient : IChatClient
             _metricsPublisher.Publish(new ContextTruncationEvent
             {
                 Sender = sender ?? "unknown",
+                UserId = account,
                 Model = effectiveModel,
                 DroppedMessages = droppedCount,
                 EstimatedTokensBefore = tokensBefore,
@@ -196,6 +197,7 @@ public sealed class OpenRouterChatClient : IChatClient
             _metricsPublisher.Publish(new TokenUsageEvent
             {
                 Sender = sender ?? "unknown",
+                UserId = account,
                 Model = effectiveModel,
                 InputTokens = (int)(usage.Details.InputTokenCount ?? 0),
                 OutputTokens = (int)(usage.Details.OutputTokenCount ?? 0),

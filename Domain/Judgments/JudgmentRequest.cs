@@ -37,6 +37,9 @@ public sealed record JudgmentCaller(
 
     public ModelPayer Payer { get; init; } = ModelPayer.Deployment;
 
+    // The account the judgment is billed to (TokenUsageEvent.UserId), which Sender only names.
+    public string? UserId { get; init; }
+
     // The conversation a server's tool call came from, as its `_meta` carried it; none is a call
     // with nothing behind it (a fixture, a harness). Counted under the household the call's verified
     // identity names, on the server's own key.
@@ -44,7 +47,8 @@ public sealed record JudgmentCaller(
         ? None
         : new(conversation.ConfigPatchModel, conversation.UserId, conversation.AgentId, conversation.ConversationId)
         {
-            Payer = new ModelPayer(conversation.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null, null)
+            Payer = new ModelPayer(conversation.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null, null),
+            UserId = conversation.Principal?.Account?.UserId
         };
 }
 

@@ -13,9 +13,12 @@ public sealed record HouseholdUsage(IReadOnlyList<UsageLine> Agents, IReadOnlyLi
     public const string Path = "/api/usage";
 }
 
-// An agent (under the name its latest event went by) or a person (under the name their turns carried).
+// An agent (under the name its latest event went by) or a person: keyed by their account (Id) and
+// shown under the latest name their turns carried, which the accounts service replaces with the name
+// the household knows them by now. A person's line with no Id is a call from before accounts were
+// carried, under the name it went by.
 [PublicAPI]
-public sealed record UsageLine(string Name, long Tokens, decimal Cost);
+public sealed record UsageLine(string Name, long Tokens, decimal Cost, string? Id = null);
 
 // What a household asked of the shared Lemonade over a range, each in its own unit.
 [PublicAPI]

@@ -182,7 +182,7 @@ public sealed class MetricsCollectorService(
             db.HashIncrementAsync(totalsKey, "tokens:input", evt.InputTokens),
             db.HashIncrementAsync(totalsKey, "tokens:output", evt.OutputTokens),
             db.HashIncrementAsync(totalsKey, "tokens:cost", (long)(evt.Cost * 10000m)),
-            db.HashIncrementAsync(totalsKey, $"tokens:byUser:{evt.Sender}", evt.InputTokens + evt.OutputTokens),
+            db.HashIncrementAsync(totalsKey, $"tokens:byUser:{evt.UserId ?? evt.Sender}", evt.InputTokens + evt.OutputTokens),
             db.HashIncrementAsync(totalsKey, $"tokens:byModel:{evt.Model}", evt.InputTokens + evt.OutputTokens),
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
             db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));

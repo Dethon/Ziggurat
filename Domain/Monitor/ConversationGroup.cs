@@ -937,7 +937,8 @@ internal sealed class ConversationGroup(
             Caller = new JudgmentCaller(
                 message.ConfigPatch?.Model, message.Sender, message.AgentId, state.DeliveryKey.ConversationId)
             {
-                Payer = state.Agent.Payer
+                Payer = state.Agent.Payer,
+                UserId = message.Principal?.Account?.UserId
             },
             ChannelId = message.ChannelId,
             // The session's mounts, built by the warmup awaited above: the reads a preloaded

@@ -15,7 +15,7 @@ public sealed record MemoryJudgmentContext(string UserId, string? AgentId = null
 
     // No turn is behind a memory question — dreaming has none, and extraction is never enqueued
     // for a turn addressed to the local box — so it bills the user alone.
-    public JudgmentCaller Caller => new(TurnModel: null, UserId, AgentId, ConversationId) { Payer = Payer };
+    public JudgmentCaller Caller => new(TurnModel: null, UserId, AgentId, ConversationId) { Payer = Payer, UserId = UserId };
 }
 
 // Gate: whether the extractor is asked at all. Skip is only ever true on an answer.

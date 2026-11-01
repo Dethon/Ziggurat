@@ -9,6 +9,7 @@ namespace Domain.Extensions;
 public static class ChatMessageExtensions
 {
     private const string SenderIdKey = "SenderId";
+    private const string AccountIdKey = "AccountId";
     private const string TimestampKey = "Timestamp";
     private const string MemoryContextKey = "MemoryContext";
     private const string LocationKey = "Location";
@@ -45,6 +46,23 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[SenderIdKey] = senderId;
+        }
+
+        // The account a model call made for this message is billed to: the one named on the message
+        // itself — a request no turn is behind, as memory's extraction — else the account its turn
+        // acts for, off the turn's context. None for the guest and nobody.
+        public string? GetAccountId() =>
+            message.AdditionalProperties?.GetValueOrDefault(AccountIdKey) switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => message.GetConversationContext()?.Principal?.Account?.UserId
+            };
+
+        public void SetAccountId(string accountId)
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[AccountIdKey] = accountId;
         }
 
         public string? GetLocation()
