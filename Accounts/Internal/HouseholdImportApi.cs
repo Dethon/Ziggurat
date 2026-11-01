@@ -2,6 +2,7 @@ using Accounts.People;
 using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
+using Domain.Security;
 
 namespace Accounts.Internal;
 
@@ -42,7 +43,7 @@ public static class HouseholdImportApi
             CancellationToken ct) =>
         {
             if (!settings.Callers.TryGetValue(Caller, out var credential)
-                || !CallerCredential.Matches(http.Request.Headers.Authorization.ToString(), credential))
+                || !SharedSecret.Matches(http.Request.Headers.Authorization.ToString(), credential))
             {
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             }

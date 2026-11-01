@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Accounts.Configuration;
 using Accounts.Settings;
 using Domain.DTOs.Household;
+using Domain.Security;
 
 namespace Accounts.Internal;
 
@@ -39,7 +40,7 @@ public static class HouseholdConfigSeedApi
             AccountsSettings settings, CancellationToken ct) =>
         {
             if (!settings.Callers.TryGetValue(HouseholdImportApi.Caller, out var credential)
-                || !CallerCredential.Matches(http.Request.Headers.Authorization.ToString(), credential))
+                || !SharedSecret.Matches(http.Request.Headers.Authorization.ToString(), credential))
             {
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             }
