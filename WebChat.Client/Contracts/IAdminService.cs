@@ -1,3 +1,4 @@
+using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
 using WebChat.Client.Models;
 
@@ -9,4 +10,14 @@ public interface IAdminService
     Task<AdminAnswer<HouseholdSettings>> GetSettingsAsync();
 
     Task<AdminAnswer<HouseholdSettings>> SaveSettingsAsync(HouseholdSettings settings);
+
+    // The household's keys as their states and last characters; each key is saved on its own and
+    // never read back.
+    Task<AdminAnswer<HouseholdKeys>> GetKeysAsync();
+
+    Task<AdminAnswer<HouseholdKeys>> SaveOpenRouterKeyAsync(OpenRouterKey key);
+
+    Task<AdminAnswer<HouseholdKeys>> SaveIdealistaKeysAsync(IdealistaKeys keys);
+
+    Task<AdminAnswer<HouseholdKeys>> SaveTelegramBotAsync(string agentId, TelegramBotKey bot);
 }

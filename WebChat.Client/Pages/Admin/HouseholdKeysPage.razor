@@ -1,0 +1,151 @@
+@page "/admin/keys"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.Admin
+@using Domain.DTOs.Household
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdKeysStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household keys</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-keys-heading">
+    <h1 id="admin-keys-heading">Keys</h1>
+    <p class="admin-lede">
+        The keys the household's agents use. Each key is checked with its provider before it is saved, and is
+        never shown again: only whether it works and its last few characters.
+    </p>
+
+    @if (_state.Keys is not { } keys)
+    {
+        @if (_state.Notice is { } notice)
+        {
+            <AdminNoticeView Notice="notice" />
+        }
+        else
+        {
+            <p class="admin-status">Loading the household's keys</p>
+        }
+    }
+    else
+    {
+        <form class="admin-form admin-key" aria-labelledby="admin-key-openrouter" @onsubmit="SaveOpenRouter">
+            <h2 id="admin-key-openrouter">OpenRouter</h2>
+            @if (keys.PaysWithDeploymentKey)
+            {
+                <p class="admin-field-hint">This household's agents run on the deployment's own key, whatever is set here.</p>
+            }
+            else if (keys.NeedsOpenRouterKey)
+            {
+                <p class="admin-key-needed" role="note">
+                    The household's agents answer nobody until it has an OpenRouter key. Paste one from openrouter.ai to start.
+                </p>
+            }
+            <KeyStatusView Status="keys.OpenRouter" />
+            <label class="admin-field">
+                <span class="admin-field-label">@(keys.OpenRouter is null ? "API key" : "Replace the API key")</span>
+                <input name="openRouterKey" type="password" @bind="_openRouterKey" @bind:event="oninput"
+                       placeholder="sk-or-v1-…" spellcheck="false" autocomplete="off" required />
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@(_state.Saving is not null)">
+                    @(_state.Saving == KeyForm.OpenRouter ? "Checking" : "Save")
+                </button>
+            </div>
+            <KeyFormNotice Form="KeyForm.OpenRouter" State="_state" />
+        </form>
+
+        <form class="admin-form admin-key" aria-labelledby="admin-key-idealista" @onsubmit="SaveIdealista">
+            <h2 id="admin-key-idealista">Idealista</h2>
+            <KeyStatusView Status="keys.Idealista" />
+            <label class="admin-field">
+                <span class="admin-field-label">API key</span>
+                <input name="idealistaKey" type="password" @bind="_idealistaKey" @bind:event="oninput"
+                       spellcheck="false" autocomplete="off" required />
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Secret</span>
+                <input name="idealistaSecret" type="password" @bind="_idealistaSecret" @bind:event="oninput"
+                       spellcheck="false" autocomplete="off" required />
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@(_state.Saving is not null)">
+                    @(_state.Saving == KeyForm.Idealista ? "Checking" : "Save")
+                </button>
+            </div>
+            <KeyFormNotice Form="KeyForm.Idealista" State="_state" />
+        </form>
+
+        <form class="admin-form admin-key" aria-labelledby="admin-key-telegram" @onsubmit="SaveTelegram">
+            <h2 id="admin-key-telegram">Telegram bots</h2>
+            <p class="admin-field-hint">A bot of the household's own answers as one of its agents, named by the agent's id.</p>
+            @if (keys.TelegramBots.Count > 0)
+            {
+                <ul class="admin-key-bots">
+                    @foreach (var bot in keys.TelegramBots)
+                    {
+                        <li><span class="admin-key-agent">@bot.AgentId</span> <KeyStatusView Status="bot.Key" /></li>
+                    }
+                </ul>
+            }
+            <label class="admin-field">
+                <span class="admin-field-label">Agent</span>
+                <input name="telegramAgent" @bind="_telegramAgent" @bind:event="oninput" placeholder="jonas"
+                       spellcheck="false" autocomplete="off" required />
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Bot token</span>
+                <input name="telegramToken" type="password" @bind="_telegramToken" @bind:event="oninput"
+                       placeholder="123456789:AA…" spellcheck="false" autocomplete="off" required />
+                <span class="admin-field-hint">As BotFather gives it.</span>
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@(_state.Saving is not null)">
+                    @(_state.Saving == KeyForm.Telegram ? "Checking" : "Save")
+                </button>
+            </div>
+            <KeyFormNotice Form="KeyForm.Telegram" State="_state" />
+        </form>
+    }
+</section>
+
+@code {
+    private HouseholdKeysState _state = HouseholdKeysState.Initial;
+    private string _openRouterKey = "";
+    private string _idealistaKey = "";
+    private string _idealistaSecret = "";
+    private string _telegramAgent = "";
+    private string _telegramToken = "";
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // A key typed is the owner's until it is saved, and gone from the page once it is: it is never
+        // shown again, so nothing here keeps it.
+        Subscribe(Store.StateObservable, state => state.SavedCount, _ =>
+        {
+            switch (Store.State.NoticeFor)
+            {
+                case KeyForm.OpenRouter:
+                    _openRouterKey = "";
+                    break;
+                case KeyForm.Idealista:
+                    (_idealistaKey, _idealistaSecret) = ("", "");
+                    break;
+                case KeyForm.Telegram:
+                    (_telegramAgent, _telegramToken) = ("", "");
+                    break;
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdKeys());
+    }
+
+    private void SaveOpenRouter() => Dispatcher.Dispatch(new SaveOpenRouterKey(new OpenRouterKey(_openRouterKey.Trim())));
+
+    private void SaveIdealista() =>
+        Dispatcher.Dispatch(new SaveIdealistaKeys(new IdealistaKeys(_idealistaKey.Trim(), _idealistaSecret.Trim())));
+
+    private void SaveTelegram() =>
+        Dispatcher.Dispatch(new SaveTelegramBot(_telegramAgent.Trim(), new TelegramBotKey(_telegramToken.Trim())));
+}
