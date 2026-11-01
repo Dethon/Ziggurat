@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.Security;
 using Infrastructure.Clients.Channels;
 using Mcp.Hosting;
@@ -27,6 +28,19 @@ namespace Tests.Integration.Fixtures;
 // on every meal in the database, so a sibling's meal would answer for this test's months.
 public sealed class SugaryServer : IAsyncDisposable
 {
+    // The household's agents, which a test may add to once the server is up.
+    public List<HouseholdAgentName> HouseholdAgents { get; private init; } = [];
+
+    // The household runs these agents as the agent registered them: same ids, same models.
+    public void HouseholdRuns(IEnumerable<AgentCatalogEntry> registered)
+    {
+        foreach (var entry in registered)
+        {
+            HouseholdAgents.RemoveAll(agent => agent.Id == entry.Id);
+            HouseholdAgents.Add(new HouseholdAgentName(entry.Id, entry.Name, Model: entry.DefaultModel));
+        }
+    }
+
     // The people the proxy's session check names, as opaque as the accounts service's own ids: two
     // of one household, who share its kitchen and keep their own logs, and one of another.
     public static readonly Account Her = new("household-home", "user-her");
@@ -81,6 +95,10 @@ public sealed class SugaryServer : IAsyncDisposable
         };
         settings = configure?.Invoke(settings) ?? settings;
 
+        // The agents every household runs, as the accounts service would list them on a person's
+        // assertion: what a photo sent to the sugary agent is checked against. Empty until a test
+        // says, which is a household naming no sugary agent — as silent as nothing registered.
+        List<HouseholdAgentName> householdAgents = [];
         var server = await InMemoryMcpServer.StartAsync(
             collection =>
             {
@@ -90,7 +108,7 @@ public sealed class SugaryServer : IAsyncDisposable
                 // And its households' settings without it: every household keeps the home's zone. A
                 // household's own is CallHouseholdTests'.
                 collection.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
-                    new EveryHouseholdIn(ConfigModule.HomeZone(settings))));
+                    new EveryHouseholdIn(ConfigModule.HomeZone(settings), householdAgents)));
                 if (turnClock is not null)
                 {
                     collection.AddSingleton(sp => ActivatorUtilities.CreateInstance<SugaryChannel>(sp, turnClock));
@@ -107,7 +125,7 @@ public sealed class SugaryServer : IAsyncDisposable
                 services?.Invoke(collection);
             },
             map: app => app.MapSugaryApp(), webRoot: webRoot);
-        return new SugaryServer(server, settings, directory);
+        return new SugaryServer(server, settings, directory) { HouseholdAgents = householdAgents };
     }
 
     // A request that did not come through the proxy: it carries nobody's headers.

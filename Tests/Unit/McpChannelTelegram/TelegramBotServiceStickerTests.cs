@@ -32,6 +32,7 @@ public class TelegramBotServiceStickerTests : IDisposable
             new AgentCatalogEntry(
                 "jack", "Jack", null, DefaultModel: "text-only/model", DefaultModelAttachmentKinds: [])
         ]);
+        _harness.HouseholdRunsJackOn("text-only/model");
 
         await DriveAsync(message => message.Sticker = Sticker());
 

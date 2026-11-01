@@ -55,7 +55,7 @@ public static class AttachmentEndpoints
 
         await using var content = file.OpenReadStream();
         var reference = await store.SaveAsync(
-            scope.ConversationId, scope.SpaceSlug, file.FileName, file.ContentType ?? string.Empty, content, ct);
+            scope.Conversation, scope.SpaceSlug, file.FileName, file.ContentType ?? string.Empty, content, ct);
         return Results.Ok(reference);
     }
 

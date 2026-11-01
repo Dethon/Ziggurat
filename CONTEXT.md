@@ -662,6 +662,12 @@ A shipped agent definition a household's agent starts from; a household changes 
 custom instructions.
 _Avoid_: default agent, base agent, preset
 
+**Household agent catalogue**:
+A household's agents as a channel shows and checks them for a person of it: the household's own
+agents on the models it runs them on, with what the deployment decides about models. The catalogue
+the agent registers with its channels is the home's agents, never a household's list.
+_Avoid_: agent catalog (for a household's), registered catalogue (for a household's), agent list
+
 ## Outposts
 
 **Outpost**:

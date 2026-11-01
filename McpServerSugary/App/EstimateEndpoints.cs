@@ -1,3 +1,4 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.Tools.Sugary.Estimation;
@@ -30,7 +31,7 @@ public static class EstimateEndpoints
     // acts for the person the proxy named, and only they may answer the estimate it opened.
     private static async Task<IResult> EstimateAsync(
         HttpRequest request, Person person, SugaryChannel channel, UploadStore uploads, OpenEstimates estimates,
-        IAgentCatalog catalog, SugarySettings settings, ClipProcessor clips, ILogger<ClipProcessor> logger,
+        HouseholdAgentCatalogue agents, SugarySettings settings, ClipProcessor clips, ILogger<ClipProcessor> logger,
         ILoggerFactory loggers, CancellationToken ct)
     {
         if (!request.HasFormContentType)
@@ -67,7 +68,8 @@ public static class EstimateEndpoints
         // a turn nor a file, and a model that cannot see photos never answers as if none was sent.
         if ((PhotoUpload.Refusal(photos, settings.Uploads)
              ?? ClipUpload.Refusal(filmed, settings.Uploads)
-             ?? PhotoUpload.ModelRefusal(photos, filmed.Count > 0, catalog.Get(settings.Agent))) is { } refusal)
+             ?? PhotoUpload.ModelRefusal(
+                 photos, filmed.Count > 0, await SugaryAgent.OfAsync(person, agents, settings, Log(loggers), ct))) is { } refusal)
         {
             return Problem(StatusCodes.Status400BadRequest, refusal);
         }
