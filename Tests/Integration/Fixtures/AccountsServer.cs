@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 using Accounts;
 using Accounts.Commands;
@@ -6,7 +7,9 @@ using Accounts.Internal;
 using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
+using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
+using Domain.Security;
 using Domain.Security.Sealing;
 using Domain.Security.Signing;
 using Microsoft.AspNetCore.Builder;
@@ -92,6 +95,11 @@ public sealed partial class AccountsServer : IAsyncDisposable
     // A signed-in browser's requests without the browser: the session cookie, and the antiforgery
     // cookie and token the service's pages hand out, carried as a browser would carry them.
     public PageClient SignedIn(string session) => new(Client(), session);
+
+    // The admin API as the chat client reaches it through the proxy: each request is first put to the
+    // session check for the admin channel, as forward_auth does, and goes on carrying the four headers
+    // it answered and the admin client's own header; a refusal by the check is the answer.
+    public AdminClient Admin(string? session) => new(this, session);
 
     // A verifier of the assertions this service signs, as the agent and the apps will hold one: over
     // the keys the service publishes, fetched from it, on the service's clock.
@@ -200,6 +208,19 @@ public sealed partial class AccountsServer : IAsyncDisposable
         return (household.Id, user.Id);
     }
 
+    // Somebody in a household besides the home one, as an owner's invite will write them.
+    public async Task<string> SeedPersonAsync(string tenantId, string name, Role role = Role.Member)
+    {
+        await using var db = await Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        var person = new User
+        {
+            Id = Tokens.NewId(), TenantId = tenantId, DisplayName = name, Role = role, CreatedAt = Clock.GetUtcNow()
+        };
+        db.Users.Add(person);
+        await db.SaveChangesAsync();
+        return person.Id;
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _app.StopAsync();
@@ -209,6 +230,41 @@ public sealed partial class AccountsServer : IAsyncDisposable
         if (_ownsDirectory)
         {
             System.IO.Directory.Delete(_directory, recursive: true);
+        }
+    }
+
+    public sealed class AdminClient(AccountsServer server, string? session)
+    {
+        public Task<HttpResponseMessage> GetAsync(string path) => SendAsync(new HttpRequestMessage(HttpMethod.Get, path));
+
+        public Task<HttpResponseMessage> PutAsync(string path, object body) =>
+            SendAsync(new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(body) });
+
+        public Task<HttpResponseMessage> PostAsync(string path, object? body = null) =>
+            SendAsync(new HttpRequestMessage(HttpMethod.Post, path) { Content = body is null ? null : JsonContent.Create(body) });
+
+        public async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, bool withAdminHeader = true)
+        {
+            var check = await server.VerifyAsync(
+                session, request.Method.Method, request.RequestUri!.OriginalString, "application/json", channel: AppChannels.Admin);
+            if (!check.IsSuccessStatusCode)
+            {
+                return check;
+            }
+
+            foreach (var header in ForwardedAccount.Headers)
+            {
+                request.Headers.Remove(header);
+                request.Headers.Add(header, check.Headers.GetValues(header));
+            }
+
+            if (withAdminHeader)
+            {
+                request.Headers.Add(AdminProtocol.RequestHeader, AdminProtocol.RequestHeaderValue);
+            }
+
+            request.Headers.Add("Cookie", $"{SessionCookie.Name}={session}");
+            return await server.Client().SendAsync(request);
         }
     }
 

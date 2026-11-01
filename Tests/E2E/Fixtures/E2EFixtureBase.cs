@@ -88,7 +88,9 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     // meta-viewport, and with it the tap heuristics that decide whether a touch becomes a click.
     // A gesture test that only sets hasTouch is still being judged by desktop rules, which is
     // how a tap bug can reproduce on a phone and pass here.
-    public async Task<IPage> CreatePageAsync(bool hasTouch = false, bool isMobile = false)
+    // withoutServiceWorker: for a test that answers the page's own requests (page.RouteAsync), which
+    // a service worker would answer first, out of the route's sight.
+    public async Task<IPage> CreatePageAsync(bool hasTouch = false, bool isMobile = false, bool withoutServiceWorker = false)
     {
         if (_browser is null)
         {
@@ -111,7 +113,8 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             IsMobile = isMobile,
             DeviceScaleFactor = isMobile ? 3 : null,
             ViewportSize = isMobile ? new ViewportSize { Width = 390, Height = 844 } : null,
-            ExtraHTTPHeaders = PageHeaders
+            ExtraHTTPHeaders = PageHeaders,
+            ServiceWorkers = withoutServiceWorker ? ServiceWorkerPolicy.Block : ServiceWorkerPolicy.Allow
         });
         _mine.Add(context);
         // The fake UI already answers the prompt; granting as well covers the permissions API,

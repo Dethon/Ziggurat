@@ -1,4 +1,6 @@
+using Accounts.Admin;
 using Accounts.People;
+using Domain.DTOs.Admin;
 using Domain.DTOs.Tunnel;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
@@ -27,6 +29,9 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
     public DbSet<TunnelCredential> TunnelCredentials => Set<TunnelCredential>();
     public DbSet<HouseholdSection> HouseholdSections => Set<HouseholdSection>();
     public DbSet<HouseholdDataKey> HouseholdDataKeys => Set<HouseholdDataKey>();
+    public DbSet<AdminChange> AdminChanges => Set<AdminChange>();
+    public DbSet<HouseholdKeyCheck> HouseholdKeyChecks => Set<HouseholdKeyCheck>();
+    public DbSet<AgentVersion> AgentVersions => Set<AgentVersion>();
 
     // An instant is kept as UTC, because not every provider has an offset type and SQLite cannot
     // order or compare the text of one.
@@ -121,6 +126,39 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
         dataKey.HasIndex(k => k.TenantId).IsUnique();
         dataKey.Property(k => k.MasterKeyId).HasMaxLength(IdLength);
         dataKey.HasOne<Tenant>().WithMany().HasForeignKey(k => k.TenantId).OnDelete(DeleteBehavior.Restrict);
+
+        var check = modelBuilder.Entity<HouseholdKeyCheck>();
+        check.Property(c => c.Id).HasMaxLength(IdLength);
+        check.Property(c => c.TenantId).HasMaxLength(IdLength);
+        check.Property(c => c.Key).HasMaxLength(Keys.HouseholdKeyChecks.KeyNameLength);
+        check.Property(c => c.Fingerprint).HasMaxLength(IdLength);
+        check.Property(c => c.State).HasMaxLength(16);
+        check.Property(c => c.Reason).HasMaxLength(Keys.HouseholdKeyChecks.ReasonLength);
+        check.HasIndex(c => new { c.TenantId, c.Key }).IsUnique();
+        check.HasOne<Tenant>().WithMany().HasForeignKey(c => c.TenantId).OnDelete(DeleteBehavior.Restrict);
+
+        var change = modelBuilder.Entity<AdminChange>();
+        change.Property(c => c.Id).HasMaxLength(IdLength);
+        change.Property(c => c.TenantId).HasMaxLength(IdLength);
+        change.Property(c => c.ActorUserId).HasMaxLength(IdLength);
+        change.Property(c => c.ActorTenantId).HasMaxLength(IdLength);
+        change.Property(c => c.Route).HasMaxLength(AdminLog.RouteLength);
+        change.Property(c => c.Summary).HasMaxLength(AdminLog.SummaryLength);
+        // A household's changes are read newest first.
+        change.HasIndex(c => new { c.TenantId, c.At });
+        change.HasOne<Tenant>().WithMany().HasForeignKey(c => c.TenantId).OnDelete(DeleteBehavior.Restrict);
+        change.HasOne<User>().WithMany().HasForeignKey(c => c.ActorUserId).OnDelete(DeleteBehavior.Restrict);
+
+        var version = modelBuilder.Entity<AgentVersion>();
+        version.Property(v => v.Id).HasMaxLength(IdLength);
+        version.Property(v => v.TenantId).HasMaxLength(IdLength);
+        version.Property(v => v.AgentId).HasMaxLength(64);
+        version.Property(v => v.Name).HasMaxLength(AdminAgent.NameLength);
+        version.Property(v => v.ReplacedBy).HasMaxLength(IdLength);
+        // An agent's versions are read newest first.
+        version.HasIndex(v => new { v.TenantId, v.AgentId, v.ReplacedAt });
+        version.HasOne<Tenant>().WithMany().HasForeignKey(v => v.TenantId).OnDelete(DeleteBehavior.Restrict);
+        version.HasOne<User>().WithMany().HasForeignKey(v => v.ReplacedBy).OnDelete(DeleteBehavior.Restrict);
     }
 
     private sealed class UtcConverter() : ValueConverter<DateTimeOffset, DateTime>(

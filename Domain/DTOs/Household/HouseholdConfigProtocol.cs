@@ -36,10 +36,23 @@ public static class HouseholdConfigProtocol
     // then read on its own view for its key. Asked naming no household.
     public const string PeopleView = "people";
 
+    // What a change of a household's people — a member disabled or re-enabled — is announced as on
+    // SavedChannel, so the agent drops the view that says who is disabled. No section is called this:
+    // a reader drops all it kept of the household whatever section a save names.
+    public const string PeopleChanged = "people";
+
+    // Not a view: the agent saying OpenRouter refused a household's own key in a turn, asked as its
+    // own view is (the household named, the agent's token beside its credential) and answered 204.
+    public const string OpenRouterKeyRefused = "openrouter-key-refused";
+
     // Where a save is announced (a HouseholdConfigSaved, as JSON), so every reader drops what it
     // cached of that household. Pub/sub reaches only who is subscribed then: a reader's cache
     // lifetime is what bounds a missed one.
     public const string SavedChannel = "accounts:household-config:saved";
+
+    // What a save announcement names when the household was suspended or resumed rather than a section
+    // saved: no section is called this, and every reader drops what it kept of the household either way.
+    public const string SuspensionChanged = "suspension";
 
     // The channel the agent's own token for the configuration names: it acts for nobody, and names
     // its household in the query (the agent is the one caller that may).
@@ -65,7 +78,10 @@ public sealed record HouseholdConfigQuery(
     string? HouseholdId = null, string? CallToken = null, string? Assertion = null, string? Delegation = null);
 
 // Many sections at once, with the model key unsealed, where a shared server is handed its own section
-// alone: the agent builds the household's agents from them and pays for their models.
+// alone: the agent builds the household's agents from them and pays for their models. DisabledPeople
+// are the user ids of the members an owner disabled: the agent refuses their turns and believes no
+// delegation naming them, so nothing it does acts for them until they are re-enabled. Suspended is the
+// operator's word that the household runs nothing: the agent refuses its turns and fires by it.
 [PublicAPI]
 public sealed record AgentHouseholdConfig(
     string HouseholdId,
@@ -74,14 +90,17 @@ public sealed record AgentHouseholdConfig(
     AgentsSection Agents,
     FeaturesSection Features,
     SpacesSection Spaces,
-    string? OpenRouterApiKey)
+    string? OpenRouterApiKey,
+    IReadOnlyList<string>? DisabledPeople = null,
+    bool Suspended = false)
 {
     // The key goes over the wire in clear, as the agent needs it; printed — a log line, an assertion's
     // message, the HouseholdAgents built from it — it says only whether there is one.
     private bool PrintMembers(StringBuilder builder)
     {
         builder.Append($"HouseholdId = {HouseholdId}, IsHome = {IsHome}, Settings = {Settings}, Agents = {Agents}, ");
-        builder.Append($"Features = {Features}, Spaces = {Spaces}, OpenRouterApiKey = {(OpenRouterApiKey is null ? "none" : "[set]")}");
+        builder.Append($"Features = {Features}, Spaces = {Spaces}, OpenRouterApiKey = {(OpenRouterApiKey is null ? "none" : "[set]")}, ");
+        builder.Append($"DisabledPeople = [{string.Join(", ", DisabledPeople ?? [])}], Suspended = {Suspended}");
         return true;
     }
 }
@@ -144,6 +163,7 @@ public enum HouseholdConfigRefusal
     SecretsUnavailable
 }
 
-// Published on HouseholdConfigProtocol.SavedChannel when a section is saved.
+// Published on HouseholdConfigProtocol.SavedChannel when a section is saved, and when the household is
+// suspended or resumed (HouseholdConfigProtocol.SuspensionChanged), which its readers must see as soon.
 [PublicAPI]
 public sealed record HouseholdConfigSaved(string HouseholdId, string Section);

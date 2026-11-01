@@ -107,14 +107,15 @@ public sealed class MultiAgentFactory(
     private DisposableAgent Build(AgentSpec spec, IToolApprovalHandler approvalHandler)
     {
         IMetricsPublisher agentPublisher = metricsPublisher is not null
-            ? new AgentMetricsPublisher(metricsPublisher, spec.MetricsAgentId, spec.TenantId)
+            ? new AgentMetricsPublisher(metricsPublisher, spec.AgentId, spec.MetricsAgentName, spec.TenantId)
             : NoOpMetricsPublisher.Instance;
 
         var chatClient = CreateChatClient(
             spec.Model, agentPublisher, spec.MaxContextTokens,
             sessionId: spec.RoutingSessionId,
             providerRouting: spec.ProviderRouting,
-            key: spec.Key);
+            key: spec.Key,
+            keyHousehold: spec.TenantId);
 
         // Composed from the spec this build is already running against, so the parent's values
         // reach the projection with no second source of truth for any of them.
@@ -157,7 +158,7 @@ public sealed class MultiAgentFactory(
             // before the screen existed. A worker gets it by this same line, screened on its
             // delegation prompt.
             serviceProvider?.GetService<IExecScreen>(),
-            spec.MetricsAgentId,
+            spec.AgentId,
             spec.Payer);
 
         return new McpAgent(
@@ -257,7 +258,7 @@ public sealed class MultiAgentFactory(
         string model, IMetricsPublisher? publisher = null, int? maxContextTokens = null,
         string? sessionId = null, ProviderRouting? providerRouting = null,
         HttpMessageHandler? transportHandler = null, HttpMessageHandler? lemonadeTransportHandler = null,
-        ModelKey? key = null)
+        ModelKey? key = null, string? keyHousehold = null)
     {
         var effectivePublisher = publisher ?? metricsPublisher;
         var effectiveContext = maxContextTokens ?? openRouterConfig.MaxContextTokens;
@@ -271,7 +272,7 @@ public sealed class MultiAgentFactory(
         // in front of a patched model that cannot take it — the wire rejects the whole request.
         var readImageStore = serviceProvider?.GetService<IReadImageStore>();
 
-        var openRouter = new OpenRouterChatClient(
+        IChatClient openRouter = new OpenRouterChatClient(
             openRouterConfig.ApiUrl,
             key?.Reveal() ?? openRouterConfig.ApiKey,
             model,
@@ -285,6 +286,14 @@ public sealed class MultiAgentFactory(
             readImageStore: readImageStore,
             modelAcceptsImages: AcceptsImages,
             modelAcceptsVideo: AcceptsVideo);
+
+        // A household's own key that OpenRouter refuses is the owner's to fix, so their keys page is
+        // told; the deployment's key is the operator's, and the box has a key of its own.
+        if (key is not null && keyHousehold is not null && serviceProvider?.GetService<IHouseholdKeyReports>() is { } reports)
+        {
+            openRouter = new RefusedKeyReportingChatClient(
+                openRouter, keyHousehold, reports, loggerFactory?.CreateLogger<RefusedKeyReportingChatClient>());
+        }
 
         if (_lemonadeHost is not { IsConfigured: true } host)
         {

@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.Security;
+using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
@@ -60,6 +61,12 @@ public static class AccountsClientRegistration
             http.BaseAddress = new Uri(config.BaseUrl.TrimEnd('/') + "/");
             http.Timeout = config.RequestTimeout;
         });
+        // Only the agent, which holds a token of its own, says a household's key failed in use.
+        if (agentToken is not null)
+        {
+            services.AddSingleton<IHouseholdKeyReports>(sp => sp.GetRequiredService<HouseholdConfigurationClient>());
+        }
+
         return services
             .AddSingleton(sp => new HouseholdConfigurationClient(
                 sp.GetRequiredService<IHttpClientFactory>().CreateClient(HouseholdConfigurationClient.ClientName),

@@ -1,11 +1,17 @@
 using System.Net;
+using System.Net.Http.Json;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Accounts.Sessions;
+using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Tunnel;
 using Domain.Metrics;
+using Domain.Monitor;
+using Domain.Prompts;
 using Domain.Security;
 using Domain.Security.Signing;
 using Infrastructure.StateManagers;
@@ -213,11 +219,13 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
 
         (await stack.TopicsAsync(stack.Home, agent.Id)).ShouldContain(t => t.Name.StartsWith(tag));
 
-        // The roll-ups name an agent by its name (AgentSpec.MetricsAgentId), so the reply's own call is
-        // the configured agent's on its configured model; the deployment's own scope holds none of the
-        // turn's calls, though its key paid for them.
+        // The roll-ups key an agent by its id, which a household's rename leaves alone, and carry the
+        // name it goes by (AgentSpec.MetricsAgentName), so the reply's own call is the configured
+        // agent's on its configured model; the deployment's own scope holds none of the turn's calls,
+        // though its key paid for them.
         await Eventually.Until(async () => (await UsageAsync(stack.Home, since))
-                .Any(u => u.AgentId == agent.Name && u.Model == agent.Model && u.Sender == stack.MemberName),
+                .Any(u => u.AgentId == agent.Id && u.AgentName == agent.Name && u.Model == agent.Model
+                          && u.Sender == stack.MemberName),
             $"{agent.Name}'s reply on {agent.Model} counted under the home household");
         (await UsageAsync(MetricKeys.Deployment, since))
             .ShouldNotContain(u => u.Sender == stack.MemberName || u.AgentId == agent.Name || u.AgentId == agent.Id);
@@ -284,6 +292,62 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
                 .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 180_000 });
             await Assertions.Expect(page.Locator(".chat-message.error")).ToHaveCountAsync(0);
         });
+    }
+
+    // A household onboarded the whole way, as its operator and its owner would: created from the
+    // dashboard, its owner signed in (mint-session standing in for the passkey their link enrolls), its
+    // OpenRouter key set through the admin API — probed against the stack's stub, which takes it —
+    // and its agent renamed there, then a reply from that agent under its new name, paid for with the
+    // household's own key. That key is the deployment's, on this machine's stack alone, so the turn is
+    // real and costs one cheap model call. Then the operator suspends it: its next turn on the same
+    // open page is refused with the reason, and a page asked for again says it is suspended. Each run
+    // makes a household of its own, so a rerun starts as fresh and needs nothing resumed.
+    [SkippableFact]
+    public async Task AHouseholdTheOperatorCreates_IsAnsweredByTheAgentItsOwnerNamed_UntilItIsSuspended()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var created = await AdminAsync<AdminSaved<OwnerLink>>(HttpMethod.Post, stack.DashboardHost, AdminProtocol.Households,
+            stack.OperatorSession, new NewHousehold($"Smoke Household {tag}", $"Smoke Owner {tag}"));
+        var household = created.Value.HouseholdId;
+        var owner = await SmokeStack.SessionOfAsync(created.Value.UserId);
+
+        var keys = await AdminAsync<AdminSaved<HouseholdKeys>>(HttpMethod.Put, stack.MainHost, AdminProtocol.OpenRouterKey,
+            owner, new OpenRouterKey(SmokeStack.DeploymentOpenRouterKey()));
+        keys.Value.OpenRouter!.State.ShouldBe(KeyState.Working);
+        keys.Value.NeedsOpenRouterKey.ShouldBeFalse();
+        // No warning: the save was announced, so the agent reads the household with its key.
+        keys.Warning.ShouldBeNull();
+
+        var name = $"Smoke Butler {tag}";
+        var agents = await AdminAsync<AdminSaved<AdminAgents>>(HttpMethod.Put, stack.MainHost,
+            AdminProtocol.Agent(AgentTemplates.Jonas), owner, new AgentEdit(name, null));
+        agents.Value.Agents.ShouldContain(a => a.Id == AgentTemplates.Jonas && a.Name == name);
+        agents.Warning.ShouldBeNull();
+
+        await InChatAsync(name, async page =>
+        {
+            await SayAsync(page, $"Smoke {tag}: reply with one short sentence.");
+            await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
+                .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 180_000 });
+            await Assertions.Expect(page.Locator(".chat-message.error")).ToHaveCountAsync(0);
+            await Assertions.Expect(page.Locator(".chat-message.assistant:not(.error) .message-content").First)
+                .Not.ToBeEmptyAsync();
+
+            var suspended = await AdminAsync<AdminSaved<HouseholdSuspension>>(HttpMethod.Put, stack.DashboardHost,
+                AdminProtocol.Suspension(household), stack.OperatorSession, new HouseholdSuspension(true));
+            suspended.Value.Suspended.ShouldBeTrue();
+            suspended.Warning.ShouldBeNull();
+
+            await SayAsync(page, $"Smoke {tag}: and another.");
+            await Assertions.Expect(page.Locator(".chat-message.error", new PageLocatorOptions { HasText = ConversationGroup.SuspendedAnswer }))
+                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
+        }, owner);
+
+        var refused = await SendAsync(HttpMethod.Get, stack.MainHost, "/", owner, "text/html");
+        refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await refused.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
     }
 
     // A tunnel is opened with the credential minted for that server and no other: a forged one, and
@@ -530,8 +594,8 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     }
 
     // A signed-in browser through Caddy to the chat client, on a fresh topic of the agent named (or
-    // whichever the client selects).
-    private async Task InChatAsync(string? agent, Func<IPage, Task> converse)
+    // whichever the client selects), as the member unless another session is given.
+    private async Task InChatAsync(string? agent, Func<IPage, Task> converse, string? session = null)
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
@@ -544,7 +608,7 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         [
             new Microsoft.Playwright.Cookie
             {
-                Name = "ziggurat_session", Value = stack.MemberSession, Domain = stack.MainHost, Path = "/",
+                Name = "ziggurat_session", Value = session ?? stack.MemberSession, Domain = stack.MainHost, Path = "/",
                 Secure = true, HttpOnly = true
             }
         ]);
@@ -653,6 +717,23 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
 
         return (await SmokeStack.FromInsideAsync(HttpMethod.Get, url, headers)).Status;
     }
+
+    // An admin API call through the proxy as the admin client sends it: the session's cookie, the
+    // admin header, a JSON body. A refusal fails the test with its status and AdminRefusal, which never
+    // carries a value sent.
+    private async Task<T> AdminAsync<T>(HttpMethod method, string host, string path, string session, object body)
+    {
+        var request = stack.Request(method, host, path, session);
+        request.Headers.Add(AdminProtocol.RequestHeader, AdminProtocol.RequestHeaderValue);
+        request.Headers.Add("Accept", "application/json");
+        request.Content = JsonContent.Create(body, body.GetType(), options: AdminJson);
+        using var response = await stack.Http.SendAsync(request);
+        var answer = await response.Content.ReadAsStringAsync();
+        response.IsSuccessStatusCode.ShouldBeTrue($"{method} {path} answered {(int)response.StatusCode}: {answer}");
+        return JsonSerializer.Deserialize<T>(answer, AdminJson)!;
+    }
+
+    private static readonly JsonSerializerOptions AdminJson = new(JsonSerializerDefaults.Web);
 
     private Task<HttpResponseMessage> SendAsync(
         HttpMethod method, string host, string path, string? session = null, string? accept = null)

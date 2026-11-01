@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Tunnel;
@@ -322,6 +323,35 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
             () => _metrics.Published.OfType<ErrorEvent>().Any(e => e.Message.Contains(nameof(TunnelCredentialRefusal.Revoked))),
             "the server's next open is refused as revoked");
         _relay.Registry.Open.ShouldBeEmpty();
+        await watching.CancelAsync();
+    }
+
+    // The operator suspends a household: every tunnel of it the relay holds is closed, its servers'
+    // next opens are refused as Suspended though their credentials are live, and another household's
+    // stay open.
+    [Fact]
+    public async Task SuspendingAHousehold_ClosesItsTunnels_RefusesTheirNextOpen_AndLeavesOthersOpen()
+    {
+        var (casa, _) = await _accounts.SeedHouseholdAsync("Casa", "Ana");
+        var operatorAdmin = _accounts.Admin(await _accounts.MintSessionAsync((await _accounts.MintOperatorAsync("Fran")).UserId));
+        var casaVault = await _accounts.MintTunnelCredentialAsync(casa, "vault");
+        var homeVault = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+        await using var suspendedServer = await TunnelledServer.StartAsync(_relay.Hub, casaVault.Credential, "vault");
+        await using var homeServer = await TunnelledServer.StartAsync(_relay.Hub, homeVault.Credential, "vault");
+        await Eventually.Until(() => _relay.Registry.Open.Count == 2, "both households' vaults to be connected");
+        using var watching = new CancellationTokenSource();
+        var closed = FirstClosedAsync(_relay.Registry, watching.Token);
+
+        (await operatorAdmin.PutAsync(AdminProtocol.Suspension(casa), new HouseholdSuspension(true))).StatusCode
+            .ShouldBe(System.Net.HttpStatusCode.OK);
+
+        var gone = await closed.WaitAsync(TimeSpan.FromSeconds(10));
+        (gone.Tunnel.TenantId, gone.Reason).ShouldBe((casa, TunnelProtocol.Suspended));
+        await Eventually.Until(
+            () => _metrics.Published.OfType<ErrorEvent>().Any(e => e.Message.Contains(nameof(TunnelCredentialRefusal.Suspended))),
+            "the server's next open is refused as suspended");
+        _relay.Registry.Find(casa, "vault").ShouldBeNull();
+        _relay.Registry.Find(_household, "vault").ShouldNotBeNull();
         await watching.CancelAsync();
     }
 

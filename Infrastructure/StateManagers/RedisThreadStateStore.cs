@@ -226,15 +226,39 @@ public sealed class RedisThreadStateStore(
         messages.Select(m => (RedisValue)JsonSerializer.Serialize(m)).ToArray();
 
     public async Task<TopicPage> GetTopicPageAsync(
-        string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false)
+        string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false,
+        IReadOnlyList<string>? alsoSpaces = null)
     {
-        await TrimPurgedAsync(viewer.TenantId, agentId, spaceSlug);
+        IReadOnlyList<string> slugs = [spaceSlug, .. alsoSpaces ?? []];
+        await Task.WhenAll(slugs.Select(slug => TrimPurgedAsync(viewer.TenantId, agentId, slug)));
 
         return await FillPageAsync(
             viewer, cursor, pageSize,
-            from => ReadIndexRangeAsync(viewer.TenantId, agentId, spaceSlug, from, pageSize, archived),
+            from => ReadIndexRangesAsync(viewer.TenantId, agentId, slugs, from, pageSize, archived),
             member => ReadIndexedTopicAsync(viewer.TenantId, agentId, member.Element.ToString()),
             Cursor);
+    }
+
+    // Several spaces' orderings read as one: each read from the same cursor, then merged in the
+    // order a single sorted set answers — score descending, ties by member descending — so the
+    // cursor of the merged run is a cursor of every one of them. A topic is indexed under one space
+    // alone, so no member is read twice.
+    private async Task<IReadOnlyList<SortedSetEntry>> ReadIndexRangesAsync(
+        string household, string agentId, IReadOnlyList<string> slugs, string? cursor, int take, bool archived)
+    {
+        if (slugs.Count == 1)
+        {
+            return await ReadIndexRangeAsync(household, agentId, slugs[0], cursor, take, archived);
+        }
+
+        var runs = await Task.WhenAll(slugs.Select(slug => ReadIndexRangeAsync(household, agentId, slug, cursor, take, archived)));
+        return
+        [
+            .. runs.SelectMany(run => run)
+                .OrderByDescending(e => e.Score)
+                .ThenByDescending(e => e.Element.ToString(), StringComparer.Ordinal)
+                .Take(take)
+        ];
     }
 
     // One page of what the viewer may see, read a run of the ordering at a time until the page is
@@ -417,12 +441,31 @@ public sealed class RedisThreadStateStore(
     // Both ranges at once, deliberately: search is the way into the archive, so a cutoff has no
     // business in it.
     public Task<TopicPage> SearchTopicsAsync(
-        string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize) =>
+        string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize,
+        IReadOnlyList<string>? alsoSpaces = null) =>
         FillPageAsync(
             viewer, cursor, pageSize,
-            from => _searchDocuments.SearchAsync(viewer.TenantId, agentId, spaceSlug, query, from, pageSize),
+            from => _searchDocuments.SearchAsync(viewer.TenantId, agentId, [spaceSlug, .. alsoSpaces ?? []], query, from, pageSize),
             hit => ReadTopicAsync(TopicKey(viewer.TenantId, agentId, hit.ChatId, hit.TopicId)),
             TopicSearchDocuments.CursorFor);
+
+    // A scan of the household's orderings, since nothing else names a slug the household no longer
+    // has: the hub asks once as a connection joins its default space, not per page.
+    public async Task<IReadOnlyList<string>> SpacesHoldingTopicsAsync(string tenantId)
+    {
+        var prefix = $"topics@{tenantId}:";
+        var slugs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var endpoint in redis.GetEndPoints())
+        {
+            await foreach (var key in redis.GetServer(endpoint).KeysAsync(_db.Database, pattern: $"{prefix}*", pageSize: 1000))
+            {
+                var name = key.ToString();
+                slugs.Add(name[(name.LastIndexOf(':') + 1)..]);
+            }
+        }
+
+        return [.. slugs];
+    }
 
     // Whether topics can be searched, the index made if it is missing: the household migration's,
     // once it has moved the documents under their households.

@@ -9,6 +9,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
+using Domain.Security;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
@@ -57,6 +58,7 @@ internal sealed partial class WebChatStack
     private IContainer? _mcpSugary;
     private IContainer? _accounts;
     private WebApplication? _whisper;
+    private FakeKeyProviders? _keyProviders;
     private int _caddyPort;
 
     private int _sliceIndex = -1;
@@ -400,9 +402,18 @@ internal sealed partial class WebChatStack
 
         // The accounts service, as compose wires it but for this host: its store in a tmpfs that
         // starts empty, migrated before the sign-in page answers.
+        // The providers a household's keys are checked with, answered in this process and reached
+        // through the host's gateway, so an owner's key is never put to a real provider. Started
+        // first: the accounts service is told where they are.
+        _keyProviders = await FakeKeyProviders.StartAsync(forContainers: true);
+
         _accounts = TestContainers.Container(E2EImages.Accounts.ImageName)
             .WithNetwork(_network)
             .WithNetworkAliases("accounts")
+            .WithExtraHost("host.docker.internal", "host-gateway")
+            .WithEnvironment("KEYPROBES__OPENROUTERURL", _keyProviders.OpenRouterUrlOn("host.docker.internal"))
+            .WithEnvironment("KEYPROBES__IDEALISTAURL", _keyProviders.RootOn("host.docker.internal"))
+            .WithEnvironment("KEYPROBES__TELEGRAMURL", _keyProviders.RootOn("host.docker.internal"))
             .WithTmpfsMount("/data")
             .WithEnvironment("WEBAUTHN__RELYINGPARTYID", "localhost")
             .WithEnvironment("ALLOWEDORIGINS__0", baseUrl)
@@ -551,10 +562,10 @@ internal sealed partial class WebChatStack
         // DockerCompose/caddy/Caddyfile's main host, minus TLS: the chat client, its hub and the
         // hub's upload and dictation endpoints ask the accounts service's session check first and
         // carry the person on in its headers; sign-in and the agent API do not.
-        static string Checked(string matcher, string upstream) =>
+        static string Checked(string matcher, string upstream, string channel = ChannelIds.SignalR) =>
             $"    handle {matcher}{{\n" +
             "        forward_auth accounts:8080 {\n" +
-            "            uri /accounts/verify?channel=signalr\n" +
+            $"            uri /accounts/verify?channel={channel}\n" +
             "            copy_headers X-Ziggurat-User X-Ziggurat-Tenant X-Ziggurat-Roles X-Ziggurat-Assertion\n" +
             "        }\n" +
             $"        reverse_proxy {upstream}\n" +
@@ -575,6 +586,13 @@ internal sealed partial class WebChatStack
             "    handle /accounts/internal/* {\n" +
             "        respond 404\n" +
             "    }\n" +
+            // The session check is forward_auth's alone, mirroring DockerCompose/caddy/Caddyfile.
+            "    handle /accounts/verify* {\n" +
+            "        respond 404\n" +
+            "    }\n" +
+            // The admin area's API, behind the session check for the admin channel and before the
+            // accounts service's unchecked pages, mirroring DockerCompose/caddy/Caddyfile.
+            Checked("/accounts/admin/* ", "accounts:8080", AppChannels.Admin) +
             "    handle /accounts/* {\n" +
             "        reverse_proxy accounts:8080\n" +
             "    }\n" +
@@ -781,6 +799,7 @@ internal sealed partial class WebChatStack
     {
         await Task.WhenAll(
             _whisper is null ? Task.CompletedTask : _whisper.DisposeAsync().AsTask(),
+            _keyProviders is null ? Task.CompletedTask : _keyProviders.DisposeAsync().AsTask(),
             _caddy is null ? Task.CompletedTask : _caddy.DisposeAsync().AsTask(),
             _mcpSugary is null ? Task.CompletedTask : _mcpSugary.DisposeAsync().AsTask(),
             _accounts is null ? Task.CompletedTask : _accounts.DisposeAsync().AsTask(),

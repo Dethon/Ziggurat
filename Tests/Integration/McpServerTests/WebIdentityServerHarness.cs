@@ -157,6 +157,8 @@ internal sealed class WebIdentityServerHarness : IAsyncDisposable
     {
         await _app.StopAsync();
         await _app.DisposeAsync();
+        TestPort.Release(new Uri(McpAddress).Port);
+        TestPort.Release(new Uri(PagesAddress).Port);
     }
 
     private sealed class AnsweringLoginSites(bool loggedIn) : ILoginSites

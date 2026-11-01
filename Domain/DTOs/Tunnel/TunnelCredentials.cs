@@ -17,6 +17,10 @@ public static partial class TunnelCredentialProtocol
     // relay still verifies on every open, which is what keeps a revoked credential out for good.
     public const string RevokedChannel = "accounts:tunnel-credentials:revoked";
 
+    // Where a household's suspension is published (a HouseholdSuspended, as JSON), so the relay closes
+    // every tunnel of it that is open; its credentials are refused as Suspended on every later open.
+    public const string SuspendedChannel = "accounts:households:suspended";
+
     // A server's name goes into the synthetic address a tunnelled server is reached at, so it is a
     // DNS label: lowercase letters, digits and inner hyphens, at most 63 characters.
     public const int ServerNameMaxLength = 63;
@@ -53,9 +57,15 @@ public enum TunnelCredentialRefusal
 
     // A live credential, minted for another of its household's servers than the one the tunnel says
     // it is.
-    AnotherServer
+    AnotherServer,
+
+    // A live credential of a household the operator suspended: it opens again once it is resumed.
+    Suspended
 }
 
 // Published on TunnelCredentialProtocol.RevokedChannel when a credential is revoked.
 [PublicAPI]
 public sealed record TunnelCredentialRevoked(string CredentialId, string TenantId, string ServerName);
+// Published on TunnelCredentialProtocol.SuspendedChannel when a household is suspended.
+[PublicAPI]
+public sealed record HouseholdSuspended(string TenantId);

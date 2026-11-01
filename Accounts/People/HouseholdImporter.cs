@@ -103,7 +103,9 @@ public sealed class HouseholdImporter(IDbContextFactory<AccountsDbContext> conte
         var result = new List<ImportedPerson>();
         foreach (var p in placed)
         {
-            var link = p.Created ? await links.MintRecoveryAsync(p.User.Id, ct) : null;
+            var link = p.Created && await links.MintRecoveryAsync(p.User.Id, ct) is RecoveryMint.Minted { Link: var minted }
+                ? minted
+                : null;
             result.Add(Result(p, passkeys, link, dryRun));
         }
 

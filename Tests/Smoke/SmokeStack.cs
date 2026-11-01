@@ -2,8 +2,10 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Domain.DTOs.WebChat;
+using Tests.E2E.Fixtures;
 using Tests.Unit.Deployment;
 
 namespace Tests.Smoke;
@@ -177,7 +179,26 @@ public sealed partial class SmokeStack : IAsyncLifetime
             parts.Length > 1 ? parts[1] : "");
     }
 
-    private static async Task<string> SessionOfAsync(string userId) =>
+    // The deployment's OpenRouter key on this machine, read where the agent reads it: the user secrets
+    // its container mounts (DockerCompose/docker-compose.override.linux.yml), which win over the
+    // environment. Only ever sent as a request's body, never put in a command line or a message.
+    public static string DeploymentOpenRouterKey()
+    {
+        var id = SecretsId().Match(File.ReadAllText(Path.Combine(TestHelpers.FindSolutionRoot(), "Agent", "Agent.csproj")))
+            .Groups["id"].Value;
+        var secrets = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".microsoft", "usersecrets", id, "secrets.json");
+        var key = File.Exists(secrets)
+            ? JsonNode.Parse(File.ReadAllText(secrets))?["openRouter:apiKey"]?.GetValue<string>()
+            : null;
+        return key is { Length: > 0 }
+            ? key
+            : Environment.GetEnvironmentVariable("OPENROUTER__APIKEY") is { Length: > 0 } fromEnvironment
+                ? fromEnvironment
+                : throw new InvalidOperationException($"no OpenRouter key in the agent's user secrets ({secrets}) or OPENROUTER__APIKEY");
+    }
+
+    public static async Task<string> SessionOfAsync(string userId) =>
         (await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "mint-session", "--user", userId)).Trim()
             .Split('\n').Last().Trim();
 
@@ -193,6 +214,9 @@ public sealed partial class SmokeStack : IAsyncLifetime
 
     private static string HostStartingWith(string prefix) =>
         DeploymentFiles.Caddyfile().Hosts.Select(h => h.Name).First(n => n.StartsWith(prefix, StringComparison.Ordinal));
+
+    [GeneratedRegex("<UserSecretsId>(?<id>[^<]+)</UserSecretsId>")]
+    private static partial Regex SecretsId();
 
     [GeneratedRegex(@"user (?<id>[0-9a-f]{32})")]
     private static partial Regex UserId();

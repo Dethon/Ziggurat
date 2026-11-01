@@ -35,7 +35,12 @@ public sealed record ForwardedAccount(string UserId, string TenantId, IReadOnlyL
     // The deployment's operator, beside the household role: the dashboard is theirs alone.
     public const string OperatorRole = "operator";
 
+    // The household role of whoever manages the household: its admin area is theirs.
+    public const string OwnerRole = "owner";
+
     public bool IsOperator => Roles.Contains(OperatorRole);
+
+    public bool IsOwner => Roles.Contains(OwnerRole);
 
     public bool SeesAll => Roles.Contains(SeesAllRole);
 

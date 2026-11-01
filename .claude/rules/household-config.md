@@ -104,13 +104,14 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 
 | View | Caller (`CALLERS__<name>`) | Answer | Secrets unsealed |
 |---|---|---|---|
-| `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces | the OpenRouter key |
+| `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces, `disabledPeople` (the user ids of members an owner disabled, which the agent acts for no more), and `suspended` (the operator suspended it: the agent refuses its turns and fires, `.claude/rules/admin.md`) | the OpenRouter key |
 | `settings` | `mcp-scheduling`, `mcp-sugary` | `HouseholdConfigAnswer<HouseholdSettings>` | none |
 | `idealista` | `mcp-idealista` | `HouseholdConfigAnswer<IdealistaKeys?>` | Idealista's two |
 | `spaces` | `mcp-channel-signalr` | `HouseholdConfigAnswer<SpacesSection>` | none |
 | `telegram-bots` | `mcp-channel-telegram` | `HouseholdTelegramBots`: every household's bots | the bots' tokens |
 | `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr` | `HouseholdConfigAnswer<HouseholdAgentNames>`: each agent's id, name, description, model and reasoning effort, and the default (`HouseholdAgents.Names`, the entries its turns are built from: the two templates for a household that saved none, an unshipped template left out; never custom instructions), proven by the person's assertion on the asker's channel | none |
 | `people` | `agent` | `HouseholdPeople`: every household and its people's user ids | none |
+| `openrouter-key-refused` | `agent` | 204: not a view, the agent saying OpenRouter refused the household's own key in a turn (4c, `.claude/rules/admin.md`, "Keys and probes"); proven as `agent` is | none |
 
 A secret is unsealed into its own server's view and **left out** of every other, never sent sealed.
 A new view, or a server that comes to need one, is a line in that table, a route, and a row here.
@@ -220,7 +221,8 @@ Every model call made for a household goes out on its own OpenRouter key and is 
   agent is read under `Account(TenantId, UserId)`.
 - **Dreaming** walks the `people` view: each household's people the store keeps memory for, on the
   household's key, its events and the merge's embeddings counted under it. A household that cannot
-  pay or be read is not dreamt for that night; a user id in no household is left alone (one warning).
+  pay or be read is not dreamt for that night, nor one suspended, nor a member its view lists as
+  disabled; a user id in no household is left alone (one warning).
 - **Housekeeping stays the deployment's**: the keep-alive and model capabilities.
 - **A shared server's Jev** (the voice approval reader, the web search modal judge) holds no
   household's key, so `JudgmentCaller.For(context)` names the call's household for the figures and
@@ -230,9 +232,13 @@ Every model call made for a household goes out on its own OpenRouter key and is 
 ## Saves are announced; readers keep briefly
 
 A save publishes `HouseholdConfigSaved { householdId, section }` on Redis's
-`accounts:household-config:saved` (`RedisAnnouncer`, the same lazily opened connection that
+`accounts:household-config:saved` (and so does a suspension or a resumption, naming
+`HouseholdConfigProtocol.SuspensionChanged`, which is no section: the readers drop the household either way) (`RedisAnnouncer`, the same lazily opened connection that
 announces tunnel revocations). The save stands if nobody could be told; the command says so and
-exits 1.
+exits 1. A member disabled or re-enabled is announced the same way, as section
+`HouseholdConfigProtocol.PeopleChanged` (`people`, which no section is called): a reader drops all it
+kept of the household whatever section is named, so the agent's view — and its `disabledPeople` — is
+read again on the household's next turn.
 
 **The reader** is `IHouseholdConfiguration` (`Domain/Contracts`), implemented by
 `HouseholdConfigurationClient` (`Infrastructure/Clients/Accounts`), registered by
@@ -284,7 +290,9 @@ token's proof built anywhere but the accessor, and on the verified token read pa
 
 ## Operator commands
 
-Until the admin area (4c): `get-household-config --household <id> --section <name>` prints the
+The admin area (4c, `.claude/rules/admin.md`) saves through the same `HouseholdConfigStore.SaveAsync` and
+schema as these commands, section by section as its pages come (the settings first), so neither can
+save what the other would refuse. `get-household-config --household <id> --section <name>` prints the
 section at its current shape with every secret as `{"sealed": true}`; `set-household-config
 --household <id> --section <name> --file <path|->` (`-` is the input: `docker exec -i accounts dotnet
 Accounts.dll set-household-config ... --file - < keys.json`, so no secret sits in a file in the

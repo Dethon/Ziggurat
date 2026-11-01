@@ -4,6 +4,10 @@ namespace WebChat.Client.State.UserIdentity;
 
 public record SignedIn(SignedInPerson Person) : IAction;
 
+// Who is signed in, asked for by a page that is not the chat — the admin area — which never sends
+// Initialize: that starts the chat's live connection, which such a page has no use for.
+public record LoadSignedIn : IAction;
+
 public sealed class UserIdentityStore : IDisposable
 {
     private readonly Store<UserIdentityState> _store;

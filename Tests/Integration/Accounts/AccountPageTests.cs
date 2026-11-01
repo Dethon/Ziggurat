@@ -1,5 +1,8 @@
 using System.Net;
 using Accounts.Sessions;
+using Accounts.Store;
+using Domain.DTOs.Admin;
+using Microsoft.EntityFrameworkCore;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -90,6 +93,39 @@ public class AccountPageTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
         (await server.VerifyAsync(laptop.Token)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // Nothing here is open to a suspended household's people, as nothing behind the session check is:
+    // no Telegram code, no new passkey, no profile change, each told why — the page in the check's own
+    // words, the passkey script's call as plain text it can show.
+    [Fact]
+    public async Task ASuspendedHouseholdsPerson_IsRefusedThePageItsFormsAndItsScript_WithTheNotice()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (casa, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var browser = server.SignedIn(await server.MintSessionAsync(ana));
+        (await server.Admin(await server.MintSessionAsync(fran.UserId))
+            .PutAsync(AdminProtocol.Suspension(casa), new HouseholdSuspension(true))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var refused = new[]
+        {
+            await browser.GetAsync(Account),
+            await browser.PostWithoutPageAsync($"{Account}/telegram"),
+            await browser.PostWithoutPageAsync($"{Account}/profile", ("displayName", "Someone else"), ("avatarUrl", "")),
+            await browser.PostWithoutPageAsync("/accounts/api/passkeys/options")
+        };
+
+        foreach (var response in refused)
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            (await response.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
+        }
+
+        refused[^1].Content.Headers.ContentType!.MediaType.ShouldBe("text/plain");
+        await using var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        (await db.Users.SingleAsync(u => u.Id == ana)).DisplayName.ShouldBe("Ana");
+        (await db.Links.CountAsync(l => l.TenantId == casa)).ShouldBe(0);
     }
 
     [Fact]
