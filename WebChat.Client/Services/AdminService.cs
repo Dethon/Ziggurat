@@ -70,6 +70,30 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
     public Task<AdminAnswer<AdminAgents>> RestoreAgentVersionAsync(string agentId, string versionId) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.RestoreAgentVersion(agentId, versionId)), SavedAgentsAsync);
 
+    public Task<AdminAnswer<FeaturesSection>> GetFeaturesAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Features), async content =>
+            new AdminAnswer<FeaturesSection>.Answered((await content.ReadFromJsonAsync<FeaturesSection>())!));
+
+    public Task<AdminAnswer<FeaturesSection>> SaveFeaturesAsync(FeaturesSection features) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Features) { Content = JsonContent.Create(features) },
+            async content =>
+            {
+                var saved = (await content.ReadFromJsonAsync<AdminSaved<FeaturesSection>>())!;
+                return new AdminAnswer<FeaturesSection>.Answered(saved.Value, saved.Warning);
+            });
+
+    public Task<AdminAnswer<AdminSpaces>> GetSpacesAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Spaces), async content =>
+            new AdminAnswer<AdminSpaces>.Answered((await content.ReadFromJsonAsync<AdminSpaces>())!));
+
+    public Task<AdminAnswer<AdminSpaces>> SaveSpacesAsync(SpacesSection spaces) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Spaces) { Content = JsonContent.Create(spaces) },
+            async content =>
+            {
+                var saved = (await content.ReadFromJsonAsync<AdminSaved<AdminSpaces>>())!;
+                return new AdminAnswer<AdminSpaces>.Answered(saved.Value, saved.Warning);
+            });
+
     private static async Task<AdminAnswer<AdminAgents>.Answered> SavedAgentsAsync(HttpContent content)
     {
         var saved = (await content.ReadFromJsonAsync<AdminSaved<AdminAgents>>())!;

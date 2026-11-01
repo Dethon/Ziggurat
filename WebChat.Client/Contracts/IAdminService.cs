@@ -31,4 +31,13 @@ public interface IAdminService
     Task<AdminAnswer<IReadOnlyList<AdminAgentVersion>>> GetAgentVersionsAsync(string agentId);
 
     Task<AdminAnswer<AdminAgents>> RestoreAgentVersionAsync(string agentId, string versionId);
+
+    Task<AdminAnswer<FeaturesSection>> GetFeaturesAsync();
+
+    Task<AdminAnswer<FeaturesSection>> SaveFeaturesAsync(FeaturesSection features);
+
+    // The spaces in their order, beside the household's agents a space may open on; saved whole.
+    Task<AdminAnswer<AdminSpaces>> GetSpacesAsync();
+
+    Task<AdminAnswer<AdminSpaces>> SaveSpacesAsync(SpacesSection spaces);
 }
