@@ -12,6 +12,10 @@ public sealed class Tenant
     public bool IsHome { get; init; }
 
     public DateTimeOffset CreatedAt { get; init; }
+
+    // Since when the operator has it suspended: its sessions, turns, fires and tunnels are refused, and
+    // nothing of it is deleted, so clearing this is all resuming it takes. Never the home's.
+    public DateTimeOffset? SuspendedAt { get; set; }
 }
 
 public enum Role

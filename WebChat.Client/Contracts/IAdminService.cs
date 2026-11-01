@@ -52,4 +52,11 @@ public interface IAdminService
     Task<AdminAnswer<AdminSpaces>> GetSpacesAsync();
 
     Task<AdminAnswer<AdminSpaces>> SaveSpacesAsync(SpacesSection spaces);
+
+    // The household's own servers; a minted credential is in its answer alone, never read back.
+    Task<AdminAnswer<AdminServers>> GetServersAsync();
+
+    Task<AdminAnswer<MintedServerCredential>> AddServerAsync(ServerAddition addition);
+
+    Task<AdminAnswer<AdminServers>> RevokeServerCredentialAsync(string credentialId);
 }

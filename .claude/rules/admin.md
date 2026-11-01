@@ -44,6 +44,11 @@ paths:
   - "Tests/Integration/Accounts/HouseholdFeaturesAdminTests.cs"
   - "Tests/Integration/Accounts/HouseholdSpacesAdminTests.cs"
   - "Tests/E2E/WebChat/HouseholdSpacesE2ETests.cs"
+  - "Tests/Integration/Accounts/HouseholdSuspensionAdminTests.cs"
+  - "Accounts/Tunnels/TunnelCredentialStore.cs"
+  - "WebChat.Client/State/Effects/HouseholdServersEffect.cs"
+  - "Tests/Integration/Accounts/HouseholdServersAdminTests.cs"
+  - "Tests/E2E/WebChat/HouseholdServersE2ETests.cs"
 ---
 
 # The admin API and the admin area
@@ -69,7 +74,7 @@ routes like any owner. Today's routes: `GET`/`PUT /household/settings` (`Househo
 `GET`/`PUT /household/features` (`FeaturesSection`) and `/household/spaces` (`AdminSpaces` read, `SpacesSection` saved; "Features and spaces"),
 `GET /household/keys` (`HouseholdKeys`) and `PUT /household/keys/openrouter` (`OpenRouterKey`),
 `/household/keys/idealista` (`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`) ("Keys and probes"),
-`GET /household/changes?limit=` (the household's change log), the agents routes (below), `GET /operator/changes?household=&limit=`
+`GET /household/changes?limit=` (the household's change log), the agents, members and own servers routes (below), `GET /operator/changes?household=&limit=`
 (every household's, or one's), and the household list's (below): `GET`/`POST /operator/households` and
 `POST /operator/households/{householdId}/owners/{userId}/recovery`. A route is mapped in `AdminApi.Map` into one of the two groups, with its
 path inside the group from `AdminApi.Under(root, AdminProtocol.X)`, and reads its caller as a bound
@@ -98,8 +103,8 @@ order:
    else **403** with an `AdminRefusal`.
 
 Every admin answer is `Cache-Control: no-store`. The session's liveness is the session check's: it ran
-on this very request (forward_auth), so the assertion is seconds old; suspension (09) and disabled
-members (04) are refused there, not here.
+on this very request (forward_auth), so the assertion is seconds old; a suspended household (below) and
+disabled members (04) are refused there, not here.
 
 ## Answers
 
@@ -303,6 +308,44 @@ out left as it is) and `POST .../{userId}/disable` / `.../enable`, each answerin
   The E2E test (`HouseholdSpacesE2ETests`) adds a tagged space to the home, finds it in the chat with its
   name, colour and agent, edits and removes it; it opens the features page and never saves it.
 
+## Own servers
+
+`HouseholdServersAdmin` over 4a's tunnel credentials (`TunnelCredentialStore`, `.claude/rules/accounts.md`)
+and the agent's relay (`ConnectedServersClient`, the household list's client) (`Domain/DTOs/Admin/AdminServers.cs`):
+`GET /household/servers` (`AdminServers`: each `AdminServer` — name, outpost, `ServerConnection`
+`Connected`/`Offline`/`Unknown`, connected since, tools, and its live credentials as `AdminServerCredential`
+— id, when minted, in use); `POST /household/servers` (`ServerAddition { name }`), answering
+`AdminSaved<MintedServerCredential>` — the credential once, never again (only its hash is kept); `POST
+/household/servers/credentials/{credentialId}/revoke`, answering `AdminSaved<AdminServers>`.
+
+- **The list** is every server name holding a live credential of the household, joined by name with the
+  relay's listing — and a name with a tunnel open but no live credential (revoked while the relay could not
+  be told), which is still connected and shown so. The relay not answering (`ConnectedServersClient` null)
+  is every server `Unknown`, never offline; answered without it, `Offline`. Connected carries the tunnel's
+  opening time and the tools it listed through its tunnel just now (null: did not answer), and marks the
+  credential the tunnel was opened with as in use — the relay's listing carries `ConnectedServer.CredentialId`
+  for that — so an owner replacing a credential (mint another, restart the server with it, revoke the old)
+  sees which one to keep.
+- **A name** is held to `TunnelCredentialProtocol.IsServerName` (a DNS label: it goes into the server's
+  synthetic address) before minting, refused 400 in those words with nothing minted. Minting for a name
+  already listed adds a second credential; nothing is replaced.
+- **Outposts are minted here too**: a machine's credential is one for `outpost-<NAME>`
+  (`OutpostServerName`), and the list marks it by that name, as the relay tells a machine apart — the
+  verified name is what makes an outpost, not who minted it, and a household's machines are its owners'.
+- **Revoking is the caller's household's alone**: `TunnelCredentialStore.RevokeAsync(id, tenantId)` matches
+  the household and the id together (404 otherwise, nothing revoked or recorded) — `revoke-tunnel-credential`
+  names an id alone, and an id is no secret. It publishes the revocation as the command does, so the relay
+  closes the tunnel at once and refuses its reopen. Told, the answer leaves out the tunnel opened with that
+  credential without waiting for the close to land (the relay takes it out of its registry first thing);
+  not told, the revocation stands with `HouseholdServersAdmin.NotToldWarning` — the server stays connected
+  until its tunnel next reopens, and is refused then.
+- Summaries name the server, never the credential: "Minted a tunnel credential for server <name>",
+  "Revoked a tunnel credential of server <name>".
+- **The page** is `/admin/servers` (`HouseholdServersPage`, `HouseholdServersStore`, `HouseholdServersEffect`):
+  one article per server named by its name, its state and tools, each credential with Revoke behind a
+  confirmation, New credential, and the add form. A minted credential is shown in a `New credential` region
+  until the next change or a reload, never again; the effect asks the list again after a mint.
+
 ## The proxy
 
 `DockerCompose/caddy/Caddyfile`'s main host routes `handle /accounts/admin/*` to `accounts:8080` behind
@@ -332,7 +375,7 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
   exists for this (`DeploymentConformanceTests.TheAccountsService_AsksTheAgentsRelayWithTheAgentApisSecret`).
   An agent not configured, down, refusing or slower than `AgentListingTimeout` (appsettings, 15 s: the
   relay asks each server for its tools for up to ten) leaves that household's servers **null**, shown as
-  unknown, never a failed list. Owners' pages (07) read the same client. **Last seen** is the latest
+  unknown, never a failed list. Owners' pages (07) read the same client (`HouseholdServersAdmin`, "Own servers"). **Last seen** is the latest
   `Session.LastSeenAt` of any of the household's sessions — the session check's own record, at its
   five-minute grain — so a person who only uses Telegram or voice never moves it; what a household spends
   is the usage view's (08), read from the metrics, which this service never reads.
@@ -350,8 +393,24 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
   container command: a stolen dashboard session must not become a passkey).
 - Both mints are recorded on the household they are for, the link never in the summary. A link is in
   the answer alone; the page holds it in its state until "Done" or the page is left, and never asks again.
-- **09 adds suspension here**: its routes under `/operator/households/{householdId}/…`, its state as a
-  field of `HouseholdListEntry`, and its button in the list's row.
+- **Suspension** (`HouseholdSuspensionAdmin`): **`PUT /operator/households/{householdId}/suspension`**
+  `HouseholdSuspension { suspended }` sets `Tenant.SuspendedAt` (kept when already suspended, cleared on
+  resume), answered `AdminSaved<HouseholdSuspension { suspended, since }>`; the home is 400 (the
+  operator's own: nothing would be left to resume it from), no such household 404. Recorded as
+  "Suspended the household" / "Resumed the household" only when it changed; it is announced every time
+  (asking again is the retry): `HouseholdConfigSaved(id, HouseholdConfigProtocol.SuspensionSection)` so
+  every reader of the household's configuration drops what it kept, and on suspending
+  `HouseholdSuspended(id)` on `TunnelCredentialProtocol.SuspendedChannel` so the relay closes its open
+  tunnels; not told stands with `NotToldWarning`. **Nothing is deleted.** Each place that lets a
+  household in reads the row: the session check (`.claude/rules/accounts.md`), the agent's view
+  (`AgentHouseholdConfig.Suspended`, refused per message in `ConversationGroup`, `.claude/rules/channels.md`),
+  the tunnel verify (`TunnelCredentialRefusal.Suspended`) and a household server's back-call
+  (`TunnelCredentialStore.LiveAsync` answers none). The list's `HouseholdListEntry.SuspendedAt` and the
+  row's Status cell (Suspend / Resume, none for the home) are the dashboard's.
+- **Not stopped by it**: the owner's own `/accounts/*` pages (account, members) read their own cookie,
+  not the session check; dreaming still consolidates a suspended household's memories on its key once a
+  night (the `people` view says nothing of suspension). Resolutions (Telegram, voice) and the hub's
+  session refresh still answer, so a turn reaches the agent, which says why it was refused.
 
 ## The admin area (chat client)
 
@@ -397,6 +456,13 @@ be answered (`page.RouteAsync`); the E2E stack has no master key, so nothing the
 Seam 1 for keys is `KeysAdminTests` against `FakeKeyProviders`; the turn side of a refused key is
 `MultiAgentFactoryHouseholdTests` (`FakeOpenRouter.Refuse`).
 
+Own servers' seam 1 is `HouseholdServersAdminTests`, against the real relay (`RelayHost` and
+`TunnelledServer` from `Tests/Integration/Tunnels`, the relay's port taken first since accounts is told the
+relay's address and the relay the accounts service's): a server added through the admin route connects with
+the credential shown, is listed with its tools and then offline, and a credential revoked there closes its
+tunnel and is refused on the reopen. Seam 2 is `HouseholdServersE2ETests`, whose server is its own tagged name
+in the home, which no agent names: listed offline (the stack's real agent is asked) and revoked.
+
 Members' seam 1 is `HouseholdMembersAdminTests`, which checks a disabled member is nobody on every way in
 (the session check, the session refresh, `resolve` for voice and Telegram, `web-link`, a recovery link,
 `mint-session`) and that the agent's own reader says so (`HouseholdAccountStanding` over
@@ -412,4 +478,15 @@ secret). The owner's link enrolling a passkey into the new household is a ceremo
 signed in by `mint-link --operator` and `mint-session` (`CreateOperatorPageAsync`, which also answers
 the home's id), anybody else by `CreatePersonPageAsync(name, role)`, and the relay's listing a stub
 whose servers a test sets with `Connect(householdId, server)`. Its stack is its own, so a test may
-create, change and suspend households freely; the fixture is the one 08 and 09 extend.
+create, change and suspend households freely; the fixture is the one 08 and 09 extend. Its accounts
+service announces on the fixture's Redis; `OwnerSessionAsync(operatorPage, householdName)` mints a session
+for the owner of a household the operator created (found through the operator's page's own list), and
+`OpenAsAsync(session, path)` asks the host as that person's browser would over HTTP — the base fixture keeps
+one page open at a time, so a second person cannot have a page beside the operator's.
+
+Suspension's seam 1 is `HouseholdSuspensionAdminTests` (the route, the home refused, the announcements on a
+`RedisFixture`, the tunnel verify and back-call, the agent's reader seeing it and resuming) beside
+`SessionCheckTests` (the notice and the 403); seam 4 is `ChatMonitorAssertionTests` and
+`ChatMonitorDelegationTests` over `MonitorTestMocks.Households(suspended, from)` — a household suspended
+from its n-th asking, so a conversation already running is refused from its next message — and
+`TunnelRelayTests` (its tunnels closed `Suspended`, another household's left open).

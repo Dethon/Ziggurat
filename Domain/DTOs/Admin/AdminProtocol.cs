@@ -40,6 +40,11 @@ public static class AdminProtocol
     public static string OwnerRecovery(string householdId, string userId) =>
         $"{Households}/{Uri.EscapeDataString(householdId)}/owners/{Uri.EscapeDataString(userId)}/recovery";
 
+    // Whether a household runs: PUT a HouseholdSuspension to suspend it or resume it.
+    public const string SuspensionRoute = Households + "/{householdId}/suspension";
+
+    public static string Suspension(string householdId) => $"{Households}/{Uri.EscapeDataString(householdId)}/suspension";
+
     // The household's agents (AdminAgents): each one's name and custom instructions, its last few
     // versions and a restore of one, an agent added from a shipped template, one removed.
     public const string Agents = Household + "/agents";
@@ -67,6 +72,13 @@ public static class AdminProtocol
     // read, the spaces section saved whole).
     public const string Features = Household + "/features";
     public const string Spaces = Household + "/spaces";
+
+    // The household's own servers (AdminServers): a tunnel credential minted for a server by name, and
+    // one revoked, which closes the tunnel it opened.
+    public const string Servers = Household + "/servers";
+
+    public static string RevokeServerCredential(string credentialId) =>
+        $"{Servers}/credentials/{Uri.EscapeDataString(credentialId)}/revoke";
 
     // Every admin request carries this header with this value. A cross-site form cannot set a
     // header, and a cross-origin script that does is preflighted, which nothing here answers: so a
@@ -141,8 +153,9 @@ public sealed record NewHousehold(string Name, string OwnerName);
 public sealed record OwnerLink(string HouseholdId, string UserId, string DisplayName, string Url, DateTimeOffset ExpiresAt);
 
 // One household as the operator's list shows it: its people by role, the servers connected to the
-// agent's relay now (null when the agent could not be asked), and when any of its people's sessions
-// was last seen by the session check (null when none ever was).
+// agent's relay now (null when the agent could not be asked), when any of its people's sessions was
+// last seen by the session check (null when none ever was), and since when it is suspended (null
+// while it runs).
 [PublicAPI]
 public sealed record HouseholdListEntry(
     string Id,
@@ -152,10 +165,16 @@ public sealed record HouseholdListEntry(
     IReadOnlyList<HouseholdPerson> Owners,
     IReadOnlyList<HouseholdPerson> Members,
     IReadOnlyList<HouseholdConnectedServer>? ConnectedServers,
-    DateTimeOffset? LastSeenAt);
+    DateTimeOffset? LastSeenAt,
+    DateTimeOffset? SuspendedAt = null);
 
 [PublicAPI]
 public sealed record HouseholdPerson(string UserId, string DisplayName, bool IsOperator);
 
 [PublicAPI]
 public sealed record HouseholdConnectedServer(string Name, DateTimeOffset ConnectedSince);
+// A household suspended or resumed by the operator: sent with Suspended alone, answered with since when
+// it is suspended (null once resumed). While suspended its sessions, turns, fires and tunnels are all
+// refused, and nothing of it is deleted.
+[PublicAPI]
+public sealed record HouseholdSuspension(bool Suspended, DateTimeOffset? Since = null);
