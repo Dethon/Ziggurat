@@ -669,6 +669,34 @@ public sealed class StreamingServiceTests : IDisposable
         running.SetResult();
     }
 
+    // The send's own wire is the only one sure to carry what the hub answers before any turn: a
+    // refusal (signed out, disabled, a model that cannot see the file) completes the topic's
+    // stream before a resume that claimed the topic can open its wire, and "Session not found" is
+    // never on the topic's stream at all. A new conversation's first message is exactly this race —
+    // selecting the topic starts a resume — so the refusal was never shown and the message sat
+    // unanswered.
+    [Fact]
+    public async Task SendMessageAsync_AResumeClaimedTheTopic_AndTheSendIsRefused_TheRefusalIsShownOnce()
+    {
+        const string refusal = "This device was signed out, so this message has not been answered.";
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _messagingService.HoldTheSendAnswer();
+        _messagingService.EnqueueError(refusal);
+        var send = _service.SendMessageAsync(topic, "hello");
+
+        var resumed = _topicStreams.TryBeginResume(topic.TopicId)!;
+        _topicStreams.TryShowResumed(resumed, new ChatMessageModel { Role = "assistant" }, null).ShouldBeTrue();
+        _topicStreams.Read(resumed, _ => Task.CompletedTask);
+        _messagingService.LetTheSendAnswer();
+        await send;
+
+        await Eventually.Until(() => MessagesFor(topic.TopicId).Any(m => m.IsError), "the refusal to be shown");
+        await Eventually.Settle();
+        MessagesFor(topic.TopicId).Where(m => m.IsError).Select(m => m.Content).ShouldBe([refusal]);
+        _toastStore.State.Toasts.Select(t => t.Message).ShouldBe([refusal]);
+    }
+
     [Fact]
     public async Task TryStartResumeStreamAsync_PreservesTheContentAlreadyStreamed()
     {

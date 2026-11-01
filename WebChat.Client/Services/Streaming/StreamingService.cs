@@ -155,12 +155,54 @@ public sealed class StreamingService(
 
         // Nothing back means a resume claimed the topic while this send was waiting, so the
         // reply is already being read. Both readers are on the topic's one stream server side,
-        // so the one holding the topic delivers what this send asked for too.
-        topicStreams.TryOpen(
+        // so the one holding the topic delivers what this send asked for too — every chunk of a
+        // turn. Not what the hub answers instead of a turn: a refusal completes the topic's
+        // stream before the resume's wire is open, and "Session not found" is never on it, so
+        // this wire is still read for that. A new conversation's first message is this race
+        // every time, since selecting the topic starts a resume.
+        var opened = topicStreams.TryOpen(
             topic.TopicId,
             new ChatMessageModel { Role = "assistant" },
             currentMessageId: null,
             lease => ProcessStreamAsync(topic, chunks, lease));
+        if (opened is null)
+        {
+            _ = ShowRefusalsOfAsync(topic, chunks);
+        }
+    }
+
+    // The losing wire's errors, and nothing else: its content is the holder's to show, and the two
+    // wires share no numbering to merge chunks by.
+    private async Task ShowRefusalsOfAsync(StoredTopic topic, IAsyncEnumerable<ChatStreamMessage> chunks)
+    {
+        try
+        {
+            await foreach (var chunk in chunks)
+            {
+                if (chunk.Error is { } error && !TransientErrorFilter.IsTransientErrorMessage(error))
+                {
+                    ShowErrorOnce(topic.TopicId, error);
+                }
+            }
+        }
+        catch
+        {
+            // The holder's wire answers for the reply; a drop on this one says nothing new.
+        }
+    }
+
+    // Once, whichever wire it came on: two readers of one topic can both carry the same answer, and
+    // the toast store already keeps one of each.
+    private void ShowErrorOnce(string topicId, string error)
+    {
+        dispatcher.Dispatch(new ShowError(error));
+        if (messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId) is { Count: > 0 } shown
+            && shown[^1] is { IsError: true } last && last.Content == error)
+        {
+            return;
+        }
+
+        dispatcher.Dispatch(new AddMessage(topicId, CreateErrorMessage(error)));
     }
 
     // Null means the send could not be made and the user has been told. The send is theirs, so
@@ -208,8 +250,7 @@ public sealed class StreamingService(
                 {
                     if (!TransientErrorFilter.IsTransientErrorMessage(chunk.Error))
                     {
-                        dispatcher.Dispatch(new ShowError(chunk.Error));
-                        dispatcher.Dispatch(new AddMessage(topic.TopicId, CreateErrorMessage(chunk.Error)));
+                        ShowErrorOnce(topic.TopicId, chunk.Error);
                     }
 
                     continue;
