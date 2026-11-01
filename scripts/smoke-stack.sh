@@ -9,6 +9,10 @@
 #   scripts/smoke-stack.sh test    run the Smoke tests against it (Category=Smoke)
 #   scripts/smoke-stack.sh migrate --operator <n> --owner <n> --sugary <n> [--dry-run]
 #                                  the household migration against it
+#   scripts/smoke-stack.sh voice   the kit's voice server and a test satellite beside the running stack:
+#                                  two questions spoken to it (a sum, a one-minute timer), the answers
+#                                  heard back and the timer ringing on it, checked; Lemonade starts for
+#                                  it, on the CPU unless STT_BACKEND says otherwise
 #   scripts/smoke-stack.sh down    stop both and remove their state
 #
 # Everything here is local. The tests reach the stack on 127.0.0.1 alone, whatever the deployment's
@@ -17,9 +21,9 @@
 # the tenant kit's (TenantKit/): up mints a tunnel credential for each from the smoke stack's own
 # accounts service, for its home household, and starts the kit with them, its tunnels opened to this
 # machine's Caddy by the deployment's main host (TenantKit/docker-compose.override.smoke.yml). Web
-# search, the vault, the library, the sandbox and the printer start; voice, Home Assistant's server,
-# Home Assistant and Music Assistant never do — they reach satellites, the home and the LAN — so a
-# turn goes without them and is told they are offline. A household an owner keys here has its keys
+# search, the vault, the library, the sandbox and the printer start; Home Assistant's server, Home
+# Assistant and Music Assistant never do — they reach the home and the LAN — so a turn goes without
+# them and is told they are offline. Voice starts only for `voice`, dialling a test satellite alone. A household an owner keys here has its keys
 # sealed with a master key made for this smoke state, and probed against a stub (smoke-keys) that takes
 # every key, so no key is sent to a provider to be checked. Never point this at the deployment's host.
 
@@ -141,6 +145,15 @@ credentials() {
     done
     mv "$KIT_STATE/credentials.env.new" "$KIT_STATE/credentials.env"
   fi
+  # Voice's, minted the first time it is asked for, for the household the kit's vault serves.
+  if [[ "${1:-}" == voice ]] && ! grep -q '^TUNNEL_CREDENTIAL_VOICE=' "$KIT_STATE/credentials.env"; then
+    local household
+    household="$(docker exec accounts dotnet Accounts.dll list-tunnel-credentials \
+      | grep -o 'server vault of household [0-9a-f]\{32\}' | head -n 1 | awk '{print $NF}')"
+    [[ -n "$household" ]] || { echo "no vault credential to find the kit's household by" >&2; exit 1; }
+    echo "TUNNEL_CREDENTIAL_VOICE=$(docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household "$household" --server voice | tail -n 1)" \
+      >> "$KIT_STATE/credentials.env"
+  fi
   set -a
   # shellcheck disable=SC1091
   source "$KIT_STATE/credentials.env"
@@ -172,6 +185,26 @@ case "${1:-}" in
   test)
     ZIGGURAT_SMOKE=1 dotnet test Tests/Tests.csproj --filter "Category=Smoke"
     ;;
+  voice)
+    # Lemonade hears and speaks for voice (its back-call) and for this check. Its container name is
+    # the dev stack's too, so that one must not be running; its caches are the dev stack's volumes.
+    STT_BACKEND="${STT_BACKEND:-cpu}" "${DC[@]}" up -d --no-deps lemonade
+    retry curl -sf -o /dev/null http://127.0.0.1:13305/api/v1/health
+    credentials voice
+    SATELLITE="$KIT_STATE/satellite"
+    mkdir -p "$SATELLITE" && rm -f "$SATELLITE"/*.wav
+    python3 TenantKit/smoke/voice.py say "¿Cuánto es siete por ocho?" "$SATELLITE/q1.wav"
+    python3 TenantKit/smoke/voice.py say "Pon un temporizador de un minuto." "$SATELLITE/q2.wav"
+    "${KIT[@]}" --profile voice build mcp-channel-voice
+    # The satellite first: the hub dials it as it starts.
+    "${KIT[@]}" --profile voice up -d --no-deps --force-recreate test-satellite
+    "${KIT[@]}" --profile voice up -d --no-deps mcp-channel-voice
+    satellite="$(docker ps -q --filter label=com.docker.compose.project=tenant-kit-smoke \
+      --filter label=com.docker.compose.service=test-satellite)"
+    docker wait "$satellite" > /dev/null
+    docker logs "$satellite"
+    python3 TenantKit/smoke/voice.py check "$SATELLITE"
+    ;;
   migrate)
     # The household migration against the smoke stack, its people file in
     # DockerCompose/volumes/smoke/household-migration/people.json; the rest of the arguments are its.
@@ -180,7 +213,7 @@ case "${1:-}" in
     "${DC[@]}" --profile migrate run --rm --no-deps household-migration --people /input/people.json "$@"
     ;;
   down)
-    "${KIT[@]}" down --volumes --remove-orphans
+    "${KIT[@]}" --profile voice down --volumes --remove-orphans
     "${DC[@]}" down --volumes --remove-orphans
     # The containers wrote as their own users; a throwaway container removes what they wrote. Only
     # where there is something: bind-mounting a missing ./volumes makes Docker create it as root,
@@ -190,7 +223,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: $0 up|test|migrate|down" >&2
+    echo "usage: $0 up|test|voice|migrate|down" >&2
     exit 2
     ;;
 esac
