@@ -388,6 +388,21 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         installed["theme_color"]!.GetValue<string>().ShouldBe(kitchen.AccentColor);
     }
 
+    // The picker is the household's agents, in its configuration's order and under the names it gives
+    // them: the home's, for the people of the home this stack signs in.
+    [SkippableFact]
+    public async Task ThePicker_ShowsTheHouseholdsAgentsUnderItsNames()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await SelectAgentAsync(page);
+
+        await Assertions.Expect(page.Locator(".agent-seg:visible .agent-seg-name"))
+            .ToHaveTextAsync([.. WebChatStack.Agents.Agents.Select(agent => agent.Definition!.Name)]);
+    }
+
     // A slug that is none of the household's spaces is nobody's space to show: the page opens the
     // household's first space instead, under the deployment's own name.
     [SkippableFact]

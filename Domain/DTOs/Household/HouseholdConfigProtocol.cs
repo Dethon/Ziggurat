@@ -102,8 +102,16 @@ public sealed record HouseholdTelegramBot(string HouseholdId, string AgentId, st
 [PublicAPI]
 public sealed record HouseholdAgentNames(string? DefaultAgent, IReadOnlyList<HouseholdAgentName> Agents);
 
+// What a picker shows of an agent beside its name — its description, and the model and effort it runs
+// on, which only the household's configuration knows for an agent the deployment does not run itself.
+// Never its custom instructions.
 [PublicAPI]
-public sealed record HouseholdAgentName(string Id, string Name);
+public sealed record HouseholdAgentName(
+    string Id,
+    string Name,
+    string? Description = null,
+    string? Model = null,
+    string? ReasoningEffort = null);
 
 // The agent's view across households: each household, and the user ids of its people (none for a
 // household nobody has joined yet).

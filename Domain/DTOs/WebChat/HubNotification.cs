@@ -60,3 +60,7 @@ public record UserMessageNotification(
     DateTimeOffset? Timestamp,
     string? CorrelationId = null,
     string? SpaceSlug = null);
+
+// The agent registered its agents again. It carries no list: every household is shown its own agents,
+// so a client asks for its own (ChatHub.GetAgents) rather than being sent the home's.
+public record AgentsUpdatedNotification;

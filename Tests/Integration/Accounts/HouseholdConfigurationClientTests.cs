@@ -132,7 +132,7 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
         starting.Agents.Select(a => a.Id).ShouldBe(["jonas", "sugary"]);
         await Eventually.Until(
             async () => (await client.AgentNamesAsync(household, proof, CancellationToken.None)).Agents
-                .SequenceEqual([new HouseholdAgentName("chef", "Chef")]),
+                .Select(a => (a.Id, a.Name)).SequenceEqual([("chef", "Chef")]),
             "the saved agents to be listed");
     }
 
