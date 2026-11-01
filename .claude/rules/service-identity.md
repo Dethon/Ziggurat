@@ -116,7 +116,10 @@ not as whatever its claims would make it. The `TokenRefusal` is the reason a gat
 
 `JwksCache` fetches when first asked, answers from its copy for `KeysLifetime` (10 min), fetches
 again for a key id the copy lacks — how a rotated key is picked up without a restart — but never
-twice within `KeysRefetchInterval` (10 s), one fetch at a time. A failed fetch keeps the copy there
+twice within `KeysRefetchInterval` (10 s), one fetch at a time, each bounded by `KeysFetchTimeout`
+(5 s) inside the cache rather than by the host's `HttpClient` — every check the copy cannot answer
+waits on that one fetch, so an issuer that takes the connection and never answers is
+`KeysUnavailable` within the bound on every host alike. A failed fetch keeps the copy there
 was. The agent verifies its own delegations against its `SigningKeyStore` directly, which is also an
 `IVerificationKeys`.
 

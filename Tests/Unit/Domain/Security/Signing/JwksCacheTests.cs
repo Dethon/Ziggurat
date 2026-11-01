@@ -171,6 +171,22 @@ public class JwksCacheTests
         issuer.Fetches.ShouldBe(2);
     }
 
+    // An issuer that takes the connection and never answers is an issuer that cannot be reached, said
+    // within the fetch's own bound: every check waits on the one fetch in flight, so a fetch left to
+    // the host's HTTP default would hold every tool call, config proof and dashboard request with it.
+    [Fact]
+    public async Task AnIssuerThatNeverAnswers_IsRefusedAsKeysUnavailableOnceTheFetchTimesOut()
+    {
+        var clock = new ArmedClock(_clock.GetUtcNow());
+        var issuer = new Issuer(_current.PublishedKeys) { Gate = new TaskCompletionSource().Task };
+        var verifier = new TokenVerifier(TokenIssuers.Agent, new JwksCache(issuer.FetchAsync, clock, _settings), clock, _settings);
+
+        var verification = verifier.VerifyAsync(Token(_current), Audience);
+        await clock.AdvancePastAsync(_settings.KeysFetchTimeout);
+
+        (await verification).Refusal.ShouldBe(TokenRefusal.KeysUnavailable);
+    }
+
     // The issuer's JWKS endpoint, as a verifier's fetch sees it: whatever it publishes right now.
     private sealed class Issuer(JsonWebKeySet published)
     {

@@ -22,7 +22,11 @@
       "keysLifetime": "00:10:00",
 
       // The least time between two fetches a token naming an unknown key can cause.
-      "keysRefetchInterval": "00:00:10"
+      "keysRefetchInterval": "00:00:10",
+
+      // The longest one fetch of the issuer's keys may take: every check the copy cannot answer waits
+      // on the fetch in flight, so an issuer that never answers is reported unreachable this soon.
+      "keysFetchTimeout": "00:00:05"
     }
   }
 }
