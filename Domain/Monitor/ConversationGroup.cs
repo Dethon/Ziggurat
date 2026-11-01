@@ -58,7 +58,7 @@ internal sealed class ConversationGroup(
 
     // Why a turn or a fire did not act for the person it named: the household disabled them, or their
     // standing could not be read just now, which is never taken for good standing.
-    internal const string AccountDisabled = "AccountDisabled";
+    internal const string AccountDisabled = ChatMonitor.AccountDisabledErrorType;
     internal const string StandingUnreadable = "StandingUnreadable";
 
     // What a person whose household set no OpenRouter key is told: nothing was asked of any model, and

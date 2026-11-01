@@ -135,7 +135,7 @@
 
 @code {
     private HouseholdAgentsState _state = HouseholdAgentsState.Initial;
-    private readonly Dictionary<string, AgentDraft> _drafts = [];
+    private Dictionary<string, AgentDraft> _drafts = [];
     private string? _confirming;
     private string _template = "";
     private string _newName = "";
@@ -152,11 +152,7 @@
                 return;
             }
 
-            _drafts.Clear();
-            foreach (var agent in agents.Agents)
-            {
-                _drafts[agent.Id] = new AgentDraft { Name = agent.Name, Instructions = agent.CustomInstructions ?? "" };
-            }
+            _drafts = agents.Agents.ToDictionary(a => a.Id, DraftOf);
 
             _confirming = null;
             _newName = "";
@@ -171,7 +167,9 @@
     private AgentDraft Draft(AdminAgent agent) =>
         _drafts.TryGetValue(agent.Id, out var draft)
             ? draft
-            : _drafts[agent.Id] = new AgentDraft { Name = agent.Name, Instructions = agent.CustomInstructions ?? "" };
+            : _drafts[agent.Id] = DraftOf(agent);
+
+    private static AgentDraft DraftOf(AdminAgent agent) => new() { Name = agent.Name, Instructions = agent.CustomInstructions ?? "" };
 
     private void Save(string agentId)
     {

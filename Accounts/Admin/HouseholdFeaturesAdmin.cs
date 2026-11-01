@@ -30,33 +30,28 @@ public static class HouseholdFeaturesAdmin
             }
 
             var before = await store.ReadAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, ct);
-            switch (await store.SaveAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, document, ct))
-            {
-                case SectionSave.Invalid invalid:
-                    return Results.BadRequest(new AdminRefusal("The features were not saved.", invalid.Problems));
-                case SectionSave.Saved saved:
+            return await AdminSections.AnswerAsync(
+                await store.SaveAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, document, ct),
+                "The features were not saved.",
+                async saved =>
+                {
                     var after = (await store.ReadAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, ct))!;
                     await log.RecordAsync(http, caller, Summary(before ?? new FeaturesSection(), after), ct);
-                    return Results.Ok(new AdminSaved<FeaturesSection>(
-                        after, saved.NotTold is null ? null : HouseholdSettingsAdmin.NotToldWarning));
-                default:
-                    return Results.NotFound();
-            }
+                    return Results.Ok(new AdminSaved<FeaturesSection>(after, AdminSections.Warning(saved)));
+                });
         });
     }
 
     // Which features changed, by name: a summary never carries a value.
     private static string Summary(FeaturesSection before, FeaturesSection after)
     {
-        var changed = new (string Name, bool Changed)[]
-        {
+        var changed = AdminLog.Changed(
             ("scheduling", before.Scheduling != after.Scheduling),
             ("timers", before.Timers != after.Timers),
             ("Sugary", before.Sugary != after.Sugary),
             ("Idealista", before.Idealista != after.Idealista),
             ("memory", before.Memory != after.Memory),
-            ("workers", before.Workers != after.Workers)
-        }.Where(f => f.Changed).Select(f => f.Name).ToList();
+            ("workers", before.Workers != after.Workers));
         return changed.Count == 0 ? "Saved the features unchanged" : $"Changed the {string.Join(", ", changed)} features";
     }
 }
