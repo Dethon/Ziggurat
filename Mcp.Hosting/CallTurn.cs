@@ -31,7 +31,7 @@ public static class CallTurn
         // principal is: what a server sees there is the token's, or nobody's.
         public ConversationContext? Turn =>
             ConversationScope.Parse(call.Params?.Meta) is { } claimed
-                ? claimed with { Principal = PrincipalOf(call.Identity), Identity = call.Identity }
+                ? claimed with { Principal = call.Identity?.Principal, Identity = call.Identity }
                 : null;
 
         // The household the call acts for, through which a server reads its own section of that
@@ -64,12 +64,4 @@ public static class CallTurn
         }
     }
 
-    // A person is their account on the channel the token names; the guest is somebody on that
-    // channel with no account; nobody has no principal at all.
-    private static Principal? PrincipalOf(IdentityClaims? identity) => identity switch
-    {
-        null or { IsNobody: true } => null,
-        { IsGuest: true } => new Principal(identity.ChannelId, IdentityClaims.GuestSubject),
-        _ => new Principal(identity.ChannelId, identity.Subject, identity.Account)
-    };
 }

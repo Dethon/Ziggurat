@@ -73,6 +73,15 @@ public record IdentityClaims
     [JsonIgnore]
     public Account? Account => IsGuest || IsNobody ? null : new Account(TenantId, Subject);
 
+    // Who this is on the channel it names, as everything keyed by a principal reads it: a person is
+    // their account there, the guest somebody there with no account, nobody no principal at all.
+    [JsonIgnore]
+    public Principal? Principal => IsNobody
+        ? null
+        : IsGuest
+            ? new Principal(ChannelId, GuestSubject)
+            : new Principal(ChannelId, Subject, Account);
+
     public static IdentityClaims Person(string userId, string tenantId, string channelId, IReadOnlyList<string> roles)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userId);
