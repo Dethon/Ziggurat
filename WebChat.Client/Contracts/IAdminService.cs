@@ -32,6 +32,18 @@ public interface IAdminService
 
     Task<AdminAnswer<AdminAgents>> RestoreAgentVersionAsync(string agentId, string versionId);
 
+    Task<AdminAnswer<AdminMembers>> GetMembersAsync();
+
+    Task<AdminAnswer<MemberLink>> InviteMemberAsync(MemberInvite invite);
+
+    Task<AdminAnswer<AdminMembers>> SaveMemberAsync(string userId, MemberEdit edit);
+
+    Task<AdminAnswer<AdminMembers>> DisableMemberAsync(string userId);
+
+    Task<AdminAnswer<AdminMembers>> EnableMemberAsync(string userId);
+
+    Task<AdminAnswer<MemberLink>> MintMemberRecoveryAsync(string userId);
+
     Task<AdminAnswer<FeaturesSection>> GetFeaturesAsync();
 
     Task<AdminAnswer<FeaturesSection>> SaveFeaturesAsync(FeaturesSection features);

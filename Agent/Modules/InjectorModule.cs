@@ -149,6 +149,9 @@ public static class InjectorModule
                     settings.SharedServers,
                     sp.GetService<ILogger<HouseholdAgentSource>>()))
                 .AddSingleton<IAgentDefinitionProvider, AgentDefinitionProvider>()
+                // Who of a household an owner disabled, from the same view the turn's agents are built
+                // from: the monitor refuses their turns and believes no delegation naming them.
+                .AddSingleton<IAccountStanding>(sp => new HouseholdAccountStanding(sp.GetRequiredService<IHouseholdConfiguration>()))
                 // Read once the agent listens, and waited for by the channel connections, so their
                 // first registration carries the home's agents rather than none.
                 .AddSingleton(sp => new HomeAgentCatalog(
