@@ -29,6 +29,7 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
     public DbSet<HouseholdSection> HouseholdSections => Set<HouseholdSection>();
     public DbSet<HouseholdDataKey> HouseholdDataKeys => Set<HouseholdDataKey>();
     public DbSet<AdminChange> AdminChanges => Set<AdminChange>();
+    public DbSet<HouseholdKeyCheck> HouseholdKeyChecks => Set<HouseholdKeyCheck>();
 
     // An instant is kept as UTC, because not every provider has an offset type and SQLite cannot
     // order or compare the text of one.
@@ -123,6 +124,16 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
         dataKey.HasIndex(k => k.TenantId).IsUnique();
         dataKey.Property(k => k.MasterKeyId).HasMaxLength(IdLength);
         dataKey.HasOne<Tenant>().WithMany().HasForeignKey(k => k.TenantId).OnDelete(DeleteBehavior.Restrict);
+
+        var check = modelBuilder.Entity<HouseholdKeyCheck>();
+        check.Property(c => c.Id).HasMaxLength(IdLength);
+        check.Property(c => c.TenantId).HasMaxLength(IdLength);
+        check.Property(c => c.Key).HasMaxLength(Keys.HouseholdKeyChecks.KeyNameLength);
+        check.Property(c => c.Fingerprint).HasMaxLength(IdLength);
+        check.Property(c => c.State).HasMaxLength(16);
+        check.Property(c => c.Reason).HasMaxLength(Keys.HouseholdKeyChecks.ReasonLength);
+        check.HasIndex(c => new { c.TenantId, c.Key }).IsUnique();
+        check.HasOne<Tenant>().WithMany().HasForeignKey(c => c.TenantId).OnDelete(DeleteBehavior.Restrict);
 
         var change = modelBuilder.Entity<AdminChange>();
         change.Property(c => c.Id).HasMaxLength(IdLength);

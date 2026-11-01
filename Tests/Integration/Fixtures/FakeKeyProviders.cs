@@ -1,0 +1,88 @@
+using System.Collections.Concurrent;
+using System.Net;
+using System.Text;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+
+namespace Tests.Integration.Fixtures;
+
+// The three providers a household's keys are checked with, answered in process on one port and never
+// a real one: OpenRouter's key info, Idealista's token exchange and Telegram's getMe, each answering
+// a key as the test said — accepted, or a status of its own — and refusing any other with 401, as a
+// provider refuses a key it never issued.
+public sealed class FakeKeyProviders : IAsyncDisposable
+{
+    private const int Stalled = 0;
+
+    private readonly ConcurrentDictionary<string, int> _answers = new(StringComparer.Ordinal);
+    private readonly ConcurrentQueue<string> _asked = new();
+    private WebApplication _app = null!;
+    private int _port;
+
+    public string OpenRouterUrl => $"http://127.0.0.1:{_port}/api/v1/";
+
+    public string IdealistaUrl => $"http://127.0.0.1:{_port}/";
+
+    public string TelegramUrl => $"http://127.0.0.1:{_port}/";
+
+    // Every key a provider was asked about, in order (Idealista's by its API key).
+    public IReadOnlyList<string> Asked => [.. _asked];
+
+    public void Accept(string key) => _answers[key] = StatusCodes.Status200OK;
+
+    public void Answer(string key, HttpStatusCode status) => _answers[key] = (int)status;
+
+    // Never answers this key: the request is held until the asker gives up on it.
+    public void Stall(string key) => _answers[key] = Stalled;
+
+    public static async Task<FakeKeyProviders> StartAsync()
+    {
+        var fake = new FakeKeyProviders { _port = TestPort.GetAvailable() };
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.Logging.ClearProviders();
+        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, fake._port));
+        fake._app = builder.Build();
+
+        // Each takes more than the context, so none is read as a bare RequestDelegate whose IResult is dropped.
+        fake._app.MapGet("/api/v1/key", (HttpContext http, CancellationToken _) =>
+            fake.AnswerAsync(http, http.Request.Headers.Authorization.ToString().Replace("Bearer ", "", StringComparison.Ordinal),
+                """{"data":{"label":"sk-or-v1-...","usage":0}}"""));
+
+        fake._app.MapPost("/oauth/token", (HttpContext http, CancellationToken _) =>
+        {
+            var basic = http.Request.Headers.Authorization.ToString().Replace("Basic ", "", StringComparison.Ordinal);
+            var pair = Encoding.UTF8.GetString(Convert.FromBase64String(basic)).Split(':', 2);
+            return fake.AnswerAsync(http, pair[0], """{"access_token":"t","token_type":"bearer","expires_in":43199,"scope":"read"}""");
+        });
+
+        fake._app.MapGet("/{bot}/getMe", (string bot, HttpContext http) =>
+            fake.AnswerAsync(http, bot.StartsWith("bot", StringComparison.Ordinal) ? bot[3..] : "",
+                """{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"Test","username":"test_bot"}}"""));
+
+        await fake._app.StartAsync();
+        return fake;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _app.DisposeAsync();
+        TestPort.Release(_port);
+    }
+
+    private async Task<IResult> AnswerAsync(HttpContext http, string key, string accepted)
+    {
+        _asked.Enqueue(key);
+        switch (_answers.GetValueOrDefault(key, StatusCodes.Status401Unauthorized))
+        {
+            case Stalled:
+                await Task.Delay(Timeout.Infinite, http.RequestAborted).ContinueWith(_ => { }, CancellationToken.None);
+                return Results.Empty;
+            case StatusCodes.Status200OK:
+                return Results.Text(accepted, "application/json");
+            case var status:
+                return Results.Text("""{"error":"no"}""", "application/json", statusCode: status);
+        }
+    }
+}
