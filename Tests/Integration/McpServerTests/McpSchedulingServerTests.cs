@@ -69,6 +69,30 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
         await client.DisposeAsync();
     }
 
+    // The skill and the mount's description are served per session, before any call names a
+    // household, and cached for every household; a schedule is read in the calling household's zone.
+    // So neither names a zone — the server's would tell a household elsewhere that "nine" means nine
+    // in the deployment's zone — and both say local time: the zone today's date is given in.
+    [Fact]
+    public async Task McpServer_TheSkillAndTheMount_NameNoTimeZone_OnlyLocalTime()
+    {
+        var client = await ConnectAsync();
+
+        var skill = await client.ReadResourceAsync(
+            SkillServerResources.BodyAddress(SchedulingSkill.Name), cancellationToken: CancellationToken.None);
+        var body = string.Join("", skill.Contents.OfType<TextResourceContents>().Select(c => c.Text));
+        var mount = string.Join("", (await client.ReadResourceAsync("filesystem://schedules")).Contents
+            .OfType<TextResourceContents>().Select(c => c.Text));
+
+        foreach (var text in new[] { body, mount })
+        {
+            text.ShouldNotContain(TimeZoneInfo.Local.Id);
+            text.ShouldContain("local time");
+        }
+
+        await client.DisposeAsync();
+    }
+
     // The prompt is fetched for nobody and cached for every household, so it names no agent: the
     // catalogue the agent registers is the home's, and was shown to every household from here.
     [Fact]

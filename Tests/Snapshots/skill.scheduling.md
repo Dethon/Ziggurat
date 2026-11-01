@@ -1,4 +1,4 @@
-# scheduling — description 107 / 130 tokens, body 1121 / 1300 tokens, served by mcp-scheduling
+# scheduling — description 107 / 130 tokens, body 1110 / 1300 tokens, served by mcp-scheduling
 
 ================================================================================================
 
@@ -12,7 +12,7 @@ description: Creating, changing, running now or removing a scheduled task under 
 - `/schedules` — the root. Each immediate child directory is an **agent** you can schedule work for.
 - `/schedules/<agentId>/agent_info.json` — read this to learn what *another* agent does before scheduling against it.
 - `/schedules/<agentId>/<scheduleId>/schedule.json` — one schedule. `<scheduleId>` is a descriptive, unique id you choose (e.g. `morning-news`).
-- `/schedules/<agentId>/<scheduleId>/status.json` — read-only timing: `createdAt`, `lastRunAt`, `nextRunAt`, shown in the **Europe/Madrid** time zone.
+- `/schedules/<agentId>/<scheduleId>/status.json` — read-only timing: `createdAt`, `lastRunAt`, `nextRunAt`, shown in **local time**.
 
 ### Which agent to schedule against
 
@@ -26,11 +26,11 @@ Use another agent's directory only when the user asked for that agent by name, o
 
 - `prompt` (required) — the instruction delivered to the agent when the schedule fires.
 - `cron` **or** `runAt` — exactly one is required, and they are mutually exclusive.
-  - `cron` — a standard 5-field cron expression for a **recurring** schedule. Times are interpreted in the **Europe/Madrid** time zone and adjust automatically across daylight-saving changes. Examples:
-    - `"0 9 * * *"` — every day at 09:00 Europe/Madrid time
+  - `cron` — a standard 5-field cron expression for a **recurring** schedule. Times are **local time** — the time zone today's date is given in — and adjust automatically across daylight-saving changes. Examples:
+    - `"0 9 * * *"` — every day at 09:00 local time
     - `"0 */2 * * *"` — every 2 hours
-    - `"30 14 * * 1-5"` — weekdays at 14:30 Europe/Madrid time
-  - `runAt` — an ISO-8601 datetime for a **one-shot** schedule. You may include a time zone — `Z` for UTC (e.g. `2026-06-01T14:30:00Z`) or an explicit offset (e.g. `2026-06-01T16:30:00+02:00`) — or omit it, in which case it is read as **Europe/Madrid** local time (e.g. `2026-06-01T18:00:00`). It is stored as UTC and deleted automatically once it fires.
+    - `"30 14 * * 1-5"` — weekdays at 14:30 local time
+  - `runAt` — an ISO-8601 datetime for a **one-shot** schedule. You may include a time zone — `Z` for UTC (e.g. `2026-06-01T14:30:00Z`) or an explicit offset (e.g. `2026-06-01T16:30:00+02:00`) — or omit it, in which case it is read as **local time** (e.g. `2026-06-01T18:00:00`). It is stored as UTC and deleted automatically once it fires.
 - `userId` (optional) — the user the fired prompt should be attributed to.
 - `deliverTo` (optional) — a list of channel ids that should receive the result (e.g. `["signalr", "telegram"]`). Omit to use the configured default.
 
@@ -41,7 +41,7 @@ Use another agent's directory only when the user asked for that agent by name, o
 
   Add a voice target **only when the user explicitly asked to be notified by voice** (spoken aloud / announced). Otherwise omit voice — **silence is the default**. For example, a schedule that starts the air conditioning at night must NOT announce. Offline satellites are skipped silently. To keep tool-approval prompts answerable, list a non-voice channel first, e.g. `["signalr", "voice:fran-office-01"]`.
 
-A recurring schedule — every day at 09:00 Europe/Madrid time:
+A recurring schedule — every day at 09:00 local time:
 
 ```json
 {

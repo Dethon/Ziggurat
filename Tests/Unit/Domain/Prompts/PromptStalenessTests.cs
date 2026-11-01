@@ -214,7 +214,9 @@ public class PromptStalenessTests
             prompt.ShouldContain($"domain__filesystem__{tool}");
         }
 
-        prompt.ShouldContain("Europe/Madrid");
+        // The zone is the calling household's, so the skill names none: local time.
+        prompt.ShouldNotContain("Europe/Madrid");
+        prompt.ShouldContain("local time");
     }
 
     // The core directive tells the model never to hedge and never to add an unsolicited warning,
