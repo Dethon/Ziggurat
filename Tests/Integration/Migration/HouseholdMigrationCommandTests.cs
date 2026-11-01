@@ -1,15 +1,30 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using Accounts.Configuration;
+using Accounts.Store;
 using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
+using Domain.DTOs.Metrics;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
+using Domain.Metrics;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Memory;
 using Infrastructure.StateManagers;
 using McpServerSugary.Store;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using Observability.Hubs;
+using Observability.Services;
 using Shouldly;
+using StackExchange.Redis;
 using Tests.Integration.Fixtures;
+using Tests.Unit.Deployment;
 
 namespace Tests.Integration.Migration;
 
@@ -19,6 +34,20 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     : IClassFixture<HouseholdMigrationRedisFixture>
 {
     private const int Dimension = 4;
+    private const string JackToken = "1001:jack-token-of-the-home";
+    private const string JonasToken = "1002:jonas-token-of-the-home";
+
+    private const string IdealistaKey = "idealista-key-of-the-home";
+    private const string IdealistaSecret = "idealista-secret-of-the-home";
+
+    // What the operator pipes into the run from the deployment's .env, which held them as BOTS__0,
+    // BOTS__1 and IDEALISTA__*.
+    private const string HomeKeys = $$"""
+        {
+          "telegramBots": { "jack": { "token": "{{JackToken}}" }, "jonas": { "token": "{{JonasToken}}" } },
+          "idealista": { "apiKey": "{{IdealistaKey}}", "secret": "{{IdealistaSecret}}" }
+        }
+        """;
 
     private readonly string _tag = Guid.NewGuid().ToString("N")[..6];
 
@@ -132,14 +161,40 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         var (fran, ana) = (Fran(), Ana());
         var push = new RedisPushSubscriptionStore(redis.Connection);
         var phone = new PushSubscriptionDto($"https://push.example/{_tag}", "p256dh", "auth");
-        await push.SaveAsync(fran.WebChat, phone, $"kitchen-{_tag}");
+        await BeforeHouseholds.PhoneAsync(redis.Connection.GetDatabase(), fran.WebChat, phone, $"kitchen-{_tag}");
 
         var (exit, output) = await RunAsync(rig, fran, ana);
 
         exit.ShouldBe(0, output);
-        var franId = (await rig.AccountOfAsync(fran.TelegramId)).UserId;
-        (await push.GetBySpaceAsync($"kitchen-{_tag}")).ShouldBe([(franId, phone)]);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        (await push.GetBySpaceAsync(franAccount.TenantId, $"kitchen-{_tag}")).ShouldBe([(franAccount.UserId, phone)]);
         (await push.GetAllAsync()).ShouldNotContain(s => s.UserId == fran.WebChat);
+    }
+
+    // A space is the household's now, and so are the phones that hear of it: a phone already under
+    // its person's account, in a space every household shared, joins the home household's space.
+    [Fact]
+    public async Task ASpacesPhones_AreTheHomeHouseholdsSpacesPhones()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var push = new RedisPushSubscriptionStore(redis.Connection);
+        var phone = new PushSubscriptionDto($"https://push.example/space-{_tag}", "p256dh", "auth");
+        var elsewhere = new Account($"elsewhere{_tag}", $"laura{_tag}");
+        var hers = new PushSubscriptionDto($"https://push.example/elsewhere-{_tag}", "p256dh", "auth");
+        await push.SaveAsync(elsewhere, hers, $"porch-{_tag}");
+
+        var (first, _) = await RunAsync(rig, fran, ana);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        await BeforeHouseholds.PhoneAsync(db, franAccount.UserId, phone, $"porch-{_tag}");
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        first.ShouldBe(0);
+        exit.ShouldBe(0, output);
+        (await push.GetBySpaceAsync(franAccount.TenantId, $"porch-{_tag}")).ShouldBe([(franAccount.UserId, phone)]);
+        (await push.GetBySpaceAsync(elsewhere.TenantId, $"porch-{_tag}")).ShouldBe([(elsewhere.UserId, hers)]);
+        (await db.KeyExistsAsync($"push:space:porch-{_tag}")).ShouldBeFalse();
     }
 
     [Fact]
@@ -147,22 +202,49 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     {
         await using var rig = await MigrationRig.StartAsync(redis, Dimension);
         var (fran, ana) = (Fran(), Ana());
-        var schedules = new RedisScheduleStore(redis.Connection);
-        var byTelegram = await schedules.CreateAsync(Schedule(new Principal("telegram", fran.Telegram)));
-        var byChatClient = await schedules.CreateAsync(Schedule(new Principal("signalr", ana.WebChat.ToUpperInvariant())));
-        var byGuest = await schedules.CreateAsync(Schedule(new Principal("voice", "household")));
-        var fromBefore = await schedules.CreateAsync(Schedule(null));
+        var db = redis.Connection.GetDatabase();
+        var byTelegram = await BeforeHouseholds.ScheduleAsync(db, Schedule(new Principal("telegram", fran.Telegram)));
+        var byChatClient = await BeforeHouseholds.ScheduleAsync(db, Schedule(new Principal("signalr", ana.WebChat.ToUpperInvariant())));
+        var byGuest = await BeforeHouseholds.ScheduleAsync(db, Schedule(new Principal("voice", "household")));
+        var fromBefore = await BeforeHouseholds.ScheduleAsync(db, Schedule(null));
 
         var (exit, output) = await RunAsync(rig, fran, ana);
 
         exit.ShouldBe(0, output);
         var franAccount = await rig.AccountOfAsync(fran.TelegramId);
         var anaAccount = await rig.AccountOfAsync(ana.TelegramId);
-        (await schedules.GetAsync(byTelegram.Id))!.CreatedBy.ShouldBe(new Principal("telegram", fran.Telegram, franAccount));
-        (await schedules.GetAsync(byChatClient.Id))!.CreatedBy.ShouldBe(new Principal("signalr", anaAccount.UserId, anaAccount));
-        (await schedules.GetAsync(byGuest.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
-        (await schedules.GetAsync(fromBefore.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
-        (await schedules.GetAsync(fromBefore.Id))!.Prompt.ShouldBe(fromBefore.Prompt);
+        var home = franAccount.TenantId;
+        var schedules = new RedisScheduleStore(redis.Connection);
+        (await schedules.GetAsync(home, byTelegram.Id))!.CreatedBy.ShouldBe(new Principal("telegram", fran.Telegram, franAccount));
+        (await schedules.GetAsync(home, byChatClient.Id))!.CreatedBy.ShouldBe(new Principal("signalr", anaAccount.UserId, anaAccount));
+        (await schedules.GetAsync(home, byGuest.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
+        (await schedules.GetAsync(home, fromBefore.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
+        (await schedules.GetAsync(home, fromBefore.Id))!.Prompt.ShouldBe(fromBefore.Prompt);
+    }
+
+    // The deployment's schedules were all the home household's, so each is moved under it as it was —
+    // still due when it was due — and nothing is left under the shape from before households.
+    [Fact]
+    public async Task ASchedule_IsKeptUnderTheHomeHousehold_AndStillComesDue()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var bins = await BeforeHouseholds.ScheduleAsync(db,
+            Schedule(new Principal("telegram", fran.Telegram)) with { NextRunAt = DateTime.UtcNow.AddMinutes(-1) });
+        var schedules = new RedisScheduleStore(redis.Connection);
+        var elsewhere = await schedules.CreateAsync(Schedule(null) with { TenantId = $"elsewhere{_tag}" });
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var home = (await rig.AccountOfAsync(fran.TelegramId)).TenantId;
+        (await schedules.ListAsync(home)).Where(s => s.Prompt.EndsWith(_tag, StringComparison.Ordinal))
+            .Select(s => (s.Id, s.TenantId, s.Prompt)).ShouldBe([(bins.Id, home, bins.Prompt)]);
+        (await schedules.GetDueSchedulesAsync(DateTime.UtcNow)).ShouldContain(s => s.Id == bins.Id && s.TenantId == home);
+        (await db.KeyExistsAsync($"schedule:{bins.Id}")).ShouldBeFalse();
+        (await db.SetContainsAsync("schedules", bins.Id)).ShouldBeFalse();
+        (await schedules.GetAsync(elsewhere.TenantId, elsewhere.Id)).ShouldBe(elsewhere);
     }
 
     [Fact]
@@ -183,22 +265,62 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         exit.ShouldBe(0, output);
         var franAccount = await rig.AccountOfAsync(fran.TelegramId);
         var anaAccount = await rig.AccountOfAsync(ana.TelegramId);
-        (await threads.GetTopicAsync(anasTopic.AgentId, anasTopic.ChatId, anasTopic.TopicId)).ShouldBe(anasTopic with
+        var home = franAccount.TenantId;
+        (await threads.GetTopicAsync(home, anasTopic.AgentId, anasTopic.ChatId, anasTopic.TopicId)).ShouldBe(anasTopic with
         {
             OwnerId = anaAccount.UserId,
             TenantId = anaAccount.TenantId,
             Shared = true,
             OwnerName = ana.Name
         });
-        (await threads.GetTopicAsync(guestsTopic.AgentId, guestsTopic.ChatId, guestsTopic.TopicId)).ShouldBe(guestsTopic with
+        (await threads.GetTopicAsync(home, guestsTopic.AgentId, guestsTopic.ChatId, guestsTopic.TopicId)).ShouldBe(guestsTopic with
         {
             OwnerId = franAccount.UserId,
             TenantId = franAccount.TenantId,
             Shared = true
         });
-        (await threads.GetTopicAsync(someonesPrivate.AgentId, someonesPrivate.ChatId, someonesPrivate.TopicId))
+        (await threads.GetTopicAsync("home", someonesPrivate.AgentId, someonesPrivate.ChatId, someonesPrivate.TopicId))
             .ShouldBe(someonesPrivate);
-        (await threads.GetTopicAsync(aGroupsCopy.AgentId, aGroupsCopy.ChatId, aGroupsCopy.TopicId)).ShouldBe(aGroupsCopy);
+        (await threads.GetTopicAsync("home", aGroupsCopy.AgentId, aGroupsCopy.ChatId, aGroupsCopy.TopicId)).ShouldBe(aGroupsCopy);
+    }
+
+    // The deployment's topics were all the home household's, so each is moved under it as it was: still
+    // listed in its space, still found by what was said in it, its conversation still leading to it —
+    // and the search index from before households, which had no household to filter on, is gone.
+    // Another household's topic is nothing this run touches.
+    [Fact]
+    public async Task ATopic_IsListedAndSearchedInTheHomeHousehold_AndItsConversationStillLeadsToIt()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var threads = new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System);
+        await BeforeHouseholds.SearchIndexAsync(db);
+        var quince = await TopicAsync(threads, firstSender: ana.WebChat, text: $"quince{_tag} jelly");
+        var elsewhere = new TopicMetadata(Guid.NewGuid().ToString("N"), Random.Shared.NextInt64(1, long.MaxValue), 1,
+            "jonas", $"Topic {_tag}", DateTimeOffset.UtcNow, null, TenantId: $"elsewhere{_tag}", Shared: true);
+        await threads.SaveTopicAsync(elsewhere);
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        var franSees = new TopicViewer(franAccount.UserId, franAccount.TenantId);
+        var held = (await threads.GetTopicByChatIdAndThreadIdAsync(quince.AgentId, quince.ChatId, quince.ThreadId))
+            .ShouldNotBeNull();
+        held.TenantId.ShouldBe(franAccount.TenantId);
+        IReadOnlyList<TopicMetadata> found = [];
+        await Eventually.Until(
+            async () => (found = (await threads.SearchTopicsAsync("jonas", "default", franSees, $"quince{_tag}", null, 10)).Topics)
+                .Count > 0,
+            "the moved topic to be indexed");
+        found.Select(t => t.TopicId).ShouldBe([quince.TopicId]);
+        (await threads.GetTopicPageAsync("jonas", "default", franSees, null, 500)).Topics
+            .ShouldContain(t => t.TopicId == quince.TopicId);
+        (await db.KeyExistsAsync($"topic:jonas:{quince.ChatId}:{quince.TopicId}")).ShouldBeFalse();
+        (await db.KeyExistsAsync($"topicdoc:jonas:{quince.ChatId}:{quince.TopicId}")).ShouldBeFalse();
+        ((RedisResult[])(await db.ExecuteAsync("FT._LIST"))!).Select(i => i.ToString()).ShouldNotContain("idx:topics");
+        (await threads.GetTopicAsync(elsewhere.TenantId!, "jonas", elsewhere.ChatId, elsewhere.TopicId)).ShouldBe(elsewhere);
     }
 
     [Fact]
@@ -250,17 +372,320 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         (await his.Foods.Select(f => f.Name).ToListAsync()).ShouldBe(["Pan de molde"]);
     }
 
+    // The collector keys by household from the deploy on, so the day of the deploy is in both shapes
+    // when the run comes: what the dashboard counted before is the home's, added to what it counted since.
+    [Fact]
+    public async Task TheRollUpsFromBeforeHouseholds_AreTheHomeHouseholds_AddedToWhatItCountedSince()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        (await RunAsync(rig, fran, ana)).Exit.ShouldBe(0);
+        var home = (await rig.AccountOfAsync(fran.TelegramId)).TenantId;
+        var day = Day();
+        var db = redis.Connection.GetDatabase();
+        var collector = new MetricsCollectorService(
+            redis.Connection, Mock.Of<IHubContext<MetricsHub>>(h => h.Clients.All == Mock.Of<IClientProxy>()),
+            NullLogger<MetricsCollectorService>.Instance);
+        await SeedLegacyRollUpsAsync(day, input: 100, error: $"Vault gone {_tag}");
+        await collector.ProcessEventAsync(
+            new TokenUsageEvent
+            {
+                Sender = "fran", Model = "z-ai/glm-5", InputTokens = 20, OutputTokens = 0, Cost = 0m,
+                TenantId = home, Timestamp = Noon(day)
+            },
+            db);
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        output.ShouldContain("Metric roll-ups");
+        var query = new MetricsQueryService(redis.Connection);
+        (await query.GetSummaryAsync(day, day, home)).InputTokens.ShouldBe(120);
+        (await query.GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, day, day, home))
+            .Select(e => e.InputTokens).ShouldBe([100, 20], ignoreOrder: true);
+        (await query.GetRecentErrorsAsync(household: home)).ShouldContain(e => e.Message == $"Vault gone {_tag}");
+        (await query.GetHouseholdsAsync()).ShouldContain(home);
+        (await db.KeyExistsAsync(LegacyKey("totals", day))).ShouldBeFalse();
+        (await db.KeyTimeToLiveAsync(MetricKeys.Daily(MetricKeys.Tokens, home, day))).ShouldNotBeNull();
+    }
+
+    // The chat client's spaces were a list in its own settings, the same for everybody; they are the
+    // home household's configuration now, and each opens on whatever agent was picked in it.
+    [Fact]
+    public async Task TheHomeHouseholdsSpaces_AreTheChatClientsList()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var home = (await rig.AccountOfAsync(fran.TelegramId)).TenantId;
+        var spaces = await rig.Accounts.Service<HouseholdConfigStore>().ReadAsync(home, HouseholdSections.SpacesSchema, CancellationToken.None);
+        spaces.ShouldNotBeNull().Spaces.Select(s => (s.Slug, s.Name, s.AccentColor, s.DefaultAgent, s.Order))
+            .ShouldBe([("default", "Main", "#e9601f", (string?)null, 0), ("x", "X", "#e3c727", (string?)null, 1)]);
+    }
+
+    // Spaces an owner saved before the migration ran are theirs, and the list is not put over them.
+    [Fact]
+    public async Task AHomeHouseholdThatSavedItsSpaces_KeepsThem()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var store = rig.Accounts.Service<HouseholdConfigStore>();
+        var home = await rig.HomeHouseholdAsync();
+        var kitchen = new SpacesSection { Spaces = [HouseholdSpace.Default with { Slug = "kitchen", Name = "Kitchen" }] };
+        (await store.SaveAsync(home, HouseholdSections.SpacesSchema, HouseholdSections.SpacesSchema.Write(kitchen), CancellationToken.None))
+            .ShouldBeOfType<SectionSave.Saved>();
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        (await store.ReadAsync(home, HouseholdSections.SpacesSchema, CancellationToken.None)).ShouldNotBeNull().Spaces.Select(s => s.Slug)
+            .ShouldBe(["kitchen"]);
+        output.ShouldContain("already saved");
+    }
+
+    // The home's agents were the agent's settings' four, the same for every turn: they are its own
+    // configuration now, seeded whole, its days read in the deployment's zone, and every feature its
+    // agents used on — Idealista too, which a new household starts without.
+    [Fact]
+    public async Task TheHomeHousehold_IsGivenTheDeploymentsZone_TodaysAgents_AndEveryFeature()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var home = (await rig.AccountOfAsync(fran.TelegramId)).TenantId;
+        var store = rig.Accounts.Service<HouseholdConfigStore>();
+        var settings = (await store.ReadAsync(home, HouseholdSections.SettingsSchema, CancellationToken.None)).ShouldNotBeNull();
+        settings.TimeZone.ShouldBe(TimeZoneInfo.Local.Id);
+        settings.Language.ShouldBeNull();
+        var agents = (await store.ReadAsync(home, HouseholdSections.AgentsSchema, CancellationToken.None)).ShouldNotBeNull();
+        agents.DefaultAgent.ShouldBe("jonas");
+        agents.Agents.Select(a => a.Id).ShouldBe(["jack", "jonas", "nabu", "sugary"]);
+        HouseholdSections.AgentsSchema.Write(agents).ToJsonString()
+            .ShouldBe(HouseholdSections.AgentsSchema.Write(HomeAgents.Section()).ToJsonString());
+        (await store.ReadAsync(home, HouseholdSections.FeaturesSchema, CancellationToken.None))
+            .ShouldBe(new FeaturesSection { Idealista = true });
+        output.ShouldContain("jack, jonas, nabu, sugary");
+    }
+
+    // Agents an owner or the operator saved before the migration ran are theirs.
+    [Fact]
+    public async Task AHomeHouseholdThatSavedItsAgents_KeepsThem()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var store = rig.Accounts.Service<HouseholdConfigStore>();
+        var home = await rig.HomeHouseholdAsync();
+        var own = new AgentsSection { Agents = [new HouseholdAgent { Id = "ana", Template = "jonas", Name = "Ana" }] };
+        (await store.SaveAsync(home, HouseholdSections.AgentsSchema, HouseholdSections.AgentsSchema.Write(own), CancellationToken.None))
+            .ShouldBeOfType<SectionSave.Saved>();
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        (await store.ReadAsync(home, HouseholdSections.AgentsSchema, CancellationToken.None)).ShouldNotBeNull().Agents
+            .Select(a => a.Id).ShouldBe(["ana"]);
+    }
+
+    // The jack and jonas bots and Idealista's keys were the deployment's .env; they are the home's own
+    // keys now, each sealed like any secret and answered to its own server alone: the bots, each
+    // bound to the agent it always answered as, to Telegram, and Idealista's to Idealista on a call
+    // made for one of the household's people. They arrive on the run's input, never on its command
+    // line or in a file of the volume.
+    [Fact]
+    public async Task TheHomesKeys_AreSealed_AndEachAnsweredToItsOwnServer()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await RunAsync(rig, fran, ana, input: HomeKeys, "--home-keys", "-");
+
+        exit.ShouldBe(0, output);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        var home = franAccount.TenantId;
+        await using var telegram = rig.Reader(ConfigurationReader.Telegram);
+        await using var idealista = rig.Reader(ConfigurationReader.Idealista);
+        (await telegram.TelegramBotsAsync(CancellationToken.None)).Where(b => b.HouseholdId == home)
+            .ShouldBe([new HouseholdTelegramBot(home, "jack", JackToken), new HouseholdTelegramBot(home, "jonas", JonasToken)],
+                ignoreOrder: true);
+        (await idealista.IdealistaKeysAsync(home, MigrationRig.IdealistaCall(franAccount), CancellationToken.None))
+            .ShouldBe(new IdealistaKeys(IdealistaKey, IdealistaSecret));
+        await using (var db = await rig.Accounts.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync())
+        {
+            var stored = (await db.HouseholdSections.SingleAsync(s => s.TenantId == home && s.Section == HouseholdSections.Keys)).Document;
+            new[] { JackToken, JonasToken, IdealistaKey, IdealistaSecret }.ShouldAllBe(secret => !stored.Contains(secret));
+        }
+
+        output.ShouldContain("jack, jonas");
+        output.ShouldContain("Idealista");
+        new[] { JackToken, JonasToken, IdealistaKey, IdealistaSecret }.ShouldAllBe(secret => !output.Contains(secret));
+    }
+
+    // The operator may have saved the home's Idealista keys before the run, the deployment's having
+    // left Idealista's server on the deploy: those are kept, and the bots are seeded beside them.
+    [Fact]
+    public async Task AnIdealistaKeySavedBeforeTheRun_IsKept_AndTheBotsAreSeededBesideIt()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var store = rig.Accounts.Service<HouseholdConfigStore>();
+        var home = await rig.HomeHouseholdAsync();
+        var own = new KeysSection { Idealista = new IdealistaKeys("idealista-set-by-hand", "secret-set-by-hand") };
+        (await store.SaveAsync(home, HouseholdSections.KeysSchema, HouseholdSections.KeysSchema.Write(own), CancellationToken.None))
+            .ShouldBeOfType<SectionSave.Saved>();
+
+        var (exit, output) = await RunAsync(rig, fran, ana, input: HomeKeys, "--home-keys", "-");
+
+        exit.ShouldBe(0, output);
+        var keys = (await store.ReadAsync(home, HouseholdSections.KeysSchema, CancellationToken.None)).ShouldNotBeNull();
+        keys.Idealista.ShouldBe(own.Idealista);
+        keys.TelegramBots.Select(b => (b.Key, b.Value.Token)).ShouldBe([("jack", JackToken), ("jonas", JonasToken)], ignoreOrder: true);
+        output.ShouldContain("Idealista's keys the household already held are kept");
+    }
+
+    // A run given no keys seeds none and says how, so the steps before and after still run.
+    [Fact]
+    public async Task ARunGivenNoKeys_SeedsNone_AndSaysHow()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        output.ShouldContain("--home-keys");
+        await using var db = await rig.Accounts.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        (await db.HouseholdSections.AnyAsync(s => s.Section == HouseholdSections.Keys)).ShouldBeFalse();
+    }
+
+    // A file that is not the home's keys — a bot of an agent the home does not have, half of
+    // Idealista's pair, the OpenRouter key the home never had of its own — migrates nothing, and no
+    // value is ever printed.
+    [Theory]
+    [InlineData("""{ "telegramBots": { "jack": "1001:jack-token" } }""")]
+    [InlineData("""{ "telegramBots": { "Jack": { "token": "1001:jack-token" } } }""")]
+    [InlineData("""{ "telegramBots": { "jak": { "token": "1001:jack-token" } } }""")]
+    [InlineData("""{ "telegramBots": { "jack": { "token": "" } } }""")]
+    [InlineData("""{ "jack": { "token": "1001:jack-token" } }""")]
+    [InlineData("""{ "idealista": { "apiKey": "1001:jack-token" } }""")]
+    [InlineData("""{ "idealista": { "apiKey": "1001:jack-token", "secret": " " } }""")]
+    [InlineData("""{ "openRouter": { "apiKey": "1001:jack-token" } }""")]
+    [InlineData("""{ }""")]
+    [InlineData("not json 1001:jack-token")]
+    public async Task AKeysFileThatIsNotTheHomesKeys_MigratesNothing(string file)
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+
+        var (exit, output) = await RunAsync(rig, fran, ana, input: file, "--home-keys", "-");
+
+        exit.ShouldBe(2, output);
+        output.ShouldContain("nothing was migrated");
+        output.ShouldNotContain("1001:jack-token");
+        await using var db = await rig.Accounts.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        (await db.Users.CountAsync()).ShouldBe(0);
+    }
+
+    // The whole migration over the home as the deployment held it: a dry run names a move under every
+    // step, writes nothing anywhere, and counts exactly the changes the run then makes.
+    [Fact]
+    public async Task ADryRun_ReportsEveryStepsMoves_AndWritesNothingAnywhere()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        await SeedTheHomeAsync(rig, fran, ana);
+        var before = await SnapshotAsync(rig);
+
+        var (exit, output) = await RunAsync(rig, fran, ana, input: HomeKeys, "--dry-run", "--home-keys", "-");
+
+        exit.ShouldBe(0, output);
+        output.ShouldContain("dry run");
+        output.ShouldNotContain("nothing to move");
+        output.ShouldContain("telegramBots: jack, jonas");
+        output.ShouldContain($"'{fran.Telegram}'");
+        output.ShouldContain($"'{fran.Voice}' renamed");
+        var wouldBe = Changes(output, "would be made");
+        (await SnapshotAsync(rig)).ShouldBe(before);
+        var run = await RunAsync(rig, fran, ana, input: HomeKeys, "--home-keys", "-");
+        run.Exit.ShouldBe(0, run.Output);
+        Changes(run.Output, "made").ShouldBe(wouldBe, run.Output);
+    }
+
+    // After the run the home is what its people knew, read the way the channels read it now — by
+    // household and by account: each person's topics in each space, listed and found by what was said,
+    // the schedules still due, the phones in their spaces, and the configuration every reader is
+    // answered, the chat client's spaces on a signed-in person's assertion.
+    [Fact]
+    public async Task AfterTheRun_ASignedInPersonSeesTheirTopicsSchedulesAndSpaces()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var before = await SeedTheHomeAsync(rig, fran, ana);
+
+        var (exit, output) = await RunAsync(rig, fran, ana, input: HomeKeys, "--home-keys", "-");
+
+        exit.ShouldBe(0, output);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        var anaAccount = await rig.AccountOfAsync(ana.TelegramId);
+        var home = anaAccount.TenantId;
+        await using var chatClient = rig.Reader(ConfigurationReader.ChatClient);
+        (await chatClient.SpacesAsync(home, await rig.SignedInAsync(anaAccount), CancellationToken.None)).Spaces
+            .Select(s => (s.Slug, s.Name)).ShouldBe([("default", "Main"), ("x", "X")]);
+
+        var threads = new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System);
+        var anaSees = new TopicViewer(anaAccount.UserId, home);
+        (await threads.GetTopicPageAsync("jonas", "default", anaSees, null, 500)).Topics
+            .ShouldContain(t => t.TopicId == before.Dinner.TopicId && t.OwnerId == anaAccount.UserId);
+        (await threads.GetTopicPageAsync("jonas", "x", anaSees, null, 500)).Topics
+            .ShouldContain(t => t.TopicId == before.Trip.TopicId && t.OwnerId == franAccount.UserId);
+        IReadOnlyList<TopicMetadata> found = [];
+        await Eventually.Until(
+            async () => (found = (await threads.SearchTopicsAsync("jonas", "default", anaSees, $"quince{_tag}", null, 10)).Topics)
+                .Count > 0,
+            "the moved topic to be found by what was said in it");
+        found.Select(t => t.TopicId).ShouldBe([before.Dinner.TopicId]);
+        (await threads.GetTopicByChatIdAndThreadIdAsync("jonas", before.Dinner.ChatId, before.Dinner.ThreadId))
+            .ShouldNotBeNull().TopicId.ShouldBe(before.Dinner.TopicId);
+
+        var schedules = new RedisScheduleStore(redis.Connection);
+        (await schedules.ListAsync(home)).Where(s => s.Prompt.EndsWith(_tag, StringComparison.Ordinal))
+            .Select(s => (s.Id, s.CreatedBy?.Account))
+            .ShouldBe([(before.Bins.Id, franAccount), (before.Nobodys.Id, franAccount)], ignoreOrder: true);
+        (await schedules.GetDueSchedulesAsync(DateTime.UtcNow)).ShouldContain(s => s.Id == before.Bins.Id && s.TenantId == home);
+
+        var push = new RedisPushSubscriptionStore(redis.Connection);
+        (await push.GetBySpaceAsync(home, "default")).ShouldContain((anaAccount.UserId, before.AnasPhone));
+        (await push.GetBySpaceAsync(home, "x")).ShouldContain((franAccount.UserId, before.FransPhone));
+
+        await using var agent = rig.Reader(ConfigurationReader.Agent);
+        await using var telegram = rig.Reader(ConfigurationReader.Telegram);
+        await using var idealista = rig.Reader(ConfigurationReader.Idealista);
+        var configured = await agent.ForAgentAsync(home, CancellationToken.None);
+        configured.IsHome.ShouldBeTrue();
+        configured.Agents.Agents.Select(a => a.Id).ShouldBe(["jack", "jonas", "nabu", "sugary"]);
+        configured.Features.Idealista.ShouldBeTrue();
+        (await telegram.TelegramBotsAsync(CancellationToken.None)).Where(b => b.HouseholdId == home).Select(b => b.AgentId)
+            .ShouldBe(["jack", "jonas"], ignoreOrder: true);
+        (await idealista.IdealistaKeysAsync(home, MigrationRig.IdealistaCall(anaAccount), CancellationToken.None))
+            .ShouldBe(new IdealistaKeys(IdealistaKey, IdealistaSecret));
+    }
+
     [Fact]
     public async Task RunningItAgain_ChangesNothingAndSaysSo()
     {
         await using var rig = await MigrationRig.StartAsync(redis, Dimension);
         var (fran, ana) = (Fran(), Ana());
-        await SeedEverythingAsync(rig, fran, ana);
-        var first = await RunAsync(rig, fran, ana);
+        await SeedTheHomeAsync(rig, fran, ana);
+        var first = await RunAsync(rig, fran, ana, input: HomeKeys, "--home-keys", "-");
         first.Exit.ShouldBe(0, first.Output);
         var migrated = await SnapshotAsync(rig);
 
-        var (exit, output) = await RunAsync(rig, fran, ana);
+        var (exit, output) = await RunAsync(rig, fran, ana, input: HomeKeys, "--home-keys", "-");
 
         exit.ShouldBe(0, output);
         output.ShouldContain("Nothing changed");
@@ -269,31 +694,11 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     }
 
     [Fact]
-    public async Task ADryRun_SaysWhatItWouldDoAndWritesNothingAnywhere()
-    {
-        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
-        var (fran, ana) = (Fran(), Ana());
-        await SeedEverythingAsync(rig, fran, ana);
-        var before = await SnapshotAsync(rig);
-
-        var (exit, output) = await RunAsync(rig, fran, ana, "--dry-run");
-
-        exit.ShouldBe(0, output);
-        output.ShouldContain("dry run");
-        output.ShouldContain($"'{fran.Telegram}'");
-        output.ShouldContain($"'{fran.Voice}' renamed");
-        output.ShouldContain("would be made");
-        (await SnapshotAsync(rig)).ShouldBe(before);
-        (await RunAsync(rig, fran, ana)).Exit.ShouldBe(0);
-        (await SnapshotAsync(rig)).ShouldNotBe(before);
-    }
-
-    [Fact]
     public async Task ARunNamingSomebodyTheFileDoesNotList_MigratesNothing()
     {
         await using var rig = await MigrationRig.StartAsync(redis, Dimension);
         var (fran, ana) = (Fran(), Ana());
-        await SeedEverythingAsync(rig, fran, ana);
+        await SeedTheHomeAsync(rig, fran, ana);
         var before = await SnapshotAsync(rig);
 
         var (exit, output) = await rig.RunAsync(
@@ -305,26 +710,79 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         (await SnapshotAsync(rig)).ShouldBe(before);
     }
 
-    private async Task SeedEverythingAsync(MigrationRig rig, Person fran, Person ana)
+    // The dashboard's lists as the collector kept them before households: one set for everybody.
+    private async Task SeedLegacyRollUpsAsync(DateOnly day, int input, string error)
     {
+        var db = redis.Connection.GetDatabase();
+        var usage = new TokenUsageEvent
+        {
+            Sender = "fran", Model = "z-ai/glm-5", InputTokens = input, OutputTokens = 0, Cost = 0m, Timestamp = Noon(day)
+        };
+        await db.SortedSetAddAsync(
+            LegacyKey("tokens", day), JsonSerializer.Serialize<MetricEvent>(usage, _metricJson),
+            usage.Timestamp.ToUnixTimeMilliseconds());
+        await db.KeyExpireAsync(LegacyKey("tokens", day), TimeSpan.FromDays(30));
+        await db.HashIncrementAsync(LegacyKey("totals", day), "tokens:input", input);
+        await db.KeyExpireAsync(LegacyKey("totals", day), TimeSpan.FromDays(30));
+        await db.ListLeftPushAsync(
+            MetricKeys.LegacyRecentErrors,
+            JsonSerializer.Serialize<MetricEvent>(
+                new ErrorEvent { Service = "agent", ErrorType = "Gone", Message = error, Timestamp = Noon(day) },
+                _metricJson));
+    }
+
+    private static readonly JsonSerializerOptions _metricJson = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+    private static string LegacyKey(string family, DateOnly day) => $"metrics:{family}:{day:yyyy-MM-dd}";
+
+    // A day of the class's own, so two tests' roll-ups never fall on one key.
+    private static DateOnly Day() => new DateOnly(2026, 1, 1).AddDays(Random.Shared.Next(0, 3000));
+
+    private static DateTimeOffset Noon(DateOnly day) => new(day.ToDateTime(new TimeOnly(12, 0)), TimeSpan.Zero);
+
+    // The home as the deployment held it on the day of the deploy: every shared store in the shape from
+    // before households — the topics and their search index, the spaces' phones, the schedules, the
+    // dashboard's roll-ups — and what the people kept under the names the channels gave them: their
+    // memories and the household's, a remembered login, a voice, the Sugary log. Two spaces, as the
+    // chat client shipped them, each with a topic and a phone.
+    private async Task<TheHome> SeedTheHomeAsync(MigrationRig rig, Person fran, Person ana)
+    {
+        var db = redis.Connection.GetDatabase();
+        await SeedLegacyRollUpsAsync(Day(), input: 7, error: $"Printer jammed {_tag}");
         await Memories().StoreAsync(Memory(fran.Telegram, $"Likes game meat {_tag}", [1, 0, 0, 0]));
         await Memories().StoreAsync(Memory("household", $"The cat is called Mus {_tag}", [1, 1, 0, 0]));
-        await new RedisPersonStateStore(redis.Connection, MigrationRig.StateKey)
-            .SaveAsync(fran.Name, new PersonState("{}", []));
-        await new RedisPushSubscriptionStore(redis.Connection)
-            .SaveAsync(ana.WebChat, new PushSubscriptionDto($"https://push.example/{_tag}", "p", "a"));
-        await new RedisScheduleStore(redis.Connection).CreateAsync(Schedule(new Principal("telegram", fran.Telegram)));
-        await TopicAsync(
-            new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System), ana.WebChat);
+        await new RedisPersonStateStore(redis.Connection, MigrationRig.StateKey).SaveAsync(fran.Name, new PersonState(
+            """{"cookies":[{"name":"sid","value":"abc","domain":".github.com"}],"origins":[]}""",
+            [new SiteLogin("github.com", ["github.com"], DateTimeOffset.UnixEpoch, null)]));
+        var anasPhone = new PushSubscriptionDto($"https://push.example/ana-{_tag}", "p", "a");
+        var fransPhone = new PushSubscriptionDto($"https://push.example/fran-{_tag}", "p", "a");
+        await BeforeHouseholds.PhoneAsync(db, ana.WebChat, anasPhone);
+        await BeforeHouseholds.PhoneAsync(db, fran.WebChat, fransPhone, "x");
+        var bins = await BeforeHouseholds.ScheduleAsync(db,
+            Schedule(new Principal("telegram", fran.Telegram)) with { NextRunAt = DateTime.UtcNow.AddMinutes(-1) });
+        var nobodys = await BeforeHouseholds.ScheduleAsync(db, Schedule(null));
+        await BeforeHouseholds.SearchIndexAsync(db);
+        var threads = new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System);
+        var dinner = await TopicAsync(threads, ana.WebChat, text: $"quince{_tag} jelly");
+        var trip = await TopicAsync(threads, fran.Telegram, owned: t => t with { SpaceSlug = "x" });
         Directory.CreateDirectory(Path.Combine(rig.Voices, fran.Voice));
         await File.WriteAllBytesAsync(Path.Combine(rig.Voices, fran.Voice, "take-1.wav"), [1]);
-        await using var db = await rig.Sugary.CreateDbContextAsync();
-        db.Meals.Add(new Meal
+        await using var sugary = await rig.Sugary.CreateDbContextAsync();
+        sugary.Meals.Add(new Meal
         {
             UserId = Owners.Unassigned, TenantId = Owners.Unassigned, Id = Guid.NewGuid(), EatenAt = DateTimeOffset.UtcNow
         });
-        await db.SaveChangesAsync();
+        await sugary.SaveChangesAsync();
+        return new TheHome(bins, nobodys, dinner, trip, anasPhone, fransPhone);
     }
+
+    private sealed record TheHome(
+        Schedule Bins, Schedule Nobodys, TopicMetadata Dinner, TopicMetadata Trip, PushSubscriptionDto AnasPhone,
+        PushSubscriptionDto FransPhone);
+
+    // The count a run's last line gives: "12 changes made", "12 changes would be made".
+    private static int Changes(string output, string made) =>
+        int.Parse(Regex.Match(output, $@"(\d+) changes? {made}\.").Groups[1].Value);
 
     // Everything the run could touch, as it stands: every Redis key with its serialized value, the
     // accounts service's people and links, the voices folder and the owners of the Sugary log's rows.
@@ -352,6 +810,7 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
             $"people={await accounts.Users.CountAsync()}",
             $"links={await accounts.Links.CountAsync()}",
             $"identities={await accounts.LinkedIdentities.CountAsync()}",
+            $"sections={string.Join(',', await accounts.HouseholdSections.OrderBy(s => s.Section).Select(s => s.Section + s.Document + s.UpdatedAt).ToListAsync())}",
             $"voices={string.Join(',', Directory.EnumerateFileSystemEntries(rig.Voices, "*", SearchOption.AllDirectories).Order())}",
             $"meals={string.Join(',', await sugary.Meals.IgnoreQueryFilters().Select(m => m.UserId).ToListAsync())}"
         ]));
@@ -392,20 +851,21 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     // A topic whose conversation began with a message the chat client stamped with whatever name its
     // picker sent, as every message did before accounts.
     private async Task<TopicMetadata> TopicAsync(
-        RedisThreadStateStore threads, string firstSender, Func<TopicMetadata, TopicMetadata>? owned = null)
+        RedisThreadStateStore threads, string firstSender, Func<TopicMetadata, TopicMetadata>? owned = null,
+        string? text = null)
     {
         var now = DateTimeOffset.UtcNow;
         var topic = new TopicMetadata(
             Guid.NewGuid().ToString("N"), Random.Shared.NextInt64(1, long.MaxValue), Random.Shared.NextInt64(1, 1_000_000),
             "jonas", $"Topic {_tag}", now, now, "default");
         topic = owned?.Invoke(topic) ?? topic;
-        await threads.SaveTopicAsync(topic);
+        await BeforeHouseholds.TopicAsync(redis.Connection.GetDatabase(), topic, text);
         var first = new ChatMessage(ChatRole.User, "What's for dinner?");
         first.SetSenderId(firstSender);
         await threads.AppendMessagesAsync(
             new AgentKey($"{topic.ChatId}:{topic.ThreadId}", topic.AgentId).ToString(),
             [first, new ChatMessage(ChatRole.Assistant, "Pasta.")]);
-        return (await threads.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId))!;
+        return topic;
     }
 
     private static object Entry(Person p, params string[] oldNames) => new
@@ -420,7 +880,11 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
 
     // Fran runs the deployment and owns the household; the Sugary log was Ana's.
     private static Task<(int Exit, string Output)> RunAsync(MigrationRig rig, Person fran, Person ana, params string[] extra) =>
+        RunAsync(rig, fran, ana, input: null, extra);
+
+    private static Task<(int Exit, string Output)> RunAsync(
+        MigrationRig rig, Person fran, Person ana, string? input, params string[] extra) =>
         rig.RunAsync(
-            new[] { Entry(fran), Entry(ana) },
+            new[] { Entry(fran), Entry(ana) }, input,
             ["--operator", fran.Name, "--owner", fran.Name, "--sugary", ana.Name, .. extra]);
 }

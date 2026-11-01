@@ -97,24 +97,20 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
         await using var server = await TunnelledServer.StartAsync(_relay.Hub, credential.Credential, "vault");
         await ConnectedAsync(_relay, "vault");
-        var definitions = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        definitions.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions
-        {
-            Agents = [new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["vault"] }]
-        });
+        AgentDefinition[] agents = [new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["vault"] }];
         var factory = new MultiAgentFactory(
             new ServiceCollection()
                 .AddSingleton(new CallTokens(_keys, TimeProvider.System))
                 .AddSingleton(_relay.OwnServers)
                 .AddSingleton(new Mock<IThreadStateStore>().Object)
                 .BuildServiceProvider(),
-            new AgentDefinitionProvider(definitions.Object, new CustomAgentRegistry()),
+            FixedHouseholdAgents.Provider(new CustomAgentRegistry(), agents),
             new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
             Mock.Of<IDomainToolRegistry>(r =>
                 r.GetToolsForFeatures(It.IsAny<IEnumerable<string>>(), It.IsAny<FeatureConfig>()) == Enumerable.Empty<AIFunction>()
                 && r.GetPromptsForFeatures(It.IsAny<IEnumerable<string>>()) == Enumerable.Empty<PromptSection>()));
 
-        await using var agent = factory.Create(
+        await using var agent = await factory.CreateAsync(
             new AgentKey("conv-1", "jonas"), "fran", "jonas", Mock.Of<IToolApprovalHandler>(), tenantId: _household);
         var session = await agent.CreateSessionAsync();
 
@@ -284,7 +280,6 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         OpenRouter = new global::Agent.Settings.OpenRouterConfiguration { ApiUrl = "http://test", ApiKey = "test" },
         Redis = new global::Agent.Settings.RedisConfiguration { ConnectionString = "localhost" },
         BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
-        Agents = [],
         AgentApi = new global::Agent.Settings.AgentApiConfiguration { SharedSecret = AgentCredential }
     };
 

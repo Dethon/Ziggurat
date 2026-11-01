@@ -1,3 +1,4 @@
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 
@@ -39,4 +40,7 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
 
     public Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug) =>
         liveConnection.InvokeAsync("JoinSpace", spaceSlug);
+
+    public Task<HubResult<IReadOnlyList<HouseholdSpace>>> GetSpacesAsync() =>
+        liveConnection.InvokeAsync<IReadOnlyList<HouseholdSpace>>("GetSpaces");
 }

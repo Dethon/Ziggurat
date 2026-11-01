@@ -363,6 +363,60 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         configured.Select(p => p.Key).ShouldNotContain(key => key.Equals("users", StringComparison.OrdinalIgnoreCase));
     }
 
+    // A space is its household's configuration: its name and colour on the page and in the manifest an
+    // install reads, and the agent it opens on when the person picked none there.
+    [SkippableFact]
+    public async Task ASpace_OpensWithItsHouseholdsNameColourAndAgent()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var kitchen = WebChatStack.Kitchen;
+
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.DefaultSpaceUrl + kitchen.Slug);
+
+        await Assertions.Expect(page.Locator(".agent-seg.on:visible").First)
+            .ToContainTextAsync("Vision Agent", new LocatorAssertionsToContainTextOptions { Timeout = 60_000 });
+        await Assertions.Expect(page).ToHaveTitleAsync(new Regex($"{kitchen.Name}$"));
+        await page.WaitForFunctionAsync(
+            "color => getComputedStyle(document.documentElement).getPropertyValue('--space-accent').trim() === color",
+            kitchen.AccentColor);
+        var manifestHref = await page.Locator("link[rel=manifest]").GetAttributeAsync("href");
+        var manifest = await page.APIRequest.GetAsync(new Uri(new Uri(fixture.WebChatUrl), manifestHref).ToString());
+        var installed = JsonNode.Parse(await manifest.TextAsync())!.AsObject();
+        installed["short_name"]!.GetValue<string>().ShouldBe(kitchen.Name);
+        installed["start_url"]!.GetValue<string>().ShouldBe($"/{kitchen.Slug}");
+        installed["theme_color"]!.GetValue<string>().ShouldBe(kitchen.AccentColor);
+    }
+
+    // The picker is the household's agents, in its configuration's order and under the names it gives
+    // them: the home's, for the people of the home this stack signs in.
+    [SkippableFact]
+    public async Task ThePicker_ShowsTheHouseholdsAgentsUnderItsNames()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await SelectAgentAsync(page);
+
+        await Assertions.Expect(page.Locator(".agent-seg:visible .agent-seg-name"))
+            .ToHaveTextAsync([.. WebChatStack.Agents.Agents.Select(agent => agent.Definition!.Name)]);
+    }
+
+    // A slug that is none of the household's spaces is nobody's space to show: the page opens the
+    // household's first space instead, under the deployment's own name.
+    [SkippableFact]
+    public async Task ASlugThatIsNoSpaceOfTheHousehold_OpensItsFirstSpace()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.DefaultSpaceUrl + "nowhere");
+        await SelectAgentAsync(page);
+
+        await Assertions.Expect(page).ToHaveTitleAsync("Herfluffness' Assistants");
+    }
+
     // The proxy sends a page with no session to sign in, and sign-in brings it back to where it was
     // going, as the account whose passkey answered. A real ceremony, against Chromium's virtual
     // authenticator, through the stack's own Caddy and accounts service.

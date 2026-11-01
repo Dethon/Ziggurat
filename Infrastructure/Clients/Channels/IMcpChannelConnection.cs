@@ -27,6 +27,9 @@ namespace Infrastructure.Clients.Channels;
 //   review copy's background copy only logs the second (ADR 0046).
 // - Messages yields forever. The agent's read loop awaits messages for the process lifetime, so a
 //   reconnect is invisible to it; a completed sequence would end the loop.
+// - Domain's IAlertChannel, which the same type implements, keeps the shape of the approval offer:
+//   OfferAlertAsync is false (not dismissed here), SettleAlertAsync returns silently, and Alerts,
+//   like Messages, yields forever.
 //
 // The first three of those members are on Domain's IChannelConnection, which the same type
 // implements. Only the run verb is here, because it is the only one a supervisor calls.

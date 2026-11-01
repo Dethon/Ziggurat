@@ -42,7 +42,7 @@ public sealed class PushSubscriptions(IConnectionMultiplexer redis, IPushSubscri
                         if (theirs)
                         {
                             var (subscription, space) = Read(phone);
-                            await store.SaveAsync(person.UserId!, subscription, space, ct: ct);
+                            await store.SaveAsync(person.Account!, subscription, space, ct: ct);
                         }
 
                         // The save clears the old name's entry only where the endpoint still named it as

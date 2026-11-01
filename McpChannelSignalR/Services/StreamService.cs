@@ -195,13 +195,21 @@ public sealed class StreamService(
             const string body = "The agent has finished responding";
             var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(
                 session.AgentId, session.ChatId, session.ThreadId);
-            if (topic is { IsPrivate: true, OwnerId: { } owner })
+
+            // A space is its household's, so a topic recording none — or none held — has no space
+            // whose phones may hear of it.
+            if (topic?.TenantId is not { } household)
             {
-                await pushNotificationService.SendToPersonAsync(owner, spaceSlug, title, body, url);
                 return;
             }
 
-            await pushNotificationService.SendToSpaceAsync(spaceSlug, title, body, url);
+            if (topic is { IsPrivate: true, OwnerId: { } owner })
+            {
+                await pushNotificationService.SendToPersonAsync(new Account(household, owner), spaceSlug, title, body, url);
+                return;
+            }
+
+            await pushNotificationService.SendToSpaceAsync(household, spaceSlug, title, body, url);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

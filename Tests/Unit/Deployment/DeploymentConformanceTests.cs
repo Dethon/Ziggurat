@@ -1,5 +1,6 @@
 using System.Globalization;
 using Accounts.Internal;
+using Accounts.Settings;
 using Agent.App;
 using Agent.Modules;
 using Domain.DTOs.Channel;
@@ -10,6 +11,7 @@ using McpServerSugary.Channel;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Shouldly;
+using Tests.E2E.Fixtures;
 
 namespace Tests.Unit.Deployment;
 
@@ -32,6 +34,22 @@ public class DeploymentConformanceTests
         hosts.ShouldNotBeEmpty();
         hosts.ShouldAllBe(h => h.Body.Contains("import tls_{$CADDY_TLS:cloudflare}"));
         DeploymentFiles.Compose().Service("caddy").Environment.ShouldNotContainKey("CADDY_TLS");
+    }
+
+    // Every section's words are a markdown document embedded into Domain, and the build context
+    // drops markdown: a context that lost them builds images whose agents have no prompt.
+    [Fact]
+    public void ThePromptDocuments_ReachEveryImagesBuildContext()
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var ignore = DeploymentFiles.DockerIgnore();
+        var documents = Directory
+            .EnumerateFiles(Path.Combine(root, "Domain", "Prompts"), "*.md", SearchOption.AllDirectories)
+            .Select(file => Path.GetRelativePath(root, file).Replace('\\', '/'))
+            .ToList();
+
+        documents.ShouldNotBeEmpty();
+        documents.ShouldAllBe(document => !ignore.Excludes(document));
     }
 
     // A household's server opens its tunnel through the proxy on the main host, to the relay in the
@@ -163,10 +181,10 @@ public class DeploymentConformanceTests
     [InlineData("OPENROUTER__APIKEY", new[] { "agent" })]
     [InlineData("LOGINS__STATEKEY", new[] { "household-migration" })]
     [InlineData("HOUSEHOLD_MIGRATION_SECRET", new[] { "accounts", "household-migration" })]
-    [InlineData("BOTS__0__BOTTOKEN", new[] { "mcp-channel-telegram" })]
-    [InlineData("BOTS__1__BOTTOKEN", new[] { "mcp-channel-telegram" })]
+    [InlineData("TELEGRAM_SHARED_BOT_TOKEN", new[] { "mcp-channel-telegram" })]
     [InlineData("WEBPUSH__PRIVATEKEY", new[] { "mcp-channel-signalr", "mcp-sugary" })]
     [InlineData("AGENTAPI__SHAREDSECRET", new[] { "agent", "accounts" })]
+    [InlineData("HOUSEHOLD_CONFIG_MASTER_KEY", new[] { "accounts" })]
     public void ASecret_ReachesOnlyTheServicesThatReadIt(string variable, string[] readers)
     {
         DeploymentFiles.Compose().Services.Values
@@ -445,6 +463,9 @@ public class DeploymentConformanceTests
     [Theory]
     [InlineData("mcp-channel-signalr")]
     [InlineData("mcp-channel-telegram")]
+    [InlineData("mcp-idealista")]
+    [InlineData("mcp-scheduling")]
+    [InlineData("mcp-sugary")]
     public void TheAccountsServicesCallers_PresentTheirOwnMcpCredential(string caller)
     {
         var compose = DeploymentFiles.Compose();
@@ -464,9 +485,10 @@ public class DeploymentConformanceTests
             .ShouldAllBe(caller => compose.Services.ContainsKey(caller));
     }
 
-    // The service confines each caller to its own channel — the agent to tunnel credentials — by the
-    // name compose gives it (InternalCallers), so a caller renamed on one side and not the other
-    // would be refused everything it asks.
+    // The service confines each caller to its own channel — the agent to tunnel credentials, a shared
+    // server to its own view of a household's configuration — by the name compose gives it
+    // (InternalCallers), so a caller renamed on one side and not the other would be refused
+    // everything it asks.
     [Fact]
     public void EveryChannelCallerOfTheAccountsService_IsOneItKnowsTheChannelOf()
     {
@@ -477,7 +499,10 @@ public class DeploymentConformanceTests
             .Select(k => k["CALLERS__".Length..])
             .Where(caller => caller != HouseholdImportApi.Caller)
             .ShouldBe(
-                [InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Agent],
+                [
+                    InternalCallers.SignalR, InternalCallers.Telegram, InternalCallers.Agent,
+                    InternalCallers.Idealista, InternalCallers.Scheduling, InternalCallers.Sugary
+                ],
                 ignoreOrder: true);
     }
 
@@ -792,6 +817,34 @@ public class DeploymentConformanceTests
         migration.Profiles.ShouldBe(["migrate"]);
         migration.Ports.ShouldBeEmpty();
         migration.DependsOn.ShouldBe(["base-sdk", "redis", "accounts"], ignoreOrder: true);
+    }
+
+    // The accounts service spells Sugary's channel again (it references no server), and the assertion
+    // Sugary forwards as its proof of a household must name the channel Sugary is.
+    [Fact]
+    public void TheSugaryChannelTheAccountsServiceHoldsAssertionsTo_IsSugarysOwn() =>
+        InternalCallers.SugaryChannel.ShouldBe(SugaryChannel.ChannelId);
+
+    // The one secret households' configuration adds: the master key their data keys are wrapped with,
+    // a placeholder shipped empty and handed to the accounts service as the setting it reads.
+    [Fact]
+    public void TheHouseholdConfigMasterKey_IsAnEmptyPlaceholderTheAccountsServiceReads()
+    {
+        DeploymentFiles.Placeholders()["HOUSEHOLD_CONFIG_MASTER_KEY"].ShouldBeEmpty();
+        DeploymentFiles.Compose().Service("accounts").Environment.GetValueOrDefault("HOUSEHOLDCONFIG__MASTERKEY")
+            .ShouldBe("${HOUSEHOLD_CONFIG_MASTER_KEY}");
+    }
+
+    // A shared server proves which household it asks about with the agent's call token it was handed,
+    // and the agent proves itself with one of its own, so the accounts service checks them against the
+    // keys the agent publishes on the compose network — the address its default names too.
+    [Fact]
+    public void TheAccountsService_ChecksCallTokensAgainstTheAgentsKeys()
+    {
+        var expected = $"http://agent:8080{AgentKeysApi.Path}";
+
+        DeploymentFiles.Compose().Service("accounts").Environment.GetValueOrDefault("AGENTKEYSURL").ShouldBe(expected);
+        AccountsSettings.DefaultAgentKeysUrl.ShouldBe(expected);
     }
 
     // The household import can make the operator and mint their link, so the accounts service admits

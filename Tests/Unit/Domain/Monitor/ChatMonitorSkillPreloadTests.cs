@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Domain.Judgments;
 using Domain.Monitor;
@@ -169,6 +170,25 @@ public class ChatMonitorSkillPreloadTests
         caller.Sender.ShouldBe("fran");
         caller.AgentId.ShouldBe("jonas");
         caller.ConversationId.ShouldBe("conv-1");
+    }
+
+    // A household's preload is its call: asked on the key its agent pays with, and counted under it.
+    [Fact]
+    public async Task ThePreload_IsPaidByTheHouseholdTheAgentWasBuiltFor()
+    {
+        var payer = new ModelPayer("0123456789abcdef0123456789abcdef", new ModelKey("household-key"));
+        var agent = MonitorTestMocks.CreateAgent();
+        agent.Skills = [_home];
+        agent.PaidBy = payer;
+        var judge = new DelayingJudge(new ArmedClock(), TimeSpan.Zero, Sure(_home.Name));
+        var metrics = new RecordingMetricsPublisher();
+        var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage(content: "enciende la luz"));
+        var monitor = Monitor(agent, channel, recall: null, new SkillPreloader(judge, _settings, TimeProvider.System, metrics));
+
+        await monitor.Monitor(CancellationToken.None);
+
+        judge.Asked.ShouldHaveSingleItem().Caller.Payer.ShouldBe(payer);
+        metrics.Published.OfType<SkillPreloadEvent>().ShouldHaveSingleItem().TenantId.ShouldBe(payer.TenantId);
     }
 
     private sealed class CallerRecordingJudge : IJudge

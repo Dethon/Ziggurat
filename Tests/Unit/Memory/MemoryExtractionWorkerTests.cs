@@ -1,6 +1,10 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
 using Domain.Judgments;
 using Domain.Memory;
 using Infrastructure.Memory;
@@ -32,6 +36,9 @@ public class MemoryExtractionWorkerTests
     {
         // No judge configured: every judgment is absent and the worker behaves as it always has.
         _worker = Worker(StubJudge.Absent(AbsenceReason.Unconfigured));
+        // Agents a stack names in code, whose calls are the deployment's.
+        _agentDefinitionProvider.Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(HouseholdAgents.Fixed([]));
     }
 
     private MemoryExtractionWorker Worker(IJudge judge, MemoryJudgmentSettings? settings = null) =>
@@ -67,7 +74,7 @@ public class MemoryExtractionWorkerTests
 
         await worker.ProcessRequestAsync(Current("hola, ¿qué tal?"), CancellationToken.None);
 
-        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Never);
         var evt = published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem();
         evt.Outcome.ShouldBe(MemoryExtractionOutcomes.Gated);
         evt.CandidateCount.ShouldBe(0);
@@ -78,7 +85,7 @@ public class MemoryExtractionWorkerTests
     public async Task ProcessRequestAsync_WhenAnyAnswerIsAboveTheBar_ExtractsAsBefore()
     {
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), "user1", It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), "user1", It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         var published = Recording();
         var worker = Worker(StubJudge.Nouls(("fact", 0.05), ("preference", 0.05), ("instruction", 0.9)));
@@ -87,7 +94,7 @@ public class MemoryExtractionWorkerTests
 
         _extractor.Verify(e => e.ExtractAsync(
             It.Is<IReadOnlyList<ChatMessage>>(w => w.Count == 1 && w[0].Text == "a partir de ahora háblame de tú"),
-            "user1", It.IsAny<CancellationToken>()), Times.Once);
+            "user1", It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Once);
         published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem().Outcome.ShouldBe(MemoryExtractionOutcomes.Empty);
     }
 
@@ -95,20 +102,20 @@ public class MemoryExtractionWorkerTests
     public async Task ProcessRequestAsync_WhenTheJudgeIsAbsent_ExtractsAsBefore()
     {
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         var worker = Worker(StubJudge.Absent(AbsenceReason.Deadline));
 
         await worker.ProcessRequestAsync(Current("hola"), CancellationToken.None);
 
-        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task ProcessRequestAsync_WithJudgmentsDisabled_AsksNothing()
     {
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         var judge = StubJudge.Nouls(_nothingLasting);
         var worker = Worker(judge, new MemoryJudgmentSettings { Enabled = false });
@@ -116,7 +123,7 @@ public class MemoryExtractionWorkerTests
         await worker.ProcessRequestAsync(Current("hola"), CancellationToken.None);
 
         judge.Requests.ShouldBeEmpty();
-        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     // The state Jev reads is the window as fields: the text turns as context, the current message
@@ -152,7 +159,7 @@ public class MemoryExtractionWorkerTests
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new OperationCanceledException());
         var published = Recording();
         var worker = Worker(StubJudge.Absent(AbsenceReason.Unconfigured));
@@ -183,6 +190,23 @@ public class MemoryExtractionWorkerTests
         evt.StoredCount.ShouldBe(1);
     }
 
+    // Each candidate checked against what is already stored is embedded on the shared Lemonade, and
+    // counts against the household the turn was for, as the extraction itself does.
+    [Fact]
+    public async Task ProcessRequestAsync_EachCandidatesEmbeddingAndTheExtraction_CountAgainstTheTurnsHousehold()
+    {
+        ExtractorReturns(Fact("Trabaja en Globex"), Fact("Vive en Madrid"));
+        var published = Recording();
+        var worker = Worker(Verifying(_ => Verified(0.9)));
+
+        await worker.ProcessRequestAsync(
+            Current("trabajo en Globex y vivo en Madrid") with { TenantId = "home" }, CancellationToken.None);
+
+        published.OfType<LemonadeUsageEvent>().Where(e => e.Use == LemonadeUse.Embedding)
+            .Select(e => (e.Amount, e.TenantId)).ShouldBe([(1, "home"), (1, "home")]);
+        published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem().TenantId.ShouldBe("home");
+    }
+
     private static readonly (string, double)[] _somethingLasting = [("fact", 0.9), ("preference", 0.05), ("instruction", 0.05)];
 
     private static JudgmentOutcome Verified(double supported, double aboutUser = 0.9, double durable = 0.9, double notAQuestion = 0.9) =>
@@ -197,7 +221,7 @@ public class MemoryExtractionWorkerTests
     private void ExtractorReturns(params ExtractionCandidate[] candidates)
     {
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(candidates);
         _embeddingService
             .Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -301,7 +325,7 @@ public class MemoryExtractionWorkerTests
     public async Task ProcessRequestAsync_PublishesAJudgmentEvent_ForAnAnsweredAndForAnAbsentCall(bool answered)
     {
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         var published = Recording();
         var worker = Worker(answered ? StubJudge.Nouls(_nothingLasting) : StubJudge.Absent(AbsenceReason.Error));
@@ -334,6 +358,7 @@ public class MemoryExtractionWorkerTests
                 It.Is<IReadOnlyList<ChatMessage>>(w =>
                     w.Count == 1 && w[0].Text == "Hello, I work at Contoso"),
                 "user1",
+                It.IsAny<ModelPayer>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([candidate]);
 
@@ -391,6 +416,7 @@ public class MemoryExtractionWorkerTests
             .Setup(e => e.ExtractAsync(
                 It.IsAny<IReadOnlyList<ChatMessage>>(),
                 It.IsAny<string>(),
+                It.IsAny<ModelPayer>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([candidate]);
 
@@ -434,6 +460,7 @@ public class MemoryExtractionWorkerTests
             .Setup(e => e.ExtractAsync(
                 It.IsAny<IReadOnlyList<ChatMessage>>(),
                 It.IsAny<string>(),
+                It.IsAny<ModelPayer>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
@@ -462,7 +489,7 @@ public class MemoryExtractionWorkerTests
         _threadStateStore.Setup(s => s.GetMessagesAsync("thread-key-6"))
             .ReturnsAsync([new ChatMessage(ChatRole.User, "I work at Contoso")]);
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([new ExtractionCandidate("Works at Contoso", MemoryCategory.Fact, 0.8, 0.9, [], null)]);
         _embeddingService
             .Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -491,7 +518,7 @@ public class MemoryExtractionWorkerTests
     public async Task ProcessRequestAsync_WhenEveryAttemptFails_PublishesFailed()
     {
         _extractor
-            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("transient"));
 
         var published = new List<MetricEvent>();
@@ -511,11 +538,92 @@ public class MemoryExtractionWorkerTests
         _store.Verify(s => s.StoreAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
+    private const string Household = "0123456789abcdef0123456789abcdef";
+
+    private void HouseholdWithKey(string? key) =>
+        _agentDefinitionProvider.Setup(p => p.ForHouseholdAsync(Household, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HouseholdAgents
+            {
+                HouseholdId = Household,
+                Agents = [],
+                Configuration = new AgentHouseholdConfig(
+                    Household, false, new HouseholdSettings { Name = "Casa", TimeZone = "UTC" }, new AgentsSection(),
+                    new FeaturesSection(), new SpacesSection(), key)
+            });
+
+    // Extraction is the household's call: the gate and the extractor are both asked on its key, and
+    // what they cost is counted under it.
+    [Fact]
+    public async Task ProcessRequestAsync_ForAHousehold_AsksTheJudgeAndTheExtractorOnItsKey()
+    {
+        HouseholdWithKey("casa-key");
+        var payer = new ModelPayer(Household, new ModelKey("casa-key"));
+        _extractor
+            .Setup(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        var judge = StubJudge.Nouls(("fact", 0.9), ("preference", 0.05), ("instruction", 0.05));
+
+        await Worker(judge).ProcessRequestAsync(Current("hola") with { TenantId = Household }, CancellationToken.None);
+
+        judge.Requests.ShouldHaveSingleItem().Caller.Payer.ShouldBe(payer);
+        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), "user1", payer, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A household of its own with no key pays for nothing: no judge, no extractor.
+    [Fact]
+    public async Task ProcessRequestAsync_ForAHouseholdWithNoKey_AsksNoModel()
+    {
+        HouseholdWithKey(null);
+        var judge = StubJudge.Nouls(("fact", 0.9));
+
+        await Worker(judge).ProcessRequestAsync(Current("hola") with { TenantId = Household }, CancellationToken.None);
+
+        judge.Requests.ShouldBeEmpty();
+        _extractor.Verify(e => e.ExtractAsync(
+            It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // A household the configuration cannot answer for just now is not extracted from on somebody
+    // else's key: the turn is reported as failed, and nothing is asked.
+    [Fact]
+    public async Task ProcessRequestAsync_ForAHouseholdThatCannotBeRead_AsksNoModelAndReportsAFailure()
+    {
+        _agentDefinitionProvider.Setup(p => p.ForHouseholdAsync(Household, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("accounts away"));
+        var published = Recording();
+
+        await _worker.ProcessRequestAsync(Current("hola") with { TenantId = Household }, CancellationToken.None);
+
+        _extractor.Verify(e => e.ExtractAsync(
+            It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Never);
+        published.OfType<MemoryExtractionEvent>().ShouldHaveSingleItem().Outcome.ShouldBe(MemoryExtractionOutcomes.Failed);
+        published.OfType<ErrorEvent>().ShouldHaveSingleItem().TenantId.ShouldBe(Household);
+    }
+
+    // A person's own agent is found under the account the request names, its household and its person,
+    // so an agent they registered with memory off is not extracted from either.
+    [Fact]
+    public async Task ProcessRequestAsync_ForAPersonsCustomAgent_ReadsItUnderTheirAccount()
+    {
+        HouseholdWithKey("casa-key");
+        _agentDefinitionProvider.Setup(p => p.GetByIdAsync(
+                "mine", Household, new Account(Household, "user1"), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentDefinition { Id = "mine", Name = "Mine", Model = "m", McpServerEndpoints = [], EnabledFeatures = [] });
+
+        await _worker.ProcessRequestAsync(
+            new MemoryExtractionRequest("user1", null, Anchor(0), "conv_1", "mine") { FallbackContent = "hola", TenantId = Household },
+            CancellationToken.None);
+
+        _extractor.Verify(e => e.ExtractAsync(
+            It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     [Fact]
     public async Task ProcessRequestAsync_SkipsExtraction_WhenAgentDoesNotHaveMemoryFeature()
     {
-        _agentDefinitionProvider.Setup(p => p.GetById("agent-no-memory"))
-            .Returns(new AgentDefinition
+        _agentDefinitionProvider.Setup(p => p.GetByIdAsync(
+                "agent-no-memory", It.IsAny<string?>(), It.IsAny<Account?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentDefinition
             {
                 Id = "agent-no-memory", Name = "NoMem", Model = "test",
                 McpServerEndpoints = [], EnabledFeatures = []
@@ -529,6 +637,7 @@ public class MemoryExtractionWorkerTests
             e => e.ExtractAsync(
                 It.IsAny<IReadOnlyList<ChatMessage>>(),
                 It.IsAny<string>(),
+                It.IsAny<ModelPayer>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
         _metricsPublisher.Verify(
@@ -546,6 +655,7 @@ public class MemoryExtractionWorkerTests
             .Setup(e => e.ExtractAsync(
                 It.IsAny<IReadOnlyList<ChatMessage>>(),
                 It.IsAny<string>(),
+                It.IsAny<ModelPayer>(),
                 It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("Connection refused"));
 
@@ -590,6 +700,7 @@ public class MemoryExtractionWorkerTests
             e => e.ExtractAsync(
                 It.IsAny<IReadOnlyList<ChatMessage>>(),
                 It.IsAny<string>(),
+                It.IsAny<ModelPayer>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
         published.ShouldNotBeNull();
@@ -608,8 +719,9 @@ public class MemoryExtractionWorkerTests
             .Setup(e => e.ExtractAsync(
                 It.IsAny<IReadOnlyList<ChatMessage>>(),
                 It.IsAny<string>(),
+                It.IsAny<ModelPayer>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<ChatMessage> _, string _, CancellationToken _) =>
+            .ReturnsAsync((IReadOnlyList<ChatMessage> _, string _, ModelPayer _, CancellationToken _) =>
             {
                 callCount++;
                 if (callCount <= 2)

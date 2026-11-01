@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
 using Domain.Security;
@@ -12,6 +13,7 @@ using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Internal;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 
 namespace McpChannelSignalR.Hubs;
@@ -29,6 +31,7 @@ public sealed class ChatHub(
     RetentionSettings retention,
     DictationSettings dictationSettings,
     ISessionAccounts sessions,
+    IHouseholdConfiguration households,
     ILogger<ChatHub> logger) : Hub
 {
     // What the browser is told when the emit reached nobody. The message may still be sitting in a
@@ -44,6 +47,12 @@ public sealed class ChatHub(
     // page, or a connection that came with no session to ask about: nothing is sent until it signs in
     // again, and sending again will not help.
     internal const string SignedOutError = "This device was signed out, so this message has not been answered. Sign in again to keep chatting.";
+
+    // What the browser is told when its household's spaces could not be asked for its person: signed
+    // out since, or the accounts service unreachable just now.
+    private const string UnvouchedSpacesError = "This household's spaces could not be read right now.";
+
+    private const string UnvouchedAgentsError = "This household's agents could not be read right now.";
 
     // Where the connection keeps the person the proxy's session check named as it arrived, which is
     // also what says it may call anything (SignedInConnectionFilter).
@@ -64,6 +73,9 @@ public sealed class ChatHub(
     // Continuing a shared topic is not deciding it: its name and whether it exists stay its owner's.
     private const string OwnersConversation = "Only the person whose conversation this is can rename or delete it.";
 
+    // Another household's space is answered as one that does not exist, so naming it tells nothing.
+    private const string NoSuchSpace = "No such space.";
+
     private string? CurrentSpaceSlug =>
         Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
 
@@ -81,15 +93,13 @@ public sealed class ChatHub(
         ? shown
         : SignedIn.UserId;
 
-    public IReadOnlyList<AgentCatalogEntry> GetAgents()
-    {
-        return catalog.GetAll();
-    }
+    // The connection's household's agents, as its configuration names them, on the deployment's models
+    // as the agent registered them (AgentCatalogBuilder.ForHousehold): never another household's.
+    public async Task<IReadOnlyList<AgentCatalogEntry>> GetAgents() =>
+        AgentCatalogBuilder.ForHousehold(await HouseholdAgentsAsync(Context.ConnectionAborted), catalog.GetAll() ?? []);
 
-    public bool ValidateAgent(string agentId)
-    {
-        return catalog.Exists(agentId);
-    }
+    public async Task<bool> ValidateAgent(string agentId) =>
+        (await HouseholdAgentsAsync(Context.ConnectionAborted)).Agents.Any(agent => agent.Id == agentId);
 
     // Liveness probe. Clients invoke this on foreground to confirm the transport is actually
     // alive (a backgrounded mobile connection can report Connected while the socket is dead).
@@ -156,6 +166,11 @@ public sealed class ChatHub(
         return session;
     }
 
+    // The household's spaces in the order its configuration puts them, which is the order a person
+    // is shown them in.
+    public async Task<IReadOnlyList<HouseholdSpace>> GetSpaces() =>
+        [.. (await HouseholdSpacesAsync(Context.ConnectionAborted)).OrderBy(s => s.Order).ThenBy(s => s.Slug, StringComparer.Ordinal)];
+
     public async Task JoinSpace(string spaceSlug)
     {
         if (!SpaceConfig.IsValidSlug(spaceSlug))
@@ -163,7 +178,40 @@ public sealed class ChatHub(
             throw new HubException("Invalid space slug");
         }
 
+        if ((await HouseholdSpacesAsync(Context.ConnectionAborted)).All(s => s.Slug != spaceSlug))
+        {
+            throw new HubException(NoSuchSpace);
+        }
+
         await SwitchSpaceGroupAsync(spaceSlug);
+    }
+
+    // Asked with the accounts service's fresh word for the connection's person rather than the
+    // assertion it arrived with, which lives ten minutes while a chat client stays connected for
+    // hours: the household is the one that word names, never one the browser says.
+    private async Task<IReadOnlyList<HouseholdSpace>> HouseholdSpacesAsync(CancellationToken ct) =>
+        (await HouseholdViewAsync(households.SpacesAsync, "spaces", UnvouchedSpacesError, ct)).Spaces;
+
+    private Task<HouseholdAgentNames> HouseholdAgentsAsync(CancellationToken ct) =>
+        HouseholdViewAsync(households.AgentNamesAsync, "agents", UnvouchedAgentsError, ct);
+
+    private async Task<T> HouseholdViewAsync<T>(
+        Func<string, HouseholdProof, CancellationToken, Task<T>> view, string what, string refusal, CancellationToken ct)
+    {
+        if ((await VouchedAsync(ct)).Account is not { } vouched)
+        {
+            throw new HubException(refusal);
+        }
+
+        try
+        {
+            return await view(SignedIn.TenantId, HouseholdProof.OfAssertion(vouched.Assertion), ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException)
+        {
+            logger.LogWarning(ex, "Could not read the {What} of household {TenantId}", what, SignedIn.TenantId);
+            throw new HubException(refusal);
+        }
     }
 
     // A connection hears its space's news, and a private topic's only as its owner or as someone who
@@ -198,7 +246,7 @@ public sealed class ChatHub(
     // screen where no conversation has been started yet.
     public DictationTicket CreateDictationTicket()
     {
-        return attachmentService.MintDictation(CurrentSpaceSlug ?? AttachmentService.SpaceDefault);
+        return attachmentService.MintDictation(CurrentSpaceSlug ?? AttachmentService.SpaceDefault, SignedIn.TenantId);
     }
 
     // The ticket is scoped to the topic being composed in, so a caller can only put bytes against
@@ -589,7 +637,7 @@ public sealed class ChatHub(
     // Renaming one is its owner's, shared or not.
     public async Task SaveTopic(TopicMetadata topic, bool isNew = false)
     {
-        var stored = await threadStore.GetTopicAsync(topic.AgentId, topic.ChatId, topic.TopicId);
+        var stored = await threadStore.GetTopicAsync(SignedIn.TenantId, topic.AgentId, topic.ChatId, topic.TopicId);
         if (stored is not null)
         {
             RequireMayRenameOrDelete(stored);
@@ -597,7 +645,10 @@ public sealed class ChatHub(
             return;
         }
 
-        if (!IsItsOwnConversation(topic.TopicId, topic.ChatId, topic.ThreadId))
+        // The topics this household holds are not the only ones: a conversation another household's
+        // topic holds is theirs, and saving a topic of this one over it would take it from them.
+        if (!IsItsOwnConversation(topic.TopicId, topic.ChatId, topic.ThreadId)
+            || await threadStore.GetTopicByChatIdAndThreadIdAsync(topic.AgentId, topic.ChatId, topic.ThreadId) is not null)
         {
             throw new HubException(NoSuchConversation);
         }
@@ -616,7 +667,7 @@ public sealed class ChatHub(
     // see it now can, and on unsharing their list lets it go (TopicViewer, in the client too).
     public async Task SetTopicShared(string agentId, long chatId, string topicId, bool shared)
     {
-        var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId)
+        var stored = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId)
                      ?? throw new HubException(NoSuchConversation);
         RequireSees(stored);
         if (!Viewer.Owns(stored))
@@ -627,7 +678,7 @@ public sealed class ChatHub(
         var changed = stored with { Shared = shared };
         await threadStore.SaveTopicAsync(changed, keepTtl: true);
         await hubSender.SendToGroupAsync(
-            TopicAudience.Space(changed.SpaceSlug),
+            TopicAudience.Space(SignedIn.TenantId, changed.SpaceSlug),
             "OnTopicChanged",
             new TopicChangedNotification(TopicChangeType.Updated, topicId, changed, changed.SpaceSlug));
     }
@@ -651,11 +702,11 @@ public sealed class ChatHub(
     // person's private one leaves it as unread as its owner left it.
     public async Task MarkTopicRead(string agentId, long chatId, string topicId)
     {
-        var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId);
+        var stored = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId);
         RequireSees(stored);
         if (stored is null || Viewer.MayContinue(stored))
         {
-            await threadStore.MarkTopicReadAsync(agentId, chatId, topicId);
+            await threadStore.MarkTopicReadAsync(SignedIn.TenantId, agentId, chatId, topicId);
         }
     }
 
@@ -676,12 +727,15 @@ public sealed class ChatHub(
     // Whether a topic exists is its owner's to decide, shared or not.
     public async Task DeleteTopic(string agentId, string topicId, long chatId, long threadId)
     {
-        var stored = await threadStore.GetTopicAsync(agentId, chatId, topicId);
+        // Another household's topic over the conversation is held to the same rule, which it fails:
+        // its history and its stream are not this caller's to name into a delete.
+        var stored = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId)
+                     ?? await threadStore.GetTopicByChatIdAndThreadIdAsync(agentId, chatId, threadId);
         RequireMayRenameOrDelete(stored);
 
         // The topic's own conversation and no other: a thread it does not hold is not the caller's
         // to name into the delete.
-        if (stored is not null && stored.ThreadId != threadId)
+        if (stored is not null && (stored.ThreadId != threadId || stored.TopicId != topicId))
         {
             throw new HubException(NoSuchConversation);
         }
@@ -693,7 +747,7 @@ public sealed class ChatHub(
         // whose the conversation is, only one its own id names is this chat's to delete.
         if (stored is null && !IsItsOwnConversation(topicId, chatId, threadId))
         {
-            await hubSender.SendToTopicAsync(null, spaceSlug, "OnTopicChanged", notification);
+            await hubSender.SendToGroupAsync(TopicAudience.Space(SignedIn.TenantId, spaceSlug), "OnTopicChanged", notification);
             return;
         }
 
@@ -710,7 +764,7 @@ public sealed class ChatHub(
         await approvalService.CancelPendingApprovalsForTopicAsync(topicId);
 
         await threadStore.DeleteAsync(new AgentKey(identity.ConversationId, agentId));
-        await threadStore.DeleteTopicAsync(agentId, chatId, topicId);
+        await threadStore.DeleteTopicAsync(SignedIn.TenantId, agentId, chatId, topicId);
 
         // Removing a conversation removes what was in it. The sweep would reach these eventually;
         // deleting a topic is the person saying they want them gone now.
@@ -719,15 +773,18 @@ public sealed class ChatHub(
         // Said to whoever may see the topic rather than to this caller: another tab holds a row
         // for a conversation that no longer exists, and paging only ever fetches backwards, so
         // nothing would ever refetch that row away. Deleting a topic that is already gone says the
-        // same thing again, which is harmless and is what makes a repeated delete safe.
-        await hubSender.SendToTopicAsync(stored, spaceSlug, "OnTopicChanged", notification);
+        // same thing again, which is harmless and is what makes a repeated delete safe — to this
+        // caller's household, the only one that could hold a row for it.
+        await (stored is null
+            ? hubSender.SendToGroupAsync(TopicAudience.Space(SignedIn.TenantId, spaceSlug), "OnTopicChanged", notification)
+            : hubSender.SendToTopicAsync(stored, spaceSlug, "OnTopicChanged", notification));
     }
 
     public async Task SubscribePush(PushSubscriptionDto subscription)
     {
         ValidateSubscription(subscription);
 
-        await pushSubscriptionStore.SaveAsync(SignedIn.UserId, subscription, CurrentSpaceSlug ?? "default");
+        await pushSubscriptionStore.SaveAsync(SignedIn.Account, subscription, CurrentSpaceSlug ?? "default");
     }
 
     public async Task ReplacePushSubscription(PushSubscriptionDto subscription, string oldEndpoint)
@@ -739,7 +796,7 @@ public sealed class ChatHub(
             throw new HubException("Old endpoint is required for replacement.");
         }
 
-        await pushSubscriptionStore.SaveAsync(SignedIn.UserId, subscription, CurrentSpaceSlug ?? "default",
+        await pushSubscriptionStore.SaveAsync(SignedIn.Account, subscription, CurrentSpaceSlug ?? "default",
             replacingEndpoint: oldEndpoint);
     }
 
@@ -786,6 +843,17 @@ public sealed class ChatHub(
     // client that was not open when they were.
     public IReadOnlyList<ToolApprovalRequestMessage> GetOfferedApprovals() =>
         approvalService.OfferedTo(SignedIn.UserId);
+
+    // False is "not yours to dismiss", or it already ended: an alert is its person's, and only their
+    // dismissal, from any of their clients, stops it — everywhere it rings. The service is the
+    // method's rather than the hub's, as the alerts are no part of a topic.
+    public Task<bool> DismissAlert(string alertId, [FromServices] AlertService alerts) =>
+        alerts.DismissAsync(alertId, SignedIn.Account);
+
+    // What still rings for this connection's person, for a chat client that was not open when it
+    // began — the one the push brought up, above all.
+    public IReadOnlyList<AlertOfferedNotification> GetOfferedAlerts([FromServices] AlertService alerts) =>
+        alerts.OfferedTo(SignedIn.Account);
 
     // Reading is never deciding: whoever sees every topic sees another person's prompt and cannot
     // settle it. A prompt acting for nobody is answered in a topic by its owner, in a shared one also

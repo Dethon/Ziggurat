@@ -104,7 +104,7 @@ public static class McpServerRegistrations
             DeliveryPolicy.Broadcast),
 
         Row("telegram", "McpChannelTelegram", McpServerRole.Channel,
-            new TelegramSettings.ChannelSettings { Bots = [], Mcp = DeploymentGate },
+            new TelegramSettings.ChannelSettings { Mcp = DeploymentGate },
             (services, settings) => services.ConfigureChannel(settings),
             DeliveryPolicy.BufferAlways),
 
@@ -161,7 +161,7 @@ public static class McpServerRegistrations
         Row("idealista", "McpServerIdealista", McpServerRole.Tool,
             new IdealistaSettings.McpSettings
             {
-                Idealista = new IdealistaSettings.IdealistaConfiguration { ApiKey = "x", ApiSecret = "x" },
+                Idealista = new IdealistaSettings.IdealistaConfiguration(),
                 Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureMcp(settings)),
@@ -211,10 +211,12 @@ public static class McpServerRegistrations
             (services, settings) => services.ConfigureSugary(settings),
             DeliveryPolicy.GateOnLive),
 
-        // The voice hub is reached through a named HttpClient, which never dials at registration.
-        Row("timers", "McpServerTimers", McpServerRole.Tool,
+        // The voice hub is reached through a named HttpClient, which never dials at registration. A
+        // channel too: a timer with no satellite rings on its owner's channels through the agent.
+        Row("timers", "McpServerTimers", McpServerRole.DualRole,
             new TimersSettings.TimerSettings { Mcp = DeploymentGate },
-            (services, settings) => services.ConfigureTimers(settings)),
+            (services, settings) => services.ConfigureTimers(settings),
+            DeliveryPolicy.GateOnLive),
 
         Row("vault", "McpServerVault", McpServerRole.Tool,
             new VaultSettings.McpSettings { VaultPath = "/vault", AllowedExtensions = [".md"], Mcp = DeploymentGate },

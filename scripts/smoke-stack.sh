@@ -3,8 +3,9 @@
 # A smoke stack on this machine: the deployment's own compose file and Caddyfile, run from empty state
 # with local secrets, then checked from outside through Caddy as a browser would reach it.
 #
-#   scripts/smoke-stack.sh up      build and start it (project jackbot-smoke), and the home's tenant kit
-#                                  beside it (project tenant-kit-smoke)
+#   scripts/smoke-stack.sh up      build and start it (project jackbot-smoke), run the household migration
+#                                  into it as the deploy does, and start the home's tenant kit beside it
+#                                  (project tenant-kit-smoke)
 #   scripts/smoke-stack.sh test    run the Smoke tests against it (Category=Smoke)
 #   scripts/smoke-stack.sh migrate --operator <n> --owner <n> --sugary <n> [--dry-run]
 #                                  the household migration against it
@@ -67,6 +68,47 @@ retry() {
   "$@"
 }
 
+# The household migration as the deploy runs it (.scratch/tenants-config/deploy.md, steps 5 to 8), so
+# what the tests ask is a stack the deploy path made: the operator signs in first, then the run carries
+# the people into the home household, seeds the home's settings, agents, features and spaces
+# (HouseholdMigration/Home), moves the shared stores into the household and stamps the schedules'
+# writers; then the agent restarts, building every conversation from the seeded agents, and offers each
+# schedule as its writer. No keys are piped in: no master key is set here, the home's turns are paid
+# with the deployment's key, and a Telegram bot would take the deployment's updates. The one person in
+# the file is the operator, the owner and Sugary's. On the first up the stores also hold one schedule
+# as it was kept before households, due long after any run, which the migration moves into the home;
+# a second up runs it again and it changes nothing.
+MIGRATION=DockerCompose/volumes/smoke/household-migration
+BEFORE_HOUSEHOLDS=smoke-before-households
+migrate_home() {
+  retry docker exec accounts dotnet Accounts.dll mint-link --operator --name "Smoke Operator" > /dev/null
+  if [[ ! -s "$MIGRATION/people.json" ]]; then
+    # The shape BeforeHouseholds.ScheduleAsync writes: schedule:{id}, the schedules set, and its place
+    # in schedules:due by NextRunAt's ticks; no writer recorded, so the migration stamps the owner.
+    docker exec redis redis-cli SET "schedule:$BEFORE_HOUSEHOLDS" \
+      "{\"Id\":\"$BEFORE_HOUSEHOLDS\",\"AgentId\":\"jonas\",\"Prompt\":\"Smoke: a schedule from before households.\",\"RunAt\":\"2099-01-01T08:00:00Z\",\"NextRunAt\":\"2099-01-01T08:00:00Z\",\"CreatedAt\":\"2026-10-01T08:00:00Z\"}" > /dev/null
+    docker exec redis redis-cli SADD schedules "$BEFORE_HOUSEHOLDS" > /dev/null
+    docker exec redis redis-cli ZADD schedules:due 662065344000000000 "$BEFORE_HOUSEHOLDS" > /dev/null
+    echo '{ "people": [ { "name": "smoke", "displayName": "Smoke Operator" } ] }' > "$MIGRATION/people.json"
+  fi
+  "${DC[@]}" --profile migrate build household-migration
+  "${DC[@]}" --profile migrate run --rm --no-deps household-migration --people /input/people.json \
+    --operator smoke --owner smoke --sugary smoke
+  "${DC[@]}" restart agent
+  retry redelegated
+}
+
+# Redelegate asks every channel server the agent dials, and the ones this stack never starts (Telegram,
+# voice, Home Assistant's) cannot be asked, so its exit code always says so. What has to have answered
+# is the scheduling server, which keeps the schedules; no server named at all is the agent still
+# restarting.
+redelegated() {
+  local said
+  said="$(docker exec agent dotnet Agent.dll redelegate --yes 2>&1)" || true
+  echo "$said"
+  grep -q '^[a-z-]*: ' <<<"$said" && ! grep -q '^scheduling: could not be asked' <<<"$said"
+}
+
 # One credential per kit server for the home household, minted once per smoke state and kept beside it
 # (credentials.env), so a second up starts the kit with the same ones.
 credentials() {
@@ -92,13 +134,14 @@ credentials() {
 
 case "${1:-}" in
   up)
-    mkdir -p DockerCompose/volumes/smoke/{redis,accounts,agent-keys,sugary,caddy_data,caddy_config}
+    mkdir -p DockerCompose/volumes/smoke/{redis,accounts,agent-keys,sugary,voices,household-migration,caddy_data,caddy_config}
     "${DC[@]}" build base-sdk
     "${DC[@]}" build "${SERVICES[@]}"
     "${DC[@]}" up -d --no-deps "${SERVICES[@]}" smoke-probe
 
     mkdir -p "$KIT_STATE"/{redis,vault,media,sandbox}
     credentials
+    migrate_home
     # Caddy's local root, which the kit's servers are told to trust for the hub; copied out because
     # Caddy keeps it where only root reads.
     retry docker exec caddy test -s /data/caddy/pki/authorities/local/root.crt

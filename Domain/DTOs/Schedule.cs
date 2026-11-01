@@ -7,6 +7,11 @@ namespace Domain.DTOs;
 public record Schedule
 {
     public required string Id { get; init; }
+
+    // The household it is kept under, from the verified identity of the call that wrote it — never
+    // from its JSON. A schedule's id is unique within its household only.
+    public string TenantId { get; init; } = "";
+
     public required string AgentId { get; init; }
     public required string Prompt { get; init; }
     public string? CronExpression { get; init; }

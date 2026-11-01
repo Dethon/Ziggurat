@@ -102,6 +102,11 @@ public static class Icons
         "M12 4V1L8 5l4 4V6a6 6 0 0 1 5.3 8.8l1.46 1.46A8 8 0 0 0 12 4Zm0 14a6 6 0 0 1-5.3-8.8L5.24 7.74A8 8 0 0 0 "
         + "12 20v3l4-4-4-4Z");
 
+    // A ringing timer's alert.
+    public static readonly IconGlyph Bell = Filled(
+        "M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 "
+        + "5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2Z");
+
     public static readonly IconGlyph Ring = Filled(
         "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z");
 

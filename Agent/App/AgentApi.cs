@@ -28,17 +28,19 @@ public static class AgentApi
             .RequireSharedSecret(sharedSecret)
             .RequireAssertedPerson();
 
-        agents.MapGet("/", (IAgentDefinitionProvider provider, HttpContext context) =>
-            provider.GetAll(UserOf(context)).Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description)));
+        // The person's household's agents, then their own.
+        agents.MapGet("/", async (IAgentDefinitionProvider provider, HttpContext context) =>
+            (await provider.GetAllAsync(OwnerOf(context).TenantId, OwnerOf(context), context.RequestAborted))
+            .Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description)));
 
-        agents.MapPost("/", (IAgentDefinitionProvider provider, HttpContext context, CustomAgentRegistration registration) =>
+        agents.MapPost("/", async (IAgentDefinitionProvider provider, HttpContext context, CustomAgentRegistration registration) =>
         {
-            var definition = provider.RegisterCustomAgent(UserOf(context), registration);
+            var definition = await provider.RegisterCustomAgentAsync(OwnerOf(context), registration, context.RequestAborted);
             return new AgentCatalogEntry(definition.Id, definition.Name, definition.Description);
         });
 
         agents.MapDelete("/{agentId}", (IAgentDefinitionProvider provider, HttpContext context, string agentId) =>
-            provider.UnregisterCustomAgent(UserOf(context), agentId));
+            provider.UnregisterCustomAgentAsync(OwnerOf(context), agentId, context.RequestAborted));
     }
 
     private static readonly object _personItem = new();
@@ -64,5 +66,11 @@ public static class AgentApi
         return group;
     }
 
-    private static string UserOf(HttpContext context) => ((ForwardedAccount)context.Items[_personItem]!).UserId;
+    // The household and the person both, as the assertion signed them: a custom agent is kept under
+    // the pair, so the same person id in another household names a catalogue of its own.
+    private static Account OwnerOf(HttpContext context)
+    {
+        var person = (ForwardedAccount)context.Items[_personItem]!;
+        return new Account(person.TenantId, person.UserId);
+    }
 }

@@ -25,6 +25,8 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
     public DbSet<LinkedIdentity> LinkedIdentities => Set<LinkedIdentity>();
     public DbSet<BoundChat> BoundChats => Set<BoundChat>();
     public DbSet<TunnelCredential> TunnelCredentials => Set<TunnelCredential>();
+    public DbSet<HouseholdSection> HouseholdSections => Set<HouseholdSection>();
+    public DbSet<HouseholdDataKey> HouseholdDataKeys => Set<HouseholdDataKey>();
 
     // An instant is kept as UTC, because not every provider has an offset type and SQLite cannot
     // order or compare the text of one.
@@ -105,6 +107,20 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
         tunnel.Property(t => t.TenantId).HasMaxLength(IdLength);
         tunnel.Property(t => t.ServerName).HasMaxLength(TunnelCredentialProtocol.ServerNameMaxLength);
         tunnel.HasOne<Tenant>().WithMany().HasForeignKey(t => t.TenantId).OnDelete(DeleteBehavior.Restrict);
+
+        var section = modelBuilder.Entity<HouseholdSection>();
+        section.Property(s => s.Id).HasMaxLength(IdLength);
+        section.Property(s => s.TenantId).HasMaxLength(IdLength);
+        section.Property(s => s.Section).HasMaxLength(32);
+        section.HasIndex(s => new { s.TenantId, s.Section }).IsUnique();
+        section.HasOne<Tenant>().WithMany().HasForeignKey(s => s.TenantId).OnDelete(DeleteBehavior.Restrict);
+
+        var dataKey = modelBuilder.Entity<HouseholdDataKey>();
+        dataKey.Property(k => k.Id).HasMaxLength(IdLength);
+        dataKey.Property(k => k.TenantId).HasMaxLength(IdLength);
+        dataKey.HasIndex(k => k.TenantId).IsUnique();
+        dataKey.Property(k => k.MasterKeyId).HasMaxLength(IdLength);
+        dataKey.HasOne<Tenant>().WithMany().HasForeignKey(k => k.TenantId).OnDelete(DeleteBehavior.Restrict);
     }
 
     private sealed class UtcConverter() : ValueConverter<DateTimeOffset, DateTime>(

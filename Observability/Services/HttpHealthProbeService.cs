@@ -88,7 +88,8 @@ public sealed class HttpHealthProbeService(
 
     private async Task MarkHealthyAsync(IDatabase db, string service, DateTimeOffset now, CancellationToken ct)
     {
-        await db.StringSetAsync($"metrics:health:{service}", now.ToString("o"), _keyTtl);
+        // A probed container is the deployment's: its member is its bare name.
+        await db.StringSetAsync(ServiceHealthRegistry.HealthKey(service), now.ToString("o"), _keyTtl);
         await hubContext.Clients.All.SendAsync(
             "OnHealthUpdate", new ServiceHealthUpdate(service, true, now), ct);
     }

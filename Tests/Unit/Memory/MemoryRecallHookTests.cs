@@ -104,6 +104,32 @@ public class MemoryRecallHookTests
         context.Profile.ShouldNotBeNull();
     }
 
+    // The recall window is embedded on the shared Lemonade, which every household's recall runs
+    // on: the embedding counts against the household of the account the turn acts for, and so does
+    // the recall itself, and the extraction it hands on carries the household with it.
+    [Fact]
+    public async Task EnrichAsync_TheRecallsEmbeddingAndItsEvents_CountAgainstTheAccountsHousehold()
+    {
+        var published = new List<MetricEvent>();
+        _metricsPublisher.Setup(p => p.Publish(It.IsAny<MetricEvent>())).Callback<MetricEvent>(published.Add);
+        var session = CreateSessionWithStateKey("state-test");
+        _threadStateStore.Setup(s => s.GetMessageCountAsync("state-test")).ReturnsAsync(0L);
+        _embeddingService.Setup(e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_testEmbedding);
+        _store.Setup(s => s.SearchAsync("user1", null, _testEmbedding, null, null, null, 10, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        await _hook.EnrichAsync(new ChatMessage(ChatRole.User, "Hello"), User1, "conv_1", null, session, CancellationToken.None);
+
+        published.OfType<LemonadeUsageEvent>().ShouldHaveSingleItem().ShouldSatisfyAllConditions(
+            e => e.Use.ShouldBe(LemonadeUse.Embedding),
+            e => e.Amount.ShouldBe(1),
+            e => e.TenantId.ShouldBe(User1.TenantId));
+        published.OfType<MemoryRecallEvent>().ShouldHaveSingleItem().TenantId.ShouldBe(User1.TenantId);
+        _queue.Complete();
+        (await _queue.ReadAllAsync(CancellationToken.None).FirstAsync()).TenantId.ShouldBe(User1.TenantId);
+    }
+
     [Fact]
     public async Task EnrichAsync_NoMemoriesAndNoProfile_AttachesNothingAndProceeds()
     {
@@ -483,8 +509,9 @@ public class MemoryRecallHookTests
     {
         var message = new ChatMessage(ChatRole.User, "Hello");
         const string agentId = "agent-no-memory";
-        _agentDefinitionProvider.Setup(p => p.GetById(agentId))
-            .Returns(new AgentDefinition
+        _agentDefinitionProvider.Setup(p => p.GetByIdAsync(
+                agentId, It.IsAny<string?>(), It.IsAny<Account?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentDefinition
             {
                 Id = agentId, Name = agentId, Model = "test",
                 McpServerEndpoints = [], EnabledFeatures = []

@@ -2,16 +2,16 @@ namespace Domain.DTOs.WebChat;
 
 // Somebody looking at a household's topics, and the one rule for which of them they may know
 // exist: their own, every shared one of their household, every one nobody owns that is their
-// household's or no household's, and — for whoever an owner granted "sees all conversations" — every
-// one of their household. The hub lists, reads and acts by it, the store pages by it and the chat
+// household's, and — for whoever an owner granted "sees all conversations" — every one of their
+// household. A topic recording no household (one a turn acting for nobody opened) is nobody's to see. The hub lists, reads and acts by it, the store pages by it and the chat
 // client drops a row by it, so the three cannot disagree about who sees what.
 public sealed record TopicViewer(string UserId, string TenantId, bool SeesAll = false)
 {
-    // A topic nobody owns still records the household it was made for when there was one (a Telegram
-    // group's copy, the household the group is bound to), and is that household's alone; one recording
-    // none (a voice guest's, one from before topics had owners) is everyone's in its space.
+    // A topic nobody owns still records the household it was made for (a Telegram group's copy, the
+    // household the group is bound to; the voice guest's, the household whose guest they are), and is
+    // that household's alone.
     public bool Sees(TopicMetadata topic) =>
-        topic.OwnerId is null && (topic.TenantId is null || topic.TenantId == TenantId)
+        topic.OwnerId is null && topic.TenantId == TenantId
         || Owns(topic)
         || topic.TenantId == TenantId && (topic.Shared || SeesAll);
 

@@ -80,9 +80,8 @@ services:
       dockerfile: McpServerIdealista/Dockerfile
     restart: unless-stopped
     environment:
-      # The secrets this service reads, by name: it is never handed the whole .env.
-      IDEALISTA__APIKEY: ${IDEALISTA__APIKEY}
-      IDEALISTA__SECRET: ${IDEALISTA__SECRET}
+      # No Idealista key of the deployment's: every search is made with the calling household's own,
+      # asked of the accounts service (its keys section) with this server's credential below.
       <<: *timezone
       MCP__SHAREDSECRET: ${MCP_SECRET_IDEALISTA}
       # A tool call's token: the agent's, for this name, checked against the keys it publishes.
@@ -143,9 +142,10 @@ services:
     environment:
       # The secrets this service reads, by name: it is never handed the whole .env. Who may use the
       # bots is nobody's list here: a sender is admitted by the account the accounts service has
-      # their numeric Telegram id linked to, asked with this server's own MCP credential.
-      BOTS__0__BOTTOKEN: ${BOTS__0__BOTTOKEN}
-      BOTS__1__BOTTOKEN: ${BOTS__1__BOTTOKEN}
+      # their numeric Telegram id linked to, asked with this server's own MCP credential. The shared
+      # bot serves every household; a household's own bots (the home's jack and jonas) are its
+      # configuration's keys, read from the accounts service with the same credential.
+      BOTS__SHAREDTOKEN: ${TELEGRAM_SHARED_BOT_TOKEN}
       <<: *timezone
       REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
       MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_TELEGRAM}
@@ -544,8 +544,8 @@ services:
       ALLOWEDORIGINS__3: https://assistants-dashboard.herfluffness.com
       SESSIONCOOKIE__DOMAIN: .herfluffness.com
       PUBLICBASEURL: https://assistants.herfluffness.com
-      # The bot people link their Telegram through, without the @: the account page's link code
-      # and an invite are shown as its t.me deep link. Left empty they are shown as a bare code to
+      # The bot people link their Telegram through, the shared bot, without the @: the account page's
+      # link code and an invite are shown as its t.me deep link. Left empty they are shown as a bare code to
       # send the bot as /start <code>, which is safe; a wrong name would send codes to a stranger's bot.
       TELEGRAM__BOTUSERNAME: ""
       # The servers that may ask whose account an identity is, each by the credential it already
@@ -554,6 +554,12 @@ services:
       # accounts back-call, and is admitted by the live tunnel credential the relay shows for it.
       CALLERS__mcp-channel-signalr: ${MCP_SECRET_CHANNEL_SIGNALR}
       CALLERS__mcp-channel-telegram: ${MCP_SECRET_CHANNEL_TELEGRAM}
+      # The shared servers that read their own section of the calling household's configuration —
+      # Idealista its keys, scheduling and Sugary the household's zone — each by the credential it
+      # already holds for its own /mcp, and each proving the household with what its call carries.
+      CALLERS__mcp-idealista: ${MCP_SECRET_IDEALISTA}
+      CALLERS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
+      CALLERS__mcp-sugary: ${MCP_SECRET_SUGARY}
       # The household migration below, and only its household import: it can make the operator and
       # mint their link, so it is admitted by a secret of its own, left empty — nobody — but for the run.
       CALLERS__household-migration: ${HOUSEHOLD_MIGRATION_SECRET}
@@ -563,8 +569,16 @@ services:
       # server holds that one too, which lets it ask about a tunnel credential only if it already
       # has one — and a credential opens a tunnel by itself.
       CALLERS__agent: ${AGENTAPI__SHAREDSECRET}
-      # Where a revoked tunnel credential is announced, so the relay closes its tunnel at once.
+      # Where a revoked tunnel credential is announced, so the relay closes its tunnel at once, and a
+      # saved household configuration, so every reader drops what it kept of that household.
       REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      # The master key every household's data key is wrapped with, which seals that household's
+      # secrets (its OpenRouter key, Idealista's keys, its Telegram bots). This service's alone.
+      HOUSEHOLDCONFIG__MASTERKEY: ${HOUSEHOLD_CONFIG_MASTER_KEY}
+      # Where the agent publishes the keys its call tokens verify with: a shared server proves which
+      # household it asks about with the call token it was handed, and the agent proves it is the
+      # agent with one of its own.
+      AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -577,12 +591,18 @@ services:
 
   # One-shot, by hand, on the deploy that brings accounts: carries the retired identity map's people
   # into the home household as accounts, and what was filed under their names — memories, remembered
-  # logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids.
+  # logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids;
+  # seeds the home's configuration (settings, agents, features, the chat client's spaces, its keys);
+  # and moves every shared store into the home household.
   # Under a profile, so `up` never starts it. Put the people in ./volumes/household-migration/people.json
   # and HOUSEHOLD_MIGRATION_SECRET in .env (then `docker compose up -d accounts`), and run
-  #   docker compose --profile migrate run --rm household-migration \
-  #     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run]
-  # Running it again changes nothing. The steps are .scratch/accounts/spec.md's Further Notes.
+  #   ... | docker compose --profile migrate run --rm -T household-migration \
+  #     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run] \
+  #     --home-keys -
+  # piping in, never from a file in the volume, the home's keys as .env held them before households:
+  # { "telegramBots": { "jack": { "token": BOTS__0 }, "jonas": { "token": BOTS__1 } },
+  #   "idealista": { "apiKey": IDEALISTA__APIKEY, "secret": IDEALISTA__SECRET } }.
+  # Running it again changes nothing. The steps are .scratch/tenants-config/deploy.md.
   household-migration:
     image: household-migration:latest
     profiles: ["migrate"]

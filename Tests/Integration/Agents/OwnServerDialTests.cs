@@ -45,7 +45,7 @@ public sealed class OwnServerDialTests : IAsyncLifetime
     public async Task AnAgentNamingAHouseholdServer_ReachesTheOneItsTurnsHouseholdResolvesTo()
     {
         var (factory, _) = Factory();
-        await using var agent = factory.Create(
+        await using var agent = await factory.CreateAsync(
             new AgentKey("conv-1", "jonas"), "fran", "jonas", new Mock<IToolApprovalHandler>().Object, tenantId: Household);
 
         var session = await agent.CreateSessionAsync();
@@ -58,7 +58,7 @@ public sealed class OwnServerDialTests : IAsyncLifetime
     public async Task AWorkerNamingAHouseholdServer_ReachesItsParentsHouseholds()
     {
         var (factory, captured) = Factory();
-        await using var agent = factory.Create(
+        await using var agent = await factory.CreateAsync(
             new AgentKey("conv-1", "jonas"), "fran", "jonas", new Mock<IToolApprovalHandler>().Object, tenantId: Household);
         var spawn = captured.ShouldHaveSingleItem().SubAgentFactory.ShouldNotBeNull();
 
@@ -86,10 +86,7 @@ public sealed class OwnServerDialTests : IAsyncLifetime
             .Setup(r => r.GetPromptsForFeatures(It.IsAny<IEnumerable<string>>()))
             .Returns(Enumerable.Empty<PromptSection>());
 
-        var options = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        options.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions
-        {
-            Agents =
+        AgentDefinition[] agents =
             [
                 new AgentDefinition
                 {
@@ -98,8 +95,7 @@ public sealed class OwnServerDialTests : IAsyncLifetime
                     Model = "test-model",
                     McpServerEndpoints = ["vault"]
                 }
-            ]
-        });
+            ];
 
         var services = new ServiceCollection()
             .AddSingleton(McpTestSecret.Credentials)
@@ -110,7 +106,7 @@ public sealed class OwnServerDialTests : IAsyncLifetime
 
         return (new MultiAgentFactory(
             services,
-            new AgentDefinitionProvider(options.Object, new CustomAgentRegistry()),
+            FixedHouseholdAgents.Provider(agents),
             new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
             toolRegistry.Object), captured);
     }

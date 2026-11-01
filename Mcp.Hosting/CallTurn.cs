@@ -18,6 +18,9 @@ public static class CallTurn
     // Where the gate leaves the identity it verified, on the call's own Items.
     internal const string IdentityKey = "com.herfluffness/callIdentity";
 
+    // And the token it verified it from, which only the household accessor shows on (CallHousehold).
+    internal const string VerifiedTokenKey = "com.herfluffness/verifiedCallToken";
+
     extension(RequestContext<CallToolRequestParams> call)
     {
         // Null on a call no gate checked, and then the call acts for nobody.
@@ -29,6 +32,16 @@ public static class CallTurn
         public ConversationContext? Turn =>
             ConversationScope.Parse(call.Params?.Meta) is { } claimed
                 ? claimed with { Principal = PrincipalOf(call.Identity), Identity = call.Identity }
+                : null;
+
+        // The household the call acts for, through which a server reads its own section of that
+        // household's configuration: the verified identity's, proved to the accounts service with the
+        // very token the gate verified it from. Null when the call acts for nobody or names no
+        // household, and the server then reads nobody's configuration.
+        public CallHousehold? Household =>
+            call.Identity is { IsNobody: false, TenantId.Length: > 0 } identity
+            && call.Items.TryGetValue(VerifiedTokenKey, out var token) && token is string { Length: > 0 } verified
+                ? CallHousehold.OfCall(identity.TenantId, verified, call.Services ?? call.Server.Services!)
                 : null;
 
         // The delegation the agent signed for whatever this call creates or rewrites — a schedule, a

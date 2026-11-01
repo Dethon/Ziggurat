@@ -3,6 +3,7 @@ using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Infrastructure.Clients.Accounts;
 using Mcp.Hosting;
 using McpChannelTelegram.Services;
@@ -29,10 +30,15 @@ internal sealed class TelegramPollingHarness : IDisposable
     public const string SubscriberId = ChannelProtocol.ChannelClientNamePrefix + "telegram";
     public const string AgentId = "jack";
 
-    private readonly CancellationTokenSource _cts = new();
+    // The household's jack bot, as its configuration keeps it, and the deployment's shared bot.
+    public const string JackToken = "1001:jack-token";
+    public const string SharedToken = "1000:shared-token";
+
+    private CancellationTokenSource _cts = new();
     private readonly ConcurrentQueue<SendMessageRequest> _sent = new();
 
     private readonly ConcurrentDictionary<int, Action> _beforeBatch = new();
+    private readonly ITelegramAccounts _telegramAccounts;
 
     // Alice is Telegram user 1 and Bob user 2, both linked to accounts in the household, unless a
     // test links others.
@@ -42,23 +48,25 @@ internal sealed class TelegramPollingHarness : IDisposable
     // A group chat's id is negative; a supergroup's starts -100.
     public const long FamilyGroup = -100_200;
 
-    public TelegramPollingHarness(params long[] linkedUserIds) : this(null, linkedUserIds)
+    // The household's own jack bot is the one polled, as its configuration says.
+    public TelegramPollingHarness(params long[] linkedUserIds) : this(null, linkedUserIds, shared: false)
     {
     }
 
     // Against a real accounts service, through the client the deployment uses, instead of the fake:
-    // nobody is linked until a test links them there.
-    public TelegramPollingHarness(AccountsResolverClient accountsService) : this(accountsService, [])
+    // nobody is linked until a test links them there, on the shared bot, which every household's people
+    // link through.
+    public TelegramPollingHarness(AccountsResolverClient accountsService) : this(accountsService, [], shared: true)
     {
     }
 
-    private TelegramPollingHarness(AccountsResolverClient? accountsService, long[] linkedUserIds)
+    // The deployment's shared bot is the one polled, and no household has a bot of its own until a
+    // test saves one.
+    public static TelegramPollingHarness OnTheSharedBot(params long[] linkedUserIds) => new(null, linkedUserIds, shared: true);
+
+    private TelegramPollingHarness(AccountsResolverClient? accountsService, long[] linkedUserIds, bool shared)
     {
-        Settings = new ChannelSettings
-        {
-            Bots = [new AgentBotConfig { AgentId = AgentId, BotToken = "unused" }],
-            Dictation = Dictation
-        };
+        Settings = new ChannelSettings { Dictation = Dictation };
 
         var linked = linkedUserIds.Length > 0
             ? linkedUserIds.Select(id => (Id: id, Name: $"person-{id}"))
@@ -70,24 +78,19 @@ internal sealed class TelegramPollingHarness : IDisposable
 
         IAccountResolver resolver = accountsService is null ? Accounts : accountsService;
         ITelegramAccounts telegramAccounts = accountsService is null ? Accounts : accountsService;
+        _telegramAccounts = telegramAccounts;
         Access = new TelegramAccess(resolver, telegramAccounts, Settings.LinkCache, Time);
         Inbox = new ChannelInbox(Time);
         Emitter = new ChannelNotificationEmitter(Inbox, DeliveryPolicy.BufferAlways, SubscriberId);
-        BotRegistry = new BotRegistry(new Dictionary<string, ITelegramBotClient>
+        if (!shared)
         {
-            [AgentId] = BotClient.Object
-        });
+            Households.SaveBots(new HouseholdTelegramBot(FakeTelegramAccounts.Household, AgentId, JackToken));
+        }
 
-        Service = new TelegramBotService(
-            BotRegistry,
-            Emitter,
-            CallbackRouter,
-            Catalog,
-            new VoiceNoteDictation(
-                Transcriber, Dictation, Metrics, new Mock<ILogger<VoiceNoteDictation>>().Object),
-            new TelegramGate(Access, telegramAccounts, new Mock<ILogger<TelegramGate>>().Object),
-            Time,
-            new Mock<ILogger<TelegramBotService>>().Object);
+        BotRegistry = new BotRegistry(shared ? SharedToken : null, Connect);
+        BotRegistry.Replace(Households.TelegramBotsAsync(CancellationToken.None).GetAwaiter().GetResult());
+        Bot = BotRegistry.All.Single(bot => bot.Client == BotClient.Object);
+        Service = NewService();
 
         BotClient
             .Setup(b => b.SendRequest(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
@@ -100,8 +103,13 @@ internal sealed class TelegramPollingHarness : IDisposable
             }));
     }
 
+    // The client of the bot the harness polls (Bot): the household's jack bot, or the shared bot.
     public Mock<ITelegramBotClient> BotClient { get; } = new();
+    public TelegramBot Bot { get; }
     public FakeTelegramAccounts Accounts { get; } = new();
+    public FakeTelegramHouseholds Households { get; } = new();
+    public InMemoryChatAgentChoices Choices { get; } = new();
+    public BotSettings Bots { get; } = new();
     public TelegramAccess Access { get; }
     public FakeTranscriber Transcriber { get; } = new();
     public RecordingMetricsPublisher Metrics { get; } = new();
@@ -113,9 +121,38 @@ internal sealed class TelegramPollingHarness : IDisposable
     public ChannelInbox Inbox { get; }
     public ChannelNotificationEmitter Emitter { get; }
     public BotRegistry BotRegistry { get; }
-    public TelegramBotService Service { get; }
+    public TelegramBotService Service { get; private set; }
 
     public IReadOnlyList<SendMessageRequest> Sent => [.. _sent];
+
+    // Any other bot's client, made the first time a token is connected: a household's bot a test saves.
+    public ConcurrentDictionary<string, Mock<ITelegramBotClient>> OtherBots { get; } = new();
+
+    // The server stopped and started again over the same stores, which the next run drives.
+    public void Restart()
+    {
+        Service.Dispose();
+        _cts.Dispose();
+        _cts = new CancellationTokenSource();
+        Service = NewService();
+    }
+
+    private TelegramBotService NewService() => new(
+        BotRegistry,
+        Emitter,
+        CallbackRouter,
+        Catalog,
+        new VoiceNoteDictation(
+            Transcriber, Dictation, Metrics, new Mock<ILogger<VoiceNoteDictation>>().Object),
+        new TelegramGate(Access, _telegramAccounts, new Mock<ILogger<TelegramGate>>().Object),
+        new ChatAgents(Choices, Households, new Mock<ILogger<ChatAgents>>().Object),
+        Households,
+        Bots,
+        Time,
+        new Mock<ILogger<TelegramBotService>>().Object);
+
+    private ITelegramBotClient Connect(string token) =>
+        token is JackToken or SharedToken ? BotClient.Object : OtherBots.GetOrAdd(token, _ => new Mock<ITelegramBotClient>()).Object;
 
     // One poll answers with these updates; the next cancels, which is how the pump stops.
     public void Enqueue(params Update[] updates) => EnqueueSequence((TimeSpan.Zero, updates));

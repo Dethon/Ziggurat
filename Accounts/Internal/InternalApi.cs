@@ -52,6 +52,8 @@ public static class InternalApi
         SessionRefresh.Map(routes);
         TelegramLinking.Map(routes);
         HouseholdImportApi.Map(routes);
+        HouseholdConfigSeedApi.Map(routes);
         TunnelVerification.Map(routes);
+        HouseholdConfiguration.Map(routes);
     }
 }

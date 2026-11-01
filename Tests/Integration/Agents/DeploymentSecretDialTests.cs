@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Prompts;
 using Domain.Security;
 using Infrastructure.Agents;
@@ -43,7 +44,7 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
     public async Task AnAgentsConfiguredEndpoints_PresentTheDeploymentSecret()
     {
         var (factory, _) = Factory();
-        await using var agent = factory.Create(
+        await using var agent = await factory.CreateAsync(
             new AgentKey("conv-1", "jack"), "fran", "jack", new Mock<IToolApprovalHandler>().Object);
 
         var session = await agent.CreateSessionAsync();
@@ -54,7 +55,7 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
     public async Task AWorkersConfiguredEndpoints_PresentTheDeploymentSecret()
     {
         var (factory, captured) = Factory();
-        await using var agent = factory.Create(
+        await using var agent = await factory.CreateAsync(
             new AgentKey("conv-1", "jack"), "fran", "jack", new Mock<IToolApprovalHandler>().Object);
         var spawn = captured.ShouldHaveSingleItem().SubAgentFactory.ShouldNotBeNull();
 
@@ -81,7 +82,8 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
             .WithHttpTransport()
             .WithTools<TestEchoTool>());
         var (factory, _, definitions) = FactoryAndDefinitions();
-        var registered = definitions.RegisterCustomAgent("fran", new CustomAgentRegistration
+        var fran = new Account("home", "fran");
+        var registered = await definitions.RegisterCustomAgentAsync(fran, new CustomAgentRegistration
         {
             Name = "Registered",
             Model = "test-model",
@@ -89,8 +91,8 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
         });
         presented.Clear();
 
-        await using var agent = factory.Create(
-            new AgentKey("conv-1", registered.Id), "fran", registered.Id, new Mock<IToolApprovalHandler>().Object);
+        await using var agent = await factory.CreateAsync(
+            new AgentKey("conv-1", registered.Id), "fran", registered.Id, new Mock<IToolApprovalHandler>().Object, fran);
         var session = await agent.CreateSessionAsync();
         await agent.WarmupSessionAsync(session);
 
@@ -131,10 +133,7 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
             .Setup(r => r.GetPromptsForFeatures(It.IsAny<IEnumerable<string>>()))
             .Returns(Enumerable.Empty<PromptSection>());
 
-        var options = new Mock<IOptionsMonitor<AgentRegistryOptions>>();
-        options.Setup(o => o.CurrentValue).Returns(new AgentRegistryOptions
-        {
-            Agents =
+        AgentDefinition[] agents =
             [
                 new AgentDefinition
                 {
@@ -143,15 +142,14 @@ public sealed class DeploymentSecretDialTests : IAsyncLifetime
                     Model = "test-model",
                     McpServerEndpoints = [_server.Endpoint]
                 }
-            ]
-        });
+            ];
 
         var services = new ServiceCollection()
             .AddSingleton(McpTestSecret.Credentials)
             .AddSingleton(new Mock<IThreadStateStore>().Object)
             .BuildServiceProvider();
 
-        var definitions = new AgentDefinitionProvider(options.Object, new CustomAgentRegistry());
+        var definitions = FixedHouseholdAgents.Provider(agents);
         return (new MultiAgentFactory(
             services,
             definitions,

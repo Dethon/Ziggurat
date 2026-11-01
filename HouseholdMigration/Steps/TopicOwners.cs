@@ -1,4 +1,4 @@
-using System.Globalization;
+using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
@@ -18,11 +18,13 @@ namespace HouseholdMigration.Steps;
 //
 // Only a topic with neither owner nor household is one from before: a Telegram group's review copy is
 // shared and the household's with no owner on purpose, and is left as it is.
+//
+// Every topic from before owners is also from before households, so it is read where it still is,
+// under the shape TopicHouseholds then moves into its household (`topic:{agentId}:{chatId}:{topicId}`),
+// and given its owner in place; a household's topic is never touched.
 public sealed class TopicOwners(IConnectionMultiplexer redis, IThreadStateStore threads) : IMigrationStep
 {
-    // RedisThreadStateStore's record key: topic:{agentId}:{chatId}:{topicId}, an agent id possibly
-    // holding ':' itself, so the two ids are read from the end.
-    private const string Pattern = "topic:*";
+    private const string Pattern = $"{TopicHouseholds.UnmovedRecordPrefix}*";
 
     public async Task<StepReport> RunAsync(Household household, bool dryRun, CancellationToken ct)
     {
@@ -36,10 +38,11 @@ public sealed class TopicOwners(IConnectionMultiplexer redis, IThreadStateStore 
         }
 
         var owned = new List<(TopicMetadata Topic, MigratedPerson Owner, bool Started)>();
-        foreach (var parts in keys.Select(Parts).OfType<(string AgentId, long ChatId, string TopicId)>())
+        foreach (var key in keys.Where(k => TopicHouseholds.Unmoved(k) is not null))
         {
-            if (await threads.GetTopicAsync(parts.AgentId, parts.ChatId, parts.TopicId) is not
-                { OwnerId: null, TenantId: null } topic)
+            var json = await db.StringGetAsync(key);
+            if (json.IsNullOrEmpty
+                || JsonSerializer.Deserialize<TopicMetadata>(json.ToString()) is not { OwnerId: null, TenantId: null } topic)
             {
                 continue;
             }
@@ -48,15 +51,18 @@ public sealed class TopicOwners(IConnectionMultiplexer redis, IThreadStateStore 
             var owner = starter ?? household.Owner;
             if (!dryRun)
             {
-                await threads.SaveTopicAsync(
-                    topic with
+                // Its own key and its own expiry; the space's ordering and the search document hold
+                // nothing an owner changes.
+                await db.StringSetAsync(
+                    key,
+                    JsonSerializer.Serialize(topic with
                     {
                         OwnerId = owner.UserId,
                         TenantId = household.TenantId,
                         Shared = true,
                         OwnerName = starter?.DisplayName
-                    },
-                    keepTtl: true);
+                    }),
+                    expiry: null, keepTtl: true, when: When.Exists);
             }
 
             owned.Add((topic, owner, starter is not null));
@@ -84,14 +90,5 @@ public sealed class TopicOwners(IConnectionMultiplexer redis, IThreadStateStore 
         return new[] { principal?.Account?.UserId, userId, first?.GetSenderId() }
             .Select(household.Named)
             .FirstOrDefault(p => p is not null);
-    }
-
-    private static (string AgentId, long ChatId, string TopicId)? Parts(string key)
-    {
-        var segments = key.Split(':');
-        return segments.Length >= 4
-               && long.TryParse(segments[^2], NumberStyles.Integer, CultureInfo.InvariantCulture, out var chatId)
-            ? (string.Join(':', segments[1..^2]), chatId, segments[^1])
-            : null;
     }
 }

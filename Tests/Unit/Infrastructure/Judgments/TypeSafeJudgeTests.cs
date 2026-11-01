@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Domain.DTOs;
 using Domain.DTOs.Metrics;
 using Domain.Judgments;
 using Infrastructure.Judgments;
@@ -130,6 +131,61 @@ public class TypeSafeJudgeTests
         usage.Sender.ShouldBe("alice");
         usage.AgentId.ShouldBe("jonas");
         usage.ConversationId.ShouldBe("conv-1");
+    }
+
+    // A judgment asked for a household is that household's call: it goes out on the household's own
+    // key, and its usage is counted under the household.
+    [Fact]
+    public async Task Judge_AskedForAHousehold_IsSentWithItsKeyAndCountedUnderIt()
+    {
+        var metrics = new RecordingMetricsPublisher();
+        var handler = new ScriptedHandler(_ => Ok(Answered));
+        var judge = Judge(handler, metrics: metrics);
+
+        await judge.JudgeAsync(
+            AChoiceAndTwoNouls(new JudgmentCaller("m", "alice") { Payer = new ModelPayer("household-1", new ModelKey("household-key")) }),
+            CancellationToken.None);
+
+        handler.Requests.ShouldHaveSingleItem().Authorization.ShouldBe("Bearer household-key");
+        metrics.Published.OfType<TokenUsageEvent>().ShouldHaveSingleItem().TenantId.ShouldBe("household-1");
+    }
+
+    // The home household's judgments, and a shared server's (which holds no household's key), go out
+    // on the host's own key — counted under the household they were for.
+    [Fact]
+    public async Task Judge_AskedForAHouseholdPayingWithTheHostsKey_IsSentWithTheHostsKey()
+    {
+        var metrics = new RecordingMetricsPublisher();
+        var handler = new ScriptedHandler(_ => Ok(Answered));
+        var judge = Judge(handler, metrics: metrics);
+
+        await judge.JudgeAsync(
+            AChoiceAndTwoNouls(new JudgmentCaller("m", "alice") { Payer = new ModelPayer("home", null) }),
+            CancellationToken.None);
+
+        handler.Requests.ShouldHaveSingleItem().Authorization.ShouldBe("Bearer or-key");
+        metrics.Published.OfType<TokenUsageEvent>().ShouldHaveSingleItem().TenantId.ShouldBe("home");
+    }
+
+    // A household's key that OpenRouter refuses is the household's to fix, not the deployment's
+    // setting, and the line says whose without ever printing the key.
+    [Fact]
+    public async Task Judge_AHouseholdsKeyRejected_LogsTheHouseholdOnceAndNeverTheKey()
+    {
+        var logger = new RecordingLogger();
+        var judge = Judge(new ScriptedHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized)), logger);
+        var caller = new JudgmentCaller("m", "alice") { Payer = new ModelPayer("household-1", new ModelKey("household-key")) };
+
+        await judge.JudgeAsync(AChoiceAndTwoNouls(caller), CancellationToken.None);
+        await judge.JudgeAsync(AChoiceAndTwoNouls(caller), CancellationToken.None);
+        await judge.JudgeAsync(AChoiceAndTwoNouls(), CancellationToken.None);
+
+        var errors = logger.Entries.Where(e => e.Level == LogLevel.Error).Select(e => e.Message).ToList();
+        errors.Count.ShouldBe(2);
+        errors[0].ShouldContain("household-1");
+        errors[0].ShouldNotContain("openRouter:apiKey");
+        errors[1].ShouldContain("openRouter:apiKey");
+        logger.Entries.ShouldAllBe(e => !e.Message.Contains("household-key"));
     }
 
     [Fact]

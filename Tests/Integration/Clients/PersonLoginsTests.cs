@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using System.Text.Json.Nodes;
+using Domain.Security.Sealing;
 using Infrastructure.Clients.Browser;
 using Infrastructure.StateManagers;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -23,7 +23,7 @@ public class PersonLoginsTests(RedisFixture redis) : IClassFixture<RedisFixture>
     private RedisPersonStateStore? _store;
     private PersonLogins? _logins;
 
-    private RedisPersonStateStore Store => _store ??= new RedisPersonStateStore(redis.Connection, RandomNumberGenerator.GetBytes(32));
+    private RedisPersonStateStore Store => _store ??= new RedisPersonStateStore(redis.Connection, SealingKey.Generate());
 
     private long _maxRecordBytes = 8 * 1024 * 1024;
 

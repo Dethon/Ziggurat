@@ -9,10 +9,11 @@ paths:
 # The system prompt is a manifest, not a concatenation
 
 Every section that can reach a system prompt is declared in `PromptManifest`, with a name, a
-one-line purpose, a priority band, a token budget, an audience and a conflict policy.
-`PromptComposer` turns a `PromptContext` into sections and `PromptAssembly` orders, joins and
-audits them. Nothing decides an order at a call site: adding a section is a declaration plus a line
-binding its text, never an argument about where a `Prepend` goes.
+one-line purpose, a priority band, a token budget, an audience and a conflict policy — read from
+the section's document (below), whose header is that declaration. `PromptComposer` turns a
+`PromptContext` into sections and `PromptAssembly` orders, joins and audits them. Nothing decides an
+order at a call site: adding a section is a document plus a line binding its text, never an
+argument about where a `Prepend` goes.
 
 - **A declaration is metadata; the words are bound to it.** Half these sections are written by
   somebody else — an MCP server serves its own prompt and can change it without this repo being
@@ -23,8 +24,9 @@ binding its text, never an argument about where a `Prepend` goes.
   because the provider's cache keys on a byte prefix; custom instructions and the channel override
   sit after that; the language rule is last.
 - **A prompt name is a key.** Two servers answering to `system_prompt` cannot both be budgeted, so
-  each server's `[McpServerPrompt(Name = …)]` reads the `Name` constant beside its text in
-  `Domain/Prompts` and the manifest declares that same constant.
+  each server's `[McpServerPrompt(Name = …)]` reads the `Name` constant of its section's class in
+  `Domain/Prompts`, and the section's document is named after that same constant. The constant
+  stays in code because an attribute takes nothing else.
 - **A contradiction is a question with an answer.** A section names the rules it governs
   (`PromptRules`) and the sections it beats. Two sections claiming one rule with no declared winner
   is reported by the assembly and fails the tests; so is a section claiming to override one that is
@@ -45,6 +47,85 @@ binding its text, never an argument about where a `Prepend` goes.
 - **Over budget is reported, never thrown.** `McpAgent` logs the assembly's warnings once per
   distinct set — a prompt that grew is a worse outcome than a turn that fails, and a server that
   grows its prompt must not take the agent down. What fails a build is `PromptBudgetTests`.
+
+## A section is a document
+
+Every section's words and declaration live in one text document, `Domain/Prompts/Sections/<name>.md`,
+so the prompt is data a later editor can work on and a claim sits beside its prose (ADR 0031). The
+classes beside them (`TimerPrompt`, `VoicePrompt`, …) are handles: the `Name` constant, the
+server's `Description`, the C# accessors the hosts call, and one `PromptClaim` per claim a scenario
+cites, resolved from the document by id (`document.Claim("timers.…")`) — a statement lives in the
+document only, and a handle whose id the document stopped declaring fails the first test that
+touches its class.
+
+- **The format.** A header between two `---` lines, then the words. A header line is
+  `key: value`, split at the first colon (a purpose is a sentence), and `#` starts a comment line —
+  the reason a budget is what it is goes there. A section's keys: `name` (= the file name), `purpose`,
+  `priority` (a `PromptPriority` band by name), `budget`, `served-by`, `audience-agents`,
+  `audience-channels`, `governs` (`PromptRules` words), `beats`, `selectable`, `placeholders`, and
+  `claims:` followed by `- <id>: <statement>` lines. An unknown key, band or rule fails the document
+  (`PromptDocument.AsSection`). After the main body, `<!-- part: <name> -->` lines open named parts:
+  words the host adds or swaps in — the timer roster's heading, the language pins, the mounts
+  section's machines and shell paragraphs. Each body is its lines without the blank lines around
+  them; CRLF is read as LF.
+- **A placeholder is `{{name}}`**, lowercase, digits and `_`, no spaces — so Jinja's and Templater's
+  `{{ … }}` in a skill body stay prose. It is filled verbatim, in one pass. The host fills what only
+  it knows: the date, the agent's name and description, the user, the custom instructions, the
+  language, the satellites, the printer's formats, the sandbox's mount point and workspace, the
+  mounts, the scheduling setup. A placeholder absorbs its own separator where the words vary — the
+  identity's ` {{description}}` is empty for an agent with none, `{{satellites}}` and `{{setup}}`
+  are where a block lands with its blank line — so no conditional lives in a document; the host
+  chooses a part, never an `if`. Lists and their item formats (a mount line, a roster line, an
+  agent line) stay in code; every sentence is in a document.
+- **The contract is held from both ends.** The header's `placeholders:` lists every hole the bodies
+  use, and reading the document fails on one declared and used nowhere or used and undeclared —
+  an edit that drops `{{date}}` from the words fails where the documents are loaded, at startup and
+  in `PromptDocumentsTests`. The host names what it fills when it takes a body
+  (`document.Template("satellites")`, `document.Part("satellites", "roster")`, in a static field), so
+  a hole dropped from the header and the words alike fails the host's class; `PromptTemplate.Fill`
+  refuses a value missing or extra. A section with nothing to fill is read with `document.Text`.
+- **Shipped embedded, in Domain.** One folder because Domain owns every declaration — the agent,
+  the eval and every server read the manifest, and the servers already take their words from
+  `Domain/Prompts`. Embedded rather than copied to output, for the public suffix list's reason: the
+  words are the code's, not a policy a host may override, and a container that edited its own
+  prompt would make every snapshot a statement about another prompt. The repository's
+  `.dockerignore` drops `**/*.md` and puts `Domain/Prompts/**/*.md` back
+  (`DeploymentConformanceTests` holds it), and `Domain.csproj` fails a build that embedded no
+  section or no skill. Agent templates join `Domain/Prompts/` as documents of their own kind.
+- **A skill is a document too**, `Domain/Prompts/Skills/<name>.md`, in the same format and read by
+  `PromptDocument.AsSkill`. Its keys: `name` (= the file name), `description` (the advertisement,
+  verbatim — Jev and the model read it), `description-budget`, `body-budget`, `served-by` (required),
+  `preload-reads`, `placeholders` and `claims:`, the trigger claim first. It lives in Domain and not
+  beside its server, because the server ships the skill (ADR 0039) but the agent, the eval, Jev's
+  preload and every budget test read its declaration from the manifest, and none of them references
+  a server; each server references Domain, so the document is in its image already. The classes
+  beside them (`HomeAssistantSkill`, `SandboxSkill`, …) are handles: the `Name` constant, the
+  `Text` or `For(...)` the server's `AddSkills` takes, and the claim handles. The manifest lists
+  skills by name; the order a model sees them in is its servers' registration order.
+- **The changed tier reads the header.** `ChangeScope` parses a changed `.md` with the same parser,
+  so an edit anywhere in a document — words, a part, a statement — selects every scenario testing a
+  claim its header declares, and an id its words merely mention is not a declaration. Code still
+  declares by spelling a quoted id, which is how a claim handle's file, or a skill still declared in
+  code, selects. `ChangeScopeTests` runs every shipped document against the real suite.
+- **What is not a section stays code.** The memory pipeline's extraction, consolidation and profile
+  prompts are the system prompts of its own model calls, and the HA setup index is a file the mount
+  builds on every read; neither reaches an agent's prompt as a section.
+
+## An agent template is a document
+
+A household's agent starts from a shipped template (CONTEXT.md, "Agent template"):
+`Domain/Prompts/Agents/<name>.md`, embedded as the sections are, read by `AgentTemplates` into an
+`AgentDefinition` whose id is the file's name. Today: `jonas`, a barebones general assistant that
+dials the shared servers alone (scheduling, timers, Sugary, Idealista) with files, workers and memory,
+and `sugary`, the estimator. The header is the definition — `name`, `purpose`, `agent-name` (the name a
+household starts with), `model`, `reasoning-effort`, `provider-routing` (one JSON object on its line,
+a threshold an object as a seeded definition's is), `servers`, `features`, `whitelist`,
+`prompt-sections` (comma lists), `uses-outposts`, `no-tools` — and the words are the description the
+identity section reads after the agent's name; a template fills no placeholder and has no parts or
+claims. An unknown key fails the document. A household gives a template its id, its name and its
+custom instructions (`.claude/rules/household-config.md`, "The agents a household runs"); everything
+else is the template's. The prompt snapshots are the home's seeded agents' (the eval's copies), not
+the templates'.
 
 ## A skill is a section the model reads on demand
 
@@ -105,8 +186,9 @@ parent turn's, written onto its request by the run tool from the `ConversationCo
   any choice.
 - **A skill is a manifest entry.** `PromptManifest.Skills` declares each one beside the sections:
   name, the description that is the advertisement, a description budget, a body budget, the server
-  that serves it and its claims. Its text lives in `Domain/Prompts` beside its name constant, like a
-  section's, and the server publishes it through the hosting helper — never a hand-written resource.
+  that serves it and its claims — read from its document's header, its text from the same
+  document's words, and the server publishes it through the hosting helper — never a hand-written
+  resource.
 - **The ceiling ratchets.** `PromptManifest.StandingTokens` is the largest agent's declared sections
   rounded up to the hundred, and the budget tests refuse a figure left where it was. A move lowers
   it by editing that one number.

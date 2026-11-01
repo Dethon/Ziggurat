@@ -1,3 +1,5 @@
+using Domain.DTOs.Voice;
+
 namespace Domain.DTOs.WebChat;
 
 public enum TopicChangeType
@@ -38,6 +40,19 @@ public record ApprovalOfferedNotification(
     ToolApprovalRequestMessage Request,
     string? TopicId = null);
 
+// A timer ringing for this person — one with no satellite to ring on — shown insistently on every
+// chat client they have open until they dismiss it on one of them, or it ends elsewhere.
+public record AlertOfferedNotification(
+    string AlertId,
+    string Text,
+    AnnounceKind Kind = AnnounceKind.Timer);
+
+// The alert ended — dismissed here or on another of the person's channels, or rung out — so every
+// client showing it takes it down.
+public record AlertSettledNotification(
+    string AlertId,
+    bool Dismissed);
+
 public record UserMessageNotification(
     string TopicId,
     string Content,
@@ -45,3 +60,7 @@ public record UserMessageNotification(
     DateTimeOffset? Timestamp,
     string? CorrelationId = null,
     string? SpaceSlug = null);
+
+// The agent registered its agents again. It carries no list: every household is shown its own agents,
+// so a client asks for its own (ChatHub.GetAgents) rather than being sent the home's.
+public record AgentsUpdatedNotification;

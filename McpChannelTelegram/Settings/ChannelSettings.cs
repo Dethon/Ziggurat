@@ -10,7 +10,7 @@ public record ChannelSettings : IMcpHostSettings
     // This server's own credential, which its /mcp asks for (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
 
-    public required AgentBotConfig[] Bots { get; init; }
+    public BotSettings Bots { get; init; } = new();
 
     // The accounts service, asked with this server's own credential (Mcp:SharedSecret) whose account
     // each sender's numeric Telegram id is linked to, and the ways in the bot redeems.
@@ -33,10 +33,14 @@ public record LinkCacheSettings
     public TimeSpan Unlinked { get; init; } = TimeSpan.FromSeconds(5);
 }
 
-public record AgentBotConfig
+// The bots this server polls. The shared bot is the deployment's and serves every household (its
+// token a secret; empty runs none); every household's own bots are its configuration's, read across
+// households this often. The reader keeps that answer for a minute and drops it the moment any
+// household's keys are saved, so asking often costs nothing and a saved bot starts within moments.
+public record BotSettings
 {
-    public required string AgentId { get; init; }
-    public required string BotToken { get; init; }
+    public string SharedToken { get; init; } = "";
+    public TimeSpan Refresh { get; init; } = TimeSpan.FromSeconds(5);
 }
 
 // What only Telegram needs on top of the shared chat settings: the gibberish gate the satellites

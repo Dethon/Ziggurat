@@ -43,6 +43,11 @@ internal sealed class ConversationGroup(
     // not believe, so it says no more than that; the reason is on the errors feed.
     internal const string RefusedTurnAnswer = "This message could not be verified as yours, so it was not answered.";
 
+    // What a person whose household set no OpenRouter key is told: nothing was asked of any model, and
+    // nothing will be until a key is added, which they cannot do from here.
+    internal const string WithoutKeyAnswer =
+        "Your household has no OpenRouter key set, so its assistant cannot answer yet. Ask whoever runs it to add one.";
+
     // The outer token: it ends with the monitor, not with a turn. The two establishing stages
     // that reach outside — minting the delivery targets and restoring the thread — run on it
     // rather than on the per-turn token, so a /cancel arriving mid-establish lets them finish
@@ -81,7 +86,10 @@ internal sealed class ConversationGroup(
         AgentKey DeliveryKey,
         DisposableAgent Agent,
         AgentSession Thread,
-        Task Warmup);
+        Task Warmup,
+        // The group's publisher, naming the household its agent was built for: what its turns cost
+        // in time and runs is that household's.
+        IMetricsPublisher Metrics);
 
     public async IAsyncEnumerable<TurnUpdate> RunAsync(
         IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)> messages,
@@ -233,6 +241,15 @@ internal sealed class ConversationGroup(
                     // restoring the thread arrives as a TaskCanceledException. Without it that
                     // timeout would break out of here with the group never completed, leaving
                     // every later message queued into a channel nobody reads.
+                    await ObserveAbandonedWarmupAsync();
+                    break;
+                }
+                catch (HouseholdWithoutKeyException ex)
+                {
+                    // Refused before any model was asked. The group ends as a failed setup does, so the
+                    // next message is built afresh and runs once the household has set a key.
+                    await RefuseWithoutKeyAsync(x, ex.HouseholdId);
+                    CancelOwnContext();
                     await ObserveAbandonedWarmupAsync();
                     break;
                 }
@@ -444,13 +461,39 @@ internal sealed class ConversationGroup(
             Message = $"A turn on {channel.ChannelId} for conversation {message.ConversationId} was refused: {reason}"
         });
 
+        await AnswerRefusedAsync(channel, message, RefusedTurnAnswer);
+    }
+
+    // The same answer for a household that cannot pay, counted as that household's. A fire has nobody
+    // waiting on it, so the errors feed is where it is told.
+    private async Task RefuseWithoutKeyAsync(AdmittedTurn x, string householdId)
+    {
+        logger.LogWarning(
+            "Refused a turn on {ChannelId} for conversation {ConversationId}: household {Household} has set no OpenRouter key",
+            x.Channel.ChannelId, x.Message.ConversationId, householdId);
+        metricsPublisher.ForHousehold(householdId).Publish(new ErrorEvent
+        {
+            Service = "agent",
+            ErrorType = ChatMonitor.HouseholdWithoutKeyErrorType,
+            Message = $"A turn on {x.Channel.ChannelId} for conversation {x.Message.ConversationId} was refused: " +
+                      $"household {householdId} has set no OpenRouter key"
+        });
+
+        if (x.Message.Origin is null)
+        {
+            await AnswerRefusedAsync(x.Channel, x.Message, WithoutKeyAnswer);
+        }
+    }
+
+    private async Task AnswerRefusedAsync(IChannelConnection channel, ChannelMessage message, string answer)
+    {
         var turnKey = message.TurnKey ?? TurnKey.Mint();
         try
         {
             await channel.SendReplyAsync(new SendReplyParams
             {
                 ConversationId = message.ConversationId,
-                Content = RefusedTurnAnswer,
+                Content = answer,
                 ContentType = ReplyContentType.Error,
                 IsComplete = false,
                 TurnKey = turnKey
@@ -536,9 +579,9 @@ internal sealed class ConversationGroup(
         var approvals = new ApprovalRelay(approvalChannel, channels, logger, TimeProvider.System);
         // The household the verified identity names — the guest's too, who has no account — is the
         // one whose own servers the agent reaches.
-        var agent = _agent = agentFactory.Create(
-            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account,
-            x.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null);
+        var tenantId = x.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null;
+        var agent = _agent = await agentFactory.CreateAsync(
+            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account, tenantId, _groupCt);
         var thread = await GetOrRestoreThread(agent, deliveryKey);
 
         // Start session warmup (MCP connections + tool discovery) without awaiting it yet, so
@@ -547,7 +590,8 @@ internal sealed class ConversationGroup(
         // of operations is well-defined.
         var warmup = agent.WarmupSessionAsync(thread, _turnCt);
 
-        return _state = new GroupState(x.Message, targets, deliveryKey, agent, thread, warmup);
+        return _state = new GroupState(
+            x.Message, targets, deliveryKey, agent, thread, warmup, metricsPublisher.ForHousehold(tenantId));
     }
 
     private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(AdmittedTurn x)
@@ -563,7 +607,7 @@ internal sealed class ConversationGroup(
         // the window rather than sitting inside it, so the scope can carry the turn's own
         // anchor: the conversation this turn's reply actually lands in, which for a later
         // interactive turn is its own origin rather than the group's delivery key.
-        var firstReply = metricsPublisher.MeasureLatency(
+        var firstReply = state.Metrics.MeasureLatency(
             LatencyStage.FirstReply,
             targets.Count > 0 ? targets[0].ConversationId : agentKey.ConversationId);
         // A channel that has to recognise its own answer mints the key itself, before it dispatches
@@ -733,7 +777,7 @@ internal sealed class ConversationGroup(
         {
             logger.LogWarning(ex, "Skill preload failed for conversation {ConversationId}", message.ConversationId);
             var failed = new SkillPreload(SkillPreloadOutcome.Error, []);
-            metricsPublisher.Publish(SkillPreloader.ToEvent(Request(message, [], [], state), failed));
+            state.Metrics.Publish(SkillPreloader.ToEvent(Request(message, [], [], state), failed));
             return failed;
         }
     }
@@ -742,8 +786,12 @@ internal sealed class ConversationGroup(
         ChannelMessage message, IReadOnlyList<PromptSkill> skills, IReadOnlyList<ChatMessage> history, GroupState state) =>
         new(message.Content, skills, history)
         {
+            // Paid as the turn is: by the household the agent was built for, on its key.
             Caller = new JudgmentCaller(
-                message.ConfigPatch?.Model, message.Sender, message.AgentId, state.DeliveryKey.ConversationId),
+                message.ConfigPatch?.Model, message.Sender, message.AgentId, state.DeliveryKey.ConversationId)
+            {
+                Payer = state.Agent.Payer
+            },
             ChannelId = message.ChannelId,
             // The session's mounts, built by the warmup awaited above: the reads a preloaded
             // skill declares are made over them, the way the model's own would be.
@@ -769,7 +817,7 @@ internal sealed class ConversationGroup(
                         turn.Message, stopwatch.ElapsedMilliseconds, !faulted, error);
                     if (evt is not null)
                     {
-                        metricsPublisher.Publish(evt);
+                        state.Metrics.Publish(evt);
                     }
 
                     return ValueTask.CompletedTask;

@@ -259,8 +259,8 @@ public sealed class MetricsHubBinder(
         _subscriptions.Add(hub.On("OnHealthUpdate", OnPush<ServiceHealthUpdate>(_ => false, evt =>
         {
             var current = healthStore.State.Services.ToList();
-            var idx = current.FindIndex(s => s.Service == evt.Service);
-            var entry = new ServiceHealth(evt.Service, evt.IsHealthy, evt.Timestamp.ToString("o"));
+            var idx = current.FindIndex(s => s.Service == evt.Service && s.Household == evt.Household);
+            var entry = new ServiceHealth(evt.Service, evt.IsHealthy, evt.Timestamp.ToString("o"), evt.Household);
 
             if (idx >= 0)
             {

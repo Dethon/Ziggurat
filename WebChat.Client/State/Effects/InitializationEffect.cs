@@ -23,6 +23,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly ILogger<InitializationEffect> _logger;
     private readonly IDisposable _initializeRegistration;
     private readonly IDisposable _setAgentsRegistration;
+    private readonly IDisposable _agentsUpdatedRegistration;
     private readonly IDisposable _becameLiveAgainSubscription;
     private int _awaitingAgentCatalog;
 
@@ -55,8 +56,10 @@ public sealed class InitializationEffect : IDisposable
             _ => HandleInitializeAsync().LogFaults(_logger, nameof(Initialize)));
         _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(
             action => HandleAgentCatalogArrivedAsync(action.Agents).LogFaults(_logger, nameof(SetAgents)));
+        _agentsUpdatedRegistration = dispatcher.RegisterHandler<AgentsUpdated>(
+            _ => RefetchAgentCatalogAsync().LogFaults(_logger, nameof(AgentsUpdated)));
 
-        // Nothing else retries a not-live catalog fetch on its own: a SetAgents broadcast (the
+        // Nothing else retries a not-live catalog fetch on its own: an AgentsUpdated push (the
         // agent re-registering) is one way it completes, and the next connection epoch is the
         // other — the client's own retry, not dependent on the agent process doing anything.
         _becameLiveAgainSubscription = connectionStore.BecameLiveAgain.Subscribe(
@@ -83,20 +86,15 @@ public sealed class InitializationEffect : IDisposable
         // Nothing to say about who this is: the hub took the person from the proxy's headers as
         // the connection arrived, so everything below may be asked at once.
 
-        // Validate and join space (must happen before push subscribe so space context is set)
-        var spaceSlug = _spaceStore.State.CurrentSlug;
-        var space = await _configService.GetSpaceAsync(spaceSlug);
-        if (space is null)
+        // Validate and join space (must happen before push subscribe so space context is set). The
+        // household's spaces are the hub's to say; a slug that is none of them opens the household's
+        // first space instead.
+        var spaces = await _topicService.GetSpacesAsync();
+        if (spaces is { IsLive: true, Value: { } household }
+            && (household.FirstOrDefault(s => s.Slug == _spaceStore.State.CurrentSlug) ?? household.FirstOrDefault()) is { } space)
         {
-            _dispatcher.Dispatch(new InvalidSpace());
-            spaceSlug = _spaceStore.State.CurrentSlug;
-            space = await _configService.GetSpaceAsync(spaceSlug);
-        }
-
-        if (space is not null)
-        {
-            await _topicService.JoinSpaceAsync(spaceSlug);
-            _dispatcher.Dispatch(new SpaceValidated(spaceSlug, space.Name, space.AccentColor));
+            await _topicService.JoinSpaceAsync(space.Slug);
+            _dispatcher.Dispatch(new SpaceValidated(space.Slug, space.Name, space.AccentColor, space.DefaultAgent));
         }
 
         // Best-effort, network/browser-dependent — must not gate the rest of init
@@ -108,7 +106,7 @@ public sealed class InitializationEffect : IDisposable
         var catalog = await _agentService.GetAgentsAsync();
         if (!catalog.IsLive)
         {
-            // Nothing else retries this fetch on its own: a SetAgents broadcast (the agent
+            // Nothing else retries this fetch on its own: an AgentsUpdated push (the agent
             // re-registering) or the next connection epoch (BecameLiveAgain, below) completes
             // the initialization this load could not.
             Volatile.Write(ref _awaitingAgentCatalog, 1);
@@ -157,6 +155,16 @@ public sealed class InitializationEffect : IDisposable
         await SelectAgentAndLoadTopicsAsync(catalog.Value!);
     }
 
+    // The agent registered again: this household's agents are asked for afresh, and their arrival is
+    // a SetAgents like any other, so it also finishes a first load that could not fetch them.
+    private async Task RefetchAgentCatalogAsync()
+    {
+        if (await _agentService.GetAgentsAsync() is { IsLive: true, Value: { } agents })
+        {
+            _dispatcher.Dispatch(new SetAgents(agents));
+        }
+    }
+
     // The deferred completion is owed exactly once, to whichever path gets here first.
     private bool ClaimAgentCatalog() => Interlocked.Exchange(ref _awaitingAgentCatalog, 0) == 1;
 
@@ -167,15 +175,10 @@ public sealed class InitializationEffect : IDisposable
             return;
         }
 
-        var savedAgentId = await _localStorage.GetAsync("selectedAgentId");
-        var savedAgent = agents.FirstOrDefault(a => a.Id == savedAgentId);
-        var agentToSelect = savedAgent ?? agents[0];
-        _dispatcher.Dispatch(new SelectAgent(agentToSelect.Id));
-
-        if (savedAgent is null)
-        {
-            await _localStorage.SetAsync("selectedAgentId", agentToSelect.Id);
-        }
+        // Not remembered: what the space opened on is the person's pick only once they pick it, so a
+        // default the household changes later still reaches them.
+        var agentToSelect = await SpaceAgent.ChooseAsync(_localStorage, agents, _spaceStore.State);
+        _dispatcher.Dispatch(new SelectAgent(agentToSelect.Id, Picked: false));
 
         var firstPage = await _topicService.GetTopicPageAsync(agentToSelect.Id, _spaceStore.State.CurrentSlug);
         if (!firstPage.IsLive)
@@ -214,6 +217,7 @@ public sealed class InitializationEffect : IDisposable
     {
         _initializeRegistration.Dispose();
         _setAgentsRegistration.Dispose();
+        _agentsUpdatedRegistration.Dispose();
         _becameLiveAgainSubscription.Dispose();
     }
 }

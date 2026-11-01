@@ -153,3 +153,28 @@ public sealed class TunnelCredential
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? RevokedAt { get; set; }
 }
+// One section of a household's configuration (Domain/DTOs/Household): a JSON document carrying its
+// own schemaVersion, kept as plain text — not a provider's JSON column — with its secret fields
+// sealed under the household's data key. A household holds at most one of each section; one it has
+// not saved reads as the section's defaults.
+public sealed class HouseholdSection
+{
+    public required string Id { get; init; }
+    public required string TenantId { get; init; }
+    public required string Section { get; init; }
+    public required string Document { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+// The random key a household's secrets are sealed with, kept only wrapped by the deployment's master
+// key. MasterKeyId says which master wrapped it, so a rotation can be rerun and a service started
+// with the wrong master says so instead of failing to open every secret one at a time.
+public sealed class HouseholdDataKey
+{
+    public required string Id { get; init; }
+    public required string TenantId { get; init; }
+    public required byte[] WrappedKey { get; set; }
+    public required string MasterKeyId { get; set; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? RewrappedAt { get; set; }
+}
