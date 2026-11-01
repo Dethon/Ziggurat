@@ -65,7 +65,8 @@ public partial class DashboardAdminE2EFixture : E2EFixtureBase
             .WithNetwork(_network)
             .WithNetworkAliases("redis")
             .WithEnvironment("REDIS_ARGS", $"--requirepass {RedisPassword}")
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilCommandIsCompleted("redis-cli", "-a", RedisPassword, "ping"))
+            .WithPortBinding(6379, true)
+            .WithWaitStrategy(Wait.ForUnixContainer().UntilExternalTcpPortIsAvailable(6379))
             .Build();
 
         // As compose wires it, but for this host: its store in a tmpfs that starts empty, the stack's
@@ -82,6 +83,7 @@ public partial class DashboardAdminE2EFixture : E2EFixtureBase
             .WithEnvironment("CALLERS__agent", AgentCredential)
             .WithEnvironment("AGENTURL", $"http://host.docker.internal:{agentPort}")
             .WithEnvironment("TZ", "Europe/Madrid")
+            .WithPortBinding(8080, true)
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/accounts/sign-in")))
             .Build();
