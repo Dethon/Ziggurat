@@ -63,6 +63,7 @@ public sealed class HouseholdSpacesAdminTests(RedisFixture redis) : IClassFixtur
         var admin = server.Admin(await server.MintSessionAsync(ana));
         var attic = new HouseholdSpace { Slug = "attic", Name = "Desván", Order = 1 };
         await admin.PutAsync(AdminProtocol.Spaces, new SpacesSection { Spaces = [HouseholdSpace.Default, attic] });
+        server.Clock.Advance(TimeSpan.FromMinutes(1));
 
         var saved = await admin.PutAsync(AdminProtocol.Spaces, new SpacesSection { Spaces = [HouseholdSpace.Default] });
 
