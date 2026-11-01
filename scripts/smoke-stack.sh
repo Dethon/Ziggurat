@@ -66,12 +66,15 @@ KIT=(env PUID="$(id -u)" PGID="$(id -g)"
      -p tenant-kit-smoke)
 [[ -e /dev/dri ]] || KIT+=(-f TenantKit/docker-compose.override.no-dri.yml)
 KIT_SERVERS=(websearch vault library sandbox printer)
-KIT_SERVICES=(redis camoufox mcp-websearch mcp-vault mcp-library mcp-sandbox mcp-printer)
+KIT_SERVICES=(redis camoufox mcp-websearch mcp-vault mcp-library mcp-sandbox smoke-printer mcp-printer)
 KIT_STATE=DockerCompose/volumes/smoke/kit
 # The deployment's main host, as the Caddyfile serves it: where every kit server's tunnel opens.
 DEPLOYMENT_HOST="$(grep -o '^assistants\.[^ ]*' DockerCompose/caddy/Caddyfile)"
 export DEPLOYMENT_HOST
 export KIT_REDIS_PASSWORD="${KIT_REDIS_PASSWORD:-local-kit-redis-password}"
+# The kit asks for its site's printer; the smoke override replaces it with its stand-in, so this only
+# fills the kit's required placeholder and never names a printer anything reaches.
+export PRINTER_URI="${PRINTER_URI:-ipp://smoke-printer.local:8631/ipp/print}"
 
 # Asks until the command succeeds: the accounts service's verbs need its store prepared, and Caddy
 # makes its local CA on its first start.

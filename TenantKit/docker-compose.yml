@@ -305,6 +305,8 @@ services:
     restart: unless-stopped
     environment:
       <<: [*timezone, *hub]
+      # The site's own printer, by its IPP address on the site's LAN.
+      PRINTERURI: ${PRINTER_URI:?set PRINTER_URI in .env}
       MCP__TUNNEL__SERVERNAME: printer
       MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_PRINTER}
     networks:
