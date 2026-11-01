@@ -57,6 +57,8 @@ public static class ServiceCollectionExtensions
             services.AddScoped<IAdminService, AdminService>();
             services.AddScoped<HouseholdSettingsStore>();
             services.AddScoped<HouseholdSettingsEffect>();
+            services.AddScoped<HouseholdAgentsStore>();
+            services.AddScoped<HouseholdAgentsEffect>();
 
             return services;
         }

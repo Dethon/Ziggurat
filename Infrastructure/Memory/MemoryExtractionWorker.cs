@@ -124,7 +124,8 @@ public class MemoryExtractionWorker(
                 StoredCount = outcomes.Count(o => o == CandidateOutcome.Stored),
                 Outcome = outcome,
                 UserId = request.UserId,
-                AgentId = agentName,
+                AgentId = request.AgentId,
+                AgentName = agentName,
                 ConversationId = request.ConversationId
             };
         }
@@ -233,7 +234,7 @@ public class MemoryExtractionWorker(
     }
 
     private static MemoryJudgmentContext Context(MemoryExtractionRequest request, string? agentName, ModelPayer payer) =>
-        new(request.UserId, agentName, request.ConversationId) { Payer = payer };
+        new(request.UserId, request.AgentId, request.ConversationId) { Payer = payer };
 
     private async Task<IReadOnlyList<ChatMessage>> BuildExtractionWindowAsync(MemoryExtractionRequest request)
     {

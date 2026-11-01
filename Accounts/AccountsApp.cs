@@ -37,6 +37,7 @@ public static class AccountsApp
             .AddSingleton<MembersPage>()
             .AddSingleton<AdminLog>()
             .AddSingleton<ConnectedServersClient>()
+            .AddSingleton<AgentVersions>()
             // The admin API believes the assertion the proxy's session check signed for the admin
             // channel, which is this service's own: verified against its own keys, on its own clock,
             // with the skew every verifier forgives.

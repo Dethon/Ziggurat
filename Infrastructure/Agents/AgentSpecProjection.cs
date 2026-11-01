@@ -34,7 +34,7 @@ internal static class AgentSpecProjection
             DisplayName = $"{definition.Name}-{agentKey.ConversationId}",
             PromptName = definition.Name,
             Description = definition.Description ?? "",
-            MetricsAgentId = definition.Name,
+            MetricsAgentName = definition.Name,
             RoutingSessionId = $"{definition.Id}:{agentKey.ConversationId}",
             ConversationId = agentKey.ConversationId,
             UserId = userId,
@@ -95,7 +95,7 @@ internal static class AgentSpecProjection
             DisplayName = identity,
             PromptName = identity,
             Description = definition.Description ?? "",
-            MetricsAgentId = definition.Name,
+            MetricsAgentName = definition.Name,
             // Fresh every spawn, so a subagent never shares the parent's prompt cache: its
             // static prefix is its own instructions and its own tools, and sticking it to the
             // parent's session would route the two to the same cached prefix.

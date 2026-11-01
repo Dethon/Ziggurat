@@ -54,7 +54,7 @@
                     {
                         <div class="table-row">
                             <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
-                            <span>@evt.AgentId</span>
+                            <span>@(evt.AgentName ?? evt.AgentId)</span>
                             <span>@evt.Channel</span>
                             <span class="@OutcomeClass(evt.Outcome)">@evt.Outcome</span>
                             <span>@string.Join(", ", evt.Skills)</span>
