@@ -12,6 +12,7 @@ using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Topics;
 using Infrastructure.Metrics;
 using Infrastructure.Tunnels;
+using Microsoft.Extensions.Logging;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Unit;
@@ -29,6 +30,7 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
     private const string AgentCredential = "agent-credential";
 
     private readonly RecordingMetricsPublisher _metrics = new();
+    private readonly CapturingLoggerProvider _errors = new(LogLevel.Error);
     private readonly string _keyDirectory = Path.Combine(Path.GetTempPath(), "tunnel-tests", Guid.NewGuid().ToString("N"));
     private AccountsServer _accounts = null!;
     private RelayHost _relay = null!;
@@ -48,7 +50,7 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
         (_home, _fran) = (fran.TenantId, fran.UserId);
         (_household, _ana) = await _accounts.SeedHouseholdAsync("Ana's", "Ana");
         var keys = SigningKeyStore.Open(new SigningKeySettings { KeyDirectory = _keyDirectory });
-        _relay = await RelayHost.StartAsync(_accounts, AgentCredential, redis.ConnectionString, keys, _metrics);
+        _relay = await RelayHost.StartAsync(_accounts, AgentCredential, redis.ConnectionString, keys, _metrics, logs: _errors);
     }
 
     public async Task DisposeAsync()
@@ -124,6 +126,26 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _metrics.Published.OfType<HeartbeatEvent>().ShouldHaveSingleItem().ShouldSatisfyAllConditions(
             e => e.Service.ShouldBe("a-household-server"),
             e => e.Origin.ShouldBe(ServerAddress.Tunnelled(_home, serverName).Name));
+    }
+
+    // A back-call's connection outlives its request (keep-alive), so a server going away closes its
+    // tunnel under a connection the gateway's Kestrel still holds — which Kestrel then aborts with no
+    // reason given. The tunnel ends as any other does, and nothing in the gateway fails over it.
+    [Fact]
+    public async Task ATunnelClosingUnderAKeptBackCallConnection_EndsAsAnyOtherDoes()
+    {
+        var port = await ServerOfAsync(_home, HouseholdServerNames.WebSearch, BackCallProtocol.Metrics);
+        using var http = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}{BackCallProtocol.MetricsPath}") };
+        await new HttpMetricSink(http).SendAsync(new HeartbeatEvent { Service = "a-household-server" });
+        _relay.Registry.Find(_home, HouseholdServerNames.WebSearch).ShouldNotBeNull();
+
+        await _servers[^1].DisposeAsync();
+        _servers.RemoveAt(_servers.Count - 1);
+
+        await Eventually.Until(() => _relay.Registry.Find(_home, HouseholdServerNames.WebSearch) is null,
+            "the closed tunnel to leave the registry");
+        await Eventually.Settle();
+        _errors.Messages.ShouldBeEmpty();
     }
 
     // A kit server's events count against the household its tunnel's credential names, never the one
