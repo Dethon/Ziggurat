@@ -50,4 +50,7 @@ public interface IAdminService
     Task<AdminAnswer<MintedServerCredential>> AddServerAsync(ServerAddition addition);
 
     Task<AdminAnswer<AdminServers>> RevokeServerCredentialAsync(string credentialId);
+
+    // The household's usage over a month, yyyy-MM, or the current one when none is named.
+    Task<AdminAnswer<AdminUsage>> GetUsageAsync(string? month);
 }

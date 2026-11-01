@@ -81,5 +81,6 @@ _ = app.Services.GetRequiredService<OnboardingEffect>();
 _ = app.Services.GetRequiredService<HouseholdAgentsEffect>();
 _ = app.Services.GetRequiredService<HouseholdMembersEffect>();
 _ = app.Services.GetRequiredService<HouseholdServersEffect>();
+_ = app.Services.GetRequiredService<HouseholdUsageEffect>();
 
 await app.RunAsync();
