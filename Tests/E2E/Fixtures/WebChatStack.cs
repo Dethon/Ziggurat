@@ -586,6 +586,10 @@ internal sealed partial class WebChatStack
             "    handle /accounts/internal/* {\n" +
             "        respond 404\n" +
             "    }\n" +
+            // The session check is forward_auth's alone, mirroring DockerCompose/caddy/Caddyfile.
+            "    handle /accounts/verify* {\n" +
+            "        respond 404\n" +
+            "    }\n" +
             // The admin area's API, behind the session check for the admin channel and before the
             // accounts service's unchecked pages, mirroring DockerCompose/caddy/Caddyfile.
             Checked("/accounts/admin/* ", "accounts:8080", AppChannels.Admin) +

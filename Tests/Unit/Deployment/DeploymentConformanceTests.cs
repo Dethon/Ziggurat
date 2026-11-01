@@ -400,6 +400,37 @@ public class DeploymentConformanceTests
         }
     }
 
+    // The session check answers whoever holds the cookie with the four headers, a signed assertion among
+    // them, for any channel it is asked about — the admin API's included. forward_auth asks it on the
+    // compose network, never through a host, so every host that routes the accounts service's paths
+    // refuses it before that route could hand it on, and no host's route for it is the service: a
+    // same-origin script cannot read an assertion out of its answer.
+    [Fact]
+    public void TheSessionCheck_IsAnswered404OnEveryHostThatRoutesTheAccountsService()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts
+            .Where(h => h.Routes.Any(r => r.Matcher == "/accounts/*" && r.Upstream == "accounts:8080"))
+            .ToList();
+
+        hosts.ShouldNotBeEmpty();
+        foreach (var host in hosts)
+        {
+            var routes = host.Routes.ToList();
+            var refusal = routes.FindIndex(r => r.Matcher == "/accounts/verify*");
+            refusal.ShouldBeGreaterThanOrEqualTo(0, $"{host.Name} refuses the session check");
+            routes[refusal].Upstream.ShouldBeNull();
+            routes[refusal].Body.ShouldContain("respond 404");
+            refusal.ShouldBeLessThan(routes.FindIndex(r => r.Upstream == "accounts:8080"), host.Name);
+            foreach (var path in new[] { "/accounts/verify", $"/accounts/verify?channel={AppChannels.Admin}" })
+            {
+                RouteFor(host, path)!.Matcher.ShouldBe("/accounts/verify*", $"{host.Name} {path}");
+            }
+        }
+
+        DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('('))
+            .ShouldAllBe(h => RouteFor(h, "/accounts/verify")!.Upstream != "accounts:8080");
+    }
+
     // The keys assertions verify with are asked for without a credential, so it is the proxy alone
     // that keeps them inside: on every host the route the path lands on is a refusal or an upstream
     // that is not the accounts service, never the accounts route.
