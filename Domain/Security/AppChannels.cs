@@ -14,4 +14,10 @@ public static class AppChannels
     // The admin API on the accounts service itself (/accounts/admin/*), which verifies its own
     // assertions: one of its own, so an assertion the hub or an app was handed opens no admin route.
     public const string Admin = "admin";
+
+    // The Observability host's usage route (HouseholdUsage.Path), which no proxy block names: the
+    // accounts service signs an assertion for it itself, for the owner its admin API verified, so
+    // an owner's admin area reads its household's usage and no assertion a browser was handed
+    // reaches it.
+    public const string Usage = "usage";
 }
