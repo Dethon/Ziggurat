@@ -359,15 +359,21 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
                 .ToList();
 
         var agent = AgentLabels(allEvents, "unknown");
+
+        // Memory's events name only the account; the person's model calls name them too, so the
+        // breakdown is under the name the token figures show them by.
+        var person = dimension == MemoryDimension.User
+            ? AccountNames(await GetEventsAsync<TokenUsageEvent>(MetricKeys.Tokens, from, to, household))
+            : _ => null;
         return allEvents
             .GroupBy(e => dimension switch
             {
                 MemoryDimension.User => e switch
                 {
-                    MemoryRecallEvent r => r.UserId,
-                    MemoryExtractionEvent x => x.UserId,
-                    MemoryDreamingEvent d => d.UserId,
-                    MemoryJudgmentEvent j => j.UserId,
+                    MemoryRecallEvent r => person(r.UserId) ?? r.UserId,
+                    MemoryExtractionEvent x => person(x.UserId) ?? x.UserId,
+                    MemoryDreamingEvent d => person(d.UserId) ?? d.UserId,
+                    MemoryJudgmentEvent j => person(j.UserId) ?? j.UserId,
                     _ => "unknown"
                 },
                 MemoryDimension.EventType => e switch
@@ -677,6 +683,16 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         var shared = named.GroupBy(p => p.Name).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
         var labels = named.ToDictionary(p => p.Id, p => shared.Contains(p.Name) ? $"{p.Name} ({p.Id})" : p.Name);
         return e => userId(e) is { } id ? labels[id] : sender(e);
+    }
+
+    // An account's label from the calls that named it, for events that carry only the account; null
+    // for one no call named.
+    private static Func<string, string?> AccountNames(IReadOnlyCollection<TokenUsageEvent> calls)
+    {
+        var named = calls.Where(e => e.UserId is not null).ToList();
+        var label = PersonLabels(named, e => e.UserId, e => e.Sender);
+        var labels = named.GroupBy(e => e.UserId!).ToDictionary(g => g.Key, g => label(g.First()));
+        return id => labels.GetValueOrDefault(id);
     }
 
     private static Func<MetricEvent, string> AgentLabels(IEnumerable<MetricEvent> events, string unknown)

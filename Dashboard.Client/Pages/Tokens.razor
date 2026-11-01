@@ -41,7 +41,7 @@
                     {
                         <div class="table-row">
                             <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
-                            <span>@evt.Sender</span>
+                            <span>@PeopleOf(state.Events).Of(evt.UserId, evt.Sender)</span>
                             <span>@evt.Model</span>
                             <span>@evt.InputTokens.ToString("N0")</span>
                             <span>@evt.OutputTokens.ToString("N0")</span>
@@ -80,12 +80,28 @@
         else { _sortColumn = column; _sortAsc = false; }
     }
 
+    private IReadOnlyList<TokenUsageEvent>? _peopleFrom;
+    private PersonNames? _people;
+
+    // Whom each call's account stands for, built once per list of calls rather than once per row: a
+    // memory call or a judgment names only the account.
+    private PersonNames PeopleOf(IReadOnlyList<TokenUsageEvent> calls)
+    {
+        if (!ReferenceEquals(calls, _peopleFrom) || _people is null)
+        {
+            _peopleFrom = calls;
+            _people = PersonNames.From(calls);
+        }
+
+        return _people;
+    }
+
     private IEnumerable<TokenUsageEvent> GetSortedEvents(TokensState state)
     {
         var events = state.Events.TakeLast(50).AsEnumerable();
         Func<TokenUsageEvent, object> keySelector = _sortColumn switch
         {
-            "Sender" => e => e.Sender,
+            "Sender" => e => PeopleOf(state.Events).Of(e.UserId, e.Sender),
             "Model" => e => e.Model,
             "Input" => e => e.InputTokens,
             "Output" => e => e.OutputTokens,

@@ -108,6 +108,31 @@ public class MetricsQueryServiceGroupingTests
         }, ignoreOrder: true);
     }
 
+    // Memory's events name only the account, and the person's model calls name them too: the memory
+    // breakdown by person is under the latest name those calls carried, as the token one is, and an
+    // account no call named stays its id.
+    [Fact]
+    public async Task GetMemoryGroupedAsync_ByUser_LabelsEachAccountWithTheNameItsCallsCarried()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        var morning = new DateTimeOffset(2026, 3, 15, 9, 0, 0, TimeSpan.Zero);
+        SetupSortedSet("metrics:tokens:deployment:2026-03-15",
+        [
+            Person(100, "acc-ana", "Ana", morning),
+            Person(40, "acc-ana", "acc-ana", morning.AddHours(1))
+        ]);
+        SetupSortedSet("metrics:memory-recall:deployment:2026-03-15",
+        [
+            new MemoryRecallEvent { DurationMs = 100, MemoryCount = 1, UserId = "acc-ana" },
+            new MemoryRecallEvent { DurationMs = 100, MemoryCount = 1, UserId = "acc-ana" },
+            new MemoryRecallEvent { DurationMs = 100, MemoryCount = 1, UserId = "acc-nobody-named" }
+        ]);
+
+        var result = await _sut.GetMemoryGroupedAsync(MemoryDimension.User, MemoryMetric.Count, date, date);
+
+        result.ShouldBe(new Dictionary<string, decimal> { ["Ana"] = 2m, ["acc-nobody-named"] = 1m }, ignoreOrder: true);
+    }
+
     private static TokenUsageEvent Person(int tokens, string? userId, string sender, DateTimeOffset at) => new()
     {
         Sender = sender, UserId = userId, Model = "m", InputTokens = tokens, OutputTokens = 0, Cost = 0m, Timestamp = at
