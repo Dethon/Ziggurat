@@ -10,6 +10,7 @@ paths:
   - "WebChat.Client/Components/Admin/**"
   - "WebChat.Client/State/Admin/**"
   - "WebChat.Client/State/Effects/HouseholdSettingsEffect.cs"
+  - "WebChat.Client/State/Effects/HouseholdAgentsEffect.cs"
   - "WebChat.Client/Services/AdminService.cs"
   - "WebChat.Client/Contracts/IAdminService.cs"
   - "Tests/Integration/Accounts/AdminApiTests.cs"
@@ -135,6 +136,11 @@ customInstructions }`); `GET /household/agents/{agentId}/versions` (`AdminAgentV
 - Summaries name the agent's id and the fields changed ("Changed agent jonas's name, custom
   instructions", "Added agent jonas-2 from the jonas template", "Restored a version of agent jonas",
   "Removed agent jonas-2"), never a name or instructions.
+- **The page** is `/admin/agents` (`HouseholdAgentsPage`, `HouseholdAgentsStore`, `HouseholdAgentsEffect`):
+  one article per agent named by its saved name, its fields, its earlier versions on asking (each with
+  Restore), Remove behind a confirmation (not offered for the default or the last agent), and a form
+  adding one from a template. The E2E test adds its own agent to the home and removes it, never touching
+  the home's seeded ones.
 
 ## The proxy
 

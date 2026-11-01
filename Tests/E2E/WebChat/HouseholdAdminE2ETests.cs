@@ -11,8 +11,8 @@ namespace Tests.E2E.WebChat;
 // member is offered no way in and refused it anyway.
 //
 // Every person this stack signs in is in the home household, which every collection's turns run under,
-// so only the household's name is changed here — it is in no agent's prompt — and put back after; the
-// zone and the language are saved as they were. What a zone or a language does to a turn is the admin
+// so only the household's name is changed here — it is in no agent's prompt — and put back after, and an
+// agent added for a test is removed by it; the zone and the language are saved as they were. What a zone or a language does to a turn is the admin
 // API's seam (AdminApiTests).
 [Collection(WebChatE2ECollections.Chat)]
 [Trait("Category", "E2E")]
@@ -52,6 +52,64 @@ public partial class HouseholdAdminE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");
     }
 
+    // The home's own agents are what every collection's turns run, so this adds one of its own from a
+    // template, names it, restores the name it replaced and removes it, leaving the home's agents as
+    // they were — and removes it through the API should the page not get that far. What a rename does
+    // to a turn is the admin API's seam (HouseholdAgentsAdminTests).
+    [SkippableFact]
+    public async Task AnOwner_AddsAnAgent_RenamesIt_RestoresItsName_AndRemovesIt()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var (added, renamed) = ($"Cocina {tag}", $"Chef {tag}");
+        var page = await fixture.CreatePageSignedInAsync(await OwnerSessionAsync($"Owner {tag}"));
+        try
+        {
+            await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
+            await page.GetByLabel("Household settings").ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
+            await page.WaitForURLAsync(new Regex("/admin/settings$"));
+            await page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = "Agents" }).ClickAsync();
+            await page.WaitForURLAsync(new Regex("/admin/agents$"));
+
+            await page.Locator("select[name=template]").SelectOptionAsync("jonas", new LocatorSelectOptionOptions { Timeout = 30_000 });
+            await page.Locator("input[name=newAgentName]").FillAsync(added);
+            await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Add agent" }).ClickAsync();
+            await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");
+            var agent = page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = added });
+            await Assertions.Expect(agent).ToBeVisibleAsync();
+
+            await agent.Locator("input[name=agentName]").FillAsync(renamed);
+            await agent.Locator("textarea[name=customInstructions]").FillAsync("Answer with a recipe.");
+            await agent.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Save" }).ClickAsync();
+            var chef = page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = renamed });
+            await Assertions.Expect(chef).ToBeVisibleAsync();
+            await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");
+
+            await chef.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Earlier versions" }).ClickAsync();
+            var versions = chef.GetByRole(AriaRole.Region, new LocatorGetByRoleOptions { Name = $"Earlier versions of {renamed}" });
+            await Assertions.Expect(versions.Locator(".admin-version")).ToHaveCountAsync(1);
+            await Assertions.Expect(versions).ToContainTextAsync(added);
+            await versions.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Restore" }).ClickAsync();
+            await Assertions.Expect(page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = added })).ToBeVisibleAsync();
+
+            await page.ReloadAsync();
+            agent = page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = added });
+            await Assertions.Expect(agent.Locator("input[name=agentName]"))
+                .ToHaveValueAsync(added, new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+            await Assertions.Expect(agent.Locator("textarea[name=customInstructions]")).ToHaveValueAsync("");
+
+            await agent.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Remove", Exact = true }).ClickAsync();
+            await agent.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = $"Remove {added}" }).ClickAsync();
+            await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");
+            await Assertions.Expect(page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = added })).ToHaveCountAsync(0);
+        }
+        finally
+        {
+            await RemoveAgentsNamedAsync(page, tag);
+        }
+    }
+
     [SkippableFact]
     public async Task AMember_IsOfferedNoAdminArea_AndIsRefusedIt()
     {
@@ -79,6 +137,29 @@ public partial class HouseholdAdminE2ETests(WebChatE2EFixture fixture)
             });
         asked.Status.ShouldBe(403);
     }
+
+    // Whatever agent the test added and the page did not remove, removed as the page would.
+    private async Task RemoveAgentsNamedAsync(IPage page, string tag)
+    {
+        var headers = new Dictionary<string, string>
+        {
+            [AdminProtocol.RequestHeader] = AdminProtocol.RequestHeaderValue, ["Accept"] = "application/json"
+        };
+        var listed = await page.APIRequest.GetAsync(Url(AdminProtocol.Agents), new APIRequestContextOptions { Headers = headers });
+        if (!listed.Ok)
+        {
+            return;
+        }
+
+        var agents = System.Text.Json.JsonSerializer.Deserialize<AdminAgents>(
+            await listed.TextAsync(), new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+        foreach (var agent in agents.Agents.Where(a => a.Name.EndsWith(tag, StringComparison.Ordinal)))
+        {
+            await page.APIRequest.DeleteAsync(Url(AdminProtocol.Agent(agent.Id)), new APIRequestContextOptions { Headers = headers });
+        }
+    }
+
+    private string Url(string path) => new Uri(new Uri(fixture.WebChatUrl), path).ToString();
 
     // The stack's people are members; an owner is made for the test, as the operator's command makes one.
     private async Task<string> OwnerSessionAsync(string name)
