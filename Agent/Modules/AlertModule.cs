@@ -1,6 +1,7 @@
 using Agent.App;
 using Domain.Contracts;
 using Domain.Monitor;
+using Infrastructure.Timers;
 
 namespace Agent.Modules;
 
@@ -15,6 +16,7 @@ public static class AlertModule
             services
                 .AddSingleton(sp => new AlertRelay(
                     sp.GetServices<IChannelConnection>().OfType<IAlertChannel>().ToList(),
+                    new RingingAlerts(),
                     sp.GetRequiredService<ILogger<AlertRelay>>(),
                     sp.GetRequiredService<TimeProvider>()))
                 .AddHostedService<AlertRinging>();

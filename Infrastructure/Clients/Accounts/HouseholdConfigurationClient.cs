@@ -31,7 +31,8 @@ public sealed class HouseholdConfigurationClient(
 {
     public const string ClientName = "accounts-household-config";
 
-    // What the views across every household (the Telegram server's bots) are kept under.
+    // No household's id is empty, so a view across households keeps beside the per-household ones
+    // in one table without a second, and a save that changes it drops it by this key alone.
     private const string EveryHousehold = "";
 
     private readonly ConcurrentDictionary<(string View, string Household), Kept> _kept = new();
