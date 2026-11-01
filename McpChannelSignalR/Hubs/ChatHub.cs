@@ -34,6 +34,9 @@ public sealed class ChatHub(
     IHouseholdConfiguration households,
     ILogger<ChatHub> logger) : Hub
 {
+    // The connection's household's agents, as the household runs them on the deployment's models.
+    private readonly HouseholdAgentCatalogue _agents = new(households, catalog);
+
     // What the browser is told when the emit reached nobody. The message may still be sitting in a
     // buffer for an agent that comes back, so this says the turn cannot be answered now rather
     // than claiming it was thrown away.
@@ -117,8 +120,8 @@ public sealed class ChatHub(
 
     // The connection's household's agents, as its configuration names them, on the deployment's models
     // as the agent registered them (AgentCatalogBuilder.ForHousehold): never another household's.
-    public async Task<IReadOnlyList<AgentCatalogEntry>> GetAgents() =>
-        AgentCatalogBuilder.ForHousehold(await HouseholdAgentsAsync(Context.ConnectionAborted), catalog.GetAll() ?? []);
+    public Task<IReadOnlyList<AgentCatalogEntry>> GetAgents() =>
+        HouseholdViewAsync(_agents.AgentsAsync, "agents", UnvouchedAgentsError, Context.ConnectionAborted);
 
     public async Task<bool> ValidateAgent(string agentId) =>
         (await HouseholdAgentsAsync(Context.ConnectionAborted)).Agents.Any(agent => agent.Id == agentId);
@@ -539,8 +542,9 @@ public sealed class ChatHub(
 
         var agent = agentId is null
             ? null
-            : AgentCatalogBuilder.ForHousehold(await HouseholdAgentsAsync(ct), catalog.GetAll() ?? [])
-                .FirstOrDefault(entry => entry.Id == agentId);
+            : await HouseholdViewAsync(
+                (household, proof, token) => _agents.AgentAsync(household, proof, agentId, token),
+                "agents", UnvouchedAgentsError, ct);
         return AttachmentCapability.Refusal(agent, configPatch?.Model, attachments.Select(a => a.MediaType));
     }
 
