@@ -554,6 +554,37 @@ public class MemoryDreamingServiceTests
             .ShouldBe([("fran", Home), ("luis", Casa)], ignoreOrder: true);
     }
 
+    // A suspended household runs nothing, dreaming included, and nothing acts for a member an owner
+    // disabled: the walk reads both off the view of the household it reads for the key, the one its
+    // turns are refused by. Their memories are left as they are, for when they are back.
+    [Fact]
+    public async Task RunDreamingAsync_ASuspendedHouseholdAndADisabledMember_AreNotDreamtFor()
+    {
+        string[] people = ["fran", "laura", "luis"];
+        foreach (var person in people)
+        {
+            _store.Setup(s => s.GetByUserIdAsync(person, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<MemoryEntry> { MakeMemory($"mem_{person}", person, MemoryCategory.Fact, 0.9, _now, _now) });
+        }
+
+        _store.Setup(s => s.GetAllUserIdsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(people);
+        InHousehold(Home, isHome: true, key: null, "fran", "laura");
+        Disable(Home, "laura");
+        InHousehold(Casa, isHome: false, key: "casa-key", "luis");
+        Suspend(Casa);
+
+        await _service.RunDreamingAsync(_now, CancellationToken.None);
+
+        _consolidator.Verify(c => c.SynthesizeProfileAsync(
+            "fran", It.IsAny<IReadOnlyList<MemoryEntry>>(), new ModelPayer(Home, null), It.IsAny<CancellationToken>()), Times.Once);
+        foreach (var left in new[] { "laura", "luis" })
+        {
+            _consolidator.Verify(c => c.SynthesizeProfileAsync(
+                left, It.IsAny<IReadOnlyList<MemoryEntry>>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Never);
+            _store.Verify(s => s.GetByUserIdAsync(left, It.IsAny<CancellationToken>()), Times.Never);
+        }
+    }
+
     // Nobody can be paid for without knowing their household: an accounts service away at the night's
     // tick skips the night and says so, and never takes the agent down with it.
     [Fact]
@@ -784,4 +815,15 @@ public class MemoryDreamingServiceTests
                 new FeaturesSection(), new SpacesSection(), key)
         };
     }
+
+    private void Suspend(string household) => Reconfigure(household, c => c with { Suspended = true });
+
+    private void Disable(string household, string person) =>
+        Reconfigure(household, c => c with { DisabledPeople = [.. c.DisabledPeople ?? [], person] });
+
+    private void Reconfigure(string household, Func<AgentHouseholdConfig, AgentHouseholdConfig> change) =>
+        _householdAgents[household] = _householdAgents[household] with
+        {
+            Configuration = change(_householdAgents[household].Configuration!)
+        };
 }
