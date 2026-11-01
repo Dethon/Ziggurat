@@ -131,7 +131,7 @@
 
 @code {
     private HouseholdMembersState _state = HouseholdMembersState.Initial;
-    private readonly Dictionary<string, MemberDraft> _drafts = [];
+    private Dictionary<string, MemberDraft> _drafts = [];
     private string? _confirming;
     private string _inviteName = "";
     private string _inviteRole = AdminMember.Member;
@@ -148,11 +148,7 @@
                 return;
             }
 
-            _drafts.Clear();
-            foreach (var member in members.Members)
-            {
-                _drafts[member.Id] = new MemberDraft { Role = member.Role, SeesAll = member.SeesAll };
-            }
+            _drafts = members.Members.ToDictionary(m => m.Id, DraftOf);
 
             _confirming = null;
         });
@@ -169,7 +165,9 @@
     private MemberDraft Draft(AdminMember member) =>
         _drafts.TryGetValue(member.Id, out var draft)
             ? draft
-            : _drafts[member.Id] = new MemberDraft { Role = member.Role, SeesAll = member.SeesAll };
+            : _drafts[member.Id] = DraftOf(member);
+
+    private static MemberDraft DraftOf(AdminMember member) => new() { Role = member.Role, SeesAll = member.SeesAll };
 
     private void Save(string userId)
     {

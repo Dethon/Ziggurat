@@ -11,10 +11,6 @@ namespace Accounts.Admin;
 // the household's next turn.
 public static class HouseholdSettingsAdmin
 {
-    // A save the readers were not told of still stands; they read it once what they keep runs out.
-    public const string NotToldWarning =
-        "Saved, but the household's agents could not be told just now: they use the new settings within a minute.";
-
     public static void Map(RouteGroupBuilder household)
     {
         var path = AdminApi.Under(AdminProtocol.Household, AdminProtocol.Settings);
@@ -34,17 +30,15 @@ public static class HouseholdSettingsAdmin
             }
 
             var before = await store.ReadAsync(caller.HouseholdId, HouseholdSections.SettingsSchema, ct);
-            switch (await store.SaveAsync(caller.HouseholdId, HouseholdSections.SettingsSchema, document, ct))
-            {
-                case SectionSave.Invalid invalid:
-                    return Results.BadRequest(new AdminRefusal("The settings were not saved.", invalid.Problems));
-                case SectionSave.Saved saved:
+            return await AdminSections.AnswerAsync(
+                await store.SaveAsync(caller.HouseholdId, HouseholdSections.SettingsSchema, document, ct),
+                "The settings were not saved.",
+                async saved =>
+                {
                     var after = (await store.ReadAsync(caller.HouseholdId, HouseholdSections.SettingsSchema, ct))!;
                     await log.RecordAsync(http, caller, Summary(before, after), ct);
-                    return Results.Ok(new AdminSaved<HouseholdSettings>(after, saved.NotTold is null ? null : NotToldWarning));
-                default:
-                    return Results.NotFound();
-            }
+                    return Results.Ok(new AdminSaved<HouseholdSettings>(after, AdminSections.Warning(saved)));
+                });
         });
     }
 
@@ -52,12 +46,10 @@ public static class HouseholdSettingsAdmin
     // summary never carries a value, so the pattern a keys page copies cannot leak one.
     private static string Summary(HouseholdSettings? before, HouseholdSettings after)
     {
-        var changed = new (string Name, bool Changed)[]
-        {
+        var changed = AdminLog.Changed(
             ("name", before?.Name != after.Name),
             ("time zone", before?.TimeZone != after.TimeZone),
-            ("language", before?.Language != after.Language)
-        }.Where(f => f.Changed).Select(f => f.Name).ToList();
+            ("language", before?.Language != after.Language));
         return changed.Count == 0 ? "Saved the settings unchanged" : $"Changed the {string.Join(", ", changed)}";
     }
 }

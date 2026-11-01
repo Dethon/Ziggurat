@@ -46,10 +46,7 @@ public sealed class AdminLog(IDbContextFactory<AccountsDbContext> contexts, Acco
             .ThenByDescending(c => c.Id)
             .Take(Math.Clamp(limit ?? AdminProtocol.DefaultChangeCount, 1, AdminProtocol.MaxChangeCount))
             .ToListAsync(ct);
-        var actors = changes.Select(c => c.ActorUserId).Distinct().ToList();
-        var names = await db.Users.AsNoTracking()
-            .Where(u => actors.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
+        var names = await DisplayNamesAsync(db, changes.Select(c => c.ActorUserId), ct);
         return
         [
             .. changes.Select(c => new AdminChangeEntry(
@@ -67,6 +64,20 @@ public sealed class AdminLog(IDbContextFactory<AccountsDbContext> contexts, Acco
         deployment.MapGet(AdminApi.Under(AdminProtocol.Operator, AdminProtocol.AllChanges),
             async (string? household, int? limit, AdminLog log, CancellationToken ct) =>
                 Results.Ok(await log.ListAsync(household, limit, ct)));
+    }
+
+    // The fields that changed, by name, for a summary: a summary never carries a value.
+    public static IReadOnlyList<string> Changed(params (string Field, bool Changed)[] fields) =>
+        [.. fields.Where(f => f.Changed).Select(f => f.Field)];
+
+    // The names the people a record names go by now, by user id, so a renamed person shows as they are.
+    internal static async Task<IReadOnlyDictionary<string, string>> DisplayNamesAsync(
+        AccountsDbContext db, IEnumerable<string> userIds, CancellationToken ct)
+    {
+        var ids = userIds.Distinct().ToList();
+        return await db.Users.AsNoTracking()
+            .Where(u => ids.Contains(u.Id))
+            .ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
     }
 
     private static string Cut(string text, int length) => text.Length <= length ? text : text[..length];

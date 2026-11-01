@@ -20,7 +20,7 @@ paths:
   - "WebChat.Client/State/Effects/HouseholdKeysEffect.cs"
   - "WebChat.Client/State/Effects/OnboardingEffect.cs"
   - "Infrastructure/Agents/ChatClients/RefusedKeyReportingChatClient.cs"
-  - "Domain/Contracts/IHouseholdKeyReports.cs"
+  - "Infrastructure/Agents/ChatClients/IHouseholdKeyReports.cs"
   - "Tests/Integration/Accounts/KeysAdminTests.cs"
   - "Tests/Integration/Fixtures/FakeKeyProviders.cs"
   - "Tests/E2E/WebChat/HouseholdKeysE2ETests.cs"
@@ -83,7 +83,10 @@ routes like any owner. Today's routes: `GET`/`PUT /household/settings` (`Househo
 (every household's, or one's), and the household list's (below): `GET`/`POST /operator/households` and
 `POST /operator/households/{householdId}/owners/{userId}/recovery`. A route is mapped in `AdminApi.Map` into one of the two groups, with its
 path inside the group from `AdminApi.Under(root, AdminProtocol.X)`, and reads its caller as a bound
-`AdminCaller` parameter (never null: the gate answered first).
+`AdminCaller` parameter (never null: the gate answered first). A route that takes an id has its template
+there too (`AdminProtocol.XRoute`, `{agentId}` and the like) beside the builder the clients call
+(`AdminProtocol.X(id)`), which escapes every id it puts in the path; a service never writes a template
+by hand.
 
 ## The gate
 
@@ -118,12 +121,16 @@ disabled members (04) are refused there, not here.
 
 - A read answers **200** with its shape (`HouseholdSettings`, a list of `AdminChangeEntry`).
 - A change that stood answers **200** `AdminSaved<T> { value, warning }`: what is saved now, read back,
-  and a warning when it stood with a caveat — readers not told (`HouseholdSettingsAdmin.NotToldWarning`),
-  or for 03 a key saved while its provider could not be asked.
+  and a warning when it stood with a caveat — readers not told (`AdminSections.NotToldWarning`, the one
+  wording for every section and the members' changes; keys, own servers and suspension say what is
+  particular to them), or for 03 a key saved while its provider could not be asked. A section's save
+  is answered through `AdminSections.AnswerAsync` (its rules' refusal 400, no household 404, the route's
+  answer when it stood), and a summary's changed fields are `AdminLog.Changed`.
 - A change refused answers **400** `AdminRefusal { message, problems }`, nothing changed and nothing
   recorded; the problems are the section rules' own words (`SectionSchema.Problems`), never a value sent.
 - **401** signed out (the session check's own answer, or the gate's), **403** `AdminRefusal` not allowed,
-  **404** no such route or household.
+  **404** no such route or household, **503** `AdminRefusal` what the deployment cannot do just now (keys
+  with no master key, usage with no Observability host), read or save alike.
 
 ## Configuration is saved as the operator's command saves it
 
@@ -171,7 +178,9 @@ provider was asked** (`Accounts/Keys/KeyProbes.cs`):
   "the Telegram bot for <agent>"). Unreachable answers `AdminSaved.Warning` ("could not be asked …: it
   shows as unchecked"), joined with the not-told warning when both apply. A bot must be bound to one of
   the household's agents (`HouseholdAgents.Names`, the two templates for a household that saved none).
-  A stack with no master key refuses a key with `KeysAdmin.SecretsUnavailableMessage`, never a 500.
+  A stack with no master key answers a read or a save **503** `AdminRefusal` with
+  `KeysAdmin.SecretsUnavailableMessage` — the deployment's to fix, not the request's — never a 500 and
+  never a 400; the chat client shows the refusal's message (`AdminAnswer.Unreachable(message)`).
 - **State lives beside the section, not in it**: `HouseholdKeyChecks` (table `HouseholdKeyChecks`, one
   row per household and key name — `openRouter`, `idealista`, `telegramBots/<agent>`): state, when
   checked (`AccountsClock`), a reason, and the key's **fingerprint** (`Tokens.Hash` of the key, Idealista's
@@ -271,7 +280,7 @@ out left as it is) and `POST .../{userId}/disable` / `.../enable`, each answerin
   their next one (`.claude/rules/service-identity.md`). Re-enabling clears the column and is announced
   the same way; their sessions stay ended — they sign in again with a passkey they kept or a recovery
   link — and their Telegram, voice profile, passkeys, links still in date, memories and topics answer
-  for them again. Not told, the change stands with `HouseholdMembersAdmin.NotToldWarning` (the agent
+  for them again. Not told, the change stands with `AdminSections.NotToldWarning` (the agent
   sees it within `Accounts:ConfigurationLifetime`).
 - **Role and sees-all reach the member's next turn**: the chat hub asks a fresh assertion for every turn
   (`SessionRefresh`), signed with the roles as they are then, and so does every voice utterance. Two
@@ -454,7 +463,7 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
   resume), answered `AdminSaved<HouseholdSuspension { suspended, since }>`; the home is 400 (the
   operator's own: nothing would be left to resume it from), no such household 404. Recorded as
   "Suspended the household" / "Resumed the household" only when it changed; it is announced every time
-  (asking again is the retry): `HouseholdConfigSaved(id, HouseholdConfigProtocol.SuspensionSection)` so
+  (asking again is the retry): `HouseholdConfigSaved(id, HouseholdConfigProtocol.SuspensionChanged)` so
   every reader of the household's configuration drops what it kept, and on suspending
   `HouseholdSuspended(id)` on `TunnelCredentialProtocol.SuspendedChannel` so the relay closes its open
   tunnels; not told stands with `NotToldWarning`. **Nothing is deleted.** Each place that lets a
@@ -503,8 +512,9 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
   `OnInitialized` and binds fields with `@bind:event="oninput"`.
 - **`IAdminService` / `AdminService`** is the one client of the API: same-origin `HttpClient`, the admin
   header and `Accept: application/json` on every request, each answer an `AdminAnswer<T>`
-  (`Answered(value, warning)`, `Refused(refusal)`, `SignedOut`, `NotAllowed(message)`, `Unreachable`).
-  A new route is a method here. Stores, effects and the service are registered by `AddWebChatAdmin()`,
+  (`Answered(value, warning)`, `Refused(refusal)`, `SignedOut`, `NotAllowed(message)`, `Unreachable(message?)`,
+  the message a 503's refusal). A new route is a method here, and an effect settles its answer with
+  `AdminAnswers.Settle` (`State/Admin/`), naming only its page's outcome and not-saved action. Stores, effects and the service are registered by `AddWebChatAdmin()`,
   apart from the chat's own, and each effect is activated in `Program.cs`.
 - Icons are drawn (`.claude/rules/blazor-client-ui.md`).
 
@@ -570,3 +580,12 @@ Suspension's seam 1 is `HouseholdSuspensionAdminTests` (the route, the home refu
 `ChatMonitorDelegationTests` over `MonitorTestMocks.Households(suspended, from)` — a household suspended
 from its n-th asking, so a conversation already running is refused from its next message — and
 `TunnelRelayTests` (its tunnels closed `Suspended`, another household's left open).
+
+Seam 5 is `StackSmokeTests.AHouseholdTheOperatorCreates_IsAnsweredByTheAgentItsOwnerNamed_UntilItIsSuspended` on
+the smoke stack (`scripts/smoke-stack.sh`): the operator's create and suspend through the dashboard's host,
+the owner signed in by `mint-session --user` from the create answer's `UserId`, the OpenRouter key and the
+agent's name through the main host's household routes, every call with the admin header. The stack's
+accounts service has a master key made for its smoke state and its `KEYPROBES__*` at `smoke-keys`, a stub
+answering 200 to everything (`DockerCompose/docker-compose.override.smoke.yml`), so the key set is the
+deployment's own, read from the agent's user secrets, and only the turn reaches OpenRouter. Each run makes
+its own household and leaves it suspended; `down` removes it.

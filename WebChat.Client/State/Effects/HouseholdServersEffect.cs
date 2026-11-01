@@ -50,31 +50,8 @@ public sealed class HouseholdServersEffect : IDisposable
         Settle(await _admin.RevokeServerCredentialAsync(credentialId),
             answered => new HouseholdServersSaved(answered.Value, answered.Warning));
 
-    private bool Settle<T>(AdminAnswer<T> answer, Func<AdminAnswer<T>.Answered, IAction> outcome)
-    {
-        switch (answer)
-        {
-            case AdminAnswer<T>.Answered answered:
-                _dispatcher.Dispatch(outcome(answered));
-                return true;
-            case AdminAnswer<T>.SignedOut:
-                _accounts.SendToSignIn();
-                break;
-            case AdminAnswer<T>.Refused refused:
-                _dispatcher.Dispatch(new HouseholdServersNotSaved(
-                    new AdminNotice(AdminNoticeKind.Refused, refused.Refusal.Message, refused.Refusal.Problems)));
-                break;
-            case AdminAnswer<T>.NotAllowed notAllowed:
-                _dispatcher.Dispatch(new HouseholdServersNotSaved(new AdminNotice(AdminNoticeKind.Unavailable, notAllowed.Message)));
-                break;
-            default:
-                _dispatcher.Dispatch(new HouseholdServersNotSaved(
-                    new AdminNotice(AdminNoticeKind.Unavailable, AdminNotice.UnreachableMessage)));
-                break;
-        }
-
-        return false;
-    }
+    private bool Settle<T>(AdminAnswer<T> answer, Func<AdminAnswer<T>.Answered, IAction> outcome) =>
+        _dispatcher.Settle(_accounts, answer, outcome, notice => new HouseholdServersNotSaved(notice));
 
     public void Dispose()
     {

@@ -36,29 +36,8 @@ public sealed class HouseholdSpacesEffect : IDisposable
     public async Task SaveAsync(SpacesSection spaces) =>
         Settle(await _admin.SaveSpacesAsync(spaces), answered => new HouseholdSpacesSaved(answered.Value, answered.Warning));
 
-    private void Settle(AdminAnswer<AdminSpaces> answer, Func<AdminAnswer<AdminSpaces>.Answered, IAction> outcome)
-    {
-        switch (answer)
-        {
-            case AdminAnswer<AdminSpaces>.Answered answered:
-                _dispatcher.Dispatch(outcome(answered));
-                break;
-            case AdminAnswer<AdminSpaces>.SignedOut:
-                _accounts.SendToSignIn();
-                break;
-            case AdminAnswer<AdminSpaces>.Refused refused:
-                _dispatcher.Dispatch(new HouseholdSpacesNotSaved(
-                    new AdminNotice(AdminNoticeKind.Refused, refused.Refusal.Message, refused.Refusal.Problems)));
-                break;
-            case AdminAnswer<AdminSpaces>.NotAllowed notAllowed:
-                _dispatcher.Dispatch(new HouseholdSpacesNotSaved(new AdminNotice(AdminNoticeKind.Unavailable, notAllowed.Message)));
-                break;
-            default:
-                _dispatcher.Dispatch(new HouseholdSpacesNotSaved(
-                    new AdminNotice(AdminNoticeKind.Unavailable, AdminNotice.UnreachableMessage)));
-                break;
-        }
-    }
+    private void Settle(AdminAnswer<AdminSpaces> answer, Func<AdminAnswer<AdminSpaces>.Answered, IAction> outcome) =>
+        _dispatcher.Settle(_accounts, answer, outcome, notice => new HouseholdSpacesNotSaved(notice));
 
     public void Dispose()
     {

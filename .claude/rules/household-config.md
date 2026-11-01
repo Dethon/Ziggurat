@@ -233,7 +233,7 @@ Every model call made for a household goes out on its own OpenRouter key and is 
 
 A save publishes `HouseholdConfigSaved { householdId, section }` on Redis's
 `accounts:household-config:saved` (and so does a suspension or a resumption, naming
-`HouseholdConfigProtocol.SuspensionSection`, which is no section: the readers drop the household either way) (`RedisAnnouncer`, the same lazily opened connection that
+`HouseholdConfigProtocol.SuspensionChanged`, which is no section: the readers drop the household either way) (`RedisAnnouncer`, the same lazily opened connection that
 announces tunnel revocations). The save stands if nobody could be told; the command says so and
 exits 1. A member disabled or re-enabled is announced the same way, as section
 `HouseholdConfigProtocol.PeopleChanged` (`people`, which no section is called): a reader drops all it

@@ -6,6 +6,7 @@ using Domain.Contracts;
 using Domain.DTOs.Household;
 using Domain.Security;
 using Domain.Security.Signing;
+using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;

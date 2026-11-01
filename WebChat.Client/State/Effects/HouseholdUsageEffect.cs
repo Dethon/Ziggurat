@@ -30,28 +30,9 @@ public sealed class HouseholdUsageEffect : IDisposable
             action => LoadAsync(action.Month).LogFaults(logger, nameof(LoadHouseholdUsage)));
     }
 
-    public async Task LoadAsync(string? month)
-    {
-        switch (await _admin.GetUsageAsync(month))
-        {
-            case AdminAnswer<AdminUsage>.Answered answered:
-                _dispatcher.Dispatch(new HouseholdUsageLoaded(answered.Value));
-                break;
-            case AdminAnswer<AdminUsage>.SignedOut:
-                _accounts.SendToSignIn();
-                break;
-            case AdminAnswer<AdminUsage>.Refused refused:
-                _dispatcher.Dispatch(new HouseholdUsageNotLoaded(
-                    new AdminNotice(AdminNoticeKind.Refused, refused.Refusal.Message, refused.Refusal.Problems)));
-                break;
-            case AdminAnswer<AdminUsage>.NotAllowed notAllowed:
-                _dispatcher.Dispatch(new HouseholdUsageNotLoaded(new AdminNotice(AdminNoticeKind.Unavailable, notAllowed.Message)));
-                break;
-            default:
-                _dispatcher.Dispatch(new HouseholdUsageNotLoaded(new AdminNotice(AdminNoticeKind.Unavailable, UnreadableMessage)));
-                break;
-        }
-    }
+    public async Task LoadAsync(string? month) =>
+        _dispatcher.Settle(_accounts, await _admin.GetUsageAsync(month),
+            answered => new HouseholdUsageLoaded(answered.Value), notice => new HouseholdUsageNotLoaded(notice), UnreadableMessage);
 
     public void Dispose() => _loadRegistration.Dispose();
 }
