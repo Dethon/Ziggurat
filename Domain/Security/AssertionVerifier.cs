@@ -72,6 +72,22 @@ public sealed class AssertionVerifier(
         return new ForwardedAccount(account.UserId, account.TenantId, claims.Roles, claims.SessionId);
     }
 
+    // Whether an app behind the proxy lets a request in, decided here for all five so each says only
+    // how it answers: signed out without one assertion for its channel naming a person, forbidden for a
+    // person `may` turns away (a role the app asks for), otherwise the person with the very assertion,
+    // which an app that starts turns hands on.
+    public async Task<AppAdmission> AdmitAsync(
+        IDictionary<string, StringValues> headers, string channel, Func<ForwardedAccount, bool>? may, CancellationToken ct)
+    {
+        var assertion = AssertionOf(headers);
+        return await VerifyAsync(assertion, channel, ct) switch
+        {
+            null => new AppAdmission.SignedOut(),
+            { } person when may is not null && !may(person) => new AppAdmission.Forbidden(person),
+            { } person => new AppAdmission.Admitted(person, assertion!)
+        };
+    }
+
     // The agent's check on a person's turn as it arrives, over the same keys: the accounts service
     // signed it, for TokenAudiences.Assertion, in date, for the very channel the turn came on — and
     // for a person or the household's guest, both somebody the house works for. Never nobody: the
@@ -108,4 +124,25 @@ public abstract record TurnAdmission
     public sealed record Admitted(IdentityClaims Identity) : TurnAdmission;
 
     public sealed record Refused(string Reason) : TurnAdmission;
+}
+// Whether an app lets a request in (AssertionVerifier.AdmitAsync), with the status an HTTP app answers
+// a refusal with.
+public abstract record AppAdmission
+{
+    public abstract int Status { get; }
+
+    public sealed record Admitted(ForwardedAccount Person, string Assertion) : AppAdmission
+    {
+        public override int Status => 200;
+    }
+
+    public sealed record SignedOut : AppAdmission
+    {
+        public override int Status => 401;
+    }
+
+    public sealed record Forbidden(ForwardedAccount Person) : AppAdmission
+    {
+        public override int Status => 403;
+    }
 }
