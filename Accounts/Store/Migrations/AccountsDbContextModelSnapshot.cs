@@ -17,6 +17,42 @@ namespace Accounts.Store.Migrations
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
+            modelBuilder.Entity("Accounts.Store.AdminChange", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64);
+
+                    b.Property<string>("ActorTenantId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<string>("ActorUserId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.Property<DateTime>("At");
+
+                    b.Property<string>("Route")
+                        .IsRequired()
+                        .HasMaxLength(300);
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(500);
+
+                    b.Property<string>("TenantId")
+                        .IsRequired()
+                        .HasMaxLength(64);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("TenantId", "At");
+
+                    b.ToTable("AdminChanges");
+                });
+
             modelBuilder.Entity("Accounts.Store.BoundChat", b =>
                 {
                     b.Property<string>("Id")
@@ -343,6 +379,21 @@ namespace Accounts.Store.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Accounts.Store.AdminChange", b =>
+                {
+                    b.HasOne("Accounts.Store.User", null)
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Accounts.Store.Tenant", null)
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Accounts.Store.BoundChat", b =>

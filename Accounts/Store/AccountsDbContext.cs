@@ -1,3 +1,4 @@
+using Accounts.Admin;
 using Accounts.People;
 using Domain.DTOs.Tunnel;
 using Microsoft.EntityFrameworkCore;
@@ -27,6 +28,7 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
     public DbSet<TunnelCredential> TunnelCredentials => Set<TunnelCredential>();
     public DbSet<HouseholdSection> HouseholdSections => Set<HouseholdSection>();
     public DbSet<HouseholdDataKey> HouseholdDataKeys => Set<HouseholdDataKey>();
+    public DbSet<AdminChange> AdminChanges => Set<AdminChange>();
 
     // An instant is kept as UTC, because not every provider has an offset type and SQLite cannot
     // order or compare the text of one.
@@ -121,6 +123,18 @@ public class AccountsDbContext(DbContextOptions<AccountsDbContext> options) : Db
         dataKey.HasIndex(k => k.TenantId).IsUnique();
         dataKey.Property(k => k.MasterKeyId).HasMaxLength(IdLength);
         dataKey.HasOne<Tenant>().WithMany().HasForeignKey(k => k.TenantId).OnDelete(DeleteBehavior.Restrict);
+
+        var change = modelBuilder.Entity<AdminChange>();
+        change.Property(c => c.Id).HasMaxLength(IdLength);
+        change.Property(c => c.TenantId).HasMaxLength(IdLength);
+        change.Property(c => c.ActorUserId).HasMaxLength(IdLength);
+        change.Property(c => c.ActorTenantId).HasMaxLength(IdLength);
+        change.Property(c => c.Route).HasMaxLength(AdminLog.RouteLength);
+        change.Property(c => c.Summary).HasMaxLength(AdminLog.SummaryLength);
+        // A household's changes are read newest first.
+        change.HasIndex(c => new { c.TenantId, c.At });
+        change.HasOne<Tenant>().WithMany().HasForeignKey(c => c.TenantId).OnDelete(DeleteBehavior.Restrict);
+        change.HasOne<User>().WithMany().HasForeignKey(c => c.ActorUserId).OnDelete(DeleteBehavior.Restrict);
     }
 
     private sealed class UtcConverter() : ValueConverter<DateTimeOffset, DateTime>(

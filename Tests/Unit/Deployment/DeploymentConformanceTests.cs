@@ -3,6 +3,7 @@ using Accounts.Internal;
 using Accounts.Settings;
 using Agent.App;
 using Agent.Modules;
+using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Tunnel;
 using Domain.Security;
@@ -563,6 +564,7 @@ public class DeploymentConformanceTests
     [InlineData(SexyHost, "/api/attachments*", ChannelIds.SignalR)]
     [InlineData(SexyHost, "/api/dictation*", ChannelIds.SignalR)]
     [InlineData(SugaryHost, null, SugaryChannel.ChannelId)]
+    [InlineData(MainHost, "/accounts/admin/*", AppChannels.Admin)]
     public void TheChatClientsRoutes_GoThroughTheSessionCheckAndCopyItsHeaders(string hostName, string? matcher, string channel)
     {
         var route = DeploymentFiles.Caddyfile().Host(hostName).Routes.Single(r => r.Matcher == matcher);
@@ -586,6 +588,31 @@ public class DeploymentConformanceTests
         checks.ShouldNotBeEmpty();
         checks.ShouldAllBe(c => c.Check.CopiedHeaders.Order().SequenceEqual(ForwardedAccount.Headers.Order()));
         checks.ShouldAllBe(c => c.Check.Uri != null && c.Check.Uri.Contains("channel="));
+    }
+
+    // The admin API believes only the assertion the session check signs for the admin channel, so it
+    // is reached on the main host through that check alone, and on no host past it: a host that does
+    // not serve the admin area refuses the path rather than hand it to the accounts service unchecked.
+    [Fact]
+    public void TheAdminApi_IsReachedThroughItsSessionCheckAlone()
+    {
+        var hosts = DeploymentFiles.Caddyfile().Hosts.Where(h => !h.Name.StartsWith('(')).ToList();
+
+        var main = RouteFor(DeploymentFiles.Caddyfile().Host(MainHost), AdminProtocol.Settings).ShouldNotBeNull();
+        main.Upstream.ShouldBe("accounts:8080");
+        main.ForwardAuth.ShouldNotBeNull().Uri.ShouldBe($"/accounts/verify?channel={AppChannels.Admin}");
+        foreach (var host in hosts)
+        {
+            foreach (var path in new[] { AdminProtocol.Settings, AdminProtocol.AllChanges })
+            {
+                var route = RouteFor(host, path).ShouldNotBeNull($"{host.Name} {path}");
+                if (route.Upstream == "accounts:8080")
+                {
+                    route.ForwardAuth.ShouldNotBeNull($"{host.Name} {path}").Uri.ShouldBe(
+                        $"/accounts/verify?channel={AppChannels.Admin}", $"{host.Name} {path}");
+                }
+            }
+        }
     }
 
     // Sign-in and enrollment are how a signed-out person gets a session at all; a login handoff's
