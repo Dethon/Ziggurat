@@ -193,27 +193,12 @@ public static class AgentCommand
         return true;
     }
 
-    // Every channel endpoint, dialled the way the agent dials it: the dual-role servers among them keep
+    // Every channel endpoint, dialled the way the agent dials it — a home server named by its server
+    // name through the running agent's relay (CommandServers): the dual-role servers among them keep
     // the schedules and watches, and the rest answer that they keep nothing.
-    private static IReadOnlyList<Redelegation.Server> Servers(AgentSettings settings, CallTokens tokens)
-    {
-        var credentials = McpCredentials.From(settings.Mcp);
-        return
-        [
-            .. settings.ChannelEndpoints.Select(endpoint => new Redelegation.Server(endpoint.ChannelId, ct =>
-            {
-                var server = ServerAddress.FromUrl(endpoint.Endpoint)
-                             ?? throw new UriFormatException($"The channel endpoint '{endpoint.Endpoint}' is not an absolute URL");
-                return McpClient.CreateAsync(new SigningClientTransport(new HttpClientTransport(new HttpClientTransportOptions
-                {
-                    Endpoint = new Uri(endpoint.Endpoint),
-                    AdditionalHeaders = credentials.For(server) is { } secret
-                        ? new Dictionary<string, string> { ["Authorization"] = SharedSecret.Header(secret) }
-                        : null
-                }), tokens, TokenAudiences.CallTo(server)), cancellationToken: ct);
-            }))
-        ];
-    }
+    private static IReadOnlyList<Redelegation.Server> Servers(AgentSettings settings, CallTokens tokens) =>
+        CommandServers.Of(settings.ChannelEndpoints, McpCredentials.From(settings.Mcp), tokens, new Uri(OwnAddress),
+            settings.AgentApi.SharedSecret);
 
     // The last call token the old key signed has run out, with the skew every verifier forgives.
     private static TimeSpan RetireAfter(AgentSettings settings) =>

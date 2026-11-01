@@ -305,6 +305,17 @@ The registry lives in the serving process alone, so the command asks it at `GET
 proxy) and behind `AGENTAPI__SHAREDSECRET`, which the command reads from the same environment.
 `--agent` defaults to `http://localhost:8080`, the agent inside its own container.
 
+**The key commands reach the home's servers the same way.** `redelegate` and `retire-signing-keys`
+ask every channel endpoint for the delegations it keeps (`.claude/rules/service-identity.md`); one
+named by its server name — Home Assistant's watches, once it runs in the kit — exists only inside its
+tunnel, so `CommandServers` asks the agent `GET /internal/tunnels/home/{name}` (`ConnectedServers.Home`:
+the home household, which the call token's audience names, or 404 when that tunnel is not open) and
+dials its `/mcp` at `/internal/tunnels/home/{name}/mcp`, which `TunnelForwarder.ForwardHomeAsync` sends
+down the home's tunnel on the `mcp` tag (whose pool presents the tunnel credential; the command's
+`Authorization` is withheld), both behind `AGENTAPI__SHAREDSECRET` like the listing. A home server whose
+tunnel is closed is a server that could not be asked, so retiring keys wants the home's kit servers
+online (`RedelegationOverTunnelTests`).
+
 ## A household's channel server
 
 A server that is also a channel (web search, library, Home Assistant, voice) is named in

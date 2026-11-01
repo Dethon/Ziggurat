@@ -181,13 +181,14 @@ internal sealed class TunnelledServer : IAsyncDisposable
 
     // `backCalls` are the back-calls the server makes, each at the loopback port given;
     // `hubAuthority` a certificate authority's PEM file the hub's certificate may chain to.
+    // `delegations`, a store it keeps delegations in, as Home Assistant's server keeps its watches'.
     public static async Task<TunnelledServer> StartAsync(
         string hub, string credential, string serverName, Dictionary<string, int>? backCalls = null,
-        string hubAuthority = "")
+        string hubAuthority = "", IDelegationStore? delegations = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, 0));
-        builder.Services
+        var server = builder.Services
             .AddToolServer(new Settings(new McpGateSettings
             {
                 Tunnel = Quick(hub, credential, serverName) with
@@ -198,6 +199,12 @@ internal sealed class TunnelledServer : IAsyncDisposable
             }))
             .WithTools<CallTokenGateTests.WhoTools>()
             .WithTools<WaitTools>();
+        if (delegations is not null)
+        {
+            builder.Services.AddSingleton(delegations);
+            server.WithTools<DelegationStoreTools>();
+        }
+
         var app = builder.Build();
         app.MapMcp("/mcp");
         await app.StartAsync();
