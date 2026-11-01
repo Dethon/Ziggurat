@@ -41,10 +41,7 @@ public sealed class AgentVersions(IDbContextFactory<AccountsDbContext> contexts,
     {
         await using var db = await contexts.CreateDbContextAsync(ct);
         var versions = await Newest(db, householdId, agentId).AsNoTracking().ToListAsync(ct);
-        var people = versions.Select(v => v.ReplacedBy).Distinct().ToList();
-        var names = await db.Users.AsNoTracking()
-            .Where(u => people.Contains(u.Id))
-            .ToDictionaryAsync(u => u.Id, u => u.DisplayName, ct);
+        var names = await AdminLog.DisplayNamesAsync(db, versions.Select(v => v.ReplacedBy), ct);
         return
         [
             .. versions.Select(v => new AdminAgentVersion(

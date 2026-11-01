@@ -52,29 +52,8 @@ public sealed class HouseholdMembersEffect : IDisposable
     private async Task MintAsync(Task<AdminAnswer<MemberLink>> mint, string what) =>
         Settle(await mint, answered => new MemberLinkMinted(what, answered.Value));
 
-    private void Settle<T>(AdminAnswer<T> answer, Func<AdminAnswer<T>.Answered, IAction> outcome)
-    {
-        switch (answer)
-        {
-            case AdminAnswer<T>.Answered answered:
-                _dispatcher.Dispatch(outcome(answered));
-                break;
-            case AdminAnswer<T>.SignedOut:
-                _accounts.SendToSignIn();
-                break;
-            case AdminAnswer<T>.Refused refused:
-                _dispatcher.Dispatch(new HouseholdMembersNotSaved(
-                    new AdminNotice(AdminNoticeKind.Refused, refused.Refusal.Message, refused.Refusal.Problems)));
-                break;
-            case AdminAnswer<T>.NotAllowed notAllowed:
-                _dispatcher.Dispatch(new HouseholdMembersNotSaved(new AdminNotice(AdminNoticeKind.Unavailable, notAllowed.Message)));
-                break;
-            default:
-                _dispatcher.Dispatch(new HouseholdMembersNotSaved(
-                    new AdminNotice(AdminNoticeKind.Unavailable, AdminNotice.UnreachableMessage)));
-                break;
-        }
-    }
+    private void Settle<T>(AdminAnswer<T> answer, Func<AdminAnswer<T>.Answered, IAction> outcome) =>
+        _dispatcher.Settle(_accounts, answer, outcome, notice => new HouseholdMembersNotSaved(notice));
 
     public void Dispose()
     {

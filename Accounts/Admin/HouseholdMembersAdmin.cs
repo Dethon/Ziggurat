@@ -21,11 +21,6 @@ namespace Accounts.Admin;
 // next one on. Their data stays: re-enabling is one column.
 public static class HouseholdMembersAdmin
 {
-    // Disabling or re-enabling stood, but the agent was not told: it reads the household's view again
-    // once what it kept runs out.
-    public const string NotToldWarning =
-        "Saved, but the household's agents could not be told just now: they see the change within a minute.";
-
     private static readonly AdminRefusal _nobody = new("There is nobody like that in the household.", []);
 
     private static readonly AdminRefusal _lastOwner = new(
@@ -36,10 +31,7 @@ public static class HouseholdMembersAdmin
 
     public static void Map(RouteGroupBuilder household)
     {
-        var members = AdminApi.Under(AdminProtocol.Household, AdminProtocol.Members);
-        var member = $"{members}/{{userId}}";
-
-        household.MapGet(members, async (AdminCaller caller, MemberStore store, CancellationToken ct) =>
+        household.MapGet(AdminApi.Under(AdminProtocol.Household, AdminProtocol.Members), async (AdminCaller caller, MemberStore store, CancellationToken ct) =>
             Results.Ok(await AnswerAsync(store, caller, ct)));
 
         household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.MemberInvites), async (
@@ -67,7 +59,7 @@ public static class HouseholdMembersAdmin
                 issued.Url.ToString(), issued.ExpiresAt, deepLink, deepLink is null ? $"/start {issued.Token}" : null)));
         });
 
-        household.MapPut(member, async (
+        household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.MemberRoute), async (
             AdminCaller caller, string userId, [FromBody] MemberEdit? edit, HttpContext http, MemberStore store, AdminLog log,
             CancellationToken ct) =>
         {
@@ -98,16 +90,14 @@ public static class HouseholdMembersAdmin
             }
 
             var after = (await FindAsync(store, caller, userId, ct))!;
-            var changed = new (string Field, bool Changed)[]
-            {
-                ("role", before.Role != after.Role), ("sees all conversations", before.SeesAllConversations != after.SeesAllConversations)
-            }.Where(f => f.Changed).Select(f => f.Field).ToList();
+            var changed = AdminLog.Changed(
+                ("role", before.Role != after.Role), ("sees all conversations", before.SeesAllConversations != after.SeesAllConversations));
             await log.RecordAsync(http, caller,
                 changed.Count == 0 ? $"Saved member {userId} unchanged" : $"Changed member {userId}'s {string.Join(", ", changed)}", ct);
             return Results.Ok(new AdminSaved<AdminMembers>(await AnswerAsync(store, caller, ct)));
         });
 
-        household.MapPost($"{member}/disable", async (
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.DisableMemberRoute), async (
             AdminCaller caller, string userId, HttpContext http, MemberStore store, AdminLog log, RedisAnnouncer announcer,
             CancellationToken ct) =>
         {
@@ -124,7 +114,7 @@ public static class HouseholdMembersAdmin
             return await AnnouncedAsync(http, caller, store, log, announcer, $"Disabled member {userId}", ct);
         });
 
-        household.MapPost($"{member}/enable", async (
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.EnableMemberRoute), async (
             AdminCaller caller, string userId, HttpContext http, MemberStore store, AdminLog log, RedisAnnouncer announcer,
             CancellationToken ct) =>
             await store.EnableAsync(caller.HouseholdId, userId, ct)
@@ -134,7 +124,7 @@ public static class HouseholdMembersAdmin
         // Not for the operator, as on the members page: their way back in is the container command,
         // and an owner who could mint them a link could take the deployment's dashboard. Not for a
         // disabled member either: their link would open nothing until they are re-enabled.
-        household.MapPost($"{member}/recovery", async (
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.MemberRecoveryRoute), async (
             AdminCaller caller, string userId, HttpContext http, MemberStore store, LinkStore links, AdminLog log,
             CancellationToken ct) =>
         {
@@ -163,7 +153,7 @@ public static class HouseholdMembersAdmin
         var notTold = await announcer.AnnounceAsync(HouseholdConfigProtocol.SavedChannel,
             new HouseholdConfigSaved(caller.HouseholdId, HouseholdConfigProtocol.PeopleChanged), ct);
         await log.RecordAsync(http, caller, summary, ct);
-        return Results.Ok(new AdminSaved<AdminMembers>(await AnswerAsync(store, caller, ct), notTold is null ? null : NotToldWarning));
+        return Results.Ok(new AdminSaved<AdminMembers>(await AnswerAsync(store, caller, ct), notTold is null ? null : AdminSections.NotToldWarning));
     }
 
     private static async Task<Member?> FindAsync(MemberStore store, AdminCaller caller, string userId, CancellationToken ct) =>

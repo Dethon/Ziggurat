@@ -1,6 +1,5 @@
 using System.ClientModel;
 using System.Runtime.CompilerServices;
-using Domain.Contracts;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
 

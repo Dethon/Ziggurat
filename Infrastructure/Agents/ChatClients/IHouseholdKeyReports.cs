@@ -1,4 +1,4 @@
-namespace Domain.Contracts;
+namespace Infrastructure.Agents.ChatClients;
 
 // The agent telling the accounts service that OpenRouter refused a household's own key in a turn, so
 // the owner's keys page shows it rejected without waiting for the owner to save it again: the service

@@ -9,6 +9,7 @@ using Domain.DTOs.Household;
 using Domain.Prompts;
 using Domain.Tools.SubAgents;
 using Infrastructure.Agents;
+using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;

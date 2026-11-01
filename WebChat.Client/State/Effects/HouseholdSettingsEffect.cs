@@ -36,29 +36,8 @@ public sealed class HouseholdSettingsEffect : IDisposable
     public async Task SaveAsync(HouseholdSettings settings) =>
         Settle(await _admin.SaveSettingsAsync(settings), answered => new HouseholdSettingsSaved(answered.Value, answered.Warning));
 
-    private void Settle(AdminAnswer<HouseholdSettings> answer, Func<AdminAnswer<HouseholdSettings>.Answered, IAction> outcome)
-    {
-        switch (answer)
-        {
-            case AdminAnswer<HouseholdSettings>.Answered answered:
-                _dispatcher.Dispatch(outcome(answered));
-                break;
-            case AdminAnswer<HouseholdSettings>.SignedOut:
-                _accounts.SendToSignIn();
-                break;
-            case AdminAnswer<HouseholdSettings>.Refused refused:
-                _dispatcher.Dispatch(new HouseholdSettingsNotSaved(
-                    new AdminNotice(AdminNoticeKind.Refused, refused.Refusal.Message, refused.Refusal.Problems)));
-                break;
-            case AdminAnswer<HouseholdSettings>.NotAllowed notAllowed:
-                _dispatcher.Dispatch(new HouseholdSettingsNotSaved(new AdminNotice(AdminNoticeKind.Unavailable, notAllowed.Message)));
-                break;
-            default:
-                _dispatcher.Dispatch(new HouseholdSettingsNotSaved(
-                    new AdminNotice(AdminNoticeKind.Unavailable, AdminNotice.UnreachableMessage)));
-                break;
-        }
-    }
+    private void Settle(AdminAnswer<HouseholdSettings> answer, Func<AdminAnswer<HouseholdSettings>.Answered, IAction> outcome) =>
+        _dispatcher.Settle(_accounts, answer, outcome, notice => new HouseholdSettingsNotSaved(notice));
 
     public void Dispose()
     {

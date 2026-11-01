@@ -42,29 +42,8 @@ public sealed class HouseholdKeysEffect : IDisposable
         Settle(form, await saving, answered => new HouseholdKeysSaved(form, answered.Value, answered.Warning));
 
     private void Settle(
-        KeyForm? form, AdminAnswer<HouseholdKeys> answer, Func<AdminAnswer<HouseholdKeys>.Answered, IAction> outcome)
-    {
-        switch (answer)
-        {
-            case AdminAnswer<HouseholdKeys>.Answered answered:
-                _dispatcher.Dispatch(outcome(answered));
-                break;
-            case AdminAnswer<HouseholdKeys>.SignedOut:
-                _accounts.SendToSignIn();
-                break;
-            case AdminAnswer<HouseholdKeys>.Refused refused:
-                _dispatcher.Dispatch(new HouseholdKeysNotSaved(form,
-                    new AdminNotice(AdminNoticeKind.Refused, refused.Refusal.Message, refused.Refusal.Problems)));
-                break;
-            case AdminAnswer<HouseholdKeys>.NotAllowed notAllowed:
-                _dispatcher.Dispatch(new HouseholdKeysNotSaved(form, new AdminNotice(AdminNoticeKind.Unavailable, notAllowed.Message)));
-                break;
-            default:
-                _dispatcher.Dispatch(new HouseholdKeysNotSaved(form,
-                    new AdminNotice(AdminNoticeKind.Unavailable, AdminNotice.UnreachableMessage)));
-                break;
-        }
-    }
+        KeyForm? form, AdminAnswer<HouseholdKeys> answer, Func<AdminAnswer<HouseholdKeys>.Answered, IAction> outcome) =>
+        _dispatcher.Settle(_accounts, answer, outcome, notice => new HouseholdKeysNotSaved(form, notice));
 
     public void Dispose()
     {
