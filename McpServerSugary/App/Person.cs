@@ -28,15 +28,14 @@ public sealed record Person(Account Account, string Assertion)
     // The assertion is kept as well as believed: the channel hands it on with every turn it starts.
     internal static async Task<Person?> SignedInAsync(HttpContext http, CancellationToken ct)
     {
-        var assertion = AssertionVerifier.AssertionOf(http.Request.Headers);
-        var account = await http.RequestServices.GetRequiredService<AssertionVerifier>()
-            .VerifyAsync(assertion, SugaryChannel.ChannelId, ct);
-        if (account is null)
+        if (await http.RequestServices.GetRequiredService<AssertionVerifier>()
+                .AdmitAsync(http.Request.Headers, SugaryChannel.ChannelId, null, ct)
+            is not AppAdmission.Admitted admitted)
         {
             return null;
         }
 
-        var person = new Person(account.Account, assertion!);
+        var person = new Person(admitted.Person.Account, admitted.Assertion);
         http.Items[_item] = person;
         return person;
     }
