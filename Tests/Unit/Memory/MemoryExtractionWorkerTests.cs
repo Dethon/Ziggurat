@@ -66,6 +66,31 @@ public class MemoryExtractionWorkerTests
     private static MemoryExtractionRequest Current(string text) =>
         new("user1", null, Anchor(0), "conv_1", null) { FallbackContent = text };
 
+    // A turn admitted just before the operator suspended its household, or before an owner disabled
+    // its person, is extracted after it: suspension and disabling stop every model call made for them,
+    // as dreaming already skips both, so nothing is asked and nothing is paid on the household's key.
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task ProcessRequestAsync_ForASuspendedHouseholdOrADisabledPerson_AsksNothing(bool suspended, bool disabled)
+    {
+        var configuration = new AgentHouseholdConfig(
+            "0123456789abcdef0123456789abcdef", false, new HouseholdSettings(), new AgentsSection(),
+            new FeaturesSection(), new SpacesSection(), "sk-household",
+            DisabledPeople: disabled ? ["user1"] : [], Suspended: suspended);
+        _agentDefinitionProvider.Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(HouseholdAgents.Fixed([]) with { HouseholdId = configuration.HouseholdId, Configuration = configuration });
+        var published = Recording();
+        var worker = Worker(StubJudge.Nouls(_somethingLasting));
+
+        await worker.ProcessRequestAsync(
+            Current("trabajo en Globex") with { TenantId = configuration.HouseholdId }, CancellationToken.None);
+
+        _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<ModelPayer>(), It.IsAny<CancellationToken>()), Times.Never);
+        published.OfType<MemoryJudgmentEvent>().ShouldBeEmpty();
+        published.OfType<MemoryExtractionEvent>().ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ProcessRequestAsync_WhenTheGateFindsNothingLasting_DoesNotExtractAndSaysGated()
     {

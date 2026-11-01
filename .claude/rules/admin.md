@@ -483,7 +483,8 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
     under (`ChannelMessage.HouseholdId`, a schedule's `TenantId`) as well as its person's
     (`.claude/rules/channels.md`);
   - dreaming, which skips the household (`MemoryDreamingService` reads `Suspended` off the same view it
-    reads the key from);
+    reads the key from), and memory extraction, which asks nothing for a turn admitted before the
+    suspension (`MemoryExtractionWorker`, the same view; a member disabled since their turn likewise);
   - the tunnel verify (`TunnelCredentialRefusal.Suspended`) and a household server's back-call
     (`TunnelCredentialStore.LiveAsync` answers none).
 
