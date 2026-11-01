@@ -50,9 +50,7 @@ public sealed class TunnelForwarder(IHttpForwarder forwarder, TunnelRegistry reg
         PathString path,
         IReadOnlyCollection<string> withheld,
         Func<HttpContext, string, Task> offline) =>
-        ForwardToAsync(
-            context, registry.Find(tenantId, serverName) is { IsOpen: true } open ? open : null,
-            serverName, tag, path, withheld, offline);
+        ForwardToAsync(context, registry.Find(tenantId, serverName), serverName, tag, path, withheld, offline);
 
     private async Task ForwardToAsync(
         HttpContext context,
