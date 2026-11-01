@@ -27,6 +27,7 @@ public static class AdminApi
 
         HouseholdSettingsAdmin.Map(household);
         HouseholdAgentsAdmin.Map(household);
+        HouseholdMembersAdmin.Map(household);
         AdminLog.Map(household, deployment);
     }
 

@@ -392,6 +392,8 @@ namespace Accounts.Store.Migrations
 
                     b.Property<DateTime>("CreatedAt");
 
+                    b.Property<DateTime?>("DisabledAt");
+
                     b.Property<string>("DisplayName")
                         .IsRequired()
                         .HasMaxLength(200);

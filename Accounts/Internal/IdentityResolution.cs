@@ -54,7 +54,8 @@ public static class IdentityResolution
             }
 
             // A household's server finds its own household's people and no one else's: anyone else
-            // is nobody to it.
+            // is nobody to it. A member an owner disabled is nobody to every channel: their Telegram
+            // reaches the bot as a stranger's, and their voice is the household's guest.
             var household = InternalCallers.Household(http);
             await using var db = await contexts.CreateDbContextAsync(ct);
             var people = (_linkedIdentityChannels.Contains(query.Channel)
@@ -62,7 +63,7 @@ public static class IdentityResolution
                         .Where(i => i.Channel == query.Channel && i.Identity == query.Identity)
                         .Join(db.Users, i => i.UserId, u => u.Id, (_, u) => u)
                     : db.Users.Where(u => u.Id == query.Identity))
-                .Where(u => household == null || u.TenantId == household);
+                .Where(u => (household == null || u.TenantId == household) && u.DisabledAt == null);
 
             return await people.FirstOrDefaultAsync(ct) is { } user
                 ? Results.Ok(new ResolvedIdentity(user.TenantId, user.Id, user.DisplayName, assertions.Of(user, query.Channel)))

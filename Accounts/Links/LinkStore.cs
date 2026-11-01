@@ -98,6 +98,9 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
 
     public Task<OpenLink?> FindOpenAsync(string token, CancellationToken ct) => FindOpenAsync(token, Enrollable, ct);
 
+    // A link naming a member an owner disabled opens nothing while they are: a recovery link would add
+    // them a way in, and a Telegram code a way to be somebody on Telegram. One still in date opens again
+    // once they are re-enabled.
     public async Task<OpenLink?> FindOpenAsync(string token, IReadOnlyCollection<LinkKind> kinds, CancellationToken ct)
     {
         var hash = Tokens.Hash(token);
@@ -108,10 +111,11 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
             .Select(l => new
             {
                 Link = l,
-                Named = db.Users.Where(u => u.Id == l.UserId).Select(u => u.DisplayName).FirstOrDefault()
+                Named = db.Users.Where(u => u.Id == l.UserId).Select(u => u.DisplayName).FirstOrDefault(),
+                Disabled = db.Users.Any(u => u.Id == l.UserId && u.DisabledAt != null)
             })
             .SingleOrDefaultAsync(ct);
-        return found is null || !kinds.Contains(found.Link.Kind)
+        return found is null || found.Disabled || !kinds.Contains(found.Link.Kind)
             ? null
             : new OpenLink(found.Link.Id, found.Link.Kind, found.Link.TenantId, found.Link.UserId,
                 found.Named ?? found.Link.DisplayName ?? "", found.Link.Role);

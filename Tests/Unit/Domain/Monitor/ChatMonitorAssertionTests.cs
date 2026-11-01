@@ -166,6 +166,69 @@ public class ChatMonitorAssertionTests
         run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
     }
 
+    // An assertion signed before an owner disabled its person still verifies — Telegram keeps the one
+    // that admitted a sender for minutes — so the agent asks the household too, and acts for nobody
+    // the household disabled: the person is told, the errors feed says whose, and no agent is built.
+    [Fact]
+    public async Task ADisabledMembersTurn_IsRefusedReportedAndAnswered()
+    {
+        var run = new Run(standing: new FakeAccountStanding(_fran));
+        run.Channel.WriteMessage(Message() with
+        {
+            Principal = new Principal(ChatChannel, _fran.UserId, _fran),
+            Assertion = TestAssertions.Of(_fran, ChatChannel),
+            TurnKey = "turn-7"
+        });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.AccountDisabledErrorType);
+        refused.TenantId.ShouldBe(Household);
+        refused.Message.ShouldNotBeNull().ShouldContain(_fran.UserId);
+        run.Channel.SentReplies.Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, ConversationGroup.DisabledAnswer), (ReplyContentType.StreamComplete, "")]);
+        run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
+    }
+
+    // A standing the agent cannot read is never good standing: the turn could not be built without
+    // the same view anyway.
+    [Fact]
+    public async Task ATurnWhosePersonsStandingCannotBeRead_IsRefused()
+    {
+        var run = new Run(standing: new FakeAccountStanding { Unreadable = true });
+        run.Channel.WriteMessage(Message() with { Assertion = TestAssertions.Of(_fran, ChatChannel) });
+
+        await run.MonitorAsync();
+
+        run.Factory.Created.ShouldBeEmpty();
+        var refused = run.Errors.ShouldHaveSingleItem();
+        refused.ErrorType.ShouldBe(ChatMonitor.AssertionRefusedErrorType);
+        refused.Message.ShouldNotBeNull().ShouldContain(ConversationGroup.StandingUnreadable);
+        run.Channel.SentReplies.Select(r => r.ContentType).ShouldBe([ReplyContentType.Error, ReplyContentType.StreamComplete]);
+    }
+
+    // The guest is nobody an owner can disable, and the others in the household are unaffected.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AnotherPersonsOrTheGuestsTurn_RunsBesideADisabledMember(bool guest)
+    {
+        var channel = guest ? "voice" : ChatChannel;
+        var run = new Run(channel, standing: new FakeAccountStanding(_mallory));
+        run.Channel.WriteMessage(Message(channel) with
+        {
+            Assertion = guest ? TestAssertions.OfGuest(Household, channel) : TestAssertions.Of(_fran, channel)
+        });
+
+        await run.MonitorAsync();
+
+        run.Errors.ShouldBeEmpty();
+        run.Factory.Created.ShouldHaveSingleItem();
+    }
+
     // The guest is somebody too, but only a satellite hears one: a guest's assertion on the channel it
     // was signed for and no other.
     [Fact]
@@ -258,13 +321,15 @@ public class ChatMonitorAssertionTests
     private sealed class Run
     {
         private readonly AssertionVerifier _verifier;
+        private readonly IAccountStanding? _standing;
         private readonly List<MetricEvent> _published = [];
 
         public Run(
             string channel = ChatChannel, AssertionVerifier? verifier = null, Func<CancellationToken, Task>? turnGate = null,
-            AgentResponseUpdate[]? replies = null)
+            AgentResponseUpdate[]? replies = null, IAccountStanding? standing = null)
         {
             _verifier = verifier ?? MonitorTestMocks.Assertions;
+            _standing = standing;
             Channel = new FakeChannelConnection { ChannelId = channel };
             Agent = new FakeAiAgent { TurnGate = turnGate, UpdatesToYield = replies ?? [] };
             Factory = MonitorTestMocks.CreateAgentFactory(Agent);
@@ -308,7 +373,8 @@ public class ChatMonitorAssertionTests
                 metrics.Object,
                 null,
                 NullLogger<ChatMonitor>.Instance,
-                _verifier);
+                _verifier,
+                standing: _standing);
 
             await monitor.Monitor(CancellationToken.None);
         }
