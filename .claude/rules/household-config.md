@@ -109,7 +109,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 | `idealista` | `mcp-idealista` | `HouseholdConfigAnswer<IdealistaKeys?>` | Idealista's two |
 | `spaces` | `mcp-channel-signalr` | `HouseholdConfigAnswer<SpacesSection>` | none |
 | `telegram-bots` | `mcp-channel-telegram` | `HouseholdTelegramBots`: every household's bots | the bots' tokens |
-| `agent-names` | `mcp-channel-telegram` | `HouseholdConfigAnswer<HouseholdAgentNames>`: each agent's id and name and the default (`HouseholdAgents.Names`, the entries its turns are built from: the two templates for a household that saved none, an unshipped template left out), proven by the person's assertion on `telegram` | none |
+| `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr` | `HouseholdConfigAnswer<HouseholdAgentNames>`: each agent's id, name, description, model and reasoning effort, and the default (`HouseholdAgents.Names`, the entries its turns are built from: the two templates for a household that saved none, an unshipped template left out; never custom instructions), proven by the person's assertion on the asker's channel | none |
 | `people` | `agent` | `HouseholdPeople`: every household and its people's user ids | none |
 
 A secret is unsealed into its own server's view and **left out** of every other, never sent sealed.
@@ -308,7 +308,10 @@ exist, secrets with no master, or readers not told. Saving `settings` also renam
 - **12** (done): the hub (`ChatHub.GetSpaces`, `JoinSpace`) proves with the **session refresh's**
   assertion (`ISessionAccounts.SessionAsync`, as every turn does), not the one the connection arrived
   with, which lives ten minutes while a chat client stays connected for hours. The chat client's host
-  keeps no list and reads no header; see `.claude/rules/channels.md`, "Spaces".
+  keeps no list and reads no header; see `.claude/rules/channels.md`, "Spaces". The picker
+  (`ChatHub.GetAgents`, `ValidateAgent`) reads `agent-names` the same way: the household's agents under
+  its names and on its models, with the patchable models and what a model accepts taken from the
+  catalogue the agent registered (`AgentCatalogBuilder.ForHousehold`).
 - **Seeding a section the household never saved** is `POST /accounts/internal/household-config-seed`
   (`HouseholdConfigSeedApi`, `{ householdId, section, document, dryRun }` → `{ saved, alreadySaved }`,
   400 with the problems), admitted for `CALLERS__household-migration` alone like the import. A section

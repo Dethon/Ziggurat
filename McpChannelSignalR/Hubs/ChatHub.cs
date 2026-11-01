@@ -52,6 +52,8 @@ public sealed class ChatHub(
     // out since, or the accounts service unreachable just now.
     private const string UnvouchedSpacesError = "This household's spaces could not be read right now.";
 
+    private const string UnvouchedAgentsError = "This household's agents could not be read right now.";
+
     // Where the connection keeps the person the proxy's session check named as it arrived, which is
     // also what says it may call anything (SignedInConnectionFilter).
     internal const string AccountItem = "Account";
@@ -91,15 +93,13 @@ public sealed class ChatHub(
         ? shown
         : SignedIn.UserId;
 
-    public IReadOnlyList<AgentCatalogEntry> GetAgents()
-    {
-        return catalog.GetAll();
-    }
+    // The connection's household's agents, as its configuration names them, on the deployment's models
+    // as the agent registered them (AgentCatalogBuilder.ForHousehold): never another household's.
+    public async Task<IReadOnlyList<AgentCatalogEntry>> GetAgents() =>
+        AgentCatalogBuilder.ForHousehold(await HouseholdAgentsAsync(Context.ConnectionAborted), catalog.GetAll() ?? []);
 
-    public bool ValidateAgent(string agentId)
-    {
-        return catalog.Exists(agentId);
-    }
+    public async Task<bool> ValidateAgent(string agentId) =>
+        (await HouseholdAgentsAsync(Context.ConnectionAborted)).Agents.Any(agent => agent.Id == agentId);
 
     // Liveness probe. Clients invoke this on foreground to confirm the transport is actually
     // alive (a backgrounded mobile connection can report Connected while the socket is dead).
@@ -189,21 +189,28 @@ public sealed class ChatHub(
     // Asked with the accounts service's fresh word for the connection's person rather than the
     // assertion it arrived with, which lives ten minutes while a chat client stays connected for
     // hours: the household is the one that word names, never one the browser says.
-    private async Task<IReadOnlyList<HouseholdSpace>> HouseholdSpacesAsync(CancellationToken ct)
+    private async Task<IReadOnlyList<HouseholdSpace>> HouseholdSpacesAsync(CancellationToken ct) =>
+        (await HouseholdViewAsync(households.SpacesAsync, "spaces", UnvouchedSpacesError, ct)).Spaces;
+
+    private Task<HouseholdAgentNames> HouseholdAgentsAsync(CancellationToken ct) =>
+        HouseholdViewAsync(households.AgentNamesAsync, "agents", UnvouchedAgentsError, ct);
+
+    private async Task<T> HouseholdViewAsync<T>(
+        Func<string, HouseholdProof, CancellationToken, Task<T>> view, string what, string refusal, CancellationToken ct)
     {
         if ((await VouchedAsync(ct)).Account is not { } vouched)
         {
-            throw new HubException(UnvouchedSpacesError);
+            throw new HubException(refusal);
         }
 
         try
         {
-            return (await households.SpacesAsync(SignedIn.TenantId, HouseholdProof.OfAssertion(vouched.Assertion), ct)).Spaces;
+            return await view(SignedIn.TenantId, HouseholdProof.OfAssertion(vouched.Assertion), ct);
         }
         catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException)
         {
-            logger.LogWarning(ex, "Could not read the spaces of household {TenantId}", SignedIn.TenantId);
-            throw new HubException(UnvouchedSpacesError);
+            logger.LogWarning(ex, "Could not read the {What} of household {TenantId}", what, SignedIn.TenantId);
+            throw new HubException(refusal);
         }
     }
 

@@ -1,4 +1,3 @@
-using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
@@ -96,16 +95,19 @@ public sealed class HubEventBinderTests : IDisposable
         second.BoundWireNames.ShouldBe(_serverPushes, ignoreOrder: true);
     }
 
+    // The push carries no agents (every household is shown its own); it is told on as an action, for
+    // the effect that asks the hub again.
     [Fact]
-    public void Bind_AgentsUpdatedPush_ReachesTheStore()
+    public void Bind_AgentsUpdatedPush_IsDispatched()
     {
         var connection = new FakeHubConnection();
+        var told = 0;
+        using var _ = _dispatcher.RegisterHandler<AgentsUpdated>(_ => told++);
         _binder.Bind(connection);
 
-        connection.Raise<IReadOnlyList<AgentCatalogEntry>>(
-            "OnAgentsUpdated", [new AgentCatalogEntry("agent-1", "Agent One", null)]);
+        connection.Raise("OnAgentsUpdated", new AgentsUpdatedNotification());
 
-        _topicsStore.State.Agents.ShouldContain(agent => agent.Id == "agent-1");
+        told.ShouldBe(1);
     }
 
     private static TopicChangedNotification TopicCreated(string topicId) =>

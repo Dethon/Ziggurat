@@ -68,7 +68,7 @@ public static class InternalCallers
         [Idealista] = [HouseholdConfigProtocol.IdealistaView],
         [Scheduling] = [HouseholdConfigProtocol.SettingsView],
         [Sugary] = [HouseholdConfigProtocol.SettingsView],
-        [SignalR] = [HouseholdConfigProtocol.SpacesView],
+        [SignalR] = [HouseholdConfigProtocol.SpacesView, HouseholdConfigProtocol.AgentNamesView],
         [Telegram] = [HouseholdConfigProtocol.TelegramBotsView, HouseholdConfigProtocol.AgentNamesView]
     };
 
