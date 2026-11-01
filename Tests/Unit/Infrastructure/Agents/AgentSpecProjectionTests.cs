@@ -89,7 +89,9 @@ public sealed class AgentSpecProjectionTests
         Row("routing session id", s => WithoutSpawnId(s.RoutingSessionId),
             "jack:conv-1", "subagent-worker:<spawn>"),
         Row("conversation id", s => s.ConversationId, "conv-1", "conv-1"),
-        Row("metrics identity", s => s.MetricsAgentId, "Jack", "Worker"),
+        // The figures are keyed by the agent's id, which a household's rename leaves alone, and shown
+        // under the name it goes by.
+        Row("metrics identity", s => (s.AgentId, s.MetricsAgentName), ("jack", "Jack"), ("worker", "Worker")),
         Row("keeps history", s => s.KeepsHistory, true, false),
         // A mount verdict answers "did the agent you registered with mount you", so a delegated
         // task's collision set is nobody's business at the machine.

@@ -29,6 +29,34 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
                 return new AdminAnswer<HouseholdSettings>.Answered(saved.Value, saved.Warning);
             });
 
+    public Task<AdminAnswer<AdminAgents>> GetAgentsAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Agents), async content =>
+            new AdminAnswer<AdminAgents>.Answered((await content.ReadFromJsonAsync<AdminAgents>())!));
+
+    public Task<AdminAnswer<AdminAgents>> SaveAgentAsync(string agentId, AgentEdit edit) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Agent(agentId)) { Content = JsonContent.Create(edit) }, SavedAgentsAsync);
+
+    public Task<AdminAnswer<AdminAgents>> AddAgentAsync(AgentAddition addition) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.Agents) { Content = JsonContent.Create(addition) }, SavedAgentsAsync);
+
+    public Task<AdminAnswer<AdminAgents>> RemoveAgentAsync(string agentId) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Delete, AdminProtocol.Agent(agentId)), SavedAgentsAsync);
+
+    public Task<AdminAnswer<IReadOnlyList<AdminAgentVersion>>> GetAgentVersionsAsync(string agentId) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.AgentVersions(agentId)), async content =>
+            new AdminAnswer<IReadOnlyList<AdminAgentVersion>>.Answered(
+                (await content.ReadFromJsonAsync<List<AdminAgentVersion>>())!));
+
+    // A body-less POST: the restore says which version in its path alone.
+    public Task<AdminAnswer<AdminAgents>> RestoreAgentVersionAsync(string agentId, string versionId) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.RestoreAgentVersion(agentId, versionId)), SavedAgentsAsync);
+
+    private static async Task<AdminAnswer<AdminAgents>.Answered> SavedAgentsAsync(HttpContent content)
+    {
+        var saved = (await content.ReadFromJsonAsync<AdminSaved<AdminAgents>>())!;
+        return new AdminAnswer<AdminAgents>.Answered(saved.Value, saved.Warning);
+    }
+
     private async Task<AdminAnswer<T>> SendAsync<T>(
         HttpRequestMessage request, Func<HttpContent, Task<AdminAnswer<T>.Answered>> read)
     {

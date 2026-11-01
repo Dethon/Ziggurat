@@ -59,6 +59,34 @@ public class MetricsQueryServiceGroupingTests
         result[keyB].ShouldBe((decimal)expectedB);
     }
 
+    // An agent's figures are keyed by its id, so a household's rename does not split them, and shown
+    // under the name it last went by; two agents that go by one name are told apart by their ids.
+    [Fact]
+    public async Task GetTokenGroupedAsync_ByAgent_KeepsARenamedAgentTogether_UnderItsLatestName()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        var morning = new DateTimeOffset(2026, 3, 15, 9, 0, 0, TimeSpan.Zero);
+        SetupSortedSet("metrics:tokens:deployment:2026-03-15",
+        [
+            Usage(100, "jonas", "Jonas", morning),
+            Usage(200, "jonas", "Chef", morning.AddHours(2)),
+            Usage(40, "jonas", "Jonas", morning.AddHours(1)),
+            Usage(5, "cook", "Chef", morning),
+            Usage(7, "Jack", null, morning)
+        ]);
+
+        var result = await _sut.GetTokenGroupedAsync(TokenDimension.Agent, TokenMetric.Tokens, date, date);
+
+        result.ShouldBe(new Dictionary<string, decimal> { ["Chef (jonas)"] = 340m, ["Chef (cook)"] = 5m, ["Jack"] = 7m },
+            ignoreOrder: true);
+    }
+
+    private static TokenUsageEvent Usage(int tokens, string agentId, string? agentName, DateTimeOffset at) => new()
+    {
+        Sender = "alice", Model = "m", InputTokens = tokens, OutputTokens = 0, Cost = 0m,
+        AgentId = agentId, AgentName = agentName, Timestamp = at
+    };
+
     [Theory]
     [InlineData(ToolDimension.ToolName, ToolMetric.CallCount)]
     [InlineData(ToolDimension.ToolName, ToolMetric.AvgDuration)]

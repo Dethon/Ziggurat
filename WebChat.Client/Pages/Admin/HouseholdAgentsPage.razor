@@ -1,0 +1,196 @@
+@page "/admin/agents"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.Admin
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdAgentsStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household agents</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-agents-heading">
+    <h1 id="admin-agents-heading">Agents</h1>
+    <p class="admin-lede">
+        Each agent's name and the instructions it follows on top of its own. Everything else about an agent
+        — its model, its tools — is the template's it was made from.
+    </p>
+
+    @if (_state.Notice is { } notice)
+    {
+        <AdminNoticeView Notice="notice" />
+    }
+
+    @if (_state.Agents is { } agents)
+    {
+        @foreach (var agent in agents.Agents)
+        {
+            var draft = Draft(agent);
+            <article class="admin-agent" aria-label="@agent.Name">
+                <header class="admin-agent-header">
+                    <h2>@agent.Name</h2>
+                    <span class="admin-agent-meta">
+                        @(agent.Template is { } template ? $"From the {template} template" : "Set up for this household")
+                        @if (agent.Id == agents.DefaultAgent)
+                        {
+                            <span class="admin-agent-default">· answers by default</span>
+                        }
+                    </span>
+                </header>
+                <form class="admin-form" @onsubmit="() => Save(agent.Id)">
+                    <label class="admin-field">
+                        <span class="admin-field-label">Name</span>
+                        <input name="agentName" @bind="draft.Name" @bind:event="oninput" maxlength="@AdminAgent.NameLength"
+                               autocomplete="off" />
+                    </label>
+                    <label class="admin-field">
+                        <span class="admin-field-label">Custom instructions</span>
+                        <textarea name="customInstructions" rows="4" @bind="draft.Instructions" @bind:event="oninput"
+                                  maxlength="@agents.InstructionsLength"></textarea>
+                        <span class="admin-field-hint">
+                            @draft.Instructions.Length of @agents.InstructionsLength characters.
+                        </span>
+                    </label>
+                    <div class="admin-actions">
+                        <button type="button" class="admin-secondary" @onclick="() => ShowVersions(agent.Id)">Earlier versions</button>
+                        @if (agent.Id != agents.DefaultAgent && agents.Agents.Count > 1)
+                        {
+                            <button type="button" class="admin-secondary" @onclick="() => _confirming = agent.Id">Remove</button>
+                        }
+                        <button type="submit" class="admin-save" disabled="@_state.Saving">@(_state.Saving ? "Saving" : "Save")</button>
+                    </div>
+                </form>
+
+                @if (_confirming == agent.Id)
+                {
+                    <div class="admin-confirm" role="group" aria-label="Remove @agent.Name">
+                        <p>Remove @agent.Name? Nobody in the household can talk to it after.</p>
+                        <div class="admin-actions">
+                            <button type="button" class="admin-secondary" @onclick="() => _confirming = null">Keep it</button>
+                            <button type="button" class="admin-save" @onclick="() => Remove(agent.Id)">Remove @agent.Name</button>
+                        </div>
+                    </div>
+                }
+
+                @if (_state.VersionsOf == agent.Id)
+                {
+                    <div class="admin-versions" role="region" aria-label="Earlier versions of @agent.Name">
+                        @if (_state.Versions is null)
+                        {
+                            <p class="admin-status">Loading the earlier versions</p>
+                        }
+                        else if (_state.Versions.Count == 0)
+                        {
+                            <p class="admin-status">No earlier versions yet: each save keeps the one it replaces.</p>
+                        }
+                        else
+                        {
+                            <ol>
+                                @foreach (var version in _state.Versions)
+                                {
+                                    <li class="admin-version">
+                                        <div>
+                                            <strong>@version.Name</strong>
+                                            <span class="admin-field-hint">
+                                                replaced @version.ReplacedAt.ToLocalTime().ToString("g")@(version.ReplacedBy.Length > 0 ? $" by {version.ReplacedBy}" : "")
+                                            </span>
+                                            <p class="admin-version-instructions">@(version.CustomInstructions ?? "No custom instructions.")</p>
+                                        </div>
+                                        <button type="button" class="admin-secondary" disabled="@_state.Saving"
+                                                @onclick="() => Restore(agent.Id, version.Id)">Restore</button>
+                                    </li>
+                                }
+                            </ol>
+                        }
+                    </div>
+                }
+            </article>
+        }
+
+        <form class="admin-form admin-agent-add" @onsubmit="Add" aria-labelledby="admin-agent-add-heading">
+            <h2 id="admin-agent-add-heading">Add an agent</h2>
+            <label class="admin-field">
+                <span class="admin-field-label">Template</span>
+                <select name="template" @bind="_template">
+                    @foreach (var template in agents.Templates)
+                    {
+                        <option value="@template.Name">@template.AgentName (@template.Name)</option>
+                    }
+                </select>
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Name</span>
+                <input name="newAgentName" @bind="_newName" @bind:event="oninput" maxlength="@AdminAgent.NameLength" autocomplete="off" />
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@_state.Saving">Add agent</button>
+            </div>
+        </form>
+    }
+    else if (_state.Notice is null)
+    {
+        <p class="admin-status">Loading the household's agents</p>
+    }
+</section>
+
+@code {
+    private HouseholdAgentsState _state = HouseholdAgentsState.Initial;
+    private readonly Dictionary<string, AgentDraft> _drafts = [];
+    private string? _confirming;
+    private string _template = "";
+    private string _newName = "";
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The fields take what the admin API answered — on opening and after every change — and are the
+        // owner's to edit in between.
+        Subscribe(Store.StateObservable, state => state.Agents, agents =>
+        {
+            if (agents is null)
+            {
+                return;
+            }
+
+            _drafts.Clear();
+            foreach (var agent in agents.Agents)
+            {
+                _drafts[agent.Id] = new AgentDraft { Name = agent.Name, Instructions = agent.CustomInstructions ?? "" };
+            }
+
+            _confirming = null;
+            _newName = "";
+            if (agents.Templates.All(t => t.Name != _template))
+            {
+                _template = agents.Templates.FirstOrDefault()?.Name ?? "";
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdAgents());
+    }
+
+    private AgentDraft Draft(AdminAgent agent) =>
+        _drafts.TryGetValue(agent.Id, out var draft)
+            ? draft
+            : _drafts[agent.Id] = new AgentDraft { Name = agent.Name, Instructions = agent.CustomInstructions ?? "" };
+
+    private void Save(string agentId)
+    {
+        var draft = _drafts[agentId];
+        Dispatcher.Dispatch(new SaveHouseholdAgent(agentId, new AgentEdit(
+            draft.Name.Trim(), string.IsNullOrWhiteSpace(draft.Instructions) ? null : draft.Instructions.Trim())));
+    }
+
+    private void ShowVersions(string agentId) => Dispatcher.Dispatch(new LoadHouseholdAgentVersions(agentId));
+
+    private void Restore(string agentId, string versionId) => Dispatcher.Dispatch(new RestoreHouseholdAgentVersion(agentId, versionId));
+
+    private void Remove(string agentId) => Dispatcher.Dispatch(new RemoveHouseholdAgent(agentId));
+
+    private void Add() => Dispatcher.Dispatch(new AddHouseholdAgent(new AgentAddition(_template, _newName.Trim())));
+
+    private sealed class AgentDraft
+    {
+        public string Name { get; set; } = "";
+        public string Instructions { get; set; } = "";
+    }
+}

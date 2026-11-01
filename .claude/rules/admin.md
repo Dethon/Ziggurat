@@ -10,9 +10,11 @@ paths:
   - "WebChat.Client/Components/Admin/**"
   - "WebChat.Client/State/Admin/**"
   - "WebChat.Client/State/Effects/HouseholdSettingsEffect.cs"
+  - "WebChat.Client/State/Effects/HouseholdAgentsEffect.cs"
   - "WebChat.Client/Services/AdminService.cs"
   - "WebChat.Client/Contracts/IAdminService.cs"
   - "Tests/Integration/Accounts/AdminApiTests.cs"
+  - "Tests/Integration/Accounts/HouseholdAgentsAdminTests.cs"
   - "Tests/E2E/WebChat/HouseholdAdminE2ETests.cs"
   - "Accounts/Tunnels/ConnectedServersClient.cs"
   - "Dashboard.Client/Pages/Households.razor"
@@ -44,7 +46,7 @@ clients read. Two roots, and nothing else under `/accounts/admin`:
 
 The operator is also an owner of the home household and manages the home through the household
 routes like any owner. Today's routes: `GET`/`PUT /household/settings` (`HouseholdSettings`),
-`GET /household/changes?limit=` (the household's change log) and `GET /operator/changes?household=&limit=`
+`GET /household/changes?limit=` (the household's change log), the agents routes (below), `GET /operator/changes?household=&limit=`
 (every household's, or one's), and the household list's (below): `GET`/`POST /operator/households` and
 `POST /operator/households/{householdId}/owners/{userId}/recovery`. A route is mapped in `AdminApi.Map` into one of the two groups, with its
 path inside the group from `AdminApi.Under(root, AdminProtocol.X)`, and reads its caller as a bound
@@ -108,6 +110,46 @@ for settings, "Replaced the OpenRouter key" for 03, never any characters of a ke
 Reads (`ListAsync`) are newest first, `limit` defaulting to 50 and capped at 200, each with the actor's
 current display name. Minting something (a link, a credential) is a change and is recorded; it is never
 in the summary.
+
+## Agents
+
+`HouseholdAgentsAdmin` over the agents section, and `AgentVersions` beside it (`Domain/DTOs/Admin/AdminAgents.cs`):
+`GET /household/agents` (`AdminAgents`: the default, each agent as `AdminAgent` — id, name, custom
+instructions, the template it was made from or none for a seeded definition, description and model shown,
+never edited — the shipped templates, and the instructions limit); `POST /household/agents`
+(`AgentAddition { template, name }`); `PUT`/`DELETE /household/agents/{agentId}` (`AgentEdit { name,
+customInstructions }`); `GET /household/agents/{agentId}/versions` (`AdminAgentVersion`, newest first) and
+`POST .../versions/{versionId}/restore`. Every change answers `AdminSaved<AdminAgents>`, the whole list.
+
+- **Only the name and the custom instructions are the owner's.** An edit carries those two and nothing
+  else binds (a model sent beside them is ignored). They live where the section says: a template entry's
+  `name`/`customInstructions`, a seeded definition's own `definition.name`/`definition.customInstructions`
+  (the home's jack, jonas, nabu and sugary) — so the home's agents are renamed like any other.
+- **Limits are the admin API's**, beyond the section's rules: a name 1–`AdminAgent.NameLength` (100)
+  characters, instructions at most `Admin:AgentInstructionsLength` (appsettings, 4000) — they are in every
+  turn's prompt. The operator's `set-household-config` is not held to them.
+- **A household that saved no agents** reads as the two starting templates (`HouseholdAgents.Effective`),
+  and its first change is made to those, so renaming jonas keeps sugary.
+- **An added agent** takes the template's id, or the first free `<template>-<n>`. A template this build
+  does not ship is refused.
+- **Removing** the default agent is refused ("answers by default, so it stays: rename it…") — nothing
+  else names which agent answers a message that names none — and so is removing the last agent, since a
+  section with none reads as the two starting templates again. A space's default agent or a Telegram bot
+  bound to a removed agent's id is not checked: the keys section is sealed, and an id freed by a removal
+  is the next one an addition of that template takes.
+- **Versions** are the name and instructions a change replaced (an edit's or a restore's, so a restore is
+  undone the same way), the last `Admin:AgentVersionsKept` (5) per agent, by whom and when, written after
+  the save stood and dropped with the agent. **A table, not the section**: no turn reads history, and the
+  section is what the agent is sent on every view, migrated by every step and rewritten whole by the
+  operator's command. That command writes no version.
+- Summaries name the agent's id and the fields changed ("Changed agent jonas's name, custom
+  instructions", "Added agent jonas-2 from the jonas template", "Restored a version of agent jonas",
+  "Removed agent jonas-2"), never a name or instructions.
+- **The page** is `/admin/agents` (`HouseholdAgentsPage`, `HouseholdAgentsStore`, `HouseholdAgentsEffect`):
+  one article per agent named by its saved name, its fields, its earlier versions on asking (each with
+  Restore), Remove behind a confirmation (not offered for the default or the last agent), and a form
+  adding one from a template. The E2E test adds its own agent to the home and removes it, never touching
+  the home's seeded ones.
 
 ## The proxy
 
