@@ -385,7 +385,7 @@ public sealed class ChatHub(
         // between picking a file and sending it: no turn is created, no agent is woken, and no
         // browser is shown a message that was never taken. The answer goes out on the same
         // stream-error path an undeliverable message uses, so every browser sees the same end.
-        if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
+        if (await CapabilityRefusalAsync(session.AgentId, configPatch, attachments, cancellationToken) is { } refused)
         {
             await AnswerRefusedAsync(topicId, conversationId, refused);
             await foreach (var refusalChunk in
@@ -474,7 +474,7 @@ public sealed class ChatHub(
         var userId = SignedIn.UserId;
         var conversationId = session.Identity.ConversationId;
 
-        if (CapabilityRefusal(session.AgentId, configPatch, attachments) is { } refused)
+        if (await CapabilityRefusalAsync(session.AgentId, configPatch, attachments, Context.ConnectionAborted) is { } refused)
         {
             await AnswerRefusedAsync(topicId, conversationId, refused);
             return true;
@@ -522,21 +522,26 @@ public sealed class ChatHub(
     }
 
     // The composer already blocks this case; this is the guard for the race where the model
-    // changed between picking a file and sending it. The agent does not check a third time.
-    private string? CapabilityRefusal(
+    // changed between picking a file and sending it. The agent does not check a third time. The agent
+    // is the connection's household's, on the model it runs there (AgentCatalogBuilder.ForHousehold):
+    // the catalogue the agent registered is the home's agents, and a household's own agent is not one
+    // of them to be sent anything.
+    private async Task<string?> CapabilityRefusalAsync(
         string? agentId,
         AgentConfigPatch? configPatch,
-        IReadOnlyList<AttachmentReference>? attachments)
+        IReadOnlyList<AttachmentReference>? attachments,
+        CancellationToken ct)
     {
         if (attachments is not { Count: > 0 })
         {
             return null;
         }
 
-        return AttachmentCapability.Refusal(
-            agentId is null ? null : catalog.Get(agentId),
-            configPatch?.Model,
-            attachments.Select(a => a.MediaType));
+        var agent = agentId is null
+            ? null
+            : AgentCatalogBuilder.ForHousehold(await HouseholdAgentsAsync(ct), catalog.GetAll() ?? [])
+                .FirstOrDefault(entry => entry.Id == agentId);
+        return AttachmentCapability.Refusal(agent, configPatch?.Model, attachments.Select(a => a.MediaType));
     }
 
     private async Task AnswerRefusedAsync(string topicId, string conversationId, string refusal)
