@@ -55,7 +55,7 @@ public static class HouseholdServersAdmin
                 new MintedServerCredential(minted.ServerName, minted.Id, minted.Credential)));
         });
 
-        household.MapPost($"{servers}/credentials/{{credentialId}}/revoke", async (
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.RevokeServerCredentialRoute), async (
             AdminCaller caller, string credentialId, HttpContext http, TunnelCredentialStore store,
             ConnectedServersClient relay, AdminLog log, CancellationToken ct) =>
         {

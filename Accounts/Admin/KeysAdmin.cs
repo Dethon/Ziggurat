@@ -37,7 +37,7 @@ public sealed class KeysAdmin(
                 }
                 catch (HouseholdSecretsUnavailableException)
                 {
-                    return Results.Json(new AdminRefusal(SecretsUnavailableMessage, []), statusCode: StatusCodes.Status503ServiceUnavailable);
+                    return SecretsUnavailable();
                 }
             });
 
@@ -49,7 +49,7 @@ public sealed class KeysAdmin(
             (AdminCaller caller, IdealistaKeys? key, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
                 keys.SaveIdealistaAsync(key, new Saving(caller, http, log), ct));
 
-        household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.TelegramBots) + "/{agentId}",
+        household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.TelegramBotRoute),
             (string agentId, AdminCaller caller, TelegramBotKey? key, HttpContext http, KeysAdmin keys, AdminLog log,
                 CancellationToken ct) => keys.SaveBotAsync(agentId, key, new Saving(caller, http, log), ct));
     }
@@ -68,6 +68,11 @@ public sealed class KeysAdmin(
             ? await SaveAsync(KeySlot.TelegramBot(agentId), telegram, key, saving, ct)
             : Results.BadRequest(new AdminRefusal($"The bot was not saved: the household has no agent {agentId} to bind it to.", []));
     }
+
+    // Not the owner's to fix and not the request's fault: the deployment cannot open the household's
+    // secrets, which a read meets as a save does.
+    private static IResult SecretsUnavailable() =>
+        Results.Json(new AdminRefusal(SecretsUnavailableMessage, []), statusCode: StatusCodes.Status503ServiceUnavailable);
 
     // Who is saving and the request's log entry, carried to the one save every key goes through.
     private sealed record Saving(AdminCaller Caller, HttpContext Http, AdminLog Log);
@@ -149,11 +154,11 @@ public sealed class KeysAdmin(
                 return Results.BadRequest(new AdminRefusal($"The {slot.Label} was not saved: {rejected.Why}.", []));
             }
 
-            switch (await store.SaveAsync(caller.HouseholdId, HouseholdSections.KeysSchema, document, ct))
-            {
-                case SectionSave.Invalid invalid:
-                    return Results.BadRequest(new AdminRefusal($"The {slot.Label} was not saved.", invalid.Problems));
-                case SectionSave.Saved saved:
+            return await AdminSections.AnswerAsync(
+                await store.SaveAsync(caller.HouseholdId, HouseholdSections.KeysSchema, document, ct),
+                $"The {slot.Label} was not saved.",
+                async saved =>
+                {
                     var unreachable = outcome as KeyProbeOutcome.Unreachable;
                     await checks.RecordAsync(caller.HouseholdId, slot.Name, slot.Material(key),
                         unreachable is null ? KeyState.Working : KeyState.Unchecked, unreachable?.Why, ct);
@@ -168,14 +173,12 @@ public sealed class KeysAdmin(
                     var warning = string.Join(" ", warnings.OfType<string>());
                     return Results.Ok(new AdminSaved<HouseholdKeys>(
                         (await ViewAsync(caller.HouseholdId, ct))!, warning.Length == 0 ? null : warning));
-                default:
-                    return Results.NotFound();
-            }
+                });
         }
         catch (HouseholdSecretsUnavailableException ex)
         {
             logger.LogWarning("A household's keys could not be saved: {Reason}", ex.Message);
-            return Results.BadRequest(new AdminRefusal(SecretsUnavailableMessage, []));
+            return SecretsUnavailable();
         }
     }
 

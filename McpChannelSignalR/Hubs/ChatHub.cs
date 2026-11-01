@@ -62,6 +62,12 @@ public sealed class ChatHub(
     // absent when the service could not say.
     internal const string DisplayNameItem = "DisplayName";
 
+    // Where it keeps the space it joined last, the household's spaces as it joined it, and the removed
+    // spaces' slugs that space lists beside its own.
+    private const string SpaceSlugItem = "SpaceSlug";
+    private const string HouseholdSpacesItem = "HouseholdSpaces";
+    private const string ListedWithItem = "ListedWith";
+
     // The one answer for a topic the caller may not see, worded as for one that does not exist, so
     // naming another person's private topic tells the namer nothing about it — not even that it is.
     private const string NoSuchConversation = "No such conversation.";
@@ -77,16 +83,16 @@ public sealed class ChatHub(
     private const string NoSuchSpace = "No such space.";
 
     private string? CurrentSpaceSlug =>
-        Context.Items.TryGetValue("SpaceSlug", out var slug) ? slug as string : null;
+        Context.Items.TryGetValue(SpaceSlugItem, out var slug) ? slug as string : null;
 
     // The household's spaces as the connection last joined one of them, and the slugs of removed
     // spaces whose topics the joined space lists beside its own (SpaceListing): both asked once as
     // it joins, so a page costs no read of the configuration and no scan.
     private IReadOnlyList<HouseholdSpace>? JoinedHouseholdSpaces =>
-        Context.Items.TryGetValue("HouseholdSpaces", out var spaces) ? spaces as IReadOnlyList<HouseholdSpace> : null;
+        Context.Items.TryGetValue(HouseholdSpacesItem, out var spaces) ? spaces as IReadOnlyList<HouseholdSpace> : null;
 
     private IReadOnlyList<string> ListedWith(string spaceSlug) =>
-        spaceSlug == CurrentSpaceSlug && Context.Items.TryGetValue("ListedWith", out var slugs) && slugs is IReadOnlyList<string> listed
+        spaceSlug == CurrentSpaceSlug && Context.Items.TryGetValue(ListedWithItem, out var slugs) && slugs is IReadOnlyList<string> listed
             ? listed
             : [];
 
@@ -202,8 +208,8 @@ public sealed class ChatHub(
 
         // A removed space's topics are not moved; the default space lists them, so they are found by
         // what the household's topics are kept under, only when that is the space joined.
-        Context.Items["HouseholdSpaces"] = spaces;
-        Context.Items["ListedWith"] = spaceSlug == SpaceListing.DefaultOf(spaces)
+        Context.Items[HouseholdSpacesItem] = spaces;
+        Context.Items[ListedWithItem] = spaceSlug == SpaceListing.DefaultOf(spaces)
             ? SpaceListing.ListedWith(spaceSlug, spaces, await threadStore.SpacesHoldingTopicsAsync(SignedIn.TenantId))
             : Array.Empty<string>();
         await SwitchSpaceGroupAsync(spaceSlug);
@@ -241,7 +247,7 @@ public sealed class ChatHub(
     // sees every topic (TopicAudience).
     private async Task SwitchSpaceGroupAsync(string spaceSlug)
     {
-        if (Context.Items.TryGetValue("SpaceSlug", out var previous) && previous is string prevSlug)
+        if (Context.Items.TryGetValue(SpaceSlugItem, out var previous) && previous is string prevSlug)
         {
             if (prevSlug == spaceSlug)
             {
@@ -252,7 +258,7 @@ public sealed class ChatHub(
                 .Select(group => Groups.RemoveFromGroupAsync(Context.ConnectionId, group)));
         }
 
-        Context.Items["SpaceSlug"] = spaceSlug;
+        Context.Items[SpaceSlugItem] = spaceSlug;
         await Task.WhenAll(TopicAudience.GroupsOf(SignedIn, spaceSlug)
             .Select(group => Groups.AddToGroupAsync(Context.ConnectionId, group)));
     }
