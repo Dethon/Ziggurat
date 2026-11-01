@@ -44,6 +44,15 @@ public interface IAdminService
 
     Task<AdminAnswer<MemberLink>> MintMemberRecoveryAsync(string userId);
 
+    Task<AdminAnswer<FeaturesSection>> GetFeaturesAsync();
+
+    Task<AdminAnswer<FeaturesSection>> SaveFeaturesAsync(FeaturesSection features);
+
+    // The spaces in their order, beside the household's agents a space may open on; saved whole.
+    Task<AdminAnswer<AdminSpaces>> GetSpacesAsync();
+
+    Task<AdminAnswer<AdminSpaces>> SaveSpacesAsync(SpacesSection spaces);
+
     // The household's own servers; a minted credential is in its answer alone, never read back.
     Task<AdminAnswer<AdminServers>> GetServersAsync();
 

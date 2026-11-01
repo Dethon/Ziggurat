@@ -92,6 +92,22 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
     public Task<AdminAnswer<MemberLink>> MintMemberRecoveryAsync(string userId) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.MemberRecovery(userId)), SavedAsync<MemberLink>);
 
+    public Task<AdminAnswer<FeaturesSection>> GetFeaturesAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Features), async content =>
+            new AdminAnswer<FeaturesSection>.Answered((await content.ReadFromJsonAsync<FeaturesSection>())!));
+
+    public Task<AdminAnswer<FeaturesSection>> SaveFeaturesAsync(FeaturesSection features) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Features) { Content = JsonContent.Create(features) },
+            SavedAsync<FeaturesSection>);
+
+    public Task<AdminAnswer<AdminSpaces>> GetSpacesAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Spaces), async content =>
+            new AdminAnswer<AdminSpaces>.Answered((await content.ReadFromJsonAsync<AdminSpaces>())!));
+
+    public Task<AdminAnswer<AdminSpaces>> SaveSpacesAsync(SpacesSection spaces) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Spaces) { Content = JsonContent.Create(spaces) },
+            SavedAsync<AdminSpaces>);
+
     public Task<AdminAnswer<AdminServers>> GetServersAsync() =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Servers), async content =>
             new AdminAnswer<AdminServers>.Answered((await content.ReadFromJsonAsync<AdminServers>())!));

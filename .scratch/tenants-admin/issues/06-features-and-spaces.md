@@ -4,8 +4,8 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A feature turned off disappears from the household's agents on the next turn
-- [ ] A new or edited space appears in the chat client with its colour and default agent
-- [ ] Topics of a removed space are reachable from the default space
+- [x] A feature turned off disappears from the household's agents on the next turn
+- [x] A new or edited space appears in the chat client with its colour and default agent
+- [x] Topics of a removed space are reachable from the default space (read side: listed, searched and heard there; nothing moved)

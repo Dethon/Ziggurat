@@ -38,12 +38,15 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
     private const string Phone = "5e55105e55105e55105e55105e55105e";
 
     private readonly HouseholdSpacesAccounts _households = new();
+    private readonly Mock<IThreadStateStore> _store = new();
+    private readonly Mock<IHubNotificationSender> _hub = new();
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
     private readonly List<HubConnection> _connections = [];
     private WebApplication _app = null!;
 
     public async Task InitializeAsync()
     {
+        _store.Setup(s => s.SpacesHoldingTopicsAsync(It.IsAny<string>())).ReturnsAsync([]);
         var attachmentSettings = new AttachmentSettings { StoragePath = _root };
         var time = new FakeTimeProvider();
         var sessions = new SessionService();
@@ -64,14 +67,14 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
             .AddSingleton<ISessionAccounts>(new VouchingAccounts(Home))
             .AddSingleton<IHouseholdConfiguration>(_households)
             .AddSingleton(new Mock<IAgentCatalog>().Object)
-            .AddSingleton(new Mock<IThreadStateStore>().Object)
+            .AddSingleton(_store.Object)
             .AddSingleton(new Mock<IPushSubscriptionStore>().Object)
             .AddSingleton(new AttachmentService(
                 attachmentSettings,
                 new AttachmentTickets(attachmentSettings, time),
                 new AttachmentStore(attachmentSettings, new RetentionSettings(), new FakeConversationLiveness(), time, NullLogger<AttachmentStore>.Instance),
                 NullLogger<AttachmentService>.Instance))
-            .AddSingleton(new Mock<IHubNotificationSender>().Object)
+            .AddSingleton(_hub.Object)
             .AddSingleton(new RetentionSettings())
             .AddSingleton(new DictationSettings())
             .AddSingleton(TestAssertions.Verifier());
@@ -150,6 +153,78 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
         spaces.ShouldBe([HouseholdSpace.Default]);
         await Should.ThrowAsync<HubException>(() => connection.InvokeAsync("JoinSpace", "x"));
     }
+
+    // A removed space's topics are not moved: the default space lists and searches them beside its
+    // own, found by the slugs the household's topics are kept under that are none of its spaces now.
+    [Fact]
+    public async Task ATopicOfARemovedSpace_IsListedAndFoundInTheDefaultSpace()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), Space("kitchen", 1)] };
+        var attic = Topic("t-attic", "attic");
+        HoldingTopics("default", "kitchen", "attic");
+        _store.Setup(s => s.GetTopicPageAsync(
+                "jonas", "default", It.IsAny<TopicViewer>(), null, It.IsAny<int>(), false, Only("attic")))
+            .ReturnsAsync(new TopicPage([attic], null));
+        _store.Setup(s => s.SearchTopicsAsync(
+                "jonas", "default", It.IsAny<TopicViewer>(), "jam", null, It.IsAny<int>(), Only("attic")))
+            .ReturnsAsync(new TopicPage([attic], null));
+        var connection = await ConnectAsync();
+
+        await connection.InvokeAsync("JoinSpace", SpaceConfig.DefaultSlug);
+
+        (await connection.InvokeAsync<TopicPage>("GetTopicPage", "jonas", "default", null, null, false))
+            .Topics.Select(t => t.TopicId).ShouldBe(["t-attic"]);
+        (await connection.InvokeAsync<TopicPage>("SearchTopics", "jonas", "jam", "default", null, null))
+            .Topics.Select(t => t.TopicId).ShouldBe(["t-attic"]);
+    }
+
+    // Only the default space lists them: another space is its own topics alone.
+    [Fact]
+    public async Task ASpaceOtherThanTheDefault_ListsOnlyItsOwnTopics()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0), Space("kitchen", 1)] };
+        HoldingTopics("default", "kitchen", "attic");
+        _store.Setup(s => s.GetTopicPageAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TopicViewer>(), It.IsAny<string?>(), It.IsAny<int>(),
+                It.IsAny<bool>(), It.IsAny<IReadOnlyList<string>?>()))
+            .ReturnsAsync(new TopicPage([], null));
+        var connection = await ConnectAsync();
+
+        await connection.InvokeAsync("JoinSpace", "kitchen");
+        await connection.InvokeAsync<TopicPage>("GetTopicPage", "jonas", "kitchen", null, null, false);
+
+        _store.Verify(s => s.GetTopicPageAsync(
+            "jonas", "kitchen", It.IsAny<TopicViewer>(), null, It.IsAny<int>(), false,
+            It.Is<IReadOnlyList<string>?>(also => also == null || also.Count == 0)), Times.Once);
+    }
+
+    // Nobody can join a removed space, so a change to one of its topics is told to the default space
+    // that lists it, or the rows there would never hear of it.
+    [Fact]
+    public async Task SharingATopicOfARemovedSpace_IsHeardInTheDefaultSpace()
+    {
+        _households.Saved[Home] = new SpacesSection { Spaces = [Space("default", 0)] };
+        HoldingTopics("default", "attic");
+        _store.Setup(s => s.GetTopicAsync(Home, "jonas", 7, "t-attic")).ReturnsAsync(Topic("t-attic", "attic"));
+        var connection = await ConnectAsync();
+        await connection.InvokeAsync("JoinSpace", SpaceConfig.DefaultSlug);
+
+        await connection.InvokeAsync("SetTopicShared", "jonas", 7L, "t-attic", true);
+
+        _hub.Verify(h => h.SendToGroupAsync(
+            $"space:{Home}:default", "OnTopicChanged", It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Once);
+        _hub.Verify(h => h.SendToGroupAsync(
+            $"space:{Home}:attic", It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private void HoldingTopics(params string[] slugs) =>
+        _store.Setup(s => s.SpacesHoldingTopicsAsync(Home)).ReturnsAsync(slugs);
+
+    private static IReadOnlyList<string>? Only(params string[] slugs) =>
+        It.Is<IReadOnlyList<string>?>(also => also != null && also.SequenceEqual(slugs));
+
+    private static TopicMetadata Topic(string topicId, string slug) =>
+        new(topicId, 7, 0, "jonas", "Jam", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, slug, OwnerId: Fran, TenantId: Home);
 
     private async Task<HubConnection> ConnectAsync()
     {
