@@ -23,7 +23,10 @@ namespace Domain.DTOs.Metrics;
 public abstract record MetricEvent
 {
     public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
+    // The agent's id, which keys its figures, and the name it went by when this happened, which they
+    // are shown under: a household renames an agent without splitting what it used.
     public string? AgentId { get; init; }
+    public string? AgentName { get; init; }
     public string? ConversationId { get; init; }
 
     // The household server a back-call brought this event from (its synthetic address,
