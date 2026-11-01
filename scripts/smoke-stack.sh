@@ -19,7 +19,9 @@
 # machine's Caddy by the deployment's main host (TenantKit/docker-compose.override.smoke.yml). Web
 # search, the vault, the library, the sandbox and the printer start; voice, Home Assistant's server,
 # Home Assistant and Music Assistant never do — they reach satellites, the home and the LAN — so a
-# turn goes without them and is told they are offline. Never point this at the deployment's host.
+# turn goes without them and is told they are offline. A household an owner keys here has its keys
+# sealed with a master key made for this smoke state, and probed against a stub (smoke-keys) that takes
+# every key, so no key is sent to a provider to be checked. Never point this at the deployment's host.
 
 set -euo pipefail
 
@@ -48,6 +50,13 @@ while read -r name; do export "$name=${!name:-local-mcp-secret}"; done \
 export AGENTAPI__SHAREDSECRET="${AGENTAPI__SHAREDSECRET:-local-agentapi-secret}"
 export HOUSEHOLD_MIGRATION_SECRET="${HOUSEHOLD_MIGRATION_SECRET:-local-migration-secret}"
 
+# The household configuration's master key, so an owner's key can be saved here: made once per smoke
+# state and kept beside it, since a second up with another would leave every sealed secret unreadable.
+# Never one from the environment, which could be the deployment's.
+MASTER_KEY=DockerCompose/volumes/smoke/household-config-master.key
+HOUSEHOLD_CONFIG_MASTER_KEY="$( [[ -s "$MASTER_KEY" ]] && cat "$MASTER_KEY" || true)"
+export HOUSEHOLD_CONFIG_MASTER_KEY
+
 # The kit, as its own project: the tracked TenantKit/.env is read for everything left out here, and
 # what is exported here wins over its empty placeholders.
 KIT=(docker compose -f TenantKit/docker-compose.yml -f TenantKit/docker-compose.override.smoke.yml
@@ -73,8 +82,8 @@ retry() {
 # the people into the home household, seeds the home's settings, agents, features and spaces
 # (HouseholdMigration/Home), moves the shared stores into the household and stamps the schedules'
 # writers; then the agent restarts, building every conversation from the seeded agents, and offers each
-# schedule as its writer. No keys are piped in: no master key is set here, the home's turns are paid
-# with the deployment's key, and a Telegram bot would take the deployment's updates. The one person in
+# schedule as its writer. No keys are piped in: the home's turns are paid with the deployment's key,
+# and a Telegram bot would take the deployment's updates. The one person in
 # the file is the operator, the owner and Sugary's. On the first up the stores also hold one schedule
 # as it was kept before households, due long after any run, which the migration moves into the home;
 # a second up runs it again and it changes nothing.
@@ -137,7 +146,11 @@ case "${1:-}" in
     mkdir -p DockerCompose/volumes/smoke/{redis,accounts,agent-keys,sugary,voices,household-migration,caddy_data,caddy_config}
     "${DC[@]}" build base-sdk
     "${DC[@]}" build "${SERVICES[@]}"
-    "${DC[@]}" up -d --no-deps "${SERVICES[@]}" smoke-probe
+    if [[ ! -s "$MASTER_KEY" ]]; then
+      head -c 32 /dev/urandom | base64 > "$MASTER_KEY"
+    fi
+    HOUSEHOLD_CONFIG_MASTER_KEY="$(cat "$MASTER_KEY")"
+    "${DC[@]}" up -d --no-deps "${SERVICES[@]}" smoke-probe smoke-keys
 
     mkdir -p "$KIT_STATE"/{redis,vault,media,sandbox}
     credentials
