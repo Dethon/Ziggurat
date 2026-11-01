@@ -2,6 +2,7 @@ using System.Net;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using McpServerScheduling.Modules;
 using McpServerScheduling.Settings;
 using Microsoft.AspNetCore.Builder;
@@ -43,7 +44,7 @@ public class McpSchedulingServerFixture : IAsyncLifetime
         builder.Services.ConfigureScheduling(settings);
         // No accounts service here: every household's schedules are read in this machine's zone, as
         // the server read them before households had one. A household's own is CallHouseholdTests'.
-        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(TimeZoneInfo.Local)));
+        builder.Services.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(new EveryHouseholdIn(TimeZoneInfo.Local, [new HouseholdAgentName("jonas", "Jonas", "test agent")])));
 
         var app = builder.Build();
         app.MapMcp("/mcp");

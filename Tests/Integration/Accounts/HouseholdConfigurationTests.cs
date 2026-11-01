@@ -194,7 +194,7 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         { Telegram, HouseholdConfigProtocol.AgentView },
         { Telegram, HouseholdConfigProtocol.IdealistaView },
         { SignalR, HouseholdConfigProtocol.TelegramBotsView },
-        { Scheduling, HouseholdConfigProtocol.AgentNamesView },
+        { Idealista, HouseholdConfigProtocol.AgentNamesView },
         { Agent, HouseholdConfigProtocol.IdealistaView },
         { Agent, HouseholdConfigProtocol.TelegramBotsView }
     };

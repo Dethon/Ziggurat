@@ -10,6 +10,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Household;
+using Domain.Prompts;
 using Domain.Security;
 using Domain.Security.Signing;
 using Infrastructure.Agents.Mcp;
@@ -60,6 +61,37 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
         (await scheduling.Store.GetAsync(household, "dentist", CancellationToken.None))!.RunAt
             .ShouldBe(new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc));
         status.ShouldContain("2030-01-01T09:00:00+09:00");
+    }
+
+    // The directories under /schedules are the calling household's own agents, as its configuration
+    // names them: never the home's catalogue the agent registers with every channel, so a household is
+    // not shown the home's agents nor refused a schedule for an agent it added. The prompt the server
+    // serves — fetched for nobody and cached for every household — names no agent at all.
+    [Fact]
+    public async Task TheSchedulesMount_ShowsTheCallingHouseholdsOwnAgents_AndThePromptNamesNone()
+    {
+        await using var accounts = await StartAccountsAsync();
+        var (household, person) = await accounts.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(accounts, household, HouseholdSections.Agents,
+            """{ "agents": [ { "id": "chef", "template": "jonas", "name": "Chef" } ], "defaultAgent": "chef" }""");
+        await using var scheduling = await StartSchedulingAsync(accounts);
+        await using var mount = await scheduling.MountAsync(household, person);
+
+        var listed = (await mount.Backend.GlobAsync("/", "*/", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;
+        var created = await mount.Backend.CreateAsync("/chef/soup/schedule.json",
+            """{"prompt":"start the soup","runAt":"2030-01-01T09:00:00Z"}""", false, true, CancellationToken.None);
+        var refused = await mount.Backend.CreateAsync("/jack/film/schedule.json",
+            """{"prompt":"download a film","runAt":"2030-01-01T09:00:00Z"}""", false, true, CancellationToken.None);
+        await using var client = await scheduling.ConnectAsync();
+        var prompt = string.Concat((await client.GetPromptAsync(SchedulingPrompt.Name)).Messages
+            .Select(m => m.Content).OfType<TextContentBlock>().Select(t => t.Text));
+
+        listed.ShouldBe(["/chef/"]);
+        created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        refused.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        prompt.ShouldNotContain("jack");
+        prompt.ShouldNotContain("chef");
     }
 
     // A fire has no call behind it: the schedule's own delegation proves its household, whose zone the
@@ -222,7 +254,9 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
         });
         var app = builder.Build();
         app.MapMcp("/mcp");
-        app.Services.GetRequiredService<IMutableAgentCatalog>().Replace([new AgentCatalogEntry("jonas", "Jonas", "test agent")]);
+        // The home's catalogue, as the agent registers it with every channel.
+        app.Services.GetRequiredService<IMutableAgentCatalog>().Replace(
+            [new AgentCatalogEntry("jack", "Jack", "downloads"), new AgentCatalogEntry("jonas", "Jonas", "test agent")]);
         await app.StartAsync();
         return new ServerHost(app, port, Scheduling);
     }

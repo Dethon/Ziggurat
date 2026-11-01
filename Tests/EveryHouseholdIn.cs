@@ -7,7 +7,8 @@ namespace Tests;
 // service: every household is set in one zone and has set no Idealista keys, whatever proof is shown.
 // What a server makes of a real household's section, asked with what its call proved, is
 // CallHouseholdTests' (seam 4); a stack that only needs the zone its dates are read in takes this.
-internal sealed class EveryHouseholdIn(TimeZoneInfo zone) : IHouseholdConfiguration
+// `agents` are every household's agents, for a stack whose schedules mount lists them.
+internal sealed class EveryHouseholdIn(TimeZoneInfo zone, IReadOnlyList<HouseholdAgentName>? agents = null) : IHouseholdConfiguration
 {
     public Task<AgentHouseholdConfig> ForAgentAsync(string householdId, CancellationToken ct) =>
         throw new NotSupportedException("a shared server's stand-in answers no agent");
@@ -25,7 +26,9 @@ internal sealed class EveryHouseholdIn(TimeZoneInfo zone) : IHouseholdConfigurat
         Task.FromResult<IReadOnlyList<HouseholdTelegramBot>>([]);
 
     public Task<HouseholdAgentNames> AgentNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
-        throw new NotSupportedException("a shared server's stand-in lists no agents");
+        agents is null
+            ? throw new NotSupportedException("a shared server's stand-in lists no agents")
+            : Task.FromResult(new HouseholdAgentNames(agents.FirstOrDefault()?.Id, agents));
 
     public Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<HouseholdMembers>>([]);

@@ -69,8 +69,10 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
         await client.DisposeAsync();
     }
 
+    // The prompt is fetched for nobody and cached for every household, so it names no agent: the
+    // catalogue the agent registers is the home's, and was shown to every household from here.
     [Fact]
-    public async Task McpServer_GetSchedulingPrompt_IncludesRegisteredAgents()
+    public async Task McpServer_GetSchedulingPrompt_NamesNoRegisteredAgent()
     {
         var client = await ConnectAsync();
 
@@ -93,15 +95,17 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
             .OfType<TextContentBlock>()
             .Select(c => c.Text));
 
-        text.ShouldContain("## Current scheduling setup");
-        text.ShouldContain("/schedules/itest-summary-agent");
-        text.ShouldContain("- `itest-summary-agent` (Summary Agent) — Used by the snippet test.");
+        text.ShouldBe(SchedulingPrompt.Prompt);
+        text.ShouldNotContain("itest-summary-agent");
 
         await client.DisposeAsync();
     }
 
+    // Registering the home's catalogue gives no household a directory: a call's agents are its own
+    // household's (the fixture's every household runs jonas alone), so an agent only the catalogue
+    // names is refused, and the household's own is written to.
     [Fact]
-    public async Task RegisterAgents_ThenCreateForNewAgent_PassesValidation()
+    public async Task RegisterAgents_GivesNoHouseholdAnAgentItDoesNotRun()
     {
         var client = await ConnectAsync();
 
@@ -117,14 +121,9 @@ public class McpSchedulingServerTests(McpSchedulingServerFixture fixture) : ICla
 
         (await AsAPerson(client).CreateAsync("/jack/itest-register/schedule.json",
                 """{"prompt":"do the thing","cron":"0 7 * * *"}""", false, true, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
-
-        var info = await client.CallToolAsync(
-            "fs_read",
-            new Dictionary<string, object?> { ["path"] = "/jack/agent_info.json" },
-            cancellationToken: CancellationToken.None);
-
-        info.Content.OfType<TextContentBlock>().First().Text.ShouldContain("Jack");
+            .ShouldBeOfType<FsResult<FsCreateResult>.Err>();
+        (await AsAPerson(client).ReadAsync("/jonas/agent_info.json", null, null, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content.ShouldContain("Jonas");
 
         await client.DisposeAsync();
     }

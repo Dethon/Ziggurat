@@ -10,7 +10,7 @@ namespace Domain.Tools.Scheduling.Vfs;
 
 public sealed class ScheduleFileSystem(
     IScheduleStore store,
-    IAgentCatalog agents,
+    IAgentCatalog unprovenAgents,
     ICronValidator cronValidator,
     TimeProvider timeProvider,
     TimeSpan? regexMatchTimeout = null) : FileSystemBackendBase
@@ -31,6 +31,16 @@ public sealed class ScheduleFileSystem(
     // That household as the call proved it, whose settings say the zone its schedules are read in: a
     // bare runAt, a cron and every time the files show. A call for nobody reads them in the server's.
     private ICallHousehold? _householdOfCall;
+
+    // The agents whose directories the call sees: its household's own, as the call proved it (the
+    // accounts service's agent-names view), so one household is never shown another's agents nor
+    // refused a schedule for an agent of its own. The catalogue the server was registered keeps only a
+    // stack with no accounts service to ask (a call whose household cannot be asked: the eval's, a
+    // unit's); a call for nobody sees no schedule whichever it reads.
+    private async Task<IAgentCatalog> AgentsAsync(CancellationToken ct) =>
+        _householdOfCall is { } household
+            ? new HouseholdAgentCatalog(await household.AgentNamesAsync(ct))
+            : unprovenAgents;
 
     // A shallow copy with the caller swapped, as HaFileSystem does: the copy carries every
     // dependency this mount was built with, and the store is shared by reference.
@@ -107,6 +117,7 @@ public sealed class ScheduleFileSystem(
         var (dirsOnly, matches) = scope;
         var all = await HouseholdSchedulesAsync(ct);
 
+        var agents = await AgentsAsync(ct);
         var dirs = ScheduleTree.Directories(agents, all).Where(matches).Select(p => $"/{p}/");
         if (dirsOnly)
         {
@@ -138,6 +149,7 @@ public sealed class ScheduleFileSystem(
     {
         var node = SchedulePath.Parse(path);
         // offset/limit are unused: schedule files are small JSON blobs, always returned whole (Truncated = false).
+        var agents = await AgentsAsync(ct);
         string content;
         switch (node.Kind)
         {
@@ -213,6 +225,7 @@ public sealed class ScheduleFileSystem(
         }
 
         var node = SchedulePath.Parse(scope);
+        var agents = await AgentsAsync(ct);
         return node.Kind switch
         {
             ScheduleNodeKind.Root => all,
@@ -247,7 +260,7 @@ public sealed class ScheduleFileSystem(
 
     private async Task<Schedule?> GetScheduleAsync(ScheduleNode node, CancellationToken ct)
     {
-        if (node.AgentId is null || node.ScheduleId is null || !agents.Exists(node.AgentId))
+        if (node.AgentId is null || node.ScheduleId is null || !(await AgentsAsync(ct)).Exists(node.AgentId))
         {
             return null;
         }
@@ -265,7 +278,7 @@ public sealed class ScheduleFileSystem(
     private async Task<bool> NodeExistsAsync(ScheduleNode node, CancellationToken ct) => node.Kind switch
     {
         ScheduleNodeKind.Root => true,
-        ScheduleNodeKind.AgentDir or ScheduleNodeKind.AgentInfoFile => agents.Exists(node.AgentId!),
+        ScheduleNodeKind.AgentDir or ScheduleNodeKind.AgentInfoFile => (await AgentsAsync(ct)).Exists(node.AgentId!),
         ScheduleNodeKind.ScheduleDir or ScheduleNodeKind.ScheduleFile
             or ScheduleNodeKind.StatusFile or ScheduleNodeKind.RunNowFile => await GetScheduleAsync(node, ct) is not null,
         _ => false
@@ -293,7 +306,7 @@ public sealed class ScheduleFileSystem(
             return Invalid<FsCreateResult>($"Create a schedule at /<agentId>/<scheduleId>/schedule.json (got '{path}')");
         }
 
-        if (!agents.Exists(node.AgentId))
+        if (!(await AgentsAsync(ct)).Exists(node.AgentId))
         {
             return new FsResult<FsCreateResult>.Err(Error(ToolError.Codes.NotFound, $"Unknown agent '{node.AgentId}'"));
         }
@@ -420,7 +433,7 @@ public sealed class ScheduleFileSystem(
             return NotFound<FsMoveResult>(sourcePath);
         }
 
-        if (!agents.Exists(dst.AgentId!))
+        if (!(await AgentsAsync(ct)).Exists(dst.AgentId!))
         {
             return new FsResult<FsMoveResult>.Err(Error(ToolError.Codes.NotFound, $"Unknown agent '{dst.AgentId}'"));
         }

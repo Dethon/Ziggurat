@@ -106,6 +106,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 |---|---|---|---|
 | `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces, `disabledPeople` (the user ids of members an owner disabled, which the agent acts for no more), and `suspended` (the operator suspended it: the agent refuses its turns and fires, `.claude/rules/admin.md`) | the OpenRouter key |
 | `settings` | `mcp-scheduling`, `mcp-sugary` | `HouseholdConfigAnswer<HouseholdSettings>` | none |
+| `agent-names` (call token) | `mcp-scheduling` | as below: the household's agents, which its `/schedules` directories are (`.claude/rules/scheduling.md`) | none |
 | `idealista` | `mcp-idealista` | `HouseholdConfigAnswer<IdealistaKeys?>` | Idealista's two |
 | `spaces` | `mcp-channel-signalr` | `HouseholdConfigAnswer<SpacesSection>` | none |
 | `telegram-bots` | `mcp-channel-telegram` | `HouseholdTelegramBots`: every household's bots | the bots' tokens |
