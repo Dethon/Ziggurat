@@ -4,9 +4,16 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The operator creates a household and gets an owner link that enrolls a passkey into it
-- [ ] The list shows owners, members, connected servers and last activity
-- [ ] A recovery link for an owner works and is recorded
-- [ ] Nobody but the operator can reach the list
+- [x] The operator creates a household and gets an owner link that enrolls a passkey into it
+- [x] The list shows owners, members, connected servers and last activity
+- [x] A recovery link for an owner works and is recorded
+- [x] Nobody but the operator can reach the list
+
+Done: `HouseholdListAdmin` (`GET`/`POST /accounts/admin/operator/households`,
+`POST /accounts/admin/operator/households/{householdId}/owners/{userId}/recovery`), the dashboard's
+`/households` page, `HouseholdListAdminTests`, a ceremony in `PasskeyCeremoniesTests`, and
+`HouseholdListE2ETests` on `DashboardAdminE2EFixture`. Connected servers: the accounts service asks the
+agent's listing with `CALLERS__agent` (no new secret). Last activity: the latest session seen by the
+session check (Telegram and voice use does not move it). See `.claude/rules/admin.md`, "The household list".
