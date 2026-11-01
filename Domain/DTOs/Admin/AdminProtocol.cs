@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using JetBrains.Annotations;
 
 namespace Domain.DTOs.Admin;
@@ -17,6 +18,19 @@ public static class AdminProtocol
     public const string HouseholdChanges = Household + "/changes";
     public const string AllChanges = Operator + "/changes";
 
+    // The household's keys: read as their states alone, and each saved on its own route once its
+    // provider has been asked about it. A bot is put under the id of the agent it is bound to.
+    public const string Keys = Household + "/keys";
+    public const string OpenRouterKey = Keys + "/openrouter";
+    public const string IdealistaKeys = Keys + "/idealista";
+    public const string TelegramBots = Keys + "/telegram";
+
+    public static string TelegramBot(string agentId) => $"{TelegramBots}/{Uri.EscapeDataString(agentId)}";
+
+    // How many of a saved key's last characters an answer shows, so the owner can tell which key is
+    // saved without it being shown; a key too short to spare them shows none.
+    public const int KeyCharactersShown = 4;
+    public const int ShortestKeyShown = 12;
     // The operator's household list: GET lists every household, POST creates one with its owner.
     public const string Households = Operator + "/households";
 
@@ -69,6 +83,36 @@ public sealed record AdminChangeEntry(
     string Route,
     string Summary,
     DateTimeOffset At);
+// What the household's keys are, never what they say: each saved key's state, when it was last
+// checked and its last few characters. The home household's agents run on the deployment's key
+// whatever its own section holds, so only another household needs an OpenRouter key of its own.
+[PublicAPI]
+public sealed record HouseholdKeys(
+    bool PaysWithDeploymentKey,
+    KeyStatus? OpenRouter,
+    KeyStatus? Idealista,
+    IReadOnlyList<TelegramBotStatus> TelegramBots)
+{
+    // Its agents refuse every turn until one is set: what the owner is sent to the keys page for.
+    public bool NeedsOpenRouterKey => !PaysWithDeploymentKey && OpenRouter is null;
+}
+
+// Working: the provider accepted it when last asked. Rejected: the provider refused it, on saving
+// or in use. Unchecked: saved while the provider could not be asked, or saved by the operator's
+// command, which asks nobody.
+[JsonConverter(typeof(JsonStringEnumConverter<KeyState>))]
+public enum KeyState
+{
+    Working,
+    Rejected,
+    Unchecked
+}
+
+[PublicAPI]
+public sealed record KeyStatus(KeyState State, string LastCharacters, DateTimeOffset? CheckedAt, string? Reason = null);
+
+[PublicAPI]
+public sealed record TelegramBotStatus(string AgentId, KeyStatus Key);
 // A household the operator creates: its name and the display name of the owner it starts with.
 [PublicAPI]
 public sealed record NewHousehold(string Name, string OwnerName);

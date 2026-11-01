@@ -2,6 +2,7 @@ using Accounts.Admin;
 using Accounts.Announcements;
 using Accounts.Configuration;
 using Accounts.Internal;
+using Accounts.Keys;
 using Accounts.Links;
 using Accounts.Members;
 using Accounts.Pages;
@@ -36,6 +37,9 @@ public static class AccountsApp
             .AddSingleton<AccountPage>()
             .AddSingleton<MembersPage>()
             .AddSingleton<AdminLog>()
+            .AddSingleton<HouseholdKeyChecks>()
+            .AddSingleton<KeysAdmin>()
+            .AddKeyProbes()
             .AddSingleton<ConnectedServersClient>()
             .AddSingleton<AgentVersions>()
             // The admin API believes the assertion the proxy's session check signed for the admin

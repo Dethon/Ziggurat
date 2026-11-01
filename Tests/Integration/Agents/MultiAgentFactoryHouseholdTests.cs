@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Net;
 using System.Text.Json.Nodes;
 using Domain.Agents;
 using Domain.Contracts;
@@ -34,6 +36,7 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
     private static readonly DateTimeOffset _now = new(2026, 10, 31, 15, 0, 0, TimeSpan.Zero);
 
     private readonly FakeHouseholds _households = new();
+    private readonly KeyReports _reports = new();
     private FakeOpenRouter _model = null!;
 
     public async Task InitializeAsync() => _model = await FakeOpenRouter.StartAsync();
@@ -256,6 +259,35 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         _model.Requests.ShouldHaveSingleItem().Authorization.ShouldBe("Bearer deployment-key");
     }
 
+    // A household's own key that OpenRouter refuses in a turn is said to the accounts service, which
+    // shows it rejected on the owner's keys page; the turn still fails as it would have.
+    [Fact]
+    public async Task AHouseholdsOwnKeyOpenRouterRefusesInATurn_IsReportedForThatHousehold()
+    {
+        _households.Add(Household, isHome: false, Settings(), Jonas(), key: HouseholdKey);
+        _model.Refuse(HttpStatusCode.Unauthorized);
+
+        await Should.ThrowAsync<Exception>(() => TurnAsync("jonas", Household));
+
+        await Eventually.Until(() => !_reports.Households.IsEmpty, "the refused key to be reported");
+        _reports.Households.ShouldBe([Household]);
+    }
+
+    // The deployment's key is nobody's to fix on a keys page, and a key out of credit is not refused.
+    [Theory]
+    [InlineData(true, HttpStatusCode.Unauthorized)]
+    [InlineData(false, HttpStatusCode.PaymentRequired)]
+    public async Task ARefusalThatIsNotAHouseholdsKeyRefused_IsNotReported(bool home, HttpStatusCode status)
+    {
+        _households.Add(home ? Home : Household, isHome: home, Settings(), Jonas(), key: HouseholdKey);
+        _model.Refuse(status);
+
+        await Should.ThrowAsync<Exception>(() => TurnAsync("jonas", home ? Home : Household));
+
+        await Eventually.Settle();
+        _reports.Households.ShouldBeEmpty();
+    }
+
     private static AgentsSection Jonas() => new()
     {
         Agents =
@@ -282,6 +314,7 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         var services = new ServiceCollection()
             .AddSingleton<TimeProvider>(new FakeTimeProvider(_now))
             .AddSingleton(Mock.Of<IThreadStateStore>())
+            .AddSingleton<IHouseholdKeyReports>(_reports)
             .BuildServiceProvider();
 
         return new MultiAgentFactory(
@@ -301,6 +334,18 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 
     private static IReadOnlyList<string> Tools(FakeOpenRouter.Request request) =>
         [.. (request.Body["tools"] as JsonArray ?? []).Select(tool => tool?["name"]?.GetValue<string>() ?? "")];
+
+    // What the accounts service was told of keys refused in use.
+    private sealed class KeyReports : IHouseholdKeyReports
+    {
+        public ConcurrentQueue<string> Households { get; } = new();
+
+        public Task OpenRouterKeyRefusedAsync(string householdId, CancellationToken ct)
+        {
+            Households.Enqueue(householdId);
+            return Task.CompletedTask;
+        }
+    }
 
     // A household's configuration as the accounts service would answer the agent, the home asked for
     // by name answered as the home.
