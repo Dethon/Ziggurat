@@ -30,20 +30,18 @@ public static class AgentApi
 
         // The person's household's agents, then their own.
         agents.MapGet("/", async (IAgentDefinitionProvider provider, HttpContext context) =>
-            (await provider.GetAllAsync(OwnerOf(context).TenantId, OwnerOf(context), context.RequestAborted))
+            (await provider.GetAllAsync(AgentApiOwner.Of(context).TenantId, AgentApiOwner.Of(context), context.RequestAborted))
             .Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description)));
 
         agents.MapPost("/", async (IAgentDefinitionProvider provider, HttpContext context, CustomAgentRegistration registration) =>
         {
-            var definition = await provider.RegisterCustomAgentAsync(OwnerOf(context), registration, context.RequestAborted);
+            var definition = await provider.RegisterCustomAgentAsync(AgentApiOwner.Of(context), registration, context.RequestAborted);
             return new AgentCatalogEntry(definition.Id, definition.Name, definition.Description);
         });
 
         agents.MapDelete("/{agentId}", (IAgentDefinitionProvider provider, HttpContext context, string agentId) =>
-            provider.UnregisterCustomAgentAsync(OwnerOf(context), agentId, context.RequestAborted));
+            provider.UnregisterCustomAgentAsync(AgentApiOwner.Of(context), agentId, context.RequestAborted));
     }
-
-    private static readonly object _personItem = new();
 
     // After the secret's gate, so a caller without the secret learns only that it lacks it. Without
     // a believable assertion the call is signed out, as a request past the session check without one
@@ -53,24 +51,32 @@ public static class AgentApi
         group.AddEndpointFilter(async (context, next) =>
         {
             var http = context.HttpContext;
-            var person = await http.RequestServices.GetRequiredService<AssertionVerifier>()
-                .VerifyRequestAsync(http.Request.Headers, AppChannels.SexyTime, http.RequestAborted);
-            if (person is null)
+            if (await http.RequestServices.GetRequiredService<AssertionVerifier>()
+                    .AdmitAsync(http.Request.Headers, AppChannels.SexyTime, null, http.RequestAborted)
+                is not AppAdmission.Admitted { Person: var person })
             {
                 return Results.Unauthorized();
             }
 
-            http.Items[_personItem] = person;
+            AgentApiOwner.Keep(http, person);
             return await next(context);
         });
         return group;
     }
+}
 
-    // The household and the person both, as the assertion signed them: a custom agent is kept under
-    // the pair, so the same person id in another household names a catalogue of its own.
-    private static Account OwnerOf(HttpContext context)
-    {
-        var person = (ForwardedAccount)context.Items[_personItem]!;
-        return new Account(person.TenantId, person.UserId);
-    }
+// Whose catalogue a request is about: the household and the person both, as the assertion the gate
+// verified signed them — a custom agent is kept under the pair, so the same person id in another
+// household names a catalogue of its own. Read by the routes, which run only behind the gate (an
+// endpoint filter, so after parameter binding: a binder would see nobody yet).
+internal static class AgentApiOwner
+{
+    private static readonly object _item = new();
+
+    public static Account Of(HttpContext http) =>
+        http.Items.TryGetValue(_item, out var owner) && owner is Account account
+            ? account
+            : throw new InvalidOperationException("An /api/agents route ran with no owner: it is not behind the gate");
+
+    public static void Keep(HttpContext http, ForwardedAccount person) => http.Items[_item] = person.Account;
 }

@@ -60,14 +60,13 @@ public static class OperatorGate
         app.Use(async (context, next) =>
         {
             var usage = context.Request.Path.Equals(HouseholdUsage.Path);
-            var person = await context.RequestServices.GetRequiredService<AssertionVerifier>()
-                .VerifyRequestAsync(
-                    context.Request.Headers, usage ? AppChannels.Usage : AppChannels.Dashboard, context.RequestAborted);
-            if (person is null || !(usage ? person.IsOwner : person.IsOperator))
+            var admission = await context.RequestServices.GetRequiredService<AssertionVerifier>()
+                .AdmitAsync(
+                    context.Request.Headers, usage ? AppChannels.Usage : AppChannels.Dashboard,
+                    person => usage ? person.IsOwner : person.IsOperator, context.RequestAborted);
+            if (admission is not AppAdmission.Admitted { Person: var person })
             {
-                context.Response.StatusCode = person is null
-                    ? StatusCodes.Status401Unauthorized
-                    : StatusCodes.Status403Forbidden;
+                context.Response.StatusCode = admission.Status;
                 return;
             }
 

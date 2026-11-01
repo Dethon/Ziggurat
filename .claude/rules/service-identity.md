@@ -145,9 +145,13 @@ assertion must name the app's channel and a person — a guest assertion is nobo
 answers a `ForwardedAccount` built from the signed claims, or null, logging a refusal other than
 `Missing` at warning (`KeysUnavailable` there means the accounts service is unreachable and every
 signed-in person is being turned away). `ForwardedAccount.From`, which read the plain three, is gone.
-Each app asks `VerifyRequestAsync(request.Headers, channel)`, which reads the one header through
-`AssertionVerifier.AssertionOf` — none, or two values, is no assertion — and Sugary, which keeps the
-assertion to hand on, reads it there too.
+Each app asks **`AdmitAsync(request.Headers, channel, may, ct)`**, the one decision all five share
+(`AppAdmission`: `Admitted(person, assertion)`, `SignedOut` (401), `Forbidden(person)` (403) for a person
+`may` turns away — the role the app asks for), and says only how it answers each: the hub's
+`HubException`, Sugary's `Person` (which keeps the assertion to hand on), the dashboard's status, the agent
+API's 401 and its typed owner (`AgentApiOwner`), the admin API's refusal body. It reads the one header
+through `AssertionVerifier.AssertionOf` — none, or two values, is no assertion. `AppAdmissionTests` pins
+the decision once.
 
 | App | Channel it holds the assertion to | Signed out | Else |
 |---|---|---|---|
