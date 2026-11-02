@@ -181,7 +181,8 @@ The agent builds a turn's agents from the turn's household's view (`HouseholdAge
 - **A section that names no agent is the two templates** (`HouseholdAgents.Starting`): `jonas`, the
   barebones Jonas, and `sugary`, under their own ids and names, `jonas` answering by default — so a new
   household has agents before anything is saved, and the deployment's channel defaults (`sugary` for
-  the Sugary app) name an agent it has.
+  the Sugary app) name an agent it has. The third template, `nabu`, answers aloud and is never a
+  starting one: an owner adds it on the Agents page, under the id voice's channel default names.
 - **The settings fill the prompt.** The language is every agent's that pins none (an agent's own pin
   wins: nabu stays Spanish); the zone is the day's (`AgentSpec.TimeZone` → the `date` section's `zoned`
   part, named only when it is not the host's own, so the home's prompts are the snapshots'), the

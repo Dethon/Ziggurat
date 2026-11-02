@@ -14,6 +14,10 @@ public static class AgentTemplates
     public const string Jonas = "jonas";
     public const string Sugary = "sugary";
 
+    // The id a household's voice server addresses (VoiceSettings.AgentId, agentDefaults.byChannel.voice),
+    // so an agent added from this template under its own id answers aloud with no setting of its own.
+    public const string Nabu = "nabu";
+
     // What an agent template's header may say: the definition's fields, spelled as a header spells.
     private static readonly HashSet<string> _keys =
     [

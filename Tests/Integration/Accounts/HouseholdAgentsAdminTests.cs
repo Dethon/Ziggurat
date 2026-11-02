@@ -179,6 +179,25 @@ public sealed class HouseholdAgentsAdminTests(RedisFixture redis) : IClassFixtur
         (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(["Added agent jonas-2 from the jonas template"]);
     }
 
+    // A household starts with no voice agent; one added from the voice template takes the id the
+    // voice server addresses, under the name its owner gave it.
+    [Fact]
+    public async Task AnAgentAddedFromTheVoiceTemplate_TakesTheIdVoiceAddresses_UnderItsOwnersName()
+    {
+        await using var server = await StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        (await AgentsAsync(admin)).Agents.ShouldNotContain(a => a.Template == AgentTemplates.Nabu);
+
+        var added = await SendAsync(admin, HttpMethod.Post, AdminProtocol.Agents, new AgentAddition(AgentTemplates.Nabu, "Voz"));
+
+        added.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var agent = (await added.Content.ReadFromJsonAsync<AdminSaved<AdminAgents>>())!.Value.Agents
+            .Where(a => a.Template == AgentTemplates.Nabu).ShouldHaveSingleItem();
+        agent.Id.ShouldBe(AgentTemplates.Nabu);
+        agent.Name.ShouldBe("Voz");
+    }
+
     [Fact]
     public async Task ATemplateThisDeploymentDoesNotShip_IsRefused()
     {

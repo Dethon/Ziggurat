@@ -3,6 +3,7 @@ using Domain.Outposts;
 using Domain.Prompts;
 using Shouldly;
 using Tests.Integration.McpServers;
+using Tests.Unit.Deployment;
 
 namespace Tests.Unit.Domain.Prompts;
 
@@ -108,11 +109,12 @@ public class PromptDocumentsTests
             .Message.ShouldContain("no_such_section");
     }
 
-    // What a new household's agents start from: a barebones Jonas its owner names, and Sugary.
+    // What a household's agents start from: a barebones Jonas its owner names, Sugary, and a Nabu that
+    // answers aloud.
     [Fact]
-    public void AgentTemplates_AreABarebonesJonasAndSugary_EachADefinition()
+    public void AgentTemplates_AreABarebonesJonasSugaryAndNabu_EachADefinition()
     {
-        PromptDocuments.AgentTemplates.Select(d => d.Name).ShouldBe(["jonas", "sugary"], ignoreOrder: true);
+        PromptDocuments.AgentTemplates.Select(d => d.Name).ShouldBe(["jonas", "sugary", "nabu"], ignoreOrder: true);
 
         var jonas = AgentTemplates.Named("jonas").ShouldNotBeNull();
         jonas.Id.ShouldBe("jonas");
@@ -126,6 +128,29 @@ public class PromptDocumentsTests
         sugary.NoTools.ShouldBeTrue();
         sugary.McpServerEndpoints.ShouldBe(["http://mcp-sugary:8080/mcp"]);
         AgentTemplates.Named("jack").ShouldBeNull();
+    }
+
+    // The voice template is the home's Nabu without the home: its spoken rules and its tuning for a
+    // fast first word, and none of the home's Home Assistant or music, which a household's kit does
+    // not stand in for. The language is the household's, as every template's is.
+    [Fact]
+    public void TheNabuTemplate_SpeaksAsTheHomesNabuDoes_WithoutTheHomesHouse()
+    {
+        var home = HomeAgents.Definition("nabu");
+        var nabu = AgentTemplates.Named(AgentTemplates.Nabu).ShouldNotBeNull();
+
+        nabu.Name.ShouldBe("Nabu");
+        nabu.PromptSections.ShouldBe([VoicePrompt.Name]);
+        nabu.Model.ShouldBe(home.Model);
+        nabu.ReasoningEffort.ShouldBe(home.ReasoningEffort);
+        nabu.ProviderRouting.ShouldBeEquivalentTo(home.ProviderRouting);
+        nabu.UsesOutposts.ShouldBe(home.UsesOutposts);
+        nabu.EnabledFeatures.ShouldBe(home.EnabledFeatures);
+        nabu.WhitelistPatterns.ShouldBe(home.WhitelistPatterns);
+        nabu.Language.ShouldBeNull();
+        nabu.McpServerEndpoints.ShouldBe(
+            [.. home.McpServerEndpoints.Where(endpoint => endpoint != "homeassistant")], ignoreOrder: true);
+        nabu.Description.ShouldNotContain("home automation");
     }
 
     // Barebones: a template dials the deployment's shared servers at their compose addresses, and a

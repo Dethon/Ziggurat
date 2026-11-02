@@ -212,7 +212,9 @@ public class AgentAppSettingsTests
     // Who answers a message whose channel named no agent is configuration, in two halves: the
     // deployment's per channel here, the household's own default in its agents section. A channel
     // default naming an agent the home does not have routes the home's messages nowhere, and the
-    // Sugary app's must name an agent every new household has as well, the Sugary template's.
+    // Sugary app's must name an agent every new household has as well, the Sugary template's. Voice's
+    // names the voice template, so an agent a household adds from it is reached by its voice server
+    // with no setting of its own.
     [Fact]
     public void AgentDefaults_EveryChannelDefault_NamesOneOfTheHomesAgents()
     {
@@ -222,6 +224,7 @@ public class AgentAppSettingsTests
         defaults.ByChannel.Values.ShouldAllBe(id => home.Agents.Any(a => a.Id == id));
         home.Agents.ShouldContain(a => a.Id == home.DefaultAgent);
         HouseholdAgents.Starting.Select(a => a.Id).ShouldContain(defaults.For("sugary")!);
+        AgentTemplates.Named(defaults.For("voice")!).ShouldNotBeNull().PromptSections.ShouldContain(VoicePrompt.Name);
     }
 
     // The nested map is the part that fails silently: a renamed key binds to nothing, the
