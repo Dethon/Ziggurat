@@ -382,9 +382,18 @@ services:
     volumes:
       - ./volumes/voices:/voices
       - ./volumes/tse-audit:/tse-audit
+    # The household's satellites, one Satellites__<id>__Address/Identity/Room/WakeWord block each, in a
+    # file of the site's own beside this one (README, "Running it"): the image ships none, so a voice
+    # server with no file dials nothing and offers no room to ring.
+    env_file:
+      - path: ./satellites.env
+        required: false
     environment:
       <<: [*timezone, *hub]
       OPENROUTER__APIKEY: ${OPENROUTER__APIKEY}
+      # The town a satellite's room is shown in to the agent ("Kitchen (Valladolid, Spain)"); empty is
+      # the room alone.
+      LOCALITY: ${VOICE_LOCALITY:-}
       # Home Assistant's watch callback and resolve, on the kit's own network. The deployment's timers
       # server rings through the relay, which presents this server's tunnel credential instead.
       Announce__Token: ${Announce__Token}

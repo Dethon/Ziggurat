@@ -100,6 +100,26 @@ public class TenantKitConformanceTests
             .ShouldStartWith("${PRINTER_URI:?");
     }
 
+    // The satellites are the site's own too: a household's voice server dials and rings the ones its
+    // owner lists in the kit's satellites file, never a catalogue baked into the voice image — that was
+    // the home's office speaker on the home's LAN, which every other household's voice then offered as
+    // a room to ring and dialled on its own network. The town a satellite's room is shown in is the
+    // site's own as well.
+    [Fact]
+    public void TheKitsSatellites_AreTheSitesOwn_NeverTheVoiceImagesDefault()
+    {
+        var shipped = System.Text.Json.Nodes.JsonNode.Parse(
+            File.ReadAllText(Path.Combine(DeploymentFiles.KitDirectory, "..", "McpChannelVoice", "appsettings.json")))!;
+        var voice = Kit.Service("mcp-channel-voice");
+
+        shipped["Satellites"]?.AsObject().Select(s => s.Key).ShouldBeEmpty();
+        shipped["Locality"]?.GetValue<string>().ShouldBeNullOrEmpty();
+        voice.EnvFiles.ShouldContain(SatellitesFile);
+        voice.Environment.GetValueOrDefault("LOCALITY").ShouldBe("${VOICE_LOCALITY:-}");
+    }
+
+    private const string SatellitesFile = "./satellites.env";
+
     [Fact]
     public void NoKitService_TakesTheWholeSecretsFile()
     {

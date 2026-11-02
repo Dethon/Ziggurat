@@ -53,6 +53,20 @@ it is offline; nothing fails.
    handoff's link points), `KIT_REDIS_PASSWORD`, `LOGINS__STATEKEY`, `Announce__Token`, the API keys
    and tokens, and `PUID`/`PGID`/`RENDER_GID`/`LAN_BIND_ADDRESS`, and `PRINTER_URI` (the printer's IPP address on the LAN; the home's is `ipp://192.168.4.59:631/ipp/print`). Every line says what it is.
    `STT_MODEL` must be the deployment's: voice asks the deployment's Lemonade for that model.
+   `VOICE_LOCALITY` is the town the satellites are in, which the agent is told beside each room.
+
+   **The satellites** voice dials and rings are the household's own and go in `satellites.env` beside
+   `.env` (gitignored; the voice image ships none, so a voice server without the file dials nothing
+   and offers no room to ring), one block per satellite under an id of the household's choosing:
+
+   ```bash
+   Satellites__kitchen-01__Address=tcp://192.168.1.20:10800
+   Satellites__kitchen-01__Room=Kitchen
+   Satellites__kitchen-01__Identity=household
+   Satellites__kitchen-01__WakeWord=ok_nabu
+   ```
+
+   A satellite with no `Address` is never dialled but stays a place to announce to, shown offline.
 
 3. **Start it**, from the repository root (base-sdk first: every image builds from it, and `up
    --build` reuses a stale one):
@@ -116,7 +130,12 @@ Music Assistant would fight over their ports.
    `tse-extractor`, `plex`, `filebrowser`); their volumes stay. From here until the kit is up, turns go without the home's
    servers and say so.
 
-3. **Carry the volumes.** Bind mounts are folders: copy each from `DockerCompose/volumes/` to
+3. **Name the home's satellites** in `TenantKit/satellites.env` (above, "Running it" 2) — the voice
+   image used to carry the office unit, and no longer does: `fran-office-01`, room `Fran's office`,
+   identity `household`, wake word `ok_nabu`, at `tcp://192.168.5.11:10800` — and set `VOICE_LOCALITY`
+   to `Valladolid, Spain`.
+
+4. **Carry the volumes.** Bind mounts are folders: copy each from `DockerCompose/volumes/` to
    `TenantKit/volumes/` with its owner kept (`sudo cp -a`), or point the kit's `_PATH` settings at
    the folders where they are.
 
@@ -134,9 +153,9 @@ Music Assistant would fight over their ports.
    | sandbox home | `SANDBOX_HOME_PATH` | `SANDBOX_HOME_PATH` |
 
    Two are named volumes, the browser's identity and the printer's spool; they are carried once the
-   kit has made its own (step 4).
+   kit has made its own (step 5).
 
-4. **Start the kit** ("Running it" 2 and 3). `LOGINS__STATEKEY` must be the value the deployment's
+5. **Start the kit** ("Running it" 2 and 3). `LOGINS__STATEKEY` must be the value the deployment's
    `.env` holds — the remembered logins move sealed — and `Announce__Token` the deployment's old one,
    or Home Assistant's `rest_command` for watches must be given the new one. Then carry the two named
    volumes into the ones the kit made, with their services stopped, and start them again:
@@ -151,7 +170,7 @@ Music Assistant would fight over their ports.
    The browser's identity is its one fingerprint: carried over, the sites people are logged into see
    the same device.
 
-5. **Run the state move**: the remembered logins, the one-time links and the library's download
+6. **Run the state move**: the remembered logins, the one-time links and the library's download
    routing, out of the deployment's Redis and into the kit's. It reaches both on the host's loopback
    — the deployment's on its published port (or `ssh -L 6379:127.0.0.1:6379 <deployment host>` from
    another machine) — and is told the deployment's password for that run alone:
@@ -168,9 +187,9 @@ Music Assistant would fight over their ports.
    the download routing's index is merged. It copies; the deployment's Redis keeps its copy, which
    nothing there reads any more.
 
-6. **Check** ("Running it" 4): all seven servers listed, a turn that uses one of them, a login
+7. **Check** ("Running it" 4): all seven servers listed, a turn that uses one of them, a login
    handoff's link opening the live view.
 
-7. **Clean the deployment's `.env`** of what it no longer reads: the moved servers' `MCP_SECRET_*`,
+8. **Clean the deployment's `.env`** of what it no longer reads: the moved servers' `MCP_SECRET_*`,
    the Home Assistant and Music Assistant tokens, qBittorrent, Jackett, Brave and CapSolver, and
    `Announce__Token`. `LOGINS__STATEKEY` stays only while the household migration may still run.
