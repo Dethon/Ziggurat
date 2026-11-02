@@ -7,6 +7,8 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
+using Domain.Exceptions;
+using Domain.Monitor;
 using Domain.Prompts;
 using Domain.Security;
 using Domain.Tools.SubAgents;
@@ -487,6 +489,33 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 
         await Eventually.Until(() => !_reports.Households.IsEmpty, "the refused key to be reported");
         _reports.Households.ShouldBe([Household]);
+    }
+
+    // What the person is told when their household's own key fails: a sentence saying what an owner
+    // can do about it, never the provider's status line.
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, RefusalAnswers.KeyRefused)]
+    [InlineData(HttpStatusCode.PaymentRequired, RefusalAnswers.OutOfCredit)]
+    public async Task AHouseholdsOwnKeyFailingInATurn_IsRefusedInWordsAnOwnerCanActOn(HttpStatusCode status, string answer)
+    {
+        _households.Add(Household, isHome: false, Settings(), Jonas(), key: HouseholdKey);
+        _model.Refuse(status);
+
+        var refusal = await Should.ThrowAsync<TurnRefusedException>(() => TurnAsync("jonas", Household));
+
+        refusal.Message.ShouldBe(answer);
+    }
+
+    // The deployment's key is the operator's to fix, and nothing a person is told helps them do it.
+    [Fact]
+    public async Task TheDeploymentsKeyRefused_FailsAsTheProviderSaidIt()
+    {
+        _households.Add(Home, isHome: true, Settings(), Jonas(), key: HouseholdKey);
+        _model.Refuse(HttpStatusCode.Unauthorized);
+
+        var failure = await Should.ThrowAsync<Exception>(() => TurnAsync("jonas", Home));
+
+        failure.ShouldNotBeOfType<TurnRefusedException>();
     }
 
     // The deployment's key is nobody's to fix on a keys page, and a key out of credit is not refused.

@@ -34,6 +34,15 @@ public static class RefusalAnswers
     public const string NoVoiceAgent =
         "Your household has no voice agent yet, so nobody answers here. An owner can pick one on the Agents page, or add one from the Nabu template.";
 
+    // A household whose own OpenRouter key OpenRouter refused in the turn (401): the owner's keys page
+    // shows it rejected, and replacing it there is the fix.
+    public const string KeyRefused =
+        "OpenRouter refused your household's key, so its assistant could not answer. An owner can replace it on the Keys page.";
+
+    // A household whose own OpenRouter account has no credit left (402): nothing here can add it.
+    public const string OutOfCredit =
+        "Your household's OpenRouter account is out of credit, so its assistant could not answer. An owner can add credit at openrouter.ai.";
+
     public static IReadOnlyList<string> All { get; } =
-        [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent];
+        [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent, KeyRefused, OutOfCredit];
 }
