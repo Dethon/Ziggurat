@@ -72,7 +72,12 @@ public partial class HouseholdAdminE2ETests(WebChatE2EFixture fixture)
             await page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = "Agents" }).ClickAsync();
             await page.WaitForURLAsync(new Regex("/admin/agents$"));
 
-            await page.Locator("select[name=template]").SelectOptionAsync("jonas", new LocatorSelectOptionOptions { Timeout = 30_000 });
+            // A template says what it makes beside the picker: a household told it has no voice agent
+            // finds the one whose replies are spoken aloud by reading, not by knowing the home's names.
+            await page.Locator("select[name=template]").SelectOptionAsync("nabu", new LocatorSelectOptionOptions { Timeout = 30_000 });
+            await Assertions.Expect(page.Locator("#admin-agent-template-description")).ToContainTextAsync("spoken aloud");
+            await page.Locator("select[name=template]").SelectOptionAsync("jonas");
+            await Assertions.Expect(page.Locator("#admin-agent-template-description")).ToContainTextAsync("General-purpose personal assistant");
             await page.Locator("input[name=newAgentName]").FillAsync(added);
             await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Add agent" }).ClickAsync();
             await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");

@@ -111,12 +111,16 @@
             <h2 id="admin-agent-add-heading">Add an agent</h2>
             <label class="admin-field">
                 <span class="admin-field-label">Template</span>
-                <select name="template" @bind="_template">
+                <select name="template" @bind="_template" aria-describedby="admin-agent-template-description">
                     @foreach (var template in agents.Templates)
                     {
                         <option value="@template.Name">@template.AgentName (@template.Name)</option>
                     }
                 </select>
+                @* What the picked template makes, so the one that answers aloud is found by reading. *@
+                <span id="admin-agent-template-description" class="admin-field-hint">
+                    @agents.Templates.FirstOrDefault(t => t.Name == _template)?.Description
+                </span>
             </label>
             <label class="admin-field">
                 <span class="admin-field-label">Name</span>
