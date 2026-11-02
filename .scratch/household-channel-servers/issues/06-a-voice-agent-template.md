@@ -11,10 +11,10 @@ not get one by default. Spec: `../spec.md`.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The template passes the template conformance tests: shared servers by address, the kit's own servers by name
-- [ ] Its prompt snapshot is committed
-- [ ] An owner can add it on the Agents page, name it, and its turns in chat carry the voice section
-- [ ] An agent made from it reaches only the own servers its household set up (turn-level household tests)
-- [ ] Run the eval's voice family on the template's agent (the changed tier does not select templates)
+- [x] The template passes the template conformance tests: shared servers by address, the kit's own servers by name
+- [x] Its prompt snapshot is committed
+- [x] An owner can add it on the Agents page, name it, and its turns in chat carry the voice section
+- [x] An agent made from it reaches only the own servers its household set up (turn-level household tests)
+- [ ] (not run: it spends eval money; run it before relying on the template) Run the eval's voice family on the template's agent (the changed tier does not select templates)

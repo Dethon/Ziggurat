@@ -11,9 +11,9 @@ saying channels are the home's alone. Spec: `../spec.md`.
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A non-home household's Home Assistant watch fires a turn for that household, through the real Home Assistant server over its tunnel (round trip), with its delegation checked
-- [ ] Its library's download notice starts that household's turn
-- [ ] Its web search's finished login wakes that household's conversation
-- [ ] A watch's delivery lands on the household's own channel
+- [x] A non-home household's Home Assistant watch fires a turn for that household, through the real Home Assistant server over its tunnel (round trip), with its delegation checked
+- [x] Its library's download notice starts that household's turn
+- [x] Its web search's finished login wakes that household's conversation
+- [x] A watch's delivery lands on the household's own channel

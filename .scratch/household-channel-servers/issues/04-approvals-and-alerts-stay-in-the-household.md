@@ -7,8 +7,8 @@ household's is offered on another's devices. Spec: `../spec.md`.
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] With two households each connected to a channel server that shows approvals, an approval is offered on the asker's household's connection and the deployment's, never the other household's (round trip)
-- [ ] An alert rings only on the owner's household's connections and the deployment's, and a dismissal settles it there
-- [ ] The home's approvals and alerts are unchanged
+- [x] With two households each connected to a channel server that shows approvals, an approval is offered on the asker's household's connection and the deployment's, never the other household's (round trip)
+- [x] An alert rings only on the owner's household's connections and the deployment's, and a dismissal settles it there
+- [x] The home's approvals and alerts are unchanged

@@ -12,9 +12,9 @@ household case. Spec: `../spec.md`.
 
 **Blocked by:** 02, 03, 06, 07
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The household's satellite hears its own voice agent's answer
-- [ ] A timer set by voice in that household rings on its satellite
-- [ ] A household with voice and no voice agent hears the refusal
-- [ ] The home's voice check still passes beside it
+- [x] The household's satellite hears its own voice agent's answer
+- [x] A timer set by voice in that household rings on its satellite
+- [x] A household with voice and no voice agent hears the refusal
+- [x] The home's voice check still passes beside it

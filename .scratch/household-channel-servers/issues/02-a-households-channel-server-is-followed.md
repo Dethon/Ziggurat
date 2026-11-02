@@ -13,11 +13,11 @@ another's. The tunnel rules' section on a household's channel server is rewritte
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A non-home household's notification is answered by its own agent through its own tunnel (round trip, a second household)
-- [ ] Two households with a channel server of the same name each get only their own replies
-- [ ] A message asserting another household is refused, logged with both households, and no agent is built
-- [ ] A non-home tunnel's drop and reopen is followed without a restart, and leaves another household's connection alone
-- [ ] Revoking the credential or suspending the household disconnects it; resuming brings it back by itself
-- [ ] The home's channels behave as before
+- [x] A non-home household's notification is answered by its own agent through its own tunnel (round trip, a second household)
+- [x] Two households with a channel server of the same name each get only their own replies
+- [x] A message asserting another household is refused, logged with both households, and no agent is built
+- [x] A non-home tunnel's drop and reopen is followed without a restart, and leaves another household's connection alone
+- [x] Revoking the credential or suspending the household disconnects it; resuming brings it back by itself
+- [x] The home's channels behave as before

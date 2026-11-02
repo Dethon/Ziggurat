@@ -12,8 +12,8 @@ every answer is the one it is today. Spec: `../spec.md`.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The existing tunnelled channel round trips, browse page and redelegation tests stay green, unchanged
-- [ ] A connection added to the live set after the monitor started is read (round trip: the home's channel server's tunnel opens after the agent started, and its notification is answered)
-- [ ] A connection whose tunnel closed is not connected, with the five behaviours ADR 0011 keeps
+- [x] The existing tunnelled channel round trips, browse page and redelegation tests stay green, unchanged
+- [x] A connection added to the live set after the monitor started is read (round trip: the home's channel server's tunnel opens after the agent started, and its notification is answered)
+- [x] A connection whose tunnel closed is not connected, with the five behaviours ADR 0011 keeps
