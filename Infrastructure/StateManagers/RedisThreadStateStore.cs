@@ -209,12 +209,13 @@ public sealed class RedisThreadStateStore(
         await _db.ScriptEvaluateAsync(_markReadScript, [TopicKey(tenantId, agentId, chatId, topicId)]);
     }
 
-    // The last thing said that had anything to say. A message carrying only files leaves the
-    // previous preview standing rather than blanking the row.
+    // The last thing said that had anything to say, as text — a reply's markdown read, not shown
+    // raw in the list. A message carrying only files leaves the previous preview standing rather
+    // than blanking the row.
     private string? Snippet(IEnumerable<ChatMessage> messages)
     {
         var text = messages
-            .Select(TextOf)
+            .Select(m => TextOf(m).MarkdownToPlainText())
             .LastOrDefault(t => !string.IsNullOrWhiteSpace(t));
 
         return text is null

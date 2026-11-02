@@ -401,6 +401,23 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         topic.LastMessageSnippet.ShouldBe("cold and bri…");
     }
 
+    // The preview is text: the reply's markdown is read before it is cut.
+    [Fact]
+    public async Task AppendMessagesAsync_StoresTheSnippetAsText_NotTheRepliesMarkdown()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 3, 3, 9, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock, snippetLength: 20);
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-snip-md", 561, 0, "agent-snippet-md", "Kitchen", clock.GetUtcNow(), null, TenantId: "home"));
+
+        await store.AppendMessagesAsync(HistoryKey("agent-snippet-md", 561),
+            [new ChatMessage(ChatRole.Assistant, "1. **Receta** (`/vault/receta.md`)")]);
+
+        var topic = (await store.GetTopicPageAsync("agent-snippet-md", "default", Anyone, null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.LastMessageSnippet.ShouldBe("1. Receta (/vault/re…");
+    }
+
     // Unread is a subtraction of two numbers carried on the topic, so a badge reads no messages.
     [Fact]
     public async Task AppendMessagesAsync_CountsWhatTheTopicHolds()
