@@ -83,6 +83,10 @@ public partial class HouseholdAdminE2ETests(WebChatE2EFixture fixture)
             await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");
             var agent = page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = added });
             await Assertions.Expect(agent).ToBeVisibleAsync();
+            // Any of the household's agents may be the one that answers aloud: the page offers it. Marking
+            // one would change the home's voice turns, which this collection never does (admin API tests).
+            await Assertions.Expect(page.Locator($"select[name=voiceAgent] option:text-is('{added}')")).ToHaveCountAsync(1);
+            await Assertions.Expect(page.Locator("#admin-agent-voice-now")).ToContainTextAsync("voice satellites");
 
             await agent.Locator("input[name=agentName]").FillAsync(renamed);
             await agent.Locator("textarea[name=customInstructions]").FillAsync("Answer with a recipe.");

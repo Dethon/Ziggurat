@@ -14,9 +14,13 @@ public interface IAgentFactory
     // tenantId is the household the turn is for — a person's, or the guest's — whose agents it runs
     // and whose own servers the agent reaches. Null for a turn that acts for nobody, which runs the
     // home household's agents and reaches no household's servers.
+    //
+    // channelId is the channel the conversation's group is built for, whose sections the agent reads
+    // whatever its definition selects (PromptManifest.ForChannel): an agent serving a satellite answers
+    // under the voice rules. Decided once per group, so a running conversation never changes its rules.
     Task<DisposableAgent> CreateAsync(
         AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
-        string? tenantId = null, CancellationToken ct = default);
+        string? tenantId = null, CancellationToken ct = default, string? channelId = null);
     DisposableAgent CreateSubAgent(
         SubAgentDefinition definition, IToolApprovalHandler approvalHandler, SpawnContext spawn);
 }

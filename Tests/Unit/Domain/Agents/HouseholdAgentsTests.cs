@@ -187,6 +187,68 @@ public class HouseholdAgentsTests
         HouseholdAgents.Fixed([]).NotSetUp(["vault"]).ShouldBeEmpty();
     }
 
+    // A household's voice turns go to one agent of its: the one its owner marked, whatever template it
+    // was made from — a Jonas answers aloud as well as a Nabu does.
+    [Fact]
+    public void TheVoiceAgent_IsTheOneTheOwnerMarked()
+    {
+        var agents = HouseholdAgents.Of(Household(new AgentsSection
+        {
+            DefaultAgent = "jonas",
+            VoiceAgent = "jonas",
+            Agents =
+            [
+                new HouseholdAgent { Id = "jonas", Template = "jonas", Name = "Jonas" },
+                new HouseholdAgent { Id = "nabu", Template = "nabu", Name = "Luna" }
+            ]
+        }), _shared);
+
+        agents.VoiceAgent.ShouldBe("jonas");
+    }
+
+    // Marked none, it is the household's agent made from the voice template, the first if it has two;
+    // the home's seeded Nabu, which names no template, by its id.
+    [Theory]
+    [InlineData("nabu-2", "nabu-2")]
+    [InlineData(null, "nabu")]
+    public void TheVoiceAgent_MarkedNone_IsTheAgentOfTheVoiceTemplate(string? templated, string expected)
+    {
+        HouseholdAgent[] entries = templated is null
+            ?
+            [
+                new HouseholdAgent { Id = "jonas", Template = "jonas", Name = "Jonas" },
+                new HouseholdAgent { Id = "nabu", Definition = new AgentDefinition { Id = "nabu", Name = "Nabu", Model = "m", McpServerEndpoints = [] } }
+            ]
+            :
+            [
+                new HouseholdAgent { Id = "jonas", Template = "jonas", Name = "Jonas" },
+                new HouseholdAgent { Id = templated, Template = "nabu", Name = "Luna" },
+                new HouseholdAgent { Id = "nabu-3", Template = "nabu", Name = "Sol" }
+            ];
+
+        HouseholdAgents.Of(Household(new AgentsSection { DefaultAgent = "jonas", Agents = entries }), _shared)
+            .VoiceAgent.ShouldBe(expected);
+    }
+
+    // A household with none answers aloud by nobody: its voice turns name the voice template's id, which
+    // it has no agent by, and are refused with the way to set one up.
+    [Fact]
+    public void TheVoiceAgent_OfAHouseholdWithNone_IsTheVoiceTemplatesId()
+    {
+        HouseholdAgents.Of(Household(new AgentsSection()), _shared).VoiceAgent.ShouldBe(AgentTemplates.Nabu);
+    }
+
+    [Fact]
+    public void AVoiceAgentNamedThatIsNoneOfTheHouseholds_IsRefused()
+    {
+        HouseholdSections.AgentsSchema.Problems(HouseholdSections.AgentsSchema.Write(new AgentsSection
+        {
+            DefaultAgent = "jonas",
+            VoiceAgent = "ghost",
+            Agents = [new HouseholdAgent { Id = "jonas", Template = "jonas", Name = "Jonas" }]
+        })).ShouldContain("the voice agent ghost is none of the household's agents");
+    }
+
     private static AgentHouseholdConfig Household(
         AgentsSection agents, HouseholdSettings? settings = null, FeaturesSection? features = null,
         IReadOnlyList<string>? ownServers = null) =>

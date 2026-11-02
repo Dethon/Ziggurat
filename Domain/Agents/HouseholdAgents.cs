@@ -24,6 +24,22 @@ public sealed record HouseholdAgents
     // Who answers a message whose channel named no agent and has no default of its own.
     public string? DefaultAgent { get; init; }
 
+    // Who answers the household's voice satellites (VoiceAgentOf).
+    public string VoiceAgent { get; init; } = AgentTemplates.Nabu;
+
+    // The agent a household's voice turns go to: the one its owner marked, else its first agent made
+    // from the voice template, else one going by that template's id (the home's seeded Nabu, which
+    // names no template). A household with none is the template's id all the same, which it has no
+    // agent by, so its voice turn is refused with the way to set one up rather than answered by
+    // another agent or not at all.
+    public static string VoiceAgentOf(AgentsSection section)
+    {
+        var effective = Effective(section);
+        return effective.VoiceAgent is { } marked && effective.Agents.Any(a => a.Id == marked)
+            ? marked
+            : effective.Agents.FirstOrDefault(a => a.Template == AgentTemplates.Nabu)?.Id ?? AgentTemplates.Nabu;
+    }
+
     // The zone the household's days are read in (an IANA name); null where no household said, and
     // the host's own is used.
     public string? TimeZone { get; init; }
@@ -77,6 +93,7 @@ public sealed record HouseholdAgents
             HouseholdId = configuration.HouseholdId,
             Agents = [],
             DefaultAgent = defaultAgent,
+            VoiceAgent = VoiceAgentOf(configuration.Agents),
             TimeZone = configuration.Settings.TimeZone,
             Features = configuration.Features,
             WithheldServers = withheld,

@@ -29,10 +29,10 @@ public static class RefusalAnswers
     public const string WithoutKey =
         "Your household has no OpenRouter key set, so its assistant cannot answer yet. Ask whoever runs it to add one.";
 
-    // A channel that only attaches (a satellite), in a household with no agent of the id it addresses:
-    // what to add, and where — the template the Agents page lists it under.
+    // A satellite in a household with no voice agent (HouseholdAgents.VoiceAgent): where to pick one of
+    // its agents to answer aloud, or add one from the voice template.
     public const string NoVoiceAgent =
-        "Your household has no voice agent yet, so nobody answers here. An owner can add one on the Agents page, from the Nabu template.";
+        "Your household has no voice agent yet, so nobody answers here. An owner can pick one on the Agents page, or add one from the Nabu template.";
 
     public static IReadOnlyList<string> All { get; } =
         [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent];

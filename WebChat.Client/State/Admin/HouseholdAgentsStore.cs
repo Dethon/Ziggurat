@@ -12,6 +12,9 @@ public record AddHouseholdAgent(AgentAddition Addition) : IAction;
 
 public record RemoveHouseholdAgent(string AgentId) : IAction;
 
+// Which agent answers the household's satellites; null marks none.
+public record SetHouseholdVoiceAgent(string? AgentId) : IAction;
+
 public record RestoreHouseholdAgentVersion(string AgentId, string VersionId) : IAction;
 
 // A change the admin API answered with the household's agents as they are now saved.
@@ -65,7 +68,7 @@ public sealed class HouseholdAgentsStore : IDisposable
     {
         LoadHouseholdAgents => state with { Notice = null },
         HouseholdAgentsLoaded a => state with { Agents = a.Agents },
-        SaveHouseholdAgent or AddHouseholdAgent or RemoveHouseholdAgent or RestoreHouseholdAgentVersion =>
+        SaveHouseholdAgent or AddHouseholdAgent or RemoveHouseholdAgent or RestoreHouseholdAgentVersion or SetHouseholdVoiceAgent =>
             state with { Saving = true, Notice = null },
         // A change makes the versions shown stale: what it replaced is a version now.
         HouseholdAgentsSaved a => state with

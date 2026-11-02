@@ -216,9 +216,18 @@ instructions, the template it was made from or none for a seeded definition, des
 never edited — the shipped templates, and the instructions limit); `POST /household/agents`
 (`AgentAddition { template, name }`); `PUT`/`DELETE /household/agents/{agentId}` (`AgentEdit { name,
 customInstructions }`); `GET /household/agents/{agentId}/versions` (`AdminAgentVersion`, newest first) and
-`POST .../versions/{versionId}/restore`. Every change answers `AdminSaved<AdminAgents>`, the whole list.
+`POST .../versions/{versionId}/restore`; `PUT /household/voice-agent` (`VoiceAgentChoice { agentId }`, null for
+none — beside the agents rather than under them, where it would read as an agent's id). Every change answers
+`AdminSaved<AdminAgents>`, the whole list, with `voiceAgent` (the one marked) and `answersAloud` (the one that
+does, `HouseholdAgents.VoiceAgentOf`, or null).
 
-- **Only the name and the custom instructions are the owner's.** An edit carries those two and nothing
+- **Which agent answers aloud is the owner's too**: any of the household's agents, whatever its template —
+  a Jonas answers a satellite under the voice rules as a Nabu does (`.claude/rules/channels.md`). Marked
+  none, the household's first agent of the voice template answers. The section's own rule refuses a mark
+  naming none of its agents ("Marked agent jonas to answer aloud" / "Marked no agent to answer aloud" in the
+  log); removing the marked agent clears the mark in the same save. The page is a select under the agents,
+  saying who answers now.
+- **Only the name and the custom instructions are the owner's** of an agent itself. An edit carries those two and nothing
   else binds (a model sent beside them is ignored). They live where the section says: a template entry's
   `name`/`customInstructions`, a seeded definition's own `definition.name`/`definition.customInstructions`
   (the home's jack, jonas, nabu and sugary) — so the home's agents are renamed like any other.

@@ -212,9 +212,8 @@ public class AgentAppSettingsTests
     // Who answers a message whose channel named no agent is configuration, in two halves: the
     // deployment's per channel here, the household's own default in its agents section. A channel
     // default naming an agent the home does not have routes the home's messages nowhere, and the
-    // Sugary app's must name an agent every new household has as well, the Sugary template's. Voice's
-    // names the voice template, so an agent a household adds from it is reached by its voice server
-    // with no setting of its own.
+    // Sugary app's must name an agent every new household has as well, the Sugary template's. Voice has
+    // none: a satellite's turn goes to its household's voice agent, which for the home is its Nabu.
     [Fact]
     public void AgentDefaults_EveryChannelDefault_NamesOneOfTheHomesAgents()
     {
@@ -224,18 +223,19 @@ public class AgentAppSettingsTests
         defaults.ByChannel.Values.ShouldAllBe(id => home.Agents.Any(a => a.Id == id));
         home.Agents.ShouldContain(a => a.Id == home.DefaultAgent);
         HouseholdAgents.Starting.Select(a => a.Id).ShouldContain(defaults.For("sugary")!);
-        AgentTemplates.Named(defaults.For("voice")!).ShouldNotBeNull().PromptSections.ShouldContain(VoicePrompt.Name);
+        defaults.For("voice").ShouldBeNull();
+        HouseholdAgents.VoiceAgentOf(home).ShouldBe(AgentTemplates.Nabu);
     }
 
     // The nested map is the part that fails silently: a renamed key binds to nothing, the
-    // household's default answers for every channel, and voice starts speaking with the general
-    // assistant.
+    // household's default answers for every channel, and the Sugary app's estimates go to the
+    // general assistant.
     [Fact]
     public void Bind_AgentDefaults_BindsThePerChannelMap()
     {
-        var settings = BindSettings(("agentDefaults:byChannel:voice", "nabu"));
+        var settings = BindSettings(("agentDefaults:byChannel:sugary", "sugary"));
 
-        settings.AgentDefaults.For("voice").ShouldBe("nabu");
+        settings.AgentDefaults.For("sugary").ShouldBe("sugary");
         settings.AgentDefaults.For("telegram").ShouldBeNull();
     }
 

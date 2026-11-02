@@ -43,7 +43,7 @@ public sealed class FakeAgentFactory : IAgentFactory
 
     public Task<DisposableAgent> CreateAsync(
         AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
-        string? tenantId = null, CancellationToken ct = default)
+        string? tenantId = null, CancellationToken ct = default, string? channelId = null)
     {
         var responses = new List<QueuedResponse>();
         while (_responseQueue.TryDequeue(out var response))

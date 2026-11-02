@@ -54,6 +54,9 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
     public Task<AdminAnswer<AdminAgents>> RemoveAgentAsync(string agentId) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Delete, AdminProtocol.Agent(agentId)), SavedAsync<AdminAgents>);
 
+    public Task<AdminAnswer<AdminAgents>> SetVoiceAgentAsync(VoiceAgentChoice choice) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.VoiceAgent) { Content = JsonContent.Create(choice) }, SavedAsync<AdminAgents>);
+
     public Task<AdminAnswer<IReadOnlyList<AdminAgentVersion>>> GetAgentVersionsAsync(string agentId) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.AgentVersions(agentId)), async content =>
             new AdminAnswer<IReadOnlyList<AdminAgentVersion>>.Answered(

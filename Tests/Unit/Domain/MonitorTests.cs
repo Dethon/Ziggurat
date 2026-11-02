@@ -196,14 +196,18 @@ internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
     public List<(AgentKey Key, string? AgentId, IToolApprovalHandler ApprovalHandler, string UserId, Account? Account, string? TenantId)> Created { get; } = [];
 
+    // The channel each agent was built for, in the order built.
+    public List<string?> Channels { get; } = [];
+
     // What building the agent throws instead, as the real factory does for a household that cannot pay.
     public Exception? Refusal { get; set; }
 
     public Task<DisposableAgent> CreateAsync(
         AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
-        string? tenantId = null, CancellationToken ct = default)
+        string? tenantId = null, CancellationToken ct = default, string? channelId = null)
     {
         Created.Add((agentKey, agentId, approvalHandler, userId, account, tenantId));
+        Channels.Add(channelId);
         return Refusal is null ? Task.FromResult(agent) : Task.FromException<DisposableAgent>(Refusal);
     }
 

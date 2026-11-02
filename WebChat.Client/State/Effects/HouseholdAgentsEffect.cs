@@ -34,6 +34,9 @@ public sealed class HouseholdAgentsEffect : IDisposable
                 ChangeAsync(_admin.AddAgentAsync(action.Addition)).LogFaults(logger, nameof(AddHouseholdAgent))),
             dispatcher.RegisterHandler<RemoveHouseholdAgent>(action =>
                 ChangeAsync(_admin.RemoveAgentAsync(action.AgentId)).LogFaults(logger, nameof(RemoveHouseholdAgent))),
+            dispatcher.RegisterHandler<SetHouseholdVoiceAgent>(action =>
+                ChangeAsync(_admin.SetVoiceAgentAsync(new VoiceAgentChoice(action.AgentId)))
+                    .LogFaults(logger, nameof(SetHouseholdVoiceAgent))),
             dispatcher.RegisterHandler<RestoreHouseholdAgentVersion>(action =>
                 ChangeAsync(_admin.RestoreAgentVersionAsync(action.AgentId, action.VersionId))
                     .LogFaults(logger, nameof(RestoreHouseholdAgentVersion))),

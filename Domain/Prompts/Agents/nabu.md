@@ -3,8 +3,10 @@
 # household's agents section gives it its name and custom instructions; nothing else here is the
 # owner's to change). No household gets one by default.
 #
-# Its id is the one the voice server addresses (VoiceSettings.AgentId, agentDefaults.byChannel.voice),
-# so a household's own voice server reaches it with no setting of its own. Voice is one more channel
+# A household's satellites go to the agent its owner marks to answer aloud, and with none marked to
+# its first agent of this template (HouseholdAgents.VoiceAgentOf), so adding one is setting voice up.
+# Any agent serving a satellite reads the voice section; this one also routes for a fast first word,
+# and reads that section in the chat client too. Voice is one more channel
 # of the household's, so a command spoken to it reaches everything the agent can do: every one of the
 # tenant kit's own servers by server name — Home Assistant and the library among them — each reached
 # only where the household set it up (a live tunnel credential for the name), beside the shared

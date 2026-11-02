@@ -275,6 +275,23 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         prompt.ShouldContain(VoicePrompt.Instructions);
     }
 
+    // Voice is just another channel: an owner may have their Jonas answer aloud, and a conversation
+    // opened on a satellite is served by it under the voice rules, whatever template it came from. The
+    // same agent in the chat client writes as it always did.
+    [Fact]
+    public async Task AnAgentServingAVoiceConversation_ReadsTheVoiceRules_WhateverItsTemplate()
+    {
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection
+        {
+            DefaultAgent = "jonas",
+            VoiceAgent = "jonas",
+            Agents = [new HouseholdAgent { Id = "jonas", Template = "jonas", Name = "Jonas" }]
+        });
+
+        (await TurnAsync("jonas", Household, channelId: ChannelIds.Voice)).ShouldContain(VoicePrompt.Instructions);
+        (await TurnAsync("jonas", Household, channelId: ChannelIds.SignalR)).ShouldNotContain(VoicePrompt.Instructions);
+    }
+
     // An accounts service from before households named the servers they set up says nothing of them:
     // nothing is set up, as every household but the home ran before.
     [Fact]
@@ -505,10 +522,12 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         Agents = [new HouseholdAgent { Id = AgentTemplates.Nabu, Template = AgentTemplates.Nabu, Name = "Voz" }]
     };
 
-    private async Task<string> TurnAsync(string agentId, string? household, IToolApprovalHandler? approvals = null)
+    private async Task<string> TurnAsync(
+        string agentId, string? household, IToolApprovalHandler? approvals = null, string? channelId = null)
     {
         await using var agent = await Factory().CreateAsync(
-            new AgentKey("conv-1", agentId), "fran", agentId, approvals ?? Mock.Of<IToolApprovalHandler>(), tenantId: household);
+            new AgentKey("conv-1", agentId), "fran", agentId, approvals ?? Mock.Of<IToolApprovalHandler>(), tenantId: household,
+            channelId: channelId);
 
         await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hello")]).ToListAsync();
 

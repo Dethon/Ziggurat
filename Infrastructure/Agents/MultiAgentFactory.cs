@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Domain.Prompts;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents.ChatClients;
@@ -54,7 +55,7 @@ public sealed class MultiAgentFactory(
 
     public async Task<DisposableAgent> CreateAsync(
         AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
-        string? tenantId = null, CancellationToken ct = default)
+        string? tenantId = null, CancellationToken ct = default, string? channelId = null)
     {
         // The household the turn is for runs its own agents (a turn acting for nobody runs the home's).
         // A person's custom agents are registered under their account — household and person — so a
@@ -77,6 +78,11 @@ public sealed class MultiAgentFactory(
             : agents.FirstOrDefault(a => a.Id == agentId);
 
         _ = definition ?? throw new AgentNotFoundException(agentId, household.HouseholdId ?? householdId);
+        // The channel's own sections beside the ones it selects: whoever serves a satellite answers aloud.
+        definition = definition with
+        {
+            PromptSections = [.. definition.PromptSections.Union(PromptManifest.ForChannel(channelId), StringComparer.OrdinalIgnoreCase)]
+        };
 
         // Only the household's own agents' endpoints present a deployment credential: they are its
         // configuration's, which its owner cannot point anywhere, where a person's registered agent

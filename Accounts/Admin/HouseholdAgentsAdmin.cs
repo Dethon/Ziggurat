@@ -103,14 +103,40 @@ public static class HouseholdAgentsAdmin
                 return Results.BadRequest(new AdminRefusal("A household keeps at least one agent.", []));
             }
 
+            // The mark goes with the agent, in the same save: the satellites fall back as if none were marked.
             var result = await SaveAsync(http, caller, store, log, settings,
-                section with { Agents = [.. section.Agents.Where(a => a.Id != agentId)] }, $"Removed agent {agentId}", ct);
+                section with
+                {
+                    Agents = [.. section.Agents.Where(a => a.Id != agentId)],
+                    VoiceAgent = section.VoiceAgent == agentId ? null : section.VoiceAgent
+                }, $"Removed agent {agentId}", ct);
             if (Stood(result))
             {
                 await versions.DropAsync(caller.HouseholdId, agentId, ct);
             }
 
             return result;
+        });
+
+        // Which agent answers the household's satellites: one of its agents, or none marked. Saved as the
+        // section's own rules hold it, so naming no agent of the household's is refused in their words.
+        household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.VoiceAgent), async (
+            AdminCaller caller, [FromBody] VoiceAgentChoice? choice, HttpContext http, HouseholdConfigStore store, AdminLog log,
+            AccountsSettings settings, CancellationToken ct) =>
+        {
+            if (await SectionAsync(store, caller, ct) is not { } section)
+            {
+                return Results.NotFound();
+            }
+
+            var agentId = string.IsNullOrWhiteSpace(choice?.AgentId) ? null : choice.AgentId;
+            if (agentId == section.VoiceAgent)
+            {
+                return Results.Ok(new AdminSaved<AdminAgents>(Answer(section, settings)));
+            }
+
+            return await SaveAsync(http, caller, store, log, settings, section with { VoiceAgent = agentId },
+                agentId is null ? "Marked no agent to answer aloud" : $"Marked agent {agentId} to answer aloud", ct);
         });
 
         household.MapGet(AdminApi.Under(AdminProtocol.Household, AdminProtocol.AgentVersionsRoute), async (
@@ -204,7 +230,9 @@ public static class HouseholdAgentsAdmin
         section.DefaultAgent,
         [.. section.Agents.Select(Shown)],
         [.. AgentTemplates.All.Select(t => new AdminAgentTemplate(t.Id, t.Name, t.Description))],
-        settings.Admin.AgentInstructionsLength);
+        settings.Admin.AgentInstructionsLength,
+        section.VoiceAgent,
+        HouseholdAgents.VoiceAgentOf(section) is var aloud && section.Agents.Any(a => a.Id == aloud) ? aloud : null);
 
     // An entry as an owner sees it, whichever kind: a seeded definition carries its own name and
     // instructions; a template's entry carries them beside the template, whose words and model are its.

@@ -86,6 +86,18 @@ public static class PromptManifest
 
     public static IReadOnlyCollection<string> SelectableSections => _selectable.Keys;
 
+    // The selectable sections written for a channel (audience-channels), which an agent serving a
+    // conversation built for that channel reads whatever its definition selects: voice's rules for
+    // whichever agent a household has answer aloud.
+    public static IReadOnlyList<string> ForChannel(string? channelId) =>
+        channelId is null
+            ? []
+            :
+            [
+                .. SelectableSections.Where(name => Find(name) is { } declaration
+                    && declaration.Audience.Channels.Contains(channelId, StringComparer.OrdinalIgnoreCase))
+            ];
+
     // Aggregated across sections the way the declarations themselves are, so a scenario can cite
     // one id and a coverage test can enumerate every claim the deployment makes.
     public static IReadOnlyList<PromptClaim> Claims { get; } =
