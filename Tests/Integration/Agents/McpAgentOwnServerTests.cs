@@ -101,10 +101,43 @@ public sealed class McpAgentOwnServerTests : IAsyncLifetime
         ContextOf(_requests[1]).ShouldContain(TurnDecoration.OfflineLine(["vault"]));
     }
 
-    private McpAgent Agent() => new(
+    // A server the household withholds — one it never set up — is not the household's to be told
+    // about: online or not, the turn neither reaches it nor names it offline. A shared server's
+    // address in the same list leaves a household's server of another name alone.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AWithheldHouseholdServer_IsNeitherReachedNorNamedOffline(bool online)
+    {
+        if (online)
+        {
+            _online["vault"] = _vault.Endpoint;
+        }
+
+        await using var agent = Agent(withheld: ["vault", "http://vault:8080/mcp"]);
+        await TurnAsync(agent, await agent.CreateSessionAsync());
+
+        ToolsOf(_requests.Single()).ShouldNotContain(name => name.EndsWith("__recall"));
+        ToolsOf(_requests.Single()).ShouldContain(name => name.EndsWith("__Echo"));
+        ContextOf(_requests.Single()).ShouldNotContain("Offline household servers");
+    }
+
+    [Fact]
+    public async Task AWithheldSharedAddress_DoesNotWithholdAHouseholdServerOfThatHostsName()
+    {
+        _online["vault"] = _vault.Endpoint;
+
+        await using var agent = Agent(withheld: ["http://vault:8080/mcp"]);
+        await TurnAsync(agent, await agent.CreateSessionAsync());
+
+        ToolsOf(_requests.Single()).ShouldContain(name => name.EndsWith("__recall"));
+    }
+
+    private McpAgent Agent(IReadOnlyList<string>? withheld = null) => new(
         TestAgentSpec.Default with
         {
             TenantId = Household,
+            WithheldServers = withheld ?? [],
             McpServerEndpoints =
             [
                 McpServerEndpoint.OwnServer("vault"),

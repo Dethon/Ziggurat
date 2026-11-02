@@ -38,6 +38,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IReadOnlySet<string> _withheldTools;
     private readonly IOutposts? _outposts;
     private readonly IOwnServers? _ownServers;
+    private readonly IReadOnlyList<string> _withheldServers;
     private readonly string? _tenantId;
     private readonly ModelPayer _payer;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
@@ -106,6 +107,7 @@ public sealed class McpAgent : DisposableAgent
         _tenantId = spec.TenantId;
         _payer = spec.Payer;
         _ownServers = ownServers;
+        _withheldServers = spec.WithheldServers;
         _usesOutposts = spec.UsesOutposts;
         _noTools = spec.NoTools;
         _withheldTools = spec.WithheldTools;
@@ -591,7 +593,7 @@ public sealed class McpAgent : DisposableAgent
     {
         return await _syncLock.WithLockAsync(async () =>
         {
-            var ownServers = OwnServerEndpoints.Resolve(_endpoints, _tenantId, _ownServers);
+            var ownServers = OwnServerEndpoints.Resolve(_endpoints, _tenantId, _ownServers, _withheldServers);
             // Asked here rather than at construction, and at every turn rather than once per
             // session: an agent outlives many sessions and an outpost's tunnel outlives none, so a
             // machine that opened, closed or reopened since the last turn is reconciled like a

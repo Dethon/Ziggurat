@@ -10,8 +10,9 @@ Decisions": the agent withholds what was not set up).
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] An own server name in the withheld list removes that name from a household's agent definitions and from a spawned worker's endpoints; a shared server's URL still does as before
-- [ ] A name never matches a URL endpoint and a URL never matches a name endpoint (a server named like a host is not withheld by accident)
-- [ ] Nothing withholds an own server yet: every existing test passes unchanged
+- [x] An own server name in the withheld list keeps a turn from reaching that server or naming it offline — an agent's and a spawned worker's, which carries its parent's list; a shared server's URL is still removed from the definitions as before
+- [x] The name is applied where a turn resolves its own servers, not to the definitions: an agent outlives its conversation's turns, so a name taken out of a definition could never come back once the household set the server up (spec story 10)
+- [x] A name never matches a URL endpoint and a URL never matches a name endpoint (a server named like a host is not withheld by accident)
+- [x] Nothing withholds an own server yet: every existing test passes unchanged

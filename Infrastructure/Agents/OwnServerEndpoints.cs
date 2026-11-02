@@ -1,10 +1,12 @@
+using Domain.Agents;
+
 namespace Infrastructure.Agents;
 
 // What one server a session is built with was found to be when a turn started — a household server
 // named in the agent's definition, or a machine: online and on which opening of its tunnel (ADR 0012's
 // generation), or not there. Two turns whose states are equal, in the same order, reach the same
 // servers, so the session the first built serves the second.
-public sealed record ServerState(string Name, bool Online, long? Generation)
+public sealed record ServerState(string Name, bool Online, long? Generation, bool Withheld = false)
 {
     public static bool Same(IReadOnlyList<ServerState> one, IReadOnlyList<ServerState> other) =>
         one.SequenceEqual(other);
@@ -41,19 +43,26 @@ public sealed record OwnServerResolution(
 // server's URL endpoint still fails the session (.claude/rules/tunnel.md).
 internal static class OwnServerEndpoints
 {
+    // One the household withholds — a server it never set up — is not asked for and not named: it is
+    // no part of the turn, so a household is never told about a server it does not run. It still has
+    // a state, so a turn after the household set it up builds a session that reaches it.
     public static OwnServerResolution Resolve(
-        IReadOnlyList<McpServerEndpoint> endpoints, string? tenantId, IOwnServers? servers)
+        IReadOnlyList<McpServerEndpoint> endpoints, string? tenantId, IOwnServers? servers,
+        IReadOnlyList<string>? withheld = null)
     {
         var resolved = endpoints
-            .Select(endpoint => (Named: endpoint, Reached: endpoint.NamesOwnServer
-                ? servers?.Resolve(tenantId, endpoint.Address)
-                : endpoint))
+            .Select(endpoint => (
+                Named: endpoint,
+                Withheld: endpoint.NamesOwnServer && WithheldServers.Withholds(withheld ?? [], endpoint.Address)))
+            .Select(r => (r.Named, r.Withheld, Reached: !r.Named.NamesOwnServer
+                ? r.Named
+                : r.Withheld ? null : servers?.Resolve(tenantId, r.Named.Address)))
             .ToList();
         var own = resolved.Where(r => r.Named.NamesOwnServer).ToList();
 
         return new OwnServerResolution(
             [.. resolved.Select(r => r.Reached).OfType<McpServerEndpoint>()],
-            [.. own.Where(r => r.Reached is null).Select(r => r.Named.Address)],
-            [.. own.Select(r => new ServerState(r.Named.Address, r.Reached is not null, r.Reached?.Generation))]);
+            [.. own.Where(r => r.Reached is null && !r.Withheld).Select(r => r.Named.Address)],
+            [.. own.Select(r => new ServerState(r.Named.Address, r.Reached is not null, r.Reached?.Generation, r.Withheld))]);
     }
 }
