@@ -25,10 +25,21 @@ public static class TestPort
 
     // For a fixture that has stopped whatever it bound; the number becomes issuable again, and the
     // probe still has the last word when it is.
-    public static void Release(int port) => _pool.Release(port);
+    public static void Release(int port)
+    {
+        _pool.Release(port);
+        PortClaims.Machine.Release(port);
+    }
 
+    // Claimed for this process first, across every test process on the machine (PortClaims), then
+    // probed: a port another run holds is never ours to try, and one something else binds is let go.
     private static bool IsFree(int port)
     {
+        if (!PortClaims.Machine.TryClaim(port))
+        {
+            return false;
+        }
+
         try
         {
             using var listener = new TcpListener(IPAddress.Loopback, port);
@@ -38,6 +49,7 @@ public static class TestPort
         }
         catch (SocketException)
         {
+            PortClaims.Machine.Release(port);
             return false;
         }
     }

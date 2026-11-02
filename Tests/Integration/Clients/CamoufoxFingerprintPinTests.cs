@@ -60,7 +60,9 @@ public class CamoufoxFingerprintPinTests
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(9377).ForPath("/json")))
             .Build();
-        using var startCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        // A browser launched in a container on a busy Docker takes what it takes: the cap bounds a start
+        // that will never come, not one the machine is slow to give.
+        using var startCts = new CancellationTokenSource(TimeSpan.FromMinutes(6));
         await container.StartAsync(startCts.Token);
 
         await using var browser = new PlaywrightWebBrowser(

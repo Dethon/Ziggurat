@@ -109,9 +109,13 @@ public sealed class ChannelAlertsTests : IAsyncLifetime
 
         (await DismissAsync(_fran)).ShouldContain("timer \"pasta is ready\"");
 
+        // A stop at the origin calls the offers off at once and settles them after, so the settles are
+        // waited for in their own right rather than read the moment the offers went.
         await Eventually.Until(
-            () => _webchat.CalledOff.Contains(alertId) && _telegram.CalledOff.Contains(alertId),
-            "both offers to be called off");
+            () => _webchat.CalledOff.Contains(alertId) && _telegram.CalledOff.Contains(alertId)
+                  && !_webchat.Settles.IsEmpty && !_telegram.Settles.IsEmpty,
+            "both offers to be called off and settled");
+        await Eventually.Settle();
         _webchat.Settles.ShouldHaveSingleItem().ShouldBe((alertId, true));
         _telegram.Settles.ShouldHaveSingleItem().ShouldBe((alertId, true));
     }
