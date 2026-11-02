@@ -37,7 +37,7 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         await store.SaveTopicAsync(Topic("t-ours", 790, "Damson gin"));
         await store.SaveTopicAsync(Topic("t-away", 791, "Damson gin") with { TenantId = "away", Shared = true });
 
-        var found = await store.SearchTopicsAsync(_agentId, "default", Anyone, "damson", null, 10);
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "damson", null, 10);
         var foundAway = await store.SearchTopicsAsync(_agentId, "default", new TopicViewer("laura", "away"), "damson", null, 10);
 
         found.Topics.Select(t => t.TopicId).ShouldBe(["t-ours"]);
@@ -51,7 +51,7 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         await store.SaveTopicAsync(Topic("t-1", 700, "Planting the tomatoes"));
         await store.SaveTopicAsync(Topic("t-2", 701, "Rewiring the shed"));
 
-        var found = await store.SearchTopicsAsync(_agentId, "default", Anyone, "tomatoes", null, 10);
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "tomatoes", null, 10);
 
         found.Topics.Select(t => t.TopicId).ShouldBe(["t-1"]);
     }
@@ -68,10 +68,10 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         clock.Advance(TimeSpan.FromDays(31));
         await store.SaveTopicAsync(Topic("t-new", 711, "Fresh greenhouse notes", clock.GetUtcNow()));
 
-        (await store.GetTopicPageAsync(_agentId, "default", Anyone, null, 10))
+        (await store.GetTopicPageAsync(_agentId, "default", _anyone, null, 10))
             .Topics.Select(t => t.TopicId).ShouldBe(["t-new"]);
 
-        var found = await store.SearchTopicsAsync(_agentId, "default", Anyone, "greenhouse", null, 10);
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "greenhouse", null, 10);
 
         found.Topics.Select(t => t.TopicId).ShouldBe(["t-new", "t-old"]);
     }
@@ -87,8 +87,8 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
             clock.Advance(TimeSpan.FromMinutes(1));
         }
 
-        var first = await store.SearchTopicsAsync(_agentId, "default", Anyone, "kettle", null, 2);
-        var second = await store.SearchTopicsAsync(_agentId, "default", Anyone, "kettle", first.NextCursor, 2);
+        var first = await store.SearchTopicsAsync(_agentId, "default", _anyone, "kettle", null, 2);
+        var second = await store.SearchTopicsAsync(_agentId, "default", _anyone, "kettle", first.NextCursor, 2);
 
         first.Topics.Select(t => t.TopicId).ShouldBe(["t-page-2", "t-page-1"]);
         second.Topics.Select(t => t.TopicId).ShouldBe(["t-page-0"]);
@@ -107,8 +107,8 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         clock.Advance(TimeSpan.FromMinutes(1));
         await store.SaveTopicAsync(Topic("t-tie-2", 772, "Compost heap two", clock.GetUtcNow()));
 
-        var first = await store.SearchTopicsAsync(_agentId, "default", Anyone, "compost", null, 2);
-        var second = await store.SearchTopicsAsync(_agentId, "default", Anyone, "compost", first.NextCursor, 2);
+        var first = await store.SearchTopicsAsync(_agentId, "default", _anyone, "compost", null, 2);
+        var second = await store.SearchTopicsAsync(_agentId, "default", _anyone, "compost", first.NextCursor, 2);
 
         first.Topics.First().TopicId.ShouldBe("t-tie-2");
         first.Topics.Concat(second.Topics).Select(t => t.TopicId)
@@ -135,9 +135,9 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
             clock.Advance(TimeSpan.FromMinutes(1));
         }
 
-        var first = await store.SearchTopicsAsync(_agentId, "default", AsFran, "pear", null, 1);
-        var second = await store.SearchTopicsAsync(_agentId, "default", AsFran, "pear", first.NextCursor, 1);
-        var third = await store.SearchTopicsAsync(_agentId, "default", AsFran, "pear", second.NextCursor, 1);
+        var first = await store.SearchTopicsAsync(_agentId, "default", _asFran, "pear", null, 1);
+        var second = await store.SearchTopicsAsync(_agentId, "default", _asFran, "pear", first.NextCursor, 1);
+        var third = await store.SearchTopicsAsync(_agentId, "default", _asFran, "pear", second.NextCursor, 1);
 
         first.Topics.Select(t => t.TopicId).ShouldBe(["t-pear-shared"]);
         second.Topics.Select(t => t.TopicId).ShouldBe(["t-pear-mine"]);
@@ -150,7 +150,7 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         var store = NewStore();
         await store.SaveTopicAsync(Topic("t-here", 730, "Marmalade recipe") with { SpaceSlug = "kitchen" });
 
-        var found = await store.SearchTopicsAsync(_agentId, "default", Anyone, "marmalade", null, 10);
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "marmalade", null, 10);
 
         found.Topics.ShouldBeEmpty();
     }
@@ -163,7 +163,7 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         await store.SaveTopicAsync(Topic("t-attic", 731, "Quince jelly") with { SpaceSlug = "attic" });
         await store.SaveTopicAsync(Topic("t-main", 732, "Quince paste"));
 
-        var found = await store.SearchTopicsAsync(_agentId, "default", Anyone, "quince", null, 10, alsoSpaces: ["attic"]);
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "quince", null, 10, alsoSpaces: ["attic"]);
 
         found.Topics.Select(t => t.TopicId).ShouldBe(["t-attic", "t-main"], ignoreOrder: true);
     }
@@ -180,7 +180,7 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
             new ChatMessage(ChatRole.Assistant, "noted")
         ]);
 
-        var found = await store.SearchTopicsAsync(_agentId, "default", Anyone, "dentist", null, 10);
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "dentist", null, 10);
 
         found.Topics.Select(t => t.TopicId).ShouldBe(["t-said"]);
     }
@@ -216,14 +216,14 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
 
         await store.DeleteTopicAsync("home", _agentId, 760, "t-gone");
 
-        (await store.SearchTopicsAsync(_agentId, "default", Anyone, "rhubarb", null, 10)).Topics.ShouldBeEmpty();
+        (await store.SearchTopicsAsync(_agentId, "default", _anyone, "rhubarb", null, 10)).Topics.ShouldBeEmpty();
     }
 
-    private static readonly TopicViewer AsFran = new("fran", "home");
+    private static readonly TopicViewer _asFran = new("fran", "home");
 
     // Every topic these tests write is nobody's unless a test owns it, and a topic nobody owns is its
     // household's.
-    private static readonly TopicViewer Anyone = new("anyone", "home");
+    private static readonly TopicViewer _anyone = new("anyone", "home");
 
     private TopicMetadata Topic(string topicId, long chatId, string name, DateTimeOffset? at = null)
     {
