@@ -254,7 +254,12 @@ announces tunnel revocations). The save stands if nobody could be told; the comm
 exits 1. A member disabled or re-enabled is announced the same way, as section
 `HouseholdConfigProtocol.PeopleChanged` (`people`, which no section is called): a reader drops all it
 kept of the household whatever section is named, so the agent's view — and its `disabledPeople` — is
-read again on the household's next turn.
+read again on the household's next turn. A tunnel credential minted or revoked is announced too, as
+`HouseholdConfigProtocol.OwnServersChanged` (`own-servers`), by `TunnelCredentialStore` itself — so the
+command and the admin route both — because it changes the view's `ownServers`: the agent's next turn
+reaches a server just set up and leaves one just revoked. An outpost's is announced the same way,
+which drops a view that has not changed. The credential stands if nobody could be told (the admin
+route's `AdminSections.NotToldWarning`, a line before the command's credential).
 
 **The reader** is `IHouseholdConfiguration` (`Domain/Contracts`), implemented by
 `HouseholdConfigurationClient` (`Infrastructure/Clients/Accounts`), registered by

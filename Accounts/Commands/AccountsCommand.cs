@@ -242,6 +242,12 @@ public static class AccountsCommand
                 return 1;
             }
 
+            if (minted.NotTold is { } why)
+            {
+                await output.WriteLineAsync(
+                    $"The agent was not told the household set {minted.ServerName} up ({why}): it reaches it within a minute.");
+            }
+
             // The credential last and alone on its line, so a script can read it straight into the
             // server's environment; it is never shown again.
             await output.WriteLineAsync(

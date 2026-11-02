@@ -51,8 +51,10 @@ public static class HouseholdServersAdmin
             }
 
             await log.RecordAsync(http, caller, $"Minted a tunnel credential for server {name}", ct);
+            // Not told, the agent reaches the new server within its cache's lifetime rather than next turn.
             return Results.Ok(new AdminSaved<MintedServerCredential>(
-                new MintedServerCredential(minted.ServerName, minted.Id, minted.Credential)));
+                new MintedServerCredential(minted.ServerName, minted.Id, minted.Credential),
+                minted.NotTold is null ? null : AdminSections.NotToldWarning));
         });
 
         household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.RevokeServerCredentialRoute), async (

@@ -54,6 +54,11 @@ public static class HouseholdConfigProtocol
     // saved: no section is called this, and every reader drops what it kept of the household either way.
     public const string SuspensionChanged = "suspension";
 
+    // What a tunnel credential minted or revoked is announced as on SavedChannel, so the agent drops
+    // the view that names the own servers a household set up (AgentHouseholdConfig.OwnServers). No
+    // section is called this either.
+    public const string OwnServersChanged = "own-servers";
+
     // The channel the agent's own token for the configuration names: it acts for nobody, and names
     // its household in the query (the agent is the one caller that may).
     public const string AgentTokenChannel = "household-config";

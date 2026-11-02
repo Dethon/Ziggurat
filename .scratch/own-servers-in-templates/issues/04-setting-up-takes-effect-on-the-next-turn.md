@@ -7,8 +7,8 @@ rather than within the cache's lifetime. Spec: `../spec.md` ("the accounts servi
 
 **Blocked by:** 02 (a household's agents reach the vault it set up)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Minting a credential announces a configuration change for its household; so does revoking one (household configuration tests)
-- [ ] An outpost credential's mint or revoke announces nothing about own servers, or announces harmlessly — the agent's view is unchanged by it
-- [ ] Turn-level: a credential minted between two turns of one conversation is reached on the second turn
+- [x] Minting a credential announces a configuration change for its household; so does revoking one (household configuration tests)
+- [x] An outpost credential's mint or revoke announces nothing about own servers, or announces harmlessly — the agent's view is unchanged by it
+- [x] Turn-level: a credential minted between two turns of one conversation is reached on the second turn (`MultiAgentFactoryHouseholdTests.ASetUpChangedBetweenTwoTurnsOfAConversation_IsFollowedByTheSecond`, from ticket 02; the reader drops a household on any announcement naming it)

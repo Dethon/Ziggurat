@@ -1,4 +1,6 @@
+using Accounts.Announcements;
 using Accounts.Store;
+using Domain.DTOs.Household;
 using Domain.DTOs.Tunnel;
 using Domain.Outposts;
 using Microsoft.EntityFrameworkCore;
@@ -6,8 +8,11 @@ using Microsoft.EntityFrameworkCore;
 namespace Accounts.Tunnels;
 
 // The credential goes to the household's server and is never kept; the id is what a list and a
-// revoke name.
-public sealed record MintedTunnelCredential(string Id, string TenantId, string ServerName, string Credential);
+// revoke name. NotTold is why the configuration's readers were not told the household set a server up,
+// or null when they were: the credential stands either way, and the agent sees it within its cache's
+// lifetime.
+public sealed record MintedTunnelCredential(
+    string Id, string TenantId, string ServerName, string Credential, string? NotTold = null);
 
 public sealed record ListedTunnelCredential(
     string Id, string TenantId, string ServerName, DateTimeOffset CreatedAt, DateTimeOffset? RevokedAt);
@@ -27,8 +32,13 @@ public abstract record TunnelVerdict
 // A tunnel credential belongs to one household and one server name. A server may hold more than one
 // live credential at a time, so a credential is replaced without a gap: mint the new one, start the
 // server with it, revoke the old.
+//
+// A mint or a revocation changes which own servers the household set up — what the agent's view of it
+// names — so each is announced as a save of its configuration is (HouseholdConfigProtocol.OwnServersChanged),
+// and the agent's next turn reads the view again.
 public sealed class TunnelCredentialStore(
-    IDbContextFactory<AccountsDbContext> contexts, AccountsClock clock, TunnelRevocationPublisher revocations)
+    IDbContextFactory<AccountsDbContext> contexts, AccountsClock clock, TunnelRevocationPublisher revocations,
+    RedisAnnouncer announcer)
 {
     public async Task<MintedTunnelCredential?> MintAsync(string tenantId, string serverName, CancellationToken ct)
     {
@@ -56,7 +66,7 @@ public sealed class TunnelCredentialStore(
         };
         db.TunnelCredentials.Add(row);
         await db.SaveChangesAsync(ct);
-        return new MintedTunnelCredential(row.Id, row.TenantId, row.ServerName, credential);
+        return new MintedTunnelCredential(row.Id, row.TenantId, row.ServerName, credential, await AnnounceAsync(tenantId, ct));
     }
 
     // A credential is 256 random bits, so there is no dictionary to run against its hash: SHA-256 is
@@ -127,6 +137,10 @@ public sealed class TunnelCredentialStore(
         ];
     }
 
+    private Task<string?> AnnounceAsync(string tenantId, CancellationToken ct) =>
+        announcer.AnnounceAsync(HouseholdConfigProtocol.SavedChannel,
+            new HouseholdConfigSaved(tenantId, HouseholdConfigProtocol.OwnServersChanged), ct);
+
     // The names of the household's own servers it set up — those it holds a live credential for, each
     // once — and never a machine's: an outpost named `vault` is not the household's vault server.
     public async Task<IReadOnlyList<string>> SetUpServersAsync(string tenantId, CancellationToken ct) =>
@@ -156,6 +170,8 @@ public sealed class TunnelCredentialStore(
         row.RevokedAt ??= clock.Time.GetUtcNow();
         await db.SaveChangesAsync(ct);
         var notTold = await revocations.TellAsync(new TunnelCredentialRevoked(row.Id, row.TenantId, row.ServerName), ct);
-        return new RevokedTunnelCredential(row.Id, row.TenantId, row.ServerName, row.RevokedAt.Value, alreadyRevoked, notTold);
+        var readersNotTold = await AnnounceAsync(row.TenantId, ct);
+        return new RevokedTunnelCredential(
+            row.Id, row.TenantId, row.ServerName, row.RevokedAt.Value, alreadyRevoked, notTold ?? readersNotTold);
     }
 }

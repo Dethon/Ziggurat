@@ -503,6 +503,24 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         (await AgentViewAsync(server, other)).OwnServers.ShouldBe(["sandbox"]);
     }
 
+    // Setting a server up or revoking it changes what the agent's view names, so each is announced as
+    // a save is: the agent's next turn reads the view again rather than within its cache's lifetime.
+    [Fact]
+    public async Task MintingAndRevokingATunnelCredential_AreEachAnnouncedToEveryReader()
+    {
+        await using var server = await StartAsync();
+        var household = await server.SeedHouseholdAsync("Casa");
+        var heard = await ListenAsync(household);
+        var credentials = server.Service<TunnelCredentialStore>();
+
+        var minted = await credentials.MintAsync(household, "vault", CancellationToken.None);
+        await Eventually.Until(() => heard.Count == 1, "the mint's announcement");
+        await credentials.RevokeAsync(minted!.Id, household, CancellationToken.None);
+        await Eventually.Until(() => heard.Count == 2, "the revocation's announcement");
+
+        heard.ShouldAllBe(saved => saved == new HouseholdConfigSaved(household, HouseholdConfigProtocol.OwnServersChanged));
+    }
+
     [Fact]
     public async Task TheHomeHousehold_IsSaidToBeTheHome()
     {
