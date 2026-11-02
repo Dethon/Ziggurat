@@ -1,3 +1,5 @@
+using Domain.DTOs.Channel;
+
 namespace Infrastructure.Agents;
 
 // Where a channel endpoint that names a household's server is reached: every opening of every
@@ -12,7 +14,9 @@ public interface IOwnChannelServers
     IAsyncEnumerable<OwnServerOpening> WatchAsync(string serverName, CancellationToken ct);
 }
 
-// The opening's household is the tunnel credential's, verified by the accounts service as it opened;
-// Home says that household is the operator's.
-public sealed record OwnServerOpening(
-    McpServerEndpoint Endpoint, CancellationToken Closed, string HouseholdId, bool Home);
+// The opening's household is the tunnel credential's, verified by the accounts service as it opened,
+// marked Home when that household is the operator's.
+public sealed record OwnServerOpening(McpServerEndpoint Endpoint, CancellationToken Closed, ChannelHousehold Household)
+{
+    public string HouseholdId => Household.HouseholdId!;
+}

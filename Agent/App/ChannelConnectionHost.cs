@@ -18,6 +18,10 @@ namespace Agent.App;
 // adds it wherever the agent reads its connections) and kept: it is run once per opening and lets go
 // when the opening closes, so between openings it is not connected (ADR 0011), and the next opening
 // is a run of its own on the same connection.
+// What a household's own channel server is told, once its household's agents have been read: the
+// catalogue as each registration reads it.
+public delegate Task<Func<IReadOnlyList<AgentCatalogEntry>>> HouseholdCatalogRead(ChannelHousehold household, CancellationToken ct);
+
 public class ChannelConnectionHost(
     ChannelEndpoint[] endpoints,
     // The connections of the endpoints dialled by URL, made at startup.
@@ -39,7 +43,7 @@ public class ChannelConnectionHost(
     Task? catalogRead = null,
     // The catalogue a household's own channel server is told — that household's agents — once read, so
     // its first registration is its agents too. None tells it the dialled channels' catalogue.
-    Func<ChannelHousehold, CancellationToken, Task<Func<IReadOnlyList<AgentCatalogEntry>>>>? householdCatalog = null,
+    HouseholdCatalogRead? householdCatalog = null,
     // Makes the connection of a household's own channel server, once per household and endpoint, and
     // adds it to the agent's connections; without it such an endpoint is never run.
     Func<ChannelEndpoint, ChannelHousehold, IMcpChannelConnection>? householdConnection = null) : BackgroundService
@@ -115,16 +119,14 @@ public class ChannelConnectionHost(
         {
             await foreach (var opening in ownServers.WatchAsync(serverName, ct))
             {
-                if (followed.TryGetValue(opening.HouseholdId, out var previous))
-                {
-                    await previous.EndAsync();
-                }
-
-                var connection = previous?.Connection
-                                 ?? householdConnection(endpoint, ChannelHousehold.Own(opening.HouseholdId, opening.Home));
+                // The old run is ended without waiting for it here: the new one starts once it has let go
+                // (one connection holds one client), while every other household's opening goes on.
+                var previous = followed.GetValueOrDefault(opening.HouseholdId);
+                var ending = previous?.EndAsync() ?? Task.CompletedTask;
+                var connection = previous?.Connection ?? householdConnection(endpoint, opening.Household);
                 var current = CancellationTokenSource.CreateLinkedTokenSource(ct, opening.Closed);
                 followed[opening.HouseholdId] = new Following(
-                    connection, current, RunOpeningAsync(connection, serverName, opening, current.Token));
+                    connection, current, RunAfterAsync(ending, connection, serverName, opening, current.Token));
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -133,6 +135,16 @@ public class ChannelConnectionHost(
         finally
         {
             await Task.WhenAll(followed.Values.Select(f => f.EndAsync()));
+        }
+    }
+
+    private async Task RunAfterAsync(
+        Task ending, IMcpChannelConnection connection, string serverName, OwnServerOpening opening, CancellationToken ct)
+    {
+        await ending;
+        if (!ct.IsCancellationRequested)
+        {
+            await RunOpeningAsync(connection, serverName, opening, ct);
         }
     }
 
@@ -147,7 +159,7 @@ public class ChannelConnectionHost(
         {
             try
             {
-                catalog = await householdCatalog(ChannelHousehold.Own(opening.HouseholdId, opening.Home), ct);
+                catalog = await householdCatalog(opening.Household, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -166,7 +178,12 @@ public class ChannelConnectionHost(
 
     private sealed record Following(IMcpChannelConnection Connection, CancellationTokenSource Current, Task Run)
     {
-        public async Task EndAsync()
+        private Task? _ended;
+
+        // Once, however often asked: a replaced run is ended by its replacement and again at shutdown.
+        public Task EndAsync() => _ended ??= EndOnceAsync();
+
+        private async Task EndOnceAsync()
         {
             await Current.CancelAsync();
             await Run;

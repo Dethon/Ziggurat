@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Domain.DTOs.Channel;
 using Infrastructure.Agents;
 
 namespace Infrastructure.Tunnels;
@@ -21,7 +22,7 @@ public sealed class RelayedOwnServers(TunnelRegistry registry) : IOwnServers, IO
         {
             if (change is TunnelOpened { Tunnel: var tunnel } && tunnel.ServerName == serverName)
             {
-                yield return new OwnServerOpening(tunnel.Endpoint, tunnel.Closed, tunnel.TenantId, tunnel.Home);
+                yield return new OwnServerOpening(tunnel.Endpoint, tunnel.Closed, ChannelHousehold.Own(tunnel.TenantId, tunnel.Home));
             }
         }
     }

@@ -22,7 +22,8 @@ public sealed class ChannelAgentCatalogs(
     IHouseholdAgentSource households,
     TimeSpan interval,
     ILogger<ChannelAgentCatalogs> logger,
-    CancellationToken listening = default) : BackgroundService
+    CancellationToken listening = default,
+    TimeProvider? time = null) : BackgroundService
 {
     // The home is kept under the empty key: a channel serving every household names no household.
     private const string Home = "";
@@ -57,7 +58,7 @@ public sealed class ChannelAgentCatalogs(
                 }
             }
 
-            using var timer = new PeriodicTimer(interval);
+            using var timer = new PeriodicTimer(interval, time ?? TimeProvider.System);
             do
             {
                 await RefreshAsync(Home, stoppingToken);

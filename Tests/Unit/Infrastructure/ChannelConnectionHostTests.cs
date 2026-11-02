@@ -149,6 +149,36 @@ public class ChannelConnectionHostTests
         connection.Running.ShouldBe(0);
     }
 
+    // One household's reconnect is its own: an old run slow to let go holds up that household's next
+    // run alone, never another household's opening.
+    [Fact]
+    public async Task ExecuteAsync_AHouseholdsSlowReconnect_NeverHoldsUpAnotherHouseholdsOpening()
+    {
+        var letsGo = new TaskCompletionSource();
+        var casa = new FakeMcpChannelConnection("voice") { LetsGo = letsGo };
+        var home = new FakeMcpChannelConnection("voice");
+        var servers = new FakeOwnChannelServers();
+        var endpoints = new[] { new ChannelEndpoint { ChannelId = "voice", Endpoint = "voice" } };
+        var sut = new ChannelConnectionHost(
+            endpoints, [], () => _catalog, _logger, ownServers: servers,
+            householdConnection: (_, household) => household.HouseholdId == "casa" ? casa : home);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        _ = sut.StartAsync(cts.Token);
+        await Eventually.Until(() => servers.Watched == "voice", "the host follows the server's openings");
+
+        using var first = servers.Open("http://voice.casa.tunnel/mcp", "casa");
+        await Eventually.Until(() => casa.Running == 1, "Casa's first opening is run");
+        using var replacement = servers.Open("http://voice.casa.tunnel/mcp#2", "casa");
+        using var homeOpening = servers.Open("http://voice.home.tunnel/mcp", "home");
+
+        await Eventually.Until(() => home.Running == 1, "the home's opening runs while Casa's old run is still letting go");
+        casa.RunCount.ShouldBe(1);
+        letsGo.SetResult();
+        await Eventually.Until(() => casa.RunCount == 2, "Casa's replacement runs once its old run let go");
+        casa.MostAtOnce.ShouldBe(1);
+        await sut.StopAsync(CancellationToken.None);
+    }
+
     [Fact]
     public void Constructor_TwoEndpointsForOneChannelId_FailsNamingTheDuplicate()
     {
@@ -210,6 +240,9 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
 
     public int MostAtOnce => Volatile.Read(ref _mostAtOnce);
 
+    // A run that, once cancelled, lets go only when this completes: a connection slow to close.
+    public TaskCompletionSource? LetsGo { get; init; }
+
     public async Task RunAsync(
         McpServerEndpoint endpoint, Func<IReadOnlyList<AgentCatalogEntry>> catalog, CancellationToken ct)
     {
@@ -229,6 +262,10 @@ internal sealed class FakeMcpChannelConnection(string channelId) : IMcpChannelCo
         catch (OperationCanceledException)
         {
             // A run returns when it is cancelled; it does not fault.
+            if (LetsGo is not null)
+            {
+                await LetsGo.Task;
+            }
         }
         finally
         {
@@ -258,7 +295,7 @@ internal sealed class FakeOwnChannelServers : IOwnChannelServers
     public CancellationTokenSource Open(string address, string household = "home")
     {
         var closed = new CancellationTokenSource();
-        _openings.Writer.TryWrite(new OwnServerOpening(McpServerEndpoint.Configured(address), closed.Token, household, Home: true));
+        _openings.Writer.TryWrite(new OwnServerOpening(McpServerEndpoint.Configured(address), closed.Token, ChannelHousehold.Own(household, household == "home")));
         return closed;
     }
 
