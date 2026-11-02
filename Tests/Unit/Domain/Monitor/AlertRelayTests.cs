@@ -31,6 +31,31 @@ public class AlertRelayTests
         return (running, stop);
     }
 
+    // A household's own servers are its own devices: an alert rings on the deployment's channels and
+    // its owner's household's own connections, never on another household's, and a dismissal there
+    // settles it.
+    [Fact]
+    public async Task AnAlert_RingsOnlyOnTheDeploymentsChannelsAndItsOwnersHouseholds()
+    {
+        var timers = new AlertChannel("timers");
+        var webchat = new AlertChannel("signalr");
+        var homeOwn = new AlertChannel("voice") { Household = ChannelHousehold.Own("home", home: true) };
+        var casaOwn = new AlertChannel("voice") { Household = ChannelHousehold.Own("casa", home: false) };
+        var (running, stop) = Run(timers, webchat, homeOwn, casaOwn);
+        var pasta = Pasta();
+
+        timers.Raise(new AlertSignal.Ring(pasta));
+        await Eventually.Until(() => webchat.Offered.Count == 1 && homeOwn.Offered.Count == 1, "the offers to go out");
+        homeOwn.Dismiss();
+        await Eventually.Until(() => timers.Settled.Count == 1, "the dismissal settles it at its origin");
+
+        casaOwn.Offered.ShouldBeEmpty();
+        casaOwn.Settled.ShouldBeEmpty();
+        webchat.Settled.ShouldHaveSingleItem().ShouldBe((pasta.AlertId, true));
+        await stop.CancelAsync();
+        await running;
+    }
+
     [Fact]
     public async Task ARaisedAlert_IsOfferedOnEveryOtherChannel_AndTheFirstDismissalSettlesTheRest()
     {
@@ -167,6 +192,8 @@ public class AlertRelayTests
 // offer. Records what it was offered and told.
 internal sealed class AlertChannel(string channelId) : IAlertChannel
 {
+    public ChannelHousehold Household { get; init; } = ChannelHousehold.Every;
+
     private readonly System.Threading.Channels.Channel<AlertSignal> _raised =
         System.Threading.Channels.Channel.CreateUnbounded<AlertSignal>();
     private readonly TaskCompletionSource<bool> _answer = new(TaskCreationOptions.RunContinuationsAsynchronously);

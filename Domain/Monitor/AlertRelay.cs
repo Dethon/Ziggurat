@@ -83,7 +83,7 @@ public sealed class AlertRelay(
             var stoppedAtOrigin = stopped.IsCancellationRequested;
             // Settled before being called off, so a channel still showing it says it was dismissed
             // or rang out rather than only taking it down. The origin already knows when it stopped it.
-            await Task.WhenAll(channels
+            await Task.WhenAll(Reached(origin, alert)
                 .Where(channel => channel != dismissedOn && !(stoppedAtOrigin && channel == origin))
                 .Select(channel => SettleAsync(channel, alert.AlertId, dismissed: dismissedOn is not null || stoppedAtOrigin)));
             await offering.CancelAsync();
@@ -103,7 +103,7 @@ public sealed class AlertRelay(
     private async Task<IAlertChannel?> FirstDismissalAsync(
         IAlertChannel origin, ChannelAlertNotification alert, CancellationToken offering)
     {
-        var waiting = channels
+        var waiting = Reached(origin, alert)
             .Where(channel => channel != origin)
             .Select(channel => (Channel: channel, Task: channel.OfferAlertAsync(alert, offering)))
             .ToList();
@@ -132,6 +132,11 @@ public sealed class AlertRelay(
         logger.LogInformation("Alert {AlertId} could be shown on no channel of its person's", alert.AlertId);
         return null;
     }
+
+    // Where its person is: the deployment's channels and their household's own servers, never another
+    // household's — the household of the server that raised it, or of the person it is for.
+    private IReadOnlyList<IAlertChannel> Reached(IAlertChannel origin, ChannelAlertNotification alert) =>
+        [.. channels.Serving(HouseholdChannels.HouseholdOf(origin).HouseholdId ?? alert.Owner.TenantId)];
 
     // A channel that failed, or was called off, has not dismissed it; what it failed with is logged
     // and nothing more, since the alert may still be dismissed somewhere else.
