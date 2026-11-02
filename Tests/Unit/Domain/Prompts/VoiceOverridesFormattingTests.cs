@@ -86,17 +86,15 @@ public class VoiceOverridesFormattingTests
             .ShouldNotContain(VoicePrompt.Name);
     }
 
-    // The section declares the channel it belongs to, and the routing default for that channel
-    // names the agent that reads it. Two files, one statement — and a voice channel pointed at an
-    // agent with no voice rules would be a satellite reading paragraphs aloud.
+    // The section declares the channel it belongs to, and whichever agent a conversation on that
+    // channel is built for reads it: a household's satellite may be answered by any agent its owner
+    // marks, and none of them may read paragraphs aloud.
     [Fact]
-    public void TheChannelTheVoiceRulesDeclare_RoutesToAnAgentThatSelectsThem()
+    public void TheChannelTheVoiceRulesDeclare_GivesThemToWhicheverAgentServesIt()
     {
         var channel = PromptManifest.Find(VoicePrompt.Name)!.Audience.Channels.ShouldHaveSingleItem();
-        var defaults = AgentPromptFixture.AgentDefaults;
 
-        var agentId = defaults.For(channel).ShouldNotBeNull();
-        AgentPromptFixture.Agents.Single(a => a.Id == agentId)
-            .PromptSections.ShouldContain(VoicePrompt.Name);
+        PromptManifest.ForChannel(channel).ShouldBe([VoicePrompt.Name]);
+        PromptManifest.ForChannel("signalr").ShouldBeEmpty();
     }
 }
