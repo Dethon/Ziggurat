@@ -20,7 +20,7 @@ public sealed class RelayedOwnServers(TunnelRegistry registry) : IOwnServers, IO
         {
             if (change is TunnelOpened { Tunnel: var tunnel } && tunnel.IsHome(serverName))
             {
-                yield return new OwnServerOpening(tunnel.Endpoint, tunnel.Closed);
+                yield return new OwnServerOpening(tunnel.Endpoint, tunnel.Closed, tunnel.TenantId, tunnel.Home);
             }
         }
     }

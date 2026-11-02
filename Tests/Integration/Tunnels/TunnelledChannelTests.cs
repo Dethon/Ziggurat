@@ -149,8 +149,8 @@ public class TunnelledChannelTests(RedisFixture redis) : IClassFixture<RedisFixt
     {
         var host = new ChannelConnectionHost(
             [new ChannelEndpoint { ChannelId = connection.ChannelId, Endpoint = serverName }],
-            [connection], () => _catalog, NullLogger<ChannelConnectionHost>.Instance,
-            ownServers: _relay.ChannelServers);
+            [], () => _catalog, NullLogger<ChannelConnectionHost>.Instance,
+            ownServers: _relay.ChannelServers, householdConnection: (_, _) => connection);
         await host.StartAsync(_cts.Token);
         return new Running(host);
     }

@@ -11,7 +11,9 @@ using Microsoft.Extensions.Logging;
 namespace Domain.Monitor;
 
 public class ChatMonitor(
-    IReadOnlyList<IChannelConnection> channels,
+    // The connections the agent holds and every one it comes to hold: a household's own channel
+    // server's appears when its tunnel first opens, after the monitor started.
+    IConnectionSet<IChannelConnection> channels,
     IAgentFactory agentFactory,
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
@@ -73,6 +75,7 @@ public class ChatMonitor(
         try
         {
             var merged = channels
+                .WatchAsync(cancellationToken)
                 .Select(ch => ch.Messages.Select(async ValueTask<(IChannelConnection Channel, ChannelMessage Message)> (m, ct) =>
                     (ch, await RouteToAgentAsync(m, ct))))
                 .Merge(cancellationToken);

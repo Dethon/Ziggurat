@@ -127,7 +127,8 @@ public class ChannelConnectionHostTests
         var connection = new FakeMcpChannelConnection("homeassistant");
         var servers = new FakeOwnChannelServers();
         var endpoints = new[] { new ChannelEndpoint { ChannelId = "homeassistant", Endpoint = "homeassistant" } };
-        var sut = new ChannelConnectionHost(endpoints, [connection], () => _catalog, _logger, ownServers: servers);
+        var sut = new ChannelConnectionHost(
+            endpoints, [], () => _catalog, _logger, ownServers: servers, householdConnection: (_, _) => connection);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         _ = sut.StartAsync(cts.Token);
         await Eventually.Until(() => servers.Watched == "homeassistant", "the host follows the server's openings");
@@ -254,10 +255,10 @@ internal sealed class FakeOwnChannelServers : IOwnChannelServers
     public string? Watched => Volatile.Read(ref _watched);
 
     // An opening of the server, open until the returned source is cancelled.
-    public CancellationTokenSource Open(string address)
+    public CancellationTokenSource Open(string address, string household = "home")
     {
         var closed = new CancellationTokenSource();
-        _openings.Writer.TryWrite(new OwnServerOpening(McpServerEndpoint.Configured(address), closed.Token));
+        _openings.Writer.TryWrite(new OwnServerOpening(McpServerEndpoint.Configured(address), closed.Token, household, Home: true));
         return closed;
     }
 

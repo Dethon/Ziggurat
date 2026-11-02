@@ -138,7 +138,7 @@ public class ChatMonitorAgentRoutingTests
 
         await using var provider = new ServiceCollection()
             .AddLogging()
-            .AddSingleton<IReadOnlyList<IChannelConnection>>(
+            .AddSingleton<IConnectionSet<IChannelConnection>>(
                 [MonitorTestMocks.CreateChannel("telegram", message)])
             .AddSingleton<IAgentFactory>(factory)
             .AddSingleton(MonitorTestMocks.CreateThreadResolver())

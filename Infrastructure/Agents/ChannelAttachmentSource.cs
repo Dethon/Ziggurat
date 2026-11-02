@@ -14,7 +14,7 @@ namespace Infrastructure.Agents;
 // function-calling iteration of a turn, which for a 20 MB PDF and eight tool calls is eight base64
 // round trips on the critical path before the model says anything.
 public sealed class ChannelAttachmentSource(
-    IReadOnlyList<IChannelConnection> connections,
+    IEnumerable<IChannelConnection> connections,
     ILogger<ChannelAttachmentSource>? logger = null) : IAttachmentSource
 {
     // Bounded by count rather than bytes, and small: a turn hydrates the attachments inside its

@@ -1,0 +1,118 @@
+using System.Collections.Concurrent;
+using Agent.App;
+using Agent.Settings;
+using Domain.Agents;
+using Domain.Contracts;
+using Domain.DTOs;
+using Domain.DTOs.Channel;
+using Domain.Monitor;
+using Infrastructure.Clients.Channels;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging.Abstractions;
+using Tests.Unit;
+using Tests.Unit.Domain;
+
+namespace Tests.Integration.Tunnels;
+
+// The agent's side of a household's channel server, run as the deployment runs it: channel endpoints
+// naming servers, followed through the relay's openings of every household's tunnel of that name, a
+// connection made per household as its tunnel first opens and added to the live set the monitor
+// reads, and the monitor admitting each turn as it does. The model is the one stand-in: each turn's
+// agent answers with the household and agent it was built for, so a test sees who answered.
+internal sealed class TunnelledAgent : IAsyncDisposable
+{
+    private static readonly IReadOnlyList<AgentCatalogEntry> _catalog = [new AgentCatalogEntry("jonas", "Jonas", "the assistant")];
+
+    private readonly CancellationTokenSource _stopping = new();
+    private readonly ChannelConnectionHost _host;
+    private readonly Task _monitoring;
+
+    private TunnelledAgent(ChannelConnectionHost host, LiveConnectionSet<IChannelConnection> connections,
+        HouseholdAnsweringFactory factory, ChatMonitor monitor)
+    {
+        _host = host;
+        Connections = connections;
+        Factory = factory;
+        _monitoring = monitor.Monitor(_stopping.Token);
+    }
+
+    public LiveConnectionSet<IChannelConnection> Connections { get; }
+
+    public HouseholdAnsweringFactory Factory { get; }
+
+    public static async Task<TunnelledAgent> StartAsync(RelayHost relay, params ChannelEndpoint[] endpoints)
+    {
+        var connections = new LiveConnectionSet<IChannelConnection>([]);
+        var host = new ChannelConnectionHost(
+            endpoints, [], () => _catalog, NullLogger<ChannelConnectionHost>.Instance,
+            ownServers: relay.ChannelServers,
+            householdConnection: (endpoint, household) =>
+            {
+                var connection = new McpChannelConnection(
+                    endpoint.ChannelId, endpoint.AttachOnly, healthCheckInterval: TimeSpan.FromMilliseconds(200),
+                    callTokens: McpTestSecret.CallTokens)
+                {
+                    HostsReviewCopies = endpoint.HostsReviewCopies,
+                    Household = household
+                };
+                connections.Add(connection);
+                return connection;
+            });
+        var factory = new HouseholdAnsweringFactory();
+        var monitor = new ChatMonitor(
+            connections, factory, MonitorTestMocks.CreateThreadResolver(), new RecordingMetricsPublisher(), null,
+            NullLogger<ChatMonitor>.Instance, TestAssertions.Verifier(), delegations: TestDelegations.Verifier());
+        var agent = new TunnelledAgent(host, connections, factory, monitor);
+        await host.StartAsync(CancellationToken.None);
+        return agent;
+    }
+
+    public static ChannelEndpoint Endpoint(string serverName, bool attachOnly = false) =>
+        new() { ChannelId = serverName, Endpoint = serverName, AttachOnly = attachOnly };
+
+    // The household's connection of that channel, once its tunnel has opened.
+    public IChannelConnection? ConnectionOf(string channelId, string household) =>
+        Connections.FirstOrDefault(c => c.ChannelId == channelId && c.Household.HouseholdId == household);
+
+    public async ValueTask DisposeAsync()
+    {
+        await _stopping.CancelAsync();
+        await _host.StopAsync(CancellationToken.None);
+        _host.Dispose();
+        try
+        {
+            await _monitoring;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        _stopping.Dispose();
+    }
+}
+
+// Builds each turn's agent for the household it is asked for and has it say so.
+internal sealed class HouseholdAnsweringFactory : IAgentFactory
+{
+    private readonly ConcurrentQueue<(string? TenantId, string? AgentId, Account? Account)> _created = new();
+
+    public IReadOnlyList<(string? TenantId, string? AgentId, Account? Account)> Created => [.. _created];
+
+    public static string AnswerFor(string? tenantId, string? agentId) => $"{agentId} of {tenantId ?? "nobody"} answering";
+
+    public Task<DisposableAgent> CreateAsync(
+        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
+        string? tenantId = null, CancellationToken ct = default)
+    {
+        _created.Enqueue((tenantId, agentId, account));
+        return Task.FromResult<DisposableAgent>(new FakeAiAgent
+        {
+            UpdatesToYield = [new AgentResponseUpdate { Contents = [new TextContent(AnswerFor(tenantId, agentId))] }]
+        });
+    }
+
+    public DisposableAgent CreateSubAgent(
+        SubAgentDefinition definition, IToolApprovalHandler approvalHandler, SpawnContext spawn) =>
+        throw new NotSupportedException();
+}

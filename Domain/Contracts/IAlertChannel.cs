@@ -11,10 +11,8 @@ namespace Domain.Contracts;
 // Not connected is three behaviours, like the five of IChannelConnection: Alerts yields nothing
 // until the server is connected again, an offer is false, and a settle returns silently.
 [PublicAPI]
-public interface IAlertChannel
+public interface IAlertChannel : IHouseholdChannel
 {
-    string ChannelId { get; }
-
     // Everything this channel's server raised, for as long as the connection object lives: alerts to
     // ring, and alerts it stopped where they were raised.
     IAsyncEnumerable<AlertSignal> Alerts { get; }

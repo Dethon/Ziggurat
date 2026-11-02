@@ -28,7 +28,7 @@ namespace Domain.Monitor;
 // changing it is a local edit rather than an argument spread across ChatMonitor.
 internal sealed class ConversationGroup(
     AgentKey agentKey,
-    IReadOnlyList<IChannelConnection> channels,
+    IConnectionSet<IChannelConnection> channels,
     IAgentFactory agentFactory,
     DeliveryTargetResolver targetResolver,
     ChatThreadResolver threadResolver,
@@ -723,7 +723,9 @@ internal sealed class ConversationGroup(
             ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, x.Message.AgentId))
             : (x.Channel, agentKey);
         // Asked where the delivery anchors, and offered to the turn's person wherever else they are.
-        var approvals = new ApprovalRelay(approvalChannel, channels, logger, TimeProvider.System);
+        var approvals = new ApprovalRelay(
+            approvalChannel, channels.Serving(HouseholdChannels.HouseholdOfTurn(x.Message, x.Channel)), logger,
+            TimeProvider.System);
         // The household the verified identity names — the guest's too, who has no account — is the
         // one whose own servers the agent reaches.
         var tenantId = x.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null;

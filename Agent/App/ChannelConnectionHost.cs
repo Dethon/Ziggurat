@@ -11,11 +11,16 @@ namespace Agent.App;
 // which endpoint each one is. Everything after that — connect, register, watch, reconnect,
 // re-register — is the connection's own run.
 //
-// An endpoint is a deployment server's URL, run once for the host's lifetime, or a household server's
-// name: that server is not dialled but reached through its tunnel, so its connection is run once per
-// opening of the tunnel and lets go when the opening closes, and the next opening is a run of its own.
+// An endpoint is a deployment server's URL, run once for the host's lifetime on the connection made
+// for it at startup, or a household server's name: that server is not dialled but reached through
+// its tunnel, and each household's tunnel of that name is a connection of that household's. The
+// connection is made the first time the household opens the tunnel (householdConnection, which also
+// adds it wherever the agent reads its connections) and kept: it is run once per opening and lets go
+// when the opening closes, so between openings it is not connected (ADR 0011), and the next opening
+// is a run of its own on the same connection.
 public class ChannelConnectionHost(
     ChannelEndpoint[] endpoints,
+    // The connections of the endpoints dialled by URL, made at startup.
     IReadOnlyList<IMcpChannelConnection> connections,
     Func<IReadOnlyList<AgentCatalogEntry>> agentCatalog,
     ILogger<ChannelConnectionHost> logger,
@@ -31,7 +36,10 @@ public class ChannelConnectionHost(
     IOwnChannelServers? ownServers = null,
     // Completes once the catalogue has been read (HomeAgentCatalog.FirstRead), so the first
     // registration is the agents rather than an empty list. None waits for nothing.
-    Task? catalogRead = null) : BackgroundService
+    Task? catalogRead = null,
+    // Makes the connection of a household's own channel server, once per household and endpoint, and
+    // adds it to the agent's connections; without it such an endpoint is never run.
+    Func<ChannelEndpoint, ChannelHousehold, IMcpChannelConnection>? householdConnection = null) : BackgroundService
 {
     private readonly Dictionary<string, string> _endpointMap = BuildEndpointMap(endpoints);
 
@@ -51,64 +59,69 @@ public class ChannelConnectionHost(
             await catalogRead.WaitAsync(stoppingToken);
         }
 
-        var endpointMap = _endpointMap;
-
-        var connectionIds = connections.Select(c => c.ChannelId).ToHashSet();
-        foreach (var orphan in endpoints.Where(e => !connectionIds.Contains(e.ChannelId)))
+        var resolved = endpoints
+            .Select(e => (Endpoint: e, Target: McpServerEndpoint.Of(_endpointMap[e.ChannelId], server => credentials?.For(server))))
+            .ToList();
+        var dialled = connections.ToDictionary(c => c.ChannelId, StringComparer.Ordinal);
+        foreach (var orphan in resolved.Where(e => !e.Target.NamesOwnServer && !dialled.ContainsKey(e.Endpoint.ChannelId)))
         {
             logger.LogWarning(
                 "Endpoint {ChannelId} ({Endpoint}) matches no registered channel connection and will never be run",
-                orphan.ChannelId, orphan.Endpoint);
+                orphan.Endpoint.ChannelId, orphan.Endpoint.Endpoint);
         }
 
-        var runs = connections
-            .Where(c => endpointMap.ContainsKey(c.ChannelId))
-            .Select(conn =>
+        var runs = resolved
+            .Select(e =>
             {
-                var endpoint = McpServerEndpoint.Of(endpointMap[conn.ChannelId], server => credentials?.For(server));
-                if (endpoint.NamesOwnServer)
+                if (e.Target.NamesOwnServer)
                 {
-                    return FollowAsync(conn, endpoint.Address, stoppingToken);
+                    return FollowAsync(e.Endpoint, e.Target.Address, stoppingToken);
                 }
 
-                logger.LogInformation("Running channel {ChannelId} against {Endpoint}", conn.ChannelId, endpoint.Address);
-                return conn.RunAsync(endpoint, agentCatalog, stoppingToken);
+                if (!dialled.TryGetValue(e.Endpoint.ChannelId, out var conn))
+                {
+                    return Task.CompletedTask;
+                }
+
+                logger.LogInformation("Running channel {ChannelId} against {Endpoint}", conn.ChannelId, e.Target.Address);
+                return conn.RunAsync(e.Target, agentCatalog, stoppingToken);
             });
 
         await Task.WhenAll(runs);
     }
 
-    // One run at a time, each bound to its opening: a newer opening of the same server replaces the
-    // old (whose run is finished first, since one connection holds one client), and an opening that
-    // closes ends its run, leaving the channel not connected until the server opens its tunnel again.
-    private async Task FollowAsync(IMcpChannelConnection connection, string serverName, CancellationToken ct)
+    // Each household's tunnel of the server is followed on its own: one run at a time per household,
+    // each bound to its opening. A newer opening of the same household's server replaces the old
+    // (whose run is finished first, since one connection holds one client), an opening that closes
+    // ends its run, and no household's opening touches another's run.
+    private async Task FollowAsync(ChannelEndpoint endpoint, string serverName, CancellationToken ct)
     {
-        if (ownServers is null)
+        if (ownServers is null || householdConnection is null)
         {
             logger.LogWarning(
                 "Channel {ChannelId} names the household server {ServerName}, but this agent has no tunnels; it will never be run",
-                connection.ChannelId, serverName);
+                endpoint.ChannelId, serverName);
             return;
         }
 
         logger.LogInformation(
-            "Channel {ChannelId} follows the home household's server {ServerName} through its tunnel",
-            connection.ChannelId, serverName);
-        CancellationTokenSource? current = null;
-        var run = Task.CompletedTask;
+            "Channel {ChannelId} follows every household's server {ServerName} through its tunnel",
+            endpoint.ChannelId, serverName);
+        var followed = new Dictionary<string, Following>(StringComparer.Ordinal);
         try
         {
             await foreach (var opening in ownServers.WatchAsync(serverName, ct))
             {
-                if (current is not null)
+                if (followed.TryGetValue(opening.HouseholdId, out var previous))
                 {
-                    await current.CancelAsync();
-                    await run;
-                    current.Dispose();
+                    await previous.EndAsync();
                 }
 
-                current = CancellationTokenSource.CreateLinkedTokenSource(ct, opening.Closed);
-                run = RunOpeningAsync(connection, serverName, opening, current.Token);
+                var connection = previous?.Connection
+                                 ?? householdConnection(endpoint, ChannelHousehold.Own(opening.HouseholdId, opening.Home));
+                var current = CancellationTokenSource.CreateLinkedTokenSource(ct, opening.Closed);
+                followed[opening.HouseholdId] = new Following(
+                    connection, current, RunOpeningAsync(connection, serverName, opening, current.Token));
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -116,9 +129,7 @@ public class ChannelConnectionHost(
         }
         finally
         {
-            current?.Cancel();
-            await run;
-            current?.Dispose();
+            await Task.WhenAll(followed.Values.Select(f => f.EndAsync()));
         }
     }
 
@@ -126,13 +137,24 @@ public class ChannelConnectionHost(
         IMcpChannelConnection connection, string serverName, OwnServerOpening opening, CancellationToken ct)
     {
         logger.LogInformation(
-            "Running channel {ChannelId} through the tunnel of {ServerName}", connection.ChannelId, serverName);
+            "Running channel {ChannelId} through the tunnel of household {Household}'s {ServerName}",
+            connection.ChannelId, opening.HouseholdId, serverName);
         await connection.RunAsync(opening.Endpoint, agentCatalog, ct);
         if (opening.Closed.IsCancellationRequested)
         {
             logger.LogWarning(
-                "The tunnel of {ServerName} closed; channel {ChannelId} is not connected until it opens again",
-                serverName, connection.ChannelId);
+                "The tunnel of household {Household}'s {ServerName} closed; its channel {ChannelId} is not connected until it opens again",
+                opening.HouseholdId, serverName, connection.ChannelId);
+        }
+    }
+
+    private sealed record Following(IMcpChannelConnection Connection, CancellationTokenSource Current, Task Run)
+    {
+        public async Task EndAsync()
+        {
+            await Current.CancelAsync();
+            await Run;
+            Current.Dispose();
         }
     }
 

@@ -10,12 +10,12 @@ public static class AlertModule
     extension(IServiceCollection services)
     {
         // An insistent alert is rung on every channel connection that can show one, so the relay is
-        // handed every connection the chat monitor holds: the timers server's raises the alert, and
-        // the chat client's and Telegram's show it.
+        // handed the connections the chat monitor holds, live: the timers server's raises the alert,
+        // and the chat client's and Telegram's show it.
         public IServiceCollection AddAlertRinging() =>
             services
                 .AddSingleton(sp => new AlertRelay(
-                    sp.GetServices<IChannelConnection>().OfType<IAlertChannel>().ToList(),
+                    sp.GetRequiredService<IConnectionSet<IChannelConnection>>().As<IAlertChannel>(),
                     new RingingAlerts(),
                     sp.GetRequiredService<ILogger<AlertRelay>>(),
                     sp.GetRequiredService<TimeProvider>()))

@@ -238,29 +238,23 @@ public static class InjectorModule
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
         {
-            foreach (var endpoint in settings.ChannelEndpoints)
+            // A channel server's /mcp is gated like every other deployment server's, so each run of a
+            // connection — and every reconnect it makes — presents that server's credential, which the
+            // host hands it with the endpoint (a household server's tunnel presents its own). The
+            // channels dialled by URL each have one connection serving every household, made here; a
+            // household server named by its server name has one per household, made by the host as
+            // that household first opens its tunnel.
+            foreach (var endpoint in settings.ChannelEndpoints.Where(e => !NamesOwnServer(e)))
             {
-                var channelId = endpoint.ChannelId;
-                var attachOnly = endpoint.AttachOnly;
-                var hostsReviewCopies = endpoint.HostsReviewCopies;
-                // A channel server's /mcp is gated like every other deployment server's, so each run
-                // of the connection — and every reconnect it makes — presents that server's
-                // credential, which the host hands it with the endpoint (a household server's tunnel
-                // presents its own).
-                services = services.AddSingleton<IChannelConnection>(sp =>
-                    new McpChannelConnection(
-                        channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
-                        callTokens: sp.GetRequiredService<CallTokens>())
-                    {
-                        HostsReviewCopies = hostsReviewCopies
-                    });
+                services = services.AddSingleton<IChannelConnection>(sp => ConnectionFor(sp, endpoint, ChannelHousehold.Every));
             }
 
             return services
-                .AddSingleton<IReadOnlyList<IChannelConnection>>(sp =>
-                    sp.GetServices<IChannelConnection>().ToList())
+                .AddSingleton(sp => new LiveConnectionSet<IChannelConnection>(sp.GetServices<IChannelConnection>()))
+                .AddSingleton<IConnectionSet<IChannelConnection>>(sp =>
+                    sp.GetRequiredService<LiveConnectionSet<IChannelConnection>>())
                 .AddSingleton<IAttachmentSource>(sp => new ChannelAttachmentSource(
-                    sp.GetRequiredService<IReadOnlyList<IChannelConnection>>(),
+                    sp.GetRequiredService<IConnectionSet<IChannelConnection>>(),
                     sp.GetService<ILogger<ChannelAttachmentSource>>()))
                 .AddSingleton<ChatMonitor>()
                 .AddHostedService<ChatMonitoring>()
@@ -278,11 +272,29 @@ public static class InjectorModule
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>(),
                         sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default,
                         sp.GetRequiredService<McpCredentials>(),
-                        // A channel endpoint naming a household server follows the home household's
-                        // tunnel of that name (the relay's, AddTunnelRelay).
+                        // A channel endpoint naming a household server follows that server's tunnels
+                        // (the relay's, AddTunnelRelay).
                         sp.GetService<IOwnChannelServers>(),
-                        sp.GetRequiredService<HomeAgentCatalog>().FirstRead));
+                        sp.GetRequiredService<HomeAgentCatalog>().FirstRead,
+                        (endpoint, household) =>
+                        {
+                            var connection = ConnectionFor(sp, endpoint, household);
+                            sp.GetRequiredService<LiveConnectionSet<IChannelConnection>>().Add(connection);
+                            return connection;
+                        }));
         }
+
+        private static bool NamesOwnServer(ChannelEndpoint endpoint) =>
+            McpServerEndpoint.Of(endpoint.Endpoint, _ => null).NamesOwnServer;
+
+        private static McpChannelConnection ConnectionFor(
+            IServiceProvider sp, ChannelEndpoint endpoint, ChannelHousehold household) =>
+            new(endpoint.ChannelId, endpoint.AttachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
+                callTokens: sp.GetRequiredService<CallTokens>())
+            {
+                HostsReviewCopies = endpoint.HostsReviewCopies,
+                Household = household
+            };
 
         private IServiceCollection AddRedis(RedisConfiguration config, RetentionSettings retention)
         {

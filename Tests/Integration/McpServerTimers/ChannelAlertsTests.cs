@@ -59,7 +59,7 @@ public sealed class ChannelAlertsTests : IAsyncLifetime
             await ConnectAsync("signalr", webchat.Endpoint),
             await ConnectAsync("telegram", telegram.Endpoint)
         };
-        _ = new AlertRelay(connections, new RingingAlerts(), NullLogger<AlertRelay>.Instance, TimeProvider.System).RunAsync(_stopping.Token);
+        _ = new AlertRelay(ConnectionSet.Of<IAlertChannel>(connections), new RingingAlerts(), NullLogger<AlertRelay>.Instance, TimeProvider.System).RunAsync(_stopping.Token);
 
         // The timers server raises a ring only for an agent polling as it fires (gate-on-live).
         await Eventually.Until(

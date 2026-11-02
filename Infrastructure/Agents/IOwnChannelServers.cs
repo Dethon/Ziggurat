@@ -14,4 +14,7 @@ public interface IOwnChannelServers
     IAsyncEnumerable<OwnServerOpening> WatchAsync(string serverName, CancellationToken ct);
 }
 
-public sealed record OwnServerOpening(McpServerEndpoint Endpoint, CancellationToken Closed);
+// The opening's household is the tunnel credential's, verified by the accounts service as it opened;
+// Home says that household is the operator's.
+public sealed record OwnServerOpening(
+    McpServerEndpoint Endpoint, CancellationToken Closed, string HouseholdId, bool Home);
