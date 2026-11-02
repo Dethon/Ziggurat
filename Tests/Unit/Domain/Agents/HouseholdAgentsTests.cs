@@ -143,12 +143,58 @@ public class HouseholdAgentsTests
         agents.Problems.ShouldHaveSingleItem().ShouldContain("retired");
     }
 
+    // Which of the own servers an agent names its household never set up, asked at each turn: every
+    // one it holds no live credential for, each once, whatever agent names it — a renamed one, a
+    // second one from the template — and beside the shared servers its features withhold.
+    [Fact]
+    public void NotSetUp_IsEveryOwnServerNamedThatTheHouseholdHoldsNoCredentialFor()
+    {
+        var agents = HouseholdAgents.Of(Household(
+            new AgentsSection
+            {
+                Agents =
+                [
+                    new HouseholdAgent { Id = "ana", Template = "jonas", Name = "Ana" },
+                    new HouseholdAgent { Id = "jonas-2", Template = "jonas", Name = "Jonas Two" },
+                    new HouseholdAgent { Id = "sugary", Template = "sugary", Name = "Sugary" }
+                ]
+            },
+            features: new FeaturesSection { Scheduling = false, Idealista = true },
+            ownServers: ["vault", "printer"]), _shared);
+
+        var named = agents.Agents.SelectMany(a => a.McpServerEndpoints).ToList();
+
+        agents.NotSetUp(named).ShouldBe(["sandbox", "websearch"]);
+        agents.NotSetUp(agents.Find("sugary")!.McpServerEndpoints).ShouldBeEmpty();
+        agents.WithheldServers.ShouldBe(["http://mcp-scheduling:8080/mcp"]);
+    }
+
+    [Fact]
+    public void NotSetUp_ForAViewThatNamesNoOwnServers_IsEveryOneNamed()
+    {
+        var agents = HouseholdAgents.Of(Household(new AgentsSection(), ownServers: null), _shared);
+
+        agents.NotSetUp(["vault", "http://mcp-timers:8080/mcp", "websearch"]).ShouldBe(["vault", "websearch"]);
+    }
+
+    // The home's every server is its own, and agents a stack names in code reach whatever it hosts.
+    [Fact]
+    public void NotSetUp_ForTheHome_OrAgentsNoHouseholdGave_IsNone()
+    {
+        var home = HouseholdAgents.Of(Household(new AgentsSection(), ownServers: null) with { IsHome = true }, _shared);
+
+        home.NotSetUp(["vault", "homeassistant"]).ShouldBeEmpty();
+        HouseholdAgents.Fixed([]).NotSetUp(["vault"]).ShouldBeEmpty();
+    }
+
     private static AgentHouseholdConfig Household(
-        AgentsSection agents, HouseholdSettings? settings = null, FeaturesSection? features = null) =>
+        AgentsSection agents, HouseholdSettings? settings = null, FeaturesSection? features = null,
+        IReadOnlyList<string>? ownServers = null) =>
         new("h1", IsHome: false,
             settings ?? new HouseholdSettings { Name = "Casa", TimeZone = "Europe/Madrid" },
             agents,
             features ?? new FeaturesSection { Idealista = true },
             new SpacesSection(),
-            OpenRouterApiKey: null);
+            OpenRouterApiKey: null,
+            OwnServers: ownServers);
 }
