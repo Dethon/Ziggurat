@@ -82,6 +82,10 @@ public sealed record HouseholdConfigQuery(
 // are the user ids of the members an owner disabled: the agent refuses their turns and believes no
 // delegation naming them, so nothing it does acts for them until they are re-enabled. Suspended is the
 // operator's word that the household runs nothing: the agent refuses its turns and fires by it.
+// OwnServers are the server names of its own servers the household set up — those it holds a live
+// tunnel credential for, a machine's never among them — whether or not one is connected now; the
+// agent's household withholds every other own server its agents name. None (an accounts service
+// from before it) is none set up.
 [PublicAPI]
 public sealed record AgentHouseholdConfig(
     string HouseholdId,
@@ -92,7 +96,8 @@ public sealed record AgentHouseholdConfig(
     SpacesSection Spaces,
     string? OpenRouterApiKey,
     IReadOnlyList<string>? DisabledPeople = null,
-    bool Suspended = false)
+    bool Suspended = false,
+    IReadOnlyList<string>? OwnServers = null)
 {
     // The key goes over the wire in clear, as the agent needs it; printed — a log line, an assertion's
     // message, the HouseholdAgents built from it — it says only whether there is one.
@@ -100,7 +105,8 @@ public sealed record AgentHouseholdConfig(
     {
         builder.Append($"HouseholdId = {HouseholdId}, IsHome = {IsHome}, Settings = {Settings}, Agents = {Agents}, ");
         builder.Append($"Features = {Features}, Spaces = {Spaces}, OpenRouterApiKey = {(OpenRouterApiKey is null ? "none" : "[set]")}, ");
-        builder.Append($"DisabledPeople = [{string.Join(", ", DisabledPeople ?? [])}], Suspended = {Suspended}");
+        builder.Append($"DisabledPeople = [{string.Join(", ", DisabledPeople ?? [])}], Suspended = {Suspended}, ");
+        builder.Append($"OwnServers = [{string.Join(", ", OwnServers ?? [])}]");
         return true;
     }
 }

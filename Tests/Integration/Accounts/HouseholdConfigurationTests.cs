@@ -7,8 +7,10 @@ using System.Text.Json.Nodes;
 using Accounts.Commands;
 using Accounts.Signing;
 using Accounts.Store;
+using Accounts.Tunnels;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
+using Domain.Outposts;
 using Domain.Prompts;
 using Domain.Security;
 using Domain.Security.Sealing;
@@ -478,6 +480,27 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
 
         (await RefusalAsync(byId, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.UnknownHousehold);
         (await RefusalAsync(byToken, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.UnknownHousehold);
+    }
+
+    // Which of its own servers a household set up: a server name it holds a live tunnel credential
+    // for, each once — a revoked one's name is gone, and a machine's credential never names one.
+    [Fact]
+    public async Task TheAgentsView_NamesTheOwnServersTheHouseholdHoldsALiveCredentialFor()
+    {
+        await using var server = await StartAsync();
+        var household = await server.SeedHouseholdAsync("Casa");
+        var credentials = server.Service<TunnelCredentialStore>();
+        await credentials.MintAsync(household, "vault", CancellationToken.None);
+        await credentials.MintAsync(household, "vault", CancellationToken.None);
+        await credentials.MintAsync(household, "websearch", CancellationToken.None);
+        var printer = await credentials.MintAsync(household, "printer", CancellationToken.None);
+        await credentials.MintAsync(household, OutpostServerName.For("vault"), CancellationToken.None);
+        await credentials.RevokeAsync(printer!.Id, CancellationToken.None);
+        var other = await server.SeedHouseholdAsync("Otra");
+        await credentials.MintAsync(other, "sandbox", CancellationToken.None);
+
+        (await AgentViewAsync(server, household)).OwnServers.ShouldBe(["vault", "websearch"]);
+        (await AgentViewAsync(server, other)).OwnServers.ShouldBe(["sandbox"]);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using Accounts.Store;
 using Domain.DTOs.Tunnel;
+using Domain.Outposts;
 using Microsoft.EntityFrameworkCore;
 
 namespace Accounts.Tunnels;
@@ -125,6 +126,16 @@ public sealed class TunnelCredentialStore(
                 .Select(t => new ListedTunnelCredential(t.Id, t.TenantId, t.ServerName, t.CreatedAt, t.RevokedAt))
         ];
     }
+
+    // The names of the household's own servers it set up — those it holds a live credential for, each
+    // once — and never a machine's: an outpost named `vault` is not the household's vault server.
+    public async Task<IReadOnlyList<string>> SetUpServersAsync(string tenantId, CancellationToken ct) =>
+    [
+        .. (await LiveOfAsync(tenantId, ct))
+            .Select(t => t.ServerName)
+            .Where(name => OutpostServerName.NameOf(name) is null)
+            .Distinct()
+    ];
 
     // Revoking one already revoked tells the listeners again, so running the command once more is
     // the retry when they could not be told the first time.
