@@ -4,21 +4,26 @@ using Microsoft.AspNetCore.Http;
 
 namespace Infrastructure.Tunnels;
 
-// The browse pages a person opens from a link, answered by the household's web search at its own
-// site: every exchange under /browse goes down that server's tunnel to its pages listener as it
-// came, so the page's own rules — one claim per link, the cookie that binds the view, the origin
-// check on the live view's socket — are the server's and unchanged. With the server offline, the
-// person is told so on a page of the relay's own.
+// The browse pages a person opens from a link, answered by the web search of the household the link
+// names (BrowsePagePath) at its own site: every exchange under /browse/<household> goes down that
+// household's server's tunnel to its pages listener as it came, so the page's own rules — one claim
+// per link, the cookie that binds the view, the origin check on the live view's socket — are the
+// server's and unchanged. With that server offline, the person is told so on a page of the relay's
+// own; another household's web search is never asked instead, the home's included.
 //
-// Which household's web search a link is for: the home household's, in this phase
-// (TunnelRegistry.FindHome).
+// A link naming no household was minted by a web search from before links named one, when every link
+// was the home's: it still goes to the home's, so a kit not yet rebuilt keeps its links working.
 public sealed class BrowsePages(TunnelForwarder forwarder)
 {
-    public const string Path = "/browse";
+    public const string Path = BrowsePagePath.Root;
 
     public Task ForwardAsync(HttpContext context) =>
-        forwarder.ForwardHomeAsync(
-            context, HouseholdServerNames.WebSearch, TunnelProtocol.PagesTag, context.Request.Path, [], OfflineAsync);
+        BrowsePagePath.HouseholdOf(context.Request.Path) is { } household
+            ? forwarder.ForwardAsync(
+                context, household, HouseholdServerNames.WebSearch, TunnelProtocol.PagesTag, context.Request.Path, [],
+                OfflineAsync)
+            : forwarder.ForwardHomeAsync(
+                context, HouseholdServerNames.WebSearch, TunnelProtocol.PagesTag, context.Request.Path, [], OfflineAsync);
 
     private static async Task OfflineAsync(HttpContext context, string reason)
     {

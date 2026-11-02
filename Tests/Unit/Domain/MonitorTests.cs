@@ -218,6 +218,8 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public string ChannelId { get; init; } = "test-channel";
 
+    public ChannelHousehold Household { get; init; } = ChannelHousehold.Every;
+
     public bool AttachOnly { get; init; }
 
     public bool HostsReviewCopies { get; init; }
@@ -268,8 +270,17 @@ internal sealed class FakeChannelConnection : IChannelConnection
         return Task.FromResult<ToolApprovalResult?>(ToolApprovalResult.Approved);
     }
 
-    public Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
-        Task.FromResult<ToolApprovalResult?>(null);
+    public List<ApprovalAsk> OfferedApprovals { get; } = [];
+
+    public Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct)
+    {
+        lock (OfferedApprovals)
+        {
+            OfferedApprovals.Add(ask);
+        }
+
+        return Task.FromResult<ToolApprovalResult?>(null);
+    }
 
     public Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct) =>
         Task.CompletedTask;

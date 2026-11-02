@@ -258,7 +258,7 @@ public class ChatMonitorDeliveryIdentityTests
 
     private static Task RunAsync(IReadOnlyList<IChannelConnection> channels) =>
         new ChatMonitor(
-            channels,
+            ConnectionSet.Of(channels),
             MonitorTestMocks.CreateAgentFactory(ReplyingAgent()),
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher([]),

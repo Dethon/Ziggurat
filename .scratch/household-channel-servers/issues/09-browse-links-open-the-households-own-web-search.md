@@ -6,8 +6,8 @@ that household's web search is not connected, the person gets the offline page. 
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A non-home household's browse link opens a page served by that household's web search (round trip, browse pages)
-- [ ] With that household's web search not connected, the link shows the offline page and never the home's web search
-- [ ] The home's browse links are unchanged
+- [x] A non-home household's browse link opens a page served by that household's web search (round trip, browse pages)
+- [x] With that household's web search not connected, the link shows the offline page and never the home's web search
+- [x] The home's browse links are unchanged

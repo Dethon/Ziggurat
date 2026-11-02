@@ -33,6 +33,21 @@ public sealed class TunnelCredentialClient(HttpClient http, string credential)
         return new TunnelVerdict.Opens(await response.Content.ReadFromJsonAsync<TunnelCredentialVerified>(ct)
                                        ?? throw new HttpRequestException("The accounts service answered with no body."));
     }
+
+    // Who holds a server of that name, for the key commands; an outage throws, never an empty list,
+    // since an empty one would let a retirement strand delegations nobody was asked for.
+    public async Task<IReadOnlyList<TunnelServerHolder>> HoldersAsync(string serverName, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, TunnelCredentialProtocol.HoldersPath.TrimStart('/'))
+        {
+            Content = JsonContent.Create(new TunnelServerHoldersQuery(serverName))
+        };
+        request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(credential));
+        using var response = await http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<IReadOnlyList<TunnelServerHolder>>(ct)
+               ?? throw new HttpRequestException("The accounts service answered with no body.");
+    }
 }
 
 public abstract record TunnelVerdict

@@ -117,7 +117,10 @@ A household's agent starts from a shipped template (CONTEXT.md, "Agent template"
 `Domain/Prompts/Agents/<name>.md`, embedded as the sections are, read by `AgentTemplates` into an
 `AgentDefinition` whose id is the file's name. Today: `jonas`, a barebones general assistant that
 dials the shared servers (scheduling, timers, Sugary, Idealista) and the tenant kit's own servers by
-name, with files, workers and memory, and `sugary`, the estimator. A template's own server reaches a
+name, with files, workers and memory; `sugary`, the estimator; and `nabu`, the home's Nabu without
+the home — the voice section and its spoken-reply tuning, the kit's own servers by name but not Home
+Assistant, the household's language rather than a pinned one — under the id voice's channel default
+names, which an owner adds and no household starts with. A template's own server reaches a
 turn only where the household set it up (`.claude/rules/household-config.md`, "The agents a household
 runs"). The header is the definition — `name`, `purpose`, `agent-name` (the name a
 household starts with), `model`, `reasoning-effort`, `provider-routing` (one JSON object on its line,
@@ -126,8 +129,10 @@ a threshold an object as a seeded definition's is), `servers`, `features`, `whit
 identity section reads after the agent's name; a template fills no placeholder and has no parts or
 claims. An unknown key fails the document. A household gives a template its id, its name and its
 custom instructions (`.claude/rules/household-config.md`, "The agents a household runs"); everything
-else is the template's. The prompt snapshots are the home's seeded agents' (the eval's copies), not
-the templates'.
+else is the template's. The prompt snapshots are the home's seeded agents' (the eval's copies), and
+the voice template's beside them (`prompt.template.nabu.txt`, `AgentPromptFixture`'s `template.` ids,
+as a household runs it before its owner says anything), since what a household's spoken agent is told
+is otherwise nowhere a reviewer reads it.
 
 ## A skill is a section the model reads on demand
 

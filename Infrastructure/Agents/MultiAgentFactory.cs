@@ -76,10 +76,7 @@ public sealed class MultiAgentFactory(
             ? null
             : agents.FirstOrDefault(a => a.Id == agentId);
 
-        _ = definition ?? throw new InvalidOperationException(
-            string.IsNullOrEmpty(agentId)
-                ? "No agent id was supplied and no default agent is configured for the channel."
-                : $"No agent found for identifier '{agentId}'.");
+        _ = definition ?? throw new AgentNotFoundException(agentId, household.HouseholdId ?? householdId);
 
         // Only the household's own agents' endpoints present a deployment credential: they are its
         // configuration's, which its owner cannot point anywhere, where a person's registered agent

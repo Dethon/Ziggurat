@@ -290,6 +290,50 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
+    // The key commands ask through the agent who holds a server of a name: the home always, every
+    // household with a live credential for it — a suspended one too, since its server keeps its
+    // delegations — and nobody whose credentials are revoked or for another server.
+    [Fact]
+    public async Task TheHoldersOfAServer_AreTheHomeAndEveryHouseholdWithALiveCredentialForIt()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var casa = await server.SeedHouseholdAsync("Casa");
+        var piso = await server.SeedHouseholdAsync("Piso");
+        var cabana = await server.SeedHouseholdAsync("Cabaña");
+        var otro = await server.SeedHouseholdAsync("Otro");
+        await server.MintTunnelCredentialAsync(casa, "homeassistant");
+        await server.MintTunnelCredentialAsync(piso, "homeassistant");
+        var revoked = await server.MintTunnelCredentialAsync(cabana, "homeassistant");
+        await server.RunAsync(AccountsCommand.RevokeTunnelCredential, "--id", revoked.Id);
+        await server.MintTunnelCredentialAsync(otro, "vault");
+        await using (var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync())
+        {
+            (await db.Tenants.SingleAsync(t => t.Id == piso)).SuspendedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+        }
+
+        var response = await HoldersAsync(server, "homeassistant");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<List<TunnelServerHolder>>())!.ShouldBe(
+        [
+            new TunnelServerHolder(fran.TenantId, "Home", Home: true, Suspended: false),
+            new TunnelServerHolder(casa, "Casa", Home: false, Suspended: false),
+            new TunnelServerHolder(piso, "Piso", Home: false, Suspended: true)
+        ]);
+    }
+
+    [Fact]
+    public async Task AskingForTheHoldersAsAChannelServer_Is403()
+    {
+        await using var server = await StartAsync();
+
+        var response = await HoldersAsync(server, "homeassistant", caller: VoiceCredential);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
     // A household's server on its accounts back-call is shown here by its own tunnel credential: it
     // may ask about voice in its household, and about nothing the relay asks — so a server cannot
     // verify another's credential with its own.
@@ -373,6 +417,17 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
     {
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
         return (await response.Content.ReadFromJsonAsync<TunnelCredentialRefused>())!.Reason;
+    }
+
+    private static Task<HttpResponseMessage> HoldersAsync(
+        AccountsServer server, string serverName, string caller = AgentCredential)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, TunnelCredentialProtocol.HoldersPath)
+        {
+            Content = JsonContent.Create(new TunnelServerHoldersQuery(serverName))
+        };
+        request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(caller));
+        return server.Client().SendAsync(request);
     }
 
     private static Task<HttpResponseMessage> VerifyAsync(

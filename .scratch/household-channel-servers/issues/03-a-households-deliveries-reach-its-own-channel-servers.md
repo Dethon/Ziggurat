@@ -12,10 +12,10 @@ tunnel the request came through. Spec: `../spec.md`.
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A household's scheduled reminder delivering to voice reaches its own voice server and not another household's (round trip)
-- [ ] A topic created ahead for an attach-only target is created on the household's own connection
-- [ ] An attachment is fetched from the connection of the household that took it
-- [ ] Topic creation through a household's tunnel refuses another household's person
-- [ ] The home's deliveries are unchanged
+- [x] A household's scheduled reminder delivering to voice reaches its own voice server and not another household's (round trip)
+- [x] A topic created ahead for an attach-only target is created on the household's own connection
+- [x] An attachment is fetched from the connection of the household that took it
+- [x] Topic creation through a household's tunnel refuses another household's person
+- [x] The home's deliveries are unchanged

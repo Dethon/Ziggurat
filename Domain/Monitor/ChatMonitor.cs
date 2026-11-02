@@ -11,7 +11,9 @@ using Microsoft.Extensions.Logging;
 namespace Domain.Monitor;
 
 public class ChatMonitor(
-    IReadOnlyList<IChannelConnection> channels,
+    // The connections the agent holds and every one it comes to hold: a household's own channel
+    // server's appears when its tunnel first opens, after the monitor started.
+    IConnectionSet<IChannelConnection> channels,
     IAgentFactory agentFactory,
     ChatThreadResolver threadResolver,
     IMetricsPublisher metricsPublisher,
@@ -52,6 +54,13 @@ public class ChatMonitor(
     // presenting what it was never given.
     public const string DelegationRefusedErrorType = "DelegationRefused";
 
+    // A turn whose verified household is not the household of the channel connection it came on: a
+    // household's own server is believed for that household alone, so this is a server misbehaving.
+    public const string WrongHouseholdErrorType = "WrongHousehold";
+
+    // A turn naming an agent its household does not have.
+    public const string AgentNotFoundErrorType = "AgentNotFound";
+
     // A turn of a member an owner disabled, refused before anything was built for it.
     public const string AccountDisabledErrorType = "AccountDisabled";
 
@@ -73,6 +82,7 @@ public class ChatMonitor(
         try
         {
             var merged = channels
+                .WatchAsync(cancellationToken)
                 .Select(ch => ch.Messages.Select(async ValueTask<(IChannelConnection Channel, ChannelMessage Message)> (m, ct) =>
                     (ch, await RouteToAgentAsync(m, ct))))
                 .Merge(cancellationToken);

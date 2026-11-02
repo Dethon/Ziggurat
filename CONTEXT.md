@@ -676,8 +676,9 @@ _Avoid_: auth middleware, gate (for the decision), login check
 
 **Household agent catalogue**:
 A household's agents as a channel shows and checks them for a person of it: the household's own
-agents on the models it runs them on, with what the deployment decides about models. The catalogue
-the agent registers with its channels is the home's agents, never a household's list.
+agents on the models it runs them on, with what the deployment decides about models. A household's
+own channel server is told its household's catalogue; a channel the deployment dials serves every
+household and is told the home's agents, never read as a household's list.
 _Avoid_: agent catalog (for a household's), registered catalogue (for a household's), agent list
 
 ## Outposts

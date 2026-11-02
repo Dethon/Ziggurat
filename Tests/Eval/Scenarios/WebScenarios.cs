@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Prompts;
 using Domain.Tools.Web;
 using Tests.Eval.Fixtures;
@@ -665,7 +666,7 @@ public static class WebScenarios
         {
             // The link the tool answered, which nothing but the call could have produced. Up to the
             // path's last word, because the check matches at a word boundary and the token follows.
-            Mentions = [new SpokenValue("the handoff link", $"{EvalWeb.HandoffBase}/browse/handoff")],
+            Mentions = [new SpokenValue("the handoff link", $"{EvalWeb.HandoffBase}{BrowsePagePath.For(EvalRun.Tenant)}/handoff")],
             // Stopping means not claiming an answer the wall kept from it.
             NeverSays = ["4471", "enviado el martes"]
         },
@@ -717,7 +718,7 @@ public static class WebScenarios
         Reply = new ReplyExpectation
         {
             Mentions = [new SpokenValue("that a login is needed", "inicia", "iniciar sesión", "entrar", "sesión", "log in", "login")],
-            NeverSays = ["4471", "enviado el martes", "/browse/handoff/"]
+            NeverSays = ["4471", "enviado el martes", $"{BrowsePagePath.For(EvalRun.Tenant)}/handoff/"]
         },
         Claims =
         [

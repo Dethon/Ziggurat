@@ -48,7 +48,7 @@ public static class HandoffPage
             <p class="lead">Each link opens once and for {minutes} minutes. Ask again and you will get a fresh one.</p></main>
             """);
 
-    public static string Viewer(string token, int minutes) => Page("Log in",
+    public static string Viewer(string pages, string token, int minutes) => Page("Log in",
         $$"""
         <main>
           <h1 id="title">Log in</h1>
@@ -72,6 +72,8 @@ public static class HandoffPage
         <script>
         (() => {
           const token = {{System.Text.Json.JsonSerializer.Serialize(token)}};
+          // This household's pages (BrowsePagePath): every request the page makes stays under them.
+          const pages = {{System.Text.Json.JsonSerializer.Serialize(pages)}};
           const frame = document.getElementById('frame');
           const status = document.getElementById('status');
           const keys = document.getElementById('keys');
@@ -128,7 +130,7 @@ public static class HandoffPage
           done.addEventListener('click', async () => {
             done.disabled = true;
             const remember = document.getElementById('remember');
-            const answer = await fetch('/browse/handoff/done', {
+            const answer = await fetch(pages + '/handoff/done', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ remember: remember ? remember.checked : true })
             });
@@ -137,7 +139,7 @@ public static class HandoffPage
           });
 
           const connect = () => {
-            ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/browse/handoff/live');
+            ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + pages + '/handoff/live');
             ws.binaryType = 'blob';
             ws.onmessage = e => {
               const next = URL.createObjectURL(e.data);
@@ -148,7 +150,7 @@ public static class HandoffPage
           };
 
           (async () => {
-            const claim = await fetch('/browse/handoff/' + encodeURIComponent(token) + '/claim', { method: 'POST' });
+            const claim = await fetch(pages + '/handoff/' + encodeURIComponent(token) + '/claim', { method: 'POST' });
             if (!claim.ok) { finish(['This link has been used or has run out', 'Each link opens once and for {{minutes}} minutes. Ask again and you will get a fresh one.']); return; }
             const { site, canRemember } = await claim.json();
             document.getElementById('title').textContent = 'Log in to ' + site;
@@ -164,7 +166,7 @@ public static class HandoffPage
         </script>
         """);
 
-    public static string Logins(string token, int minutes) => Page("Your logins",
+    public static string Logins(string pages, string token, int minutes) => Page("Your logins",
         $$"""
         <main>
           <h1>Logins the agent can use as you</h1>
@@ -174,6 +176,8 @@ public static class HandoffPage
         <script>
         (() => {
           const token = {{System.Text.Json.JsonSerializer.Serialize(token)}};
+          // This household's pages (BrowsePagePath): every request the page makes stays under them.
+          const pages = {{System.Text.Json.JsonSerializer.Serialize(pages)}};
           const list = document.getElementById('sites');
           const when = at => at ? new Date(at).toLocaleString() : 'not yet';
           const alertNote = (row, text) => { const n = document.createElement('div'); n.className = 'note error'; n.textContent = text; row.append(n); };
@@ -197,7 +201,7 @@ public static class HandoffPage
               const forget = document.createElement('button'); forget.type = 'button'; forget.textContent = 'Forget';
               forget.addEventListener('click', async () => {
                 forget.disabled = true;
-                const answer = await fetch('/browse/logins/forget', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site: s.site }) });
+                const answer = await fetch(pages + '/logins/forget', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site: s.site }) });
                 if (answer.ok) load();
                 else if (answer.status === 409) { forget.disabled = false; alertNote(row, 'Finish or leave the login you have open first.'); }
                 else say('This page has run out', 'Ask the agent for a fresh link to your logins.');
@@ -206,12 +210,12 @@ public static class HandoffPage
             }
           };
           const load = async () => {
-            const answer = await fetch('/browse/logins/sites');
+            const answer = await fetch(pages + '/logins/sites');
             if (!answer.ok) { say('This page has run out', 'Ask the agent for a fresh link to your logins.'); return; }
             render(await answer.json());
           };
           (async () => {
-            const claim = await fetch('/browse/logins/' + encodeURIComponent(token) + '/claim', { method: 'POST' });
+            const claim = await fetch(pages + '/logins/' + encodeURIComponent(token) + '/claim', { method: 'POST' });
             if (!claim.ok) { say('This link has been used or has run out', 'Each link opens once and for {{minutes}} minutes. Ask again and you will get a fresh one.'); return; }
             load();
           })();

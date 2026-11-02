@@ -47,6 +47,8 @@ public sealed class SuspensionCoverageTests
         ["/accounts/internal/telegram/of-account"] =
             "exempt: names a linked Telegram for an approval a turn asked, and no turn of a suspended household runs",
         ["/accounts/internal/tunnels/verify"] = "refuses: TunnelCredentialRefusal.Suspended, TunnelCredentialStore",
+        ["/accounts/internal/tunnels/holders"] =
+            "exempt: names a suspended household's servers to the key commands on purpose, so its delegations are not stranded by a retirement",
         ["/accounts/internal/household-config/agent"] =
             "refuses: the agent's view says Suspended, which the agent refuses turns, fires, dreaming and extraction by",
         ["/accounts/internal/household-config/people"] =

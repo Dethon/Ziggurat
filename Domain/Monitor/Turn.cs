@@ -14,7 +14,10 @@ internal sealed record Turn(
     IReadOnlyList<DeliveryTarget> Targets,
     LatencyScope FirstReply,
     string TurnKey,
-    IdentityClaims? Identity = null)
+    IdentityClaims? Identity = null,
+    // The household whose own connection the message came on, none for a channel serving every
+    // household: whose server still holds the message's files.
+    string? ChannelHouseholdId = null)
 {
     // The same fact the group already tests when it announces a turn start, read here so a reply
     // and the announce cannot disagree about what started this turn.

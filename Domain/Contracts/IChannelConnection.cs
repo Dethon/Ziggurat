@@ -5,10 +5,8 @@ using JetBrains.Annotations;
 namespace Domain.Contracts;
 
 [PublicAPI]
-public interface IChannelConnection
+public interface IChannelConnection : IHouseholdChannel
 {
-    string ChannelId { get; }
-
     // Attach-only channels (declared per endpoint in config) cannot own a conversation:
     // their create_conversation hands back the id it is given instead of persisting a
     // topic, so delivery fan-out must never let them anchor the shared conversation id.

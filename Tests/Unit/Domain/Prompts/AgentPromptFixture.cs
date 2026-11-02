@@ -107,13 +107,22 @@ internal static class AgentPromptFixture
 
     public static AgentDefaults AgentDefaults => TestAgents.Repository.Defaults;
 
+    // A shipped template's snapshot id, kept apart from the home's agent of the same name.
+    private const string TemplatePrefix = "template.";
+
     // Every agent and worker a snapshot is kept for: the two people talk to, the worker the
-    // delegating ones spawn, and the one her carb-counting app reaches.
-    public static IReadOnlyList<string> SnapshotIds { get; } = ["jonas", "nabu", "jonas-worker", "sugary"];
+    // delegating ones spawn, the one her carb-counting app reaches, and the voice template, whose
+    // prompt is what every household's agent that answers aloud is told — the home's Nabu is not.
+    public static IReadOnlyList<string> SnapshotIds { get; } =
+        ["jonas", "nabu", "jonas-worker", "sugary", TemplatePrefix + AgentTemplates.Nabu];
 
     public static PromptAssembly Assemble(string id)
     {
-        var agent = Agents.FirstOrDefault(a => a.Id == id);
+        // As a household runs it before its owner said anything: the template's own name, no custom
+        // instructions, and no language, which is the household's.
+        var agent = id.StartsWith(TemplatePrefix, StringComparison.Ordinal)
+            ? AgentTemplates.Named(id[TemplatePrefix.Length..])
+            : Agents.FirstOrDefault(a => a.Id == id);
         var worker = SubAgents.FirstOrDefault(a => a.Id == id);
 
         return agent is not null

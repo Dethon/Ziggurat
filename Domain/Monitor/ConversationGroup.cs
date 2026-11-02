@@ -28,7 +28,7 @@ namespace Domain.Monitor;
 // changing it is a local edit rather than an argument spread across ChatMonitor.
 internal sealed class ConversationGroup(
     AgentKey agentKey,
-    IReadOnlyList<IChannelConnection> channels,
+    IConnectionSet<IChannelConnection> channels,
     IAgentFactory agentFactory,
     DeliveryTargetResolver targetResolver,
     ChatThreadResolver threadResolver,
@@ -66,6 +66,11 @@ internal sealed class ConversationGroup(
     internal const string WithoutKeyAnswer =
         "Your household has no OpenRouter key set, so its assistant cannot answer yet. Ask whoever runs it to add one.";
 
+    // What a person at a channel that only attaches (a satellite) is told when their household has no
+    // agent of the id the channel addresses: what to add, and where.
+    internal const string NoAgentHereAnswer =
+        "Your household has no voice agent yet, so nobody answers here. An owner can add one on the Agents page.";
+
     // The outer token: it ends with the monitor, not with a turn. The two establishing stages
     // that reach outside — minting the delivery targets and restoring the thread — run on it
     // rather than on the per-turn token, so a /cancel arriving mid-establish lets them finish
@@ -96,6 +101,9 @@ internal sealed class ConversationGroup(
     // A turn the group has taken: the message as the agent believes it — its principal's account the
     // one its assertion or its delegation verified — and the identity that verified, which the turn
     // acts for to its end. Null for a fire no delegation stands behind, which acts for nobody.
+    // The household this conversation is, once a turn naming one arrived or its topic said.
+    private string? _household;
+
     private sealed record AdmittedTurn(IChannelConnection Channel, ChannelMessage Message, IdentityClaims? Identity);
 
     private sealed record GroupState(
@@ -225,8 +233,7 @@ internal sealed class ConversationGroup(
                     logger.LogError(ex,
                         "The message pump failed for conversation {ConversationId} and agent {AgentId}; ending the group",
                         agentKey.ConversationId, agentKey.AgentId);
-                    CancelOwnContext();
-                    await ObserveAbandonedWarmupAsync();
+                    await EndFailedSetupAsync();
                     break;
                 }
 
@@ -267,8 +274,15 @@ internal sealed class ConversationGroup(
                     // Refused before any model was asked. The group ends as a failed setup does, so the
                     // next message is built afresh and runs once the household has set a key.
                     await RefuseWithoutKeyAsync(x, ex.HouseholdId);
-                    CancelOwnContext();
-                    await ObserveAbandonedWarmupAsync();
+                    await EndFailedSetupAsync();
+                    break;
+                }
+                catch (AgentNotFoundException ex)
+                {
+                    // The household has no agent of that id. Ends the group as a failed setup does, so
+                    // the next message is built afresh — once an owner adds the agent it answers.
+                    await RefuseWithoutAgentAsync(x, ex);
+                    await EndFailedSetupAsync();
                     break;
                 }
                 catch (Exception ex)
@@ -282,8 +296,7 @@ internal sealed class ConversationGroup(
                     logger.LogError(ex,
                         "Turn setup failed for conversation {ConversationId} and agent {AgentId}; ending the group",
                         agentKey.ConversationId, agentKey.AgentId);
-                    CancelOwnContext();
-                    await ObserveAbandonedWarmupAsync();
+                    await EndFailedSetupAsync();
                     break;
                 }
 
@@ -314,6 +327,13 @@ internal sealed class ConversationGroup(
                 LogDroppedTurn(logger, message);
             }
         }
+    }
+
+    // A setup that failed ends the group, so the next message opens a fresh one.
+    private async Task EndFailedSetupAsync()
+    {
+        CancelOwnContext();
+        await ObserveAbandonedWarmupAsync();
     }
 
     // A setup that exits before the deterministic wait on the warmup — the /cancel that
@@ -377,7 +397,8 @@ internal sealed class ConversationGroup(
                         // channel it always lands, so a message read just as teardown
                         // cancels the pump still reaches the pending queue, where the
                         // teardown drain names it instead of losing it to a cancelled write.
-                        if (await AdmitAsync(x) is { } admitted)
+                        if (await AdmitAsync(x) is { } admitted
+                            && !await RefusedForAnotherHouseholdsConversationAsync(admitted))
                         {
                             writer.TryWrite(admitted);
                         }
@@ -423,6 +444,11 @@ internal sealed class ConversationGroup(
         switch (await assertions.VerifyTurnAsync(x.Message.Assertion, x.Channel.ChannelId, _groupCt))
         {
             case TurnAdmission.Admitted { Identity: var identity }:
+                if (await RefusedForAnotherHouseholdAsync(x.Channel, x.Message, [identity.TenantId]))
+                {
+                    return null;
+                }
+
                 if (await StandingRefusalAsync([identity.TenantId], identity) is { } refusal)
                 {
                     await RefuseByStandingAsync(x.Channel, x.Message, refusal);
@@ -454,7 +480,13 @@ internal sealed class ConversationGroup(
             ? new FireAdmission.Undelegated(null)
             : await delegations.VerifyFireAsync(fire, _groupCt);
         var person = admission is FireAdmission.Delegated { Identity: var delegated } ? delegated : null;
-        if (await StandingRefusalAsync([fire.HouseholdId, person?.TenantId], person) is { } refusal)
+        if (await RefusedForAnotherHouseholdAsync(channel, fire, [fire.HouseholdId, person?.TenantId]))
+        {
+            return null;
+        }
+
+        if (await StandingRefusalAsync(
+                [fire.HouseholdId, person?.TenantId, HouseholdChannels.HouseholdOf(channel).HouseholdId], person) is { } refusal)
         {
             await RefuseByStandingAsync(channel, fire, refusal);
             return null;
@@ -471,7 +503,7 @@ internal sealed class ConversationGroup(
                 logger.LogWarning(
                     "A {Kind} fire on {ChannelId} for conversation {ConversationId} runs as nobody: its delegation was not believed ({Reason})",
                     fire.Origin!.Kind, channel.ChannelId, fire.ConversationId, reason);
-                metricsPublisher.Publish(new ErrorEvent
+                metricsPublisher.ForHousehold(HouseholdChannels.HouseholdOf(channel).HouseholdId).Publish(new ErrorEvent
                 {
                     Service = "agent",
                     ErrorType = ChatMonitor.DelegationRefusedErrorType,
@@ -481,6 +513,83 @@ internal sealed class ConversationGroup(
         }
 
         return new AdmittedTurn(channel, framed with { Principal = null }, null);
+    }
+
+    // A household's own server is believed for that household alone: a message on its connection that
+    // names another — a person's or the guest's assertion, a fire's delegation or the household its
+    // server keeps the object under — is a server misbehaving or a token replayed, and is refused
+    // before anything is built, named with both households. A connection serving every household (a
+    // channel the deployment dials) has nothing to compare.
+    private async Task<bool> RefusedForAnotherHouseholdAsync(
+        IChannelConnection channel, ChannelMessage message, IReadOnlyList<string?> named)
+    {
+        if (HouseholdChannels.HouseholdOf(channel).HouseholdId is not { } own
+            || named.FirstOrDefault(h => h is not null && h != own) is not { } claimed)
+        {
+            return false;
+        }
+
+        logger.LogWarning(
+            "Refused a {What} on {ChannelId} for conversation {ConversationId}: it names household {Claimed}, but came through household {Household}'s own server",
+            message.Origin is null ? "turn" : "fire", channel.ChannelId, message.ConversationId, claimed, own);
+        metricsPublisher.ForHousehold(own).Publish(new ErrorEvent
+        {
+            Service = "agent",
+            ErrorType = ChatMonitor.WrongHouseholdErrorType,
+            Message = $"A message on household {own}'s {channel.ChannelId} for conversation {message.ConversationId} named household {claimed}"
+        });
+        if (message.Origin is null)
+        {
+            await AnswerRefusedAsync(channel, message, RefusedTurnAnswer);
+        }
+
+        return true;
+    }
+
+    // A conversation is one household's: the household of the first turn that named one, else the one
+    // its topic records. A household's own server naming another household's conversation — live in this
+    // group, or kept under its topic — is refused before it joins it or its history is read. A turn
+    // naming no household (nobody, on a deployment channel) is not compared.
+    private async Task<bool> RefusedForAnotherHouseholdsConversationAsync(AdmittedTurn x)
+    {
+        if (HouseholdChannels.HouseholdOfTurn(x.Message, x.Channel) is not { } household)
+        {
+            return false;
+        }
+
+        try
+        {
+            _household ??= await threadResolver.HouseholdOfAsync(agentKey, _groupCt) ?? household;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !_groupCt.IsCancellationRequested)
+        {
+            // Whose conversation it is could not be read just now: never taken for granted, and never a
+            // reason to end the group — refused as a standing that could not be read is.
+            logger.LogWarning(ex, "Could not read which household conversation {ConversationId} is", x.Message.ConversationId);
+            await RefuseByStandingAsync(x.Channel, x.Message, new StandingRefusal.Unchecked(household));
+            return true;
+        }
+
+        if (_household == household)
+        {
+            return false;
+        }
+
+        logger.LogWarning(
+            "Refused a message on {ChannelId}: conversation {ConversationId} is household {Holder}'s, and the message is household {Household}'s",
+            x.Channel.ChannelId, x.Message.ConversationId, _household, household);
+        metricsPublisher.ForHousehold(household).Publish(new ErrorEvent
+        {
+            Service = "agent",
+            ErrorType = ChatMonitor.WrongHouseholdErrorType,
+            Message = $"A message of household {household} on {x.Channel.ChannelId} named conversation {x.Message.ConversationId}, which is household {_household}'s"
+        });
+        if (x.Message.Origin is null)
+        {
+            await AnswerRefusedAsync(x.Channel, x.Message, RefusedTurnAnswer);
+        }
+
+        return true;
     }
 
     // Why a household would not have the agent act on a message whose sender or delegation was believed:
@@ -601,7 +710,8 @@ internal sealed class ConversationGroup(
         logger.LogWarning(
             "Refused a turn on {ChannelId} for conversation {ConversationId}: its assertion was not believed ({Reason})",
             channel.ChannelId, message.ConversationId, reason);
-        metricsPublisher.Publish(new ErrorEvent
+        // Under the household whose own server sent it, if one did: nothing else about it is believed.
+        metricsPublisher.ForHousehold(HouseholdChannels.HouseholdOf(channel).HouseholdId).Publish(new ErrorEvent
         {
             Service = "agent",
             ErrorType = ChatMonitor.AssertionRefusedErrorType,
@@ -629,6 +739,26 @@ internal sealed class ConversationGroup(
         if (x.Message.Origin is null)
         {
             await AnswerRefusedAsync(x.Channel, x.Message, WithoutKeyAnswer);
+        }
+    }
+
+    // Refused for an agent its household does not have, counted as that household's. A channel that
+    // only attaches (voice) has a person waiting on a satellite that would otherwise sit silent for its
+    // whole reply timeout, so it is told; the other channels refuse as they always have.
+    private async Task RefuseWithoutAgentAsync(AdmittedTurn x, AgentNotFoundException refusal)
+    {
+        logger.LogWarning(
+            "Refused a turn on {ChannelId} for conversation {ConversationId}: household {Household} has no agent {AgentId}",
+            x.Channel.ChannelId, x.Message.ConversationId, refusal.HouseholdId ?? "home", refusal.AgentId);
+        metricsPublisher.ForHousehold(refusal.HouseholdId).Publish(new ErrorEvent
+        {
+            Service = "agent",
+            ErrorType = ChatMonitor.AgentNotFoundErrorType,
+            Message = $"A turn on {x.Channel.ChannelId} for conversation {x.Message.ConversationId} named agent {refusal.AgentId}, which household {refusal.HouseholdId ?? "home"} does not have"
+        });
+        if (x.Channel.AttachOnly && x.Message.Origin is null)
+        {
+            await AnswerRefusedAsync(x.Channel, x.Message, NoAgentHereAnswer);
         }
     }
 
@@ -723,10 +853,17 @@ internal sealed class ConversationGroup(
             ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, x.Message.AgentId))
             : (x.Channel, agentKey);
         // Asked where the delivery anchors, and offered to the turn's person wherever else they are.
-        var approvals = new ApprovalRelay(approvalChannel, channels, logger, TimeProvider.System);
+        var approvals = new ApprovalRelay(
+            approvalChannel, channels.Serving(HouseholdChannels.HouseholdOfTurn(x.Message, x.Channel)), logger,
+            TimeProvider.System);
         // The household the verified identity names — the guest's too, who has no account — is the
         // one whose own servers the agent reaches.
-        var tenantId = x.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null;
+        // A turn acting for nobody is still the household it came through or its fire names: a
+        // download notice, a watch or a schedule whose delegation no longer holds is answered by that
+        // household's own agent, never the home's.
+        var tenantId = x.Identity is { TenantId.Length: > 0 } identity
+            ? identity.TenantId
+            : HouseholdChannels.HouseholdOfTurn(x.Message, x.Channel);
         var agent = _agent = await agentFactory.CreateAsync(
             deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account, tenantId, _groupCt);
         var thread = await GetOrRestoreThread(agent, deliveryKey);
@@ -761,7 +898,8 @@ internal sealed class ConversationGroup(
         // (voice does). Everything else arrives without one, and gets one here, so from this point
         // on every turn has a key whichever channel the message came from.
         var turn = new Turn(
-            x.Message, targets, firstReply, x.Message.TurnKey ?? TurnKey.Mint(), x.Identity);
+            x.Message, targets, firstReply, x.Message.TurnKey ?? TurnKey.Mint(), x.Identity,
+            HouseholdChannels.HouseholdOf(x.Channel).HouseholdId);
         // Agent-initiated turns (downloads, schedules) land in conversations with no live
         // stream on the receiving channel; announce the turn so the channel can set one up
         // before reply chunks arrive.
@@ -850,6 +988,8 @@ internal sealed class ConversationGroup(
         userMessage.SetAttachments(message.Attachments);
         userMessage.SetAttachmentChannelId(
             message.Attachments is { Count: > 0 } ? message.ChannelId : null);
+        userMessage.SetAttachmentHouseholdId(
+            message.Attachments is { Count: > 0 } ? turn.ChannelHouseholdId : null);
         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
         // Who the turn acts for rides on its context, which every call the turn makes carries: the
         // agent signs each one as this identity, a worker's included, for as long as the turn runs.

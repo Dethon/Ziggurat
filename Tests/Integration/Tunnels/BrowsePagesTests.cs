@@ -25,9 +25,12 @@ using Tests.Unit;
 namespace Tests.Integration.Tunnels;
 
 // The browse pages as a person's browser gets them from a link: through the relay, which the proxy
-// sends /browse/* to, down the household's web search tunnel to its pages listener. The web search
-// server is the real one, told only a hub, a credential and its name; its link is minted by a
-// web_login the agent calls through the same tunnel, and everything after is driven at the relay.
+// sends /browse/* to, down the web search tunnel of the household the link names to its pages
+// listener. The web search server is the real one, told only a hub, a credential and its name; its
+// link is minted by a web_login the agent calls through the same tunnel, and everything after is
+// driven at the relay. The servers of two households share the test's Redis, so a link one minted is
+// live in the other's one-time links too: what tells them apart is the handoff each holds in memory,
+// and the browser each records input on.
 public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>, IAsyncLifetime
 {
     private const string AgentCredential = "agent-credential";
@@ -38,11 +41,13 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
 
     private readonly RecordingMetricsPublisher _metrics = new();
     private readonly FakeHandoffBrowser _browser = new();
+    private readonly FakeHandoffBrowser _casaBrowser = new();
     private readonly string _keyDirectory = Path.Combine(Path.GetTempPath(), "tunnel-tests", Guid.NewGuid().ToString("N"));
     private AccountsServer _accounts = null!;
     private RelayHost _relay = null!;
     private SigningKeyStore _keys = null!;
     private string _household = null!;
+    private Account _lucia = null!;
 
     public async Task InitializeAsync()
     {
@@ -52,6 +57,8 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
             Redis = new() { ConnectionString = redis.ConnectionString }
         });
         _household = (await _accounts.MintOperatorAsync("Fran")).TenantId;
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        _lucia = new Account(casa, lucia);
         await redis.Connection.GetDatabase().KeyDeleteAsync($"websearch:person:{Fran}");
         _keys = SigningKeyStore.Open(new SigningKeySettings { KeyDirectory = _keyDirectory });
         _relay = await RelayHost.StartAsync(_accounts, AgentCredential, redis.ConnectionString, _keys, _metrics);
@@ -67,35 +74,28 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
     [Fact]
     public async Task AHandoffLinkItsClaimAndItsLiveView_WorkThroughTheTunnel()
     {
-        await using var server = await StartWebSearchAsync();
-        var link = await CallAsync("web_login", new() { ["url"] = "https://shop.test/login" });
+        await using var server = await StartWebSearchAsync(_household, _browser);
+        var link = await CallAsync(Home, "web_login", new() { ["url"] = "https://shop.test/login" });
         var (browser, cookies) = NewBrowserSession();
 
         (await browser.GetAsync(link)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await browser.PostAsync($"{link}/claim", null)).EnsureSuccessStatusCode();
-        using var socket = new ClientWebSocket();
-        socket.Options.Cookies = cookies;
-        // The page's own origin, which the server compares with the host the browser asked for.
-        socket.Options.SetRequestHeader("Origin", _relay.Address);
-        await socket.ConnectAsync(new Uri($"{_relay.Address.Replace("http", "ws")}/browse/handoff/live"), CancellationToken.None);
-        var frame = await socket.ReceiveAsync(new byte[1024], CancellationToken.None);
-        await socket.SendAsync(Encoding.UTF8.GetBytes("""{"type":"text","value":"fran@example.test"}"""),
-            WebSocketMessageType.Text, true, CancellationToken.None);
+        using var view = await TypeIntoTheLiveViewAsync(_household, cookies, "fran@example.test");
 
-        frame.MessageType.ShouldBe(WebSocketMessageType.Binary);
         await Eventually.Until(() => _browser.Inputs.Count == 1, "the input to reach the tab");
         _browser.Inputs.ShouldBe([new HandoffInput.Text("fran@example.test")]);
-        (await browser.PostAsync("/browse/handoff/done", Json("""{"remember":false}"""))).StatusCode
+        (await browser.PostAsync($"{Pages(_household)}/handoff/done", Json("""{"remember":false}"""))).StatusCode
             .ShouldBe(HttpStatusCode.NoContent);
     }
 
     // Behind the proxy the browser spoke https: the claim's cookie says Secure because the proxy's
-    // X-Forwarded-Proto reaches the page as the proxy set it.
+    // X-Forwarded-Proto reaches the page as the proxy set it. It is sent back to its own household's
+    // pages alone, so no other household's web search is ever handed this view's key.
     [Fact]
-    public async Task AClaimBehindTheProxy_BindsASecureCookie()
+    public async Task AClaimBehindTheProxy_BindsASecureCookie_ToItsHouseholdsPages()
     {
-        await using var server = await StartWebSearchAsync();
-        var link = await CallAsync("web_login", new() { ["url"] = "https://shop.test/login" });
+        await using var server = await StartWebSearchAsync(_household, _browser);
+        var link = await CallAsync(Home, "web_login", new() { ["url"] = "https://shop.test/login" });
         using var proxied = new HttpClient(new HttpClientHandler { UseCookies = false }) { BaseAddress = new Uri(_relay.Address) };
         using var claim = new HttpRequestMessage(HttpMethod.Post, $"{link}/claim");
         claim.Headers.Add("X-Forwarded-Proto", "https");
@@ -103,27 +103,29 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         var answer = await proxied.SendAsync(claim);
 
         answer.EnsureSuccessStatusCode();
-        answer.Headers.GetValues("Set-Cookie").ShouldHaveSingleItem().ShouldContain("secure", Case.Insensitive);
+        var cookie = answer.Headers.GetValues("Set-Cookie").ShouldHaveSingleItem();
+        cookie.ShouldContain("secure", Case.Insensitive);
+        cookie.ShouldContain($"path={Pages(_household)};", Case.Insensitive);
     }
 
     [Fact]
     public async Task TheLoginsPage_ShowsAndForgetsRememberedLoginsThroughTheTunnel()
     {
-        await using var server = await StartWebSearchAsync();
+        await using var server = await StartWebSearchAsync(_household, _browser);
         _browser.State = ShopState;
         _browser.Hosts = ["shop.test"];
-        var handoff = await CallAsync("web_login", new() { ["url"] = "https://shop.test/login" });
+        var handoff = await CallAsync(Home, "web_login", new() { ["url"] = "https://shop.test/login" });
         var (person, _) = NewBrowserSession();
         (await person.PostAsync($"{handoff}/claim", null)).EnsureSuccessStatusCode();
-        (await person.PostAsync("/browse/handoff/done", Json("""{"remember":true}"""))).EnsureSuccessStatusCode();
-        var logins = await CallAsync("web_logins", []);
+        (await person.PostAsync($"{Pages(_household)}/handoff/done", Json("""{"remember":true}"""))).EnsureSuccessStatusCode();
+        var logins = await CallAsync(Home, "web_logins", []);
         var (page, _) = NewBrowserSession();
 
         (await page.GetAsync(logins)).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await page.PostAsync($"{logins}/claim", null)).EnsureSuccessStatusCode();
-        (await SitesAsync(page)).ShouldBe(["shop.test"]);
-        (await page.PostAsync("/browse/logins/forget", Json("""{"site":"shop.test"}"""))).EnsureSuccessStatusCode();
-        (await SitesAsync(page)).ShouldBeEmpty();
+        (await SitesAsync(page, _household)).ShouldBe(["shop.test"]);
+        (await page.PostAsync($"{Pages(_household)}/logins/forget", Json("""{"site":"shop.test"}"""))).EnsureSuccessStatusCode();
+        (await SitesAsync(page, _household)).ShouldBeEmpty();
     }
 
     [Fact]
@@ -131,23 +133,104 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
     {
         var (browser, _) = NewBrowserSession();
 
-        var answer = await browser.GetAsync("/browse/handoff/anything");
+        var answer = await browser.GetAsync($"{Pages(_household)}/handoff/anything");
 
         answer.StatusCode.ShouldBe(HttpStatusCode.BadGateway);
         answer.Content.Headers.ContentType!.MediaType.ShouldBe("text/html");
         (await answer.Content.ReadAsStringAsync()).ShouldContain("offline");
     }
 
-    private async Task<WebIdentityServerHarness> StartWebSearchAsync()
+    // Both households run a web search; Lucía's link names Casa, and its claim and live view are
+    // answered by Casa's server — the home's holds no such handoff, and its tab never sees the input.
+    [Fact]
+    public async Task AnotherHouseholdsLink_OpensAPageServedByItsOwnWebSearch()
     {
-        var credential = await _accounts.MintTunnelCredentialAsync(_household, HouseholdServerNames.WebSearch);
+        await using var home = await StartWebSearchAsync(_household, _browser);
+        await using var casa = await StartWebSearchAsync(_lucia.TenantId, _casaBrowser);
+        var link = await CallAsync(_lucia, "web_login", new() { ["url"] = "https://shop.test/login" });
+        var (browser, cookies) = NewBrowserSession();
+
+        link.ShouldStartWith($"{Pages(_lucia.TenantId)}/handoff/");
+        (await browser.GetAsync(link)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await browser.PostAsync($"{link}/claim", null)).EnsureSuccessStatusCode();
+        using var view = await TypeIntoTheLiveViewAsync(_lucia.TenantId, cookies, "lucia@example.test");
+
+        await Eventually.Until(() => _casaBrowser.Inputs.Count == 1, "the input to reach Casa's tab");
+        _casaBrowser.Inputs.ShouldBe([new HandoffInput.Text("lucia@example.test")]);
+        _browser.Inputs.ShouldBeEmpty();
+        (await browser.PostAsync($"{Pages(_lucia.TenantId)}/handoff/done", Json("""{"remember":false}"""))).StatusCode
+            .ShouldBe(HttpStatusCode.NoContent);
+    }
+
+    // Casa's web search goes away after minting the link; the home's stays. The link is answered by
+    // the relay's offline page — never by the home's web search, which would show the link's page,
+    // since the two share a Redis here.
+    [Fact]
+    public async Task AnotherHouseholdsLink_WithItsWebSearchNotConnected_ShowsTheOfflinePage_NeverTheHomes()
+    {
+        await using var home = await StartWebSearchAsync(_household, _browser);
+        string link;
+        await using (await StartWebSearchAsync(_lucia.TenantId, _casaBrowser))
+        {
+            link = await CallAsync(_lucia, "web_login", new() { ["url"] = "https://shop.test/login" });
+        }
+
+        await Eventually.Until(
+            () => _relay.Registry.Find(_lucia.TenantId, HouseholdServerNames.WebSearch) is null, "Casa's web search to go");
+        var (browser, _) = NewBrowserSession();
+
+        var answer = await browser.GetAsync(link);
+
+        answer.StatusCode.ShouldBe(HttpStatusCode.BadGateway);
+        answer.Content.Headers.ContentType!.MediaType.ShouldBe("text/html");
+        (await answer.Content.ReadAsStringAsync()).ShouldContain("Your household's browser is offline");
+    }
+
+    // A link minted before links named a household — a kit web search not yet rebuilt still mints
+    // them — is the home's, as every link then was: with the home's web search connected the answer
+    // is that server's (which, rebuilt, has no page there), not the relay's offline page.
+    [Fact]
+    public async Task ALinkNamingNoHousehold_IsForwardedToTheHomesWebSearch()
+    {
+        await using var server = await StartWebSearchAsync(_household, _browser);
+        var (browser, _) = NewBrowserSession();
+
+        var answer = await browser.GetAsync("/browse/handoff/anything");
+
+        answer.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    private Account Home => new(_household, Fran);
+
+    private static string Pages(string household) => BrowsePagePath.For(household);
+
+    // Open until the caller is done with it: a socket closed straight after the send can take the
+    // input with it before the server reads it.
+    private async Task<ClientWebSocket> TypeIntoTheLiveViewAsync(string household, CookieContainer cookies, string text)
+    {
+        var socket = new ClientWebSocket();
+        socket.Options.Cookies = cookies;
+        // The page's own origin, which the server compares with the host the browser asked for.
+        socket.Options.SetRequestHeader("Origin", _relay.Address);
+        await socket.ConnectAsync(
+            new Uri($"{_relay.Address.Replace("http", "ws")}{Pages(household)}/handoff/live"), CancellationToken.None);
+        var frame = await socket.ReceiveAsync(new byte[1024], CancellationToken.None);
+        frame.MessageType.ShouldBe(WebSocketMessageType.Binary);
+        await socket.SendAsync(Encoding.UTF8.GetBytes($$"""{"type":"text","value":"{{text}}"}"""),
+            WebSocketMessageType.Text, true, CancellationToken.None);
+        return socket;
+    }
+
+    private async Task<WebIdentityServerHarness> StartWebSearchAsync(string household, FakeHandoffBrowser browser)
+    {
+        var credential = await _accounts.MintTunnelCredentialAsync(household, HouseholdServerNames.WebSearch);
         var server = await WebIdentityServerHarness.StartAsync(
             configure: services =>
             {
                 services.RemoveAll<IHandoffBrowser>();
-                services.AddSingleton<IHandoffBrowser>(_browser);
+                services.AddSingleton<IHandoffBrowser>(browser);
                 services.RemoveAll<IPersonContexts>();
-                services.AddSingleton<IPersonContexts>(_browser);
+                services.AddSingleton<IPersonContexts>(browser);
                 services.RemoveAll<ILoginSites>();
                 services.AddSingleton<ILoginSites>(sp => sp.GetRequiredService<PersonLogins>());
             },
@@ -162,19 +245,20 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
                 Logins = s.Logins with { StateKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)) }
             });
         await Eventually.Until(
-            () => _relay.Registry.Find(_household, HouseholdServerNames.WebSearch) is not null, "web search's tunnel opens");
+            () => _relay.Registry.Find(household, HouseholdServerNames.WebSearch) is not null, "web search's tunnel opens");
         return server;
     }
 
-    // A tool call of Fran's as the agent makes it, through the tunnel; the path of the link it answers.
-    private async Task<string> CallAsync(string tool, Dictionary<string, object?> arguments)
+    // A tool call of the person's as the agent makes it, through their household's tunnel; the path
+    // of the link it answers.
+    private async Task<string> CallAsync(Account person, string tool, Dictionary<string, object?> arguments)
     {
         await using var agent = await McpClientManager.CreateAsync(
-            "jonas", "fran", "test", [_relay.OwnServers.Resolve(_household, HouseholdServerNames.WebSearch)!],
+            "jonas", person.UserId, "test", [_relay.OwnServers.Resolve(person.TenantId, HouseholdServerNames.WebSearch)!],
             new McpClientHandlers(), callTokens: new CallTokens(_keys, TimeProvider.System));
-        var turn = WebIdentityServerHarness.FromChatClient(new Account(_household, Fran)) with
+        var turn = WebIdentityServerHarness.FromChatClient(person) with
         {
-            Identity = IdentityClaims.Person(Fran, _household, ChannelIds.SignalR, [])
+            Identity = IdentityClaims.Person(person.UserId, person.TenantId, ChannelIds.SignalR, [])
         };
         var result = await agent.Clients.Single().CallToolAsync(new CallToolRequestParams
         {
@@ -191,8 +275,8 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         return (new HttpClient(new HttpClientHandler { CookieContainer = cookies }) { BaseAddress = new Uri(_relay.Address) }, cookies);
     }
 
-    private static async Task<IReadOnlyList<string>> SitesAsync(HttpClient page) =>
-        JsonNode.Parse(await page.GetStringAsync("/browse/logins/sites"))!.AsArray()
+    private static async Task<IReadOnlyList<string>> SitesAsync(HttpClient page, string household) =>
+        JsonNode.Parse(await page.GetStringAsync($"{Pages(household)}/logins/sites"))!.AsArray()
             .Select(site => site!["site"]!.GetValue<string>()).ToList();
 
     private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");

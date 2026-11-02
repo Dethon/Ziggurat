@@ -103,6 +103,9 @@ public sealed class McpChannelConnection(
 
     public bool AttachOnly { get; } = attachOnly;
 
+    // A household's own server's connection serves that household alone; a dialled one, every one.
+    public ChannelHousehold Household { get; init; } = ChannelHousehold.Every;
+
     public bool HostsReviewCopies { get; init; }
 
     public bool IsConnected => _client is not null;

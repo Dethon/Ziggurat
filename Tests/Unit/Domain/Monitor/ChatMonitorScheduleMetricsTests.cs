@@ -166,7 +166,7 @@ public class ChatMonitorScheduleMetricsTests
 
     private static ChatMonitor BuildMonitor(
         IReadOnlyList<IChannelConnection> channels, Mock<IMetricsPublisher> metricsPublisher) => new(
-        channels,
+        ConnectionSet.Of(channels),
         MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
         MonitorTestMocks.CreateThreadResolver(),
         metricsPublisher.Object,

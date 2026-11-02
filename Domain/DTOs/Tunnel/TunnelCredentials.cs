@@ -12,6 +12,10 @@ public static partial class TunnelCredentialProtocol
     // Under the accounts service's internal prefix, which the proxy answers 404 on every host.
     public const string VerifyPath = "/accounts/internal/tunnels/verify";
 
+    // The households that hold a server of a name, for the agent's key commands: a server whose tunnel
+    // is closed keeps its delegations all the same, and only the credential says it exists.
+    public const string HoldersPath = "/accounts/internal/tunnels/holders";
+
     // Where a revocation is published (a TunnelCredentialRevoked, as JSON), so the relay can close
     // the tunnel the credential opened. Pub/sub reaches only who is subscribed at that moment: the
     // relay still verifies on every open, which is what keeps a revoked credential out for good.
@@ -45,6 +49,16 @@ public sealed record TunnelCredentialVerified(string CredentialId, string Tenant
 
 [PublicAPI]
 public sealed record TunnelCredentialRefused(TunnelCredentialRefusal Reason);
+
+// The agent's question for its key commands: who holds a server of this name.
+[PublicAPI]
+public sealed record TunnelServerHoldersQuery(string ServerName);
+
+// A household that holds a live credential for the server asked about — or the home, whose servers the
+// channel endpoints have always named, whether it holds one or not. Suspended says why its tunnel is
+// closed: its credentials stand, and it opens again once resumed.
+[PublicAPI]
+public sealed record TunnelServerHolder(string TenantId, string Name, bool Home, bool Suspended);
 
 // By name on the wire: the relay logs it and reports it on the errors feed for the operator to read.
 [JsonConverter(typeof(JsonStringEnumConverter<TunnelCredentialRefusal>))]

@@ -11,8 +11,8 @@ Each says what it says on the other channels. Spec: `../spec.md`.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A voice turn for an agent the household lacks is answered with the refusal, naming the Agents page (round trip, attach-only)
-- [ ] A suspended household's and a disabled person's voice turns are answered with their refusals
-- [ ] A channel that is not attach-only refuses as it does today
+- [x] A voice turn for an agent the household lacks is answered with the refusal, naming the Agents page (round trip, attach-only)
+- [x] A suspended household's and a disabled person's voice turns are answered with their refusals
+- [x] A channel that is not attach-only refuses as it does today

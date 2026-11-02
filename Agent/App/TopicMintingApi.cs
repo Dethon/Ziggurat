@@ -1,6 +1,8 @@
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Tunnel;
+using Domain.Metrics;
 using Domain.Monitor;
 using Domain.Security;
 using Domain.Security.Signing;
@@ -42,6 +44,24 @@ public static class TopicMintingApi
             }
 
             var identity = ((TurnAdmission.Admitted)admission).Identity;
+            // Through a household's tunnel the relay names that household on the request, whatever its
+            // server sent: a person of another household is never minted for there. A request on the
+            // deployment's own network names none, and nothing it could claim widens what it may mint.
+            if (http.Request.Headers[BackCallProtocol.HouseholdHeader].ToString() is { Length: > 0 } tunnelled
+                && tunnelled != identity.TenantId)
+            {
+                loggers.CreateLogger(nameof(TopicMintingApi)).LogWarning(
+                    "Refused to mint a voice topic for household {Named} through household {Household}'s tunnel",
+                    identity.TenantId, tunnelled);
+                metrics.ForHousehold(tunnelled).Publish(new ErrorEvent
+                {
+                    Service = "agent",
+                    ErrorType = ChatMonitor.WrongHouseholdErrorType,
+                    Message = $"{ChannelIds.Voice} topic mint through household {tunnelled}'s tunnel named household {identity.TenantId}"
+                });
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
             var creation = await topics.CreateAsync(new CreateConversationParams
             {
                 AgentId = request.AgentId,

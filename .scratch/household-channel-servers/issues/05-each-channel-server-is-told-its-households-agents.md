@@ -8,8 +8,8 @@ Spec: `../spec.md`.
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A non-home household's channel server is registered with that household's agents, not the home's (round trip)
-- [ ] Renaming or adding an agent in that household reaches its channel server
-- [ ] The home's channel servers are still registered with the home's agents
+- [x] A non-home household's channel server is registered with that household's agents, not the home's (round trip)
+- [x] Renaming or adding an agent in that household reaches its channel server
+- [x] The home's channel servers are still registered with the home's agents

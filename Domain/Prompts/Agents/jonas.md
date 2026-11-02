@@ -8,9 +8,12 @@
 # workers. Which of the own servers it reaches is what the household set up — a server name it holds
 # a live tunnel credential for — asked at every turn: one it never set up is left out of the turn
 # and never named, since a household told every turn that its vault is offline never had one. The
-# kit's Home Assistant, voice and library are not named: the first two are channels the deployment
-# follows for the home alone. Web search searches and reads pages for any household; its login handoff
-# (web_login) does not reach one other than the home yet, since a browse link names no household.
+# kit's Home Assistant, voice and library are not named as servers this agent dials, though each is a
+# channel the deployment follows for every household that runs it: its watches fire turns, its
+# downloads announce themselves, and voice is answered by a voice agent (the nabu template). This
+# template carries none of the home's Home Assistant or library tuning. Web search searches and reads
+# pages for any household, and its login handoff opens on the household's own web search (a browse
+# link names its household).
 name: jonas
 purpose: A new household's general-purpose personal assistant, named by its owner.
 agent-name: Jonas

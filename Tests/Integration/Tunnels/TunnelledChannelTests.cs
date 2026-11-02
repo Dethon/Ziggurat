@@ -112,11 +112,11 @@ public class TunnelledChannelTests(RedisFixture redis) : IClassFixture<RedisFixt
         var fran = new Account(_household, FranId);
         var credential = await _accounts.MintTunnelCredentialAsync(_household, "homeassistant");
         var port = TestPort.GetAvailable();
-        await using var home = await StartHomeAssistantAsync(port, _relay.Hub, credential.Credential);
+        await using var home = await TunnelledHomeAssistant.StartAsync(port, _relay.Hub, credential.Credential);
         await using var connection = Connection("homeassistant");
         await using var running = await RunAsync(connection, "homeassistant");
         await Eventually.Until(() => _relay.Registry.Find(_household, "homeassistant") is not null, "the home's tunnel opens");
-        await WriteWatchAsync(fran);
+        await TunnelledHomeAssistant.WriteWatchAsync(_relay, fran, TunnelledHomeAssistant.LauraWatch(["telegram"]), _cts.Token);
         var reading = connection.Messages.FirstAsync(_cts.Token).AsTask();
 
         using var http = new HttpClient { BaseAddress = new Uri($"http://localhost:{port}") };
@@ -149,8 +149,8 @@ public class TunnelledChannelTests(RedisFixture redis) : IClassFixture<RedisFixt
     {
         var host = new ChannelConnectionHost(
             [new ChannelEndpoint { ChannelId = connection.ChannelId, Endpoint = serverName }],
-            [connection], () => _catalog, NullLogger<ChannelConnectionHost>.Instance,
-            ownServers: _relay.ChannelServers);
+            [], () => _catalog, NullLogger<ChannelConnectionHost>.Instance,
+            ownServers: _relay.ChannelServers, householdConnection: (_, _) => connection);
         await host.StartAsync(_cts.Token);
         return new Running(host);
     }
@@ -187,57 +187,6 @@ public class TunnelledChannelTests(RedisFixture redis) : IClassFixture<RedisFixt
         catch (Exception)
         {
             return false;
-        }
-    }
-
-    private static async Task<Stopping> StartHomeAssistantAsync(int port, string hub, string credential)
-    {
-        var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
-        builder.Services.ConfigureMcp(new McpSettings
-        {
-            HomeAssistant = new HomeAssistantConfiguration { BaseUrl = "http://home-assistant.test", Token = FakeHomeAssistant.Token },
-            Announce = new AnnounceTokenSettings { Token = "secret" },
-            Delivery = TestDelegations.Delivery,
-            Mcp = new McpGateSettings { Tunnel = TunnelledServer.Quick(hub, credential, "homeassistant") }
-        });
-        var home = new FakeHomeAssistant();
-        builder.Services.AddHttpClient(nameof(IHomeAssistantClient)).ConfigurePrimaryHttpMessageHandler(() => home);
-        var app = builder.Build();
-        app.MapMcp("/mcp");
-        WatchFiredEndpoint.Map(app);
-        await app.StartAsync();
-        return new Stopping(app);
-    }
-
-    // Fran's turn writing the watch, as the agent's filesystem writes it: through the home's tunnel,
-    // signing the call and the delegation for her.
-    private async Task WriteWatchAsync(Account fran)
-    {
-        var endpoint = _relay.OwnServers.Resolve(_household, "homeassistant")!;
-        await using var client = await McpClient.CreateAsync(
-            McpClientManager.Signed(
-                new HttpClientTransport(new HttpClientTransportOptions { Endpoint = new Uri(endpoint.Address) }, endpoint.Through!, ownsHttpClient: false),
-                endpoint.Server!, McpTestSecret.CallTokens),
-            cancellationToken: _cts.Token);
-        var turn = new ConversationContext("jonas", "conv-1", fran.UserId, new ReplyTarget(ChannelIds.SignalR, "conv-1"),
-            Principal: new Principal(ChannelIds.SignalR, fran.UserId, fran),
-            Identity: IdentityClaims.Person(fran.UserId, fran.TenantId, ChannelIds.SignalR, ["member"]));
-        var watch = """
-            {"name":"Laura's sugar","triggers":[{"trigger":"numeric_state","entity_id":"sensor.glucosa_laura","above":180}],
-             "effects":[{"kind":"prompt","prompt":"Look into it and warn Fran."}],"deliverTo":["telegram"]}
-            """;
-        (await new McpFileSystemBackend(client, HaFileSystem.Name, null).As(turn)
-                .CreateAsync("/watches/laura-sugar-high/watch.json", watch, false, true, _cts.Token))
-            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
-    }
-
-    private sealed class Stopping(WebApplication app) : IAsyncDisposable
-    {
-        public async ValueTask DisposeAsync()
-        {
-            await app.StopAsync(CancellationToken.None);
-            await app.DisposeAsync();
         }
     }
 

@@ -14,7 +14,7 @@ namespace Infrastructure.Agents;
 // function-calling iteration of a turn, which for a 20 MB PDF and eight tool calls is eight base64
 // round trips on the critical path before the model says anything.
 public sealed class ChannelAttachmentSource(
-    IReadOnlyList<IChannelConnection> connections,
+    IEnumerable<IChannelConnection> connections,
     ILogger<ChannelAttachmentSource>? logger = null) : IAttachmentSource
 {
     // Bounded by count rather than bytes, and small: a turn hydrates the attachments inside its
@@ -24,18 +24,23 @@ public sealed class ChannelAttachmentSource(
     private readonly ConcurrentDictionary<string, Task<byte[]?>> _cache = new();
     private readonly ConcurrentQueue<string> _order = new();
 
-    public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct)
+    public Task<byte[]?> FetchAsync(string channelId, string attachmentId, CancellationToken ct) =>
+        FetchAsync(channelId, null, attachmentId, ct);
+
+    // Asked of the connection that took the file: a household's own server's for its household, the
+    // deployment's otherwise — never another household's server of the same name.
+    public Task<byte[]?> FetchAsync(string channelId, string? householdId, string attachmentId, CancellationToken ct)
     {
-        var connection = connections.FirstOrDefault(c => c.ChannelId == channelId);
+        var connection = connections.Find(channelId, householdId);
         if (connection is null)
         {
             logger?.LogWarning(
-                "Attachment {AttachmentId} names channel {ChannelId}, which this agent has no connection to",
-                attachmentId, channelId);
+                "Attachment {AttachmentId} names channel {ChannelId} of household {Household}, which this agent has no connection to",
+                attachmentId, channelId, householdId ?? "none");
             return Task.FromResult<byte[]?>(null);
         }
 
-        var key = $"{channelId}/{attachmentId}";
+        var key = $"{channelId}/{householdId}/{attachmentId}";
         if (_cache.TryGetValue(key, out var cached))
         {
             return cached;

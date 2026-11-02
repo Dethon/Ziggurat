@@ -21,7 +21,9 @@ namespace Domain.Monitor;
 // so it is asked on the anchor alone, under that channel's own rule.
 public sealed class ApprovalRelay(
     IChannelConnection anchor,
-    IReadOnlyList<IChannelConnection> channels,
+    // The channels that may be offered the question: the deployment's and the turn's household's own,
+    // read as each question is asked, so a connection that appeared since is offered it too.
+    IEnumerable<IChannelConnection> channels,
     ILogger logger,
     TimeProvider time) : IToolApprovalHandler
 {

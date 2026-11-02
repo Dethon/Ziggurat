@@ -40,7 +40,7 @@ public class WebLoginTool(ILoginHandoffs handoffs)
         try
         {
             link = await handoffs.BeginAsync(
-                ((PersonResolution.Found)resolution).Person, context, uri.ToString(), inChatClient: voice, delegation, ct);
+                ((PersonResolution.Found)resolution).Account, context, uri.ToString(), inChatClient: voice, delegation, ct);
         }
         catch (PersonStateUnreadableException ex)
         {
@@ -116,7 +116,7 @@ public class WebLoginsTool(ILoginsPages pages, ILoginHandoffs handoffs)
         return new JsonObject
         {
             ["status"] = "link_ready",
-            ["link"] = await pages.MintAsync(((PersonResolution.Found)resolution).Person, ct),
+            ["link"] = await pages.MintAsync(((PersonResolution.Found)resolution).Account, ct),
             ["expiresInMinutes"] = handoffs.LinkMinutes,
             ["hint"] = "Give the person this link. It opens once; only they can see or forget their logins there."
         };

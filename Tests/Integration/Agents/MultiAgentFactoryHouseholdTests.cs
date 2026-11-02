@@ -95,13 +95,16 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         prompt.ShouldContain("Today is Saturday, 2026-10-31, in the America/New_York time zone.");
     }
 
+    // Not the voice template: a household answers aloud only once its owner adds an agent to do it.
     [Fact]
-    public async Task ANewHousehold_HasTheTwoShippedTemplates()
+    public async Task ANewHousehold_HasTheTwoStartingTemplates()
     {
         _households.Add(Household, isHome: false, Settings(), new AgentsSection());
         var definitions = Definitions();
 
-        (await definitions.ForHouseholdAsync(Household)).DefaultAgent.ShouldBe("jonas");
+        var agents = await definitions.ForHouseholdAsync(Household);
+        agents.DefaultAgent.ShouldBe("jonas");
+        agents.Agents.Select(a => a.Id).ShouldBe(["jonas", "sugary"], ignoreOrder: true);
         (await TurnAsync("jonas", Household)).ShouldContain("You are Jonas.");
         (await TurnAsync("sugary", Household)).ShouldContain("You are Sugary.");
     }
@@ -234,6 +237,49 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         }
 
         return cases;
+    }
+
+    // The voice template's agent, added and named by an owner, reaches the kit's servers it names as
+    // Jonas does: only where the household set them up.
+    [Theory]
+    [MemberData(nameof(OwnServerCases))]
+    public async Task AnAgentFromTheVoiceTemplate_ReachesAnOwnServerOnlyWhereItsHouseholdSetItUp(
+        string server, bool setUp, bool connected, bool reached, bool namedOffline)
+    {
+        _households.Add(Household, isHome: false, Settings(), Voz(), ownServers: setUp ? [server] : []);
+        Connect(connected, server);
+
+        await TurnAsync("nabu", Household);
+
+        Tools(_model.Requests[^1]).Any(tool => tool.EndsWith("__recall")).ShouldBe(reached);
+        NamesOffline(_model.Requests[^1], server).ShouldBe(namedOffline);
+    }
+
+    // The home's Home Assistant is the home's tuning, not the template's: a household that set its own
+    // up and has it connected still does not reach it through the voice template's agent.
+    [Fact]
+    public async Task AnAgentFromTheVoiceTemplate_DoesNotReachAHomeAssistantItsHouseholdSetUp()
+    {
+        _households.Add(Household, isHome: false, Settings(), Voz(), ownServers: ["homeassistant"]);
+        Connect(true, "homeassistant");
+
+        await TurnAsync("nabu", Household);
+
+        Tools(_model.Requests[^1]).ShouldNotContain(tool => tool.EndsWith("__recall"));
+        NamesOffline(_model.Requests[^1], "homeassistant").ShouldBeFalse();
+    }
+
+    // Named by its owner and answering aloud wherever its turn comes from: the voice section is the
+    // agent's, not the channel's, so a turn in chat carries it too.
+    [Fact]
+    public async Task AnAgentFromTheVoiceTemplate_IsNamedByItsOwner_AndReadsTheVoiceRules()
+    {
+        _households.Add(Household, isHome: false, Settings(), Voz());
+
+        var prompt = await TurnAsync("nabu", Household);
+
+        prompt.ShouldContain("You are Voz. " + AgentTemplates.Named(AgentTemplates.Nabu)!.Description);
+        prompt.ShouldContain(VoicePrompt.Instructions);
     }
 
     // An accounts service from before households named the servers they set up says nothing of them:
@@ -457,6 +503,13 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
                 Id = "jonas", Definition = new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = [] }
             }
         ]
+    };
+
+    // An owner's voice agent, added from the template under a name of their own.
+    private static AgentsSection Voz() => new()
+    {
+        DefaultAgent = "nabu",
+        Agents = [new HouseholdAgent { Id = AgentTemplates.Nabu, Template = AgentTemplates.Nabu, Name = "Voz" }]
     };
 
     private async Task<string> TurnAsync(string agentId, string? household, IToolApprovalHandler? approvals = null)

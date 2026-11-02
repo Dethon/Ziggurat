@@ -10,19 +10,23 @@ public static class ConnectedServers
 
     public static string For(string tenantId) => $"{Path}/{Uri.EscapeDataString(tenantId)}";
 
-    // The home household's server of a name, for the agent's own key commands, which run in a process
-    // of their own and hold no tunnel: whether its tunnel is open and whose household it is (HomeServer,
-    // 404 when it is not open), and its /mcp reached down that tunnel.
-    public const string HomeRoute = "/home/{serverName}";
-    public const string HomeMcpRoute = HomeRoute + "/mcp";
+    // Every household's server of a name, for the agent's own key commands, which run in a process of
+    // their own and hold no tunnel: each household that holds one, and whether its tunnel is open now
+    // (HouseholdServer), and one household's server's /mcp reached down its tunnel.
+    public const string HoldersRoute = "/servers/{serverName}";
+    public const string McpRoute = "/{tenantId}/{serverName}/mcp";
 
-    public static string Home(string serverName) => $"{Path}/home/{Uri.EscapeDataString(serverName)}";
+    public static string Holders(string serverName) => $"{Path}/servers/{Uri.EscapeDataString(serverName)}";
 
-    public static string HomeMcp(string serverName) => $"{Home(serverName)}/mcp";
+    public static string Mcp(string tenantId, string serverName) =>
+        $"{For(tenantId)}/{Uri.EscapeDataString(serverName)}/mcp";
 }
 
-// The home household's open server of a name: the household, which its call tokens' audience names.
-public sealed record HomeServer(string TenantId, string ServerName);
+// A household's server of a name, which the key commands must ask: the household (its id, which its
+// call tokens' audience names, and its name, for the operator to read), whether it is the home, whether
+// it is suspended, and whether its tunnel is open now.
+public sealed record HouseholdServer(
+    string TenantId, string Household, string ServerName, bool Home, bool Suspended, bool Connected);
 
 // One open tunnel: the server's name, the opening it is on and when it opened, the tools it offered
 // when asked through it just now — null when it did not answer the asking — and the id of the

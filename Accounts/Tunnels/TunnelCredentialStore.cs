@@ -124,6 +124,27 @@ public sealed class TunnelCredentialStore(
         ];
     }
 
+    // Every household holding a live credential for the server, and the home whether it holds one or
+    // not, home first: who the agent's key commands must ask for the delegations a server of that name
+    // keeps. A suspended household is among them, since its server keeps its delegations while its
+    // tunnel is refused, and they must verify again once it is resumed.
+    public async Task<IReadOnlyList<TunnelServerHolder>> HoldersAsync(string serverName, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        var households = await db.Tenants.AsNoTracking()
+            .Where(h => h.IsHome || db.TunnelCredentials.Any(
+                t => t.TenantId == h.Id && t.ServerName == serverName && t.RevokedAt == null))
+            .ToListAsync(ct);
+        return
+        [
+            .. households
+                .OrderByDescending(h => h.IsHome)
+                .ThenBy(h => h.Name, StringComparer.Ordinal)
+                .ThenBy(h => h.Id, StringComparer.Ordinal)
+                .Select(h => new TunnelServerHolder(h.Id, h.Name, h.IsHome, h.SuspendedAt is not null))
+        ];
+    }
+
     // One household's credentials not revoked, by server name and when minted: what its owners see.
     public async Task<IReadOnlyList<ListedTunnelCredential>> LiveOfAsync(string tenantId, CancellationToken ct)
     {

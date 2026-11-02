@@ -198,7 +198,7 @@ public class ChatMonitorReviewCopyTests
 
     private static Task RunAsync(IReadOnlyList<IChannelConnection> channels, FakeAgentFactory factory) =>
         new ChatMonitor(
-                channels,
+                ConnectionSet.Of(channels),
                 factory,
                 MonitorTestMocks.CreateThreadResolver(),
                 new Mock<IMetricsPublisher>().Object,

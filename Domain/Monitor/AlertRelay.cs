@@ -15,15 +15,32 @@ namespace Domain.Monitor;
 // still showing it stops; nothing could show it, and the server is told at once rather than holding
 // it as ringing; or nobody dismissed it for as long as a satellite rings a timer, and it rings out
 // everywhere. No turn is run and no model is asked.
+//
+// The connections are watched rather than read once: a household's own channel server's connection
+// appears when its tunnel first opens, and what it raises is heard from then on.
 public sealed class AlertRelay(
-    IReadOnlyList<IAlertChannel> channels, IRingingAlerts ringing, ILogger<AlertRelay> logger, TimeProvider time)
+    IConnectionSet<IAlertChannel> channels, IRingingAlerts ringing, ILogger<AlertRelay> logger, TimeProvider time)
 {
     // As long as a satellite rings a timer — twelve rounds ten seconds apart — so a timer rings for
     // the same time wherever it rings, and an offer held open on a channel is never held for good.
     public static readonly TimeSpan RingWindow = TimeSpan.FromMinutes(2);
 
-    public Task RunAsync(CancellationToken ct) =>
-        Task.WhenAll(channels.Select(origin => ListenAsync(origin, ct)));
+    public async Task RunAsync(CancellationToken ct)
+    {
+        var listening = new List<Task>();
+        try
+        {
+            await foreach (var origin in channels.WatchAsync(ct))
+            {
+                listening.Add(ListenAsync(origin, ct));
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+        }
+
+        await Task.WhenAll(listening);
+    }
 
     private async Task ListenAsync(IAlertChannel origin, CancellationToken ct)
     {
@@ -66,7 +83,7 @@ public sealed class AlertRelay(
             var stoppedAtOrigin = stopped.IsCancellationRequested;
             // Settled before being called off, so a channel still showing it says it was dismissed
             // or rang out rather than only taking it down. The origin already knows when it stopped it.
-            await Task.WhenAll(channels
+            await Task.WhenAll(Reached(origin, alert)
                 .Where(channel => channel != dismissedOn && !(stoppedAtOrigin && channel == origin))
                 .Select(channel => SettleAsync(channel, alert.AlertId, dismissed: dismissedOn is not null || stoppedAtOrigin)));
             await offering.CancelAsync();
@@ -86,7 +103,7 @@ public sealed class AlertRelay(
     private async Task<IAlertChannel?> FirstDismissalAsync(
         IAlertChannel origin, ChannelAlertNotification alert, CancellationToken offering)
     {
-        var waiting = channels
+        var waiting = Reached(origin, alert)
             .Where(channel => channel != origin)
             .Select(channel => (Channel: channel, Task: channel.OfferAlertAsync(alert, offering)))
             .ToList();
@@ -115,6 +132,11 @@ public sealed class AlertRelay(
         logger.LogInformation("Alert {AlertId} could be shown on no channel of its person's", alert.AlertId);
         return null;
     }
+
+    // Where its person is: the deployment's channels and their household's own servers, never another
+    // household's — the household of the server that raised it, or of the person it is for.
+    private IReadOnlyList<IAlertChannel> Reached(IAlertChannel origin, ChannelAlertNotification alert) =>
+        [.. channels.Serving(HouseholdChannels.HouseholdOf(origin).HouseholdId ?? alert.Owner.TenantId)];
 
     // A channel that failed, or was called off, has not dismissed it; what it failed with is logged
     // and nothing more, since the alert may still be dismissed somewhere else.
