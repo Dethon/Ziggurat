@@ -37,8 +37,15 @@ public sealed class Redelegation(
     private readonly TokenVerifier _anyKey = new(TokenIssuers.Agent, keys, clock, verification);
     private readonly TokenVerifier _currentKey = new(TokenIssuers.Agent, new CurrentKeyOnly(keys), clock, verification);
 
-    // A server the agent dials, by the name its operator knows it by, signing its calls as nobody.
-    public sealed record Server(string Name, Func<CancellationToken, Task<McpClient>> ConnectAsync);
+    // A server the agent dials, by the name its operator knows it by, signing its calls as nobody. One
+    // with no way to dial it is known to exist and not connected now (a household's server whose tunnel
+    // is closed): it is not asked, and said so with why, since the delegations it keeps were not looked
+    // at and want a second pass once it is back.
+    public sealed record Server(
+        string Name, Func<CancellationToken, Task<McpClient>>? ConnectAsync, string NotConnectedBecause = "")
+    {
+        public static Server NotConnected(string name, string because) => new(name, null, because);
+    }
 
     private sealed record Dialled(string Name, McpClient Client) : IAsyncDisposable
     {
@@ -63,12 +70,20 @@ public sealed class Redelegation(
         var failed = false;
         foreach (var server in servers)
         {
+            if (server.ConnectAsync is null)
+            {
+                failed |= await NotAskedAsync(server);
+                continue;
+            }
+
             await using var dialled = await DialAsync(server, ct);
             if (dialled is null || await ListAsync(dialled, ct) is not { } stored)
             {
                 failed |= await UnreachableAsync(server.Name);
                 continue;
             }
+
+            await AskedAsync(server, stored);
 
             foreach (var delegation in stored)
             {
@@ -84,14 +99,23 @@ public sealed class Redelegation(
     public async Task<int?> StrandedByRetiringAsync(IReadOnlyList<Server> servers, CancellationToken ct)
     {
         var stranded = 0;
+        var everyServerAsked = true;
         foreach (var server in servers)
         {
+            if (server.ConnectAsync is null)
+            {
+                everyServerAsked &= !await NotAskedAsync(server);
+                continue;
+            }
+
             await using var dialled = await DialAsync(server, ct);
             if (dialled is null || await ListAsync(dialled, ct) is not { } stored)
             {
-                await UnreachableAsync(server.Name);
-                return null;
+                everyServerAsked &= !await UnreachableAsync(server.Name);
+                continue;
             }
+
+            await AskedAsync(server, stored);
 
             foreach (var delegation in stored)
             {
@@ -103,7 +127,7 @@ public sealed class Redelegation(
             }
         }
 
-        return stranded;
+        return everyServerAsked ? stranded : null;
     }
 
     private async Task<bool> RedelegateAsync(Dialled server, StoredDelegation stored, bool assumeYes, CancellationToken ct)
@@ -184,7 +208,7 @@ public sealed class Redelegation(
     {
         try
         {
-            return new Dialled(server.Name, await server.ConnectAsync(ct));
+            return new Dialled(server.Name, await server.ConnectAsync!(ct));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -217,6 +241,17 @@ public sealed class Redelegation(
         await output.WriteLineAsync($"{server}: could not be asked for the delegations it keeps.");
         return true;
     }
+
+    private async Task<bool> NotAskedAsync(Server server)
+    {
+        await output.WriteLineAsync(
+            $"{server.Name}: not asked, {server.NotConnectedBecause}; the delegations it keeps want a second pass once it is connected.");
+        return true;
+    }
+
+    // Every server asked is named, so the operator reads which servers were looked at, by name.
+    private Task AskedAsync(Server server, IReadOnlyList<StoredDelegation> stored) =>
+        output.WriteLineAsync($"{server.Name}: asked, {stored.Count} delegation(s) kept.");
 
     private static string Text(CallToolResult result) =>
         string.Concat(result.Content.OfType<TextContentBlock>().Select(t => t.Text));

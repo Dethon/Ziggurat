@@ -457,8 +457,10 @@ household out of an undelegated one, which then runs as nobody as it could anywa
 anything builds and run instead of the agent): `rotate-signing-key` (a new key signs from the next
 call on; the agent and every server pick it up by themselves), `redelegate [--yes]` and
 `retire-signing-keys [--force]`. Both of the last dial every `ChannelEndpoint` as the agent does — a
-URL at its URL, a home server named by its server name through the running agent's relay
-(`CommandServers`, `.claude/rules/tunnel.md`) — and
+URL at its URL, one named by its server name as every household's server of that name, each through
+the running agent's relay down its own tunnel and named by its household, one not connected listed as
+not asked (`CommandServers`, `.claude/rules/tunnel.md`, "The key commands reach every household's
+servers the same way") — and
 ask the servers that keep delegations through `delegations_list` / `delegations_replace`
 (`DelegationStoreTools`, `AddDelegationStore<T>`, over an `IDelegationStore`: the scheduling and
 Home Assistant servers; behind the call-token gate, signed as nobody, and stripped from every model's
@@ -467,7 +469,8 @@ without asking one an earlier published key signed for the object as it is now, 
 operator — and signs a fresh one over what the object does now only on a yes — one it cannot believe
 (a key lost, an object changed since) and a schedule with none whose recorded writer names an
 account. A replace naming another object is refused by the server. Retirement refuses while a
-stored delegation is still an earlier key's, or a server cannot be asked; the order is rotate, then
+stored delegation is still an earlier key's, or a server could not be or was not asked (every server is
+still asked and listed first, so the operator sees each one in the way); the order is rotate, then
 redelegate, then retire (after the call-token lifetime plus skew). A provided key
 (`SIGNING__PRIVATEKEY`) is neither rotated nor retired and every verb exits 1.
 

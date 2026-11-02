@@ -55,16 +55,16 @@ public static class AgentCommand
         };
         var force = new Option<bool>("--force")
         {
-            Description = "Retire even while stored delegations are signed with a key it unpublishes, or a server cannot be asked"
+            Description = "Retire even while stored delegations are signed with a key it unpublishes, or a server could not be or was not asked"
         };
 
         var rotate = new Command(RotateSigningKey, "Sign with a new key from now on, keeping the previous one published");
         rotate.SetAction((_, _) => RotateAsync(settings, output));
 
         var redelegate = new Command(Redelegate, "Sign every stored delegation again with the current key") { yes };
-        redelegate.SetAction((parse, token) => WithKeysAsync(settings, clock, output, (keys, tokens) =>
-            Redelegation(keys, tokens, settings, clock, input, output)
-                .RedelegateAsync(Servers(settings, tokens), parse.GetValue(yes), token)));
+        redelegate.SetAction((parse, token) => WithKeysAsync(settings, clock, output, async (keys, tokens) =>
+            await Redelegation(keys, tokens, settings, clock, input, output)
+                .RedelegateAsync(await ServersAsync(settings, tokens, token), parse.GetValue(yes), token)));
 
         var retire = new Command(RetireSigningKeys, "Unpublish every key but the current one") { force };
         retire.SetAction((parse, token) => RetireAsync(settings, clock, parse.GetValue(force), input, output, token));
@@ -146,11 +146,11 @@ public static class AgentCommand
         WithKeysAsync(settings, clock, output, async (keys, tokens) =>
         {
             var stranded = await Redelegation(keys, tokens, settings, clock, input, output)
-                .StrandedByRetiringAsync(Servers(settings, tokens), ct);
+                .StrandedByRetiringAsync(await ServersAsync(settings, tokens, ct), ct);
             if (!force && stranded is not 0)
             {
                 await output.WriteLineAsync(stranded is null
-                    ? "Nothing was retired: a server that may keep delegations could not be asked. Run it again once it answers, or with --force."
+                    ? "Nothing was retired: a server that may keep delegations could not be or was not asked. Run it again once every server is connected, or with --force."
                     : $"Nothing was retired: {stranded} stored delegation(s) are still signed with a key it would unpublish. Run {Redelegate} first.");
                 return 1;
             }
@@ -193,12 +193,14 @@ public static class AgentCommand
         return true;
     }
 
-    // Every channel endpoint, dialled the way the agent dials it — a home server named by its server
-    // name through the running agent's relay (CommandServers): the dual-role servers among them keep
-    // the schedules and watches, and the rest answer that they keep nothing.
-    private static IReadOnlyList<Redelegation.Server> Servers(AgentSettings settings, CallTokens tokens) =>
-        CommandServers.Of(settings.ChannelEndpoints, McpCredentials.From(settings.Mcp), tokens, new Uri(OwnAddress),
-            settings.AgentApi.SharedSecret);
+    // Every channel endpoint, dialled the way the agent dials it — one named by its server name is every
+    // household's server of that name, each through the running agent's relay down its own tunnel
+    // (CommandServers): the dual-role servers among them keep the schedules and watches, and the rest
+    // answer that they keep nothing.
+    private static Task<IReadOnlyList<Redelegation.Server>> ServersAsync(
+        AgentSettings settings, CallTokens tokens, CancellationToken ct) =>
+        CommandServers.OfAsync(settings.ChannelEndpoints, McpCredentials.From(settings.Mcp), tokens, new Uri(OwnAddress),
+            settings.AgentApi.SharedSecret, ct);
 
     // The last call token the old key signed has run out, with the skew every verifier forgives.
     private static TimeSpan RetireAfter(AgentSettings settings) =>

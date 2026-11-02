@@ -309,16 +309,28 @@ The registry lives in the serving process alone, so the command asks it at `GET
 proxy) and behind `AGENTAPI__SHAREDSECRET`, which the command reads from the same environment.
 `--agent` defaults to `http://localhost:8080`, the agent inside its own container.
 
-**The key commands reach the home's servers the same way.** `redelegate` and `retire-signing-keys`
-ask every channel endpoint for the delegations it keeps (`.claude/rules/service-identity.md`); one
-named by its server name — Home Assistant's watches, once it runs in the kit — exists only inside its
-tunnel, so `CommandServers` asks the agent `GET /internal/tunnels/home/{name}` (`ConnectedServers.Home`:
-the home household, which the call token's audience names, or 404 when that tunnel is not open) and
-dials its `/mcp` at `/internal/tunnels/home/{name}/mcp` (`McpServerEndpoint.ThroughAgent`: that route, the agent API's secret, calls signed for the server's synthetic address), which `TunnelForwarder.ForwardHomeAsync` sends
-down the home's tunnel on the `mcp` tag (whose pool presents the tunnel credential; the command's
-`Authorization` is withheld), both behind `AGENTAPI__SHAREDSECRET` like the listing. A home server whose
-tunnel is closed is a server that could not be asked, so retiring keys wants the home's kit servers
-online (`RedelegationOverTunnelTests`).
+**The key commands reach every household's servers the same way.** `redelegate` and
+`retire-signing-keys` ask every channel endpoint for the delegations it keeps
+(`.claude/rules/service-identity.md`); one named by its server name — Home Assistant's watches, the
+library's downloads, web search's logins — is every household's server of that name, each only inside
+its own tunnel. So `CommandServers` asks the agent `GET /internal/tunnels/servers/{name}`
+(`ConnectedServers.Holders`), which asks the accounts service who holds one (`POST
+/accounts/internal/tunnels/holders`, `TunnelCredentialProtocol.HoldersPath`, the relay's own caller:
+every household with a live credential for that name, a suspended one included, and the home whether it
+holds one or not, as the channel endpoints always named its servers) and answers each as a
+`HouseholdServer` — its id and name, home, suspended, and whether its tunnel is open in the registry. The
+source is the credential and not the registry because a server whose tunnel is closed still keeps its
+delegations, and only its credential says it exists. Each connected one is dialled at
+`/internal/tunnels/{tenantId}/{name}/mcp` (`ConnectedServers.Mcp`, `McpServerEndpoint.ThroughAgent`: that
+route, the agent API's secret, calls signed for that household's synthetic address), which
+`TunnelForwarder.ForwardAsync` sends down that household's tunnel alone on the `mcp` tag (whose pool
+presents the tunnel credential; the command's `Authorization` is withheld), all behind
+`AGENTAPI__SHAREDSECRET` like the listing. The command names each server by household — `homeassistant
+of household Casa (<id>): asked, 2 delegation(s) kept.` — and one not connected is **not asked**, saying
+why (its tunnel is not open, or its household is suspended), so the operator knows whose delegations
+want a second pass; an agent or accounts service that cannot say who holds a server leaves that endpoint
+`could not be asked`. Either way retiring keys refuses, so retiring wants every holder's kit servers
+online, or `--force` (`RedelegationOverTunnelTests`).
 
 ## A household's channel server
 
