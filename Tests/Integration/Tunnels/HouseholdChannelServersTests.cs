@@ -4,6 +4,9 @@ using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Monitor;
+using Domain.Security;
+using Domain.Security.Signing;
+using Domain.Tools.Web;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Unit;
@@ -336,6 +339,100 @@ public class HouseholdChannelServersTests(RedisFixture redis) : IClassFixture<Re
         await Eventually.Settle();
         server.Replies.ShouldBeEmpty();
     }
+
+    // A household's watch, set by its person's turn through its own Home Assistant server, fires a turn
+    // for that household acting for that person, and its effect is delivered where the watch says — on
+    // the household's own voice server, never the home's.
+    [Fact]
+    public async Task AHouseholdsWatch_FiresATurnForThatHousehold_AndDeliversToItsOwnChannel()
+    {
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        var person = new Account(casa, lucia);
+        await using var agent = await TunnelledAgent.StartAsync(
+            _relay, TunnelledAgent.Endpoint("homeassistant"), TunnelledAgent.Endpoint("voice", attachOnly: true));
+        var port = TestPort.GetAvailable();
+        await using var home = await TunnelledHomeAssistant.StartAsync(
+            port, _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "homeassistant")).Credential);
+        await using var casaVoice = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "voice")).Credential, "voice");
+        await using var homeVoice = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(_home, "voice")).Credential, "voice");
+        await Eventually.Until(() => _relay.Registry.Find(casa, "homeassistant") is not null, "Casa's home's tunnel opens");
+        await Eventually.Until(
+            () => agent.ConnectionOf("voice", casa) is { IsConnected: true } && agent.ConnectionOf("voice", _home) is { IsConnected: true },
+            "both households' voice servers are connected");
+        await TunnelledHomeAssistant.WriteWatchAsync(_relay, person, TunnelledHomeAssistant.LauraWatch(["voice"]), _cts.Token);
+
+        await TunnelledHomeAssistant.FireAsync(port, ["voice"], _cts.Token);
+
+        await Eventually.Until(
+            () => casaVoice.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(casa, "jonas")),
+            "the watch's turn is spoken on Casa's voice server");
+        agent.Factory.Created.ShouldContain((casa, "jonas", person));
+        homeVoice.Replies.ShouldBeEmpty();
+        TestPort.Release(port);
+    }
+
+    // A download finishing is nobody's turn, but it came through the household's own library, so its
+    // household's agent answers it, never the home's.
+    [Fact]
+    public async Task AHouseholdsLibraryDownloadNotice_StartsThatHouseholdsTurn()
+    {
+        var (casa, _) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        await using var agent = await TunnelledAgent.StartAsync(_relay, TunnelledAgent.Endpoint("library"));
+        await using var library = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "library")).Credential, "library");
+
+        await EmitAsync(library, new ChannelMessageNotification
+        {
+            ConversationId = "download-1",
+            Sender = "library",
+            Content = "The download of Arrival has finished.",
+            AgentId = "jonas",
+            Origin = new MessageOrigin(MessageOriginKind.Download, null, Title: "Arrival")
+        });
+
+        await Eventually.Until(
+            () => library.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(casa, "jonas")), "Casa's agent answers the notice");
+        agent.Factory.Created.ShouldHaveSingleItem().ShouldBe((casa, "jonas", null));
+    }
+
+    // A login handed off through the household's own web search wakes the conversation that asked, as
+    // the person the delegation names.
+    [Fact]
+    public async Task AHouseholdsFinishedLogin_WakesItsConversation_AsThePersonWhoAskedForIt()
+    {
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        var person = new Account(casa, lucia);
+        await using var agent = await TunnelledAgent.StartAsync(_relay, TunnelledAgent.Endpoint("websearch"));
+        await using var websearch = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "websearch")).Credential, "websearch");
+        var asking = new ConversationContext("jonas", "casa-chat", person.UserId, new ReplyTarget("websearch", "casa-chat"),
+            Principal: new Principal(ChannelIds.SignalR, person.UserId, person));
+        var what = LoginDelegation.Of(asking, "https://shop.test/login")!;
+
+        await EmitAsync(websearch, new ChannelMessageNotification
+        {
+            ConversationId = "casa-chat",
+            Sender = "websearch",
+            Content = LoginDelegation.DoneText("shop.test"),
+            AgentId = "jonas",
+            UserId = person.UserId,
+            Principal = asking.Principal,
+            Delegation = new FireDelegation(TestDelegations.For(person, ChannelIds.SignalR, what), what.Description),
+            ReplyTo = [asking.Origin],
+            Origin = new MessageOrigin(MessageOriginKind.Login, null, Title: "Login to shop.test")
+        });
+
+        await Eventually.Until(
+            () => websearch.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(casa, "jonas")), "the asking conversation is woken");
+        agent.Factory.Created.ShouldHaveSingleItem().ShouldBe((casa, "jonas", person));
+    }
+
+    private async Task EmitAsync(TunnelledChannelServer server, ChannelMessageNotification fire) =>
+        await Eventually.Until(
+            async () => await server.Emitter.EmitAsync(fire, _cts.Token),
+            "the agent polls the channel through its tunnel");
 
     // A person's turn as a channel server sends one: with the accounts service's assertion for the
     // channel it came on. The broadcast emit says whether anyone polls, so it is sent once the agent's
