@@ -25,7 +25,8 @@
 # the tenant kit's (TenantKit/): up mints a tunnel credential for each from the smoke stack's own
 # accounts service, for its home household, and starts the kit with them, its tunnels opened to this
 # machine's Caddy by the deployment's main host (TenantKit/docker-compose.override.smoke.yml). Web
-# search, the vault, the library, the sandbox and the printer start; Home Assistant's server, Home
+# search, the vault, the library, the sandbox and the printer start, and a machine running the outpost
+# binary published from this checkout (smoke-machine), its own credential minted beside theirs; Home Assistant's server, Home
 # Assistant and Music Assistant never do — they reach the home and the LAN — so a turn goes without
 # them and is told they are offline. Voice starts only for `voice`, dialling a test satellite alone. A household an owner keys here has its keys
 # sealed with a master key made for this smoke state, and probed against a stub (smoke-keys) that takes
@@ -74,7 +75,9 @@ KIT=(env PUID="$(id -u)" PGID="$(id -g)"
      -p tenant-kit-smoke)
 [[ -e /dev/dri ]] || KIT+=(-f TenantKit/docker-compose.override.no-dri.yml)
 KIT_SERVERS=(websearch vault library sandbox printer)
-KIT_SERVICES=(redis camoufox mcp-websearch mcp-vault mcp-library mcp-sandbox smoke-printer mcp-printer)
+KIT_SERVICES=(redis camoufox mcp-websearch mcp-vault mcp-library mcp-sandbox smoke-printer mcp-printer smoke-machine)
+# The outpost the kit's machine runs, by the name its credential is minted for (outpost-<name>).
+OUTPOST_NAME=smoke-machine
 KIT_STATE=DockerCompose/volumes/smoke/kit
 # The deployment's main host, as the Caddyfile serves it: where every kit server's tunnel opens.
 DEPLOYMENT_HOST="$(grep -o '^assistants\.[^ ]*' DockerCompose/caddy/Caddyfile)"
@@ -147,6 +150,8 @@ credentials() {
       minted="$(docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household "$home" --server "$server")"
       echo "TUNNEL_CREDENTIAL_${server^^}=$(tail -n 1 <<<"$minted")" >> "$KIT_STATE/credentials.env.new"
     done
+    minted="$(docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household "$home" --server "outpost-$OUTPOST_NAME")"
+    echo "TUNNEL_CREDENTIAL_OUTPOST=$(tail -n 1 <<<"$minted")" >> "$KIT_STATE/credentials.env.new"
     mv "$KIT_STATE/credentials.env.new" "$KIT_STATE/credentials.env"
   fi
   # Voice's, minted the first time it is asked for, for the household the kit's vault serves.
@@ -175,7 +180,10 @@ case "${1:-}" in
     HOUSEHOLD_CONFIG_MASTER_KEY="$(cat "$MASTER_KEY")"
     "${DC[@]}" up -d --no-deps "${SERVICES[@]}" smoke-probe smoke-keys
 
-    mkdir -p "$KIT_STATE"/{redis,vault,media,sandbox}
+    mkdir -p "$KIT_STATE"/{redis,vault,media,sandbox,machine}
+    # The outpost binary, published out of this checkout as scripts/run-outpost.sh publishes it, for
+    # the kit's machine to run.
+    dotnet publish McpServerOutpost/McpServerOutpost.csproj -c Release -o DockerCompose/volumes/smoke/outpost --nologo
     credentials
     migrate_home
     # Caddy's local root, which the kit's servers are told to trust for the hub; copied out because

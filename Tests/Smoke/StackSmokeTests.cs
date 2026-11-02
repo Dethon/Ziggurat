@@ -153,7 +153,10 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             (name, (await SmokeStack.TryDockerAsync("exec", SmokeStack.Inside, "curl", "-sS", "--max-time", "5",
                 $"http://{name}:8080/mcp")).Output)));
 
-        resolved.Where(r => !r.Output.Contains("Could not resolve host", StringComparison.Ordinal))
+        // Not resolved either way: an unknown name falls through to the host's resolver, which may be
+        // slow to say so — a lookup that runs out of time found no address either.
+        resolved.Where(r => !r.Output.Contains("Could not resolve host", StringComparison.Ordinal)
+                            && !r.Output.Contains("Resolving timed out", StringComparison.Ordinal))
             .Select(r => r.name).ShouldBeEmpty();
     }
 
@@ -294,6 +297,33 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         });
     }
 
+    // Somebody's own machine at the home: the outpost binary, run with its flags on the kit's machine,
+    // opens its tunnel like any household server, and the home's Jonas — which uses outposts — reads
+    // a file from it at the machine's own address, through that tunnel alone. The word is written here,
+    // so the reply has it only from the machine.
+    [SkippableFact]
+    public async Task AMachineRunningTheOutpost_IsReadByTheAgentThroughItsTunnel()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        await Eventually.Until(async () => (await stack.ConnectedKitServersAsync()).Contains(SmokeStack.Outpost),
+            "the kit's machine connected through its tunnel");
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var word = $"machine{Guid.NewGuid():N}"[..17];
+        var file = $"smoke-{tag}.txt";
+        await File.WriteAllTextAsync(Path.Combine(KitMachine, file), $"{word}\n");
+
+        await InChatAsync(agent: "Jonas", async page =>
+        {
+            await SayAsync(page,
+                $"Smoke {tag}: read the file /machine/{file} on the machine {SmokeStack.OutpostName} and reply with the one word written in it, nothing else.");
+
+            await Assertions.Expect(page.Locator(".chat-message.assistant:not(.error) .message-content", new PageLocatorOptions { HasText = word }).First)
+                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 180_000 });
+            await Assertions.Expect(page.Locator(".chat-message.error")).ToHaveCountAsync(0);
+        });
+    }
+
     // A household onboarded the whole way, as its operator and its owner would: created from the
     // dashboard, its owner signed in (mint-session standing in for the passkey their link enrolls), its
     // OpenRouter key set through the admin API — probed against the stack's stub, which takes it —
@@ -355,6 +385,10 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         (await TunnelClosedAsync("vault", "not-a-credential")).ShouldBe(
             (WebSocketCloseStatus.PolicyViolation, nameof(TunnelCredentialRefusal.Unknown)));
         (await TunnelClosedAsync("printer", vault)).ShouldBe(
+            (WebSocketCloseStatus.PolicyViolation, nameof(TunnelCredentialRefusal.AnotherServer)));
+        // Nor does a household server's credential make a machine of it: an outpost is one only because
+        // its credential was minted for outpost-<NAME>.
+        (await TunnelClosedAsync(SmokeStack.Outpost, vault)).ShouldBe(
             (WebSocketCloseStatus.PolicyViolation, nameof(TunnelCredentialRefusal.AnotherServer)));
         (await stack.ConnectedKitServersAsync()).ShouldContain("vault");
     }
@@ -620,6 +654,10 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     // The kit's vault on this machine (TenantKit/docker-compose.override.smoke.yml).
     private static string KitVault =>
         Path.Combine(TestHelpers.FindSolutionRoot(), "DockerCompose", "volumes", "smoke", "kit", "vault");
+
+    // What the kit's machine publishes through its outpost.
+    private static string KitMachine =>
+        Path.Combine(TestHelpers.FindSolutionRoot(), "DockerCompose", "volumes", "smoke", "kit", "machine");
 
     // The second household's vault beside it (`scripts/smoke-stack.sh household-vault`).
     private static string HouseholdVault =>

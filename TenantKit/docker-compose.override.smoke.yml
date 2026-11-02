@@ -4,7 +4,8 @@
 # Caddy (host-gateway, where its 443 is published), trusting Caddy's local CA, whose root the script
 # copies out beside the smoke state before the kit starts. Every piece of the kit's state starts empty
 # under the smoke stack's ./volumes/smoke, which the script's down removes. The script starts web
-# search with its browser, the vault, the library, the sandbox and the printer, and the kit's Redis:
+# search with its browser, the vault, the library, the sandbox and the printer, the kit's Redis, and a
+# machine running an outpost (smoke-machine):
 # never Home Assistant's server, Home Assistant or Music Assistant, which reach the home and the LAN,
 # nor qBittorrent and Jackett. Voice starts only for `scripts/smoke-stack.sh voice` (profile voice),
 # talking to a test satellite (TenantKit/smoke/satellite.py) and never to the home's: the shipped
@@ -59,6 +60,28 @@ services:
       # The stand-in cannot type an octet-stream text job as a real printer does, so the smoke kit
       # names its documents text; it prints text alone.
       DOCUMENTFORMAT: text/plain
+
+  # Somebody's own machine at the home, running the outpost as a person would: the binary the script
+  # published from this checkout (as scripts/run-outpost.sh does), copied in and started with its
+  # flags, the credential minted for outpost-smoke-machine in its environment. The outpost has no image
+  # and no service of its own (.claude/rules/outpost.md): this is a bare machine to run it on. Its
+  # tunnel opens to this machine's Caddy by the deployment's main host, pinned here like every kit
+  # server's, so it never reaches the deployment's own host — which is what that name resolves to on a
+  # machine run from the host's resolver. It publishes /machine alone, jailed.
+  smoke-machine:
+    image: mcr.microsoft.com/dotnet/runtime-deps:10.0
+    user: ${PUID:-1654}:${PGID:-1654}
+    <<: *hub-here
+    command: ["/outpost/McpServerOutpost", "--name", "smoke-machine", "--dir", "/machine", "--jailed",
+              "--hub", "https://${DEPLOYMENT_HOST}"]
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/outpost:/outpost:ro"
+      - "../DockerCompose/volumes/smoke/kit/machine:/machine"
+    environment:
+      <<: *hub-ca-env
+      CREDENTIAL: ${TUNNEL_CREDENTIAL_OUTPOST:-}
+    networks: [kit]
 
   # A second household's own vault, beside the home's: the smoke test that onboards a household mints
   # its vault credential through the admin API and starts this with it (`scripts/smoke-stack.sh

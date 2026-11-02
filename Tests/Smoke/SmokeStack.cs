@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Domain.DTOs.WebChat;
+using Domain.Outposts;
 using Tests.E2E.Fixtures;
 using Tests.Unit.Deployment;
 
@@ -25,6 +26,11 @@ public sealed partial class SmokeStack : IAsyncLifetime
     // The home's servers the script starts in the kit, by their tunnels' names: never voice or Home
     // Assistant's, which reach the home's satellites and devices.
     public static readonly IReadOnlyList<string> KitServers = ["websearch", "vault", "library", "sandbox", "printer"];
+
+    // The kit's machine running the outpost (TenantKit/docker-compose.override.smoke.yml), by its name
+    // and by the server name its tunnel credential was minted for.
+    public const string OutpostName = "smoke-machine";
+    public static readonly string Outpost = OutpostServerName.For(OutpostName);
 
     public static bool IsEnabled => Environment.GetEnvironmentVariable(Enabled) == "1";
 
