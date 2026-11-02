@@ -137,6 +137,10 @@ public class AccountPageTests
         var page = await server.SignedIn(await server.MintSessionAsync(laura)).PageAsync(Account);
 
         page.ShouldContain($"scripts/enroll-voice.sh {laura}");
+        // Which agent answers aloud is each household's own choice (its voice agent), so the page names
+        // the satellites a person enrolls with, never the home's Nabu.
+        page.ShouldContain("So that the household's voice satellites know your voice");
+        page.ShouldNotContain("nabu");
     }
 
     [Fact]

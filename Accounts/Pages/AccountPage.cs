@@ -173,7 +173,7 @@ public sealed class AccountPage(
 
                <section aria-labelledby="voice">
                  <h2 id="voice">Voice</h2>
-                 <p>So that nabu knows your voice, run this on a satellite and follow what it asks:</p>
+                 <p>So that the household's voice satellites know your voice, run this on one of them and follow what it asks:</p>
                  <p><code>scripts/enroll-voice.sh {me.Id}</code></p>
                </section>
 
