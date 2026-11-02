@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Moq;
@@ -106,6 +107,30 @@ public class MetricsQueryServiceGroupingTests
         {
             ["Ana María"] = 340m, ["Luis (acc-luis)"] = 5m, ["Luis (acc-other)"] = 3m, ["bob"] = 7m
         }, ignoreOrder: true);
+    }
+
+    // A turn nobody typed — a schedule's fire, a watch's, a login wake, the Sugary app's estimate — is
+    // billed to the person it acts for but goes by its server's word, never a name: the person keeps
+    // the name their own turns carried, and one only fires named stays their id.
+    [Fact]
+    public async Task GetTokenGroupedAsync_ByUser_NeverLabelsAPersonWithTheWordAFireGoesBy()
+    {
+        var date = new DateOnly(2026, 3, 15);
+        var morning = new DateTimeOffset(2026, 3, 15, 9, 0, 0, TimeSpan.Zero);
+        SetupSortedSet("metrics:tokens:deployment:2026-03-15",
+        [
+            Person(100, "acc-ana", "Ana", morning),
+            Person(10, "acc-ana", ServiceSenders.Scheduler, morning.AddHours(1)),
+            Person(20, "acc-ana", ServiceSenders.Login, morning.AddHours(2)),
+            Person(30, "acc-ana", ServiceSenders.Watch, morning.AddHours(3)),
+            Person(40, "acc-ana", ServiceSenders.SugaryApp, morning.AddHours(4)),
+            Person(50, "acc-ana", ChannelProtocol.SystemSender, morning.AddHours(5)),
+            Person(7, "acc-luis", ServiceSenders.Scheduler, morning)
+        ]);
+
+        var result = await _sut.GetTokenGroupedAsync(TokenDimension.User, TokenMetric.Tokens, date, date);
+
+        result.ShouldBe(new Dictionary<string, decimal> { ["Ana"] = 250m, ["acc-luis"] = 7m }, ignoreOrder: true);
     }
 
     // Memory's events name only the account, and the person's model calls name them too: the memory

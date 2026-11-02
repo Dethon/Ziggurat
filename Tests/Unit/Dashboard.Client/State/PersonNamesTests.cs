@@ -1,4 +1,5 @@
 using Dashboard.Client.State.Tokens;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Shouldly;
 
@@ -37,5 +38,21 @@ public sealed class PersonNamesTests
 
         names.Of("acc-ana", fallback: "acc-ana").ShouldBe("acc-ana");
         names.Of(null, fallback: "guest").ShouldBe("guest");
+    }
+    // A schedule's fire, a watch's, a login wake and the Sugary app's estimate are billed to the
+    // person they act for under their server's word, which is never the person's name.
+    [Fact]
+    public void AnAccount_IsNeverShownUnderTheWordAFireGoesBy()
+    {
+        var names = PersonNames.From(
+        [
+            Call("acc-ana", "Ana", _morning),
+            Call("acc-ana", ServiceSenders.Login, _morning.AddHours(1)),
+            Call("acc-ana", ServiceSenders.Scheduler, _morning.AddHours(2)),
+            Call("acc-luis", ServiceSenders.Watch, _morning)
+        ]);
+
+        names.Of("acc-ana", fallback: "acc-ana").ShouldBe("Ana");
+        names.Of("acc-luis", fallback: "acc-luis").ShouldBe("acc-luis");
     }
 }

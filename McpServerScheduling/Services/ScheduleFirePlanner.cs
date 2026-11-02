@@ -10,7 +10,7 @@ public sealed record FirePlan(ChannelMessageNotification Payload, DateTime? Next
 public static class ScheduleFirePlanner
 {
     public const string ConversationPrefix = "sched";
-    public const string Sender = "scheduler";
+    public const string Sender = ServiceSenders.Scheduler;
 
     public static FirePlan Plan(
         Schedule schedule, IReadOnlyList<string> defaultDeliverTo, DateTime? nextRun, DateTimeOffset now)

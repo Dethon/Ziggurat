@@ -9,7 +9,7 @@ namespace McpServerWebSearch.Handoff;
 // have gone. Its origin is Login, so it cannot start another handoff itself.
 public static class LoginWake
 {
-    public const string Sender = "login";
+    public const string Sender = ServiceSenders.Login;
 
     // A voice turn's link, put where the person can tap it: a new conversation of their chat
     // client, whose end-of-stream Web Push pings them. It acts for the account the voice turn did —
