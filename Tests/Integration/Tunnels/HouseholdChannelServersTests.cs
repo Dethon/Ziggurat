@@ -277,6 +277,31 @@ public class HouseholdChannelServersTests(RedisFixture redis) : IClassFixture<Re
         };
     }
 
+    // A channel server is told the agents of the household it serves, under that household's names,
+    // and told again when they change.
+    [Fact]
+    public async Task AHouseholdsChannelServer_IsToldItsOwnHouseholdsAgents_AndTheirChanges()
+    {
+        var (casa, _) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        var agents = new HouseholdAgentsStandIn();
+        agents.Set(_home, ("jonas", "Jonas"));
+        agents.Set(casa, ("jonas", "Lola"), ("nabu", "Voz"));
+        await using var agent = await TunnelledAgent.StartAsync(_relay, [], agents, TunnelledAgent.Endpoint("websearch"));
+        await using var home = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(_home, "websearch")).Credential, "websearch");
+        await using var other = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "websearch")).Credential, "websearch");
+
+        await Eventually.Until(() => other.Agents.Count == 2, "Casa's server is told Casa's agents");
+        other.Agents.ShouldBe([("jonas", "Lola"), ("nabu", "Voz")]);
+        await Eventually.Until(() => home.Agents.Count == 1, "the home's server is told the home's agents");
+        home.Agents.ShouldBe([("jonas", "Jonas")]);
+
+        agents.Set(casa, ("jonas", "Lolita"), ("nabu", "Voz"));
+        await Eventually.Until(() => other.Agents.Contains(("jonas", "Lolita")), "a rename reaches Casa's server");
+        home.Agents.ShouldBe([("jonas", "Jonas")]);
+    }
+
     // A person's turn as a channel server sends one: with the accounts service's assertion for the
     // channel it came on. The broadcast emit says whether anyone polls, so it is sent once the agent's
     // long-poll through the tunnel has registered.

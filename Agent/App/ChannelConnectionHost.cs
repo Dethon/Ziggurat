@@ -34,9 +34,12 @@ public class ChannelConnectionHost(
     // Where a household server named as a channel endpoint opens; without it such an endpoint is
     // never run.
     IOwnChannelServers? ownServers = null,
-    // Completes once the catalogue has been read (HomeAgentCatalog.FirstRead), so the first
-    // registration is the agents rather than an empty list. None waits for nothing.
+    // Completes once the home's catalogue has been read (ChannelAgentCatalogs.FirstRead), so a dialled
+    // channel's first registration is the agents rather than an empty list. None waits for nothing.
     Task? catalogRead = null,
+    // The catalogue a household's own channel server is told — that household's agents — once read, so
+    // its first registration is its agents too. None tells it the dialled channels' catalogue.
+    Func<ChannelHousehold, CancellationToken, Task<Func<IReadOnlyList<AgentCatalogEntry>>>>? householdCatalog = null,
     // Makes the connection of a household's own channel server, once per household and endpoint, and
     // adds it to the agent's connections; without it such an endpoint is never run.
     Func<ChannelEndpoint, ChannelHousehold, IMcpChannelConnection>? householdConnection = null) : BackgroundService
@@ -139,7 +142,20 @@ public class ChannelConnectionHost(
         logger.LogInformation(
             "Running channel {ChannelId} through the tunnel of household {Household}'s {ServerName}",
             connection.ChannelId, opening.HouseholdId, serverName);
-        await connection.RunAsync(opening.Endpoint, agentCatalog, ct);
+        var catalog = agentCatalog;
+        if (householdCatalog is not null)
+        {
+            try
+            {
+                catalog = await householdCatalog(ChannelHousehold.Own(opening.HouseholdId, opening.Home), ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return;
+            }
+        }
+
+        await connection.RunAsync(opening.Endpoint, catalog, ct);
         if (opening.Closed.IsCancellationRequested)
         {
             logger.LogWarning(

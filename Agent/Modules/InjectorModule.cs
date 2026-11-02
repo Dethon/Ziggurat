@@ -154,12 +154,12 @@ public static class InjectorModule
                 .AddSingleton<IAccountStanding>(sp => new HouseholdAccountStanding(sp.GetRequiredService<IHouseholdConfiguration>()))
                 // Read once the agent listens, and waited for by the channel connections, so their
                 // first registration carries the home's agents rather than none.
-                .AddSingleton(sp => new HomeAgentCatalog(
+                .AddSingleton(sp => new ChannelAgentCatalogs(
                     sp.GetRequiredService<IHouseholdAgentSource>(),
                     settings.Accounts.ConfigurationLifetime,
-                    sp.GetRequiredService<ILogger<HomeAgentCatalog>>(),
+                    sp.GetRequiredService<ILogger<ChannelAgentCatalogs>>(),
                     sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default))
-                .AddSingleton<IHostedService>(sp => sp.GetRequiredService<HomeAgentCatalog>())
+                .AddSingleton<IHostedService>(sp => sp.GetRequiredService<ChannelAgentCatalogs>())
                 .AddSingleton<IAgentFactory>(sp =>
                     new MultiAgentFactory(
                         sp,
@@ -262,20 +262,21 @@ public static class InjectorModule
                     new ChannelConnectionHost(
                         settings.ChannelEndpoints,
                         sp.GetServices<IChannelConnection>().OfType<IMcpChannelConnection>().ToList(),
-                        // Read per registration, not captured once: attachment capability is
-                        // discovered from the model provider and refreshed while the agent runs.
-                        () => AgentCatalogBuilder.Build(
-                            sp.GetRequiredService<HomeAgentCatalog>().Current,
-                            settings.PatchableModels,
-                            sp.GetRequiredService<IModelCapabilityCatalog>(),
-                            sp.GetRequiredService<ILemonadeModelSource>()),
+                        // The channels dialled by URL serve every household and are told the home's
+                        // agents; a household's own channel server is told its household's.
+                        () => CatalogOf(sp, settings, null),
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>(),
                         sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default,
                         sp.GetRequiredService<McpCredentials>(),
                         // A channel endpoint naming a household server follows that server's tunnels
                         // (the relay's, AddTunnelRelay).
                         sp.GetService<IOwnChannelServers>(),
-                        sp.GetRequiredService<HomeAgentCatalog>().FirstRead,
+                        sp.GetRequiredService<ChannelAgentCatalogs>().FirstRead,
+                        async (household, ct) =>
+                        {
+                            await sp.GetRequiredService<ChannelAgentCatalogs>().ReadAsync(household.HouseholdId, ct);
+                            return () => CatalogOf(sp, settings, household.HouseholdId);
+                        },
                         (endpoint, household) =>
                         {
                             var connection = ConnectionFor(sp, endpoint, household);
@@ -283,6 +284,16 @@ public static class InjectorModule
                             return connection;
                         }));
         }
+
+        // Read per registration, not captured once: attachment capability is discovered from the model
+        // provider and refreshed while the agent runs.
+        private static IReadOnlyList<AgentCatalogEntry> CatalogOf(
+            IServiceProvider sp, AgentSettings settings, string? householdId) =>
+            AgentCatalogBuilder.Build(
+                sp.GetRequiredService<ChannelAgentCatalogs>().Current(householdId),
+                settings.PatchableModels,
+                sp.GetRequiredService<IModelCapabilityCatalog>(),
+                sp.GetRequiredService<ILemonadeModelSource>());
 
         private static bool NamesOwnServer(ChannelEndpoint endpoint) =>
             McpServerEndpoint.Of(endpoint.Endpoint, _ => null).NamesOwnServer;

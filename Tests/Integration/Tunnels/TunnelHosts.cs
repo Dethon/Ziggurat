@@ -262,6 +262,9 @@ internal sealed class TunnelledChannelServer : IAsyncDisposable
 
     public IReadOnlyCollection<string> Replies => _app.Services.GetRequiredService<ReceivedReplies>().Contents;
 
+    // The agents the agent last registered here, by id and name.
+    public IReadOnlyList<(string Id, string Name)> Agents => _app.Services.GetRequiredService<ReceivedReplies>().Agents;
+
     // The conversations the agent asked this server to create or attach to, by the id it handed.
     public IReadOnlyCollection<string?> Created => _app.Services.GetRequiredService<ReceivedReplies>().CreatedConversations;
 
@@ -298,6 +301,12 @@ internal sealed class TunnelledChannelServer : IAsyncDisposable
         public void Add(string content) => _contents.Enqueue(content);
 
         public void Create(string? existing) => _created.Enqueue(existing);
+
+        private volatile IReadOnlyList<(string Id, string Name)> _agents = [];
+
+        public IReadOnlyList<(string Id, string Name)> Agents => _agents;
+
+        public void Register(IReadOnlyList<(string Id, string Name)> agents) => _agents = agents;
     }
 
     [McpServerToolType]
@@ -309,6 +318,15 @@ internal sealed class TunnelledChannelServer : IAsyncDisposable
             string? turnKey = null, bool? agentInitiated = null)
         {
             replies.Add(content);
+            return "ok";
+        }
+
+        [McpServerTool(Name = ChannelProtocol.RegisterAgentsTool)]
+        public string RegisterAgents(System.Text.Json.JsonElement agents)
+        {
+            replies.Register([
+                .. agents.EnumerateArray().Select(a => (a.GetProperty("id").GetString()!, a.GetProperty("name").GetString()!))
+            ]);
             return "ok";
         }
 

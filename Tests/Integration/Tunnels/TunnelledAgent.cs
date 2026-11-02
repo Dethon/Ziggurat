@@ -27,6 +27,7 @@ internal sealed class TunnelledAgent : IAsyncDisposable
     private readonly CancellationTokenSource _stopping = new();
     private readonly ChannelConnectionHost _host;
     private readonly Task _monitoring;
+    private ChannelAgentCatalogs? _catalogs;
 
     private TunnelledAgent(ChannelConnectionHost host, LiveConnectionSet<IChannelConnection> connections,
         HouseholdAnsweringFactory factory, RecordingMetricsPublisher metrics, ChatMonitor monitor)
@@ -47,15 +48,31 @@ internal sealed class TunnelledAgent : IAsyncDisposable
     public static Task<TunnelledAgent> StartAsync(RelayHost relay, params ChannelEndpoint[] endpoints) =>
         StartAsync(relay, [], endpoints);
 
+    public static Task<TunnelledAgent> StartAsync(
+        RelayHost relay, IReadOnlyList<IChannelConnection> deployment, params ChannelEndpoint[] endpoints) =>
+        StartAsync(relay, deployment, new HouseholdAgentsStandIn(), endpoints);
+
     // With channels of the deployment's own beside the followed ones — a scheduling server's fires,
     // the chat client — standing in for the ones the agent dials by URL.
+    // The households' agents are the stand-in's, read for each household's channel connections as the
+    // agent reads them (ChannelAgentCatalogs), quickly enough for a test to see a change arrive.
     public static async Task<TunnelledAgent> StartAsync(
-        RelayHost relay, IReadOnlyList<IChannelConnection> deployment, params ChannelEndpoint[] endpoints)
+        RelayHost relay, IReadOnlyList<IChannelConnection> deployment, HouseholdAgentsStandIn agents,
+        params ChannelEndpoint[] endpoints)
     {
         var connections = new LiveConnectionSet<IChannelConnection>(deployment);
+        var catalogs = new ChannelAgentCatalogs(agents, TimeSpan.FromMilliseconds(200), NullLogger<ChannelAgentCatalogs>.Instance);
+        await catalogs.StartAsync(CancellationToken.None);
         var host = new ChannelConnectionHost(
             endpoints, [], () => _catalog, NullLogger<ChannelConnectionHost>.Instance,
             ownServers: relay.ChannelServers,
+            householdCatalog: async (household, ct) =>
+            {
+                await catalogs.ReadAsync(household.HouseholdId, ct);
+                return () => catalogs.Current(household.HouseholdId)
+                    .Select(a => new AgentCatalogEntry(a.Id, a.Name, a.Description ?? ""))
+                    .ToList();
+            },
             householdConnection: (endpoint, household) =>
             {
                 var connection = new McpChannelConnection(
@@ -73,7 +90,7 @@ internal sealed class TunnelledAgent : IAsyncDisposable
         var monitor = new ChatMonitor(
             connections, factory, MonitorTestMocks.CreateThreadResolver(), metrics, null,
             NullLogger<ChatMonitor>.Instance, TestAssertions.Verifier(), delegations: TestDelegations.Verifier());
-        var agent = new TunnelledAgent(host, connections, factory, metrics, monitor);
+        var agent = new TunnelledAgent(host, connections, factory, metrics, monitor) { _catalogs = catalogs };
         await host.StartAsync(CancellationToken.None);
         return agent;
     }
@@ -90,6 +107,11 @@ internal sealed class TunnelledAgent : IAsyncDisposable
         await _stopping.CancelAsync();
         await _host.StopAsync(CancellationToken.None);
         _host.Dispose();
+        if (_catalogs is not null)
+        {
+            await _catalogs.StopAsync(CancellationToken.None);
+            _catalogs.Dispose();
+        }
         try
         {
             await _monitoring;
@@ -125,4 +147,23 @@ internal sealed class HouseholdAnsweringFactory : IAgentFactory
     public DisposableAgent CreateSubAgent(
         SubAgentDefinition definition, IToolApprovalHandler approvalHandler, SpawnContext spawn) =>
         throw new NotSupportedException();
+}
+
+// Each household's agents as the accounts service would answer for them, changeable mid-test.
+internal sealed class HouseholdAgentsStandIn : IHouseholdAgentSource
+{
+    private readonly ConcurrentDictionary<string, IReadOnlyList<AgentDefinition>> _agents = new();
+
+    public void Set(string? householdId, params (string Id, string Name)[] agents) =>
+        _agents[householdId ?? ""] = [.. agents.Select(a => new AgentDefinition
+        {
+            Id = a.Id, Name = a.Name, Model = "test/model", McpServerEndpoints = []
+        })];
+
+    public Task<HouseholdAgents> ForAsync(string? householdId, CancellationToken ct) =>
+        Task.FromResult(new HouseholdAgents
+        {
+            HouseholdId = householdId,
+            Agents = _agents.GetValueOrDefault(householdId ?? "", [])
+        });
 }

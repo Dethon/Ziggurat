@@ -17,7 +17,7 @@ paths:
   - "Domain/Contracts/IHouseholdAgentSource.cs"
   - "Domain/DTOs/SharedServers.cs"
   - "Infrastructure/Agents/HouseholdAgentSource.cs"
-  - "Agent/App/HomeAgentCatalog.cs"
+  - "Agent/App/ChannelAgentCatalogs.cs"
   - "HouseholdMigration/Home/**"
   - "HouseholdMigration/Steps/HomeConfiguration.cs"
   - "HouseholdMigration/Steps/HomeKeys.cs"
