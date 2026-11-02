@@ -264,7 +264,11 @@ broken. Shared servers' URL endpoints keep ADR 0027's rule: retried, then fatal.
 
 - **Reconciled at each turn's start.** `OwnServerEndpoints.Resolve` answers an `OwnServerResolution`:
   the endpoints to dial with every unreachable household server left out, the names left out, and one
-  `ServerState(name, online, generation)` per named server. `McpAgent` keeps it beside the session
+  `ServerState(name, online, generation, withheld)` per named server. A server the turn withholds by name
+  — one its household never set up, or one a worker's parent does not name
+  (`.claude/rules/household-config.md`, "The agents a household runs") — is neither dialled nor among the
+  names left out, so it is never on the offline line; its state still says so, and a turn after the
+  household sets it up builds a new session that reaches it. `McpAgent` keeps it beside the session
   and compares it with the next turn's (`ReachesTheSameServersAs`): equal, the session is reused;
   different — a server came online, went offline, or **reconnected as a new tunnel generation** — the
   old session is disposed and a new one built, outposts and shared servers redialled with it. An

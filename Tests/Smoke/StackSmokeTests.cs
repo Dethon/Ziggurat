@@ -547,7 +547,11 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         // No warning: the mint was announced, so the household's next turn reads the vault as set up.
         minted.Warning.ShouldBeNull();
         await SmokeStack.StartHouseholdVaultAsync(minted.Value.Credential);
-        await HouseholdVaultConnectedAsync(owner);
+        // Just started, so its tunnel opens within a container's start, asked through the owner's own
+        // Servers page as they would watch it connect.
+        await Eventually.Until(async () => (await AdminReadAsync<AdminServers>(stack.MainHost, AdminProtocol.Servers, owner))
+                .Servers.Any(server => server is { Name: "vault", Connection: ServerConnection.Connected }),
+            "the household's vault connected through its tunnel", TimeSpan.FromMinutes(2), TimeSpan.FromSeconds(2));
 
         var note = $"smoke-{tag}.md";
         var households = $"house{Guid.NewGuid():N}"[..17];
@@ -564,19 +568,6 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             await Assertions.Expect(page.Locator(".chat-message.error")).ToHaveCountAsync(0);
             await Assertions.Expect(page.Locator(".chat-message", new PageLocatorOptions { HasText = homes })).ToHaveCountAsync(0);
         }, owner);
-    }
-
-    // The container is just started, so its tunnel opens within a container's start, not Eventually's
-    // budget: asked through the owner's own Servers page, as they would watch it connect.
-    private async Task HouseholdVaultConnectedAsync(string owner)
-    {
-        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
-        while (!(await AdminReadAsync<AdminServers>(stack.MainHost, AdminProtocol.Servers, owner))
-                   .Servers.Any(server => server is { Name: "vault", Connection: ServerConnection.Connected }))
-        {
-            DateTimeOffset.UtcNow.ShouldBeLessThan(deadline, "the household's vault connected through its tunnel");
-            await Task.Delay(TimeSpan.FromSeconds(2));
-        }
     }
 
     // A household made on the dashboard's operator route, its owner signed in (mint-session standing in

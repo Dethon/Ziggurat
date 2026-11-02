@@ -26,20 +26,24 @@ public static class Eventually
         condition().ShouldBeTrue($"waited {_budget.TotalSeconds:0}s for {because}");
     }
 
-    public static async Task Until(Func<ValueTask<bool>> condition, string because)
+    public static Task Until(Func<ValueTask<bool>> condition, string because) => Until(condition, because, _budget, _interval);
+
+    // For state a running stack produces over seconds — a container started, its tunnel opened — which
+    // no budget meant for in-process work covers, asked at an interval the far end can bear.
+    public static async Task Until(Func<ValueTask<bool>> condition, string because, TimeSpan budget, TimeSpan interval)
     {
         var clock = Stopwatch.StartNew();
-        while (clock.Elapsed < _budget)
+        while (clock.Elapsed < budget)
         {
             if (await condition())
             {
                 return;
             }
 
-            await Task.Delay(_interval);
+            await Task.Delay(interval);
         }
 
-        (await condition()).ShouldBeTrue($"waited {_budget.TotalSeconds:0}s for {because}");
+        (await condition()).ShouldBeTrue($"waited {budget.TotalSeconds:0}s for {because}");
     }
 
     // A claim that something does *not* happen cannot be polled — there is no state to wait for,

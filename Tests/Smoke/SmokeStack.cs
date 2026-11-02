@@ -114,38 +114,34 @@ public sealed partial class SmokeStack : IAsyncLifetime
         return [.. records.Select(json => JsonSerializer.Deserialize<TopicMetadata>(json)!)];
     }
 
-    public static async Task<string> DockerAsync(params string[] args)
+    public static Task<string> DockerAsync(params string[] args) => RunAsync("docker", args);
+
+    // A program's output, or why it failed. The environment is laid over this process's, which is how
+    // a secret reaches a script without a command line.
+    private static async Task<string> RunAsync(
+        string program, IReadOnlyList<string> args, IReadOnlyDictionary<string, string>? environment = null)
     {
-        var start = new ProcessStartInfo("docker") { RedirectStandardOutput = true, RedirectStandardError = true };
+        var start = new ProcessStartInfo(program)
+        {
+            RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = TestHelpers.FindSolutionRoot()
+        };
         args.ToList().ForEach(start.ArgumentList.Add);
+        (environment ?? new Dictionary<string, string>()).ToList().ForEach(pair => start.Environment[pair.Key] = pair.Value);
         using var process = Process.Start(start)!;
         var output = await process.StandardOutput.ReadToEndAsync();
         var error = await process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
-        return process.ExitCode == 0 ? output : throw new InvalidOperationException($"docker {string.Join(' ', args)}: {error}{output}");
+        return process.ExitCode == 0
+            ? output
+            : throw new InvalidOperationException($"{Path.GetFileName(program)} {string.Join(' ', args)}: {error}{output}");
     }
 
     // A second household's vault beside the kit's, on the credential its owner was just shown: the
     // script's own verb, so the service is the smoke override's and `down` removes it. The credential
     // goes by environment, never on a command line.
-    public static async Task StartHouseholdVaultAsync(string credential)
-    {
-        var root = TestHelpers.FindSolutionRoot();
-        var start = new ProcessStartInfo(Path.Combine(root, "scripts", "smoke-stack.sh"))
-        {
-            RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = root
-        };
-        start.ArgumentList.Add("household-vault");
-        start.Environment["SMOKE_HOUSEHOLD_VAULT_CREDENTIAL"] = credential;
-        using var process = Process.Start(start)!;
-        var output = await process.StandardOutput.ReadToEndAsync();
-        var error = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException($"smoke-stack.sh household-vault: {error}{output}");
-        }
-    }
+    public static Task StartHouseholdVaultAsync(string credential) =>
+        RunAsync(Path.Combine(TestHelpers.FindSolutionRoot(), "scripts", "smoke-stack.sh"), ["household-vault"],
+            new Dictionary<string, string> { ["SMOKE_HOUSEHOLD_VAULT_CREDENTIAL"] = credential });
 
     // A kit service's container, which compose names after the project: found by its labels.
     public static async Task<string> KitContainerAsync(string service) =>
