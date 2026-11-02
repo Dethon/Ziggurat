@@ -78,6 +78,20 @@ public class CamoufoxFingerprintPinTests
         return await browser.EvaluateOnSessionAsync<string>("fingerprint", ReadDeviceScript);
     }
 
+    private static async Task<string> SavedFingerprintAsync(string volume)
+    {
+        await using var probe = TestContainers.Container(Image, "camoufox-fingerprint")
+            .WithVolumeMount(volume, "/data")
+            .WithEntrypoint("cat", "/data/fingerprint.json")
+            .WithWaitStrategy(Wait.ForUnixContainer())
+            .Build();
+        await probe.StartAsync();
+        (await probe.GetExitCodeAsync()).ShouldBe(0, "the launch saved the device it drew");
+        var (saved, _) = await probe.GetLogsAsync();
+        saved.ShouldNotBeNullOrWhiteSpace();
+        return saved;
+    }
+
     private static async Task<bool> FingerprintSavedAsync(string volume)
     {
         await using var probe = TestContainers.Container(Image, "camoufox-fingerprint")
@@ -103,10 +117,14 @@ public class CamoufoxFingerprintPinTests
             (await FingerprintSavedAsync(volume)).ShouldBeTrue("the first launch saves the device it drew");
 
             var second = await LaunchAndReadDeviceAsync(volume);
-            var elsewhere = await LaunchAndReadDeviceAsync(other);
+            await LaunchAndReadDeviceAsync(other);
 
             second.ShouldBe(first);
-            elsewhere.ShouldNotBe(first);
+            // Another device, told by what was drawn rather than by what a page reads: the agent, the
+            // platform, the screen, the cores and the fonts are what most draws share — a common
+            // Windows profile came out the same from two fresh volumes — while the saved fingerprint
+            // holds every seed the draw made.
+            (await SavedFingerprintAsync(other)).ShouldNotBe(await SavedFingerprintAsync(volume));
         }
         finally
         {
