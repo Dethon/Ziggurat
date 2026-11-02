@@ -137,6 +137,10 @@ services:
       - "../DockerCompose/volumes/smoke/kit/tse-audit:/tse-audit"
     environment:
       <<: *hub-ca-env
+      # The smoke stack's Lemonade transcribes on the CPU, where three seconds of speech take most of a
+      # minute on a busy machine: the deployment's one-minute bound, sized for its GPU, would have the
+      # check fail for the machine being busy. Three minutes still answers inside the satellite's wait.
+      Stt__OpenAi__RequestTimeout: "00:03:00"
       Satellites__smoke-satellite__Address: tcp://test-satellite:10800
       Satellites__smoke-satellite__Identity: household
       Satellites__smoke-satellite__Room: Smoke room
@@ -184,6 +188,8 @@ services:
       Tts__OpenAi__BaseUrl: http://127.0.0.1:7804/v1
       METRICS__URL: http://127.0.0.1:7801/events
       Stt__OpenAi__Model: ${STT_MODEL:-Whisper-Large-v3-Turbo}
+      # As the home's above: the CPU's transcription, not the GPU's.
+      Stt__OpenAi__RequestTimeout: "00:03:00"
       Announce__Token: ${Announce__Token:-}
       Announce__Escalation__WebhookUrl: ""
       Tse__Mode: "Off"
