@@ -31,7 +31,7 @@ namespace Tests.Integration.Agents;
 public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixture<TopicSearchFixture>, IAsyncLifetime
 {
     private const string Home = "home";
-    private static readonly Account Alice = new(Home, "alice");
+    private static readonly Account _alice = new(Home, "alice");
 
     // Every test its own agent, so the store the class shares never answers one test with another's.
     private readonly string _agent = $"agent-topics-{Guid.NewGuid():N}";
@@ -74,7 +74,7 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
         {
             Content = JsonContent.Create(new TopicMintRequest(_agent, "Kitchen", "Alice"))
         };
-        request.Headers.Add(ForwardedAccount.AssertionHeader, TestAssertions.Of(Alice, ChannelIds.Voice));
+        request.Headers.Add(ForwardedAccount.AssertionHeader, TestAssertions.Of(_alice, ChannelIds.Voice));
         request.Headers.Add(BackCallProtocol.HouseholdHeader, "casa");
 
         (await http.SendAsync(request)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
@@ -91,7 +91,7 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
         {
             Content = JsonContent.Create(new TopicMintRequest(_agent, "Kitchen", "Alice"))
         };
-        request.Headers.Add(ForwardedAccount.AssertionHeader, TestAssertions.Of(Alice, ChannelIds.Voice));
+        request.Headers.Add(ForwardedAccount.AssertionHeader, TestAssertions.Of(_alice, ChannelIds.Voice));
         request.Headers.Add(BackCallProtocol.HouseholdHeader, Home);
 
         (await http.SendAsync(request)).StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -103,7 +103,7 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
     public async Task ARecognisedSpeakersConversation_IsTheirPrivateTopic()
     {
         var minted = await _client.MintAsync(
-            new TopicMintRequest(_agent, "Kitchen @ Cocina", "Alice"), TestAssertions.Of(Alice, ChannelIds.Voice), default);
+            new TopicMintRequest(_agent, "Kitchen @ Cocina", "Alice"), TestAssertions.Of(_alice, ChannelIds.Voice), default);
 
         var topic = (await PageAsync(new TopicViewer("alice", Home))).ShouldHaveSingleItem();
         (topic.TopicId, topic.Name, topic.OwnerId, topic.TenantId, topic.Shared, topic.OwnerName)
@@ -140,7 +140,7 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
                 principal = new { channelId = "voice", userId = "bob", account = new { tenantId = Home, userId = "bob" } }
             })
         };
-        request.Headers.Add(ForwardedAccount.AssertionHeader, TestAssertions.Of(Alice, ChannelIds.Voice));
+        request.Headers.Add(ForwardedAccount.AssertionHeader, TestAssertions.Of(_alice, ChannelIds.Voice));
         request.Headers.Add(ForwardedAccount.UserHeader, "bob");
 
         using var response = await _app.GetTestClient().SendAsync(request);
@@ -156,8 +156,8 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
     public static TheoryData<string, string?> Unbelieved => new()
     {
         { "none", null },
-        { "forged", TestAssertions.Forged(Alice, ChannelIds.Voice) },
-        { "for the chat client", TestAssertions.Of(Alice, ChannelIds.SignalR) },
+        { "forged", TestAssertions.Forged(_alice, ChannelIds.Voice) },
+        { "for the chat client", TestAssertions.Of(_alice, ChannelIds.SignalR) },
         { "naming nobody", TestAssertions.OfNobody(ChannelIds.Voice) }
     };
 
@@ -179,7 +179,7 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
     [Fact]
     public async Task AMintNamingNoAgent_IsTheVoiceAgentsOfTheSpeakersHousehold()
     {
-        await _client.MintAsync(new TopicMintRequest("", "Kitchen", "Alice"), TestAssertions.Of(Alice, ChannelIds.Voice), default);
+        await _client.MintAsync(new TopicMintRequest("", "Kitchen", "Alice"), TestAssertions.Of(_alice, ChannelIds.Voice), default);
 
         var topic = (await PageAsync(new TopicViewer("alice", Home))).ShouldHaveSingleItem();
         topic.AgentId.ShouldBe(_agent);

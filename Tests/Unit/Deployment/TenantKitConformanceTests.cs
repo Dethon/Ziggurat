@@ -31,18 +31,18 @@ public class TenantKitConformanceTests
     {
         var kit = DeploymentFiles.KitCompose();
         var smoke = DeploymentFiles.KitCompose("docker-compose.override.smoke.yml");
-        IReadOnlyList<string> ProfilesOf(string name) =>
+        IReadOnlyList<string> profilesOf(string name) =>
             smoke.Services.TryGetValue(name, out var over) && over.Profiles.Count > 0
                 ? over.Profiles
                 : kit.Services.TryGetValue(name, out var service) ? service.Profiles : [];
         var services = kit.Services.Keys.Union(smoke.Services.Keys);
 
         services
-            .Where(name => ProfilesOf(name).Count == 0)
+            .Where(name => profilesOf(name).Count == 0)
             .SelectMany(name => kit.Services.GetValueOrDefault(name)?.DependsOn
                 .Concat(smoke.Services.GetValueOrDefault(name)?.DependsOn ?? [])
-                .Where(needed => ProfilesOf(needed).Count > 0)
-                .Select(needed => $"{name} -> {needed} ({string.Join(",", ProfilesOf(needed))})") ?? [])
+                .Where(needed => profilesOf(needed).Count > 0)
+                .Select(needed => $"{name} -> {needed} ({string.Join(",", profilesOf(needed))})") ?? [])
             .ShouldBeEmpty();
     }
 

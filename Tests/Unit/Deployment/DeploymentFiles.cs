@@ -168,7 +168,7 @@ public static class ShippedAgentSettings
             });
         var root = document.RootElement;
 
-        IEnumerable<string> Listed(string section, string property) =>
+        IEnumerable<string> listed(string section, string property) =>
             root.TryGetProperty(section, out var list)
                 ? list.EnumerateArray().SelectMany(item => item.TryGetProperty(property, out var value)
                     ? value.ValueKind == System.Text.Json.JsonValueKind.Array
@@ -185,11 +185,11 @@ public static class ShippedAgentSettings
             [
                 .. HomeAgents.Definitions().SelectMany(a => a.McpServerEndpoints),
                 .. global::Domain.Prompts.AgentTemplates.All.SelectMany(a => a.McpServerEndpoints),
-                .. Listed("subAgents", "mcpServerEndpoints"),
+                .. listed("subAgents", "mcpServerEndpoints"),
                 .. shared
             ]
             : [];
-        IEnumerable<string> channel = channels ? Listed("channelEndpoints", "endpoint") : [];
+        IEnumerable<string> channel = channels ? listed("channelEndpoints", "endpoint") : [];
         return [.. tool, .. channel];
     }
 }
@@ -393,13 +393,13 @@ public sealed record CaddyForwardAuth(string Upstream, string? Uri, IReadOnlyLis
         }
 
         var block = lines.Skip(start + 1).TakeWhile(l => l != "}").ToList();
-        string? Setting(string name) => block
+        string? setting(string name) => block
             .FirstOrDefault(l => l.StartsWith(name + " ", StringComparison.Ordinal))?[(name.Length + 1)..].Trim();
 
         return new CaddyForwardAuth(
             lines[start][Directive.Length..].TrimEnd('{').Trim(),
-            Setting("uri"),
-            Setting("copy_headers")?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? []);
+            setting("uri"),
+            setting("copy_headers")?.Split(' ', StringSplitOptions.RemoveEmptyEntries) ?? []);
     }
 
     // A host-level forward_auth block, standing in front of every route of the host.
