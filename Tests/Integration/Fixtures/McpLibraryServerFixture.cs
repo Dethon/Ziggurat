@@ -135,9 +135,14 @@ public class McpLibraryServerFixture : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
-        await _host.StopAsync();
-        _host.Dispose();
-        _cache.Dispose();
+        // A fixture whose containers never became ready has no host to stop; its containers still go.
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+            _host.Dispose();
+        }
+
+        _cache?.Dispose();
 
         await Jackett.DisposeAsync();
         await QBittorrent.DisposeAsync();

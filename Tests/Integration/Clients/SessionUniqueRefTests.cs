@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Domain.Contracts;
 using Domain.Judgments;
+using Microsoft.Playwright;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -104,11 +105,16 @@ public partial class SessionUniqueRefTests(IsolatedSessionBrowserFixture fixture
 
     private async Task PrepareAsync(string sessionId, string markup)
     {
-        // Partial counts: example.com is a blank anchor to inject onto, not the subject. A
-        // DOMContentLoaded that never arrives spends the production 30s budget and returns Partial
-        // with a usable page, and demanding Success turned that into a failure of whatever the case
-        // was really asserting.
-        var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, "https://example.com") { Caller = JudgmentCaller.None });
+        // A page fulfilled here, not a live third party: the anchor to inject onto was example.com,
+        // and under a loaded suite its navigation came back Error and failed whatever the case was
+        // really asserting. Partial still counts, for a DOMContentLoaded that spends the 30s budget.
+        var url = $"https://session-unique-{Guid.NewGuid():N}.test/";
+        await fixture.Browser.RouteOnContextAsync(url, route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = "<!DOCTYPE html><html><head><title>anchor</title></head><body></body></html>"
+        }));
+        var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, url) { Caller = JudgmentCaller.None });
         nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
 
         await fixture.Browser.EvaluateOnSessionAsync(
