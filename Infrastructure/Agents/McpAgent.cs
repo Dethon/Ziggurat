@@ -39,6 +39,7 @@ public sealed class McpAgent : DisposableAgent
     private readonly IOutposts? _outposts;
     private readonly IOwnServers? _ownServers;
     private readonly IReadOnlyList<string> _withheldServers;
+    private readonly Func<CancellationToken, Task<HouseholdAgents>>? _household;
     private readonly string? _tenantId;
     private readonly ModelPayer _payer;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
@@ -101,13 +102,15 @@ public sealed class McpAgent : DisposableAgent
         ISkillPreloader? skillPreloader = null,
         IVfsBridge? bridge = null,
         CallTokens? callTokens = null,
-        IOwnServers? ownServers = null)
+        IOwnServers? ownServers = null,
+        Func<CancellationToken, Task<HouseholdAgents>>? household = null)
     {
         _endpoints = spec.McpServerEndpoints;
         _tenantId = spec.TenantId;
         _payer = spec.Payer;
         _ownServers = ownServers;
         _withheldServers = spec.WithheldServers;
+        _household = household;
         _usesOutposts = spec.UsesOutposts;
         _noTools = spec.NoTools;
         _withheldTools = spec.WithheldTools;
@@ -582,6 +585,14 @@ public sealed class McpAgent : DisposableAgent
         }
     }
 
+    // What the household keeps from this turn: what it kept when the agent was built, and the own
+    // servers it has not set up as of now — asked of its view at each turn, which the reader keeps
+    // a moment and drops when the accounts service announces a credential minted or revoked.
+    private async Task<IReadOnlyList<string>> WithheldNowAsync(CancellationToken ct) =>
+        _household is null
+            ? _withheldServers
+            : [.. _withheldServers, .. (await _household(ct)).NotSetUp(_endpoints.Select(e => e.Address))];
+
     // Reconciled at every turn's start. The household's servers and (for an agent opted in) its
     // machines are asked again — a lookup, not a dial — and a session built with the very servers
     // found now is the one this turn runs in. One that came online since, went offline, or
@@ -593,7 +604,7 @@ public sealed class McpAgent : DisposableAgent
     {
         return await _syncLock.WithLockAsync(async () =>
         {
-            var ownServers = OwnServerEndpoints.Resolve(_endpoints, _tenantId, _ownServers, _withheldServers);
+            var ownServers = OwnServerEndpoints.Resolve(_endpoints, _tenantId, _ownServers, await WithheldNowAsync(ct));
             // Asked here rather than at construction, and at every turn rather than once per
             // session: an agent outlives many sessions and an outpost's tunnel outlives none, so a
             // machine that opened, closed or reopened since the last turn is reconciled like a

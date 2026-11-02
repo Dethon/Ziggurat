@@ -174,7 +174,8 @@ The agent builds a turn's agents from the turn's household's view (`HouseholdAge
 - **An entry is a template or a definition.** `{ id, template, name, customInstructions }` is the
   shipped template (`AgentTemplates`, `Domain/Prompts/Agents/<name>.md`, `.claude/rules/prompts.md`) under
   the entry's id, with the entry's name and custom instructions and nothing else of the owner's; it
-  reaches only those of its servers the deployment runs as shared servers. `{ id, definition }` is its
+  keeps those of its URL servers the deployment runs as shared servers, and every own server it names
+  by name. `{ id, definition }` is its
   definition as seeded (the home's jack, jonas, nabu and sugary), dialled as written. An entry naming a
   template this build does not ship is left out and logged, not fatal to the household's other agents.
 - **A section that names no agent is the two templates** (`HouseholdAgents.Starting`): `jonas`, the
@@ -194,6 +195,16 @@ The agent builds a turn's agents from the turn's household's view (`HouseholdAge
   from every definition — the household's, a person's registered agent's — and from every worker its
   agents spawn (`SpawnContext.WithheldServers`), and `memory` off drops the `memory` feature, `workers`
   off the `subagents` one. Only the household's own agents' endpoints present deployment credentials.
+- **An own server reaches a turn only where the household set it up.** The agent view's `ownServers`
+  are the server names the household holds a live tunnel credential for (`TunnelCredentialStore.SetUpServersAsync`;
+  a machine's `outpost-<NAME>` never counts, and a view without the field is none set up). At every
+  turn's start `McpAgent` asks the household's view again (`HouseholdAgents.NotSetUp`, through the
+  factory's `ForHouseholdAsync`) and withholds the own servers its endpoints name that are not among
+  them (`WithheldServers.Withholds`, in `OwnServerEndpoints.Resolve`): not resolved, not dialled, not
+  on the offline line. A set-up server not connected is offline as before. It is never applied to a
+  definition, because a conversation's agent is built by its first turn and outlives it: a server set
+  up mid-conversation must reach the next turn. A worker asks its parent's household by the same line.
+  The home, and agents no household's configuration gave (a test's, the eval's), withhold none.
 - **A turn acting for nobody runs the home's agents** (`@home`) and reaches no household's servers.
 - **The worker profiles stay the deployment's** (`subAgents` in the agent's settings): a worker runs its
   parent's model for its parent's household, and the household's `workers` feature decides whether

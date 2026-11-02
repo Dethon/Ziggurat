@@ -147,6 +147,23 @@ public sealed record HouseholdAgents
             ]
         };
 
+    // The household's own servers among these endpoints that it never set up — it holds no live
+    // credential for the name — which its turns withhold (WithheldServers.Withholds) rather than name
+    // offline. Asked at every turn's start, never applied to a definition: an agent outlives its
+    // conversation's turns, and a server the household sets up later must reach the next one. The
+    // home's every server is its own, and agents no household's configuration gave reach whatever
+    // their stack hosts.
+    public IReadOnlyList<string> NotSetUp(IEnumerable<string> endpoints) =>
+        Configuration is null or { IsHome: true }
+            ? []
+            :
+            [
+                .. endpoints
+                    .Where(TunnelCredentialProtocol.IsServerName)
+                    .Where(name => !(Configuration.OwnServers ?? []).Contains(name, StringComparer.Ordinal))
+                    .Distinct()
+            ];
+
     public AgentDefinition? Find(string agentId) =>
         Agents.FirstOrDefault(agent => agent.Id.Equals(agentId, StringComparison.OrdinalIgnoreCase));
 

@@ -116,8 +116,10 @@ touches its class.
 A household's agent starts from a shipped template (CONTEXT.md, "Agent template"):
 `Domain/Prompts/Agents/<name>.md`, embedded as the sections are, read by `AgentTemplates` into an
 `AgentDefinition` whose id is the file's name. Today: `jonas`, a barebones general assistant that
-dials the shared servers alone (scheduling, timers, Sugary, Idealista) with files, workers and memory,
-and `sugary`, the estimator. The header is the definition — `name`, `purpose`, `agent-name` (the name a
+dials the shared servers (scheduling, timers, Sugary, Idealista) and the tenant kit's own servers by
+name, with files, workers and memory, and `sugary`, the estimator. A template's own server reaches a
+turn only where the household set it up (`.claude/rules/household-config.md`, "The agents a household
+runs"). The header is the definition — `name`, `purpose`, `agent-name` (the name a
 household starts with), `model`, `reasoning-effort`, `provider-routing` (one JSON object on its line,
 a threshold an object as a seeded definition's is), `servers`, `features`, `whitelist`,
 `prompt-sections` (comma lists), `uses-outposts`, `no-tools` — and the words are the description the

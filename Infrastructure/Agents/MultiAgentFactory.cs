@@ -195,7 +195,11 @@ public sealed class MultiAgentFactory(
             // Where a household's own server is reached: its tunnel in the deployment, the server a
             // stack hosts in process in a test. A host with neither reaches none, and a session that
             // needs one fails as a configured endpoint that will not answer does.
-            serviceProvider?.GetService<IOwnServers>());
+            serviceProvider?.GetService<IOwnServers>(),
+            // Which own servers the turn's household set up is asked at each turn's start, of the
+            // same view the agent was built from: a worker asks its parent's household by this same
+            // line, so it reaches no server its parent's household never set up.
+            ct => definitionProvider.ForHouseholdAsync(spec.TenantId, ct));
     }
 
     // Everything file_read needs to show the model a picture, resolved where the spec and the

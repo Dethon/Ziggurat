@@ -94,7 +94,7 @@ public class HouseholdAgentsTests
             features: new FeaturesSection { Scheduling = false, Idealista = false, Memory = false, Workers = false }), _shared);
 
         var jonas = agents.Find("jonas")!;
-        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "http://mcp-sugary:8080/mcp"]);
+        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "http://mcp-sugary:8080/mcp", "vault"]);
         jonas.EnabledFeatures.ShouldBe(["filesystem"]);
         agents.WithheldServers.ShouldBe(["http://mcp-scheduling:8080/mcp", "http://mcp-idealista:8080/mcp"]);
     }
@@ -117,14 +117,14 @@ public class HouseholdAgentsTests
     }
 
     // A template names the compose hosts the deployment runs its shared servers at; one that runs none
-    // of them dials none.
+    // of them dials none. Its household's own servers are named by name, and each turn decides them.
     [Fact]
     public void ATemplate_ReachesOnlyTheSharedServersTheDeploymentRuns()
     {
         var jonas = HouseholdAgents.Of(Household(new AgentsSection()), new SharedServers { Timers = "http://mcp-timers:8080/mcp" })
             .Find("jonas")!;
 
-        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp"]);
+        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "vault"]);
     }
 
     [Fact]

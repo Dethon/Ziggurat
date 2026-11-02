@@ -1,3 +1,5 @@
+using Domain.DTOs.Tunnel;
+using Domain.Outposts;
 using Domain.Prompts;
 using Shouldly;
 using Tests.Integration.McpServers;
@@ -126,13 +128,18 @@ public class PromptDocumentsTests
         AgentTemplates.Named("jack").ShouldBeNull();
     }
 
-    // Barebones: a template dials the deployment's shared servers alone. A household's own servers
-    // are its site's, and an agent reaches one only once its own configuration names it.
+    // Barebones: a template dials the deployment's shared servers at their compose addresses, and a
+    // household's own servers by their server name — the tenant kit's, which each turn reaches only
+    // where the household set it up. Never anything else, and never a machine: outposts are the
+    // agent's by uses-outposts, not by name.
     [Fact]
-    public void AgentTemplates_DialTheSharedServersAlone()
+    public void AgentTemplates_DialTheSharedServers_AndTheKitsOwnServersByName()
     {
         AgentTemplates.All.SelectMany(t => t.McpServerEndpoints)
-            .ShouldAllBe(endpoint => endpoint.StartsWith("http://", StringComparison.Ordinal));
+            .ShouldAllBe(endpoint => endpoint.StartsWith("http://", StringComparison.Ordinal)
+                                     || (TunnelCredentialProtocol.IsServerName(endpoint)
+                                         && OutpostServerName.NameOf(endpoint) == null));
+        AgentTemplates.Named("jonas")!.McpServerEndpoints.ShouldContain("vault");
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.ComponentModel;
 using System.Net;
 using System.Text.Json.Nodes;
 using Domain.Agents;
@@ -7,15 +8,19 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.Prompts;
+using Domain.Security;
 using Domain.Tools.SubAgents;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Mcp.Hosting;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
+using ModelContextProtocol.Server;
 using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Integration.McpServers;
 using Tests.Unit.Deployment;
 
 namespace Tests.Integration.Agents;
@@ -38,11 +43,38 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 
     private readonly FakeHouseholds _households = new();
     private readonly KeyReports _reports = new();
+
+    // The household servers connected now, by name: the vault hosted below once a test puts it here.
+    private readonly Dictionary<string, string> _online = [];
     private FakeOpenRouter _model = null!;
+    private RunningServer _vault = null!;
 
-    public async Task InitializeAsync() => _model = await FakeOpenRouter.StartAsync();
+    private sealed record GatedSettings : IMcpHostSettings
+    {
+        public McpGateSettings Mcp => McpTestSecret.Gate;
+    }
 
-    public async Task DisposeAsync() => await _model.DisposeAsync();
+    [McpServerToolType]
+    public sealed class VaultTools
+    {
+        [McpServerTool(Name = "recall")]
+        [Description("Reads a note back.")]
+        public static string Recall(string note) => note;
+    }
+
+    public async Task InitializeAsync()
+    {
+        _model = await FakeOpenRouter.StartAsync();
+        _vault = await InMemoryMcpServer.StartAsync(services => services
+            .AddToolServer(new GatedSettings())
+            .WithTools<VaultTools>());
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _model.DisposeAsync();
+        await _vault.DisposeAsync();
+    }
 
     [Fact]
     public async Task AHouseholdsTurn_RunsItsAgent_WithItsNameInstructionsLanguageAndZoneInThePrompt()
@@ -157,6 +189,7 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
     [Fact]
     public async Task AWorkerOfAHouseholdThatTurnedAServerOff_DoesNotDialIt()
     {
+        _households.Add(Household, isHome: false, Settings(), Jonas(), new FeaturesSection { Scheduling = false });
         var factory = Factory();
         await using var worker = factory.CreateSubAgent(
             new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = [UnansweredScheduling] },
@@ -167,6 +200,97 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         await worker.RunStreamingAsync([new ChatMessage(ChatRole.User, "go")]).ToListAsync();
 
         _model.Requests.ShouldHaveSingleItem();
+    }
+
+    // A household's own servers, as the Jonas template names them: reached where the household set
+    // them up (it holds a live credential for the name) and they are connected; named offline where
+    // set up and not connected; and where never set up, neither reached nor named — a household is
+    // not told every turn about a server it does not run.
+    [Theory]
+    [InlineData(true, true, true, false)]
+    [InlineData(true, false, false, true)]
+    [InlineData(false, true, false, false)]
+    [InlineData(false, false, false, false)]
+    public async Task AHouseholdsOwnServer_IsReachedOnlyWhereItSetItUp(bool setUp, bool connected, bool reached, bool namedOffline)
+    {
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection(), ownServers: setUp ? ["vault"] : []);
+        Connect(connected);
+
+        await TurnAsync("jonas", Household);
+
+        Tools(_model.Requests[^1]).Any(tool => tool.EndsWith("__recall")).ShouldBe(reached);
+        NamesOffline(_model.Requests[^1], "vault").ShouldBe(namedOffline);
+    }
+
+    // An accounts service from before households named the servers they set up says nothing of them:
+    // nothing is set up, as every household but the home ran before.
+    [Fact]
+    public async Task AViewThatSaysNothingOfOwnServers_ReadsAsNoneSetUp()
+    {
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection(), ownServers: null);
+        Connect(true);
+
+        await TurnAsync("jonas", Household);
+
+        Tools(_model.Requests[^1]).ShouldNotContain(tool => tool.EndsWith("__recall"));
+        NamesOffline(_model.Requests[^1], "vault").ShouldBeFalse();
+    }
+
+    // Set up or revoked between two turns of one conversation, the next turn follows: the agent was
+    // built by the first, and asks which servers the household set up at every turn's start.
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task ASetUpChangedBetweenTwoTurnsOfAConversation_IsFollowedByTheSecond(bool before, bool after)
+    {
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection(), ownServers: before ? ["vault"] : []);
+        Connect(true);
+        await using var agent = await Factory().CreateAsync(
+            new AgentKey("conv-1", "jonas"), "fran", "jonas", Mock.Of<IToolApprovalHandler>(), tenantId: Household);
+        var session = await agent.CreateSessionAsync();
+        await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hello")], session).ToListAsync();
+
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection(), ownServers: after ? ["vault"] : []);
+        await agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "and now?")], session).ToListAsync();
+
+        Tools(_model.Requests[0]).Any(tool => tool.EndsWith("__recall")).ShouldBe(before);
+        Tools(_model.Requests[^1]).Any(tool => tool.EndsWith("__recall")).ShouldBe(after);
+        NamesOffline(_model.Requests[^1], "vault").ShouldBeFalse();
+    }
+
+    // A worker's profile is the deployment's, and names the vault for every household; one spawned for
+    // a household that never set it up reaches it no more than its parent does, and names nothing.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AWorkerOfAHousehold_ReachesItsVaultOnlyWhereTheHouseholdSetItUp(bool setUp)
+    {
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection(), ownServers: setUp ? ["vault"] : []);
+        Connect(true);
+        await using var worker = Factory().CreateSubAgent(
+            new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = ["vault"] },
+            Mock.Of<IToolApprovalHandler>(),
+            new SpawnContext("conv-1", "fran", [], UsesOutposts: false, "m", TenantId: Household, Key: new ModelKey(HouseholdKey)));
+
+        await worker.RunStreamingAsync([new ChatMessage(ChatRole.User, "go")]).ToListAsync();
+
+        Tools(_model.Requests[^1]).Any(tool => tool.EndsWith("__recall")).ShouldBe(setUp);
+        NamesOffline(_model.Requests[^1], "vault").ShouldBeFalse();
+    }
+
+    // The home's seeded agents name the servers its kit runs, and every one of them is the home's:
+    // its view names none set up, and it reaches its vault as it always did.
+    [Fact]
+    public async Task TheHome_ReachesTheOwnServersItsSeededAgentsName()
+    {
+        var jonas = new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["vault"] };
+        _households.Add(Home, isHome: true, Settings(),
+            new AgentsSection { Agents = [new HouseholdAgent { Id = "jonas", Definition = jonas }] }, ownServers: null);
+        Connect(true);
+
+        await TurnAsync("jonas", Home);
+
+        Tools(_model.Requests[^1]).ShouldContain(tool => tool.EndsWith("__recall"));
     }
 
     // Who pays: every model call made for a household goes out on its own OpenRouter key, the home's
@@ -250,6 +374,7 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
     [Fact]
     public async Task AWorkerOfTheHome_IsSentWithTheDeploymentsKey()
     {
+        _households.Add(Home, isHome: true, Settings(), Jonas());
         await using var worker = Factory().CreateSubAgent(
             new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = [] },
             Mock.Of<IToolApprovalHandler>(),
@@ -316,6 +441,8 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
             .AddSingleton<TimeProvider>(new FakeTimeProvider(_now))
             .AddSingleton(Mock.Of<IThreadStateStore>())
             .AddSingleton<IHouseholdKeyReports>(_reports)
+            .AddSingleton<IOwnServers>(new InProcessOwnServers(_online))
+            .AddSingleton(McpTestSecret.CallTokens)
             .BuildServiceProvider();
 
         return new MultiAgentFactory(
@@ -332,6 +459,21 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         new(new HouseholdAgentSource(_households, new SharedServers { Scheduling = UnansweredScheduling }), new CustomAgentRegistry());
 
     private static HouseholdSettings Settings() => new() { Name = "Casa", TimeZone = "UTC" };
+
+    private void Connect(bool connected)
+    {
+        if (connected)
+        {
+            _online["vault"] = _vault.Endpoint;
+        }
+        else
+        {
+            _online.Remove("vault");
+        }
+    }
+
+    private static bool NamesOffline(FakeOpenRouter.Request request, string server) =>
+        request.Body.ToJsonString().Contains($"Offline household servers: {server}");
 
     private static IReadOnlyList<string> Tools(FakeOpenRouter.Request request) =>
         [.. (request.Body["tools"] as JsonArray ?? []).Select(tool => tool?["name"]?.GetValue<string>() ?? "")];
@@ -356,9 +498,10 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 
         public void Add(
             string id, bool isHome, HouseholdSettings settings, AgentsSection agents, FeaturesSection? features = null,
-            string? key = HouseholdKey) =>
+            string? key = HouseholdKey, IReadOnlyList<string>? ownServers = null) =>
             _households[id] = new AgentHouseholdConfig(
-                id, isHome, settings, agents, features ?? new FeaturesSection(), new SpacesSection(), key);
+                id, isHome, settings, agents, features ?? new FeaturesSection(), new SpacesSection(), key,
+                OwnServers: ownServers);
 
         public Task<AgentHouseholdConfig> ForAgentAsync(string householdId, CancellationToken ct) =>
             Task.FromResult(householdId == HouseholdConfigProtocol.HomeHousehold
