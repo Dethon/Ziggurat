@@ -109,6 +109,24 @@ public class ChatMonitorConversationHouseholdTests
             e => e.TenantId.ShouldBe("casa"));
     }
 
+    // Whose conversation it is is never taken for granted: a store that cannot say refuses the turn as
+    // unchecked, and the person is told so rather than left without an answer.
+    [Fact]
+    public async Task AConversationWhoseHouseholdCannotBeRead_IsRefusedAsUnchecked()
+    {
+        var store = new Mock<IThreadStateStore>();
+        store.Setup(s => s.GetTopicByChatIdAndThreadIdAsync("jonas", 7, 42, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("the store is down"));
+        var casaVoice = Own("casa", home: false);
+        casaVoice.WriteMessage(From(_lucia, "7:42"));
+
+        var (factory, errors) = await RunAsync(new ChatThreadResolver(store.Object), casaVoice);
+
+        factory.Created.ShouldBeEmpty();
+        errors.ShouldContain(e => e.ErrorType == ChatMonitor.StandingUnreadableErrorType);
+        casaVoice.SentReplies.ShouldContain(r => r.ContentType == ReplyContentType.Error);
+    }
+
     private static FakeChannelConnection Own(string household, bool home) =>
         new() { ChannelId = "voice", Household = ChannelHousehold.Own(household, home) };
 

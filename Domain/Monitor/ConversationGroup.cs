@@ -557,7 +557,19 @@ internal sealed class ConversationGroup(
             return false;
         }
 
-        _household ??= await threadResolver.HouseholdOfAsync(agentKey, _groupCt) ?? household;
+        try
+        {
+            _household ??= await threadResolver.HouseholdOfAsync(agentKey, _groupCt) ?? household;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !_groupCt.IsCancellationRequested)
+        {
+            // Whose conversation it is could not be read just now: never taken for granted, and never a
+            // reason to end the group — refused as a standing that could not be read is.
+            logger.LogWarning(ex, "Could not read which household conversation {ConversationId} is", x.Message.ConversationId);
+            await RefuseByStandingAsync(x.Channel, x.Message, new StandingRefusal.Unchecked(household));
+            return true;
+        }
+
         if (_household == household)
         {
             return false;
