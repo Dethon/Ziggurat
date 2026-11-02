@@ -58,6 +58,9 @@ public class ChatMonitor(
     // household's own server is believed for that household alone, so this is a server misbehaving.
     public const string WrongHouseholdErrorType = "WrongHousehold";
 
+    // A turn naming an agent its household does not have.
+    public const string AgentNotFoundErrorType = "AgentNotFound";
+
     // A turn of a member an owner disabled, refused before anything was built for it.
     public const string AccountDisabledErrorType = "AccountDisabled";
 

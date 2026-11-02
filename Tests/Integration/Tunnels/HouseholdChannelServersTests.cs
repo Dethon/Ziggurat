@@ -302,11 +302,47 @@ public class HouseholdChannelServersTests(RedisFixture redis) : IClassFixture<Re
         home.Agents.ShouldBe([("jonas", "Jonas")]);
     }
 
+    // A satellite waits two minutes for an answer that never comes when its household has no voice
+    // agent; the agent says so instead, and where to add one.
+    [Fact]
+    public async Task AVoiceTurnForAnAgentTheHouseholdLacks_IsAnsweredWithTheRefusal()
+    {
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        await using var agent = await TunnelledAgent.StartAsync(_relay, TunnelledAgent.Endpoint("voice", attachOnly: true));
+        agent.Factory.Without(casa, "nabu");
+        await using var voice = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "voice")).Credential, "voice");
+
+        await AskAsync(voice, new Account(casa, lucia), "voice", "¿Qué hora es?", agentId: "nabu");
+
+        await Eventually.Until(() => voice.Replies.Any(r => r.Contains("Agents page")), "the satellite hears why nobody answers");
+    }
+
+    // A channel that is not attach-only keeps refusing as it did: the turn is not answered.
+    [Fact]
+    public async Task ATurnForAnAgentTheHouseholdLacks_OnAChannelThatIsNotAttachOnly_IsRefusedAsBefore()
+    {
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        await using var agent = await TunnelledAgent.StartAsync(_relay, TunnelledAgent.Endpoint("websearch"));
+        agent.Factory.Without(casa, "nabu");
+        await using var server = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "websearch")).Credential, "websearch");
+
+        await AskAsync(server, new Account(casa, lucia), "websearch", "hola", agentId: "nabu");
+
+        await Eventually.Until(
+            () => agent.Metrics.Published.OfType<ErrorEvent>().Any(e => e.ErrorType == ChatMonitor.AgentNotFoundErrorType),
+            "the refusal is reported");
+        await Eventually.Settle();
+        server.Replies.ShouldBeEmpty();
+    }
+
     // A person's turn as a channel server sends one: with the accounts service's assertion for the
     // channel it came on. The broadcast emit says whether anyone polls, so it is sent once the agent's
     // long-poll through the tunnel has registered.
     private async Task AskAsync(
-        TunnelledChannelServer server, Account person, string channelId, string content, string conversation = "conv-1") =>
+        TunnelledChannelServer server, Account person, string channelId, string content, string conversation = "conv-1",
+        string agentId = "jonas") =>
         await Eventually.Until(
             async () => await server.Emitter.EmitAsync(
                 new ChannelMessageNotification
@@ -314,7 +350,7 @@ public class HouseholdChannelServersTests(RedisFixture redis) : IClassFixture<Re
                     ConversationId = conversation,
                     Sender = "Fran",
                     Content = content,
-                    AgentId = "jonas",
+                    AgentId = agentId,
                     Principal = new Principal(channelId, person.UserId, person),
                     Assertion = TestAssertions.Of(person, channelId)
                 },

@@ -131,12 +131,22 @@ internal sealed class HouseholdAnsweringFactory : IAgentFactory
 
     public IReadOnlyList<(string? TenantId, string? AgentId, Account? Account)> Created => [.. _created];
 
+    private readonly ConcurrentDictionary<(string?, string?), bool> _lacking = new();
+
     public static string AnswerFor(string? tenantId, string? agentId) => $"{agentId} of {tenantId ?? "nobody"} answering";
+
+    // A household without that agent, which the real factory refuses by id.
+    public void Without(string? tenantId, string agentId) => _lacking[(tenantId, agentId)] = true;
 
     public Task<DisposableAgent> CreateAsync(
         AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
         string? tenantId = null, CancellationToken ct = default)
     {
+        if (_lacking.ContainsKey((tenantId, agentId)))
+        {
+            return Task.FromException<DisposableAgent>(new AgentNotFoundException(agentId, tenantId));
+        }
+
         _created.Enqueue((tenantId, agentId, account));
         return Task.FromResult<DisposableAgent>(new FakeAiAgent
         {

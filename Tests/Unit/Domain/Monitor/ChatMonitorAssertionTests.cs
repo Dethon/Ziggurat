@@ -169,14 +169,17 @@ public class ChatMonitorAssertionTests
     // An assertion signed before an owner disabled its person still verifies — Telegram keeps the one
     // that admitted a sender for minutes — so the agent asks the household too, and acts for nobody
     // the household disabled: the person is told, the errors feed says whose, and no agent is built.
-    [Fact]
-    public async Task ADisabledMembersTurn_IsRefusedReportedAndAnswered()
+    // On a satellite as anywhere: voice speaks the answer instead of waiting out its reply timeout.
+    [Theory]
+    [InlineData(ChatChannel)]
+    [InlineData("voice")]
+    public async Task ADisabledMembersTurn_IsRefusedReportedAndAnswered(string channel)
     {
-        var run = new Run(standing: new FakeAccountStanding(_fran));
-        run.Channel.WriteMessage(Message() with
+        var run = new Run(channel, standing: new FakeAccountStanding(_fran));
+        run.Channel.WriteMessage(Message(channel) with
         {
-            Principal = new Principal(ChatChannel, _fran.UserId, _fran),
-            Assertion = TestAssertions.Of(_fran, ChatChannel),
+            Principal = new Principal(channel, _fran.UserId, _fran),
+            Assertion = TestAssertions.Of(_fran, channel),
             TurnKey = "turn-7"
         });
 

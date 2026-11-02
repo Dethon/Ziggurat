@@ -28,3 +28,13 @@ public sealed class HouseholdWithoutKeyException(string householdId)
 {
     public string HouseholdId { get; } = householdId;
 }
+// A turn naming an agent its household does not have: refused by id, never answered by another agent.
+public sealed class AgentNotFoundException(string? agentId, string? householdId)
+    : InvalidOperationException(string.IsNullOrEmpty(agentId)
+        ? "No agent id was supplied and no default agent is configured for the channel."
+        : $"No agent found for identifier '{agentId}'.")
+{
+    public string? AgentId { get; } = agentId;
+
+    public string? HouseholdId { get; } = householdId;
+}

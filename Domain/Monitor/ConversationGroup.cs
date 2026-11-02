@@ -66,6 +66,11 @@ internal sealed class ConversationGroup(
     internal const string WithoutKeyAnswer =
         "Your household has no OpenRouter key set, so its assistant cannot answer yet. Ask whoever runs it to add one.";
 
+    // What a person at a channel that only attaches (a satellite) is told when their household has no
+    // agent of the id the channel addresses: what to add, and where.
+    internal const string NoAgentHereAnswer =
+        "Your household has no voice agent yet, so nobody answers here. An owner can add one on the Agents page.";
+
     // The outer token: it ends with the monitor, not with a turn. The two establishing stages
     // that reach outside — minting the delivery targets and restoring the thread — run on it
     // rather than on the per-turn token, so a /cancel arriving mid-establish lets them finish
@@ -267,6 +272,15 @@ internal sealed class ConversationGroup(
                     // Refused before any model was asked. The group ends as a failed setup does, so the
                     // next message is built afresh and runs once the household has set a key.
                     await RefuseWithoutKeyAsync(x, ex.HouseholdId);
+                    CancelOwnContext();
+                    await ObserveAbandonedWarmupAsync();
+                    break;
+                }
+                catch (AgentNotFoundException ex)
+                {
+                    // The household has no agent of that id. Ends the group as a failed setup does, so
+                    // the next message is built afresh — once an owner adds the agent it answers.
+                    await RefuseWithoutAgentAsync(x, ex);
                     CancelOwnContext();
                     await ObserveAbandonedWarmupAsync();
                     break;
@@ -671,6 +685,26 @@ internal sealed class ConversationGroup(
         if (x.Message.Origin is null)
         {
             await AnswerRefusedAsync(x.Channel, x.Message, WithoutKeyAnswer);
+        }
+    }
+
+    // Refused for an agent its household does not have, counted as that household's. A channel that
+    // only attaches (voice) has a person waiting on a satellite that would otherwise sit silent for its
+    // whole reply timeout, so it is told; the other channels refuse as they always have.
+    private async Task RefuseWithoutAgentAsync(AdmittedTurn x, AgentNotFoundException refusal)
+    {
+        logger.LogWarning(
+            "Refused a turn on {ChannelId} for conversation {ConversationId}: household {Household} has no agent {AgentId}",
+            x.Channel.ChannelId, x.Message.ConversationId, refusal.HouseholdId ?? "home", refusal.AgentId);
+        metricsPublisher.ForHousehold(refusal.HouseholdId).Publish(new ErrorEvent
+        {
+            Service = "agent",
+            ErrorType = ChatMonitor.AgentNotFoundErrorType,
+            Message = $"A turn on {x.Channel.ChannelId} for conversation {x.Message.ConversationId} named agent {refusal.AgentId}, which household {refusal.HouseholdId ?? "home"} does not have"
+        });
+        if (x.Channel.AttachOnly && x.Message.Origin is null)
+        {
+            await AnswerRefusedAsync(x.Channel, x.Message, NoAgentHereAnswer);
         }
     }
 
