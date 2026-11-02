@@ -367,8 +367,14 @@ household and `TunnelCredentialVerified.Home`, and the opening keeps both (`Open
   assertion, a fire's delegation, or the household its server says it keeps the object under — before
   anything is built (`ChatMonitor.WrongHouseholdErrorType`, `WrongHousehold`, logged and published
   under the connection's household naming both; a person's turn is answered as a refused one). A turn
-  acting for nobody that came through a household's server (a download notice, an undelegated watch)
-  is that household's: its agent is built for that household, never the home's. Otherwise nothing
+  acting for nobody that came through a household's server (a download notice, an undelegated watch),
+  or a fire whose server names a household it keeps the object under (a schedule whose delegation no
+  longer holds), is that household's (`HouseholdChannels.HouseholdOfTurn`): its agent is built for that
+  household and it delivers to that household's connections, never the home's. **A conversation is one
+  household's** too — the household of the first turn that named one, else the one its topic records
+  (`ChatThreadResolver.HouseholdOfAsync`): a message of another household naming it, live or kept, is
+  refused as `WrongHousehold` before it joins the group or its history is read. Refused assertions and
+  delegations on a household's own server are counted under that household. Otherwise nothing
   about a turn changes: a fire carries the delegation the server stored and is checked as every fire
   is (`.claude/rules/service-identity.md`, "Deferred turns"); a reply goes back through whichever
   opening is current.
