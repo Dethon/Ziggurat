@@ -29,8 +29,9 @@ internal sealed class TunnelledAgent : IAsyncDisposable
     private readonly Task _monitoring;
 
     private TunnelledAgent(ChannelConnectionHost host, LiveConnectionSet<IChannelConnection> connections,
-        HouseholdAnsweringFactory factory, ChatMonitor monitor)
+        HouseholdAnsweringFactory factory, RecordingMetricsPublisher metrics, ChatMonitor monitor)
     {
+        Metrics = metrics;
         _host = host;
         Connections = connections;
         Factory = factory;
@@ -40,6 +41,8 @@ internal sealed class TunnelledAgent : IAsyncDisposable
     public LiveConnectionSet<IChannelConnection> Connections { get; }
 
     public HouseholdAnsweringFactory Factory { get; }
+
+    public RecordingMetricsPublisher Metrics { get; }
 
     public static async Task<TunnelledAgent> StartAsync(RelayHost relay, params ChannelEndpoint[] endpoints)
     {
@@ -60,10 +63,11 @@ internal sealed class TunnelledAgent : IAsyncDisposable
                 return connection;
             });
         var factory = new HouseholdAnsweringFactory();
+        var metrics = new RecordingMetricsPublisher();
         var monitor = new ChatMonitor(
-            connections, factory, MonitorTestMocks.CreateThreadResolver(), new RecordingMetricsPublisher(), null,
+            connections, factory, MonitorTestMocks.CreateThreadResolver(), metrics, null,
             NullLogger<ChatMonitor>.Instance, TestAssertions.Verifier(), delegations: TestDelegations.Verifier());
-        var agent = new TunnelledAgent(host, connections, factory, monitor);
+        var agent = new TunnelledAgent(host, connections, factory, metrics, monitor);
         await host.StartAsync(CancellationToken.None);
         return agent;
     }

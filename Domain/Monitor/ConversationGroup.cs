@@ -423,6 +423,11 @@ internal sealed class ConversationGroup(
         switch (await assertions.VerifyTurnAsync(x.Message.Assertion, x.Channel.ChannelId, _groupCt))
         {
             case TurnAdmission.Admitted { Identity: var identity }:
+                if (await RefusedForAnotherHouseholdAsync(x.Channel, x.Message, [identity.TenantId]))
+                {
+                    return null;
+                }
+
                 if (await StandingRefusalAsync([identity.TenantId], identity) is { } refusal)
                 {
                     await RefuseByStandingAsync(x.Channel, x.Message, refusal);
@@ -454,7 +459,13 @@ internal sealed class ConversationGroup(
             ? new FireAdmission.Undelegated(null)
             : await delegations.VerifyFireAsync(fire, _groupCt);
         var person = admission is FireAdmission.Delegated { Identity: var delegated } ? delegated : null;
-        if (await StandingRefusalAsync([fire.HouseholdId, person?.TenantId], person) is { } refusal)
+        if (await RefusedForAnotherHouseholdAsync(channel, fire, [fire.HouseholdId, person?.TenantId]))
+        {
+            return null;
+        }
+
+        if (await StandingRefusalAsync(
+                [fire.HouseholdId, person?.TenantId, HouseholdChannels.HouseholdOf(channel).HouseholdId], person) is { } refusal)
         {
             await RefuseByStandingAsync(channel, fire, refusal);
             return null;
@@ -481,6 +492,37 @@ internal sealed class ConversationGroup(
         }
 
         return new AdmittedTurn(channel, framed with { Principal = null }, null);
+    }
+
+    // A household's own server is believed for that household alone: a message on its connection that
+    // names another — a person's or the guest's assertion, a fire's delegation or the household its
+    // server keeps the object under — is a server misbehaving or a token replayed, and is refused
+    // before anything is built, named with both households. A connection serving every household (a
+    // channel the deployment dials) has nothing to compare.
+    private async Task<bool> RefusedForAnotherHouseholdAsync(
+        IChannelConnection channel, ChannelMessage message, IReadOnlyList<string?> named)
+    {
+        if (HouseholdChannels.HouseholdOf(channel).HouseholdId is not { } own
+            || named.FirstOrDefault(h => h is not null && h != own) is not { } claimed)
+        {
+            return false;
+        }
+
+        logger.LogWarning(
+            "Refused a {What} on {ChannelId} for conversation {ConversationId}: it names household {Claimed}, but came through household {Household}'s own server",
+            message.Origin is null ? "turn" : "fire", channel.ChannelId, message.ConversationId, claimed, own);
+        metricsPublisher.ForHousehold(own).Publish(new ErrorEvent
+        {
+            Service = "agent",
+            ErrorType = ChatMonitor.WrongHouseholdErrorType,
+            Message = $"A message on household {own}'s {channel.ChannelId} for conversation {message.ConversationId} named household {claimed}"
+        });
+        if (message.Origin is null)
+        {
+            await AnswerRefusedAsync(channel, message, RefusedTurnAnswer);
+        }
+
+        return true;
     }
 
     // Why a household would not have the agent act on a message whose sender or delegation was believed:
@@ -728,7 +770,11 @@ internal sealed class ConversationGroup(
             TimeProvider.System);
         // The household the verified identity names — the guest's too, who has no account — is the
         // one whose own servers the agent reaches.
-        var tenantId = x.Identity is { TenantId.Length: > 0 } identity ? identity.TenantId : null;
+        // A turn acting for nobody that came through a household's own server is that household's: its
+        // download notice or its watch is answered by its own agent, never the home's.
+        var tenantId = x.Identity is { TenantId.Length: > 0 } identity
+            ? identity.TenantId
+            : HouseholdChannels.HouseholdOf(x.Channel).HouseholdId;
         var agent = _agent = await agentFactory.CreateAsync(
             deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account, tenantId, _groupCt);
         var thread = await GetOrRestoreThread(agent, deliveryKey);

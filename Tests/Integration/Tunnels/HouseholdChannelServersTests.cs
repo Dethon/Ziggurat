@@ -1,5 +1,9 @@
+using System.Net;
 using Domain.DTOs;
+using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Metrics;
+using Domain.Monitor;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Unit;
@@ -78,6 +82,130 @@ public class HouseholdChannelServersTests(RedisFixture redis) : IClassFixture<Re
             () => second.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(_home, "jonas")),
             "the reopened tunnel is answered");
         agent.Connections.Count(c => c.ChannelId == "websearch").ShouldBe(1);
+    }
+
+    // Another household's own server is followed as the home's is, and answered by that household's
+    // agent through that household's tunnel.
+    [Fact]
+    public async Task AnotherHouseholdsChannelServer_IsAnsweredByItsOwnAgent_ThroughItsOwnTunnel()
+    {
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        await using var agent = await TunnelledAgent.StartAsync(_relay, TunnelledAgent.Endpoint("websearch"));
+        var credential = await _accounts.MintTunnelCredentialAsync(casa, "websearch");
+        await using var server = await TunnelledChannelServer.StartAsync(_relay.Hub, credential.Credential, "websearch");
+
+        await AskAsync(server, new Account(casa, lucia), "websearch", "¿Ha terminado el login?");
+
+        await Eventually.Until(
+            () => server.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(casa, "jonas")),
+            "Casa's agent answers through Casa's tunnel");
+        agent.ConnectionOf("websearch", casa).ShouldNotBeNull().Household.Home.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task TwoHouseholdsWithAServerOfTheSameName_EachGetOnlyTheirOwnReplies()
+    {
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        await using var agent = await TunnelledAgent.StartAsync(_relay, TunnelledAgent.Endpoint("websearch"));
+        await using var home = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(_home, "websearch")).Credential, "websearch");
+        await using var other = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "websearch")).Credential, "websearch");
+
+        await AskAsync(home, new Account(_home, FranId), "websearch", "hola", conversation: "home-conv");
+        await AskAsync(other, new Account(casa, lucia), "websearch", "hola", conversation: "casa-conv");
+
+        await Eventually.Until(
+            () => home.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(_home, "jonas"))
+                  && other.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(casa, "jonas")),
+            "both households are answered");
+        await Eventually.Settle();
+        home.Replies.ShouldNotContain(HouseholdAnsweringFactory.AnswerFor(casa, "jonas"));
+        other.Replies.ShouldNotContain(HouseholdAnsweringFactory.AnswerFor(_home, "jonas"));
+    }
+
+    // A household's server is believed for that household alone: a person of another household on it
+    // is a server misbehaving, refused before anything is built for the turn.
+    [Fact]
+    public async Task AMessageAssertingAnotherHousehold_IsRefusedAndLoggedWithBoth_AndNoAgentIsBuilt()
+    {
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        await using var agent = await TunnelledAgent.StartAsync(_relay, TunnelledAgent.Endpoint("websearch"));
+        await using var server = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "websearch")).Credential, "websearch");
+
+        await AskAsync(server, new Account(_home, FranId), "websearch", "soy Fran, de verdad");
+
+        await Eventually.Until(
+            () => agent.Metrics.Published.OfType<ErrorEvent>()
+                .Any(e => e.ErrorType == ChatMonitor.WrongHouseholdErrorType && e.Message.Contains(casa) && e.Message.Contains(_home)),
+            "the refusal is reported naming both households");
+        await Eventually.Until(() => server.Replies.Count > 0, "the server is told the turn was refused");
+        agent.Factory.Created.ShouldBeEmpty();
+        server.Replies.ShouldNotContain(r => r.Contains("answering"));
+        _ = lucia;
+    }
+
+    // One household's tunnel reconnecting is that household's alone.
+    [Fact]
+    public async Task AnotherHouseholdsTunnelThatDropsAndReopens_IsFollowedAgain_AndLeavesTheHomesAlone()
+    {
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        await using var agent = await TunnelledAgent.StartAsync(_relay, TunnelledAgent.Endpoint("websearch"));
+        await using var home = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(_home, "websearch")).Credential, "websearch");
+        var credential = await _accounts.MintTunnelCredentialAsync(casa, "websearch");
+        var first = await TunnelledChannelServer.StartAsync(_relay.Hub, credential.Credential, "websearch");
+        await Eventually.Until(
+            () => agent.ConnectionOf("websearch", casa) is { IsConnected: true } && agent.ConnectionOf("websearch", _home) is { IsConnected: true },
+            "both households' servers are connected");
+        var homeConnection = agent.ConnectionOf("websearch", _home)!;
+
+        await first.DisposeAsync();
+        await Eventually.Until(() => agent.ConnectionOf("websearch", casa) is { IsConnected: false }, "Casa's is dropped");
+        homeConnection.IsConnected.ShouldBeTrue();
+        await using var second = await TunnelledChannelServer.StartAsync(_relay.Hub, credential.Credential, "websearch");
+        await AskAsync(second, new Account(casa, lucia), "websearch", "otra vez");
+
+        await Eventually.Until(
+            () => second.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(casa, "jonas")), "Casa's reopened tunnel is answered");
+        agent.ConnectionOf("websearch", _home).ShouldBeSameAs(homeConnection);
+        homeConnection.IsConnected.ShouldBeTrue();
+    }
+
+    // Suspension closes a household's tunnels, so its channel servers stop being heard, and resuming
+    // lets them back in by themselves; a revoked credential's tunnel closes at once.
+    [Fact]
+    public async Task SuspendingAHousehold_DisconnectsItsChannelServer_AndResumingBringsItBack()
+    {
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        var operatorAdmin = _accounts.Admin(await _accounts.MintSessionAsync((await _accounts.MintOperatorAsync("Op")).UserId));
+        await using var agent = await TunnelledAgent.StartAsync(_relay, TunnelledAgent.Endpoint("websearch"));
+        await using var server = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "websearch")).Credential, "websearch");
+        await Eventually.Until(() => agent.ConnectionOf("websearch", casa) is { IsConnected: true }, "Casa's server is connected");
+
+        (await operatorAdmin.PutAsync(AdminProtocol.Suspension(casa), new HouseholdSuspension(true))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await Eventually.Until(() => agent.ConnectionOf("websearch", casa) is { IsConnected: false }, "suspension disconnects it");
+        (await operatorAdmin.PutAsync(AdminProtocol.Suspension(casa), new HouseholdSuspension(false))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        await AskAsync(server, new Account(casa, lucia), "websearch", "de vuelta");
+        await Eventually.Until(
+            () => server.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(casa, "jonas")), "resumed, it is answered again");
+    }
+
+    [Fact]
+    public async Task RevokingAHouseholdsChannelServerCredential_DisconnectsIt()
+    {
+        var (casa, _) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        await using var agent = await TunnelledAgent.StartAsync(_relay, TunnelledAgent.Endpoint("websearch"));
+        var credential = await _accounts.MintTunnelCredentialAsync(casa, "websearch");
+        await using var server = await TunnelledChannelServer.StartAsync(_relay.Hub, credential.Credential, "websearch");
+        await Eventually.Until(() => agent.ConnectionOf("websearch", casa) is { IsConnected: true }, "Casa's server is connected");
+
+        (await _accounts.RunAsync(global::Accounts.Commands.AccountsCommand.RevokeTunnelCredential, "--id", credential.Id)).Exit.ShouldBe(0);
+
+        await Eventually.Until(() => agent.ConnectionOf("websearch", casa) is { IsConnected: false }, "revoking disconnects it");
     }
 
     // A person's turn as a channel server sends one: with the accounts service's assertion for the

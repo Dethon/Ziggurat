@@ -325,33 +325,50 @@ online (`RedelegationOverTunnelTests`).
 A server that is also a channel (web search, library, Home Assistant, voice) is named in
 `channelEndpoints` **by its server name instead of a URL** — `{ "channelId": "homeassistant",
 "endpoint": "homeassistant" }` — and `AddAgent` refuses a channel endpoint that is neither. Such an
-endpoint is **the home household's server of that name**: a channel connection is one per channel id,
-for the deployment, and in this phase the operator's household is the only one with servers. The
-agent learns which household is the home from the accounts service, not from a setting: the verify
-answer carries `TunnelCredentialVerified.Home` (the credential's household `IsHome`), and the opening
-keeps it as `OpenTunnel.Home`.
+endpoint is **every household's server of that name**, each household's tunnel a connection of that
+household's (`ChannelHousehold.Own`, `.claude/rules/channels.md`): nothing is configured per household,
+so onboarding stays a credential and a kit. Which household a tunnel is, and whether it is the home, the
+agent learns from the accounts service, not from a setting: the verify answer carries the credential's
+household and `TunnelCredentialVerified.Home`, and the opening keeps both (`OpenTunnel.TenantId`,
+`OpenTunnel.Home`).
 
 - `ChannelConnectionHost` runs a URL endpoint once, as before, presenting `McpCredentials.For(url)`
-  (the host hands the credential with the endpoint now: `IMcpChannelConnection.RunAsync` takes a
+  (the host hands the credential with the endpoint: `IMcpChannelConnection.RunAsync` takes a
   `McpServerEndpoint`). A server-name endpoint it **follows**: `IOwnChannelServers.WatchAsync(name)`
   (the deployment's is `RelayedOwnServers`, over `TunnelRegistry.WatchAsync`) yields every opening of
-  the home's tunnel of that name as an `OwnServerOpening` — the `Relayed` endpoint and the opening's
-  `Closed` token — and the host runs the connection once per opening, on a token linked to it. A newer
-  opening (a replacement, a reconnect) finishes the old run before the new one starts, since one
-  connection holds one client.
+  any household's tunnel of that name as an `OwnServerOpening` — the `Relayed` endpoint, the opening's
+  `Closed` token, its household and whether that is the home. The first opening of a household makes
+  that household's connection (`householdConnection`, which `InjectorModule` points at the live
+  connection set the monitor and the alert relay watch), and the host runs it once per opening, on a
+  token linked to it. A newer opening of the same household's server (a replacement, a reconnect)
+  finishes that household's old run before the new one starts, since one connection holds one client;
+  no household's opening touches another's run.
 - **A run that returns lets go**: `McpChannelConnection.RunAsync` stops its pump and disposes its
-  client whenever its token goes, so a channel whose tunnel closed is **not connected** (ADR 0011's
-  five behaviours) until the next opening, and the next opening starts from nothing — its tool set is
-  asked again (ADR 0012). The run's registration, health checks and `channel_receive` long-poll are
-  the dialled channel's, carried over the tunnel's client and signed for the synthetic address.
-- Nothing about a turn changes: a fire through the tunnel carries the delegation the server stored and
-  is checked as every fire is (`.claude/rules/service-identity.md`, "Deferred turns"); a reply goes
-  back through whichever opening is current.
+  client whenever its token goes, so a channel whose tunnel closed — dropped, its credential revoked,
+  its household suspended — is **not connected** (ADR 0011's five behaviours) until the next opening,
+  and the next opening starts from nothing — its tool set is asked again (ADR 0012). The connection
+  itself stays in the set. A household's channel server is dynamic: away, it is dropped and never fails
+  the agent (ADR 0027). The run's registration, health checks and `channel_receive` long-poll are the
+  dialled channel's, carried over the tunnel's client and signed for the synthetic address.
+- **A message is believed for its connection's household alone.** `ConversationGroup` refuses a
+  message on a household's connection whose verified household is another — a person's or the guest's
+  assertion, a fire's delegation, or the household its server says it keeps the object under — before
+  anything is built (`ChatMonitor.WrongHouseholdErrorType`, `WrongHousehold`, logged and published
+  under the connection's household naming both; a person's turn is answered as a refused one). A turn
+  acting for nobody that came through a household's server (a download notice, an undelegated watch)
+  is that household's: its agent is built for that household, never the home's. Otherwise nothing
+  about a turn changes: a fire carries the delegation the server stored and is checked as every fire
+  is (`.claude/rules/service-identity.md`, "Deferred turns"); a reply goes back through whichever
+  opening is current.
 - A stack hosting its servers in process names its channels by URL; nothing there follows a tunnel.
 
 Tested at the round trip (`TunnelledChannelTests`: a notification and its reply, a drop and a reopen
-without a restart, a watch's delegated fire through the real Home Assistant server) and in
-`ChannelConnectionHostTests` (one run per opening, never two at once).
+without a restart, a watch's delegated fire through the real Home Assistant server;
+`HouseholdChannelServersTests`, over `TunnelledAgent` — the real relay, channel host and monitor with
+a stand-in model that says whose agent answered: another household answered by its own agent through
+its own tunnel, two households' servers of one name each answered alone, a message naming another
+household refused, a drop and reopen leaving the other household alone, suspension and revocation)
+and in `ChannelConnectionHostTests` (one run per opening, never two at once).
 
 ## Exchanges the relay forwards to a household's server
 

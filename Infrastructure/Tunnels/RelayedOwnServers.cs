@@ -11,14 +11,15 @@ public sealed class RelayedOwnServers(TunnelRegistry registry) : IOwnServers, IO
     public McpServerEndpoint? Resolve(string? tenantId, string serverName) =>
         tenantId is null ? null : registry.Find(tenantId, serverName)?.Endpoint;
 
-    // A replacement's TunnelClosed arrives before its TunnelOpened, and each opening's own token says
-    // when it goes, so the openings alone are what a follower needs.
+    // Every household's tunnel of that name, each opening with the household its credential was
+    // verified for. A replacement's TunnelClosed arrives before its TunnelOpened, and each opening's own
+    // token says when it goes, so the openings alone are what a follower needs.
     public async IAsyncEnumerable<OwnServerOpening> WatchAsync(
         string serverName, [EnumeratorCancellation] CancellationToken ct)
     {
         await foreach (var change in registry.WatchAsync(ct))
         {
-            if (change is TunnelOpened { Tunnel: var tunnel } && tunnel.IsHome(serverName))
+            if (change is TunnelOpened { Tunnel: var tunnel } && tunnel.ServerName == serverName)
             {
                 yield return new OwnServerOpening(tunnel.Endpoint, tunnel.Closed, tunnel.TenantId, tunnel.Home);
             }

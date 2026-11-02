@@ -54,6 +54,10 @@ public class ChatMonitor(
     // presenting what it was never given.
     public const string DelegationRefusedErrorType = "DelegationRefused";
 
+    // A turn whose verified household is not the household of the channel connection it came on: a
+    // household's own server is believed for that household alone, so this is a server misbehaving.
+    public const string WrongHouseholdErrorType = "WrongHousehold";
+
     // A turn of a member an owner disabled, refused before anything was built for it.
     public const string AccountDisabledErrorType = "AccountDisabled";
 

@@ -429,8 +429,8 @@ told and a fire as nobody still says its prompt, wherever it delivers, on the ho
 - **A suspended household's fire starts nothing**, delegated or not: the households asked are the one
   its server keeps the object under — `ChannelMessage.HouseholdId`, a schedule's `TenantId` stamped by
   `ScheduleFirePlanner` through `Fire.HouseholdId` — and the delegation's person's. A watch's fire names
-  none: Home Assistant is a channel only as the home's server (`IOwnChannelServers`), and the home cannot
-  be suspended. A login wake's household is its delegation's.
+  none, but it arrives through its household's own Home Assistant server, whose household is asked too
+  (`.claude/rules/tunnel.md`, "A household's channel server"). A login wake's household is its delegation's.
 - **A disabled member's fire starts nothing** (`AccountDisabled` under their household): story 10's
   "have schedules fire for them" is what disabling stops, so their schedules, watches and login wakes
   do not run as anybody. Nothing about the delegation is spent, and once they are re-enabled it acts for
