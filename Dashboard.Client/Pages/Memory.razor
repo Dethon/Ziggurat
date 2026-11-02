@@ -63,7 +63,7 @@
                             @foreach (var evt in GetSortedRecalls(state))
                             {
                                 <div class="table-row recall-grid">
-                                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                                    <span>@DashboardTime.Event(evt.Timestamp)</span>
                                     <span>@Person(evt.UserId)</span>
                                     <span>@evt.DurationMs ms</span>
                                     <span>@evt.MemoryCount</span>
@@ -86,7 +86,7 @@
                             @foreach (var evt in GetSortedExtractions(state))
                             {
                                 <div class="table-row extraction-grid">
-                                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                                    <span>@DashboardTime.Event(evt.Timestamp)</span>
                                     <span>@Person(evt.UserId)</span>
                                     <span>@evt.DurationMs ms</span>
                                     <span>@evt.CandidateCount</span>
@@ -112,7 +112,7 @@
                             @foreach (var evt in GetSortedDreamings(state))
                             {
                                 <div class="table-row dreaming-grid">
-                                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                                    <span>@DashboardTime.Event(evt.Timestamp)</span>
                                     <span>@Person(evt.UserId)</span>
                                     <span class="merged-count">@evt.MergedCount</span>
                                     <span class="refused-count">@evt.RefusedCount</span>
@@ -149,7 +149,7 @@
                             @foreach (var evt in GetSortedJudgments(state))
                             {
                                 <div class="table-row judgment-grid">
-                                    <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                                    <span>@DashboardTime.Event(evt.Timestamp)</span>
                                     <span>@Person(evt.UserId)</span>
                                     <span>@evt.Kind</span>
                                     <span class="@Verdict(evt).Css">@Verdict(evt).Text</span>

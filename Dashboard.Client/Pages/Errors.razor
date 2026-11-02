@@ -33,7 +33,7 @@
                     @foreach (var evt in GetSortedEvents(state))
                     {
                         <div class="table-row">
-                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                            <span>@DashboardTime.Event(evt.Timestamp)</span>
                             <span class="svc-badge">@evt.Service</span>
                             <span class="err-type tooltip-anchor" tabindex="0">
                                 <span class="err-type-text">@ShortName(evt.ErrorType)</span>

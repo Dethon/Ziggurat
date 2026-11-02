@@ -46,7 +46,7 @@
         <section class="minted-link" role="status">
             <p>
                 <strong>@link.DisplayName</strong>'s passkey link, shown this once: send it to them. It works once,
-                until @link.ExpiresAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm").
+                until @DashboardTime.Deadline(link.ExpiresAt).
             </p>
             <input readonly aria-label="Owner's passkey link" value="@link.Url" />
             <button type="button" class="quiet" @onclick="Store.ForgetLink">Done</button>
@@ -93,11 +93,11 @@
                     </span>
                     <span role="cell">@string.Join(", ", household.Members.Select(m => m.DisplayName))</span>
                     <span role="cell">@Servers(household)</span>
-                    <span role="cell">@(household.LastSeenAt?.ToLocalTime().ToString("dd/MM HH:mm") ?? "never")</span>
+                    <span role="cell">@(household.LastSeenAt is { } seen ? DashboardTime.Moment(seen) : "never")</span>
                     <span role="cell" class="status">
                         @if (household.SuspendedAt is { } since)
                         {
-                            <span class="suspended">suspended since @since.ToLocalTime().ToString("dd/MM HH:mm")</span>
+                            <span class="suspended">suspended since @DashboardTime.Moment(since)</span>
                             <button type="button" disabled="@_state.Busy"
                                     aria-label="@($"Resume {household.Name}")"
                                     @onclick="() => Effect.SetSuspensionAsync(household.Id, false)">Resume</button>
@@ -174,7 +174,7 @@
         {
             null => "unknown",
             [] => "none",
-            var servers => string.Join(", ", servers.Select(s => $"{s.Name} (since {s.ConnectedSince.ToLocalTime():dd/MM HH:mm})"))
+            var servers => string.Join(", ", servers.Select(s => $"{s.Name} (since {DashboardTime.Moment(s.ConnectedSince)})"))
         };
 
     public void Dispose() => _subscription?.Dispose();
