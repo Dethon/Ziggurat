@@ -1,4 +1,4 @@
-# countdown-timers — description 126 / 130 tokens, body 695 / 900 tokens, served by mcp-timers
+# countdown-timers — description 126 / 130 tokens, body 712 / 900 tokens, served by mcp-timers
 
 ================================================================================================
 
@@ -10,7 +10,8 @@ description: Stopping an alarm or timer that is ringing right now ("stop the ala
 - Create: `domain__filesystem__text_create` at `/timers/<descriptive-id>/timer.json` with JSON
   `{"durationSeconds": <int>, "text"?: "<spoken message>", "target"?: {...} }`.
   `target` is `{satelliteId | satelliteIds | room | all}`, or left out to ring on the
-  person's own chat client and Telegram instead. On a voice turn, default to the
+  person's own channels instead — wherever they talk to you: the chat client, and Telegram
+  only for someone who uses it. On a voice turn, default to the
   **speaking room** (the room this request came from) unless another room is named. On any
   other channel there is no speaking room, and **nothing else supplies one**: not what the
   timer is for (a pasta timer does not imply the kitchen), not anything remembered about
@@ -33,7 +34,7 @@ description: Stopping an alarm or timer that is ringing right now ("stop the ala
   adjusted remainder.
 - Stop ringing: when the user asks to stop or dismiss a ringing alarm/timer (from any room
   or any channel), `domain__filesystem__exec` `./dismiss` at `/timers` — it silences everything
-  currently ringing, on every satellite and on the person's chat client and Telegram. A fired timer no longer appears under `/timers`;
+  currently ringing, on every satellite and on every channel of the person's. A fired timer no longer appears under `/timers`;
   `./dismiss` is the only way to silence it remotely. That one call is the whole task:
   answer once it returns, and do not go looking for whatever set the alert off — not the
   alarms calendar, not the entity, not the setup index. What was ringing does not matter;

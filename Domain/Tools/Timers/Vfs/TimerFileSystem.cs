@@ -92,7 +92,7 @@ public sealed class TimerFileSystem(
 
     public override string DescribeExec =>
         $"Silence every alert currently ringing: exec ./{TimerPath.DismissFileName} at the timers "
-        + "root. One call covers every satellite, every chat client and Telegram, and both kinds, whatever set the alert off, so "
+        + "root. One call covers every satellite and every channel of the person's, and both kinds, whatever set the alert off, so "
         + "it is the whole of a silencing request — run it once and answer; there is no calendar "
         + "or home entity to visit afterwards. Not a shell — anything else returns exit 127.";
 
@@ -289,7 +289,7 @@ public sealed class TimerFileSystem(
             // person's channels, and the refusal is where the model learns that it may.
             return HubUnavailable<FsCreateResult>("the timer was not armed", _owner is null
                 ? null
-                : "Or leave target out to ring it on the person's chat client and Telegram instead.");
+                : "Or leave target out to ring it on the person's own channels instead.");
         }
         if (validation is not null)
         {
@@ -481,7 +481,7 @@ public sealed class TimerFileSystem(
             return _owner is null
                 ? Error(ToolError.Codes.InvalidArgument,
                     "target is required for a turn acting for no account: a timer with no target rings on "
-                    + "its owner's chat client and Telegram, and the household's guest has none. Give it a "
+                    + "its owner's own channels, and the household's guest has none. Give it a "
                     + "target: {satelliteId | satelliteIds | room | all}")
                 : null;
         }
@@ -493,7 +493,7 @@ public sealed class TimerFileSystem(
         {
             return Error(ToolError.Codes.InvalidArgument,
                 "target must name satellites: {satelliteId | satelliteIds | room | all}, or be left out "
-                + "to ring on the person's chat client and Telegram");
+                + "to ring on the person's own channels");
         }
 
         var satellites = voices.For(household).Satellites;
@@ -541,7 +541,7 @@ public sealed class TimerFileSystem(
             {
                 satellites = Array.Empty<object>(),
                 note = "the household's voice server is not connected, so no satellite can ring now; "
-                       + "a timer with no target rings on the person's chat client and Telegram"
+                       + "a timer with no target rings on the person's own channels"
             }, _json);
         }
     }
