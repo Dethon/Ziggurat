@@ -8,9 +8,9 @@ told about it. Spec: `../spec.md`.
 
 **Blocked by:** 02 (a household's agents reach the vault it set up)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Each of sandbox, web search and printer: set up and connected is reached; set up and off is named offline; not set up is absent
-- [ ] Web search's `web_login` from a household other than the home is not promised (its handoff is home-only, spec "Out of Scope"); searching and reading pages work
-- [ ] The Sugary template is unchanged
-- [ ] Prompt snapshots regenerate; the eval family whose scenarios use the template's agent, or the full tier, is run if its prompt changed
+- [x] Each of sandbox, web search and printer: set up and connected is reached; set up and off is named offline; not set up is absent
+- [x] Web search's `web_login` from a household other than the home is not promised (its handoff is home-only, spec "Out of Scope"); searching and reading pages work — said in the template's comment; nothing withholds the tool
+- [x] The Sugary template is unchanged
+- [x] Prompt snapshots regenerate; the eval family whose scenarios use the template's agent, or the full tier, is run if its prompt changed — neither applies: the snapshots and the eval are the home's seeded agents', and the template's words (its description) did not change, only its servers and whitelist

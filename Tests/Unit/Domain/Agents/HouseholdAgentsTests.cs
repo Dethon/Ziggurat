@@ -94,7 +94,7 @@ public class HouseholdAgentsTests
             features: new FeaturesSection { Scheduling = false, Idealista = false, Memory = false, Workers = false }), _shared);
 
         var jonas = agents.Find("jonas")!;
-        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "http://mcp-sugary:8080/mcp", "vault"]);
+        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "http://mcp-sugary:8080/mcp", "vault", "sandbox", "websearch", "printer"]);
         jonas.EnabledFeatures.ShouldBe(["filesystem"]);
         agents.WithheldServers.ShouldBe(["http://mcp-scheduling:8080/mcp", "http://mcp-idealista:8080/mcp"]);
     }
@@ -124,7 +124,7 @@ public class HouseholdAgentsTests
         var jonas = HouseholdAgents.Of(Household(new AgentsSection()), new SharedServers { Timers = "http://mcp-timers:8080/mcp" })
             .Find("jonas")!;
 
-        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "vault"]);
+        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "vault", "sandbox", "websearch", "printer"]);
     }
 
     [Fact]

@@ -207,19 +207,33 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
     // set up and not connected; and where never set up, neither reached nor named — a household is
     // not told every turn about a server it does not run.
     [Theory]
-    [InlineData(true, true, true, false)]
-    [InlineData(true, false, false, true)]
-    [InlineData(false, true, false, false)]
-    [InlineData(false, false, false, false)]
-    public async Task AHouseholdsOwnServer_IsReachedOnlyWhereItSetItUp(bool setUp, bool connected, bool reached, bool namedOffline)
+    [MemberData(nameof(OwnServerCases))]
+    public async Task AHouseholdsOwnServer_IsReachedOnlyWhereItSetItUp(
+        string server, bool setUp, bool connected, bool reached, bool namedOffline)
     {
-        _households.Add(Household, isHome: false, Settings(), new AgentsSection(), ownServers: setUp ? ["vault"] : []);
-        Connect(connected);
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection(), ownServers: setUp ? [server] : []);
+        Connect(connected, server);
 
         await TurnAsync("jonas", Household);
 
         Tools(_model.Requests[^1]).Any(tool => tool.EndsWith("__recall")).ShouldBe(reached);
-        NamesOffline(_model.Requests[^1], "vault").ShouldBe(namedOffline);
+        NamesOffline(_model.Requests[^1], server).ShouldBe(namedOffline);
+    }
+
+    // The kit's servers the template names, each set up or not, connected or not: the server hosted
+    // here answers under whichever name a case gives it.
+    public static TheoryData<string, bool, bool, bool, bool> OwnServerCases()
+    {
+        var cases = new TheoryData<string, bool, bool, bool, bool>();
+        foreach (var server in new[] { "vault", "sandbox", "websearch", "printer" })
+        {
+            cases.Add(server, true, true, true, false);
+            cases.Add(server, true, false, false, true);
+            cases.Add(server, false, true, false, false);
+            cases.Add(server, false, false, false, false);
+        }
+
+        return cases;
     }
 
     // An accounts service from before households named the servers they set up says nothing of them:
@@ -460,20 +474,21 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 
     private static HouseholdSettings Settings() => new() { Name = "Casa", TimeZone = "UTC" };
 
-    private void Connect(bool connected)
+    private void Connect(bool connected, string server = "vault")
     {
         if (connected)
         {
-            _online["vault"] = _vault.Endpoint;
+            _online[server] = _vault.Endpoint;
         }
         else
         {
-            _online.Remove("vault");
+            _online.Remove(server);
         }
     }
 
+    // The offline line naming that server and no other.
     private static bool NamesOffline(FakeOpenRouter.Request request, string server) =>
-        request.Body.ToJsonString().Contains($"Offline household servers: {server}");
+        request.Body.ToJsonString().Contains($"Offline household servers: {server}.");
 
     private static IReadOnlyList<string> Tools(FakeOpenRouter.Request request) =>
         [.. (request.Body["tools"] as JsonArray ?? []).Select(tool => tool?["name"]?.GetValue<string>() ?? "")];
