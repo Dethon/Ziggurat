@@ -474,8 +474,17 @@ public class PlaywrightWebBrowserTests(
                     && content.Contains("rdt=", StringComparison.OrdinalIgnoreCase),
                 $"reddit served its throttling interstitial rather than the thread ({content.Length} chars).");
 
-            // Deliberately NOT skipped on the consent page: that is the regression this test exists
-            // for, and skipping it would retire the case without saying so.
+            // Whatever else reddit sends — an empty document answered 200 among them — the one fact that
+            // makes a short body the extractor's fault is the comments being on the page it read. The
+            // regression is readability passing them over for the consent prose beside them, so a page
+            // carrying no comments has nothing to say about the extraction; a page carrying them that
+            // still came back short is the failure, consent notice or not.
+            Skip.If(
+                content.Length <= 5000 && !await CommentsAreOnThePageAsync(sessionId),
+                $"reddit served a page with no comments on it ({content.Length} chars, http {result.HttpStatus}).");
+
+            // Deliberately NOT skipped on the consent page when the comments are there: that is the
+            // regression this test exists for, and skipping it would retire the case without saying so.
             content.Length.ShouldBeGreaterThan(
                 5000,
                 looksLikeConsent
