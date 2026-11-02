@@ -26,7 +26,8 @@ public static class TopicMintingApi
     public static void MapTopicMinting(this IEndpointRouteBuilder app) =>
         app.MapPost(TopicMinting.Path, async (
             HttpContext http, TopicMintRequest request, AssertionVerifier assertions,
-            IConversationFactory topics, IMetricsPublisher metrics, ILoggerFactory loggers) =>
+            IConversationFactory topics, IAgentDefinitionProvider households, IMetricsPublisher metrics,
+            ILoggerFactory loggers) =>
         {
             var admission = await assertions.VerifyTurnAsync(
                 AssertionVerifier.AssertionOf(http.Request.Headers), ChannelIds.Voice, http.RequestAborted);
@@ -62,9 +63,14 @@ public static class TopicMintingApi
                 return Results.StatusCode(StatusCodes.Status403Forbidden);
             }
 
+            // A voice server naming no agent leaves it to the household: its conversation is the voice
+            // agent's of the household the speaker is of, whom its turns then go to (ChatMonitor).
+            var agentId = string.IsNullOrEmpty(request.AgentId)
+                ? (await households.ForHouseholdAsync(identity.TenantId, http.RequestAborted)).VoiceAgent
+                : request.AgentId;
             var creation = await topics.CreateAsync(new CreateConversationParams
             {
-                AgentId = request.AgentId,
+                AgentId = agentId,
                 TopicName = request.TopicName,
                 Sender = request.Sender,
                 Principal = identity.Principal,

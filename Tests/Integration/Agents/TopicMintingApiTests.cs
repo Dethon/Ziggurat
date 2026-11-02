@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -52,7 +53,8 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
         builder.Services
             .AddSingleton<IConversationFactory>(new ConversationFactory(_store, TimeProvider.System))
             .AddSingleton(TestAssertions.Verifier())
-            .AddSingleton(metrics.Object);
+            .AddSingleton(metrics.Object)
+            .AddSingleton(VoiceAgents());
         _app = builder.Build();
         _app.MapTopicMinting();
         await _app.StartAsync();
@@ -169,6 +171,27 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
         refused.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await PageAsync(new TopicViewer("alice", Home, SeesAll: true))).ShouldBeEmpty();
         _errors.ShouldHaveSingleItem().ErrorType.ShouldBe(TopicMintingApi.RefusedErrorType);
+    }
+
+    // A voice server that names no agent — every one, since the household picks who answers aloud —
+    // has its conversation's topic minted under the voice agent of the household the speaker is of,
+    // the agent its turns then go to, so the chat client lists it under the agent that answers it.
+    [Fact]
+    public async Task AMintNamingNoAgent_IsTheVoiceAgentsOfTheSpeakersHousehold()
+    {
+        await _client.MintAsync(new TopicMintRequest("", "Kitchen", "Alice"), TestAssertions.Of(Alice, ChannelIds.Voice), default);
+
+        var topic = (await PageAsync(new TopicViewer("alice", Home))).ShouldHaveSingleItem();
+        topic.AgentId.ShouldBe(_agent);
+    }
+
+    private IAgentDefinitionProvider VoiceAgents()
+    {
+        var households = new Mock<IAgentDefinitionProvider>();
+        households.Setup(h => h.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string? household, CancellationToken _) =>
+                HouseholdAgents.Fixed([]) with { VoiceAgent = household == Home ? _agent : "someone-else" });
+        return households.Object;
     }
 
     private async Task<IReadOnlyList<TopicMetadata>> PageAsync(TopicViewer viewer) =>

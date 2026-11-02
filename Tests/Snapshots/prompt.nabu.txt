@@ -6,7 +6,7 @@
   subagents                Feature               350 / 400    When to delegate to a worker, and how to answer from what it returns.
   memory                   Feature               500 / 500    Memory is invisible plumbing: applied silently, never narrated, forgotten on request.
   skills                   Feature               246 / 250    What the advertised skill list is, and that a skill is loaded once, before acting, and only when a request calls for it.
-  filesystem_mounts        FileSystem            506 / 600    The mounts this session actually has, and which one a path belongs under.
+  filesystem_mounts        FileSystem            506 / 2800   The mounts this session actually has, and which one a path belongs under.
   vault_prompt             Client                383 / 400    What the vault is, that script work over it runs in the sandbox on /vault in place, and that a transfer is one call.
   sandbox_prompt           Client                239 / 250    That the sandbox is the one mount with a shell, that its commands see the other mounts, where its workspace is, and that a run loads the skill.
   websearch_prompt         Client                189 / 400    That the browser exists, that a url comes from a search, and that no call is a probe.

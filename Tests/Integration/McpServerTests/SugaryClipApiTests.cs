@@ -7,6 +7,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Channels;
+using McpServerSugary.Settings;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -20,7 +21,9 @@ namespace Tests.Integration.McpServerTests;
 // what would reach a model.
 public class SugaryClipApiTests
 {
-    private static readonly TimeSpan _wait = TimeSpan.FromSeconds(60);
+    // A turn is sent once its clip is read, which the server allows its own bound for: a busy machine's
+    // ffmpeg is still inside it when a shorter wait here gives up. The wait only ever bounds a failure.
+    private static readonly TimeSpan _wait = TimeSpan.FromSeconds(new ClipSettings().TimeoutSeconds) + TimeSpan.FromSeconds(30);
 
     private const string Estimate =
         """

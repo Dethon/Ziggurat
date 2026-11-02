@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Domain.Security;
@@ -84,7 +85,7 @@ public class ChatMonitor(
             var merged = channels
                 .WatchAsync(cancellationToken)
                 .Select(ch => ch.Messages.Select(async ValueTask<(IChannelConnection Channel, ChannelMessage Message)> (m, ct) =>
-                    (ch, await RouteToAgentAsync(m, ct))))
+                    (ch, await RouteToAgentAsync(ch, m, ct))))
                 .Merge(cancellationToken);
 
             var groups = merged
@@ -130,20 +131,29 @@ public class ChatMonitor(
     // The household is the one the message's channel says it acts for, believed only for this: the
     // agent is then built for the household its verified identity names, and an id that household
     // has no agent by is refused there.
-    private async ValueTask<ChannelMessage> RouteToAgentAsync(ChannelMessage message, CancellationToken ct)
+    //
+    // A satellite's turn goes to the voice agent of the household it is for (HouseholdAgents.VoiceAgent):
+    // the household whose own voice server heard it, else its verified person's — a guest has no
+    // account, so the connection is what says whose satellite it was.
+    private async ValueTask<ChannelMessage> RouteToAgentAsync(
+        IChannelConnection channel, ChannelMessage message, CancellationToken ct)
     {
         if (!string.IsNullOrEmpty(message.AgentId))
         {
             return message;
         }
 
-        var routed = agentDefaults?.For(message.ChannelId) ?? await HouseholdDefaultAsync(message, ct);
+        var routed = message.ChannelId == ChannelIds.Voice
+            ? await HouseholdAgentAsync(HouseholdChannels.HouseholdOfTurn(message, channel), a => a.VoiceAgent, message, ct)
+            : agentDefaults?.For(message.ChannelId)
+              ?? await HouseholdAgentAsync(message.Principal?.Account?.TenantId, a => a.DefaultAgent, message, ct);
         return routed is null ? message : message with { AgentId = routed };
     }
 
     // A household the agent cannot read just now routes nothing: the message is refused as one with
     // no default, which the person is told, rather than taking the monitor down with it.
-    private async Task<string?> HouseholdDefaultAsync(ChannelMessage message, CancellationToken ct)
+    private async Task<string?> HouseholdAgentAsync(
+        string? householdId, Func<HouseholdAgents, string?> which, ChannelMessage message, CancellationToken ct)
     {
         if (agentDefinitions is null)
         {
@@ -152,7 +162,7 @@ public class ChatMonitor(
 
         try
         {
-            return (await agentDefinitions.ForHouseholdAsync(message.Principal?.Account?.TenantId, ct)).DefaultAgent;
+            return which(await agentDefinitions.ForHouseholdAsync(householdId, ct));
         }
         catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
                                        or TaskCanceledException && !ct.IsCancellationRequested)

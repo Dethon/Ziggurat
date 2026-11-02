@@ -55,6 +55,10 @@ public static class AdminProtocol
 
     public static string Agent(string agentId) => $"{Agents}/{Uri.EscapeDataString(agentId)}";
 
+    // Which agent answers the household's satellites (VoiceAgentChoice). Beside the agents rather than
+    // under them, where it would read as an agent's id.
+    public const string VoiceAgent = Household + "/voice-agent";
+
     public static string AgentVersions(string agentId) => $"{Agent(agentId)}/versions";
 
     public static string RestoreAgentVersion(string agentId, string versionId) =>

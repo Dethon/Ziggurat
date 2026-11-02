@@ -25,8 +25,10 @@ public static class PromptManifest
     // a ratchet, not a limit: every section that moves behind a skill lowers it by editing this one
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated. A section whose declared budget grows raises it
-    // the same way: the figure follows the declarations and is never set ahead of them.
-    public const int StandingTokens = 9_200;
+    // the same way: the figure follows the declarations and is never set ahead of them. The mounts
+    // section's budget covering its real mount list (2,800 where it covered its own words at 600) is
+    // most of what it stands at: the prompt did not grow, the figure stopped leaving the list out.
+    public const int StandingTokens = 11_400;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a
@@ -85,6 +87,18 @@ public static class PromptManifest
         .ToDictionary(document => document.Name, document => document.Text, StringComparer.OrdinalIgnoreCase);
 
     public static IReadOnlyCollection<string> SelectableSections => _selectable.Keys;
+
+    // The selectable sections written for a channel (audience-channels), which an agent serving a
+    // conversation built for that channel reads whatever its definition selects: voice's rules for
+    // whichever agent a household has answer aloud.
+    public static IReadOnlyList<string> ForChannel(string? channelId) =>
+        channelId is null
+            ? []
+            :
+            [
+                .. SelectableSections.Where(name => Find(name) is { } declaration
+                    && declaration.Audience.Channels.Contains(channelId, StringComparer.OrdinalIgnoreCase))
+            ];
 
     // Aggregated across sections the way the declarations themselves are, so a scenario can cite
     // one id and a coverage test can enumerate every claim the deployment makes.

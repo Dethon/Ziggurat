@@ -844,8 +844,11 @@ internal sealed class ConversationGroup(
         var tenantId = x.Identity is { TenantId.Length: > 0 } identity
             ? identity.TenantId
             : HouseholdChannels.HouseholdOfTurn(x.Message, x.Channel);
+        // Built for the channel of the turn that opened the group, whose rules it keeps for the group's
+        // life: a satellite's conversation is answered aloud by whichever agent serves it.
         var agent = _agent = await agentFactory.CreateAsync(
-            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account, tenantId, _groupCt);
+            deliveryKey, x.Message.Sender, x.Message.AgentId, approvals, x.Message.Principal?.Account, tenantId, _groupCt,
+            x.Channel.ChannelId);
         var thread = await GetOrRestoreThread(agent, deliveryKey);
 
         // Start session warmup (MCP connections + tool discovery) without awaiting it yet, so

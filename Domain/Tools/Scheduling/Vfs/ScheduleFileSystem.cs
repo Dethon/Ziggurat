@@ -625,9 +625,13 @@ public sealed class ScheduleFileSystem(
     private static ToolErrorResult Error(string code, string message) =>
         new() { ErrorCode = code, Message = message };
 
-    // The zone the engine actually computes in, read off the injected TimeProvider rather than a
-    // static call, so what the model is told and what a cron expression means cannot drift apart.
-    private const string MountDescription =
-        """Scheduled agent tasks, grouped by agent. Discover agents by globbing /schedules (each agent is a directory); read /schedules/<agentId>/agent_info.json to learn what another agent does. Schedule against yourself — the agent directory whose agent_info.json name is your own — unless the user names another agent: the directory you write to decides who runs the prompt and where the result is delivered, so another agent's directory means someone else does the work and answers on their own channel. Create a schedule with fs_create at /schedules/<agentId>/<descriptive-unique-id>/schedule.json containing JSON {prompt, cron|runAt, userId?, deliverTo?}: provide EXACTLY ONE of cron (recurring, standard 5-field cron read in local time — the zone today's date is given in — and adjusted automatically across daylight-saving changes, e.g. "0 9 * * *" = daily 09:00, "30 14 * * 1-5" = weekdays 14:30) or runAt (one-shot ISO-8601 datetime; give it a time zone — 'Z' for UTC or an offset like +02:00 — or omit one and it is read as local time; stored as UTC, auto-deleted after it fires). deliverTo is an optional list of channel ids (e.g. ["signalr","telegram"]) to receive the result; omit for the default. Change prompt/timing with fs_edit, reassign to another agent or rename with fs_move, remove with fs_delete. Read /schedules/<agentId>/<scheduleId>/status.json for createdAt/lastRunAt/nextRunAt, shown in local time. Fire a schedule immediately with fs_exec on its directory using command ./run_now. Use descriptive, unique schedule ids.""";
+    // What the mount is and where its rules are, read every turn; the rules themselves — which agent's
+    // directory, the file's fields, cron and runAt in local time, delivery — are the `scheduling`
+    // skill's, loaded on the turn that writes one, as the timers mount leaves its own to its skill.
+    public const string MountDescription =
+        "Scheduled agent tasks, grouped by agent: /schedules/<agentId>/<scheduleId>/schedule.json is one, "
+        + "with a read-only status.json beside it and the action ./run_now that fires it at once; "
+        + "/schedules/<agentId>/agent_info.json says what that agent does. Which agent's directory to write "
+        + "to, the file's fields, timing (always in local time) and delivery are in the `scheduling` skill, not here.";
 
 }

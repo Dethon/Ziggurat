@@ -89,6 +89,42 @@ public class VoiceScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalSc
 
 [Trait("Category", "Eval")]
 [Trait("Tier", "Full")]
+public class HouseholdVoiceScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(HouseholdVoiceScenarios.All, 0, of: 3);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task AScenario_AtItsDeclaredThreshold_Holds(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
+}
+
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
+public class HouseholdVoiceScenarioTests2(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(HouseholdVoiceScenarios.All, 1, of: 3);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task AScenario_AtItsDeclaredThreshold_Holds(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
+}
+
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
+public class HouseholdVoiceScenarioTests3(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
+{
+    public static TheoryData<string> Scenarios => EvalSuite.Named(HouseholdVoiceScenarios.All, 2, of: 3);
+
+    [SkippableTheory]
+    [MemberData(nameof(Scenarios))]
+    public Task AScenario_AtItsDeclaredThreshold_Holds(string name) =>
+        EvalSuite.AssertAsync(name, EvalTier.Full, scenario => scenario.Policy, scorecard);
+}
+
+[Trait("Category", "Eval")]
+[Trait("Tier", "Full")]
 public class HomeAssistantScenarioTests(EvalScorecard scorecard) : IClassFixture<EvalScorecard>
 {
     public static TheoryData<string> Scenarios => EvalSuite.Named(HomeAssistantScenarios.All, 0, of: 2);

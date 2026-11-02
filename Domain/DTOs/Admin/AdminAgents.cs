@@ -7,12 +7,18 @@ namespace Domain.DTOs.Admin;
 // definition's, so it is shown and never sent back. Answered as the household's turns run them — a
 // household that saved none has the two starting templates — beside the shipped templates an agent
 // can be added from and the longest custom instructions a save takes.
+//
+// VoiceAgent is the agent the owner marked to answer the household's satellites, null for none;
+// AnswersAloud the one that does (HouseholdAgents.VoiceAgent: the marked one, else the household's agent
+// of the voice template), null when none of its agents does.
 [PublicAPI]
 public sealed record AdminAgents(
     string? DefaultAgent,
     IReadOnlyList<AdminAgent> Agents,
     IReadOnlyList<AdminAgentTemplate> Templates,
-    int InstructionsLength);
+    int InstructionsLength,
+    string? VoiceAgent = null,
+    string? AnswersAloud = null);
 
 // Template is the shipped template it was made from, or null for a definition seeded for the
 // household (the home's own agents). Model is shown, never edited.
@@ -40,3 +46,6 @@ public sealed record AgentAddition(string Template, string Name);
 [PublicAPI]
 public sealed record AdminAgentVersion(
     string Id, string Name, string? CustomInstructions, DateTimeOffset ReplacedAt, string ReplacedBy);
+// Which of the household's agents answers its satellites; null marks none.
+[PublicAPI]
+public sealed record VoiceAgentChoice(string? AgentId);

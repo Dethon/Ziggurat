@@ -122,8 +122,9 @@ dials the shared servers (scheduling, timers, Sugary, Idealista) and the tenant 
 name, with files, workers and memory; `sugary`, the estimator; and `nabu`, the home's Nabu without
 the home — the voice section and its spoken-reply tuning, every one of the kit's own servers by name
 (Home Assistant and the library included: a command spoken to it reaches everything the agent can
-do), the household's language rather than a pinned one — under the id voice's channel default
-names, which an owner adds and no household starts with. A template's own server reaches a
+do), the household's language rather than a pinned one — which an owner adds and no household starts
+with, and which answers the household's satellites unless the owner marks another agent to (any
+agent serving a satellite reads the voice section, `.claude/rules/channels.md`). A template's own server reaches a
 turn only where the household set it up (`.claude/rules/household-config.md`, "The agents a household
 runs"). The header is the definition — `name`, `purpose`, `agent-name` (the name a
 household starts with), `model`, `reasoning-effort`, `provider-routing` (one JSON object on its line,
@@ -224,5 +225,5 @@ parent turn's, written onto its request by the run tool from the `ConversationCo
 - `Tests/Snapshots/skill.*.md` hold each skill's body under its budget, so a body that grows is a
   diff somebody reads; the agent snapshots show the advertised list exactly as the model sees it.
 - `VoiceOverridesFormattingTests` proves the spoken rules beat the screen-oriented ones for the
-  agent that actually speaks, and ties the section's declared channel to the routing default that
-  sends that channel's messages to it.
+  agent that actually speaks. A channel's sections reach whichever agent its conversation group is
+  built for (`PromptManifest.ForChannel`), so the voice section is the satellite's, not one agent's.

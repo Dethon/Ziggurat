@@ -18,6 +18,7 @@ public static class EvalSuite
         .. TimerScenarios.All,
         .. MechanismScenarios.All,
         .. VoiceScenarios.All,
+        .. HouseholdVoiceScenarios.All,
         .. HomeAssistantScenarios.All,
         .. WatchScenarios.All,
         .. VaultScenarios.All,

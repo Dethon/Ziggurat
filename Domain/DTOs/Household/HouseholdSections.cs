@@ -99,6 +99,11 @@ public static partial class HouseholdSections
         {
             yield return $"the default agent {fallback} is none of the household's agents";
         }
+
+        if (section.VoiceAgent is { } voice && section.Agents.All(a => a.Id != voice))
+        {
+            yield return $"the voice agent {voice} is none of the household's agents";
+        }
     }
 
     private static IEnumerable<string> KeysProblems(KeysSection keys)
@@ -186,6 +191,10 @@ public sealed record HouseholdSettings
 public sealed record AgentsSection
 {
     public string? DefaultAgent { get; init; }
+
+    // Who answers on the household's voice satellites, one of its agents whatever its template; none
+    // marked is its agent of the voice template (HouseholdAgents.VoiceAgent).
+    public string? VoiceAgent { get; init; }
     public IReadOnlyList<HouseholdAgent> Agents { get; init; } = [];
 }
 

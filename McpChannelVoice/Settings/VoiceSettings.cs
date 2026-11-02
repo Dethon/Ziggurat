@@ -19,8 +19,9 @@ public record VoiceSettings : IMcpHostSettings
     // Where the agent mints the topic each new conversation opens under.
     public AgentClientConfig Agent { get; init; } = new();
 
-    // Agent that handles voice transcripts. Sent as the message AgentId so the agent
-    // host resolves this definition; null falls back to the first configured agent.
+    // The agent a satellite's words are for, where an operator pins one. Null — the default — names
+    // none, and the agent sends each turn to the voice agent of the household it is for, the one its
+    // owner marked on the Agents page (HouseholdAgents.VoiceAgent).
     public string? AgentId { get; init; }
     // The metrics feed's alone, and unused when Metrics names a URL: a household's voice posts its
     // events on its metrics back-call (METRICS__URL) and reaches no deployment database.

@@ -28,6 +28,8 @@ public interface IAdminService
 
     Task<AdminAnswer<AdminAgents>> RemoveAgentAsync(string agentId);
 
+    Task<AdminAnswer<AdminAgents>> SetVoiceAgentAsync(VoiceAgentChoice choice);
+
     Task<AdminAnswer<IReadOnlyList<AdminAgentVersion>>> GetAgentVersionsAsync(string agentId);
 
     Task<AdminAnswer<AdminAgents>> RestoreAgentVersionAsync(string agentId, string versionId);

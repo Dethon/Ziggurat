@@ -107,6 +107,28 @@
             </article>
         }
 
+        <form class="admin-form admin-agent-voice" @onsubmit="SetVoiceAgent" aria-labelledby="admin-agent-voice-heading">
+            <h2 id="admin-agent-voice-heading">Answers aloud</h2>
+            <p class="admin-field-hint" id="admin-agent-voice-now">
+                @(agents.Agents.FirstOrDefault(a => a.Id == agents.AnswersAloud) is { } aloud
+                    ? $"{aloud.Name} answers the household's voice satellites, under the spoken-reply rules whatever template it came from."
+                    : "Nobody answers the household's voice satellites yet: pick one of its agents, or add one from the Nabu template.")
+            </p>
+            <label class="admin-field">
+                <span class="admin-field-label">Voice agent</span>
+                <select name="voiceAgent" @bind="_voiceAgent" aria-describedby="admin-agent-voice-now">
+                    <option value="">The agent made from the Nabu template, if there is one</option>
+                    @foreach (var agent in agents.Agents)
+                    {
+                        <option value="@agent.Id">@agent.Name</option>
+                    }
+                </select>
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@_state.Saving">Save voice agent</button>
+            </div>
+        </form>
+
         <form class="admin-form admin-agent-add" @onsubmit="Add" aria-labelledby="admin-agent-add-heading">
             <h2 id="admin-agent-add-heading">Add an agent</h2>
             <label class="admin-field">
@@ -143,6 +165,7 @@
     private string? _confirming;
     private string _template = "";
     private string _newName = "";
+    private string _voiceAgent = "";
 
     protected override void OnInitialized()
     {
@@ -160,6 +183,7 @@
 
             _confirming = null;
             _newName = "";
+            _voiceAgent = agents.VoiceAgent ?? "";
             if (agents.Templates.All(t => t.Name != _template))
             {
                 _template = agents.Templates.FirstOrDefault()?.Name ?? "";
@@ -187,6 +211,9 @@
     private void Restore(string agentId, string versionId) => Dispatcher.Dispatch(new RestoreHouseholdAgentVersion(agentId, versionId));
 
     private void Remove(string agentId) => Dispatcher.Dispatch(new RemoveHouseholdAgent(agentId));
+
+    private void SetVoiceAgent() =>
+        Dispatcher.Dispatch(new SetHouseholdVoiceAgent(string.IsNullOrEmpty(_voiceAgent) ? null : _voiceAgent));
 
     private void Add() => Dispatcher.Dispatch(new AddHouseholdAgent(new AgentAddition(_template, _newName.Trim())));
 

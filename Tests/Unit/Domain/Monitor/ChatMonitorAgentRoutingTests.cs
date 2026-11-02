@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.Monitor;
 using Microsoft.Agents.AI;
@@ -21,7 +22,7 @@ public class ChatMonitorAgentRoutingTests
 {
     private static readonly AgentDefaults _defaults = new()
     {
-        ByChannel = new Dictionary<string, string> { ["voice"] = "nabu" }
+        ByChannel = new Dictionary<string, string> { ["sugary"] = "sugary" }
     };
 
     // Every household's default is its own: these name theirs by the household they are asked for, and
@@ -33,7 +34,7 @@ public class ChatMonitorAgentRoutingTests
     });
 
     [Theory]
-    [InlineData("voice", null, "nabu")]
+    [InlineData("sugary", null, "sugary")]
     [InlineData("telegram", null, "jonas")]
     [InlineData("voice", "jack", "jack")]
     public async Task ChannelWithoutAnAgentId_BuildsTheChannelsDefaultAgent(
@@ -61,6 +62,42 @@ public class ChatMonitorAgentRoutingTests
         // The same id keyed the group, so a defaulted message and one naming the agent
         // explicitly share a conversation instead of running two agents over it.
         created.Key.AgentId.ShouldBe(expected);
+    }
+
+    // A satellite's turn goes to the voice agent of the household it is for — the one its owner marked,
+    // whichever template it came from — and a guest's, who has no account, to that of the household
+    // whose own voice server heard them.
+    [Theory]
+    [InlineData(null, "voz-home")]
+    [InlineData("elsewhere", "jonas-elsewhere")]
+    public async Task ASatellitesTurn_BuildsTheVoiceAgentOfTheHouseholdItIsFor(string? ownServerOf, string expected)
+    {
+        var message = MonitorTestMocks.CreateChannelMessage(channelId: "voice", agentId: null);
+        var channel = MonitorTestMocks.CreateChannel("voice", message);
+        if (ownServerOf is not null)
+        {
+            channel = new FakeChannelConnection { ChannelId = "voice", Household = ChannelHousehold.Own(ownServerOf, home: false) };
+            channel.WriteMessage(message with { Assertion = TestAssertions.OfGuest(ownServerOf, "voice") });
+            channel.Complete();
+        }
+
+        var factory = MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent());
+        var monitor = new ChatMonitor(
+            [channel],
+            factory,
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier(),
+            _defaults,
+            agentDefinitions: _households);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        factory.Created.ShouldHaveSingleItem().AgentId.ShouldBe(expected);
+        // Built for the satellite's channel, so it answers under the voice rules whatever its template.
+        factory.Channels.ShouldHaveSingleItem().ShouldBe("voice");
     }
 
     // A household's people reach its own default, which another household's need not share.
@@ -161,7 +198,10 @@ public class ChatMonitorAgentRoutingTests
         provider
             .Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((string? household, CancellationToken _) =>
-                HouseholdAgents.Fixed([], defaults.GetValueOrDefault(household ?? "@nobody")));
+                HouseholdAgents.Fixed([], defaults.GetValueOrDefault(household ?? "@nobody")) with
+                {
+                    VoiceAgent = household is null ? "voz-home" : $"jonas-{household}"
+                });
         return provider.Object;
     }
 }

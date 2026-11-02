@@ -198,6 +198,56 @@ public sealed class HouseholdAgentsAdminTests(RedisFixture redis) : IClassFixtur
         agent.Name.ShouldBe("Voz");
     }
 
+    // One agent of a household answers its satellites, and its owner says which: any of its agents, a
+    // Jonas as well as a Nabu. Marked none, the household's agent of the voice template does; with none,
+    // nobody does, and the page says so. What answers aloud is what the agent's own reader routes to.
+    [Fact]
+    public async Task AnOwner_MarksWhichAgentAnswersAloud_AndTheAgentRoutesToIt()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await using var reader = Reader(server);
+        var agents = new HouseholdAgentSource(reader, new SharedServers());
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        (await AgentsAsync(admin)).ShouldSatisfyAllConditions(
+            a => a.VoiceAgent.ShouldBeNull(), a => a.AnswersAloud.ShouldBeNull());
+
+        await SendAsync(admin, HttpMethod.Post, AdminProtocol.Agents, new AgentAddition(AgentTemplates.Nabu, "Voz"));
+        (await AgentsAsync(admin)).AnswersAloud.ShouldBe(AgentTemplates.Nabu, "the voice template's agent, marked none");
+
+        var marked = await admin.PutAsync(AdminProtocol.VoiceAgent, new VoiceAgentChoice("jonas"));
+
+        marked.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await marked.Content.ReadFromJsonAsync<AdminSaved<AdminAgents>>())!.Value.ShouldSatisfyAllConditions(
+            a => a.VoiceAgent.ShouldBe("jonas"), a => a.AnswersAloud.ShouldBe("jonas"));
+        await Eventually.Until(async () => (await agents.ForAsync(household, CancellationToken.None)).VoiceAgent == "jonas",
+            "the marked voice agent to reach the agent's reader");
+        (await ChangesAsync(admin)).Select(c => c.Summary).ShouldContain("Marked agent jonas to answer aloud");
+
+        (await admin.PutAsync(AdminProtocol.VoiceAgent, new VoiceAgentChoice("ghost"))).StatusCode
+            .ShouldBe(HttpStatusCode.BadRequest);
+        (await admin.PutAsync(AdminProtocol.VoiceAgent, new VoiceAgentChoice(null))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await AgentsAsync(admin)).ShouldSatisfyAllConditions(
+            a => a.VoiceAgent.ShouldBeNull(), a => a.AnswersAloud.ShouldBe(AgentTemplates.Nabu));
+    }
+
+    // Removing the agent that answers aloud is removing it from the satellites too: the mark goes with
+    // it in the same save, and the household's voice falls back as if none were marked.
+    [Fact]
+    public async Task RemovingTheMarkedVoiceAgent_ClearsTheMark()
+    {
+        await using var server = await StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        await SendAsync(admin, HttpMethod.Post, AdminProtocol.Agents, new AgentAddition("jonas", "Cocina"));
+        await admin.PutAsync(AdminProtocol.VoiceAgent, new VoiceAgentChoice("jonas-2"));
+
+        (await SendAsync(admin, HttpMethod.Delete, AdminProtocol.Agent("jonas-2"))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        (await AgentsAsync(admin)).ShouldSatisfyAllConditions(
+            a => a.VoiceAgent.ShouldBeNull(), a => a.AnswersAloud.ShouldBeNull());
+    }
+
     [Fact]
     public async Task ATemplateThisDeploymentDoesNotShip_IsRefused()
     {
