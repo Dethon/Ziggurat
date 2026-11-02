@@ -637,9 +637,9 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     }
 
     // A household that set up its voice and added no voice agent: its satellite's question is answered
-    // aloud with the refusal — voice speaks an error as "Hubo un error: …", which is what is listened
-    // for, since the refusal itself is English spoken by a Spanish voice — instead of the satellite
-    // waiting out its reply in silence, and the refusal is on the errors feed under the household.
+    // aloud with the refusal, in voice's own Spanish ("…no tiene un agente de voz…", which is what is
+    // listened for), instead of the satellite waiting out its reply in silence, and the refusal is on
+    // the errors feed under the household.
     [SkippableFact]
     public async Task AHouseholdsOwnVoice_WithNoVoiceAgent_HearsTheRefusalAloud()
     {

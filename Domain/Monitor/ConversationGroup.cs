@@ -43,33 +43,13 @@ internal sealed class ConversationGroup(
     IAgentDefinitionProvider? households,
     ILogger logger) : IAsyncDisposable
 {
-    // What a person of a household the operator suspended is told. Nothing they can do here changes it.
-    internal const string SuspendedAnswer =
-        "Your household is suspended, so its assistant does not answer until whoever runs this deployment resumes it.";
-
-    // What a person whose turn was refused is told. Who they are is the one thing the agent could
-    // not believe, so it says no more than that; the reason is on the errors feed.
-    internal const string RefusedTurnAnswer = "This message could not be verified as yours, so it was not answered.";
-
-    // What a member an owner disabled is told: who they are was believed, and the household says the
-    // agent acts for them no more. Whoever disabled them can say why.
-    internal const string DisabledAnswer =
-        "Your account in this household is disabled, so this message was not answered. Ask the household's owner.";
-
-    // What a person is told when whether their household runs, or still lets them in, could not be read
-    // just now: never that it is suspended or that they are disabled, which may not be so.
-    internal const string UncheckedAnswer =
-        "Whether your household lets this message through could not be checked right now, so it was not answered. Try again in a moment.";
-
-    // What a person whose household set no OpenRouter key is told: nothing was asked of any model, and
-    // nothing will be until a key is added, which they cannot do from here.
-    internal const string WithoutKeyAnswer =
-        "Your household has no OpenRouter key set, so its assistant cannot answer yet. Ask whoever runs it to add one.";
-
-    // What a person at a channel that only attaches (a satellite) is told when their household has no
-    // agent of the id the channel addresses: what to add, and where.
-    internal const string NoAgentHereAnswer =
-        "Your household has no voice agent yet, so nobody answers here. An owner can add one on the Agents page.";
+    // What a refused person is told (RefusalAnswers, which a channel may say in its own words).
+    internal const string SuspendedAnswer = RefusalAnswers.Suspended;
+    internal const string RefusedTurnAnswer = RefusalAnswers.NotVerified;
+    internal const string DisabledAnswer = RefusalAnswers.Disabled;
+    internal const string UncheckedAnswer = RefusalAnswers.Unchecked;
+    internal const string WithoutKeyAnswer = RefusalAnswers.WithoutKey;
+    internal const string NoAgentHereAnswer = RefusalAnswers.NoVoiceAgent;
 
     // The outer token: it ends with the monitor, not with a turn. The two establishing stages
     // that reach outside — minting the delivery targets and restoring the thread — run on it
