@@ -18,6 +18,6 @@ by its own agent and replied to through the same tunnel. Spec: `../spec.md`.
 - [ ] Two households each running a channel server of the same name get their own replies, never each other's
 - [ ] A message asserting another household than its connection's is refused, and no agent is built for it
 - [ ] A non-home tunnel's drop and reopen is followed without a restart
-- [ ] Connection host: one run per opening per household; two households' openings run side by side; a newer opening finishes only its own household's run (`ChannelConnectionHostTests`)
-- [ ] The home's channels behave as before (the existing tunnelled channel and host tests stay green)
+- [ ] Two households' openings of one server name are followed side by side, and a reconnect of one never drops the other (round trip)
+- [ ] The home's channels behave as before (the existing tunnelled channel tests stay green)
 - [ ] `.claude/rules/tunnel.md` "A household's channel server" describes following per household

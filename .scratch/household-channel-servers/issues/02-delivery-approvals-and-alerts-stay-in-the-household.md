@@ -19,9 +19,9 @@ assertion whose household is not the household of the tunnel the request came th
 
 **Status:** ready-for-agent
 
-- [ ] A household's fire delivering to `voice` is spoken on that household's voice server, never another's (`DeliveryTargetResolver` tests, then a tunnelled round trip)
-- [ ] An approval is offered and settled only on the deployment's channels and the asker's household's connections (`ApprovalRelayTests`)
-- [ ] An alert rings only on the deployment's channels and the owner's household's connections (`AlertRelay` tests)
-- [ ] An attachment is fetched from the connection of the household that took it, and the cache key includes that household
+- [ ] A household's fire delivering to `voice` reaches that household's voice server, never another's (round trip)
+- [ ] An approval is offered and settled only on the deployment's channels and the asker's household's connections (round trip)
+- [ ] An alert rings only on the deployment's channels and the owner's household's connections (round trip)
+- [ ] An attachment is fetched from the connection of the household that took it (round trip)
 - [ ] A connection is registered with its household's agents, not the home's
 - [ ] Topic minting through a household's tunnel refuses another household's assertion

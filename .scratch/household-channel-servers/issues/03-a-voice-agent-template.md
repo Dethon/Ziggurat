@@ -15,7 +15,7 @@ for voice), a suspended household and a disabled person. Spec: `../spec.md`.
 **Status:** ready-for-agent
 
 - [ ] The template passes the template conformance tests (`PromptDocumentsTests`), names shared servers by address and the kit's by name, and its prompt snapshot is committed
-- [ ] A household's `nabu` made from the template is the agent a voice turn of that household addresses (`HouseholdAgents` / `ChatMonitor` agent defaults per household)
+- [ ] A household's `nabu` made from the template answers that household's voice turn (round trip)
 - [ ] A voice turn for an agent the household lacks gets the spoken refusal, not silence (the round trip, attach-only)
 - [ ] Suspended household and disabled person refusals are replied on an attach-only channel too
 - [ ] The Agents page offers the template, and the owner can name it
