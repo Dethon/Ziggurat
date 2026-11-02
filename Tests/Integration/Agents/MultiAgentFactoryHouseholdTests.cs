@@ -225,10 +225,16 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 
     // The kit's servers the template names, each set up or not, connected or not: the server hosted
     // here answers under whichever name a case gives it.
-    public static TheoryData<string, bool, bool, bool, bool> OwnServerCases()
+    public static TheoryData<string, bool, bool, bool, bool> OwnServerCases() =>
+        CasesFor("vault", "sandbox", "websearch", "printer");
+
+    public static TheoryData<string, bool, bool, bool, bool> VoiceOwnServerCases() =>
+        CasesFor("vault", "sandbox", "websearch", "printer", "homeassistant", "library");
+
+    private static TheoryData<string, bool, bool, bool, bool> CasesFor(params string[] servers)
     {
         var cases = new TheoryData<string, bool, bool, bool, bool>();
-        foreach (var server in new[] { "vault", "sandbox", "websearch", "printer" })
+        foreach (var server in servers)
         {
             cases.Add(server, true, true, true, false);
             cases.Add(server, true, false, false, true);
@@ -240,9 +246,10 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
     }
 
     // The voice template's agent, added and named by an owner, reaches the kit's servers it names as
-    // Jonas does: only where the household set them up.
+    // Jonas does — and Home Assistant and the library besides, since a command spoken to it reaches
+    // everything the agent can do: each only where the household set it up.
     [Theory]
-    [MemberData(nameof(OwnServerCases))]
+    [MemberData(nameof(VoiceOwnServerCases))]
     public async Task AnAgentFromTheVoiceTemplate_ReachesAnOwnServerOnlyWhereItsHouseholdSetItUp(
         string server, bool setUp, bool connected, bool reached, bool namedOffline)
     {
@@ -253,20 +260,6 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
 
         Tools(_model.Requests[^1]).Any(tool => tool.EndsWith("__recall")).ShouldBe(reached);
         NamesOffline(_model.Requests[^1], server).ShouldBe(namedOffline);
-    }
-
-    // The home's Home Assistant is the home's tuning, not the template's: a household that set its own
-    // up and has it connected still does not reach it through the voice template's agent.
-    [Fact]
-    public async Task AnAgentFromTheVoiceTemplate_DoesNotReachAHomeAssistantItsHouseholdSetUp()
-    {
-        _households.Add(Household, isHome: false, Settings(), Voz(), ownServers: ["homeassistant"]);
-        Connect(true, "homeassistant");
-
-        await TurnAsync("nabu", Household);
-
-        Tools(_model.Requests[^1]).ShouldNotContain(tool => tool.EndsWith("__recall"));
-        NamesOffline(_model.Requests[^1], "homeassistant").ShouldBeFalse();
     }
 
     // Named by its owner and answering aloud wherever its turn comes from: the voice section is the
