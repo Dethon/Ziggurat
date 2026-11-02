@@ -70,7 +70,7 @@ public static class HouseholdServersAdmin
             var told = revoked.NotTold is null;
             return Results.Ok(new AdminSaved<AdminServers>(
                 await AnswerAsync(caller.HouseholdId, store, relay, closing: told ? revoked.Id : null, ct),
-                told ? null : NotToldWarning));
+                told ? revoked.ReadersNotTold is null ? null : AdminSections.NotToldWarning : NotToldWarning));
         });
     }
 

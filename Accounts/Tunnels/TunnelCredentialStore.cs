@@ -17,10 +17,13 @@ public sealed record MintedTunnelCredential(
 public sealed record ListedTunnelCredential(
     string Id, string TenantId, string ServerName, DateTimeOffset CreatedAt, DateTimeOffset? RevokedAt);
 
-// NotTold is why the listeners were not told, or null when they were: the revocation stands either
-// way, and the relay refuses it on the tunnel's next open.
+// NotTold is why the relay was not told, or null when it was: the revocation stands either way, and
+// the relay refuses it on the tunnel's next open. ReadersNotTold is why the configuration's readers
+// were not told the household's servers changed: the agent then stops naming it within its cache's
+// lifetime.
 public sealed record RevokedTunnelCredential(
-    string Id, string TenantId, string ServerName, DateTimeOffset RevokedAt, bool AlreadyRevoked, string? NotTold);
+    string Id, string TenantId, string ServerName, DateTimeOffset RevokedAt, bool AlreadyRevoked, string? NotTold,
+    string? ReadersNotTold = null);
 
 public abstract record TunnelVerdict
 {
@@ -170,8 +173,8 @@ public sealed class TunnelCredentialStore(
         row.RevokedAt ??= clock.Time.GetUtcNow();
         await db.SaveChangesAsync(ct);
         var notTold = await revocations.TellAsync(new TunnelCredentialRevoked(row.Id, row.TenantId, row.ServerName), ct);
-        var readersNotTold = await AnnounceAsync(row.TenantId, ct);
         return new RevokedTunnelCredential(
-            row.Id, row.TenantId, row.ServerName, row.RevokedAt.Value, alreadyRevoked, notTold ?? readersNotTold);
+            row.Id, row.TenantId, row.ServerName, row.RevokedAt.Value, alreadyRevoked, notTold,
+            await AnnounceAsync(row.TenantId, ct));
     }
 }

@@ -302,6 +302,12 @@ public static class AccountsCommand
         }
 
         await output.WriteLineAsync("The relay was told, and closes a tunnel it opened.");
+        if (revoked.ReadersNotTold is { } readers)
+        {
+            await output.WriteLineAsync(
+                $"The agent was not told ({readers}): it stops naming {revoked.ServerName} within a minute.");
+        }
+
         return 0;
     }
 
