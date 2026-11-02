@@ -182,6 +182,22 @@ public class TimerFileSystemJourneyTests
         status.Content.ShouldContain("-04:00"); // EDT on 2 July, not Madrid's +02:00
     }
 
+    // The time a new timer rings is the mount's to say, on the household's wall clock with no offset to
+    // add, so a reply that states it reads it rather than working it out: a model that had worked out
+    // 17:07:48 in its reasoning still answered "sonará a las 19:07".
+    [Fact]
+    public async Task Creating_SaysWhenTheTimerRings_OnTheHouseholdsWallClock()
+    {
+        var mount = BuildMount();
+        var fs = mount.As(PersonOf(_fran) with { Household = new ZonedHousehold(Home, "America/New_York") });
+
+        var created = (await fs.CreateAsync("/pasta/timer.json", PastaSpec, false, true, CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>().Value;
+
+        // 10:00 UTC on 2 July is 06:00 in New York (EDT); five minutes on.
+        created.Note.ShouldBe("It rings at 06:05:00, the household's time (America/New_York), in 300 seconds.");
+    }
+
     private sealed class ZonedHousehold(string id, string zone) : ICallHousehold
     {
         public string Id => id;

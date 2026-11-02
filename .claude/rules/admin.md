@@ -198,7 +198,9 @@ provider was asked** (`Accounts/Keys/KeyProbes.cs`):
   sent on a household's own key (`MultiAgentFactory.CreateChatClient` with a key and its household; never
   the deployment's key, never the Lemonade box) and on a `ClientResultException` 401 — not a 402, which
   is credit — calls `IHouseholdKeyReports.OpenRouterKeyRefusedAsync(household)` once per client, without
-  waiting, and rethrows. `HouseholdConfigurationClient` implements it (registered only where an agent
+  waiting. The turn then fails as a `TurnRefusedException` carrying `RefusalAnswers.KeyRefused` (a 402,
+  `OutOfCredit`, is not reported but is refused the same way), which the reply shows bare — never the
+  provider's status line — and voice speaks in Spanish (`SpokenRefusals`). `HouseholdConfigurationClient` implements it (registered only where an agent
   token is given): `POST /accounts/internal/household-config/openrouter-key-refused`, proven as the
   agent's own view is (`InternalCallers`' view table, `HouseholdProofs.AgentAsync`), answered 204.
   `KeysAdmin.InUseRejectedAsync` marks the key saved now rejected, then probes it: working heals it,

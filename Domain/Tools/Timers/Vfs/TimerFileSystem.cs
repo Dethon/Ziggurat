@@ -297,7 +297,7 @@ public sealed class TimerFileSystem(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        await store.ArmAsync(new ArmedTimer
+        var armed = new ArmedTimer
         {
             Id = node.TimerId,
             TenantId = household,
@@ -308,11 +308,16 @@ public sealed class TimerFileSystem(
             DurationSeconds = spec.DurationSeconds!.Value,
             CreatedAtUtc = now,
             FiresAtUtc = now.AddSeconds(spec.DurationSeconds.Value)
-        }, ct);
+        };
+        await store.ArmAsync(armed, ct);
 
         return new FsResult<FsCreateResult>.Ok(new FsCreateResult
         {
-            Status = "created", FilePath = path, Size = content.Length.ToString(), Lines = content.Split('\n').Length
+            Status = "created",
+            FilePath = path,
+            Size = content.Length.ToString(),
+            Lines = content.Split('\n').Length,
+            Note = RingsAt(armed, await _householdOfCall.ZoneAsync(timeProvider.LocalTimeZone, ct))
         });
     }
 
@@ -562,6 +567,12 @@ public sealed class TimerFileSystem(
             firesAt = ToZone(t.FiresAtUtc, zone)
         }, _json);
     }
+
+    // When a new timer rings, said by the mount so a reply that states it reads it rather than adding
+    // the duration to the turn's timestamp: a model that had worked out 17:07:48 still answered 19:07.
+    // A wall time and the zone's name, with no offset to apply.
+    private static string RingsAt(ArmedTimer t, TimeZoneInfo zone) =>
+        $"It rings at {ToZone(t.FiresAtUtc, zone):HH:mm:ss}, the household's time ({zone.Id}), in {t.DurationSeconds} seconds.";
 
     // Stored times are UTC; render them in the calling household's zone (the server's for a call that
     // proves none) so the model reads the household's wall clock.

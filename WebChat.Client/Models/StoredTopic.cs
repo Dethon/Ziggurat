@@ -35,6 +35,11 @@ public class StoredTopic
     public bool Shared { get; set; }
     public string? OwnerName { get; set; }
 
+    // The hub's rule for renaming or deleting (TopicViewer.MayRenameOrDelete), for a row this viewer
+    // already sees: the owner's alone, and anyone's who sees a topic nobody owns. A control drawn
+    // where the hub refuses would do nothing at all.
+    public bool MayRenameOrDelete(string? viewerId) => OwnerId is null || OwnerId == viewerId;
+
     // True while the name is the stand-in a conversation started by a file was given: the file's
     // own name, because at that moment nothing had been typed. The first message with text takes
     // the name over. Not part of the metadata, so it never survives a reload — by then the

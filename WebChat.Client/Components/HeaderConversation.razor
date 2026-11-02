@@ -17,11 +17,15 @@
                    @onkeydown="HandleKeyDown" @onblur="Commit"
                    aria-label="Conversation name" />
         }
-        else
+        else if (topic.MayRenameOrDelete(_signedInUserId))
         {
             <span class="header-conversation-name @(SelectedIsStreaming ? "glow" : "")"
                   role="button" tabindex="0" title="Rename conversation"
                   @onclick="() => BeginEdit(topic)">@topic.Name</span>
+        }
+        else
+        {
+            <span class="header-conversation-name @(SelectedIsStreaming ? "glow" : "")">@topic.Name</span>
         }
         <div class="header-conversation-meta">
             <span class="header-conversation-time">@FormatTime(topic.LastWriteAt)</span>
