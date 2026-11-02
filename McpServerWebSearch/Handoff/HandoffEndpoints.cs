@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.DTOs.Tunnel;
 using Infrastructure.Clients.Browser;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -9,61 +10,67 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace McpServerWebSearch.Handoff;
 
-// The person's side of a login handoff, under the assistants host's /browse path (Caddy routes it
-// to this server's pages listener, which answers nothing else — PagesListener; the host is
-// VPN-only like WebChat). The link's GET only shows the page, because link previewers and
-// prefetch issue GETs; the page's own claim spends the link and binds the view to a cookie only
-// that browser holds. Everything after — frames, input, Done — answers to the cookie.
+// The person's side of a login handoff, under the main host's /browse/<household> path (the relay
+// forwards it down this server's tunnel to its pages listener, which answers nothing else —
+// PagesListener). The household is the one the link was minted for (BrowsePagePath), and this server
+// is that household's, so it is read off the path only to scope the cookie and the page's own
+// requests to it. The link's GET only shows the page, because link previewers and prefetch issue
+// GETs; the page's own claim spends the link and binds the view to a cookie only that browser holds.
+// Everything after — frames, input, Done — answers to the cookie.
 public static class HandoffEndpoints
 {
     public const string ViewCookie = "zg_handoff";
     public const string LoginsCookie = "zg_logins";
 
-    private static CookieOptions ViewCookieOptions(HttpContext http) => new()
+    // Sent back to this household's pages alone: one browser holding views of two households' pages
+    // must never hand one household's server the other's key.
+    private static CookieOptions ViewCookieOptions(HttpContext http, string household) => new()
     {
         HttpOnly = true,
         SameSite = SameSiteMode.Strict,
-        Path = "/browse",
+        Path = BrowsePagePath.For(household),
         // Behind Caddy the request arrives as plain http; the person's browser spoke https.
         Secure = http.Request.IsHttps || http.Request.Headers["X-Forwarded-Proto"] == "https"
     };
 
-    public static IEndpointRouteBuilder MapHandoff(this IEndpointRouteBuilder app)
+    public static IEndpointRouteBuilder MapHandoff(this IEndpointRouteBuilder endpoints)
     {
-        app.MapGet("/browse/handoff/{token}", async (string token, LoginHandoffs handoffs) =>
+        var app = endpoints.MapGroup($"{BrowsePagePath.Root}/{{household}}");
+
+        app.MapGet("/handoff/{token}", async (string household, string token, LoginHandoffs handoffs) =>
             await handoffs.IsLinkLiveAsync(token)
-                ? Results.Content(HandoffPage.Viewer(token, handoffs.LinkMinutes), "text/html")
+                ? Results.Content(HandoffPage.Viewer(BrowsePagePath.For(household), token, handoffs.LinkMinutes), "text/html")
                 : Gone(handoffs.LinkMinutes));
 
-        app.MapPost("/browse/handoff/{token}/claim", async (string token, HttpContext http, LoginHandoffs handoffs) =>
+        app.MapPost("/handoff/{token}/claim", async (string household, string token, HttpContext http, LoginHandoffs handoffs) =>
         {
             if (await handoffs.ClaimAsync(token) is not var (handoff, viewKey))
             {
                 return Results.StatusCode(StatusCodes.Status410Gone);
             }
 
-            http.Response.Cookies.Append(ViewCookie, viewKey, ViewCookieOptions(http));
+            http.Response.Cookies.Append(ViewCookie, viewKey, ViewCookieOptions(http, household));
             return Results.Json(new { site = new Uri(handoff.Url).Host, canRemember = handoffs.CanRemember });
         });
 
-        app.MapGet("/browse/logins/{token}", async (string token, LoginsPages pages) =>
+        app.MapGet("/logins/{token}", async (string household, string token, LoginsPages pages) =>
             await pages.IsLinkLiveAsync(token)
-                ? Results.Content(HandoffPage.Logins(token, pages.LinkMinutes), "text/html")
+                ? Results.Content(HandoffPage.Logins(BrowsePagePath.For(household), token, pages.LinkMinutes), "text/html")
                 : Gone(pages.LinkMinutes));
 
-        app.MapPost("/browse/logins/{token}/claim", async (string token, HttpContext http, LoginsPages pages) =>
+        app.MapPost("/logins/{token}/claim", async (string household, string token, HttpContext http, LoginsPages pages) =>
         {
             if (await pages.ClaimAsync(token) is not { } viewKey)
             {
                 return Results.StatusCode(StatusCodes.Status410Gone);
             }
 
-            http.Response.Cookies.Append(LoginsCookie, viewKey, ViewCookieOptions(http));
+            http.Response.Cookies.Append(LoginsCookie, viewKey, ViewCookieOptions(http, household));
             return Results.NoContent();
         });
 
         // One entry per login, by the site it was handed off for, with every domain it covers.
-        app.MapGet("/browse/logins/sites", async (HttpContext http, LoginsPages pages, PersonLogins logins) =>
+        app.MapGet("/logins/sites", async (HttpContext http, LoginsPages pages, PersonLogins logins) =>
             pages.PersonOf(http.Request.Cookies[LoginsCookie]) is { } person
                 ? Results.Json((await logins.LoginsAsync(person)).Select(login => new
                 {
@@ -75,7 +82,7 @@ public static class HandoffEndpoints
                 }))
                 : Results.Unauthorized());
 
-        app.MapPost("/browse/logins/forget", async (HttpContext http, LoginsPages pages, PersonLogins logins) =>
+        app.MapPost("/logins/forget", async (HttpContext http, LoginsPages pages, PersonLogins logins) =>
         {
             if (pages.PersonOf(http.Request.Cookies[LoginsCookie]) is not { } person)
             {
@@ -93,7 +100,7 @@ public static class HandoffEndpoints
                 : Results.Conflict();
         });
 
-        app.MapPost("/browse/handoff/done", async (HttpContext http, LoginHandoffs handoffs) =>
+        app.MapPost("/handoff/done", async (HttpContext http, LoginHandoffs handoffs) =>
         {
             if (handoffs.ByViewKey(http.Request.Cookies[ViewCookie]) is not { } handoff)
             {
@@ -105,7 +112,7 @@ public static class HandoffEndpoints
                 : Results.StatusCode(StatusCodes.Status410Gone);
         });
 
-        app.Map("/browse/handoff/live", async (
+        app.Map("/handoff/live", async (
             HttpContext http, LoginHandoffs handoffs, IHandoffBrowser browser, TimeProvider time) =>
         {
             if (!http.WebSockets.IsWebSocketRequest)
@@ -134,7 +141,7 @@ public static class HandoffEndpoints
             await RunViewAsync(socket, handoff, handoffs, browser, time, http.RequestAborted);
         });
 
-        return app;
+        return endpoints;
     }
 
     // Ticked unless the page said otherwise: remembering is the default.

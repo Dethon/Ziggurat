@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using McpServerWebSearch.Settings;
 
 namespace McpServerWebSearch.Handoff;
@@ -22,12 +23,12 @@ public sealed class LoginsPages(OneTimeLinks links, HandoffConfiguration setting
 
     public int LinkMinutes => settings.TicketMinutes;
 
-    public async Task<string> MintAsync(string person, CancellationToken ct)
+    public async Task<string> MintAsync(Account person, CancellationToken ct)
     {
         Prune();
-        var token = await links.MintAsync(new OneTimeLinks.Ticket(TicketKind, person), Lifetime);
-        _minted[token] = new Grant(person, time.GetUtcNow() + Lifetime);
-        return BrowseLinks.For(settings, "logins", token);
+        var token = await links.MintAsync(new OneTimeLinks.Ticket(TicketKind, person.UserId), Lifetime);
+        _minted[token] = new Grant(person.UserId, time.GetUtcNow() + Lifetime);
+        return BrowseLinks.For(settings, person.TenantId, BrowseLinks.Logins, token);
     }
 
     // Links nobody claimed and pages left open are dropped once they run out, so neither table

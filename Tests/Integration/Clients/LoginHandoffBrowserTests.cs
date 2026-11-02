@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Text;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Judgments;
 using Infrastructure.Clients.Browser;
 using Microsoft.Extensions.DependencyInjection;
@@ -92,7 +93,7 @@ public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, Red
 
             using var socket = new ClientWebSocket();
             socket.Options.Cookies = cookies;
-            await socket.ConnectAsync(new Uri($"{server.PagesAddress.Replace("http", "ws")}/browse/handoff/live"),
+            await socket.ConnectAsync(new Uri($"{server.PagesAddress.Replace("http", "ws")}{BrowsePagePath.For(account.TenantId)}/handoff/live"),
                 CancellationToken.None);
             var buffer = new byte[512 * 1024];
             var frame = await socket.ReceiveAsync(buffer, CancellationToken.None);
@@ -116,7 +117,7 @@ public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, Red
                 "the login typed through the view to set its cookie");
             await fixture.Browser.CloseSessionAsync(probe);
 
-            (await http.PostAsync("/browse/handoff/done",
+            (await http.PostAsync($"{BrowsePagePath.For(account.TenantId)}/handoff/done",
                 new StringContent("{}", Encoding.UTF8, "application/json"))).StatusCode.ShouldBe(HttpStatusCode.NoContent);
 
             var browse = await server.CallAsync("web_browse",

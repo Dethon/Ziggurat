@@ -515,8 +515,8 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     }
 
     // A login handoff's page is on the household's web search, at its own site: Caddy routes it to the
-    // relay, which forwards it down web search's tunnel to its pages listener, and the server's own
-    // answer comes back — a link nobody minted is gone, not the relay's offline page. Its /mcp is on
+    // relay, which forwards it down the web search tunnel of the household its path names to its pages
+    // listener, and the server's own answer comes back — a link nobody minted is gone, not the relay's offline page. Its /mcp is on
     // the other listener, which the pages tag never reaches, and neither listener answers the other's.
     [SkippableFact]
     public async Task TheBrowsePages_AnswerThroughTheTunnel_AndTheBrowseServersMcpIsNotOnTheirListener()
@@ -524,11 +524,11 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
         await KitConnectedAsync();
-        var page = await SendAsync(HttpMethod.Get, stack.MainHost, $"/browse/handoff/{Guid.NewGuid():N}", accept: "text/html");
+        var page = await SendAsync(HttpMethod.Get, stack.MainHost, $"{BrowsePagePath.For(stack.Home)}/handoff/{Guid.NewGuid():N}", accept: "text/html");
 
         page.StatusCode.ShouldBe(HttpStatusCode.Gone);
         (await page.Content.ReadAsStringAsync()).ShouldContain("This link has been used or has run out");
-        (await SmokeStack.FromInsideTheKitAsync(HttpMethod.Get, $"http://{BrowseServerListeners.Service}:{BrowseServerListeners.Mcp}/browse/handoff/x"))
+        (await SmokeStack.FromInsideTheKitAsync(HttpMethod.Get, $"http://{BrowseServerListeners.Service}:{BrowseServerListeners.Mcp}{BrowsePagePath.For(stack.Home)}/handoff/x"))
             .Status.ShouldBe(HttpStatusCode.NotFound);
         (await SmokeStack.FromInsideTheKitAsync(HttpMethod.Post, $"http://{BrowseServerListeners.Service}:{BrowseServerListeners.Pages}/mcp"))
             .Status.ShouldBe(HttpStatusCode.NotFound);

@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Security;
 using Domain.Security.Signing;
 using Domain.Tools;
@@ -28,6 +29,9 @@ namespace Tests.Integration.McpServerTests;
 public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixture>, IAsyncLifetime
 {
     private const string PublicBase = "https://assistants.test";
+
+    // Fran's and Ana's household's pages, which every link they are handed is under.
+    private static readonly string HouseholdPages = BrowsePagePath.For(Fran.TenantId);
 
     private readonly FakeHandoffBrowser _browser = new();
     private readonly FakeTimeProvider _time = new(DateTimeOffset.UtcNow);
@@ -80,7 +84,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         var path = PathOf(envelope["link"]!.GetValue<string>());
         var (client, _) = NewBrowserSession();
         (await client.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
-        (await client.PostAsync("/browse/handoff/done", Json(doneBody))).EnsureSuccessStatusCode();
+        (await client.PostAsync($"{HouseholdPages}/handoff/done", Json(doneBody))).EnsureSuccessStatusCode();
     }
 
     public async Task DisposeAsync() => await _server.DisposeAsync();
@@ -111,7 +115,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     {
         var link = await StartHandoffAsync();
 
-        link.ShouldStartWith($"{PublicBase}/browse/handoff/");
+        link.ShouldStartWith($"{PublicBase}{HouseholdPages}/handoff/");
         var opened = _browser.OpenedTabs.ShouldHaveSingleItem();
         opened.Person.ShouldBe(Fran.UserId);
         opened.Url.ShouldBe("https://shop.test/login");
@@ -174,7 +178,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         (await mcpListener.GetAsync(path)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await mcpListener.PostAsync($"{path}/claim", null)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
-        (await mcpListener.GetAsync("/browse/logins/sites")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await mcpListener.GetAsync($"{HouseholdPages}/logins/sites")).StatusCode.ShouldBe(HttpStatusCode.NotFound);
 
         // Nothing asked on the wrong listener spent the link.
         var (browser, _) = NewBrowserSession();
@@ -192,7 +196,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         using var socket = new ClientWebSocket();
         socket.Options.Cookies = cookies;
         await Should.ThrowAsync<WebSocketException>(() => socket.ConnectAsync(
-            new Uri($"{_server.McpAddress.Replace("http", "ws")}/browse/handoff/live"), CancellationToken.None));
+            new Uri($"{_server.McpAddress.Replace("http", "ws")}{HouseholdPages}/handoff/live"), CancellationToken.None));
     }
 
     // Even holding the server's credential: the pages listener has no /mcp to present it to.
@@ -248,7 +252,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _time.Advance(TimeSpan.FromMinutes(1));
 
         await Eventually.Until(() => !_browser.IsHandoffOpen(tab), "the abandoned view's tab to close");
-        (await client.PostAsync("/browse/handoff/done", Json("{}"))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await client.PostAsync($"{HouseholdPages}/handoff/done", Json("{}"))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     // A ticket outliving its tab — the browser restarted under it — names a view that would be
@@ -272,13 +276,13 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         var (other, _) = NewBrowserSession();
         (await claimer.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
 
-        (await other.PostAsync("/browse/handoff/done", Json("{}"))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await other.PostAsync($"{HouseholdPages}/handoff/done", Json("{}"))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         _browser.IsHandoffOpen(tab).ShouldBeTrue();
 
-        (await claimer.PostAsync("/browse/handoff/done", Json("""{"remember":true}"""))).StatusCode
+        (await claimer.PostAsync($"{HouseholdPages}/handoff/done", Json("""{"remember":true}"""))).StatusCode
             .ShouldBe(HttpStatusCode.NoContent);
         _browser.IsHandoffOpen(tab).ShouldBeFalse();
-        (await claimer.PostAsync("/browse/handoff/done", Json("{}"))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await claimer.PostAsync($"{HouseholdPages}/handoff/done", Json("{}"))).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -287,7 +291,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         var path = PathOf(await StartHandoffAsync());
         var (claimer, cookies) = NewBrowserSession();
         (await claimer.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
-        var live = new Uri($"{_server.PagesAddress.Replace("http", "ws")}/browse/handoff/live");
+        var live = new Uri($"{_server.PagesAddress.Replace("http", "ws")}{HouseholdPages}/handoff/live");
 
         using var stranger = new ClientWebSocket();
         await Should.ThrowAsync<WebSocketException>(() => stranger.ConnectAsync(live, CancellationToken.None));
@@ -326,7 +330,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         var (client, _) = NewBrowserSession();
         (await client.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
 
-        (await client.PostAsync("/browse/handoff/done", Json("{}"))).EnsureSuccessStatusCode();
+        (await client.PostAsync($"{HouseholdPages}/handoff/done", Json("{}"))).EnsureSuccessStatusCode();
 
         var wake = (await DrainAsync()).ShouldHaveSingleItem();
         wake.ConversationId.ShouldBe("tg-77");
@@ -585,7 +589,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     {
         var envelope = Envelope(await _server.CallAsync("web_logins", [], from));
         var link = envelope["link"]!.GetValue<string>();
-        link.ShouldStartWith($"{PublicBase}/browse/logins/");
+        link.ShouldStartWith($"{PublicBase}{HouseholdPages}/logins/");
         var (client, _) = NewBrowserSession();
         (await client.GetAsync(PathOf(link))).StatusCode.ShouldBe(HttpStatusCode.OK);
         (await client.PostAsync($"{PathOf(link)}/claim", null)).EnsureSuccessStatusCode();
@@ -593,7 +597,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
     }
 
     private static async Task<IReadOnlyList<string>> SitesAsync(HttpClient page) =>
-        JsonNode.Parse(await page.GetStringAsync("/browse/logins/sites"))!.AsArray()
+        JsonNode.Parse(await page.GetStringAsync($"{HouseholdPages}/logins/sites"))!.AsArray()
             .Select(site => site!["site"]!.GetValue<string>()).ToList();
 
     // The page is the account's, whichever channel asked for its link: a login handed off from
@@ -609,7 +613,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         var fran = await OpenLoginsPageAsync(FromChatClient(Fran));
         (await SitesAsync(fran)).ShouldBe(["shop.test"]);
-        JsonNode.Parse(await fran.GetStringAsync("/browse/logins/sites"))![0]!["domains"]!.AsArray()
+        JsonNode.Parse(await fran.GetStringAsync($"{HouseholdPages}/logins/sites"))![0]!["domains"]!.AsArray()
             .Select(domain => domain!.GetValue<string>()).ShouldBe(["shop.test"]);
         (await SitesAsync(await OpenLoginsPageAsync(FromTelegram(Ana, "ana_tg")))).ShouldBe(["bank.test"]);
     }
@@ -622,7 +626,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         await FinishHandoffAsync("""{"remember":true}""");
         var page = await OpenLoginsPageAsync(FromTelegram(Fran));
 
-        (await page.PostAsync("/browse/logins/forget", Json("""{"site":"shop.test"}"""))).EnsureSuccessStatusCode();
+        (await page.PostAsync($"{HouseholdPages}/logins/forget", Json("""{"site":"shop.test"}"""))).EnsureSuccessStatusCode();
 
         _browser.State.ShouldNotBeNull().ShouldNotContain("shop-session");
         var record = (await Store.LoadAsync(Fran.UserId)).ShouldNotBeNull();
@@ -641,11 +645,11 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
 
         (await first.PostAsync($"{once}/claim", null)).EnsureSuccessStatusCode();
         (await second.PostAsync($"{once}/claim", null)).StatusCode.ShouldBe(HttpStatusCode.Gone);
-        (await second.GetAsync("/browse/logins/sites")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await second.GetAsync($"{HouseholdPages}/logins/sites")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
 
         _time.Advance(TimeSpan.FromMinutes(10));
         (await second.PostAsync($"{late}/claim", null)).StatusCode.ShouldBe(HttpStatusCode.Gone);
-        (await first.GetAsync("/browse/logins/sites")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await first.GetAsync($"{HouseholdPages}/logins/sites")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -675,8 +679,8 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         fire.UserId.ShouldBe(Fran.UserId);
         fire.AgentId.ShouldBe("jonas");
         fire.Origin!.Kind.ShouldBe(MessageOriginKind.Login);
-        fire.FireReport.ShouldNotBeNull().ShouldContain($"{PublicBase}/browse/handoff/");
-        fire.Content.ShouldNotContain($"{PublicBase}/browse/handoff/");
+        fire.FireReport.ShouldNotBeNull().ShouldContain($"{PublicBase}{HouseholdPages}/handoff/");
+        fire.Content.ShouldNotContain($"{PublicBase}{HouseholdPages}/handoff/");
     }
 
     // The satellite heard nobody it knows, so there is no account to log in as and no chat client
@@ -712,7 +716,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         var (client, _) = NewBrowserSession();
         (await client.PostAsync($"{PathOf(link.TrimEnd('.', ')'))}/claim", null)).EnsureSuccessStatusCode();
 
-        (await client.PostAsync("/browse/handoff/done", Json("{}"))).EnsureSuccessStatusCode();
+        (await client.PostAsync($"{HouseholdPages}/handoff/done", Json("{}"))).EnsureSuccessStatusCode();
 
         var wake = (await DrainAsync()).ShouldHaveSingleItem();
         wake.ConversationId.ShouldBe("voice-9");
@@ -729,7 +733,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         (await client.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
         await _browser.CloseHandoffAsync(_browser.OpenedTabs.Single().Id);
 
-        (await client.PostAsync("/browse/handoff/done", Json("{}"))).StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await client.PostAsync($"{HouseholdPages}/handoff/done", Json("{}"))).StatusCode.ShouldBe(HttpStatusCode.Gone);
 
         await Eventually.Settle();
         (await DrainAsync()).ShouldBeEmpty();
@@ -769,7 +773,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         await StartHandoffAsync();
         var page = await OpenLoginsPageAsync(FromTelegram(Fran));
 
-        (await page.PostAsync("/browse/logins/forget", Json("""{"site":"shop.test"}"""))).StatusCode
+        (await page.PostAsync($"{HouseholdPages}/logins/forget", Json("""{"site":"shop.test"}"""))).StatusCode
             .ShouldBe(HttpStatusCode.Conflict);
         (await Store.LoadAsync(Fran.UserId))!.Logins.Select(login => login.Site).ShouldBe(["shop.test"]);
     }
@@ -798,7 +802,7 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         socket.Options.SetRequestHeader("Origin", "https://evil.example");
 
         await Should.ThrowAsync<WebSocketException>(() => socket.ConnectAsync(
-            new Uri($"{_server.PagesAddress.Replace("http", "ws")}/browse/handoff/live"), CancellationToken.None));
+            new Uri($"{_server.PagesAddress.Replace("http", "ws")}{HouseholdPages}/handoff/live"), CancellationToken.None));
     }
 
     // The login page's own requests must not arm a save that writes the half-made login while the

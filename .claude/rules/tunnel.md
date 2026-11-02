@@ -411,12 +411,17 @@ upgraded inside it included, whose bytes then run both ways until either end clo
 ### Browse pages
 
 The proxy routes `/browse/*` on the main host to the agent (`BrowsePagesApi`, `BrowsePages.Path`),
-never to the web search container (`DeploymentConformanceTests`: no route names it). `BrowsePages`
-forwards the exchange **unchanged, path included,** to the household's web search under the
-`pages` tag (`TunnelProtocol.PagesTag`), which web search registers for its pages listener
-(`AddTunnelListener`); the stream lands on that listener's port, so `PagesListener`'s split holds as
-before. The link, its claim, the cookie and the live view are the server's, unchanged. With no
-tunnel open it answers **502 with a page of its own** saying the household's browser is offline.
+never to the web search container (`DeploymentConformanceTests`: no route names it). A link is
+`/browse/<household>/<page>/<token>` (`BrowsePagePath`, Domain, the one spelling both ends read), and
+`BrowsePages` forwards every exchange under it **unchanged, path included,** to that household's web
+search under the `pages` tag (`TunnelProtocol.PagesTag`), which web search registers for its pages
+listener (`AddTunnelListener`); the stream lands on that listener's port, so `PagesListener`'s split
+holds as before. The link, its claim, the cookie and the live view are the server's: it serves them
+under `/browse/{household}` (a route group, `HandoffEndpoints`), scopes both view cookies to
+`Path=/browse/<household>` and renders that base into the page, so every request the page makes —
+claim, Done, the live view's socket, the logins list and Forget — carries the household too. With
+that household's tunnel not open it answers **502 with a page of its own** saying the household's
+browser is offline.
 
 ### A shared server's calls to a household's server
 
@@ -459,13 +464,20 @@ validates satellites on the household's voice server (`.claude/rules/timers.md`)
 ### Which household
 
 A shared server's call names it (above): a timer's ring, dismiss and validation reach the voice server
-of the household the timer is for. Nothing in a browse link names a household yet, so **a browse
-page is for the home household's web search** (`TunnelRegistry.FindHome`, by `HouseholdServerNames`
-and `OpenTunnel.IsHome`, as a channel endpoint named by server name is); none open is answered as
-unreachable with the reason, and another household's server of that name is never a fallback. Once a
-second household runs a web search the link must name its household too — web search knows it where
-the link is minted (`web_login`'s call token carries the person's account) — and the cookie's
-`Path=/browse` must become per household, or one household's server would be sent another's view key.
+of the household the timer is for. **A browse link names it too**: web search mints the link where
+`web_login`/`web_logins` is called, under the household of the account the call token names
+(`ILoginHandoffs.BeginAsync` and `ILoginsPages.MintAsync` take the `Account`) — which is the server's
+own household, since a turn reaches only its household's web search. The relay forwards it to that
+household's tunnel alone (`TunnelForwarder.ForwardAsync`, over `TunnelRegistry.Find`); none open is
+the offline page, and another household's web search — the home's included — is never a fallback.
+The view cookies are on `Path=/browse/<household>`, so a browser holding two households' views sends
+each server its own key alone. **A link naming no household** — its first segment after `/browse` a
+page (`handoff`, `logins`), which no household id (32 lowercase hex) can be — was minted by a web
+search from before links named one, when every link was the home's, and still goes to the home's
+(`TunnelForwarder.ForwardHomeAsync`), so a kit not yet rebuilt keeps working; a rebuilt server serves
+nothing there. Tested at the round trip (`BrowsePagesTests`: another household's link served by its
+own web search with the home's connected beside it, the offline page with only the home's connected,
+the cookie's path, and a link naming no household reaching the home's).
 
 ## Outposts are tunnels too
 

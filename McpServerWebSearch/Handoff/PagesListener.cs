@@ -1,3 +1,4 @@
+using Domain.DTOs.Tunnel;
 using McpServerWebSearch.Settings;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -15,7 +16,7 @@ namespace McpServerWebSearch.Handoff;
 // /mcp is not there at all, rather than there and asking for a credential.
 internal sealed class PagesListener(ListenerConfiguration listeners) : IStartupFilter
 {
-    public const string Path = "/browse";
+    public const string Path = BrowsePagePath.Root;
 
     public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
     {
