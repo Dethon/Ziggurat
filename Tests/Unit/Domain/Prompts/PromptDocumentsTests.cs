@@ -130,11 +130,12 @@ public class PromptDocumentsTests
         AgentTemplates.Named("jack").ShouldBeNull();
     }
 
-    // The voice template is the home's Nabu without the home: its spoken rules and its tuning for a
-    // fast first word, and none of the home's Home Assistant or music, which a household's kit does
-    // not stand in for. The language is the household's, as every template's is.
+    // The voice template is the home's Nabu without the home's tuning: its spoken rules and its routing
+    // for a fast first word, every server the home's Nabu dials — Home Assistant included, a kit's own —
+    // and the library beside them, since voice is one more channel and a command spoken to it reaches
+    // everything the agent can do. The language is the household's, as every template's is.
     [Fact]
-    public void TheNabuTemplate_SpeaksAsTheHomesNabuDoes_WithoutTheHomesHouse()
+    public void TheNabuTemplate_SpeaksAsTheHomesNabuDoes_AndReachesEverythingTheAgentCanDo()
     {
         var home = HomeAgents.Definition("nabu");
         var nabu = AgentTemplates.Named(AgentTemplates.Nabu).ShouldNotBeNull();
@@ -148,9 +149,7 @@ public class PromptDocumentsTests
         nabu.EnabledFeatures.ShouldBe(home.EnabledFeatures);
         nabu.WhitelistPatterns.ShouldBe(home.WhitelistPatterns);
         nabu.Language.ShouldBeNull();
-        nabu.McpServerEndpoints.ShouldBe(
-            [.. home.McpServerEndpoints.Where(endpoint => endpoint != "homeassistant")], ignoreOrder: true);
-        nabu.Description.ShouldNotContain("home automation");
+        nabu.McpServerEndpoints.ShouldBe([.. home.McpServerEndpoints, "library"], ignoreOrder: true);
     }
 
     // Barebones: a template dials the deployment's shared servers at their compose addresses, and a

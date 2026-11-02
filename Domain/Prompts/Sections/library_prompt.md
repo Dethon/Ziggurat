@@ -6,6 +6,9 @@ purpose: Finding and fetching media, and the download assistant's persona.
 priority: Client
 budget: 4000
 served-by: mcp-library
+# Captain Jack is the download assistant's alone: another agent dialling the library reads its
+# workings without him (library_guide).
+audience-agents: jack
 governs: formatting, verbosity
 ---
 

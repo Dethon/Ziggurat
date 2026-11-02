@@ -206,7 +206,7 @@ The agent builds a turn's agents from the turn's household's view (`HouseholdAge
   definition, because a conversation's agent is built by its first turn and outlives it: a server set
   up mid-conversation must reach the next turn. A worker asks its parent's household by the same line,
   and reaches no own server its parent does not name (`SpawnContext.OwnServers`, withheld the same way):
-  the worker profiles are the deployment's and name Home Assistant, which no template does.
+  the worker profiles are the deployment's and name Home Assistant, which the voice template does too.
   The home, and agents no household's configuration gave (a test's, the eval's), withhold none.
 - **A turn acting for nobody runs the home's agents** (`@home`) and reaches no household's servers.
 - **The worker profiles stay the deployment's** (`subAgents` in the agent's settings): a worker runs its

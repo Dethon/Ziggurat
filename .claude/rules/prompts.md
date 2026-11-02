@@ -38,7 +38,9 @@ argument about where a `Prepend` goes.
   the worked example: it was three kilobytes of JSON string.
 - **A served section reaches every agent that dials its server, unless it names an audience.**
   `PromptAudience.ForAgents(...)` is filtered in `PromptAssembly.Build`: `sugary_prompt` is the
-  `sugary` agent's, though Jonas dials `mcp-sugary` too for her log. `PromptAudienceTests` checks an
+  `sugary` agent's, though Jonas dials `mcp-sugary` too for her log. `library_prompt` (Captain Jack) is
+  `jack`'s, and the library serves the same workings without him as `library_guide` for the voice
+  template's agent, which dials the library too. `PromptAudienceTests` checks an
   audience names a configured agent.
 - **An agent may dial its servers for their prompts alone.** `noTools` on a definition: the session
   offers no tool, no skill and no mount, so no `load_skill`, no `skills` section and no preload is
@@ -118,8 +120,9 @@ A household's agent starts from a shipped template (CONTEXT.md, "Agent template"
 `AgentDefinition` whose id is the file's name. Today: `jonas`, a barebones general assistant that
 dials the shared servers (scheduling, timers, Sugary, Idealista) and the tenant kit's own servers by
 name, with files, workers and memory; `sugary`, the estimator; and `nabu`, the home's Nabu without
-the home — the voice section and its spoken-reply tuning, the kit's own servers by name but not Home
-Assistant, the household's language rather than a pinned one — under the id voice's channel default
+the home — the voice section and its spoken-reply tuning, every one of the kit's own servers by name
+(Home Assistant and the library included: a command spoken to it reaches everything the agent can
+do), the household's language rather than a pinned one — under the id voice's channel default
 names, which an owner adds and no household starts with. A template's own server reaches a
 turn only where the household set it up (`.claude/rules/household-config.md`, "The agents a household
 runs"). The header is the definition — `name`, `purpose`, `agent-name` (the name a

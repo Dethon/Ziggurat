@@ -70,6 +70,7 @@ internal static class AgentPromptFixture
             [VaultPrompt.Name] = VaultPrompt.Prompt,
             [WebBrowsingPrompt.Name] = WebBrowsingPrompt.AgentSystemPrompt,
             [DownloaderPrompt.Name] = DownloaderPrompt.AgentSystemPrompt,
+            [LibraryGuide.Name] = LibraryGuide.Text,
             [IdealistaPrompt.Name] = IdealistaPrompt.SystemPrompt,
             [HomeAssistantPrompt.Name] = HomeAssistantPrompt.SystemPrompt,
             [SchedulingPrompt.Name] = SchedulingPrompt.Prompt,

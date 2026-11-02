@@ -782,11 +782,17 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         await converse(page);
     }
 
+    // The composer takes no message while a reply still streams, so an Enter pressed before the last
+    // reply finished is dropped and the words sit in the box: sent once the composer can send them,
+    // and seen to leave it.
     private static async Task SayAsync(IPage page, string message)
     {
         var input = page.Locator("textarea.chat-input");
         await input.FillAsync(message);
+        await Assertions.Expect(page.Locator("[data-testid=composer-send]"))
+            .ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 180_000 });
         await input.PressAsync("Enter");
+        await Assertions.Expect(input).ToHaveValueAsync("", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
     }
 
     private delegate Task<InsideAnswer> Inside(

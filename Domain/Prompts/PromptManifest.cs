@@ -26,7 +26,7 @@ public static class PromptManifest
     // number, and the budget tests refuse a figure left where it was, so what left the base prompt
     // cannot grow back into the room it vacated. A section whose declared budget grows raises it
     // the same way: the figure follows the declarations and is never set ahead of them.
-    public const int StandingTokens = 8_700;
+    public const int StandingTokens = 9_200;
 
     // What an agent's whole prompt may cost above that: the slack for a section that ran over its
     // budget, or one that arrived from a server nobody declared, before a turn is paying for a

@@ -198,9 +198,12 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
 
         await store.SaveTopicAsync(Topic("t-keepdoc", 780, "Quince jelly renamed"), keepTtl: true);
 
+        // Redis keeps an expiry as an instant on its own clock, which a container's clock correction
+        // can move by a second either way; what a refresh would have set is the archive horizon, months
+        // away, so a day's margin tells the two apart without reading the clock to the second.
         var ttl = await db.KeyTimeToLiveAsync(docKey);
         ttl.ShouldNotBeNull();
-        ttl.Value.ShouldBeLessThanOrEqualTo(TimeSpan.FromDays(10));
+        ttl.Value.ShouldBeLessThan(TimeSpan.FromDays(11));
     }
 
     // Purge takes what a topic is searched by with it, on the same clock and refreshed by the

@@ -12,8 +12,11 @@ namespace Tests;
 // sleep it replaces and the slow case still passes.
 public static class Eventually
 {
-    // Long enough that only a genuine failure exhausts it, and never paid when the state arrives.
-    private static readonly TimeSpan _budget = TimeSpan.FromSeconds(10);
+    // Long enough that only a genuine failure exhausts it, and never paid when the state arrives. Ten
+    // seconds was not: with the machine busy past the suite — a second checkout's run, builds beside
+    // it — a tunnel's opening (an accounts check, a socket, a handshake) and a monitor's restarts
+    // took longer, and tests failed on time they would have been given anyway.
+    private static readonly TimeSpan _budget = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan _interval = TimeSpan.FromMilliseconds(5);
 
     public static async Task Until(Func<bool> condition, string because)
