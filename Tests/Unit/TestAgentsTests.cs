@@ -46,7 +46,7 @@ public class TestAgentsTests
     {
         TestAgents.Repository.Agents.Select(a => a.Id).ShouldBe(["jack", "jonas", "nabu", "sugary"]);
         TestAgents.Repository.SubAgents.Select(a => a.Id).ShouldBe(["jonas-worker"]);
-        TestAgents.Repository.Defaults.For("voice").ShouldBe("nabu");
+        TestAgents.Repository.Defaults.For("sugary").ShouldBe("sugary");
     }
 
     // Every WebChat collection's stack splices the sugary agent through this, so a shape it cannot

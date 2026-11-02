@@ -56,11 +56,14 @@ public static class EvalRun
         await using var stack = await EvalStack.StartAsync(
             scenario, redisConnectionString, recording);
 
+        // Built for the turn's channel, as a conversation group is: whichever agent serves a satellite
+        // reads the voice rules.
         await using var agent = await stack.Factory.CreateAsync(
             new AgentKey(conversationId, scenario.AgentId),
             userId: UserId,
             agentId: scenario.AgentId,
-            approvalHandler: new AutoApproveHandler());
+            approvalHandler: new AutoApproveHandler(),
+            channelId: scenario.Turn.Channel ?? (scenario.Turn.SatelliteId is null ? ChannelIds.SignalR : ChannelIds.Voice));
 
         // Taken after the stack is up and before the turn goes out, so what the diff reports is
         // what this turn did rather than what arming the scenario did.

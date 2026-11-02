@@ -38,7 +38,8 @@ public class ShippedDefinitionTests
 
         var settings = new ShippedDefinition(files.Settings, new TestAgents(files.Agents)).Settings;
 
-        settings.Agents.Select(a => a.Id).ShouldBe(["nabu"]);
+        settings.Agents.Select(a => a.Id).Where(id => !id.StartsWith(ShippedDefinition.TemplatePrefix)).ShouldBe(["nabu"]);
+        settings.Agents.ShouldContain(a => a.Id == ShippedDefinition.TemplatePrefix + "nabu");
         settings.DefaultAgent.ShouldBe("jack");
     }
 

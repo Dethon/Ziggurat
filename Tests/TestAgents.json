@@ -5,7 +5,6 @@
     "defaultAgent": "jonas",
     "agentDefaults": {
         "byChannel": {
-            "voice": "nabu",
             "sugary": "sugary"
         }
     },

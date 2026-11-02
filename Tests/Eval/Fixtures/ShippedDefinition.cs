@@ -1,4 +1,5 @@
 using Agent.Settings;
+using Domain.Prompts;
 using Microsoft.Extensions.Configuration;
 using Tests.Eval.Harness;
 
@@ -16,10 +17,20 @@ public sealed class ShippedDefinition(string path, TestAgents agents)
     public static ShippedDefinition Repository { get; } =
         new(Path.Combine(RepositoryRoot.Path, "Agent", "appsettings.json"), TestAgents.Repository);
 
+    // An agent a household makes from a shipped template goes by an id of its own; the eval drives each
+    // template as one, beside the home's copies, under the template's id with this in front.
+    public const string TemplatePrefix = "template-";
+
     private readonly Lazy<TestAgentSettings> _settings =
-        new(() => agents.Into(Bind(path)), LazyThreadSafetyMode.ExecutionAndPublication);
+        new(() => WithTemplates(agents.Into(Bind(path))), LazyThreadSafetyMode.ExecutionAndPublication);
 
     public TestAgentSettings Settings => _settings.Value;
+
+    private static TestAgentSettings WithTemplates(TestAgentSettings settings) =>
+        settings with
+        {
+            Agents = [.. settings.Agents, .. AgentTemplates.All.Select(t => t with { Id = TemplatePrefix + t.Id })]
+        };
 
     // The secrets come from user secrets rather than from the environment the container would
     // have had; everything else is the file's.
