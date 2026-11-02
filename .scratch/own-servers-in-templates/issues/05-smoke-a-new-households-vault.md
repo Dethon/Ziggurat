@@ -8,8 +8,8 @@ stopped exactly here. Spec: `../spec.md` ("Testing Decisions", seam 3).
 
 **Blocked by:** 02 (a household's agents reach the vault it set up), 04 (setting up takes effect on the next turn)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `scripts/smoke-stack.sh up` (or the test itself) can start a vault for a second household with a credential minted at test time, and `down` removes it
-- [ ] The smoke test reads the new household's note through its agent, and the home's vault note is not what it reads
-- [ ] The stack stays local: nothing points at the deployment's host
+- [x] `scripts/smoke-stack.sh up` (or the test itself) can start a vault for a second household with a credential minted at test time, and `down` removes it
+- [x] The smoke test reads the new household's note through its agent, and the home's vault note is not what it reads
+- [x] The stack stays local: nothing points at the deployment's host
