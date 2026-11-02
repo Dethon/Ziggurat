@@ -8,9 +8,9 @@ set -euo pipefail
 #                    spoken volume commands drive, on BOTH unit paths (the PipeWire sink on a
 #                    music unit, the "Nabu" softvol on a voice-only one).
 #   Wake tuning:     THRESHOLD=<0..1> WAKE_WINDOW=<n> scripts/provision-satellite-rs.sh <user@host>
-#                    Defaults 0.7 / 2 — applied to BOTH unit paths (the voice-only ExecStart and
-#                    the music drop-in that overrides it), so a music unit is tuned by the same
-#                    two vars. WAKE_WINDOW is how many 80 ms classifier scores are AVERAGED before
+#                    Defaults 0.5 / 2, tuned for the shipped classifier (custom v10) — applied to
+#                    BOTH unit paths (the voice-only ExecStart and the music drop-in that
+#                    overrides it), so a music unit is tuned by the same two vars. WAKE_WINDOW is how many 80 ms classifier scores are AVERAGED before
 #                    the mean is compared against THRESHOLD (it replaced TRIGGER_LEVEL, which
 #                    counted consecutive frames and reset on any single dip — a jittery score
 #                    trace under background TV or music never fired). TRIGGER_LEVEL is still read
@@ -18,11 +18,11 @@ set -euo pipefail
 #                    window 1 with a low threshold is what made music itself trigger the wake word
 #                    — retune one knob at a time. Above 3 the added wake latency exceeds the
 #                    240 ms --wake-preroll-ms gap flush, so raise that too.
-#                    WAKE_MIN_RMS=<i16 rms> (default 0 = off) drops a wake whose wake-word audio
+#                    WAKE_MIN_RMS=<i16 rms> (default 350, 0 = off) drops a wake whose wake-word audio
 #                    is quieter than that — the fix for wakes fired out of a near-silent room,
 #                    which neither knob above reaches because those fires score as high as real
 #                    ones. A per-microphone number: 350 is the measured figure for the XVF3800.
-#                    WAKE_QUIET_RMS=<i16 rms> (default 0 = off) holds a QUIET room to a stricter
+#                    WAKE_QUIET_RMS=<i16 rms> (default 200, 0 = off) holds a QUIET room to a stricter
 #                    rule: while the room's median level (last 30 s AND last 15 s) is under it,
 #                    WAKE_QUIET_THRESHOLD (default 0.9) and WAKE_QUIET_WINDOW (default 2) replace
 #                    THRESHOLD / WAKE_WINDOW. False fires are one-frame score blips that the
@@ -88,15 +88,15 @@ mic=${2:-}     # empty => auto-detect the USB audio card, address it by name
 # Wake tuning. Validated HERE, before the (slow) build and any remote change: these values are
 # spliced into the unit's ExecStart, so a malformed one would install a satellite that fails to
 # start — a bricked Pi is a much worse failure than a rejected argument.
-threshold=${THRESHOLD:-0.7}
+threshold=${THRESHOLD:-0.5}
 # TRIGGER_LEVEL is the pre-sliding-window name, still honoured so muscle memory (and any wrapper
 # script) keeps working instead of being silently ignored; WAKE_WINDOW wins when both are set.
 wake_window=${WAKE_WINDOW:-${TRIGGER_LEVEL:-2}}
 [[ $threshold =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "ERROR: THRESHOLD must be a number in 0..1 (got '$threshold')" >&2; exit 1; }
 [[ $wake_window =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: WAKE_WINDOW must be a positive integer (got '$wake_window')" >&2; exit 1; }
-wake_min_rms=${WAKE_MIN_RMS:-0}
+wake_min_rms=${WAKE_MIN_RMS:-350}
 [[ $wake_min_rms =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "ERROR: WAKE_MIN_RMS must be a number >= 0 (got '$wake_min_rms')" >&2; exit 1; }
-wake_quiet_rms=${WAKE_QUIET_RMS:-0}
+wake_quiet_rms=${WAKE_QUIET_RMS:-200}
 wake_quiet_threshold=${WAKE_QUIET_THRESHOLD:-0.9}
 wake_quiet_window=${WAKE_QUIET_WINDOW:-2}
 [[ $wake_quiet_rms =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "ERROR: WAKE_QUIET_RMS must be a number >= 0 (got '$wake_quiet_rms')" >&2; exit 1; }
