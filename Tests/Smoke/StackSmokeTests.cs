@@ -604,6 +604,69 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         }, owner);
     }
 
+    // A household's own voice, set up the way its owner would: a voice agent added from the template
+    // on the Agents page (the admin route) under a name of the household's choosing, a voice
+    // credential minted on its Servers page and a second kit voice server started at home with it,
+    // dialling a test satellite of its own. The satellite's two questions are answered aloud by that
+    // household's agent — the sum, and a one-minute timer that then rings on that satellite through
+    // the household's own voice server — and the model calls are the household's agent's, under its
+    // name, by the satellite's guest; none of them is the home's.
+    [SkippableFact]
+    public async Task AHouseholdsOwnVoice_IsAnsweredByItsOwnVoiceAgent_AndItsTimerRingsOnItsSatellite()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        var since = DateTimeOffset.UtcNow;
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var (household, owner) = await KeyedHouseholdAsync(tag);
+        var name = $"Smoke Voice {tag}";
+        var added = await AdminAsync<AdminSaved<AdminAgents>>(HttpMethod.Post, stack.MainHost, AdminProtocol.Agents,
+            owner, new AgentAddition(AgentTemplates.Nabu, name));
+        // The id the voice server addresses, whatever the agent is called.
+        added.Value.Agents.ShouldContain(a => a.Id == AgentTemplates.Nabu && a.Name == name);
+        added.Warning.ShouldBeNull();
+
+        var heard = await SmokeStack.AskHouseholdVoiceAsync(await VoiceCredentialAsync(owner), household, refused: false);
+        heard.ShouldContain("answered 7x8: yes");
+        heard.ShouldContain("the timer rang on the satellite: yes");
+
+        await Eventually.Until(async () => (await UsageAsync(household, since))
+                .Any(u => u.AgentId == AgentTemplates.Nabu && u.AgentName == name && u.Sender == SmokeStack.HouseholdSatellite),
+            $"{name}'s spoken answers counted under the household", TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(2));
+        (await UsageAsync(stack.Home, since)).ShouldNotContain(u => u.Sender == SmokeStack.HouseholdSatellite);
+    }
+
+    // A household that set up its voice and added no voice agent: its satellite's question is answered
+    // aloud with the refusal — voice speaks an error as "Hubo un error: …", which is what is listened
+    // for, since the refusal itself is English spoken by a Spanish voice — instead of the satellite
+    // waiting out its reply in silence, and the refusal is on the errors feed under the household.
+    [SkippableFact]
+    public async Task AHouseholdsOwnVoice_WithNoVoiceAgent_HearsTheRefusalAloud()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        var since = DateTimeOffset.UtcNow;
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var (household, owner) = await KeyedHouseholdAsync(tag);
+
+        var heard = await SmokeStack.AskHouseholdVoiceAsync(await VoiceCredentialAsync(owner), household, refused: true);
+        heard.ShouldContain("heard the refusal: yes");
+
+        await Eventually.Until(async () => (await ErrorsAsync(household, since))
+                .Any(e => e.ErrorType == ChatMonitor.AgentNotFoundErrorType && e.Message.Contains(ChannelIds.Voice)),
+            "the voice turn refused for the agent the household lacks, under the household",
+            TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(2));
+    }
+
+    // A voice credential minted on the owner's Servers page, as they would for their kit's voice.
+    private async Task<string> VoiceCredentialAsync(string owner)
+    {
+        var minted = await AdminAsync<AdminSaved<MintedServerCredential>>(HttpMethod.Post, stack.MainHost, AdminProtocol.Servers,
+            owner, new ServerAddition(HouseholdServerNames.Voice));
+        minted.Warning.ShouldBeNull();
+        return minted.Value.Credential;
+    }
+
     // A household made on the dashboard's operator route, its owner signed in (mint-session standing in
     // for the passkey their link enrolls) and its OpenRouter key set through the admin API — probed
     // against the stack's stub, which takes it. That key is the deployment's, on this machine's stack
@@ -786,6 +849,17 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             $"/api/metrics/tokens?household={scope}&from={since.UtcDateTime:yyyy-MM-dd}", stack.OperatorSession);
         response.EnsureSuccessStatusCode();
         var events = JsonSerializer.Deserialize<List<TokenUsageEvent>>(
+            await response.Content.ReadAsStringAsync(), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        return [.. events.Where(e => e.Timestamp >= since)];
+    }
+
+    // The errors the dashboard's read API keeps under a scope since a moment, asked as UsageAsync asks.
+    private async Task<IReadOnlyList<ErrorEvent>> ErrorsAsync(string scope, DateTimeOffset since)
+    {
+        var response = await SendAsync(HttpMethod.Get, stack.DashboardHost,
+            $"/api/metrics/errors/range?household={scope}&from={since.UtcDateTime:yyyy-MM-dd}", stack.OperatorSession);
+        response.EnsureSuccessStatusCode();
+        var events = JsonSerializer.Deserialize<List<ErrorEvent>>(
             await response.Content.ReadAsStringAsync(), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         return [.. events.Where(e => e.Timestamp >= since)];
     }

@@ -9,7 +9,9 @@
 # never Home Assistant's server, Home Assistant or Music Assistant, which reach the home and the LAN,
 # nor qBittorrent and Jackett. Voice starts only for `scripts/smoke-stack.sh voice` (profile voice),
 # talking to a test satellite (TenantKit/smoke/satellite.py) and never to the home's: the shipped
-# catalogue's satellite is left with no address, so nothing dials it. The printer prints to a stand-in on the kit's own
+# catalogue's satellite is left with no address, so nothing dials it. A second household's voice and
+# satellite start only for `scripts/smoke-stack.sh household-voice` (profile household-voice), the
+# same way. The printer prints to a stand-in on the kit's own
 # network (smoke-printer: CUPS's ippeveprinter, which takes a job and keeps it as a file), never to the
 # site's printer.
 x-hub-here: &hub-here
@@ -152,4 +154,57 @@ services:
     volumes:
       - "./smoke:/satellite:ro"
       - "../DockerCompose/volumes/smoke/kit/satellite:/voice"
+    networks: [kit]
+
+  # A second household's own voice, beside the home's: the smoke tests that onboard a household with
+  # voice mint its credential through the admin API and start this with it (`scripts/smoke-stack.sh
+  # household-voice`, the credential in SMOKE_HOUSEHOLD_VOICE_CREDENTIAL), under the same server name
+  # as the home's, talking to a test satellite of its own. Defined here whole, since it is no service of
+  # the kit's: the kit's voice service's environment, its folders its own, and the shipped catalogue's
+  # satellite left with no address — it is a device on the home's LAN, never dialled from here.
+  mcp-channel-voice-household:
+    profiles: [household-voice]
+    image: mcp-channel-voice:latest
+    user: ${PUID:-1654}:${PGID:-1654}
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/household-voices:/voices"
+      - "../DockerCompose/volumes/smoke/kit/household-tse-audit:/tse-audit"
+    environment:
+      <<: *hub-ca-env
+      TZ: Europe/Madrid
+      MCP__TUNNEL__HUB: wss://${DEPLOYMENT_HOST}/tunnel
+      MCP__TUNNEL__SERVERNAME: voice
+      MCP__TUNNEL__CREDENTIAL: ${SMOKE_HOUSEHOLD_VOICE_CREDENTIAL:-}
+      MCP__TUNNEL__BACKCALLS__accounts: "7802"
+      MCP__TUNNEL__BACKCALLS__topics: "7803"
+      MCP__TUNNEL__BACKCALLS__lemonade: "7804"
+      MCP__TUNNEL__BACKCALLS__metrics: "7801"
+      ACCOUNTS__BASEURL: http://127.0.0.1:7802
+      AGENT__BASEURL: http://127.0.0.1:7803
+      Stt__OpenAi__BaseUrl: http://127.0.0.1:7804/v1
+      Tts__OpenAi__BaseUrl: http://127.0.0.1:7804/v1
+      METRICS__URL: http://127.0.0.1:7801/events
+      Stt__OpenAi__Model: ${STT_MODEL:-Whisper-Large-v3-Turbo}
+      Announce__Token: ${Announce__Token:-}
+      Announce__Escalation__WebhookUrl: ""
+      Tse__Mode: "Off"
+      Satellites__fran-office-01__Address: ""
+      Satellites__smoke-household-satellite__Address: tcp://test-satellite-household:10800
+      Satellites__smoke-household-satellite__Identity: Smoke household satellite
+      Satellites__smoke-household-satellite__Room: Smoke household room
+      Satellites__smoke-household-satellite__WakeWord: ok_nabu
+    networks: [kit]
+
+  # The household's satellite, as the home's test satellite is, in a folder of its own.
+  test-satellite-household:
+    profiles: [household-voice]
+    image: python:3.12-alpine
+    command: ["python", "-u", "/satellite/satellite.py"]
+    environment:
+      LINGER: "${SATELLITE_LINGER:-100}"
+    volumes:
+      - "./smoke:/satellite:ro"
+      - "../DockerCompose/volumes/smoke/kit/household-satellite:/voice"
     networks: [kit]

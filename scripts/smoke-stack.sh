@@ -17,6 +17,14 @@
 #                                  (re)start a second household's vault beside the kit's, with the
 #                                  tunnel credential in SMOKE_HOUSEHOLD_VAULT_CREDENTIAL (the smoke
 #                                  test that onboards a household runs it)
+#   scripts/smoke-stack.sh household-voice <household> [refused]
+#                                  a second household's voice server and a test satellite of its own
+#                                  beside the running stack, with the voice credential in
+#                                  SMOKE_HOUSEHOLD_VOICE_CREDENTIAL: once the household's tunnel is
+#                                  open, the satellite asks the sum and the one-minute timer, and the
+#                                  answer and the ring are checked; with refused (a household with no
+#                                  voice agent) it asks the sum alone and listens for the refusal. The
+#                                  smoke tests that onboard a household with voice run it
 #   scripts/smoke-stack.sh down    stop both and remove their state
 #
 # Everything here is local. The tests reach the stack on 127.0.0.1 alone, whatever the deployment's
@@ -135,6 +143,14 @@ redelegated() {
   grep -q '^[a-z-]*: ' <<<"$said" && ! grep -q '^scheduling: could not be asked' <<<"$said"
 }
 
+# Whether a household's voice tunnel is open, as the agent's own listing says. Read whole before it is
+# searched, so the search ending early never fails the listing under pipefail.
+voice_open() {
+  local listed
+  listed="$(docker exec agent dotnet Agent.dll list-household-servers --household "$1")"
+  grep -q '^voice  connected since' <<<"$listed"
+}
+
 # One credential per kit server for the home household, minted once per smoke state and kept beside it
 # (credentials.env), so a second up starts the kit with the same ones.
 credentials() {
@@ -219,6 +235,41 @@ case "${1:-}" in
     docker logs "$satellite"
     python3 TenantKit/smoke/voice.py check "$SATELLITE"
     ;;
+  household-voice)
+    household="${2:-}"
+    mode="${3:-answered}"
+    [[ -n "${SMOKE_HOUSEHOLD_VOICE_CREDENTIAL:-}" ]] || { echo "SMOKE_HOUSEHOLD_VOICE_CREDENTIAL is not set" >&2; exit 2; }
+    [[ "$household" =~ ^[0-9a-f]{32}$ && "$mode" =~ ^(answered|refused)$ ]] \
+      || { echo "usage: $0 household-voice <household id> [refused]" >&2; exit 2; }
+    STT_BACKEND="${STT_BACKEND:-cpu}" "${DC[@]}" up -d --no-deps lemonade
+    retry curl -sf -o /dev/null http://127.0.0.1:13305/api/v1/health
+    SATELLITE="$KIT_STATE/household-satellite"
+    mkdir -p "$SATELLITE" "$KIT_STATE/household-voices" "$KIT_STATE/household-tse-audit"
+    rm -f "$SATELLITE"/*.wav
+    python3 TenantKit/smoke/voice.py say "¿Cuánto es siete por ocho?" "$SATELLITE/q1.wav"
+    if [[ "$mode" == answered ]]; then
+      python3 TenantKit/smoke/voice.py say "Pon un temporizador de un minuto." "$SATELLITE/q2.wav"
+    else
+      # Nothing set going to wait for.
+      export SATELLITE_LINGER=5
+    fi
+    "${KIT[@]}" --profile voice build mcp-channel-voice
+    # The voice server first, and the satellite once its tunnel is open: a question spoken before the
+    # household's voice is followed is minted no topic and heard by nobody. The hub dials the
+    # satellite again every few seconds until it is there.
+    "${KIT[@]}" --profile household-voice up -d --no-deps --force-recreate mcp-channel-voice-household
+    retry voice_open "$household"
+    "${KIT[@]}" --profile household-voice up -d --no-deps --force-recreate test-satellite-household
+    satellite="$(docker ps -q --filter label=com.docker.compose.project=tenant-kit-smoke \
+      --filter label=com.docker.compose.service=test-satellite-household)"
+    docker wait "$satellite" > /dev/null
+    docker logs "$satellite"
+    if [[ "$mode" == answered ]]; then
+      python3 TenantKit/smoke/voice.py check "$SATELLITE"
+    else
+      python3 TenantKit/smoke/voice.py refused "$SATELLITE"
+    fi
+    ;;
   household-vault)
     [[ -n "${SMOKE_HOUSEHOLD_VAULT_CREDENTIAL:-}" ]] || { echo "SMOKE_HOUSEHOLD_VAULT_CREDENTIAL is not set" >&2; exit 2; }
     mkdir -p "$KIT_STATE/household-vault"
@@ -232,7 +283,7 @@ case "${1:-}" in
     "${DC[@]}" --profile migrate run --rm --no-deps household-migration --people /input/people.json "$@"
     ;;
   down)
-    "${KIT[@]}" --profile voice --profile household down --volumes --remove-orphans
+    "${KIT[@]}" --profile voice --profile household --profile household-voice down --volumes --remove-orphans
     "${DC[@]}" down --volumes --remove-orphans
     # The containers wrote as their own users; a throwaway container removes what they wrote. Only
     # where there is something: bind-mounting a missing ./volumes makes Docker create it as root,
@@ -242,7 +293,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: $0 up|test|voice|household-vault|migrate|down" >&2
+    echo "usage: $0 up|test|voice|household-voice|household-vault|migrate|down" >&2
     exit 2
     ;;
 esac

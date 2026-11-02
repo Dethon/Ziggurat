@@ -149,6 +149,20 @@ public sealed partial class SmokeStack : IAsyncLifetime
         RunAsync(Path.Combine(TestHelpers.FindSolutionRoot(), "scripts", "smoke-stack.sh"), ["household-vault"],
             new Dictionary<string, string> { ["SMOKE_HOUSEHOLD_VAULT_CREDENTIAL"] = credential });
 
+    // The household's test satellite's Identity (TenantKit/docker-compose.override.smoke.yml), which a
+    // guest's turn there goes by as its sender.
+    public const string HouseholdSatellite = "Smoke household satellite";
+
+    // A second household's own voice server beside the kit's, on the credential its owner was just
+    // shown, and a test satellite of its own asking it aloud: the script's own verb, which starts them,
+    // waits for the agent to follow that household's voice, and hears what the satellite recorded —
+    // the sum and the timer ringing, or with refused the refusal of a household with no voice agent.
+    // Its output is what the satellite heard; a check that failed throws with it.
+    public static Task<string> AskHouseholdVoiceAsync(string credential, string household, bool refused) =>
+        RunAsync(Path.Combine(TestHelpers.FindSolutionRoot(), "scripts", "smoke-stack.sh"),
+            ["household-voice", household, .. refused ? new[] { "refused" } : []],
+            new Dictionary<string, string> { ["SMOKE_HOUSEHOLD_VOICE_CREDENTIAL"] = credential });
+
     // A kit service's container, which compose names after the project: found by its labels.
     public static async Task<string> KitContainerAsync(string service) =>
         (await DockerAsync("ps", "--filter", $"label=com.docker.compose.project={KitProject}",

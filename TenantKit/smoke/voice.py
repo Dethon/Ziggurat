@@ -4,6 +4,8 @@
 #   voice.py say <text> <out.wav>   Kokoro speaks the text; written as 16 kHz s16 mono, the mic format
 #   voice.py check <dir>            Whisper reads every reply the test satellite recorded in <dir>, and
 #                                   the check passes when the first answer says 56 and an alert rang
+#   voice.py refused <dir>          the same reading, passing when an answer was spoken as an error
+#                                   ("Hubo un error: …", how voice speaks a refused turn) and no alert
 #
 # Standard library only.
 import glob, json, os, struct, sys, urllib.request, uuid, wave
@@ -47,20 +49,38 @@ def hear(path):
     return json.loads(urllib.request.urlopen(request, timeout=300).read()).get("text", "").strip()
 
 
-def check(directory):
+def heard(directory):
     replies = sorted(glob.glob(f"{directory}/reply-*.wav"), key=lambda p: int(p.split("reply-")[1].split("-")[0].split(".")[0]))
-    heard = []
+    said = []
     for path in replies:
         w = wave.open(path)
         seconds = w.getnframes() / w.getframerate()
         text = hear(path) if seconds >= 0.5 else ""  # the shorter ones are the follow-up listening cue
-        heard.append((os.path.basename(path), text))
+        said.append((os.path.basename(path), text))
         print(f"{os.path.basename(path)} ({seconds:.1f} s): {text}")
-    answers = [text for name, text in heard if text and "alert" not in name]
-    answered = bool(answers) and any(k in answers[0].lower() for k in ("56", "cincuenta y seis"))
-    rang = any("alert" in name for name, _ in heard)
+    return said
+
+
+def answers(replies):
+    return [text for name, text in replies if text and "alert" not in name]
+
+
+def check(directory):
+    replies = heard(directory)
+    spoken = answers(replies)
+    answered = bool(spoken) and any(k in spoken[0].lower() for k in ("56", "cincuenta y seis"))
+    rang = any("alert" in name for name, _ in replies)
     print(f"answered 7x8: {'yes' if answered else 'no'}; the timer rang on the satellite: {'yes' if rang else 'no'}")
     return 0 if answered and rang else 1
+
+
+# The refusal itself is English, spoken by a Spanish voice, so Whisper is not asked to read it back:
+# only the words voice puts before any error it speaks.
+def refused(directory):
+    replies = heard(directory)
+    told = any("error" in text.lower() for text in answers(replies))
+    print(f"heard the refusal: {'yes' if told else 'no'}")
+    return 0 if told else 1
 
 
 if __name__ == "__main__":
@@ -68,5 +88,7 @@ if __name__ == "__main__":
         say(sys.argv[2], sys.argv[3])
     elif sys.argv[1:2] == ["check"]:
         sys.exit(check(sys.argv[2]))
+    elif sys.argv[1:2] == ["refused"]:
+        sys.exit(refused(sys.argv[2]))
     else:
-        sys.exit("usage: voice.py say <text> <out.wav> | check <dir>")
+        sys.exit("usage: voice.py say <text> <out.wav> | check <dir> | refused <dir>")
