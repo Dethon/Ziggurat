@@ -152,15 +152,17 @@ credentials() {
     done
     minted="$(docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household "$home" --server "outpost-$OUTPOST_NAME")"
     echo "TUNNEL_CREDENTIAL_OUTPOST=$(tail -n 1 <<<"$minted")" >> "$KIT_STATE/credentials.env.new"
+    echo "$home" > "$KIT_STATE/household"
     mv "$KIT_STATE/credentials.env.new" "$KIT_STATE/credentials.env"
   fi
-  # Voice's, minted the first time it is asked for, for the household the kit's vault serves.
+  # Voice's, minted the first time it is asked for, for the home household its other credentials were
+  # minted for, as kept beside them. Never found by a server name: the smoke test that onboards a
+  # household mints that household a vault too, and voice found by "the household with a vault" was
+  # then that household's, so the home's agents never heard the satellite.
   if [[ "${1:-}" == voice ]] && ! grep -q '^TUNNEL_CREDENTIAL_VOICE=' "$KIT_STATE/credentials.env"; then
-    local household
-    household="$(docker exec accounts dotnet Accounts.dll list-tunnel-credentials \
-      | grep -o 'server vault of household [0-9a-f]\{32\}' | head -n 1 | awk '{print $NF}')"
-    [[ -n "$household" ]] || { echo "no vault credential to find the kit's household by" >&2; exit 1; }
-    echo "TUNNEL_CREDENTIAL_VOICE=$(docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household "$household" --server voice | tail -n 1)" \
+    [[ -s "$KIT_STATE/household" ]] \
+      || { echo "no $KIT_STATE/household: this smoke state predates it; run down and up again" >&2; exit 1; }
+    echo "TUNNEL_CREDENTIAL_VOICE=$(docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household "$(cat "$KIT_STATE/household")" --server voice | tail -n 1)" \
       >> "$KIT_STATE/credentials.env"
   fi
   set -a
