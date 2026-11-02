@@ -250,7 +250,7 @@ internal sealed class ApprovalChannel(string channelId) : IChannelConnection
     private readonly List<ApprovalAsk> _offered = [];
     private readonly List<(string, ToolApprovalResult)> _settled = [];
     private readonly List<string> _notified = [];
-    private volatile bool _calledOff;
+    private readonly List<CancellationToken> _waits = [];
 
     public Exception? OfferFailure { get; init; }
 
@@ -268,7 +268,11 @@ internal sealed class ApprovalChannel(string channelId) : IChannelConnection
     public IReadOnlyList<ApprovalAsk> Offered => Snapshot(_offered);
     public IReadOnlyList<(string ApprovalId, ToolApprovalResult Result)> Settled => Snapshot(_settled);
     public IReadOnlyList<string> Notified => Snapshot(_notified);
-    public bool CalledOff => _calledOff;
+    // Called off is the token a wait was handed being cancelled, read off the token itself. A flag set
+    // by a callback registered on it raced the wait's own: cancellation runs the later registration
+    // first, the wait it ends disposed the flag's registration on the way out, and under load the
+    // flag's callback was unregistered before it ran.
+    public bool CalledOff => Snapshot(_waits).Any(ct => ct.IsCancellationRequested);
 
     public void Answer(ToolApprovalResult? result) => _answer.TrySetResult(result);
 
@@ -309,9 +313,9 @@ internal sealed class ApprovalChannel(string channelId) : IChannelConnection
         lock (_gate)
         {
             into.Add(ask);
+            _waits.Add(ct);
         }
 
-        await using var _ = ct.Register(() => _calledOff = true);
         return await _answer.Task.WaitAsync(ct);
     }
 
