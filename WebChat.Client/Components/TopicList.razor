@@ -93,7 +93,7 @@
                                 @FormatTime(topic.LastWriteAt)
                                 @if (StartedBySomeoneElse(topic) is { } owner)
                                 {
-                                    <span class="topic-owner">· @owner</span>
+                                    <span class="topic-owner"> · @owner</span>
                                 }
                             </div>
                             <div class="topic-preview">@topic.LastMessageSnippet</div>
