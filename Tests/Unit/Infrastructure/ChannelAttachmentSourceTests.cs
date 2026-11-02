@@ -64,8 +64,26 @@ public class ChannelAttachmentSourceTests
         (await source.FetchAsync("telegram", "7-42/abc", CancellationToken.None)).ShouldBeNull();
     }
 
+    // Two households' servers of one name each keep their own files: a reference is asked of the
+    // connection of the household that took it, never another's of that id.
+    [Fact]
+    public async Task AnAttachment_IsFetchedFromTheConnectionOfTheHouseholdThatTookIt()
+    {
+        var home = new CountingChannel { ChannelId = "voice", Household = ChannelHousehold.Own("home", home: true), Bytes = [1] };
+        var casa = new CountingChannel { ChannelId = "voice", Household = ChannelHousehold.Own("casa", home: false), Bytes = [2] };
+        var source = new ChannelAttachmentSource([home, casa]);
+
+        (await source.FetchAsync("voice", "casa", "7-42/abc", CancellationToken.None)).ShouldBe([2]);
+        (await source.FetchAsync("voice", "home", "7-42/abc", CancellationToken.None)).ShouldBe([1]);
+        (await source.FetchAsync("voice", "elsewhere", "7-42/abc", CancellationToken.None)).ShouldBeNull();
+
+        (home.Fetches, casa.Fetches).ShouldBe((1, 1));
+    }
+
     private sealed class CountingChannel : IChannelConnection
     {
+        public ChannelHousehold Household { get; init; } = ChannelHousehold.Every;
+
         private int _fetches;
 
         public int Fetches => Volatile.Read(ref _fetches);
@@ -74,7 +92,7 @@ public class ChannelAttachmentSourceTests
 
         public TaskCompletionSource? Gate { get; init; }
 
-        public string ChannelId => "signalr";
+        public string ChannelId { get; init; } = "signalr";
 
         public bool AttachOnly => false;
 

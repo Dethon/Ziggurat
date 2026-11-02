@@ -262,6 +262,9 @@ internal sealed class TunnelledChannelServer : IAsyncDisposable
 
     public IReadOnlyCollection<string> Replies => _app.Services.GetRequiredService<ReceivedReplies>().Contents;
 
+    // The conversations the agent asked this server to create or attach to, by the id it handed.
+    public IReadOnlyCollection<string?> Created => _app.Services.GetRequiredService<ReceivedReplies>().CreatedConversations;
+
     public static async Task<TunnelledChannelServer> StartAsync(string hub, string credential, string serverName)
     {
         var builder = WebApplication.CreateBuilder();
@@ -286,10 +289,15 @@ internal sealed class TunnelledChannelServer : IAsyncDisposable
     internal sealed class ReceivedReplies
     {
         private readonly ConcurrentQueue<string> _contents = new();
+        private readonly ConcurrentQueue<string?> _created = new();
 
         public IReadOnlyCollection<string> Contents => _contents;
 
+        public IReadOnlyCollection<string?> CreatedConversations => _created;
+
         public void Add(string content) => _contents.Enqueue(content);
+
+        public void Create(string? existing) => _created.Enqueue(existing);
     }
 
     [McpServerToolType]
@@ -302,6 +310,16 @@ internal sealed class TunnelledChannelServer : IAsyncDisposable
         {
             replies.Add(content);
             return "ok";
+        }
+
+        // An attach-only channel's answer: the id it was handed, or one of its own.
+        [McpServerTool(Name = ChannelProtocol.CreateConversationTool)]
+        public string CreateConversation(
+            string agentId, string topicName, string sender, string? initialPrompt = null, string? address = null,
+            string? existingConversationId = null, System.Text.Json.JsonElement? principal = null, bool group = false)
+        {
+            replies.Create(existingConversationId);
+            return existingConversationId ?? $"minted-{Guid.NewGuid():N}";
         }
     }
 }

@@ -218,6 +218,8 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public string ChannelId { get; init; } = "test-channel";
 
+    public ChannelHousehold Household { get; init; } = ChannelHousehold.Every;
+
     public bool AttachOnly { get; init; }
 
     public bool HostsReviewCopies { get; init; }

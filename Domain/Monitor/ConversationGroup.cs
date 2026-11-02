@@ -809,7 +809,8 @@ internal sealed class ConversationGroup(
         // (voice does). Everything else arrives without one, and gets one here, so from this point
         // on every turn has a key whichever channel the message came from.
         var turn = new Turn(
-            x.Message, targets, firstReply, x.Message.TurnKey ?? TurnKey.Mint(), x.Identity);
+            x.Message, targets, firstReply, x.Message.TurnKey ?? TurnKey.Mint(), x.Identity,
+            HouseholdChannels.HouseholdOf(x.Channel).HouseholdId);
         // Agent-initiated turns (downloads, schedules) land in conversations with no live
         // stream on the receiving channel; announce the turn so the channel can set one up
         // before reply chunks arrive.
@@ -898,6 +899,8 @@ internal sealed class ConversationGroup(
         userMessage.SetAttachments(message.Attachments);
         userMessage.SetAttachmentChannelId(
             message.Attachments is { Count: > 0 } ? message.ChannelId : null);
+        userMessage.SetAttachmentHouseholdId(
+            message.Attachments is { Count: > 0 } ? turn.ChannelHouseholdId : null);
         userMessage.SetTimestamp(DateTimeOffset.UtcNow);
         // Who the turn acts for rides on its context, which every call the turn makes carries: the
         // agent signs each one as this identity, a worker's included, for as long as the turn runs.

@@ -44,9 +44,15 @@ internal sealed class TunnelledAgent : IAsyncDisposable
 
     public RecordingMetricsPublisher Metrics { get; }
 
-    public static async Task<TunnelledAgent> StartAsync(RelayHost relay, params ChannelEndpoint[] endpoints)
+    public static Task<TunnelledAgent> StartAsync(RelayHost relay, params ChannelEndpoint[] endpoints) =>
+        StartAsync(relay, [], endpoints);
+
+    // With channels of the deployment's own beside the followed ones — a scheduling server's fires,
+    // the chat client — standing in for the ones the agent dials by URL.
+    public static async Task<TunnelledAgent> StartAsync(
+        RelayHost relay, IReadOnlyList<IChannelConnection> deployment, params ChannelEndpoint[] endpoints)
     {
-        var connections = new LiveConnectionSet<IChannelConnection>([]);
+        var connections = new LiveConnectionSet<IChannelConnection>(deployment);
         var host = new ChannelConnectionHost(
             endpoints, [], () => _catalog, NullLogger<ChannelConnectionHost>.Instance,
             ownServers: relay.ChannelServers,

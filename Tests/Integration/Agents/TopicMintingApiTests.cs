@@ -4,7 +4,9 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Tunnel;
 using Domain.DTOs.WebChat;
+using Domain.Monitor;
 using Domain.Security;
 using global::Agent.App;
 using Infrastructure.Clients.Topics;
@@ -58,6 +60,42 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
     }
 
     public async Task DisposeAsync() => await _app.DisposeAsync();
+
+    // A household's voice server asks through its tunnel, and the relay names the tunnel's household
+    // on the request: a person of another household is never minted for there, whatever assertion the
+    // server holds.
+    [Fact]
+    public async Task AMintThroughAHouseholdsTunnel_RefusesAnotherHouseholdsPerson()
+    {
+        using var http = _app.GetTestClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, TopicMinting.Path)
+        {
+            Content = JsonContent.Create(new TopicMintRequest(_agent, "Kitchen", "Alice"))
+        };
+        request.Headers.Add(ForwardedAccount.AssertionHeader, TestAssertions.Of(Alice, ChannelIds.Voice));
+        request.Headers.Add(BackCallProtocol.HouseholdHeader, "casa");
+
+        (await http.SendAsync(request)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+
+        (await PageAsync(new TopicViewer("alice", Home))).ShouldBeEmpty();
+        _errors.ShouldContain(e => e.ErrorType == ChatMonitor.WrongHouseholdErrorType && e.Message.Contains("casa"));
+    }
+
+    [Fact]
+    public async Task AMintThroughTheSpeakersOwnHouseholdsTunnel_IsMinted()
+    {
+        using var http = _app.GetTestClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, TopicMinting.Path)
+        {
+            Content = JsonContent.Create(new TopicMintRequest(_agent, "Kitchen", "Alice"))
+        };
+        request.Headers.Add(ForwardedAccount.AssertionHeader, TestAssertions.Of(Alice, ChannelIds.Voice));
+        request.Headers.Add(BackCallProtocol.HouseholdHeader, Home);
+
+        (await http.SendAsync(request)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        (await PageAsync(new TopicViewer("alice", Home))).ShouldHaveSingleItem();
+    }
 
     [Fact]
     public async Task ARecognisedSpeakersConversation_IsTheirPrivateTopic()

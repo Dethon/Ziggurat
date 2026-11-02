@@ -21,6 +21,7 @@ public static class ChatMessageExtensions
     private const string ResponseFormatKey = "ResponseFormat";
     private const string AttachmentsKey = "Attachments";
     private const string AttachmentChannelIdKey = "AttachmentChannelId";
+    private const string AttachmentHouseholdIdKey = "AttachmentHouseholdId";
     private const string SandboxPathsKey = "SandboxPaths";
     private const string LandingFailuresKey = "LandingFailures";
     private const string OfflineServersKey = "OfflineServers";
@@ -298,6 +299,30 @@ public static class ChatMessageExtensions
 
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[AttachmentChannelIdKey] = channelId;
+        }
+
+        // Whose connection of that channel took them, for a household's own server: two households'
+        // servers of one name each keep their own files. None for a channel serving every household.
+        public string? GetAttachmentHouseholdId()
+        {
+            var value = message.AdditionalProperties?.GetValueOrDefault(AttachmentHouseholdIdKey);
+            return value switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+        }
+
+        public void SetAttachmentHouseholdId(string? householdId)
+        {
+            if (string.IsNullOrWhiteSpace(householdId))
+            {
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[AttachmentHouseholdIdKey] = householdId;
         }
 
         // Where this turn's attachments landed in the agent's sandbox. Metadata rather than text

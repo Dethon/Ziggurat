@@ -7,6 +7,7 @@ using Domain.Monitor;
 using Shouldly;
 using Tests.Integration.Fixtures;
 using Tests.Unit;
+using Tests.Unit.Domain;
 
 namespace Tests.Integration.Tunnels;
 
@@ -206,6 +207,74 @@ public class HouseholdChannelServersTests(RedisFixture redis) : IClassFixture<Re
         (await _accounts.RunAsync(global::Accounts.Commands.AccountsCommand.RevokeTunnelCredential, "--id", credential.Id)).Exit.ShouldBe(0);
 
         await Eventually.Until(() => agent.ConnectionOf("websearch", casa) is { IsConnected: false }, "revoking disconnects it");
+    }
+
+    // A household's schedule delivering to voice is spoken on that household's satellites, through its
+    // own voice server, and the home's voice server never hears of it.
+    [Fact]
+    public async Task AHouseholdsScheduledFireToVoice_ReachesItsOwnVoiceServer_NotAnotherHouseholds()
+    {
+        var (casa, lucia) = await _accounts.SeedHouseholdAsync("Casa", "Lucía");
+        var scheduling = new FakeChannelConnection { ChannelId = "scheduling" };
+        await using var agent = await TunnelledAgent.StartAsync(_relay, [scheduling], TunnelledAgent.Endpoint("voice", attachOnly: true));
+        await using var homeVoice = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(_home, "voice")).Credential, "voice");
+        await using var casaVoice = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(casa, "voice")).Credential, "voice");
+        await Eventually.Until(
+            () => agent.ConnectionOf("voice", casa) is { IsConnected: true } && agent.ConnectionOf("voice", _home) is { IsConnected: true },
+            "both households' voice servers are connected");
+
+        scheduling.WriteMessage(ScheduleFire(new Account(casa, lucia), deliverTo: "voice"));
+
+        await Eventually.Until(
+            () => casaVoice.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(casa, "jonas")),
+            "Casa's reminder is spoken on Casa's voice server");
+        await Eventually.Settle();
+        casaVoice.Created.ShouldNotBeEmpty();
+        homeVoice.Created.ShouldBeEmpty();
+        homeVoice.Replies.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task TheHomesScheduledFireToVoice_StillReachesTheHomesVoiceServer()
+    {
+        var scheduling = new FakeChannelConnection { ChannelId = "scheduling" };
+        await using var agent = await TunnelledAgent.StartAsync(_relay, [scheduling], TunnelledAgent.Endpoint("voice", attachOnly: true));
+        await using var homeVoice = await TunnelledChannelServer.StartAsync(
+            _relay.Hub, (await _accounts.MintTunnelCredentialAsync(_home, "voice")).Credential, "voice");
+        await Eventually.Until(() => agent.ConnectionOf("voice", _home) is { IsConnected: true }, "the home's voice is connected");
+
+        scheduling.WriteMessage(ScheduleFire(new Account(_home, FranId), deliverTo: "voice"));
+
+        await Eventually.Until(
+            () => homeVoice.Replies.Contains(HouseholdAnsweringFactory.AnswerFor(_home, "jonas")),
+            "the home's reminder is spoken on the home's voice server");
+    }
+
+    // A schedule's fire as the scheduling server sends it: the delegation the agent signed for the
+    // person who wrote it, delivering where the schedule says.
+    private static ChannelMessage ScheduleFire(Account person, string deliverTo)
+    {
+        const string prompt = "Recuérdame sacar la pasta";
+        var schedule = new Schedule
+        {
+            Id = $"s-{Guid.NewGuid():N}", AgentId = "jonas", Prompt = prompt, CronExpression = "0 11 * * *",
+            DeliverTo = [deliverTo]
+        };
+        return new ChannelMessage
+        {
+            ConversationId = $"sched-{schedule.Id}",
+            Content = prompt,
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "jonas",
+            UserId = person.UserId,
+            HouseholdId = person.TenantId,
+            Origin = new MessageOrigin(MessageOriginKind.Schedule, schedule.Id),
+            ReplyTo = [new ReplyTarget(deliverTo, null)],
+            Delegation = TestDelegations.OfSchedule(person, "signalr", schedule)
+        };
     }
 
     // A person's turn as a channel server sends one: with the accounts service's assertion for the
