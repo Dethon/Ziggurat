@@ -141,7 +141,7 @@ public sealed class McpAgent : DisposableAgent
         _bridge = bridge;
         _callTokens = callTokens;
         _history = new RedisChatMessageStore(stateStore, metricsPublisher, spec.ConversationId);
-        _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided, RegistryOf, spec.Payer);
+        _skills = new SkillsProvider(SkillsOf, skillPreloader, _history.LastProvided, RegistryOf, spec.Payer, spec.AgentId);
         _innerAgent = chatClient.AsAIAgent(new ChatClientAgentOptions
         {
             Name = spec.DisplayName,

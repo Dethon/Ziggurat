@@ -43,6 +43,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
     private readonly Func<AgentSession?, IVirtualFileSystemRegistry?> _registryOf;
     private readonly ISkillPreloader? _preloader;
     private readonly ModelPayer _payer;
+    private readonly string? _agentId;
     private readonly AgentSkillsProvider _inner;
 
     // The preloader is optional the way the recall hook is: a host without one — every test host
@@ -57,12 +58,16 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
         ISkillPreloader? preloader = null,
         Func<AgentSession?, IReadOnlyList<ChatMessage>>? historyOf = null,
         Func<AgentSession?, IVirtualFileSystemRegistry?>? registryOf = null,
-        ModelPayer? payer = null)
+        ModelPayer? payer = null,
+        string? agentId = null)
     {
         _skillsOf = skillsOf;
+        _agentId = agentId;
         // Who the agent's calls are paid by, which a preload asked here — a worker's, an eval's — is
         // paid by too.
         _payer = payer ?? ModelPayer.Deployment;
+        // And billed to the agent the calls are, by its id: an agent's name is its prompt's, which for
+        // a worker is "subagent-<id>", and usage billed to it listed the worker apart from its calls.
         _historyOf = historyOf ?? (_ => []);
         _registryOf = registryOf ?? (_ => null);
         _preloader = preloader;
@@ -151,7 +156,7 @@ public sealed class SkillsProvider : AIContextProvider, IDisposable
                 : await _preloader.PreloadAsync(
                     new SkillPreloadRequest(request.Text, skills, _historyOf(context.Session).Concat(requestMessages))
                     {
-                        Caller = new JudgmentCaller(request.GetTurnModel(), request.GetSenderId(), context.Agent.Name)
+                        Caller = new JudgmentCaller(request.GetTurnModel(), request.GetSenderId(), _agentId ?? context.Agent.Name)
                         {
                             Payer = _payer,
                             UserId = request.GetAccountId()
