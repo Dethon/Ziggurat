@@ -200,10 +200,12 @@ The agent builds a turn's agents from the turn's household's view (`HouseholdAge
   a machine's `outpost-<NAME>` never counts, and a view without the field is none set up). At every
   turn's start `McpAgent` asks the household's view again (`HouseholdAgents.NotSetUp`, through the
   factory's `ForHouseholdAsync`) and withholds the own servers its endpoints name that are not among
-  them (`WithheldServers.Withholds`, in `OwnServerEndpoints.Resolve`): not resolved, not dialled, not
+  them, by name (`OwnServerEndpoints.Resolve`): not resolved, not dialled, not
   on the offline line. A set-up server not connected is offline as before. It is never applied to a
   definition, because a conversation's agent is built by its first turn and outlives it: a server set
-  up mid-conversation must reach the next turn. A worker asks its parent's household by the same line.
+  up mid-conversation must reach the next turn. A worker asks its parent's household by the same line,
+  and reaches no own server its parent does not name (`SpawnContext.OwnServers`, withheld the same way):
+  the worker profiles are the deployment's and name Home Assistant, which no template does.
   The home, and agents no household's configuration gave (a test's, the eval's), withhold none.
 - **A turn acting for nobody runs the home's agents** (`@home`) and reaches no household's servers.
 - **The worker profiles stay the deployment's** (`subAgents` in the agent's settings): a worker runs its

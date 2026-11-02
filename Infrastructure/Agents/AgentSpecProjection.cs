@@ -129,7 +129,15 @@ internal static class AgentSpecProjection
             // And on its key: a worker's calls are its parent household's as much as its parent's are.
             Key = spawn.Key,
             TimeZone = spawn.TimeZone,
-            WithheldServers = spawn.WithheldServers ?? [],
+            // And the own servers its profile names that its parent does not: withheld at the turn as a
+            // server the household never set up is, so the worker neither dials nor names them.
+            WithheldServers =
+            [
+                .. spawn.WithheldServers ?? [],
+                .. spawn.OwnServers is { } parents
+                    ? definition.McpServerEndpoints.Where(e => TunnelCredentialProtocol.IsServerName(e) && !parents.Contains(e))
+                    : []
+            ],
             // Two yeses, and neither alone is enough. The parent's is the ceiling — a subagent
             // acts on its behalf and cannot reach a machine it could not — and the definition's
             // is what keeps a narrow worker off the machines: the list of subagents is shared by

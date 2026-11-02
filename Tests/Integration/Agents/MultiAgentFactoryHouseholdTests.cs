@@ -292,6 +292,26 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         NamesOffline(_model.Requests[^1], "vault").ShouldBeFalse();
     }
 
+    // A worker acts for its parent and reaches no own server its parent does not: a profile naming one
+    // the parent's definition leaves out (Home Assistant, which no template names) does not reach it,
+    // even where the household set it up.
+    [Fact]
+    public async Task AWorker_ReachesNoOwnServerItsParentDoesNotName()
+    {
+        _households.Add(Household, isHome: false, Settings(), new AgentsSection(), ownServers: ["homeassistant"]);
+        Connect(true, "homeassistant");
+        await using var worker = Factory().CreateSubAgent(
+            new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = ["homeassistant"] },
+            Mock.Of<IToolApprovalHandler>(),
+            new SpawnContext("conv-1", "fran", [], UsesOutposts: false, "m", TenantId: Household, Key: new ModelKey(HouseholdKey),
+                OwnServers: ["vault"]));
+
+        await worker.RunStreamingAsync([new ChatMessage(ChatRole.User, "go")]).ToListAsync();
+
+        Tools(_model.Requests[^1]).ShouldNotContain(tool => tool.EndsWith("__recall"));
+        NamesOffline(_model.Requests[^1], "homeassistant").ShouldBeFalse();
+    }
+
     // The home's seeded agents name the servers its kit runs, and every one of them is the home's:
     // its view names none set up, and it reaches its vault as it always did.
     [Fact]

@@ -1,5 +1,3 @@
-using Domain.Agents;
-
 namespace Infrastructure.Agents;
 
 // What one server a session is built with was found to be when a turn started — a household server
@@ -43,9 +41,11 @@ public sealed record OwnServerResolution(
 // server's URL endpoint still fails the session (.claude/rules/tunnel.md).
 internal static class OwnServerEndpoints
 {
-    // One the household withholds — a server it never set up — is not asked for and not named: it is
-    // no part of the turn, so a household is never told about a server it does not run. It still has
-    // a state, so a turn after the household set it up builds a session that reaches it.
+    // One the household withholds, by its server name — a server it never set up, or one a worker's
+    // parent does not name — is not asked for and not named: it is no part of the turn, so a household
+    // is never told about a server it does not run. A shared server's address in the same list never
+    // equals a name. It still has a state, so a turn after the household set it up builds a session
+    // that reaches it.
     public static OwnServerResolution Resolve(
         IReadOnlyList<McpServerEndpoint> endpoints, string? tenantId, IOwnServers? servers,
         IReadOnlyList<string>? withheld = null)
@@ -53,7 +53,7 @@ internal static class OwnServerEndpoints
         var resolved = endpoints
             .Select(endpoint => (
                 Named: endpoint,
-                Withheld: endpoint.NamesOwnServer && WithheldServers.Withholds(withheld ?? [], endpoint.Address)))
+                Withheld: endpoint.NamesOwnServer && (withheld ?? []).Contains(endpoint.Address, StringComparer.Ordinal)))
             .Select(r => (r.Named, r.Withheld, Reached: !r.Named.NamesOwnServer
                 ? r.Named
                 : r.Withheld ? null : servers?.Resolve(tenantId, r.Named.Address)))

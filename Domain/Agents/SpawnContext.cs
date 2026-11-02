@@ -30,4 +30,8 @@ public sealed record SpawnContext(
     string? TimeZone = null,
     // The key that household pays its parent's calls with, which pays the worker's too; null is the
     // deployment's (the home household's, or nobody's).
-    ModelKey? Key = null);
+    ModelKey? Key = null,
+    // The household's own servers the parent names, which bound the worker's as the parent's opt-in
+    // bounds its machines: a worker reaches none its parent could not. Null puts no bound (a spawn no
+    // parent agent made).
+    IReadOnlyList<string>? OwnServers = null);

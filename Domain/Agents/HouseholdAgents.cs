@@ -148,7 +148,7 @@ public sealed record HouseholdAgents
         };
 
     // The household's own servers among these endpoints that it never set up — it holds no live
-    // credential for the name — which its turns withhold (WithheldServers.Withholds) rather than name
+    // credential for the name — which its turns withhold (OwnServerEndpoints.Resolve) rather than name
     // offline. Asked at every turn's start, never applied to a definition: an agent outlives its
     // conversation's turns, and a server the household sets up later must reach the next one. The
     // home's every server is its own, and agents no household's configuration gave reach whatever

@@ -123,7 +123,8 @@ public sealed class MultiAgentFactory(
         // reach the projection with no second source of truth for any of them.
         var spawn = new SpawnContext(
             spec.ConversationId, spec.UserId, spec.WhitelistPatterns, spec.UsesOutposts,
-            spec.Model, spec.ProviderRouting, spec.TenantId, spec.WithheldServers, spec.TimeZone, spec.Key);
+            spec.Model, spec.ProviderRouting, spec.TenantId, spec.WithheldServers, spec.TimeZone, spec.Key,
+            [.. spec.McpServerEndpoints.Where(e => e.NamesOwnServer).Select(e => e.Address)]);
 
         // The spawner is absent in every deployment, so the factory builds its own workers; when
         // one is registered it stands in for them whole, which is the only way a scenario about
