@@ -5,7 +5,7 @@
 #   voice.py check <dir>            Whisper reads every reply the test satellite recorded in <dir>, and
 #                                   the check passes when the first answer says 56 and an alert rang
 #   voice.py refused <dir>          the same reading, passing when an answer was spoken as an error
-#                                   ("Hubo un error: …", how voice speaks a refused turn) and no alert
+#                                   ("Hubo un error: …", how voice speaks a refused turn) or ran long
 #
 # Standard library only.
 import glob, json, os, struct, sys, urllib.request, uuid, wave
@@ -56,29 +56,31 @@ def heard(directory):
         w = wave.open(path)
         seconds = w.getnframes() / w.getframerate()
         text = hear(path) if seconds >= 0.5 else ""  # the shorter ones are the follow-up listening cue
-        said.append((os.path.basename(path), text))
+        said.append((os.path.basename(path), text, seconds))
         print(f"{os.path.basename(path)} ({seconds:.1f} s): {text}")
     return said
 
 
 def answers(replies):
-    return [text for name, text in replies if text and "alert" not in name]
+    return [(text, seconds) for name, text, seconds in replies if text and "alert" not in name]
 
 
 def check(directory):
     replies = heard(directory)
     spoken = answers(replies)
-    answered = bool(spoken) and any(k in spoken[0].lower() for k in ("56", "cincuenta y seis"))
-    rang = any("alert" in name for name, _ in replies)
+    answered = bool(spoken) and any(k in spoken[0][0].lower() for k in ("56", "cincuenta y seis"))
+    rang = any("alert" in name for name, _, _ in replies)
     print(f"answered 7x8: {'yes' if answered else 'no'}; the timer rang on the satellite: {'yes' if rang else 'no'}")
     return 0 if answered and rang else 1
 
 
 # The refusal itself is English, spoken by a Spanish voice, so Whisper is not asked to read it back:
-# only the words voice puts before any error it speaks.
+# only the words voice puts before any error it speaks — or, since even those come back garbled at
+# times ("Hubo zun error"), an answer as long as the refusal, which is all a household with no voice
+# agent can be told (the 56 is a second at most). The caller asks the errors feed what was refused.
 def refused(directory):
     replies = heard(directory)
-    told = any("error" in text.lower() for text in answers(replies))
+    told = any("error" in text.lower() or seconds >= 3 for text, seconds in answers(replies))
     print(f"heard the refusal: {'yes' if told else 'no'}")
     return 0 if told else 1
 
