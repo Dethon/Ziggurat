@@ -84,7 +84,9 @@ public sealed class ReplySpeaker(
         // the whole ~120 s reply timeout.)
         Task appendError()
         {
-            accumulator.Append(p.ConversationId, $" Hubo un error: {p.Content}");
+            accumulator.Append(p.ConversationId, SpokenRefusals.TryRender(p.Content, out var refusal)
+                ? $" {refusal}"
+                : $" Hubo un error: {p.Content}");
             return Task.CompletedTask;
         }
 

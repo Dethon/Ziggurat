@@ -6,6 +6,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
+using Domain.Monitor;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -172,6 +173,25 @@ public class ReplySpeakerTests
         Say(_speaker, "boom", ReplyContentType.Error, true);
         _tts.Verify(t => t.SynthesizeAsync(
             It.Is<string>(s => s.Contains("boom")), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A turn the agent refused is answered in English prose meant for a screen; spoken by the Spanish
+    // voice it was noise ("Yoro seoldas no voice agente yet"). Voice says each refusal it knows in its
+    // own words instead, and anything else as the error it is.
+    [Fact]
+    public void SpeakUtteranceReply_ARefusalItKnows_IsSpokenInItsOwnWords_NotAsAnError()
+    {
+        Say(_speaker, RefusalAnswers.NoVoiceAgent, ReplyContentType.Error, true);
+
+        _tts.Verify(t => t.SynthesizeAsync(
+            It.Is<string>(s => s.Contains("agente de voz") && !s.Contains("error") && !s.Contains("voice agent")),
+            It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void EveryRefusalTheAgentAnswers_HasAVoiceOfItsOwn()
+    {
+        RefusalAnswers.All.Where(answer => !SpokenRefusals.TryRender(answer, out _)).ShouldBeEmpty();
     }
 
     [Fact]

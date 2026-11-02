@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 
 namespace Dashboard.Client.State.Tokens;
@@ -13,7 +14,7 @@ public sealed class PersonNames
 
     public static PersonNames From(IEnumerable<TokenUsageEvent> calls) =>
         new(calls
-            .Where(call => call.UserId is { } id && call.Sender != id)
+            .Where(call => call.UserId is { } id && call.Sender != id && !ServiceSenders.IsService(call.Sender))
             .GroupBy(call => call.UserId!)
             .ToDictionary(g => g.Key, g => g.MaxBy(call => call.Timestamp)!.Sender));
 

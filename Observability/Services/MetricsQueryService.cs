@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Metrics;
@@ -676,7 +677,7 @@ public sealed class MetricsQueryService(IConnectionMultiplexer redis, TimeProvid
         var named = events
             .Where(e => userId(e) is not null)
             .GroupBy(e => userId(e)!)
-            .Select(g => (Id: g.Key, Name: g.Where(e => sender(e) != g.Key).MaxBy(e => e.Timestamp) is { } latest
+            .Select(g => (Id: g.Key, Name: g.Where(e => sender(e) != g.Key && !ServiceSenders.IsService(sender(e))).MaxBy(e => e.Timestamp) is { } latest
                 ? sender(latest)
                 : g.Key))
             .ToList();

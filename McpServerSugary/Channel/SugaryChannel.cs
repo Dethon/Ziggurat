@@ -21,7 +21,7 @@ public sealed class SugaryChannel(
 
     // Who a turn from the app is from where no person is behind it: the eval's and the benchmark's
     // turns, which stand in for the app.
-    public const string Sender = "sugary-app";
+    public const string Sender = ServiceSenders.SugaryApp;
 
     public async Task<TurnReply> AskAsync(
         Account person, string assertion, string conversationId, string content, ResponseFormat format,

@@ -280,7 +280,7 @@ public sealed record ComposeService(
         name,
         [.. Sequence(node, "ports").Select(PublishedPort.Parse)],
         EnvironmentOf(node),
-        Sequence(node, "env_file"),
+        EnvFilesOf(node),
         [.. Child(node, "volumes") is YamlSequenceNode volumes ? volumes.Children.Select(VolumeOf) : []],
         Child(node, "depends_on") switch
         {
@@ -305,6 +305,14 @@ public sealed record ComposeService(
             : Child(node, "build") is not null ? "Dockerfile" : null,
         Image = Child(node, "image") is YamlScalarNode image ? image.Value : null,
         Devices = Sequence(node, "devices")
+    };
+
+    // Each file as a path, whether written bare or as `{ path, required }`.
+    private static IReadOnlyList<string> EnvFilesOf(YamlMappingNode node) => Child(node, "env_file") switch
+    {
+        YamlSequenceNode seq => [.. seq.Children.Select(c => c is YamlMappingNode file ? Value(file, "path") : ((YamlScalarNode)c).Value!)],
+        YamlScalarNode scalar => [scalar.Value!],
+        _ => []
     };
 
     // A list of names or a map of them to their settings; none at all is compose's default network,

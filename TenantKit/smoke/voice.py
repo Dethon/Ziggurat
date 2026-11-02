@@ -4,8 +4,8 @@
 #   voice.py say <text> <out.wav>   Kokoro speaks the text; written as 16 kHz s16 mono, the mic format
 #   voice.py check <dir>            Whisper reads every reply the test satellite recorded in <dir>, and
 #                                   the check passes when the first answer says 56 and an alert rang
-#   voice.py refused <dir>          the same reading, passing when an answer was spoken as an error
-#                                   ("Hubo un error: …", how voice speaks a refused turn) or ran long
+#   voice.py refused <dir>          the same reading, passing when the answer says the household has no
+#                                   voice agent ("agente de voz", voice's own Spanish for the refusal)
 #
 # Standard library only.
 import glob, json, os, struct, sys, urllib.request, uuid, wave
@@ -74,13 +74,12 @@ def check(directory):
     return 0 if answered and rang else 1
 
 
-# The refusal itself is English, spoken by a Spanish voice, so Whisper is not asked to read it back:
-# only the words voice puts before any error it speaks — or, since even those come back garbled at
-# times ("Hubo zun error"), an answer as long as the refusal, which is all a household with no voice
-# agent can be told (the 56 is a second at most). The caller asks the errors feed what was refused.
+# Voice says the refusal in Spanish of its own (SpokenRefusals), so it is read back for what it says:
+# that the household has no voice agent, which is what the person needs to hear to fix it. The caller
+# asks the errors feed what was refused.
 def refused(directory):
     replies = heard(directory)
-    told = any("error" in text.lower() or seconds >= 3 for text, seconds in answers(replies))
+    told = any("agente de voz" in text.lower() for text, _ in answers(replies))
     print(f"heard the refusal: {'yes' if told else 'no'}")
     return 0 if told else 1
 

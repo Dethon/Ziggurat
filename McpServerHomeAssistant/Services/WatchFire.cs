@@ -34,7 +34,7 @@ public sealed record WatchFiredRequest
 public static class WatchFire
 {
     public const string ConversationPrefix = "watch";
-    public const string Sender = "watch";
+    public const string Sender = ServiceSenders.Watch;
 
     // What the payload must carry for a fire to be a prompt in front of an agent; the rest is the
     // firing facts, and a template trigger legitimately carries none.

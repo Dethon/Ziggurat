@@ -8,6 +8,7 @@ riderModule.iml
 *.csproj.lscache
 DockerCompose/volumes
 TenantKit/volumes
+TenantKit/satellites.env
 # The agent's signing key on a host run (Agent/appsettings.Local.json).
 Agent/.signing
 .idea
