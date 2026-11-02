@@ -125,6 +125,28 @@ public sealed partial class SmokeStack : IAsyncLifetime
         return process.ExitCode == 0 ? output : throw new InvalidOperationException($"docker {string.Join(' ', args)}: {error}{output}");
     }
 
+    // A second household's vault beside the kit's, on the credential its owner was just shown: the
+    // script's own verb, so the service is the smoke override's and `down` removes it. The credential
+    // goes by environment, never on a command line.
+    public static async Task StartHouseholdVaultAsync(string credential)
+    {
+        var root = TestHelpers.FindSolutionRoot();
+        var start = new ProcessStartInfo(Path.Combine(root, "scripts", "smoke-stack.sh"))
+        {
+            RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = root
+        };
+        start.ArgumentList.Add("household-vault");
+        start.Environment["SMOKE_HOUSEHOLD_VAULT_CREDENTIAL"] = credential;
+        using var process = Process.Start(start)!;
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var error = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"smoke-stack.sh household-vault: {error}{output}");
+        }
+    }
+
     // A kit service's container, which compose names after the project: found by its labels.
     public static async Task<string> KitContainerAsync(string service) =>
         (await DockerAsync("ps", "--filter", $"label=com.docker.compose.project={KitProject}",

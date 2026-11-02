@@ -630,6 +630,12 @@ The home household's web search, vault, library, sandbox, printer, Home Assistan
 own servers.
 _Avoid_: home-only server, private server, tenant server, remote server
 
+**Set up** (an own server):
+A household has set up an own server of a name when it holds a live tunnel credential minted for
+that name, a machine's never counting; whether it is connected right now is another question. A
+household's agents reach only the own servers it set up, and are never told of the others.
+_Avoid_: enabled, configured, installed (for an own server)
+
 **Tunnel**:
 The one outbound connection an own server keeps open to the deployment, inside which every call
 to it, every notification from it, every page it serves and every back-call it makes travels. The

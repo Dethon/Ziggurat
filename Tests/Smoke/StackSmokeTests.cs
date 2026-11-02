@@ -308,17 +308,7 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
         var tag = Guid.NewGuid().ToString("N")[..4];
-        var created = await AdminAsync<AdminSaved<OwnerLink>>(HttpMethod.Post, stack.DashboardHost, AdminProtocol.Households,
-            stack.OperatorSession, new NewHousehold($"Smoke Household {tag}", $"Smoke Owner {tag}"));
-        var household = created.Value.HouseholdId;
-        var owner = await SmokeStack.SessionOfAsync(created.Value.UserId);
-
-        var keys = await AdminAsync<AdminSaved<HouseholdKeys>>(HttpMethod.Put, stack.MainHost, AdminProtocol.OpenRouterKey,
-            owner, new OpenRouterKey(SmokeStack.DeploymentOpenRouterKey()));
-        keys.Value.OpenRouter!.State.ShouldBe(KeyState.Working);
-        keys.Value.NeedsOpenRouterKey.ShouldBeFalse();
-        // No warning: the save was announced, so the agent reads the household with its key.
-        keys.Warning.ShouldBeNull();
+        var (household, owner) = await KeyedHouseholdAsync(tag);
 
         var name = $"Smoke Butler {tag}";
         var agents = await AdminAsync<AdminSaved<AdminAgents>>(HttpMethod.Put, stack.MainHost,
@@ -539,6 +529,75 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             .ToList();
     }
 
+    // A household's own vault, set up the way its owner would: a credential minted on its Servers
+    // page (the admin route), a vault started at home with it — here a second kit vault beside the
+    // home's — and the household's Jonas, from the template, reads a note through that vault's tunnel
+    // on the household's own key. The home's vault holds a note of the same name with another word,
+    // so a reply carrying the household's word read the household's vault and nobody else's.
+    [SkippableFact]
+    public async Task AHouseholdThatSetUpItsOwnVault_HasItsAgentReadItThroughItsOwnTunnel()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        await KitConnectedAsync();
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var (_, owner) = await KeyedHouseholdAsync(tag);
+        var minted = await AdminAsync<AdminSaved<MintedServerCredential>>(HttpMethod.Post, stack.MainHost, AdminProtocol.Servers,
+            owner, new ServerAddition("vault"));
+        // No warning: the mint was announced, so the household's next turn reads the vault as set up.
+        minted.Warning.ShouldBeNull();
+        await SmokeStack.StartHouseholdVaultAsync(minted.Value.Credential);
+        await HouseholdVaultConnectedAsync(owner);
+
+        var note = $"smoke-{tag}.md";
+        var households = $"house{Guid.NewGuid():N}"[..17];
+        var homes = $"home{Guid.NewGuid():N}"[..17];
+        await File.WriteAllTextAsync(Path.Combine(HouseholdVault, note), $"{households}\n");
+        await File.WriteAllTextAsync(Path.Combine(KitVault, note), $"{homes}\n");
+
+        await InChatAsync(AgentTemplates.Named(AgentTemplates.Jonas)!.Name, async page =>
+        {
+            await SayAsync(page, $"Smoke {tag}: read the note {note} in the vault and reply with the one word written in it, nothing else.");
+
+            await Assertions.Expect(page.Locator(".chat-message.assistant:not(.error) .message-content", new PageLocatorOptions { HasText = households }).First)
+                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 180_000 });
+            await Assertions.Expect(page.Locator(".chat-message.error")).ToHaveCountAsync(0);
+            await Assertions.Expect(page.Locator(".chat-message", new PageLocatorOptions { HasText = homes })).ToHaveCountAsync(0);
+        }, owner);
+    }
+
+    // The container is just started, so its tunnel opens within a container's start, not Eventually's
+    // budget: asked through the owner's own Servers page, as they would watch it connect.
+    private async Task HouseholdVaultConnectedAsync(string owner)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
+        while (!(await AdminReadAsync<AdminServers>(stack.MainHost, AdminProtocol.Servers, owner))
+                   .Servers.Any(server => server is { Name: "vault", Connection: ServerConnection.Connected }))
+        {
+            DateTimeOffset.UtcNow.ShouldBeLessThan(deadline, "the household's vault connected through its tunnel");
+            await Task.Delay(TimeSpan.FromSeconds(2));
+        }
+    }
+
+    // A household made on the dashboard's operator route, its owner signed in (mint-session standing in
+    // for the passkey their link enrolls) and its OpenRouter key set through the admin API — probed
+    // against the stack's stub, which takes it. That key is the deployment's, on this machine's stack
+    // alone, so its turns are real and cost a cheap model call each.
+    private async Task<(string Household, string Owner)> KeyedHouseholdAsync(string tag)
+    {
+        var created = await AdminAsync<AdminSaved<OwnerLink>>(HttpMethod.Post, stack.DashboardHost, AdminProtocol.Households,
+            stack.OperatorSession, new NewHousehold($"Smoke Household {tag}", $"Smoke Owner {tag}"));
+        var owner = await SmokeStack.SessionOfAsync(created.Value.UserId);
+
+        var keys = await AdminAsync<AdminSaved<HouseholdKeys>>(HttpMethod.Put, stack.MainHost, AdminProtocol.OpenRouterKey,
+            owner, new OpenRouterKey(SmokeStack.DeploymentOpenRouterKey()));
+        keys.Value.OpenRouter!.State.ShouldBe(KeyState.Working);
+        keys.Value.NeedsOpenRouterKey.ShouldBeFalse();
+        // No warning: the save was announced, so the agent reads the household with its key.
+        keys.Warning.ShouldBeNull();
+        return (created.Value.HouseholdId, owner);
+    }
+
     // A call with no token, a garbage one, and one signed for the server by a key the running agent
     // does not publish.
     private static async Task<(string Server, string Missing, string Garbage, string ForeignKey)> ForgedCallsAsync(
@@ -570,6 +629,10 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     // The kit's vault on this machine (TenantKit/docker-compose.override.smoke.yml).
     private static string KitVault =>
         Path.Combine(TestHelpers.FindSolutionRoot(), "DockerCompose", "volumes", "smoke", "kit", "vault");
+
+    // The second household's vault beside it (`scripts/smoke-stack.sh household-vault`).
+    private static string HouseholdVault =>
+        Path.Combine(TestHelpers.FindSolutionRoot(), "DockerCompose", "volumes", "smoke", "kit", "household-vault");
 
     // Opens the tunnel route through Caddy as a household's server would, and says how the relay
     // closed it.
@@ -730,6 +793,17 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         using var response = await stack.Http.SendAsync(request);
         var answer = await response.Content.ReadAsStringAsync();
         response.IsSuccessStatusCode.ShouldBeTrue($"{method} {path} answered {(int)response.StatusCode}: {answer}");
+        return JsonSerializer.Deserialize<T>(answer, AdminJson)!;
+    }
+
+    private async Task<T> AdminReadAsync<T>(string host, string path, string session)
+    {
+        var request = stack.Request(HttpMethod.Get, host, path, session);
+        request.Headers.Add(AdminProtocol.RequestHeader, AdminProtocol.RequestHeaderValue);
+        request.Headers.Add("Accept", "application/json");
+        using var response = await stack.Http.SendAsync(request);
+        var answer = await response.Content.ReadAsStringAsync();
+        response.IsSuccessStatusCode.ShouldBeTrue($"GET {path} answered {(int)response.StatusCode}: {answer}");
         return JsonSerializer.Deserialize<T>(answer, AdminJson)!;
     }
 

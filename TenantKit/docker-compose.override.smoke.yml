@@ -60,6 +60,27 @@ services:
       # names its documents text; it prints text alone.
       DOCUMENTFORMAT: text/plain
 
+  # A second household's own vault, beside the home's: the smoke test that onboards a household mints
+  # its vault credential through the admin API and starts this with it (`scripts/smoke-stack.sh
+  # household-vault`, the credential in SMOKE_HOUSEHOLD_VAULT_CREDENTIAL), so the household's agent
+  # reads its own notes through its own tunnel, under the same server name as the home's. Its folder
+  # is its own; `down` removes it with the rest.
+  mcp-vault-household:
+    profiles: [household]
+    image: mcp-vault:latest
+    user: ${PUID:-1654}:${PGID:-1654}
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/household-vault:/vault"
+    environment:
+      <<: *hub-ca-env
+      TZ: Europe/Madrid
+      MCP__TUNNEL__HUB: wss://${DEPLOYMENT_HOST}/tunnel
+      MCP__TUNNEL__SERVERNAME: vault
+      MCP__TUNNEL__CREDENTIAL: ${SMOKE_HOUSEHOLD_VAULT_CREDENTIAL:-}
+    networks: [kit]
+
   # A printer that prints nothing: it answers IPP as a printer does and keeps each job under /jobs.
   # It refuses a request whose Host is not its own name, which beside its DNS-SD daemon is
   # <hostname>.local, so it is reached by that alias.

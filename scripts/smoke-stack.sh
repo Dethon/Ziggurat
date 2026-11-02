@@ -13,6 +13,10 @@
 #                                  two questions spoken to it (a sum, a one-minute timer), the answers
 #                                  heard back and the timer ringing on it, checked; Lemonade starts for
 #                                  it, on the CPU unless STT_BACKEND says otherwise
+#   scripts/smoke-stack.sh household-vault
+#                                  (re)start a second household's vault beside the kit's, with the
+#                                  tunnel credential in SMOKE_HOUSEHOLD_VAULT_CREDENTIAL (the smoke
+#                                  test that onboards a household runs it)
 #   scripts/smoke-stack.sh down    stop both and remove their state
 #
 # Everything here is local. The tests reach the stack on 127.0.0.1 alone, whatever the deployment's
@@ -205,6 +209,11 @@ case "${1:-}" in
     docker logs "$satellite"
     python3 TenantKit/smoke/voice.py check "$SATELLITE"
     ;;
+  household-vault)
+    [[ -n "${SMOKE_HOUSEHOLD_VAULT_CREDENTIAL:-}" ]] || { echo "SMOKE_HOUSEHOLD_VAULT_CREDENTIAL is not set" >&2; exit 2; }
+    mkdir -p "$KIT_STATE/household-vault"
+    "${KIT[@]}" --profile household up -d --no-deps --force-recreate mcp-vault-household
+    ;;
   migrate)
     # The household migration against the smoke stack, its people file in
     # DockerCompose/volumes/smoke/household-migration/people.json; the rest of the arguments are its.
@@ -213,7 +222,7 @@ case "${1:-}" in
     "${DC[@]}" --profile migrate run --rm --no-deps household-migration --people /input/people.json "$@"
     ;;
   down)
-    "${KIT[@]}" --profile voice down --volumes --remove-orphans
+    "${KIT[@]}" --profile voice --profile household down --volumes --remove-orphans
     "${DC[@]}" down --volumes --remove-orphans
     # The containers wrote as their own users; a throwaway container removes what they wrote. Only
     # where there is something: bind-mounting a missing ./volumes makes Docker create it as root,
@@ -223,7 +232,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: $0 up|test|voice|migrate|down" >&2
+    echo "usage: $0 up|test|voice|household-vault|migrate|down" >&2
     exit 2
     ;;
 esac
