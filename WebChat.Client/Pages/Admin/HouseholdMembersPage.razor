@@ -177,7 +177,12 @@
 
     private void Recover(AdminMember member) => Dispatcher.Dispatch(new MintMemberRecovery(member.Id, member.DisplayName));
 
-    private void Disable(string userId) => Dispatcher.Dispatch(new DisableHouseholdMember(userId));
+    // The question closes once answered, refused or not (the last owner stays enabled).
+    private void Disable(string userId)
+    {
+        _confirming = null;
+        Dispatcher.Dispatch(new DisableHouseholdMember(userId));
+    }
 
     private void Enable(string userId) => Dispatcher.Dispatch(new EnableHouseholdMember(userId));
 
