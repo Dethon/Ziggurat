@@ -271,7 +271,7 @@ public class ChatMonitorDeliveryIdentityTests
     {
         public List<string?> ConversationIds { get; } = [];
 
-        public Task EnrichAsync(
+        public Task<MemoryExtraction?> EnrichAsync(
             ChatMessage message,
             Account? account,
             string? conversationId,
@@ -280,7 +280,7 @@ public class ChatMonitorDeliveryIdentityTests
             CancellationToken ct)
         {
             ConversationIds.Add(conversationId);
-            return Task.CompletedTask;
+            return Task.FromResult<MemoryExtraction?>(null);
         }
     }
 

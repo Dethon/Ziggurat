@@ -45,11 +45,40 @@ public class ChatMonitorMemoryAnchorTests
         recall.Captures.ShouldBe([("first", 0), ("second", 1)]);
     }
 
+    // What a turn said is extracted once the turn worked: one refused — the household's key, its
+    // credit, a model error — would be extracted on the same refused key and only fill the errors
+    // feed, and its retry is extracted in its place.
+    [Theory]
+    [InlineData(false, 1)]
+    [InlineData(true, 0)]
+    public async Task Monitor_QueuesATurnsExtraction_OnlyWhenTheTurnWorked(bool fails, int queued)
+    {
+        var agent = fails
+            ? new FakeAiAgent { ExceptionToThrow = new InvalidOperationException("OpenRouter refused the key") }
+            : MonitorTestMocks.CreateAgent();
+        var recall = new RecordingRecallHook();
+        var channel = MonitorTestMocks.CreateChannel(messages: [MonitorTestMocks.CreateChannelMessage(content: "first")]);
+        var monitor = new ChatMonitor(
+            [channel],
+            MonitorTestMocks.CreateAgentFactory(agent),
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            recall,
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
+
+        await monitor.Monitor(CancellationToken.None);
+
+        recall.Extracted.ShouldBe(queued);
+    }
+
     private sealed class RecordingRecallHook : IMemoryRecallHook
     {
         public List<(string Text, int PersistedCount)> Captures { get; } = [];
 
-        public Task EnrichAsync(
+        public int Extracted;
+
+        public Task<MemoryExtraction?> EnrichAsync(
             ChatMessage message,
             Account? account,
             string? conversationId,
@@ -59,7 +88,11 @@ public class ChatMonitorMemoryAnchorTests
         {
             var persisted = ((FakeAiAgent.FakeAgentThread)thread).PersistedMessages;
             Captures.Add((message.Text, persisted.Count));
-            return Task.CompletedTask;
+            return Task.FromResult<MemoryExtraction?>(_ =>
+            {
+                Interlocked.Increment(ref Extracted);
+                return ValueTask.CompletedTask;
+            });
         }
     }
 }

@@ -881,6 +881,7 @@ public class ChatMonitorTests
                 channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "/cancel"));
                 channel.Complete();
                 await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return (MemoryExtraction?)null;
             });
         var logger = new Mock<ILogger<ChatMonitor>>();
 

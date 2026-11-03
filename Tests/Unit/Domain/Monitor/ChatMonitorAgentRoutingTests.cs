@@ -171,7 +171,7 @@ public class ChatMonitorAgentRoutingTests
             .Setup(h => h.EnrichAsync(
                 It.IsAny<ChatMessage>(), It.IsAny<Account?>(), It.IsAny<string?>(), It.IsAny<string?>(),
                 It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((MemoryExtraction?)null);
 
         await using var provider = new ServiceCollection()
             .AddLogging()
