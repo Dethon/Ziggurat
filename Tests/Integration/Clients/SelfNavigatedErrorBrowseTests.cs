@@ -52,7 +52,7 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
             var result = await fixture.Browser.NavigateAsync(
                 new BrowseRequest(sessionId, $"{host}/thread") { Caller = JudgmentCaller.None });
 
-            var seen = $"at {result.Url} after {refusals} refusals, {result.Status} {result.HttpStatus}: {result.ErrorMessage}";
+            var seen = $"at {result.Url} after {refusals} refusals, {challenge}, {result.Status} {result.HttpStatus}: {result.ErrorMessage}";
             result.Status.ShouldBe(BrowseStatus.Success, seen);
             result.Content.ShouldNotBeNull().ShouldContain("The comments a reader came for", customMessage: seen);
             result.HttpStatus.ShouldBe(200, seen);
@@ -91,7 +91,7 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
             var result = await fixture.Browser.NavigateAsync(
                 new BrowseRequest(sessionId, $"{host}/thread") { Caller = JudgmentCaller.None });
 
-            var seen = $"at {result.Url} after {asked} asks, {result.Status}: {result.Content?[..Math.Min(80, result.Content.Length)]}";
+            var seen = $"at {result.Url} after {asked} asks, {challenge}, {result.Status}: {result.Content?[..Math.Min(80, result.Content.Length)]}";
             result.HttpStatus.ShouldBe(403, seen);
             result.Content.ShouldNotBeNull().ShouldContain("You have been blocked");
             asked.ShouldBe(2, seen);
@@ -108,6 +108,10 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
     {
         private int _blockers;
         private int _followUps;
+        private string _failures = "";
+
+        public override string ToString() =>
+            $"{Volatile.Read(ref _followUps)} follow-ups, {Volatile.Read(ref _blockers)} blockers{_failures}";
 
         public async Task Answer(IRoute route, Func<Task> otherwise)
         {
@@ -124,7 +128,15 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
                 Interlocked.Increment(ref _followUps);
             }
 
-            await otherwise();
+            try
+            {
+                await otherwise();
+            }
+            catch (Exception ex)
+            {
+                _failures += $", answering {route.Request.Url} threw {ex.GetType().Name}: {ex.Message}";
+                throw;
+            }
         }
     }
 

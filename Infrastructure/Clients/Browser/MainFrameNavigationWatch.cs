@@ -13,6 +13,7 @@ internal sealed class MainFrameNavigationWatch : IDisposable
     private readonly IPage _page;
     private readonly Lock _lock = new();
     private IRequest? _pending;
+    private bool _expecting;
     private TaskCompletionSource _arrived = NewSignal();
 
     public MainFrameNavigationWatch(IPage page)
@@ -29,7 +30,7 @@ internal sealed class MainFrameNavigationWatch : IDisposable
         {
             lock (_lock)
             {
-                return _pending is not null;
+                return _pending is not null || _expecting;
             }
         }
     }
@@ -41,7 +42,7 @@ internal sealed class MainFrameNavigationWatch : IDisposable
         Task arrived;
         lock (_lock)
         {
-            if (_pending is null)
+            if (_pending is null && !_expecting)
             {
                 return;
             }
@@ -51,6 +52,23 @@ internal sealed class MainFrameNavigationWatch : IDisposable
 
         await Task.WhenAny(arrived, Task.Delay(deadline, ct));
         ct.ThrowIfCancellationRequested();
+    }
+
+    // The page says it is leaving (BrowserScripts.LeavingMark) before any request has been seen:
+    // Firefox stops parsing a page whose script navigates and asks for the next document only later,
+    // and in between the page is complete with nothing in flight. Until the next main-frame commit,
+    // or a failure of the request it makes, the flight is on.
+    public void ExpectNextCommit()
+    {
+        lock (_lock)
+        {
+            if (_arrived.Task.IsCompleted)
+            {
+                _arrived = NewSignal();
+            }
+
+            _expecting = true;
+        }
     }
 
     public void Dispose()
@@ -103,7 +121,7 @@ internal sealed class MainFrameNavigationWatch : IDisposable
 
         lock (_lock)
         {
-            if (_pending is null || SameDocument(_pending.Url, frame.Url))
+            if (_pending is null ? _expecting : SameDocument(_pending.Url, frame.Url))
             {
                 Arrive();
             }
@@ -118,6 +136,7 @@ internal sealed class MainFrameNavigationWatch : IDisposable
     private void Arrive()
     {
         _pending = null;
+        _expecting = false;
         _arrived.TrySetResult();
     }
 

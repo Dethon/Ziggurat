@@ -130,11 +130,11 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
         row.CredentialHash.ShouldBe(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(minted.Credential))));
         new[] { row.Id, row.TenantId, row.ServerName, row.CredentialHash }.ShouldNotContain(minted.Credential);
         // The write-ahead log too, where SQLite keeps what it has not checkpointed yet.
-        var files = Directory.GetFiles(server.Settings.DataDirectory, Path.GetFileName(server.Settings.DatabasePath) + "*");
+        var files = await server.StoredFilesAsync();
         files.ShouldNotBeEmpty();
-        foreach (var file in files)
+        foreach (var (file, bytes) in files)
         {
-            (await File.ReadAllBytesAsync(file)).AsSpan().IndexOf(Encoding.UTF8.GetBytes(minted.Credential)).ShouldBe(-1, file);
+            bytes.AsSpan().IndexOf(Encoding.UTF8.GetBytes(minted.Credential)).ShouldBe(-1, file);
         }
     }
 

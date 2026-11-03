@@ -145,11 +145,10 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         }
 
         // The write-ahead log too, where SQLite keeps what it has not checkpointed yet.
-        var files = Directory.GetFiles(server.Settings.DataDirectory, Path.GetFileName(server.Settings.DatabasePath) + "*");
+        var files = await server.StoredFilesAsync();
         files.ShouldNotBeEmpty();
-        foreach (var file in files)
+        foreach (var (file, bytes) in files)
         {
-            var bytes = await File.ReadAllBytesAsync(file);
             foreach (var secret in new[] { OpenRouterKey, IdealistaKey, IdealistaSecret, JackToken })
             {
                 bytes.AsSpan().IndexOf(Encoding.UTF8.GetBytes(secret)).ShouldBe(-1, $"{secret} in {file}");
