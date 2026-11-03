@@ -5,8 +5,8 @@
 #
 #   scripts/smoke-stack.sh up      build and start it (project jackbot-smoke), run the household migration
 #                                  into it as the deploy does, and start the home's tenant kit beside it
-#                                  (project tenant-kit-smoke); Lemonade starts too, on the CPU, for
-#                                  memory's embeddings
+#                                  (project tenant-kit-smoke); Lemonade starts too, for memory's
+#                                  embeddings, on the NVIDIA card where Docker has the runtime
 #   scripts/smoke-stack.sh test    run the Smoke tests against it (Category=Smoke)
 #   scripts/smoke-stack.sh migrate --operator <n> --owner <n> --sugary <n> [--dry-run]
 #                                  the household migration against it
@@ -54,6 +54,12 @@ esac
 DC=(docker compose -f DockerCompose/docker-compose.yml -f "$OS_OVERRIDE"
     -f DockerCompose/docker-compose.override.smoke.yml -p jackbot-smoke)
 [[ -e /dev/dri ]] || DC+=(-f DockerCompose/docker-compose.override.no-dri.yml)
+# Lemonade on the machine's NVIDIA card where Docker has the runtime: its embeddings on CUDA, since
+# under WSL the image's Vulkan sees only llvmpipe and memory's embeddings timed out on the CPU under a
+# few turns at once. Whisper stays on the CPU there (docker-compose.override.nvidia.yml says why).
+if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q '"nvidia"'; then
+  DC+=(-f DockerCompose/docker-compose.override.nvidia.yml)
+fi
 
 # Every shared server an agent dials at a URL is here, since a session whose configured URL does not
 # answer fails to build; a household's server it names is offline instead, never fatal.
