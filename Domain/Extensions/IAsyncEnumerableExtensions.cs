@@ -258,7 +258,7 @@ public static class IAsyncEnumerableExtensions
                 {
                     errorResponse = new AgentResponseUpdate
                     {
-                        Contents = [new ErrorContent(ex is TurnRefusedException ? ex.Message : $"An error occurred: {ex.Message}")
+                        Contents = [new ErrorContent(TurnFailure.Answer(ex))
                         {
                             ErrorCode = ex.GetType().Name
                         }]

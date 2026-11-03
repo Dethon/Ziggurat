@@ -112,8 +112,10 @@ public sealed class SendMessageEffectTests : IDisposable
         remaining.ShouldContain(m => m.Content == "Old error");
         remaining.ShouldNotContain(m => m.Content == "New error");
 
-        // Assert - "Second message" was resent (appears twice: original + retry)
-        remaining.Count(m => m.Role == "user" && m.Content == "Second message").ShouldBe(2);
+        // Assert - "Second message" was resent in its own place: the retry takes the failed turn's,
+        // as the conversation the agent keeps does, so it reads once rather than twice.
+        remaining.Count(m => m.Role == "user" && m.Content == "Second message").ShouldBe(1);
+        remaining.Select(m => m.Content).Take(3).ShouldBe(["First message", "Old error", "Second message"]);
     }
 
     // The handler task is abandoned by construction, so a fault inside it — here the topic

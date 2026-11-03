@@ -70,6 +70,27 @@ public partial class HouseholdSpacesE2ETests(WebChatE2EFixture fixture)
         }
     }
 
+    // The stack's Kilo Kitchen opens on Vision Agent, so removing that agent is refused, and the page
+    // says why with the question closed: it stayed open over the refusal, asking again for what had
+    // just been refused.
+    [SkippableFact]
+    public async Task RemovingTheAgentASpaceOpensOn_IsRefused_AndTheQuestionCloses()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreatePageSignedInAsync(await OwnerSessionAsync($"Owner {Guid.NewGuid().ToString("N")[..6]}"));
+        await page.GotoAsync(fixture.DefaultSpaceUrl + "admin/agents");
+        var agent = page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = "Vision Agent", Exact = true });
+        await agent.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Remove", Exact = true })
+            .ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
+        var question = agent.GetByRole(AriaRole.Group, new LocatorGetByRoleOptions { Name = "Remove Vision Agent" });
+        await question.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Remove Vision Agent" }).ClickAsync();
+
+        await Assertions.Expect(page.GetByText("opens on Vision Agent")).ToBeVisibleAsync();
+        await Assertions.Expect(question).ToHaveCountAsync(0);
+        await Assertions.Expect(agent).ToBeVisibleAsync();
+    }
+
     [SkippableFact]
     public async Task AnOwner_IsShownTheHouseholdsFeatures()
     {

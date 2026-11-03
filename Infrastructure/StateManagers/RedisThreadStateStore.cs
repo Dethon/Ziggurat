@@ -90,6 +90,24 @@ public sealed class RedisThreadStateStore(
         await StampLastWriteAsync(key, messages);
     }
 
+    public async Task DropTailAsync(string key, int count)
+    {
+        if (count <= 0 || await GetTailMessagesAsync(key, count) is not { } dropped)
+        {
+            return;
+        }
+
+        await _db.ListTrimAsync(key, 0, -(dropped.Length + 1));
+        if (AgentKey.ChatConversationParts(key) is not { } parts
+            || await HolderAsync(parts.AgentId, parts.ChatId, parts.ThreadId) is not (var household, var topicId))
+        {
+            return;
+        }
+
+        await _db.ScriptEvaluateAsync(
+            _uncountScript, [TopicKey(household, parts.AgentId, parts.ChatId, topicId)], [Readable(dropped).Count()]);
+    }
+
     // Lua numbers are doubles and a WebChat chat id is a 63-bit hash, so the id is noise from
     // the moment the record is decoded. Encoding writes that noise back over the record, after
     // which every read of the topic throws — so the identity fields cross the round trip as the
@@ -122,6 +140,20 @@ public sealed class RedisThreadStateStore(
         {{KeepWideIds}}
         redis.call('SET', KEYS[1], updated, 'PX', ARGV[4])
         return updated
+        """;
+
+    // A count taken back, for messages a retry replaced; a read position past what is left is what
+    // is left. KEEPTTL: the append that follows stamps the write.
+    private static readonly string _uncountScript =
+        $$"""
+        local json = redis.call('GET', KEYS[1])
+        if not json then return nil end
+        local topic = cjson.decode(json)
+        local count = math.max(0, (topic['MessageCount'] or 0) - tonumber(ARGV[1]))
+        topic['MessageCount'] = count
+        if (topic['ReadPosition'] or 0) > count then topic['ReadPosition'] = count end
+        {{KeepWideIds}}
+        redis.call('SET', KEYS[1], updated, 'KEEPTTL')
         """;
 
     // KEEPTTL, because reading a conversation is not writing to it: a mark-read that reset the
@@ -215,7 +247,7 @@ public sealed class RedisThreadStateStore(
     private string? Snippet(IEnumerable<ChatMessage> messages)
     {
         var text = messages
-            .Select(m => TextOf(m).MarkdownToPlainText())
+            .Select(m => TextOf(m) is var text && text.JsonObjectWords() is { } words ? words : text.MarkdownToPlainText())
             .LastOrDefault(t => !string.IsNullOrWhiteSpace(t));
 
         return text is null
@@ -489,9 +521,25 @@ public sealed class RedisThreadStateStore(
 
         // Projected from the same set a badge counts, so unread never says more than the
         // transcript shows.
-        return messages is null
-            ? []
-            : Readable(messages)
+        if (messages is null)
+        {
+            return [];
+        }
+
+        // A turn's format is on its request alone; the answers until the next request are its.
+        var formats = new Dictionary<ChatMessage, string?>(ReferenceEqualityComparer.Instance);
+        string? format = null;
+        foreach (var message in messages)
+        {
+            if (message.Role == ChatRole.User)
+            {
+                format = message.GetResponseFormat()?.Name;
+            }
+
+            formats[message] = format;
+        }
+
+        return Readable(messages)
                 .Select(m => new ChatHistoryMessage(
                     m.MessageId,
                     m.Role.Value,
@@ -499,7 +547,9 @@ public sealed class RedisThreadStateStore(
                     m.GetAuthorId(),
                     m.GetTimestamp(),
                     m.GetAttachments(),
-                    m.GetSenderId()))
+                    m.GetSenderId(),
+                    IsError: m.Role == ChatRole.Assistant && m.IsFailedTurn(),
+                    ResponseFormat: formats[m]))
                 .ToList();
     }
 

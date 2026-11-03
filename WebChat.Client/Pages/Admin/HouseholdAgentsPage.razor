@@ -210,7 +210,13 @@
 
     private void Restore(string agentId, string versionId) => Dispatcher.Dispatch(new RestoreHouseholdAgentVersion(agentId, versionId));
 
-    private void Remove(string agentId) => Dispatcher.Dispatch(new RemoveHouseholdAgent(agentId));
+    // The question closes once answered: a refusal (the agent a space opens on) leaves the agents as
+    // they were, so it is not their change that would close it.
+    private void Remove(string agentId)
+    {
+        _confirming = null;
+        Dispatcher.Dispatch(new RemoveHouseholdAgent(agentId));
+    }
 
     private void SetVoiceAgent() =>
         Dispatcher.Dispatch(new SetHouseholdVoiceAgent(string.IsNullOrEmpty(_voiceAgent) ? null : _voiceAgent));

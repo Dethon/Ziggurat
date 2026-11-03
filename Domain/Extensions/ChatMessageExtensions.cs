@@ -25,9 +25,27 @@ public static class ChatMessageExtensions
     private const string SandboxPathsKey = "SandboxPaths";
     private const string LandingFailuresKey = "LandingFailures";
     private const string OfflineServersKey = "OfflineServers";
+    private const string FailedTurnKey = "FailedTurn";
 
     extension(ChatMessage message)
     {
+        // A message of a turn that failed: the person's words and what they were told instead of an
+        // answer, kept so the conversation they come back to shows both (RedisChatMessageStore),
+        // and never read back by the model.
+        public bool IsFailedTurn() =>
+            message.AdditionalProperties?.GetValueOrDefault(FailedTurnKey) switch
+            {
+                true => true,
+                JsonElement { ValueKind: JsonValueKind.True } => true,
+                _ => false
+            };
+
+        public void MarkFailedTurn()
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[FailedTurnKey] = true;
+        }
+
         public string? GetSenderId()
         {
             var value = message.AdditionalProperties?.GetValueOrDefault(SenderIdKey);

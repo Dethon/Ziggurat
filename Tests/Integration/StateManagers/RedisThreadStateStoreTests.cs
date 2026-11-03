@@ -433,6 +433,80 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         topic.LastMessageSnippet.ShouldBe("1. Receta (/vault/re…");
     }
 
+    // A turn that failed is kept as the person's message and what they were told, the second drawn
+    // as the error it was.
+    [Fact]
+    public async Task GetHistoryAsync_AFailedTurnsAnswer_IsShownAsAnError()
+    {
+        var store = NewStore();
+        var asked = new ChatMessage(ChatRole.User, "Hola");
+        var told = new ChatMessage(ChatRole.Assistant, "OpenRouter refused your household's key.");
+        asked.MarkFailedTurn();
+        told.MarkFailedTurn();
+        await store.AppendMessagesAsync(HistoryKey("agent-failed", 590), [asked, told]);
+
+        var history = await store.GetHistoryAsync("agent-failed", 590, 0);
+
+        history.Select(h => (h.Content, h.IsError)).ShouldBe(
+            [("Hola", false), ("OpenRouter refused your household's key.", true)]);
+    }
+
+    // A request an app composed asks for a structured answer by name; the transcript says so on the
+    // request and on the answer it got, so the chat can draw the one as the app's and read the other.
+    [Fact]
+    public async Task GetHistoryAsync_NamesTheResponseFormat_OnTheRequestThatAskedAndTheAnswer()
+    {
+        var store = NewStore();
+        var asked = new ChatMessage(ChatRole.User, "There is no photo of this meal.");
+        asked.SetResponseFormat(new ResponseFormat { Name = "meal_estimate", Schema = System.Text.Json.JsonDocument.Parse("{}").RootElement });
+        await store.AppendMessagesAsync(HistoryKey("agent-format", 592),
+        [
+            new ChatMessage(ChatRole.User, "hola"), new ChatMessage(ChatRole.Assistant, "buenas"),
+            asked, new ChatMessage(ChatRole.Assistant, "{\"items\":[]}")
+        ]);
+
+        var history = await store.GetHistoryAsync("agent-format", 592, 0);
+
+        history.Select(h => h.ResponseFormat).ShouldBe([null, null, "meal_estimate", "meal_estimate"]);
+    }
+
+    // A retry replaces the failed turn: its messages come off the conversation and off the count a
+    // badge reads, and a read position past what is left is brought back to it.
+    [Fact]
+    public async Task DropTailAsync_TakesTheLastMessagesOffTheConversationAndItsCount()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-drop", 591, 0, "agent-drop", "Dropping", DateTimeOffset.UtcNow, null, TenantId: "home"));
+        var key = HistoryKey("agent-drop", 591);
+        await store.AppendMessagesAsync(key, [new ChatMessage(ChatRole.User, "one"), new ChatMessage(ChatRole.Assistant, "two")]);
+        await store.AppendMessagesAsync(key, [new ChatMessage(ChatRole.User, "Hola"), new ChatMessage(ChatRole.Assistant, "refused")]);
+        await store.MarkTopicReadAsync("home", "agent-drop", 591, "t-drop");
+
+        await store.DropTailAsync(key, 2);
+
+        (await store.GetMessagesAsync(key))!.Select(m => m.Text).ShouldBe(["one", "two"]);
+        var topic = (await store.GetTopicPageAsync("agent-drop", "default", Anyone, null, 10)).Topics.ShouldHaveSingleItem();
+        topic.MessageCount.ShouldBe(2);
+        topic.ReadPosition.ShouldBe(2);
+    }
+
+    // An answer in JSON (a structured format's) previews as its words, never its braces.
+    [Fact]
+    public async Task AppendMessagesAsync_AJsonAnswersSnippet_IsItsWords()
+    {
+        var store = NewStore(snippetLength: 60);
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-snip-json", 562, 0, "agent-snippet-json", "Meal", DateTimeOffset.UtcNow, null, TenantId: "home"));
+
+        await store.AppendMessagesAsync(HistoryKey("agent-snippet-json", 562),
+            [new ChatMessage(ChatRole.Assistant, """{"items":[{"name":"cooked macaroni","portion":"about 200 g","grams":200}],"notes":["Sauce may add sugar."]}""")]);
+
+        var topic = (await store.GetTopicPageAsync("agent-snippet-json", "default", Anyone, null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.LastMessageSnippet.ShouldBe("cooked macaroni · about 200 g · Sauce may add sugar.");
+    }
+
     // Unread is a subtraction of two numbers carried on the topic, so a badge reads no messages.
     [Fact]
     public async Task AppendMessagesAsync_CountsWhatTheTopicHolds()

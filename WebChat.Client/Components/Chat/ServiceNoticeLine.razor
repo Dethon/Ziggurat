@@ -1,0 +1,30 @@
+@using WebChat.Client.Models
+
+@code {
+    [Parameter] public ChatMessageModel Message { get; set; } = new();
+    [Parameter] public string Line { get; set; } = "";
+
+    private bool _open;
+
+    private string? Time => Message.Timestamp?.ToLocalTime().ToString("HH:mm");
+}
+
+@* A turn a service started (ServiceNotice): one line saying what happened, its instructions to the
+   model behind the toggle for whoever wants to read them. *@
+<div class="service-notice" role="note">
+    <button class="service-notice-toggle" @onclick="() => _open = !_open" aria-expanded="@(_open ? "true" : "false")">
+        <Icon Glyph="Icons.Triangle" Size="10" Class="@(_open ? "toggle-icon open" : "toggle-icon")" />
+        <span>@Line</span>
+        @if (Time is { } time)
+        {
+            <span class="service-notice-time">@time</span>
+        }
+    </button>
+    @* What the service sent with it — a meal's photo from the Sugary app — is the person's, so it
+       shows whether or not the instructions are open. *@
+    <MessageAttachments Attachments="@Message.Attachments" />
+    @if (_open)
+    {
+        <div class="service-notice-prompt">@Message.Content</div>
+    }
+</div>

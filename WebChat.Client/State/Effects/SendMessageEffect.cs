@@ -229,6 +229,13 @@ public sealed class SendMessageEffect : IDisposable
         var lastUserMessage = messages.LastOrDefault(m => m.Role == "user");
         if (lastUserMessage is not null)
         {
+            // The failed message is sent again in its own place, as the agent's conversation keeps it
+            // once (a retry replaces the failed turn there), so it is taken back before it is resent.
+            if (ReferenceEquals(messages[^1], lastUserMessage))
+            {
+                _dispatcher.Dispatch(new RemoveLastMessage(action.TopicId));
+            }
+
             // With its files. A message can now be nothing but attachments, so re-sending the
             // text alone would ask the model about a picture it was never given.
             _dispatcher.Dispatch(new SendMessage(

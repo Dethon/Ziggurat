@@ -15,14 +15,15 @@ services:
     networks:
       - jackbot
 
-  # What the accounts service's key probes ask instead of OpenRouter, Idealista and Telegram: every
-  # path answered 200, so every key an owner saves here is working, and no key is ever sent to a
-  # provider to be checked. What a key buys in a turn is the provider's: the agent's model calls
+  # What the accounts service's key probes ask instead of OpenRouter, Idealista and Telegram, so no
+  # key is ever sent to a provider to be checked: a key with "refused" in it is refused, one with
+  # "unreachable" in it finds the provider down, and every other works (smoke-keys/Caddyfile). What a key buys in a turn is the provider's: the agent's model calls
   # still go to OpenRouter. Nothing ships it.
   smoke-keys:
     image: caddy:2.11.7-alpine
     container_name: smoke-keys
-    command: ["caddy", "respond", "--listen", ":8080", "--body", "{}"]
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    volumes: ["./smoke-keys/Caddyfile:/etc/caddy/Caddyfile:ro"]
     restart: "no"
     networks:
       - jackbot

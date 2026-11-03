@@ -146,6 +146,43 @@ public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, Red
         return result.Content ?? "";
     }
 
+    // The view is the page as it is now: what the person types into it shows in the next frames. A
+    // view that sent its first frame and then nothing left a person typing into a picture that never
+    // changed, with no way to tell whether a key had landed.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task TypingIntoTheHandoff_IsSeenInTheFramesThatFollow()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", ServeAsync, person);
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/login");
+        try
+        {
+            var frames = 0;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff, _ =>
+            {
+                Interlocked.Increment(ref frames);
+                return Task.CompletedTask;
+            });
+            await Eventually.Until(() => Volatile.Read(ref frames) > 0, "a frame of the handoff tab");
+            await Eventually.Settle();
+            var settled = Volatile.Read(ref frames);
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseDown(0.5, 0.05));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseUp(0.5, 0.05));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Text("fran"));
+
+            await Eventually.Until(() => Volatile.Read(ref frames) > settled,
+                $"a frame after the typing (frames: {settled} before it)");
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
     // A sign-in window the login page opens is what the view shows and types into, and the
     // handoff knows the hosts it passed through.
     [Trait("Category", "External")]

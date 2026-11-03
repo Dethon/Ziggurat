@@ -57,6 +57,44 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
             "the announced save to drop what was kept");
     }
 
+    // A host that shows a household's configuration live (the chat hub's agent picker) is told of a
+    // save once what this client kept of it is gone, so what it asks for next is the save's.
+    [Fact]
+    public async Task ASave_IsToldToItsListeners_AfterWhatWasKeptOfItIsDropped()
+    {
+        await using var server = await StartAsync();
+        var (household, person) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(server, household, HouseholdSections.Settings, """{ "name": "Casa", "timeZone": "Europe/Madrid" }""");
+        await using var client = Client(server, Scheduling);
+        var proof = Proof(household, person);
+        var told = new List<(HouseholdConfigSaved Saved, string ReadThen)>();
+        await client.ListenAsync(CancellationToken.None);
+        // The channel is the deployment's, so a busy suite's other households are heard on it too.
+        client.Saved += saved =>
+        {
+            if (saved.HouseholdId != household)
+            {
+                return;
+            }
+
+            var now = client.SettingsAsync(household, proof, CancellationToken.None).GetAwaiter().GetResult();
+            lock (told)
+            {
+                told.Add((saved, now.TimeZone));
+            }
+        };
+        await client.SettingsAsync(household, proof, CancellationToken.None);
+
+        await SetAsync(server, household, HouseholdSections.Settings, """{ "name": "Casa", "timeZone": "Asia/Tokyo" }""");
+
+        await Eventually.Until(() => { lock (told) { return told.Count > 0; } }, "the save to be told");
+        lock (told)
+        {
+            told[0].Saved.ShouldBe(new HouseholdConfigSaved(household, HouseholdSections.Settings));
+            told[0].ReadThen.ShouldBe("Asia/Tokyo");
+        }
+    }
+
     [Fact]
     public async Task ASaveOfAnotherHousehold_DropsNothingOfThisOnes()
     {

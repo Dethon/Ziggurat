@@ -138,5 +138,10 @@
 
     private void Mint(string name) => Dispatcher.Dispatch(new AddHouseholdServer(new ServerAddition(name)));
 
-    private void Revoke(string credentialId) => Dispatcher.Dispatch(new RevokeServerCredential(credentialId));
+    // The question closes once answered, refused or not.
+    private void Revoke(string credentialId)
+    {
+        _confirming = null;
+        Dispatcher.Dispatch(new RevokeServerCredential(credentialId));
+    }
 }

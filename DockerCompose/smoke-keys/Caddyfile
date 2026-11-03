@@ -1,0 +1,25 @@
+# The smoke stack's stand-in for every provider a key is probed against (OpenRouter's /key, Telegram's
+# getMe, Idealista's token exchange), so an owner's key is never sent anywhere from this machine. It
+# answers as the provider would for the key it is shown: a key with "refused" in it is refused (401), one
+# with "unreachable" in it finds the provider down (503), and any other works. OpenRouter's key rides in
+# the bearer header and a bot's token in the path; Idealista's pair is base64 in a basic header, so it
+# always works here.
+{
+    admin off
+}
+
+:8080 {
+    @refused {
+        header_regexp Authorization refused
+    }
+    @refusedPath path_regexp refused
+    @unreachable {
+        header_regexp Authorization unreachable
+    }
+    @unreachablePath path_regexp unreachable
+    respond @refused 401
+    respond @refusedPath 401
+    respond @unreachable 503
+    respond @unreachablePath 503
+    respond "{}" 200
+}

@@ -21,6 +21,10 @@ internal static class TopicAudience
     // offered to them is theirs wherever they are, and a sees-all person is in no `user:` group.
     public static string Account(string userId) => $"account:{userId}";
 
+    // Every connection of one household, whatever space and whoever: what the household's own
+    // configuration changes (its agents) is the same news on each of its pages.
+    public static string Household(string tenantId) => $"household:{tenantId}";
+
     private static string Person(string tenantId, string spaceSlug, string userId) =>
         $"space:{tenantId}:{spaceSlug}:user:{userId}";
 

@@ -57,7 +57,8 @@ public static class ConfigModule
             .AddSingleton<IConversationLiveness, AgentConversationLiveness>()
             .AddSingleton<AttachmentStore>()
             .AddSingleton<AttachmentService>()
-            .AddHostedService<AttachmentSweeper>();
+            .AddHostedService<AttachmentSweeper>()
+            .AddHostedService<HouseholdAgentsAnnouncer>();
 
         if (settings.WebPush?.IsConfigured == true)
         {

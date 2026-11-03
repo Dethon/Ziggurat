@@ -28,7 +28,7 @@ public sealed class HouseholdConfigurationClient(
     IConnectionMultiplexer? redis,
     TimeProvider clock,
     TimeSpan lifetime,
-    ILogger<HouseholdConfigurationClient>? logger = null) : IHouseholdConfiguration, IHouseholdKeyReports, IAsyncDisposable
+    ILogger<HouseholdConfigurationClient>? logger = null) : IHouseholdConfiguration, IHouseholdKeyReports, IHouseholdConfigSaves, IAsyncDisposable
 {
     public const string ClientName = "accounts-household-config";
 
@@ -91,6 +91,10 @@ public sealed class HouseholdConfigurationClient(
                     ?? throw new InvalidOperationException("only the agent says a household's key failed in use, with a token of its own");
         using var response = await SendAsync(HouseholdConfigProtocol.OpenRouterKeyRefused, new HouseholdConfigQuery(householdId, token), ct);
     }
+
+    public event Action<HouseholdConfigSaved>? Saved;
+
+    public Task ListenAsync(CancellationToken ct) => SubscribeAsync(ct);
 
     // This client's handler alone: the multiplexer is the host's, and another listener on the channel
     // is somebody else's to remove.
@@ -237,6 +241,17 @@ public sealed class HouseholdConfigurationClient(
         if (saved.Section == HouseholdSections.Keys)
         {
             Drop(EveryHousehold);
+        }
+
+        // After the drop, so a listener reading the household now reads the save.
+        try
+        {
+            Saved?.Invoke(saved);
+        }
+        catch (Exception ex)
+        {
+            logger?.LogWarning(ex, "A listener failed on the save of household {Household}'s {Section}",
+                saved.HouseholdId, saved.Section);
         }
     }
 
