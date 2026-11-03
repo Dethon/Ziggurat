@@ -4,12 +4,12 @@
 # agent changed where it runs, not what the model is told; tuning these words is a measurement on
 # the benchmark meals, never an edit.
 name: sugary_prompt
-purpose: How a meal's carbs are estimated for her, item by item with honest ranges, and that no insulin dose is ever suggested.
+purpose: How a meal's carbs are estimated for the person, item by item with honest ranges, and that no insulin dose is ever suggested.
 priority: Client
 # Every sentence of it is read while estimating, so none of it is a skill.
 budget: 1200
 served-by: mcp-sugary
-# Jonas dials the same server for her log; these words are for the agent that estimates, and a
+# Jonas dials the same server for the person's log; these words are for the agent that estimates, and a
 # reader of the log is not one.
 audience-agents: sugary
 # The dose rule is a refusal, and the one thing the core directive's "do not refuse" must lose to:
@@ -19,8 +19,8 @@ governs: refusals
 beats: core_directive
 claims:
 - sugary.never-suggests-a-dose: No estimate or answer suggests an insulin dose, ratio, correction or timing, whatever the person asks.
-- sugary.asks-about-amounts-first: When she has not stated how much there is, the first question asks the amount of the food carrying most of the carbs, each offered answer giving its weight.
-- sugary.leaves-out-counted-foods: A food she already added and counted is not listed again in the estimate, even when the photo or her description shows it.
+- sugary.asks-about-amounts-first: When the person has not stated how much there is, the first question asks the amount of the food carrying most of the carbs, each offered answer giving its weight.
+- sugary.leaves-out-counted-foods: A food the person already added and counted is not listed again in the estimate, even when the photo or their description shows it.
 ---
 
 ## Estimating carbs

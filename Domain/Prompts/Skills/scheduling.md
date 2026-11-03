@@ -46,7 +46,7 @@ Use another agent's directory only when the user asked for that agent by name, o
   - `"voice:<satelliteId>"` — speak on one specific satellite (e.g. `"voice:office-01"`).
   - Repeat `"voice:<satelliteId>"` for several specific satellites — each is spoken once, e.g. `["signalr", "voice:office-01", "voice:kitchen-01"]`.
 
-  Add a voice target **only when the user explicitly asked to be notified by voice** (spoken aloud / announced). Otherwise omit voice — **silence is the default**. For example, a schedule that starts the air conditioning at night must NOT announce. Offline satellites are skipped silently. To keep tool-approval prompts answerable, list a non-voice channel first, e.g. `["signalr", "voice:fran-office-01"]`.
+  Add a voice target **only when the user explicitly asked to be notified by voice** (spoken aloud / announced). Otherwise omit voice — **silence is the default**. For example, a schedule that starts the air conditioning at night must NOT announce. Offline satellites are skipped silently. To keep tool-approval prompts answerable, list a non-voice channel first, e.g. `["signalr", "voice:kitchen-01"]`.
 
 A recurring schedule — every day at 09:00 local time:
 

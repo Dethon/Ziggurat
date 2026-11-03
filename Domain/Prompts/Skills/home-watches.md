@@ -40,7 +40,7 @@ entity to Home Assistant, which has never heard of it.
 {"name": "Greenhouse above 30",
  "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.<id from the setup index>", "above": 30}],
  "conditions": [],
- "effects": [{"kind": "prompt", "prompt": "The greenhouse crossed 30 degrees. Read its history, say what it is and whether it is rising, and warn Fran."}],
+ "effects": [{"kind": "prompt", "prompt": "The greenhouse crossed 30 degrees. Read its history, say what it is and whether it is rising, and warn me."}],
  "once": false}
 ```
 
@@ -52,7 +52,7 @@ entity to Home Assistant, which has never heard of it.
   `{"trigger": "template", "value_template": "{{ … }}"}`. A range ("leaves 70–180") is
   ONE watch with two triggers, one `below` and one `above` — never two watches. "Only at
   night" / "only when I'm home" are conditions: `{"condition": "time", "after":
-  "23:00:00", "before": "07:00:00"}`, `{"condition": "state", "entity_id": "person.fran",
+  "23:00:00", "before": "07:00:00"}`, `{"condition": "state", "entity_id": "person.alex",
   "state": "home"}`.
 - `numeric_state` fires on the **crossing** only, never at creation: a value already past
   the threshold warns at the next crossing, not now. Read `state.json` when you create the
@@ -72,7 +72,7 @@ entity to Home Assistant, which has never heard of it.
     the satellites that exist. `insistent` is always present and rings until acknowledged:
     an object with optional `gapSeconds`, `maxRepeats` and `maxDurationSeconds`, and `{}`
     takes every default. Add this effect only when the request carries urgency — "wake me
-    if her sugar drops under 60" is an insistent announcement in the bedroom, usually
+    if the glucose drops under 60" is an insistent announcement in the bedroom, usually
     followed by a `prompt` effect so the detail follows on chat. It works while the
     assistant is down.
   - `{"kind": "actions", "actions": [ … ]}` — Home Assistant actions the home performs
