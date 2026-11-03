@@ -426,6 +426,16 @@ public sealed class ChatHub(
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
 
+        // The other browsers on the topic - a member reading a shared one, the same person's phone -
+        // follow a stream they are told started, replaying the message just buffered; the one sending
+        // is streaming already and ignores it. Told as an agent-initiated turn's start is, to those
+        // who may see the topic. A message enqueued behind a running reply needs no telling: whoever
+        // follows the stream receives it on it.
+        var spaceSlug = session.SpaceSlug ?? SpaceConfig.DefaultSlug;
+        await hubSender.SendToTopicAsync(
+            await threadStore.TopicOfAsync(session), spaceSlug, "OnStreamStarted",
+            new StreamStartedNotification(topicId, spaceSlug));
+
         var delivered = await notificationEmitter.EmitAsync(
             new ChannelMessageNotification
             {
