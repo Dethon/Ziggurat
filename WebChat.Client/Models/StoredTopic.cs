@@ -40,6 +40,11 @@ public class StoredTopic
     // where the hub refuses would do nothing at all.
     public bool MayRenameOrDelete(string? viewerId) => OwnerId is null || OwnerId == viewerId;
 
+    // The hub's rule for writing in it (TopicViewer.MayContinue), for a row this viewer already sees:
+    // the owner's, a shared one's for the household, one nobody owns for whoever sees it. Seeing all
+    // conversations is reading them, so another person's private topic is read-only.
+    public bool MayContinue(string? viewerId) => OwnerId is null || OwnerId == viewerId || Shared;
+
     // True while the name is the stand-in a conversation started by a file was given: the file's
     // own name, because at that moment nothing had been typed. The first message with text takes
     // the name over. Not part of the metadata, so it never survives a reload — by then the
