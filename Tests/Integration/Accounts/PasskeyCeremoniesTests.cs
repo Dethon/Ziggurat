@@ -3,7 +3,9 @@ using System.Net.Http.Json;
 using Accounts.Members;
 using Accounts.Passkeys;
 using Accounts.Sessions;
+using Accounts.Store;
 using Domain.DTOs.Admin;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -239,14 +241,58 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         await SignInAsync(server, page);
         var signedIn = await SessionOfAsync(context);
         var minted = await server.MintSessionAsync(fran.UserId);
+        await SeedSecondPasskeyAsync(server, fran.UserId);
 
         await page.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
-        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Revoke passkey" }).ClickAsync();
+        await page.Locator("li[data-passkey-id]", new PageLocatorOptions { HasText = "this device" })
+            .GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Revoke passkey" }).ClickAsync();
         await page.WaitForURLAsync(url => url.Contains("/accounts/sign-in", StringComparison.Ordinal));
 
         (await server.VerifyAsync(enrolled, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await server.VerifyAsync(signedIn, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await server.VerifyAsync(minted)).StatusCode.ShouldBe(HttpStatusCode.OK, "a session the passkey did not begin");
+    }
+
+    // A person's only passkey is their only way in: revoking it with one click locked Tomás out until an
+    // owner minted him a recovery link. The page offers no revoke for it, and a post is refused.
+    [Fact]
+    public async Task RevokingYourOnlyPasskey_IsRefused_AndSignsNothingOut()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        var enrolled = await SessionOfAsync(context);
+        var passkey = (await server.Service<PasskeyStore>().ListAsync(fran.UserId, CancellationToken.None)).ShouldHaveSingleItem();
+
+        await page.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+        await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Revoke passkey" })).ToHaveCountAsync(0);
+        await Assertions.Expect(page.Locator("li[data-passkey-id]")).ToContainTextAsync("add another");
+        var refused = await page.EvaluateAsync<int>(
+            """
+            async id => {
+              const form = new FormData();
+              const token = document.querySelector('form input[type=hidden]');
+              if (token) form.append(token.name, token.value);
+              return (await fetch(`/accounts/account/passkeys/${id}/revoke`, { method: 'POST', body: form, redirect: 'manual' })).status;
+            }
+            """, passkey.Id);
+
+        refused.ShouldBe(409);
+        (await server.Service<PasskeyStore>().ListAsync(fran.UserId, CancellationToken.None)).ShouldHaveSingleItem();
+        (await server.VerifyAsync(enrolled)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    private static async Task SeedSecondPasskeyAsync(AccountsServer server, string userId)
+    {
+        await using var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        var user = await db.Users.SingleAsync(u => u.Id == userId);
+        db.Credentials.Add(new Credential
+        {
+            Id = Tokens.NewId(), TenantId = user.TenantId, UserId = userId, CredentialId = Tokens.NewId(),
+            PublicKey = [1], CreatedAt = server.Clock.GetUtcNow()
+        });
+        await db.SaveChangesAsync();
     }
 
     // A second device signed in already adds its own passkey from the account page, and then signs
