@@ -62,8 +62,11 @@ public static class AccountsPages
 
     internal static string Encode(string text) => WebUtility.HtmlEncode(text);
 
-    internal static string Date(DateTimeOffset instant) =>
-        instant.UtcDateTime.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture);
+    // When something happened, as the admin pages and the dashboard write it: day first, a 24-hour
+    // clock, on the household's own clock (HouseholdClock) — UTC put a person in Madrid an hour behind
+    // their own day.
+    internal static string Date(DateTimeOffset instant, TimeZoneInfo zone) =>
+        TimeZoneInfo.ConvertTime(instant, zone).ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
 
     // After a form has changed something, the browser goes back to the page by a GET, so reloading
     // it does not post the form again.

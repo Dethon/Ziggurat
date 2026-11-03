@@ -11,7 +11,7 @@ namespace Accounts.Pages;
 // permission to see every conversation; inviting somebody new; a recovery link for someone who lost
 // every passkey; changing roles; granting and withdrawing the permission; a code that binds a
 // Telegram group to the household. A member is refused it.
-public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore links, AccountsSettings settings)
+public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore links, HouseholdClock clock, AccountsSettings settings)
 {
     public const string Path = "/members";
     public const string Url = AccountsApp.PathBase + Path;
@@ -55,7 +55,7 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
 
         var invite = await links.MintInviteAsync(viewer.TenantId, viewer.UserId, displayName, role, ct);
         return await RenderAsync(http, viewer,
-            Issued($"An invite for {displayName}, as {Name(role)}", invite.Url, invite.ExpiresAt, InTelegram(invite.Token)),
+            Issued($"An invite for {displayName}, as {Name(role)}", invite.Url, invite.ExpiresAt, await clock.ZoneAsync(viewer.TenantId, ct), InTelegram(invite.Token)),
             StatusCodes.Status200OK, ct);
     }
 
@@ -79,7 +79,7 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
         return await RenderAsync(http, viewer,
             $"""
              <section class="notice" aria-label="New group code">
-               <p>Add the bot to the group, then send this there. It works once, until {AccountsPages.Date(code.ExpiresAt)}, and is not shown again.</p>
+               <p>Add the bot to the group, then send this there. It works once, until {AccountsPages.Date(code.ExpiresAt, await clock.ZoneAsync(viewer.TenantId, ct))}, and is not shown again.</p>
                <p><code data-bind-command>/bind {code.Code}</code></p>
              </section>
              """,
@@ -112,7 +112,7 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
         return await links.MintRecoveryAsync(viewer.TenantId, viewer.UserId, userId, ct) switch
         {
             RecoveryMint.Minted { Link: var link } => await RenderAsync(http, viewer,
-                Issued($"A recovery link for {person.DisplayName}", link.Url, link.ExpiresAt), StatusCodes.Status200OK, ct),
+                Issued($"A recovery link for {person.DisplayName}", link.Url, link.ExpiresAt, await clock.ZoneAsync(viewer.TenantId, ct)), StatusCodes.Status200OK, ct),
             RecoveryMint.Disabled => await RenderAsync(http, viewer,
                 $"<p class=\"notice\">{AccountsPages.Encode(person.DisplayName)} is disabled, so a link would open nothing until they are re-enabled.</p>",
                 StatusCodes.Status400BadRequest, ct),
@@ -220,10 +220,10 @@ public sealed class MembersPage(PageGuard guard, MemberStore members, LinkStore 
             status);
     }
 
-    private static string Issued(string what, Uri url, DateTimeOffset expiresAt, string? alternative = null) =>
+    private static string Issued(string what, Uri url, DateTimeOffset expiresAt, TimeZoneInfo zone, string? alternative = null) =>
         $"""
          <section class="notice" aria-label="New link">
-           <p>{AccountsPages.Encode(what)}, good once until {AccountsPages.Date(expiresAt)}. Send it to them; it is not shown again.</p>
+           <p>{AccountsPages.Encode(what)}, good once until {AccountsPages.Date(expiresAt, zone)}. Send it to them; it is not shown again.</p>
            <p><a data-link href="{url}">{url}</a></p>
            {alternative}
          </section>
