@@ -1,4 +1,5 @@
 using Domain.Tools.Sugary.Estimation;
+using Domain.Tools.Sugary.Labels;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.Components.Chat;
@@ -9,7 +10,7 @@ public static class StructuredAnswers
 {
     public static string? AppOf(string format) => format switch
     {
-        MealEstimateSchema.Name => "Sugary app",
+        MealEstimateSchema.Name or NutritionLabelSchema.Name => "Sugary app",
         _ => null
     };
 
