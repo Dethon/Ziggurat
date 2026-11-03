@@ -121,9 +121,10 @@ public sealed class AccountPage(
         var zone = await clock.ZoneAsync(viewer.TenantId, ct);
         var seesAll = household.Where(m => m.SeesAllConversations).ToList();
 
+        var thisDevicesPasskey = devices.FirstOrDefault(d => d.Id == viewer.SessionId)?.PasskeyId;
         var passkeyItems = string.Concat(held.Select(p =>
             $"""
-             <li data-passkey-id="{p.Id}">Added {AccountsPages.Date(p.CreatedAt, zone)}{(p.LastUsedAt is { } used ? $", last used {AccountsPages.Date(used, zone)}" : "")}
+             <li data-passkey-id="{p.Id}">Added {AccountsPages.Date(p.CreatedAt, zone)}{(p.LastUsedAt is { } used ? $", last used {AccountsPages.Date(used, zone)}" : "")}{(p.Id == thisDevicesPasskey ? " <strong>(signed in this device)</strong>" : "")}
                <form method="post" action="{Url}/passkeys/{p.Id}/revoke">{form}<button type="submit">Revoke passkey</button></form>
              </li>
              """));

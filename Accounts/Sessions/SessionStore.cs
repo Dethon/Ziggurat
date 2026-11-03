@@ -7,7 +7,10 @@ namespace Accounts.Sessions;
 public sealed record IssuedSession(string Id, string Token);
 
 // A signed-in browser as the account page lists it; the device is the user agent it signed in with.
-public sealed record SignedInDevice(string Id, string? Device, DateTimeOffset CreatedAt, DateTimeOffset LastSeenAt);
+// PasskeyId is the passkey that signed it in (none for a minted session), so the account page can say
+// which passkey revoking would sign this device out with.
+public sealed record SignedInDevice(
+    string Id, string? Device, DateTimeOffset CreatedAt, DateTimeOffset LastSeenAt, string? PasskeyId = null);
 
 // HouseholdSuspended: the person is signed in still — nothing of a suspended household is deleted — and
 // the session check lets them in nowhere until it is resumed.
@@ -99,7 +102,7 @@ public sealed class SessionStore(IDbContextFactory<AccountsDbContext> contexts, 
         return await db.Sessions
             .Where(s => s.UserId == userId && s.RevokedAt == null)
             .OrderByDescending(s => s.LastSeenAt)
-            .Select(s => new SignedInDevice(s.Id, s.Device, s.CreatedAt, s.LastSeenAt))
+            .Select(s => new SignedInDevice(s.Id, s.Device, s.CreatedAt, s.LastSeenAt, s.CredentialId))
             .ToListAsync(ct);
     }
 

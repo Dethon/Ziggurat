@@ -203,6 +203,27 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         (await server.Service<PasskeyStore>().ListAsync(fran.UserId, CancellationToken.None)).Count.ShouldBe(2);
     }
 
+    // Revoking a passkey signs out every device it signed in, this one included, so the page says
+    // which passkey this device's session began with: two passkeys listed by their dates alone left a
+    // person on their phone revoking blind.
+    [Fact]
+    public async Task TheAccountPage_SaysWhichPasskeySignedInThisDevice()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (_, phone) = await DeviceAsync();
+        await EnrollAsync(server, phone, fran);
+        var (_, laptop) = await DeviceAsync();
+        await EnrollAsync(server, laptop, await server.MintOperatorAsync("Fran"));
+
+        await laptop.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+
+        var items = laptop.Locator("li[data-passkey-id]");
+        await Assertions.Expect(items).ToHaveCountAsync(2);
+        await Assertions.Expect(items.Filter(new LocatorFilterOptions { HasText = "this device" })).ToHaveCountAsync(1);
+        await Assertions.Expect(items.Last).ToContainTextAsync("this device");
+    }
+
     [Fact]
     public async Task RevokingAPasskeyOnTheAccountPage_EndsEverySessionItBegan()
     {
