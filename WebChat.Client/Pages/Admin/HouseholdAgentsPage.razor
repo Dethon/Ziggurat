@@ -120,7 +120,8 @@
                 <span class="admin-field-label">Voice agent</span>
                 <select name="voiceAgent" @bind="_voiceAgent" aria-describedby="admin-agent-voice-now">
                     <option value="">The agent made from the Nabu template, if there is one</option>
-                    @foreach (var agent in agents.Agents)
+                    @* An agent with no tools (the Sugary estimator) holds no conversation, so it is not offered. *@
+                    @foreach (var agent in agents.Agents.Where(a => a.MayAnswerAloud))
                     {
                         <option value="@agent.Id">@agent.Name</option>
                     }

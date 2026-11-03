@@ -223,7 +223,7 @@ none — beside the agents rather than under them, where it would read as an age
 `AdminSaved<AdminAgents>`, the whole list, with `voiceAgent` (the one marked) and `answersAloud` (the one that
 does, `HouseholdAgents.VoiceAgentOf`, or null).
 
-- **Which agent answers aloud is the owner's too**: any of the household's agents, whatever its template —
+- **Which agent answers aloud is the owner's too**: any of the household's agents that holds a conversation, whatever its template (an agent with `no-tools`, the Sugary estimator, answers one request and is never offered: `HouseholdAgent.MayAnswerAloud`, `AdminAgent.MayAnswerAloud`, and the section's rule refuses the mark) —
   a Jonas answers a satellite under the voice rules as a Nabu does (`.claude/rules/channels.md`). Marked
   none, the household's first agent of the voice template answers. The section's own rule refuses a mark
   naming none of its agents ("Marked agent jonas to answer aloud" / "Marked no agent to answer aloud" in the

@@ -239,10 +239,12 @@ public static class HouseholdAgentsAdmin
     private static AdminAgent Shown(HouseholdAgent entry) => entry switch
     {
         { Definition: { } definition } => new AdminAgent(
-            entry.Id, definition.Name, definition.CustomInstructions, null, definition.Description, definition.Model),
+            entry.Id, definition.Name, definition.CustomInstructions, null, definition.Description, definition.Model,
+            entry.MayAnswerAloud),
         _ => AgentTemplates.Named(entry.Template ?? "") is { } template
-            ? new AdminAgent(entry.Id, entry.Name ?? template.Name, entry.CustomInstructions, entry.Template, template.Description, template.Model)
-            : new AdminAgent(entry.Id, entry.Name ?? entry.Id, entry.CustomInstructions, entry.Template, null, "")
+            ? new AdminAgent(entry.Id, entry.Name ?? template.Name, entry.CustomInstructions, entry.Template, template.Description,
+                template.Model, entry.MayAnswerAloud)
+            : new AdminAgent(entry.Id, entry.Name ?? entry.Id, entry.CustomInstructions, entry.Template, null, "", entry.MayAnswerAloud)
     };
 
     // Where the two fields live for each kind (.claude/rules/household-config.md): a definition's own,

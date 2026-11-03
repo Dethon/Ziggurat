@@ -118,6 +118,43 @@ public class CreateConversationToolTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // A topic an agent opens (a schedule's fire, a meal's copy) has its first turn streaming at once, and
+    // the clients that were told of the topic are told of that stream too, as a later turn's are: a
+    // client that only added the row held it at no messages, never showed its preview or its badge,
+    // and treated it as read when opened.
+    [Fact]
+    public async Task McpRun_ATopicItMints_AnnouncesItsFirstStreamAfterTheTopic()
+    {
+        var sent = new List<string>();
+        _hubSender.Setup(s => s.SendToGroupAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string method, object _, CancellationToken _) => sent.Add(method))
+            .Returns(Task.CompletedTask);
+
+        await ShowAsync("11:22", "a plate of paella");
+
+        var topicId = _topics.Saved.ShouldHaveSingleItem().TopicId;
+        sent.Distinct().ShouldBe(["OnTopicChanged", "OnStreamStarted"]);
+        sent.LastIndexOf("OnTopicChanged").ShouldBeLessThan(sent.IndexOf("OnStreamStarted"));
+        _hubSender.Verify(s => s.SendToGroupAsync(
+            "space:home:default:user:fran", "OnStreamStarted",
+            It.Is<StreamStartedNotification>(n => n.TopicId == topicId),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The prompt a minted topic opens with is buffered with the time it was sent, as a later turn's
+    // is: a fired reminder's notice was drawn with no time while the page followed it live.
+    [Fact]
+    public async Task McpRun_ATopicItMints_BuffersItsPromptWithTheTimeItWasSent()
+    {
+        await ShowAsync("11:22", "a plate of paella");
+
+        var topicId = _topics.Saved.ShouldHaveSingleItem().TopicId;
+        var prompt = _streamService.GetStreamState(topicId).ShouldNotBeNull().BufferedMessages.ShouldHaveSingleItem();
+        prompt.Content.ShouldBe("a plate of paella");
+        prompt.UserMessage.ShouldNotBeNull().Timestamp.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task McpRun_ALaterTurnOnTheSameConversation_AttachesToTheTopicItMinted()
     {
@@ -128,6 +165,7 @@ public class CreateConversationToolTests
             ConversationId = "11:22", Content = string.Empty,
             ContentType = ReplyContentType.StreamComplete, IsComplete = true
         });
+        _hubSender.Invocations.Clear();
 
         var result = await ShowAsync("11:22", "about 300 g");
 

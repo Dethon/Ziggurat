@@ -1,3 +1,4 @@
+using Accounts.Configuration;
 using Accounts.Links;
 using Accounts.Members;
 using Accounts.Passkeys;
@@ -5,6 +6,9 @@ using Accounts.People;
 using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
+using Accounts.Tunnels;
+using Domain.DTOs.Household;
+using Domain.DTOs.Tunnel;
 
 namespace Accounts.Pages;
 
@@ -20,10 +24,15 @@ public sealed class AccountPage(
     PersonStore people,
     LinkStore links,
     HouseholdClock clock,
+    HouseholdConfigStore configuration,
+    TunnelCredentialStore tunnels,
     AccountsSettings settings)
 {
     public const string Path = "/account";
     public const string Url = AccountsApp.PathBase + Path;
+
+    private const string LastPasskey =
+        "It is your only passkey, so it stays: add another before revoking this one, or you could not sign in again.";
 
     public static void Map(IEndpointRouteBuilder accounts)
     {
@@ -63,9 +72,19 @@ public sealed class AccountPage(
             return refusal!;
         }
 
-        return await passkeys.RevokeAsync(viewer.UserId, passkeyId, ct)
-            ? AccountsPages.SeeOther(http, Url)
-            : NotFound(http);
+        return await passkeys.RevokeOwnAsync(viewer.UserId, passkeyId, ct) switch
+        {
+            OwnRevocation.Revoked => AccountsPages.SeeOther(http, Url),
+            OwnRevocation.Last => AccountsPages.Page(http, "Not revoked",
+                $"""
+                 <main>
+                   <h1>That passkey was not revoked.</h1>
+                   <p>{LastPasskey}</p>
+                   <p><a href="{Url}">Back to your account</a></p>
+                 </main>
+                 """, StatusCodes.Status409Conflict),
+            _ => NotFound(http)
+        };
     }
 
     // Whoever asks who is signed in (/accounts/me) and the chat hub's next connection read the
@@ -120,12 +139,18 @@ public sealed class AccountPage(
         var form = guard.FormField(http);
         var zone = await clock.ZoneAsync(viewer.TenantId, ct);
         var seesAll = household.Where(m => m.SeesAllConversations).ToList();
+        var configured = await configuration.HouseholdAsync(viewer.TenantId, ct);
+        var householdName = (await configuration.ReadAsync(viewer.TenantId, HouseholdSections.SettingsSchema, ct))?.Name
+                            ?? configured?.Name ?? "the household";
+        // The home's voice server is the deployment's own; any other household's is one it set up.
+        var hasVoice = configured is { IsHome: true }
+                       || (await tunnels.SetUpServersAsync(viewer.TenantId, ct)).Contains(HouseholdServerNames.Voice);
 
         var thisDevicesPasskey = devices.FirstOrDefault(d => d.Id == viewer.SessionId)?.PasskeyId;
         var passkeyItems = string.Concat(held.Select(p =>
             $"""
              <li data-passkey-id="{p.Id}">Added {AccountsPages.Date(p.CreatedAt, zone)}{(p.LastUsedAt is { } used ? $", last used {AccountsPages.Date(used, zone)}" : "")}{(p.Id == thisDevicesPasskey ? " <strong>(signed in this device)</strong>" : "")}
-               <form method="post" action="{Url}/passkeys/{p.Id}/revoke">{form}<button type="submit">Revoke passkey</button></form>
+               {(held.Count > 1 ? $"<form method=\"post\" action=\"{Url}/passkeys/{p.Id}/revoke\">{form}<button type=\"submit\">Revoke passkey</button></form>" : $"<p>{LastPasskey}</p>")}
              </li>
              """));
         var deviceItems = string.Concat(devices.Select(d =>
@@ -141,7 +166,7 @@ public sealed class AccountPage(
              <main class="wide">
                {Navigation(me)}
                <h1>{AccountsPages.Encode(me.DisplayName)}</h1>
-               <p>{(me.Role == Role.Owner ? Roles.Owner : Roles.Member)} of the household{(me.IsOperator ? ", and its operator" : "")}.</p>
+               <p>{(me.Role == Role.Owner ? "An owner" : "A member")} of {AccountsPages.Encode(householdName)}{(me.IsOperator ? ", and the deployment's operator" : "")}.</p>
 
                <section aria-labelledby="profile">
                  <h2 id="profile">Name and picture</h2>
@@ -176,8 +201,9 @@ public sealed class AccountPage(
 
                <section aria-labelledby="voice">
                  <h2 id="voice">Voice</h2>
-                 <p>So that the household's voice satellites know your voice, run this on one of them and follow what it asks:</p>
-                 <p><code>scripts/enroll-voice.sh {me.Id}</code></p>
+                 {(hasVoice
+                     ? $"<p>So that the household's voice satellites know your voice, run this on one of them and follow what it asks:</p><p><code>scripts/enroll-voice.sh {me.Id}</code></p>"
+                     : "<p>The household has no voice satellites: once an owner sets up its voice server, this is where you learn how to enroll your voice.</p>")}
                </section>
 
                <section aria-labelledby="sees-all" data-sees-all>

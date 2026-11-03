@@ -76,10 +76,12 @@ public sealed class Redelegation(
                 continue;
             }
 
-            await using var dialled = await DialAsync(server, ct);
-            if (dialled is null || await ListAsync(dialled, ct) is not { } stored)
+            var (dialled, dialFailure) = await DialAsync(server, ct);
+            await using var _ = dialled;
+            var (stored, listFailure) = dialled is null ? (null, null) : await ListAsync(dialled, ct);
+            if (stored is null)
             {
-                failed |= await UnreachableAsync(server.Name);
+                failed |= await UnreachableAsync(server.Name, dialFailure ?? listFailure);
                 continue;
             }
 
@@ -108,10 +110,12 @@ public sealed class Redelegation(
                 continue;
             }
 
-            await using var dialled = await DialAsync(server, ct);
-            if (dialled is null || await ListAsync(dialled, ct) is not { } stored)
+            var (dialled, dialFailure) = await DialAsync(server, ct);
+            await using var _ = dialled;
+            var (stored, listFailure) = dialled is null ? (null, null) : await ListAsync(dialled, ct);
+            if (stored is null)
             {
-                everyServerAsked &= !await UnreachableAsync(server.Name);
+                everyServerAsked &= !await UnreachableAsync(server.Name, dialFailure ?? listFailure);
                 continue;
             }
 
@@ -204,41 +208,42 @@ public sealed class Redelegation(
         return false;
     }
 
-    private static async Task<Dialled?> DialAsync(Server server, CancellationToken ct)
+    // The failure's own words beside a null, so the operator is told why a server went unasked.
+    private static async Task<(Dialled? Dialled, string? Failure)> DialAsync(Server server, CancellationToken ct)
     {
         try
         {
-            return new Dialled(server.Name, await server.ConnectAsync!(ct));
+            return (new Dialled(server.Name, await server.ConnectAsync!(ct)), null);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return null;
+            return (null, ex.Message);
         }
     }
 
-    // Empty when the server keeps no delegations; null when it could not be asked.
-    private static async Task<IReadOnlyList<StoredDelegation>?> ListAsync(Dialled server, CancellationToken ct)
+    // Empty when the server keeps no delegations; null, with why, when it could not be asked.
+    private static async Task<(IReadOnlyList<StoredDelegation>? Stored, string? Failure)> ListAsync(Dialled server, CancellationToken ct)
     {
         try
         {
             if ((await server.Client.ListToolsAsync(cancellationToken: ct)).All(t => t.Name != ChannelProtocol.ListDelegationsTool))
             {
-                return [];
+                return ([], null);
             }
 
-            return JsonSerializer.Deserialize<List<StoredDelegation>>(
-                Text(await server.Client.CallToolAsync(ChannelProtocol.ListDelegationsTool, cancellationToken: ct)), _json) ?? [];
+            return (JsonSerializer.Deserialize<List<StoredDelegation>>(
+                Text(await server.Client.CallToolAsync(ChannelProtocol.ListDelegationsTool, cancellationToken: ct)), _json) ?? [], null);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            return null;
+            return (null, ex.Message);
         }
     }
 
     // Said once per server: a server that cannot be reached may be keeping delegations nobody looked at.
-    private async Task<bool> UnreachableAsync(string server)
+    private async Task<bool> UnreachableAsync(string server, string? why)
     {
-        await output.WriteLineAsync($"{server}: could not be asked for the delegations it keeps.");
+        await output.WriteLineAsync($"{server}: could not be asked for the delegations it keeps{(why is null ? "" : $" ({why})")}.");
         return true;
     }
 

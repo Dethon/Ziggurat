@@ -358,6 +358,25 @@ public sealed class BufferRebuildUtilityTests
         assert(result);
     }
 
+    // The prompt a stream is resumed under is drawn from the stream's state, which carries no time;
+    // the buffered user message beside it does. A service's turn ("You finished logging in") drew
+    // its notice with no time until a reload read it from history.
+    [Fact]
+    public void ResumeFromBuffer_TheCurrentPrompt_KeepsTheTimeAndNameItWasSentWith()
+    {
+        var sentAt = new DateTimeOffset(2026, 11, 3, 17, 18, 0, TimeSpan.Zero);
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "[login finished]", UserMessage = new UserMessageInfo("login", sentAt, "Login"), SequenceNumber = 1 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, [], "[login finished]", "login");
+
+        var prompt = result.MergedMessages.ShouldHaveSingleItem();
+        prompt.Timestamp.ShouldBe(sentAt);
+        prompt.SenderName.ShouldBe("Login");
+    }
+
     public static IEnumerable<object[]> AnchorPositioningCases
     {
         get

@@ -92,6 +92,23 @@ public sealed class CreateConversationTool
         var streamService = services.GetRequiredService<StreamService>();
         streamService.GetOrCreateStream(creation.Topic.TopicId, p.InitialPrompt ?? p.TopicName, p.Sender, CancellationToken.None);
 
+        // Buffered as a later turn's prompt is, so a page that follows the turn draws it with the time
+        // it was sent: the stream's state carries the prompt's words alone.
+        if (!string.IsNullOrWhiteSpace(p.InitialPrompt))
+        {
+            await streamService.WriteMessageAsync(creation.Topic.TopicId, new ChatStreamMessage
+            {
+                Content = p.InitialPrompt,
+                UserMessage = new UserMessageInfo(p.Sender, DateTimeOffset.UtcNow)
+            });
+        }
+
+        // The first turn is streaming now, so the clients told of the topic follow it as they follow any
+        // later turn's: without this a row added at no messages kept no preview and no badge until a
+        // reload, and opening it marked nothing read.
+        await hubSender.SendToTopicAsync(creation.Topic, creation.Topic.SpaceSlug, "OnStreamStarted",
+            new StreamStartedNotification(creation.Topic.TopicId, creation.Topic.SpaceSlug));
+
         return creation.Identity.ConversationId;
     }
 

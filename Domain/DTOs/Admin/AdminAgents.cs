@@ -24,7 +24,8 @@ public sealed record AdminAgents(
 // household (the home's own agents). Model is shown, never edited.
 [PublicAPI]
 public sealed record AdminAgent(
-    string Id, string Name, string? CustomInstructions, string? Template, string? Description, string Model)
+    string Id, string Name, string? CustomInstructions, string? Template, string? Description, string Model,
+    bool MayAnswerAloud = true)
 {
     public const int NameLength = 100;
 }

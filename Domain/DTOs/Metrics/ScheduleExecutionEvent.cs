@@ -1,3 +1,4 @@
+using Domain.Channels;
 using Domain.DTOs.Channel;
 
 namespace Domain.DTOs.Metrics;
@@ -22,7 +23,7 @@ public record ScheduleExecutionEvent : MetricEvent
         {
             ScheduleId = scheduleId,
             AgentId = message.AgentId ?? "default",
-            Prompt = message.Content,
+            Prompt = FireReports.InstructionOf(message.Content),
             DurationMs = durationMs,
             Success = success,
             Error = error

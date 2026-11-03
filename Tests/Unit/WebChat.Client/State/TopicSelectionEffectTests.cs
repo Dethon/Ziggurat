@@ -91,15 +91,19 @@ public sealed class TopicSelectionEffectTests : IDisposable
         _topicsStore.State.Topics.Single().UnreadCount.ShouldBe(0);
     }
 
+    // The row's count is the client's, and the store's is newer: a topic an agent opened (a schedule's
+    // fire) arrives holding nothing and is never told what its reply added, so it read as read here,
+    // opening it marked nothing, and it came back "2 unread" on the next load.
     [Fact]
-    public async Task HandleSelectTopicAsync_NothingUnread_WritesNothing()
+    public async Task HandleSelectTopicAsync_NothingUnreadAsTheClientCounts_StillMarksTheStoreRead()
     {
-        GivenTopic("topic-1", held: 1, read: 1);
+        GivenTopic("topic-1", held: 0, read: 0);
         _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "hello"));
 
         await _effect.HandleSelectTopicAsync("topic-1");
 
-        _topicService.MarkedReadTopicIds.ShouldBeEmpty();
+        _topicService.MarkedReadTopicIds.ShouldBe(["topic-1"]);
+        _topicsStore.State.Topics.Single().UnreadCount.ShouldBe(0);
     }
 
     // Tapping a conversation is the user's own action, so a session that could not be started

@@ -1,3 +1,4 @@
+using Domain.Channels;
 using Domain.DTOs.Channel;
 using WebChat.Client.Models;
 
@@ -35,4 +36,8 @@ public static class ServiceNotice
             _ => null
         };
     }
+
+    // What the service asked, as a person reads it behind the toggle: a fire's report is framed for the
+    // model beside its instruction, and is not shown.
+    public static string PromptOf(ChatMessageModel message) => FireReports.InstructionOf(message.Content);
 }

@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Domain.DTOs.WebChat;
 using JetBrains.Annotations;
@@ -39,21 +40,23 @@ public static partial class HouseholdSections
     // An agent's id rides in Redis keys, URLs and a Telegram chat's choice, so it is a slug.
     public static bool IsAgentId(string? id) => id is { Length: > 0 and <= 64 } && Slugs.IsValid(id);
 
+    // An owner reads these on the settings page, under the fields' own labels, so they speak of the
+    // field rather than of the document's path.
     private static IEnumerable<string> SettingsProblems(HouseholdSettings settings)
     {
         if (string.IsNullOrWhiteSpace(settings.Name) || settings.Name.Length > HouseholdSettings.NameLength)
         {
-            yield return $"settings.name must be 1–{HouseholdSettings.NameLength} characters";
+            yield return $"The name must be 1–{HouseholdSettings.NameLength} characters.";
         }
 
         if (!TimeZoneInfo.TryFindSystemTimeZoneById(settings.TimeZone, out _))
         {
-            yield return $"settings.timeZone '{settings.TimeZone}' is no time zone (an IANA name such as Europe/Madrid)";
+            yield return $"The time zone '{settings.TimeZone}' is not one: write its IANA name, such as Europe/Madrid or America/New_York.";
         }
 
         if (settings.Language is { } language && !LanguageTag().IsMatch(language))
         {
-            yield return $"settings.language '{language}' is no language tag (such as es or en-GB)";
+            yield return $"The language '{language}' is not a language tag, such as es or en-GB.";
         }
     }
 
@@ -103,6 +106,11 @@ public static partial class HouseholdSections
         if (section.VoiceAgent is { } voice && section.Agents.All(a => a.Id != voice))
         {
             yield return $"the voice agent {voice} is none of the household's agents";
+        }
+
+        if (section.VoiceAgent is { } spoken && section.Agents.FirstOrDefault(a => a.Id == spoken) is { MayAnswerAloud: false })
+        {
+            yield return $"{spoken} answers one request at a time and holds no conversation, so it cannot answer aloud";
         }
     }
 
@@ -210,6 +218,11 @@ public sealed record HouseholdAgent
     public string? Name { get; init; }
     public string? CustomInstructions { get; init; }
     public AgentDefinition? Definition { get; init; }
+
+    // An agent with no tools answers one request with one answer (the Sugary estimator) and holds no
+    // conversation, so it cannot answer the household's satellites.
+    [JsonIgnore]
+    public bool MayAnswerAloud => !(Definition?.NoTools ?? Prompts.AgentTemplates.Named(Template ?? "")?.NoTools ?? false);
 }
 
 // The household's secrets. Every field is sealed at rest, and each is unsealed only into the view of

@@ -12,7 +12,8 @@ namespace Accounts.Passkeys;
 public static class PasskeyEndpoints
 {
     public const string RefusedLink = "This link can no longer be used.";
-    public const string UnknownPasskey = "That passkey is not recognised here.";
+    public const string UnknownPasskey =
+        "That passkey is not recognised here: it may have been revoked. Ask an owner of your household for a recovery link.";
 
     public const string DisabledAccount =
         "Your account is disabled, so it cannot sign in. Ask an owner of your household to re-enable it.";

@@ -231,6 +231,25 @@ public sealed class HouseholdAgentsAdminTests(RedisFixture redis) : IClassFixtur
             a => a.VoiceAgent.ShouldBeNull(), a => a.AnswersAloud.ShouldBe(AgentTemplates.Nabu));
     }
 
+    // The Sugary estimator answers one meal at a time and holds no conversation, so it cannot answer a
+    // satellite (user's decision, pass 9): it is marked so on the list, which the page's select reads,
+    // and a mark naming it is refused.
+    [Fact]
+    public async Task AnAgentWithNoTools_MayNotAnswerAloud()
+    {
+        await using var server = await StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+
+        var listed = await AgentsAsync(admin);
+        var refused = await admin.PutAsync(AdminProtocol.VoiceAgent, new VoiceAgentChoice(AgentTemplates.Sugary));
+
+        listed.Agents.Single(a => a.Template == AgentTemplates.Sugary).MayAnswerAloud.ShouldBeFalse();
+        listed.Agents.Single(a => a.Template == AgentTemplates.Jonas).MayAnswerAloud.ShouldBeTrue();
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await AgentsAsync(admin)).VoiceAgent.ShouldBeNull();
+    }
+
     // Removing the agent that answers aloud is removing it from the satellites too: the mark goes with
     // it in the same save, and the household's voice falls back as if none were marked.
     [Fact]
