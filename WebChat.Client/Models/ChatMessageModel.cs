@@ -10,6 +10,9 @@ public record ChatMessageModel
     public string? ToolCalls { get; init; }
     public bool IsError { get; init; }
 
+    // The structured answer its turn asked for, by name (ChatHistoryMessage.ResponseFormat).
+    public string? ResponseFormat { get; init; }
+
     public string? SenderId { get; init; }
 
     // The name the message was sent under, for a person the page cannot otherwise name.

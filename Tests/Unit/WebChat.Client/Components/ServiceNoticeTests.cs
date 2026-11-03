@@ -28,6 +28,25 @@ public class ServiceNoticeTests
         ServiceNotice.Of(new ChatMessageModel { Role = "user", Content = "…", SenderId = ServiceSenders.Scheduler })
             .ShouldBe("A scheduled task ran");
 
+    // The Sugary app's turns carry the person's account, so its request is known by what it asks
+    // for — a structured answer no typed message asks for — not by its sender.
+    [Fact]
+    public void ARequestAnAppComposed_IsALineNamingTheApp()
+    {
+        var message = new ChatMessageModel
+        {
+            Role = "user", Content = "There is no photo of this meal…", SenderId = "5bb91173dce8c239fee503c85cdb0645",
+            SenderName = "Marta Ortega", ResponseFormat = "meal_estimate"
+        };
+
+        ServiceNotice.Of(message).ShouldBe("Sent from the Sugary app");
+    }
+
+    [Fact]
+    public void ARequestForAFormatNobodyNamed_IsALineToo() =>
+        ServiceNotice.Of(new ChatMessageModel { Role = "user", Content = "…", SenderId = "x", ResponseFormat = "something_else" })
+            .ShouldBe("Sent from an app");
+
     [Theory]
     [InlineData("user", "5bb91173dce8c239fee503c85cdb0645", "Leo Ortega")]
     [InlineData("user", "5bb91173dce8c239fee503c85cdb0645", "login")]

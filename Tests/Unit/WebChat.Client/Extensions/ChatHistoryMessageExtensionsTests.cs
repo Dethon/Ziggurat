@@ -16,4 +16,9 @@ public class ChatHistoryMessageExtensionsTests
 
         model.IsError.ShouldBeTrue();
     }
+
+    [Fact]
+    public void ToChatMessageModel_CarriesTheResponseFormat() =>
+        new ChatHistoryMessage("m1", "assistant", "{}", null, null, ResponseFormat: "meal_estimate").ToChatMessageModel()
+            .ResponseFormat.ShouldBe("meal_estimate");
 }

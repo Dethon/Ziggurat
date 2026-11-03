@@ -521,9 +521,25 @@ public sealed class RedisThreadStateStore(
 
         // Projected from the same set a badge counts, so unread never says more than the
         // transcript shows.
-        return messages is null
-            ? []
-            : Readable(messages)
+        if (messages is null)
+        {
+            return [];
+        }
+
+        // A turn's format is on its request alone; the answers until the next request are its.
+        var formats = new Dictionary<ChatMessage, string?>(ReferenceEqualityComparer.Instance);
+        string? format = null;
+        foreach (var message in messages)
+        {
+            if (message.Role == ChatRole.User)
+            {
+                format = message.GetResponseFormat()?.Name;
+            }
+
+            formats[message] = format;
+        }
+
+        return Readable(messages)
                 .Select(m => new ChatHistoryMessage(
                     m.MessageId,
                     m.Role.Value,
@@ -532,7 +548,8 @@ public sealed class RedisThreadStateStore(
                     m.GetTimestamp(),
                     m.GetAttachments(),
                     m.GetSenderId(),
-                    IsError: m.Role == ChatRole.Assistant && m.IsFailedTurn()))
+                    IsError: m.Role == ChatRole.Assistant && m.IsFailedTurn(),
+                    ResponseFormat: formats[m]))
                 .ToList();
     }
 

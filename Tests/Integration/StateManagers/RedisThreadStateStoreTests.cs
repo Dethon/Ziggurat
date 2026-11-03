@@ -451,6 +451,25 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
             [("Hola", false), ("OpenRouter refused your household's key.", true)]);
     }
 
+    // A request an app composed asks for a structured answer by name; the transcript says so on the
+    // request and on the answer it got, so the chat can draw the one as the app's and read the other.
+    [Fact]
+    public async Task GetHistoryAsync_NamesTheResponseFormat_OnTheRequestThatAskedAndTheAnswer()
+    {
+        var store = NewStore();
+        var asked = new ChatMessage(ChatRole.User, "There is no photo of this meal.");
+        asked.SetResponseFormat(new ResponseFormat { Name = "meal_estimate", Schema = System.Text.Json.JsonDocument.Parse("{}").RootElement });
+        await store.AppendMessagesAsync(HistoryKey("agent-format", 592),
+        [
+            new ChatMessage(ChatRole.User, "hola"), new ChatMessage(ChatRole.Assistant, "buenas"),
+            asked, new ChatMessage(ChatRole.Assistant, "{\"items\":[]}")
+        ]);
+
+        var history = await store.GetHistoryAsync("agent-format", 592, 0);
+
+        history.Select(h => h.ResponseFormat).ShouldBe([null, null, "meal_estimate", "meal_estimate"]);
+    }
+
     // A retry replaces the failed turn: its messages come off the conversation and off the count a
     // badge reads, and a read position past what is left is brought back to it.
     [Fact]

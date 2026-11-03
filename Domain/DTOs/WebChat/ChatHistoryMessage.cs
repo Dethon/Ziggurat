@@ -20,4 +20,8 @@ public record ChatHistoryMessage(
 
     // What a person was told instead of an answer, when their turn failed: drawn as the error it
     // was, with its retry.
-    bool IsError = false);
+    bool IsError = false,
+
+    // The structured answer its turn asked for (ResponseFormat.Name), on the request an app composed and
+    // on the answer it got: how the chat tells an app's request from a typed one, and reads the answer.
+    string? ResponseFormat = null);

@@ -7,7 +7,9 @@ namespace WebChat.Client.Components.Chat;
 // name (ServiceSenders) rather than a person's account. The chat draws it as one line saying what
 // happened, with the instructions behind a disclosure, rather than as if somebody had written them. A
 // person's message always carries their account id, so a person whose name happens to be a service's
-// is drawn as themselves.
+// is drawn as themselves. An app that composes a request for its person (the Sugary app's turns carry
+// their account) is known by what the request asks for: a structured answer, which no typed message
+// asks for.
 public static class ServiceNotice
 {
     public static string? Of(ChatMessageModel message)
@@ -15,6 +17,11 @@ public static class ServiceNotice
         if (message.Role != "user")
         {
             return null;
+        }
+
+        if (message.ResponseFormat is { } format)
+        {
+            return StructuredAnswers.AppOf(format) is { } app ? $"Sent from the {app}" : "Sent from an app";
         }
 
         var service = message.SenderId is null or "" ? message.SenderName : message.SenderId;
