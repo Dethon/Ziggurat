@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Domain.DTOs.WebChat;
 using JetBrains.Annotations;
@@ -106,6 +107,11 @@ public static partial class HouseholdSections
         {
             yield return $"the voice agent {voice} is none of the household's agents";
         }
+
+        if (section.VoiceAgent is { } spoken && section.Agents.FirstOrDefault(a => a.Id == spoken) is { MayAnswerAloud: false })
+        {
+            yield return $"{spoken} answers one request at a time and holds no conversation, so it cannot answer aloud";
+        }
     }
 
     private static IEnumerable<string> KeysProblems(KeysSection keys)
@@ -212,6 +218,11 @@ public sealed record HouseholdAgent
     public string? Name { get; init; }
     public string? CustomInstructions { get; init; }
     public AgentDefinition? Definition { get; init; }
+
+    // An agent with no tools answers one request with one answer (the Sugary estimator) and holds no
+    // conversation, so it cannot answer the household's satellites.
+    [JsonIgnore]
+    public bool MayAnswerAloud => !(Definition?.NoTools ?? Prompts.AgentTemplates.Named(Template ?? "")?.NoTools ?? false);
 }
 
 // The household's secrets. Every field is sealed at rest, and each is unsealed only into the view of
