@@ -64,3 +64,7 @@ public record UserMessageNotification(
 // The agent registered its agents again. It carries no list: every household is shown its own agents,
 // so a client asks for its own (ChatHub.GetAgents) rather than being sent the home's.
 public record AgentsUpdatedNotification;
+
+// The household's people changed (a role, "sees all conversations", a member disabled): what this
+// connection may see was read off its assertion as it opened, so the page opens a fresh one.
+public record AccessChangedNotification;

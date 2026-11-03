@@ -25,7 +25,8 @@ public sealed class HubEventBinderTests : IDisposable
         "OnAlertOffered",
         "OnAlertSettled",
         "OnUserMessage",
-        "OnAgentsUpdated"
+        "OnAgentsUpdated",
+        "OnAccessChanged"
     ];
 
     private readonly Dispatcher _dispatcher = new();
@@ -106,6 +107,19 @@ public sealed class HubEventBinderTests : IDisposable
         _binder.Bind(connection);
 
         connection.Raise("OnAgentsUpdated", new AgentsUpdatedNotification());
+
+        told.ShouldBe(1);
+    }
+
+    [Fact]
+    public void OnAccessChanged_IsDispatchedAsAccessChanged()
+    {
+        var connection = new FakeHubConnection();
+        var told = 0;
+        using var _ = _dispatcher.RegisterHandler<AccessChanged>(_ => told++);
+        _binder.Bind(connection);
+
+        connection.Raise("OnAccessChanged", new AccessChangedNotification());
 
         told.ShouldBe(1);
     }

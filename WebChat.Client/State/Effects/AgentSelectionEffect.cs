@@ -18,6 +18,7 @@ public sealed class AgentSelectionEffect : IDisposable
     private readonly IDisposable _selectAgentRegistration;
     private readonly IDisposable _setAgentsRegistration;
     private readonly IDisposable _spaceValidatedRegistration;
+    private readonly IDisposable _reloadTopicsRegistration;
     private readonly TopicsStore _topicsStore;
     private string? _previousAgentId;
 
@@ -56,6 +57,8 @@ public sealed class AgentSelectionEffect : IDisposable
         // its own; before the catalog is known that is first load's to do.
         _spaceValidatedRegistration = dispatcher.RegisterHandler<SpaceValidated>(
             _ => OpenSpaceOnItsAgentAsync().LogFaults(_logger, nameof(SpaceValidated)));
+        _reloadTopicsRegistration = dispatcher.RegisterHandler<ReloadTopics>(
+            _ => LoadTopicsForAgentAsync(topicsStore.State.SelectedAgentId).LogFaults(_logger, nameof(ReloadTopics)));
     }
 
     private async Task OpenSpaceOnItsAgentAsync()
@@ -130,5 +133,6 @@ public sealed class AgentSelectionEffect : IDisposable
         _selectAgentRegistration.Dispose();
         _setAgentsRegistration.Dispose();
         _spaceValidatedRegistration.Dispose();
+        _reloadTopicsRegistration.Dispose();
     }
 }

@@ -29,5 +29,11 @@ public sealed class HouseholdAgentsAnnouncer(IHouseholdConfigSaves saves, IHubNo
         {
             _ = hub.SendToGroupAsync(TopicAudience.Household(saved.HouseholdId), "OnAgentsUpdated", new AgentsUpdatedNotification());
         }
+
+        // Who may see what is read off a connection's own assertion, so its page opens a fresh one.
+        if (saved.Section == HouseholdConfigProtocol.PeopleChanged)
+        {
+            _ = hub.SendToGroupAsync(TopicAudience.Household(saved.HouseholdId), "OnAccessChanged", new AccessChangedNotification());
+        }
     }
 }

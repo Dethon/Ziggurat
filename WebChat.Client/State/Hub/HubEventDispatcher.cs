@@ -88,6 +88,9 @@ public sealed class HubEventDispatcher(
     public void HandleAgentsUpdated(AgentsUpdatedNotification notification) =>
         dispatcher.Dispatch(new AgentsUpdated());
 
+    public void HandleAccessChanged(AccessChangedNotification notification) =>
+        dispatcher.Dispatch(new AccessChanged());
+
     public void HandleUserMessage(UserMessageNotification notification)
     {
         var currentTopic = topicsStore.State.SelectedTopicId;

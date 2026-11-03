@@ -59,6 +59,13 @@ public record AgentsUpdated : IAction;
 // then not remembered as their pick.
 public record SelectAgent(string AgentId, bool Picked = true) : IAction;
 
+// The selected agent's list asked for again: what this person may see of the household's changed.
+public record ReloadTopics : IAction;
+
+// The hub said the household's people changed (OnAccessChanged): the connection is renewed, then the
+// list reloaded (AccessChangedEffect).
+public record AccessChanged : IAction;
+
 public record TopicsError(string Message) : IAction;
 
 public record CreateNewTopic : IAction;

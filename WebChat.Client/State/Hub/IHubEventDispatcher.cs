@@ -12,4 +12,6 @@ public interface IHubEventDispatcher
     void HandleAlertSettled(AlertSettledNotification notification);
     void HandleUserMessage(UserMessageNotification notification);
     void HandleAgentsUpdated(AgentsUpdatedNotification notification);
+
+    void HandleAccessChanged(AccessChangedNotification notification);
 }
