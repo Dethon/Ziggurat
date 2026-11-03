@@ -370,6 +370,30 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         (await refused.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
     }
 
+    // The stack's key stub answers as a provider would for the key it is shown: one with "refused" in
+    // it is refused, one with "unreachable" in it finds the provider down, anything else works — so an
+    // owner's keys page is tried by hand down every path, and nothing is sent to a real provider.
+    [SkippableFact]
+    public async Task AKeyTheProviderRefuses_IsNotSaved_AndOneItCannotAsk_IsSavedUnchecked()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var created = await AdminAsync<AdminSaved<OwnerLink>>(HttpMethod.Post, stack.DashboardHost, AdminProtocol.Households,
+            stack.OperatorSession, new NewHousehold($"Smoke Keys {tag}", $"Smoke Keys Owner {tag}"));
+        var owner = await SmokeStack.SessionOfAsync(created.Value.UserId);
+
+        var (status, answer) = await AdminRawAsync(HttpMethod.Put, stack.MainHost, AdminProtocol.OpenRouterKey, owner,
+            new OpenRouterKey($"sk-or-v1-smoke-refused-{tag}-0000000000"));
+        status.ShouldBe(HttpStatusCode.BadRequest, answer);
+        answer.ShouldContain("was not saved");
+
+        var unreachable = await AdminAsync<AdminSaved<HouseholdKeys>>(HttpMethod.Put, stack.MainHost, AdminProtocol.OpenRouterKey,
+            owner, new OpenRouterKey($"sk-or-v1-smoke-unreachable-{tag}-000000"));
+        unreachable.Value.OpenRouter!.State.ShouldBe(KeyState.Unchecked);
+        unreachable.Warning.ShouldNotBeNull();
+    }
+
     // A tunnel is opened with the credential minted for that server and no other: a forged one, and
     // the vault's own presented as the printer's, are let through the proxy's route and refused by the
     // relay with the reason as the close — and the vault's own tunnel stands.
@@ -903,6 +927,17 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         var answer = await response.Content.ReadAsStringAsync();
         response.IsSuccessStatusCode.ShouldBeTrue($"{method} {path} answered {(int)response.StatusCode}: {answer}");
         return JsonSerializer.Deserialize<T>(answer, AdminJson)!;
+    }
+
+    private async Task<(HttpStatusCode Status, string Answer)> AdminRawAsync(
+        HttpMethod method, string host, string path, string session, object body)
+    {
+        var request = stack.Request(method, host, path, session);
+        request.Headers.Add(AdminProtocol.RequestHeader, AdminProtocol.RequestHeaderValue);
+        request.Headers.Add("Accept", "application/json");
+        request.Content = JsonContent.Create(body, body.GetType(), options: AdminJson);
+        using var response = await stack.Http.SendAsync(request);
+        return (response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 
     private async Task<T> AdminReadAsync<T>(string host, string path, string session)

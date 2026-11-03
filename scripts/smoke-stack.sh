@@ -39,7 +39,7 @@
 # Assistant and Music Assistant never do — they reach the home and the LAN — so a turn goes without
 # them and is told they are offline. Voice starts only for `voice`, dialling a test satellite alone. A household an owner keys here has its keys
 # sealed with a master key made for this smoke state, and probed against a stub (smoke-keys) that takes
-# every key, so no key is sent to a provider to be checked. Never point this at the deployment's host.
+# every key but one with "refused" or "unreachable" in it, so no key is sent to a provider to be checked. Never point this at the deployment's host.
 
 set -euo pipefail
 
