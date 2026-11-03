@@ -160,6 +160,9 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in").ToString());
         await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = SignInButton }).ClickAsync();
         await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync("not recognised");
+        // Somebody who revoked their only passkey has no way back but an owner's recovery link, and the
+        // refusal said nothing of it.
+        await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync("recovery link");
         (await context.CookiesAsync()).ShouldNotContain(c => c.Name == SessionCookie.Name);
     }
 
