@@ -41,6 +41,8 @@ internal sealed class SignedInConnectionFilter(
         // space it is in, and with none held goes to their devices instead.
         await context.Hub.Groups.AddToGroupAsync(
             context.Context.ConnectionId, TopicAudience.Account(account.UserId), context.Context.ConnectionAborted);
+        await context.Hub.Groups.AddToGroupAsync(
+            context.Context.ConnectionId, TopicAudience.Household(account.TenantId), context.Context.ConnectionAborted);
         await next(context);
         connections.Opened(account.UserId);
     }

@@ -76,6 +76,7 @@ public static class AccountsClientRegistration
                 TimeProvider.System,
                 config.ConfigurationLifetime,
                 sp.GetService<ILogger<HouseholdConfigurationClient>>()))
-            .AddSingleton<IHouseholdConfiguration>(sp => sp.GetRequiredService<HouseholdConfigurationClient>());
+            .AddSingleton<IHouseholdConfiguration>(sp => sp.GetRequiredService<HouseholdConfigurationClient>())
+            .AddSingleton<IHouseholdConfigSaves>(sp => sp.GetRequiredService<HouseholdConfigurationClient>());
     }
 }
