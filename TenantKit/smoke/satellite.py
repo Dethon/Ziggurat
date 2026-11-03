@@ -4,8 +4,10 @@
 # audio-chunks, in real time — for each question in /voice (q*.wav, in name order), with three seconds
 # of silence after each so the hub's silence gate ends the utterance. Whatever the hub plays between
 # audio-start and audio-stop is written to /voice/reply-<n>.wav, or reply-<n>-alert.wav for a stream
-# the hub marked an alert (a timer or alarm ringing), and every event the hub sends is logged. It
-# waits LINGER seconds after the last reply, for anything the questions set going (a timer) to ring.
+# the hub marked an alert (a timer or alarm ringing), and every event the hub sends is logged. After the
+# last reply it waits for anything the questions set going (a timer) to ring, and leaves at the first
+# ring or after LINGER seconds, whichever is sooner: a fixed wait sat out the whole of LINGER after the
+# timer had already rung.
 # Standard library only, so it runs on a bare python image.
 import glob, json, os, socket, threading, time, wave
 
@@ -64,6 +66,8 @@ def reader(conn, state):
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(state["rate"])
             w.writeframes(bytes(state["audio"])); w.close()
             print(f"saved {path}: {len(state['audio']) / 2 / state['rate']:.1f} s at {state['rate']} Hz", flush=True)
+            if state["alert"]:
+                state["rang"].set()
             state["audio"] = None
             state["spoken"].set()
 
@@ -87,7 +91,7 @@ server.listen(1)
 print("listening on", PORT, flush=True)
 conn, addr = server.accept()
 print("hub connected from", addr, flush=True)
-state = {"running": threading.Event(), "spoken": threading.Event()}
+state = {"running": threading.Event(), "spoken": threading.Event(), "rang": threading.Event()}
 threading.Thread(target=reader, args=(conn, state), daemon=True).start()
 state["running"].wait(30)
 time.sleep(2)
@@ -98,4 +102,4 @@ for question in sorted(glob.glob("/voice/q*.wav")):
         print("no reply within 240 s for", question, flush=True)
     time.sleep(3)
 print("done", flush=True)
-time.sleep(int(os.environ.get("LINGER", "5")))
+state["rang"].wait(int(os.environ.get("LINGER", "5")))
