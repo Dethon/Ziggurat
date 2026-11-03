@@ -102,11 +102,16 @@ public static class BufferRebuildUtility
         if (!string.IsNullOrEmpty(currentPrompt) &&
             !existingHistory.Any(m => m.Role == "user" && m.Content == currentPrompt))
         {
+            // The stream's state carries the prompt alone; the time and name it was sent with ride
+            // on its buffered user message.
+            var sent = buffer.LastOrDefault(m => m.UserMessage is not null && m.Content == currentPrompt)?.UserMessage;
             merged.Add(new ChatMessageModel
             {
                 Role = "user",
                 Content = currentPrompt,
-                SenderId = currentSenderId
+                SenderId = currentSenderId,
+                SenderName = sent?.SenderName,
+                Timestamp = sent?.Timestamp
             });
         }
 
