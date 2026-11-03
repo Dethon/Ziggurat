@@ -69,8 +69,14 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
         var proof = Proof(household, person);
         var told = new List<(HouseholdConfigSaved Saved, string ReadThen)>();
         await client.ListenAsync(CancellationToken.None);
+        // The channel is the deployment's, so a busy suite's other households are heard on it too.
         client.Saved += saved =>
         {
+            if (saved.HouseholdId != household)
+            {
+                return;
+            }
+
             var now = client.SettingsAsync(household, proof, CancellationToken.None).GetAwaiter().GetResult();
             lock (told)
             {
