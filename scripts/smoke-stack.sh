@@ -257,6 +257,9 @@ case "${1:-}" in
     python3 TenantKit/smoke/voice.py say "¿Cuánto es siete por ocho?" "$SATELLITE/q1.wav"
     python3 TenantKit/smoke/voice.py say "Pon un temporizador de un minuto." "$SATELLITE/q2.wav"
     "${KIT[@]}" --profile voice build mcp-channel-voice
+    # A voice server left from an earlier run would dial the new satellite at once and then be replaced
+    # under it, taking the satellite's one hub connection with it: it goes before the satellite starts.
+    "${KIT[@]}" --profile voice rm -sf mcp-channel-voice > /dev/null
     # The satellite first: the hub dials it as it starts.
     "${KIT[@]}" --profile voice up -d --no-deps --force-recreate test-satellite
     "${KIT[@]}" --profile voice up -d --no-deps mcp-channel-voice
