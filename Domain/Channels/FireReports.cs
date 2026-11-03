@@ -14,4 +14,17 @@ public static class FireReports
         string.IsNullOrWhiteSpace(report)
             ? instruction
             : $"{Open}\n{report.Replace("</fire-report", "<\\/fire-report", StringComparison.OrdinalIgnoreCase)}\n{Close}\n\n{instruction}";
+
+    // The instruction a framed fire carries, without the report beside it: what the fire asked, for a
+    // record of the fire (the dashboard's run list) rather than for the model.
+    public static string InstructionOf(string content)
+    {
+        if (!content.StartsWith(Open, StringComparison.Ordinal))
+        {
+            return content;
+        }
+
+        var end = content.IndexOf($"\n{Close}\n\n", StringComparison.Ordinal);
+        return end < 0 ? content : content[(end + Close.Length + 3)..];
+    }
 }
