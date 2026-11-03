@@ -52,6 +52,20 @@ public sealed class AgentSelectionEffectTests : IDisposable
             _logger);
     }
 
+    // A grant or withdrawal of "sees all conversations" changes which of the household's topics this
+    // person sees: the list of the agent they are on is asked again.
+    [Fact]
+    public async Task ReloadTopics_AsksForTheSelectedAgentsListAgain()
+    {
+        _dispatcher.Dispatch(new SelectAgent("agent-1"));
+        _topicService.SeedTopic(TestChat.Topic("topic-seen-now", agentId: "agent-1"));
+
+        _dispatcher.Dispatch(new ReloadTopics());
+
+        await Tests.Eventually.Until(() => _topicsStore.State.Topics.Any(t => t.TopicId == "topic-seen-now"),
+            "the selected agent's topics to be loaded again");
+    }
+
     [Fact]
     public void SelectAgent_FirstSelection_LoadsNothing()
     {

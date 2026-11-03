@@ -50,7 +50,7 @@ public class MemoryRecallHook(
         "Instruct: Given a person's message to their personal assistant, retrieve the stored facts "
         + "about that person that would change how the assistant answers it\nQuery: ";
 
-    public async Task EnrichAsync(
+    public async Task<MemoryExtraction?> EnrichAsync(
         ChatMessage message,
         Account? account,
         string? conversationId,
@@ -61,7 +61,7 @@ public class MemoryRecallHook(
         var agent = await AgentAsync(agentId, account, ct);
         if (agent is not null && !agent.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
         {
-            return;
+            return null;
         }
 
         // Memory belongs to a person, and a turn acting for no account is nobody's: the voice guest
@@ -70,7 +70,7 @@ public class MemoryRecallHook(
         // channel reports is a label, which another person can share.
         if (account is null)
         {
-            return;
+            return null;
         }
 
         var userId = account.UserId;
@@ -100,7 +100,7 @@ public class MemoryRecallHook(
             var messageText = message.Text;
             if (string.IsNullOrWhiteSpace(messageText))
             {
-                return;
+                return null;
             }
 
             // Opened here rather than where the stopwatch used to start, which was above the guard:
@@ -156,15 +156,16 @@ public class MemoryRecallHook(
                 }
             });
 
-            if (!isLemonadeTurn && !isFire)
-            {
-                await extractionQueue.EnqueueAsync(
+            // Handed back rather than queued: the conversation group queues it once the turn worked
+            // (MemoryExtraction). The anchor is read now, before the turn is persisted, as before.
+            MemoryExtraction? extraction = isLemonadeTurn || isFire
+                ? null
+                : extractCt => extractionQueue.EnqueueAsync(
                     new MemoryExtractionRequest(userId, stateKey, anchor, conversationId, agentId)
                     {
                         FallbackContent = messageText,
                         TenantId = account.TenantId
-                    }, ct);
-            }
+                    }, extractCt);
 
             // Same duration as the latency event the scope publishes, taken off the scope rather
             // than from a second stopwatch.
@@ -177,6 +178,7 @@ public class MemoryRecallHook(
                 AgentId = agentId,
                 AgentName = agentId is null ? null : agent?.Name
             });
+            return extraction;
         }
         catch (Exception ex)
         {
@@ -188,6 +190,8 @@ public class MemoryRecallHook(
                 Message = $"Recall failed: {ex.Message}"
             });
         }
+
+        return null;
     }
 
     private async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(

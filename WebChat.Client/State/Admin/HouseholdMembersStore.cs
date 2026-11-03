@@ -16,6 +16,11 @@ public record EnableHouseholdMember(string UserId) : IAction;
 
 public record MintMemberRecovery(string UserId, string DisplayName) : IAction;
 
+public record MintTelegramGroupCode : IAction;
+
+// A group code the admin API minted: shown until the page is left, never again.
+public record TelegramGroupCodeMinted(TelegramGroupCode Code) : IAction;
+
 // A change the admin API answered with the household's people as they are now.
 public record HouseholdMembersSaved(AdminMembers Members, string? Warning) : IAction;
 
@@ -34,6 +39,8 @@ public sealed record HouseholdMembersState
     public AdminMembers? Members { get; init; }
 
     public MintedMemberLink? Minted { get; init; }
+
+    public TelegramGroupCode? GroupCode { get; init; }
 
     public bool Saving { get; init; }
 
@@ -66,8 +73,9 @@ public sealed class HouseholdMembersStore : IDisposable
     {
         LoadHouseholdMembers => state with { Notice = null },
         HouseholdMembersLoaded a => state with { Members = a.Members },
-        InviteHouseholdMember or SaveHouseholdMember or DisableHouseholdMember or EnableHouseholdMember or MintMemberRecovery =>
-            state with { Saving = true, Notice = null, Minted = null },
+        InviteHouseholdMember or SaveHouseholdMember or DisableHouseholdMember or EnableHouseholdMember or MintMemberRecovery
+            or MintTelegramGroupCode =>
+            state with { Saving = true, Notice = null, Minted = null, GroupCode = null },
         HouseholdMembersSaved a => state with
         {
             Members = a.Members,
@@ -77,6 +85,7 @@ public sealed class HouseholdMembersStore : IDisposable
                 : new AdminNotice(AdminNoticeKind.Saved, "Saved.")
         },
         MemberLinkMinted a => state with { Saving = false, Minted = new MintedMemberLink(a.What, a.Link) },
+        TelegramGroupCodeMinted a => state with { Saving = false, GroupCode = a.Code },
         HouseholdMembersNotSaved a => state with { Saving = false, Notice = a.Notice },
         _ => state
     };

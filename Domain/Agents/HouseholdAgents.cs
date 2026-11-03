@@ -85,7 +85,7 @@ public sealed record HouseholdAgents
     public static HouseholdAgents Of(AgentHouseholdConfig configuration, SharedServers shared)
     {
         var (entries, defaultAgent) = Entries(configuration.Agents);
-        var withheld = shared.WithheldBy(configuration.Features);
+        var withheld = shared.WithheldBy(configuration.Features, RingsNowhere(configuration));
         var built = entries
             .Select(entry => (Entry: entry, Definition: Definition(entry, shared)))
             .ToList();
@@ -164,6 +164,13 @@ public sealed record HouseholdAgents
                 .. definition.EnabledFeatures.Where(feature => !Withheld(feature))
             ]
         };
+
+    // A countdown rings on the household's satellites, through its voice server: a household that set
+    // none up has nowhere for one to ring, and its countdowns are scheduled tasks that tell the person
+    // (scheduling_prompt). The home's every server is its own.
+    private static bool RingsNowhere(AgentHouseholdConfig configuration) =>
+        !configuration.IsHome
+        && !(configuration.OwnServers ?? []).Contains(HouseholdServerNames.Voice, StringComparer.Ordinal);
 
     // The household's own servers among these endpoints that it never set up — it holds no live
     // credential for the name — which its turns withhold (OwnServerEndpoints.Resolve) rather than name

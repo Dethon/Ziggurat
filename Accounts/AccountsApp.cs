@@ -36,7 +36,6 @@ public static class AccountsApp
             .AddSingleton<PageGuard>()
             .AddSingleton<AccountPage>()
             .AddSingleton<HouseholdClock>()
-            .AddSingleton<MembersPage>()
             .AddSingleton<AdminLog>()
             .AddSingleton<HouseholdKeyChecks>()
             .AddSingleton<KeysAdmin>()

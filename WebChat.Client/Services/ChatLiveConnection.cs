@@ -216,6 +216,27 @@ public sealed class ChatLiveConnection(
         return LiveHubConnection is not null;
     }
 
+    public async Task RenewAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        await _reconnectLock.WaitAsync();
+        try
+        {
+            if (!_disposed)
+            {
+                await RebuildAsync();
+            }
+        }
+        finally
+        {
+            _reconnectLock.Release();
+        }
+    }
+
     private async Task ReconnectAsync(bool waitForOneInFlight)
     {
         if (_disposed)

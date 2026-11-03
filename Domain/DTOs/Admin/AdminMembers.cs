@@ -34,3 +34,8 @@ public sealed record MemberEdit(string? Role = null, bool? SeesAll = null);
 // send the bot; a recovery link is a passkey link alone.
 [PublicAPI]
 public sealed record MemberLink(string Url, DateTimeOffset ExpiresAt, string? TelegramLink = null, string? TelegramStart = null);
+
+// A code that binds a Telegram group to the household, shown once as the command to send in the group
+// once the bot is in it (only its hash is kept).
+[PublicAPI]
+public sealed record TelegramGroupCode(string Bind, DateTimeOffset ExpiresAt);

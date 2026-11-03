@@ -64,7 +64,7 @@ public class MemoryRecallHookIntegrationTests(MemorySearchFixture redisFixture)
         var session = new Mock<AgentSession>().Object;
         session.StateBag.SetValue(RedisChatMessageStore.StateKey, "test-state-key");
 
-        await hook.EnrichAsync(message, new Account("home", userId), "conv_1", null, session, CancellationToken.None);
+        await Extracted(hook, message, new Account("home", userId), "conv_1", null, session, CancellationToken.None);
 
         var context = message.GetMemoryContext();
         context.ShouldNotBeNull();
@@ -86,8 +86,7 @@ public class MemoryRecallHookIntegrationTests(MemorySearchFixture redisFixture)
         });
 
         var message = new ChatMessage(ChatRole.User, "¿Qué lenguaje debería usar?");
-        await CreateHook(store, embeddingService.Object, queue)
-            .EnrichAsync(message, new Account("home", userId), "conv_1", null, CreateSession(), CancellationToken.None);
+        await Extracted(CreateHook(store, embeddingService.Object, queue), message, new Account("home", userId), "conv_1", null, CreateSession(), CancellationToken.None);
 
         embeddingService.Verify(
             e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
@@ -114,7 +113,7 @@ public class MemoryRecallHookIntegrationTests(MemorySearchFixture redisFixture)
         var userId = $"user_{Guid.NewGuid():N}";
         var hook = CreateHook(store, embeddingService.Object, new MemoryExtractionQueue());
 
-        await hook.EnrichAsync(new ChatMessage(ChatRole.User, "primera"), new Account("home", userId), "c", null,
+        await Extracted(hook, new ChatMessage(ChatRole.User, "primera"), new Account("home", userId), "c", null,
             CreateSession(), CancellationToken.None);
         embeddingService.Verify(
             e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -133,7 +132,7 @@ public class MemoryRecallHookIntegrationTests(MemorySearchFixture redisFixture)
             LastAccessedAt = DateTimeOffset.UtcNow
         });
 
-        await hook.EnrichAsync(new ChatMessage(ChatRole.User, "segunda"), new Account("home", userId), "c", null,
+        await Extracted(hook, new ChatMessage(ChatRole.User, "segunda"), new Account("home", userId), "c", null,
             CreateSession(), CancellationToken.None);
         embeddingService.Verify(
             e => e.GenerateEmbeddingAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -166,5 +165,16 @@ public class MemoryRecallHookIntegrationTests(MemorySearchFixture redisFixture)
     {
         var rng = new Random(42);
         return Enumerable.Range(0, 1536).Select(_ => (float)(rng.NextDouble() * 2 - 1)).ToArray();
+    }
+
+    // Recall hands the extraction back for a turn that worked; these run it as one.
+    private static async Task Extracted(
+        global::Infrastructure.Memory.MemoryRecallHook hook, Microsoft.Extensions.AI.ChatMessage message, global::Domain.DTOs.Channel.Account? account,
+        string? conversationId, string? agentId, Microsoft.Agents.AI.AgentSession thread, CancellationToken ct)
+    {
+        if (await hook.EnrichAsync(message, account, conversationId, agentId, thread, ct) is { } extract)
+        {
+            await extract(ct);
+        }
     }
 }

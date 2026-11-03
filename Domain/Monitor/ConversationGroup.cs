@@ -921,7 +921,7 @@ internal sealed class ConversationGroup(
         {
             await targetResolver.AnnounceTurnStartAsync(turn.Targets, turn.Message, _turnCt);
         }
-        var userMessage = await BuildUserMessageAsync(turn, state);
+        var (userMessage, extraction) = await BuildUserMessageAsync(turn, state);
 
         // From here a warmup failure is this turn's failure and is reported as one, so the
         // abandoned-warmup observer must not name it a second time.
@@ -931,7 +931,7 @@ internal sealed class ConversationGroup(
         // agent with no sandbox lands nothing and keeps the attachment as model context, which is
         // the whole feature for that agent.
         await LandAttachmentsAsync(x.Channel, turn, state, userMessage);
-        return StreamAgentTurn(state, userMessage, turn);
+        return StreamAgentTurn(state, userMessage, turn, extraction);
     }
 
     private async Task LandAttachmentsAsync(
@@ -986,7 +986,7 @@ internal sealed class ConversationGroup(
             : await targetResolver.ResolveAsync(x.Message, x.Channel, _turnCt);
     }
 
-    private async Task<ChatMessage> BuildUserMessageAsync(Turn turn, GroupState state)
+    private async Task<(ChatMessage Message, MemoryExtraction? Extraction)> BuildUserMessageAsync(Turn turn, GroupState state)
     {
         var message = turn.Message;
         var userMessage = new ChatMessage(ChatRole.User, message.Content);
@@ -1027,12 +1027,13 @@ internal sealed class ConversationGroup(
             // account the turn acts for, never from its sender, which is only the name a channel
             // shows: one person reaches one memory from every channel, and a turn with no account
             // reaches none.
-            await memoryRecallHook.EnrichAsync(
+            var extraction = await memoryRecallHook.EnrichAsync(
                 userMessage, message.Principal?.Account, state.DeliveryKey.ConversationId, message.AgentId,
                 state.Thread, _turnCt);
+            return (userMessage, extraction);
         }
 
-        return userMessage;
+        return (userMessage, null);
     }
 
     // Never faults: a preloader that throws, or a history that cannot be read, is a turn with no
@@ -1100,7 +1101,8 @@ internal sealed class ConversationGroup(
             Reader = SkillPreloadReads.ReaderOver(state.Agent.GetFileSystemRegistry(state.Thread))
         };
 
-    private IAsyncEnumerable<TurnUpdate> StreamAgentTurn(GroupState state, ChatMessage userMessage, Turn turn)
+    private IAsyncEnumerable<TurnUpdate> StreamAgentTurn(
+        GroupState state, ChatMessage userMessage, Turn turn, MemoryExtraction? extraction)
     {
         var stopwatch = Stopwatch.StartNew();
         var ct = _turnCt;
@@ -1112,7 +1114,7 @@ internal sealed class ConversationGroup(
             .OnCompletion(
                 seed: false,
                 fold: (faulted, pair) => faulted || pair.Item1.Contents.OfType<ErrorContent>().Any(),
-                onCompletion: (faulted, _) =>
+                onCompletion: async (faulted, _) =>
                 {
                     var error = faulted ? "Agent run reported an error" : null;
                     var evt = ScheduleExecutionEvent.FromMessage(
@@ -1122,7 +1124,13 @@ internal sealed class ConversationGroup(
                         state.Metrics.Publish(evt);
                     }
 
-                    return ValueTask.CompletedTask;
+                    // What the person said is extracted once the turn worked: one refused for the
+                    // household's key or credit would be extracted on that same key, and a failed
+                    // turn's retry is extracted in its place.
+                    if (!faulted && extraction is not null)
+                    {
+                        await extraction(_groupCt);
+                    }
                 },
                 ct)
             .Select(pair => new TurnUpdate(pair.Item1, turn));

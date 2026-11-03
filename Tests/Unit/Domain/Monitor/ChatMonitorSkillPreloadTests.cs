@@ -276,17 +276,17 @@ public class ChatMonitorSkillPreloadTests
 
     private sealed class ReleasingRecallHook(TaskCompletionSource release) : IMemoryRecallHook
     {
-        public Task EnrichAsync(
+        public Task<MemoryExtraction?> EnrichAsync(
             ChatMessage message, Account? account, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
         {
             release.TrySetResult();
-            return Task.CompletedTask;
+            return Task.FromResult<MemoryExtraction?>(null);
         }
     }
 
     private sealed class DelayingRecallHook(TimeProvider clock, TimeSpan delay) : IMemoryRecallHook
     {
-        public async Task EnrichAsync(
+        public async Task<MemoryExtraction?> EnrichAsync(
             ChatMessage message, Account? account, string? conversationId, string? agentId, AgentSession thread, CancellationToken ct)
         {
             if (delay > TimeSpan.Zero)
@@ -295,6 +295,7 @@ public class ChatMonitorSkillPreloadTests
             }
 
             message.SetMemoryContext(new MemoryContext([], null));
+            return null;
         }
     }
 }

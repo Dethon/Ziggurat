@@ -216,7 +216,7 @@ public sealed class AccountPage(
     }
 
     public static string Navigation(Member me) =>
-        $"""<nav><a href="/">Back to chat</a> · <a href="{Url}">Your account</a>{(me.Role == Role.Owner ? $" · <a href=\"{MembersPage.Url}\">Members</a>" : "")}</nav>""";
+        $"""<nav><a href="/">Back to chat</a> · <a href="{Url}">Your account</a>{(me.Role == Role.Owner ? $" · <a href=\"{MembersPage.AdminArea}\">Members</a>" : "")}</nav>""";
 
     private static IResult NotFound(HttpContext http) =>
         AccountsPages.Page(http, "Not found",

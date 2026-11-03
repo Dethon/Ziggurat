@@ -115,7 +115,8 @@ public partial class SessionUniqueRefTests(IsolatedSessionBrowserFixture fixture
             Body = "<!DOCTYPE html><html><head><title>anchor</title></head><body></body></html>"
         }));
         var nav = await fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, url) { Caller = JudgmentCaller.None });
-        nav.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
+        nav.Status.ShouldBeOneOf([BrowseStatus.Success, BrowseStatus.Partial],
+            $"the fulfilled anchor answered {nav.Status}: {nav.ErrorMessage} (title {nav.Title})");
 
         await fixture.Browser.EvaluateOnSessionAsync(
             sessionId,

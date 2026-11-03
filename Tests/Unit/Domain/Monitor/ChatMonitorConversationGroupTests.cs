@@ -506,7 +506,7 @@ public class ChatMonitorConversationGroupTests
     {
         private int _calls;
 
-        public Task EnrichAsync(
+        public Task<MemoryExtraction?> EnrichAsync(
             Microsoft.Extensions.AI.ChatMessage message,
             Account? account,
             string? conversationId,
@@ -515,8 +515,8 @@ public class ChatMonitorConversationGroupTests
             CancellationToken ct)
         {
             return Interlocked.Increment(ref _calls) == failingCall
-                ? Task.FromException(exception)
-                : Task.CompletedTask;
+                ? Task.FromException<MemoryExtraction?>(exception)
+                : Task.FromResult<MemoryExtraction?>(null);
         }
     }
 

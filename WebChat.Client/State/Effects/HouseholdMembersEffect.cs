@@ -39,7 +39,9 @@ public sealed class HouseholdMembersEffect : IDisposable
                 ChangeAsync(_admin.EnableMemberAsync(action.UserId)).LogFaults(logger, nameof(EnableHouseholdMember))),
             dispatcher.RegisterHandler<MintMemberRecovery>(action =>
                 MintAsync(_admin.MintMemberRecoveryAsync(action.UserId), $"A recovery link for {action.DisplayName}")
-                    .LogFaults(logger, nameof(MintMemberRecovery)))
+                    .LogFaults(logger, nameof(MintMemberRecovery))),
+            dispatcher.RegisterHandler<MintTelegramGroupCode>(_ =>
+                MintGroupCodeAsync().LogFaults(logger, nameof(MintTelegramGroupCode)))
         ];
     }
 
@@ -51,6 +53,9 @@ public sealed class HouseholdMembersEffect : IDisposable
 
     private async Task MintAsync(Task<AdminAnswer<MemberLink>> mint, string what) =>
         Settle(await mint, answered => new MemberLinkMinted(what, answered.Value));
+
+    private async Task MintGroupCodeAsync() =>
+        Settle(await _admin.MintTelegramGroupCodeAsync(), answered => new TelegramGroupCodeMinted(answered.Value));
 
     private void Settle<T>(AdminAnswer<T> answer, Func<AdminAnswer<T>.Answered, IAction> outcome) =>
         _dispatcher.Settle(_accounts, answer, outcome, notice => new HouseholdMembersNotSaved(notice));

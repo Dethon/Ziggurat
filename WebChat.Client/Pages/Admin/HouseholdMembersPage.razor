@@ -122,6 +122,25 @@
                 <button type="submit" class="admin-save" disabled="@_state.Saving">Create invite</button>
             </div>
         </form>
+
+        <section class="admin-form" aria-labelledby="admin-telegram-groups-heading">
+            <h2 id="admin-telegram-groups-heading">Telegram groups</h2>
+            <p class="admin-field-hint">
+                In a group bound to the household, its linked members' messages to the bot are their own turns. The bot
+                answers nobody in a group that is not.
+            </p>
+            @if (_state.GroupCode is { } groupCode)
+            {
+                <div class="admin-minted" role="region" aria-label="New group code">
+                    <p>Add the bot to the group, then send this there. It works once, until @AdminTime.Of(groupCode.ExpiresAt), and is not shown again.</p>
+                    <p><code>@groupCode.Bind</code></p>
+                </div>
+            }
+            <div class="admin-actions">
+                <button type="button" class="admin-save" disabled="@_state.Saving"
+                        @onclick="() => Dispatcher.Dispatch(new MintTelegramGroupCode())">Bind a Telegram group</button>
+            </div>
+        </section>
     }
     else if (_state.Notice is null)
     {

@@ -99,6 +99,9 @@ public partial class HouseholdAdminE2ETests(WebChatE2EFixture fixture)
             var versions = chef.GetByRole(AriaRole.Region, new LocatorGetByRoleOptions { Name = $"Earlier versions of {renamed}" });
             await Assertions.Expect(versions.Locator(".admin-version")).ToHaveCountAsync(1);
             await Assertions.Expect(versions).ToContainTextAsync(added);
+            // What the version is, said so it cannot read as the agent having been replaced by a person:
+            // the name it went by until a change, and who made the change.
+            await Assertions.Expect(versions.Locator(".admin-version")).ToContainTextAsync(new Regex(@"Until .+, when .+ changed it"));
             await versions.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Restore" }).ClickAsync();
             await Assertions.Expect(page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = added })).ToBeVisibleAsync();
 

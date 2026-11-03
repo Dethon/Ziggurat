@@ -21,7 +21,7 @@ public sealed class HouseholdFeaturesAdminTests(RedisFixture redis) : IClassFixt
     // Where this deployment runs its shared servers, as the agent's settings name them.
     private static readonly SharedServers _shared = new()
     {
-        Scheduling = "http://mcp-scheduling:8080/mcp", Timers = "http://mcp-timers:8080/mcp"
+        Scheduling = "http://mcp-scheduling:8080/mcp", Timers = "http://mcp-timers:8080/mcp", Sugary = "http://mcp-sugary:8080/mcp"
     };
 
     [Fact]
@@ -59,7 +59,8 @@ public sealed class HouseholdFeaturesAdminTests(RedisFixture redis) : IClassFixt
             "the announced save to reach the agent's reader");
         (await agents.ForAsync(household, CancellationToken.None)).Find("jonas")!.ShouldSatisfyAllConditions(
             a => a.EnabledFeatures.ShouldNotContain("memory"),
-            a => a.McpServerEndpoints.ShouldContain(_shared.Timers, "a feature left on keeps its server"));
+            // Sugary rather than the timers, which this household, holding no voice server, never reaches.
+            a => a.McpServerEndpoints.ShouldContain(_shared.Sugary, "a feature left on keeps its server"));
         (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(["Changed the scheduling, memory features"]);
     }
 

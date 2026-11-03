@@ -25,6 +25,22 @@ public class HouseholdAgentsAnnouncerTests
         hub.Sent.ShouldBe([("household:casa", "OnAgentsUpdated")]);
     }
 
+    // A change to the household's people — a role, "sees all conversations", a member disabled — is
+    // read by the hub only off a connection's own assertion, so the household's pages are told to open
+    // a fresh one.
+    [Fact]
+    public async Task AChangeToThePeople_TellsThatHouseholdsPagesTheirAccessChanged()
+    {
+        var saves = new FakeSaves();
+        var hub = new RecordingHub();
+        var announcer = new HouseholdAgentsAnnouncer(saves, hub);
+        await announcer.StartAsync(CancellationToken.None);
+
+        saves.Save(new HouseholdConfigSaved("casa", HouseholdConfigProtocol.PeopleChanged));
+
+        hub.Sent.ShouldBe([("household:casa", "OnAccessChanged")]);
+    }
+
     [Fact]
     public async Task AStoppedAnnouncer_TellsNothing()
     {

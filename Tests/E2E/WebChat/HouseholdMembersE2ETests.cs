@@ -41,6 +41,26 @@ public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.GetByRole(AriaRole.Region, new PageGetByRoleOptions { Name = "New link" })).ToHaveCountAsync(0);
     }
 
+    // A Telegram group is bound from here as well: this is the one members page.
+    [SkippableFact]
+    public async Task AnOwner_MintsATelegramGroupCode_ShownOnceAsTheCommandToSend()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var page = await MembersPageAsync(await SessionOfAsync($"Owner {tag}", "owner"));
+
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Bind a Telegram group" })
+            .ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
+
+        var minted = page.GetByRole(AriaRole.Region, new PageGetByRoleOptions { Name = "New group code" });
+        await Assertions.Expect(minted.Locator("code")).ToHaveTextAsync(new Regex(@"^/bind [A-Za-z0-9_-]{20,}$"));
+        await page.ReloadAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Heading, new PageGetByRoleOptions { Name = "Telegram groups" }))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        await Assertions.Expect(page.GetByRole(AriaRole.Region, new PageGetByRoleOptions { Name = "New group code" })).ToHaveCountAsync(0);
+    }
+
     [SkippableFact]
     public async Task AnOwner_DisablesAMember_WhoIsSignedOut_ReEnablesThem_AndMintsThemARecoveryLink()
     {

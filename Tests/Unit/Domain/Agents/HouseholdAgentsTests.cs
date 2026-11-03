@@ -121,10 +121,27 @@ public class HouseholdAgentsTests
     [Fact]
     public void ATemplate_ReachesOnlyTheSharedServersTheDeploymentRuns()
     {
-        var jonas = HouseholdAgents.Of(Household(new AgentsSection()), new SharedServers { Timers = "http://mcp-timers:8080/mcp" })
+        var jonas = HouseholdAgents.Of(Household(new AgentsSection(), ownServers: ["voice"]), new SharedServers { Timers = "http://mcp-timers:8080/mcp" })
             .Find("jonas")!;
 
         jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "vault", "sandbox", "websearch", "printer"]);
+    }
+
+    // A countdown rings on the household's satellites, and a household that set up no voice server has
+    // none: its agents reach no timers, and a countdown it asks for is a scheduled task that tells the
+    // person instead (scheduling_prompt). The home's servers are all its own, so it keeps them.
+    [Theory]
+    [InlineData(false, new string[0], false)]
+    [InlineData(false, new[] { "voice" }, true)]
+    [InlineData(true, new string[0], true)]
+    public void TheTimers_AreReachedOnlyWhereAVoiceServerIsSetUp(bool home, string[] ownServers, bool reached)
+    {
+        var household = Household(new AgentsSection(), ownServers: ownServers) with { IsHome = home };
+
+        var agents = HouseholdAgents.Of(household, _shared);
+
+        agents.Find("jonas")!.McpServerEndpoints.Contains(_shared.Timers!).ShouldBe(reached);
+        agents.WithheldServers.Contains(_shared.Timers!).ShouldBe(!reached);
     }
 
     [Fact]
@@ -160,7 +177,7 @@ public class HouseholdAgentsTests
                 ]
             },
             features: new FeaturesSection { Scheduling = false, Idealista = true },
-            ownServers: ["vault", "printer"]), _shared);
+            ownServers: ["vault", "printer", "voice"]), _shared);
 
         var named = agents.Agents.SelectMany(a => a.McpServerEndpoints).ToList();
 
@@ -284,5 +301,6 @@ public class HouseholdAgentsTests
             features ?? new FeaturesSection { Idealista = true },
             new SpacesSection(),
             OpenRouterApiKey: null,
-            OwnServers: ownServers);
+            // A household with a voice server unless a test says otherwise: one without reaches no timers.
+            OwnServers: ownServers ?? ["voice"]);
 }

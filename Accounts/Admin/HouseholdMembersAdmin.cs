@@ -61,9 +61,18 @@ public static class HouseholdMembersAdmin
                 issued.Url.ToString(), issued.ExpiresAt, deepLink, deepLink is null ? $"/start {issued.Token}" : null)));
         });
 
+        // Shown once, as the command the group is sent once the bot is in it: only its hash is kept.
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.MemberTelegramGroups), async (
+            AdminCaller caller, HttpContext http, LinkStore links, AdminLog log, CancellationToken ct) =>
+        {
+            var code = await links.MintGroupCodeAsync(caller.HouseholdId, caller.UserId, ct);
+            await log.RecordAsync(http, caller, "Minted a Telegram group code", ct);
+            return Results.Ok(new AdminSaved<TelegramGroupCode>(new TelegramGroupCode($"/bind {code.Code}", code.ExpiresAt)));
+        });
+
         household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.MemberRoute), async (
             AdminCaller caller, string userId, [FromBody] MemberEdit? edit, HttpContext http, MemberStore store, AdminLog log,
-            CancellationToken ct) =>
+            RedisAnnouncer announcer, CancellationToken ct) =>
         {
             if (edit is null || edit is { Role: null, SeesAll: null })
             {
@@ -94,9 +103,16 @@ public static class HouseholdMembersAdmin
             var after = (await FindAsync(store, caller, userId, ct))!;
             var changed = AdminLog.Changed(
                 ("role", before.Role != after.Role), ("sees all conversations", before.SeesAllConversations != after.SeesAllConversations));
-            await log.RecordAsync(http, caller,
-                changed.Count == 0 ? $"Saved member {userId} unchanged" : $"Changed member {userId}'s {string.Join(", ", changed)}", ct);
-            return Results.Ok(new AdminSaved<AdminMembers>(await AnswerAsync(store, caller, ct)));
+            if (changed.Count == 0)
+            {
+                await log.RecordAsync(http, caller, $"Saved member {userId} unchanged", ct);
+                return Results.Ok(new AdminSaved<AdminMembers>(await AnswerAsync(store, caller, ct)));
+            }
+
+            // What the person may see and do changed, which the chat hub reads off a connection's own
+            // assertion: announced as the people changing, so it tells the household's open pages.
+            return await AnnouncedAsync(http, caller, store, log, announcer,
+                $"Changed member {userId}'s {string.Join(", ", changed)}", ct);
         });
 
         household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.DisableMemberRoute), async (

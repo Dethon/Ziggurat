@@ -103,6 +103,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<TopicPagingEffect>();
             services.AddScoped<InitializationEffect>();
             services.AddScoped<AgentSelectionEffect>();
+            services.AddScoped<AccessChangedEffect>();
             services.AddScoped<UserIdentityEffect>();
             services.AddScoped<SpaceEffect>();
             services.AddScoped<AgentActivityEffect>();

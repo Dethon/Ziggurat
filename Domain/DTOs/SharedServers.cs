@@ -19,11 +19,12 @@ public sealed record SharedServers
 
     public IReadOnlyList<string> All => [.. Listed().Select(s => s.Address).OfType<string>()];
 
-    // The servers this household's features keep from its agents.
-    public IReadOnlyList<string> WithheldBy(FeaturesSection features) =>
+    // The servers this household's features keep from its agents, and the timers too where nothing of
+    // the household's can ring one.
+    public IReadOnlyList<string> WithheldBy(FeaturesSection features, bool ringsNowhere = false) =>
     [
         .. Listed()
-            .Where(s => s.Address is not null && !s.Offered(features))
+            .Where(s => s.Address is not null && (!s.Offered(features) || ringsNowhere && s.Address == Timers))
             .Select(s => s.Address!)
     ];
 

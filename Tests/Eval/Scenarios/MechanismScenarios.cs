@@ -13,8 +13,47 @@ public static class MechanismScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         RemindMeInTenMinutes, TurnTheAirOffInAnHour, WakeMeAtSeven, SixHoursFromNow,
-        FromTheOfficeAboutTheKitchen, NoSatelliteAtAll, TomorrowAtEightWithoutAHome
+        FromTheOfficeAboutTheKitchen, NoSatelliteAtAll, TomorrowAtEightWithoutAHome, ACountdownWithoutAVoiceServer
     ];
+
+    // A household that set up no voice server has nothing that rings, and its agents reach no timers
+    // (HouseholdAgents): a countdown it asks for is a one-shot schedule at now plus the duration whose
+    // prompt tells the person, set without looking for the timers it does not have.
+    public static Scenario ACountdownWithoutAVoiceServer => new()
+    {
+        Name = "a countdown without a voice server is a schedule that tells the person",
+        AgentId = ShippedDefinition.TemplatePrefix + "jonas" + ShippedDefinition.NoVoiceSuffix,
+        Turn = new EvalTurn
+        {
+            Text = "pon un temporizador de diez minutos para la pasta",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            CallExpectation.LoadsSkill(SchedulingSkill.Name),
+            new CallExpectation
+            {
+                Label = "schedule",
+                Tool = EvalTools.Create,
+                Arguments =
+                [
+                    Arg.PathMatches(@"^/schedules/[^/]+/[^/]+(/schedule\.json)?$"),
+                    Arg.Body("content",
+                        Arg.Any(
+                            Arg.Matches("runAt", @"^2026-08-17T20:10(:00)?(\.0+)?(\+02:00)?$"),
+                            Arg.Matches("runAt", @"^2026-08-17T18:10(:00)?(\.0+)?Z$")),
+                        Arg.Mentions("prompt", "(?i)pasta"))
+                ]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/schedules*")],
+        CallCeiling = 6,
+        // No prose of its own: with the timers withheld the model filed the countdown as a schedule 6 runs
+        // of 6 (deepseek-v4.1-flash-1017, 2026-11-03) on the scheduling section as it stands.
+        Claims = [SchedulingSkill.LoadsForAScheduleRequest.Id],
+        Policy = new RunPolicy(2, 3)
+    };
 
     // A household without Home Assistant has no alarms calendar, and the template a new household's
     // assistant comes from dials none. A reminder at a clock time then has one place to go - a

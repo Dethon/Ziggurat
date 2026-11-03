@@ -20,7 +20,7 @@ public sealed class SuspensionCoverageTests
         ["/accounts/me"] =
             "exempt: names the person and nothing else, deliberately (admin.md, 'Not stopped by it')",
         ["/accounts/account"] = "refuses: PageGuard answers SessionCheck.Suspended before anything else",
-        ["/accounts/members"] = "refuses: PageGuard answers SessionCheck.Suspended before anything else",
+        ["/accounts/members"] = "exempt: a redirect to the admin area's members page, whose API the session check refuses while suspended",
         ["/accounts/api/passkeys"] = "refuses: PageGuard answers SessionCheck.Suspended before the ceremony",
         ["/accounts/api/sign-in"] =
             "exempt: a sign-in makes a session and nothing else; every way in refuses that session while suspended",
