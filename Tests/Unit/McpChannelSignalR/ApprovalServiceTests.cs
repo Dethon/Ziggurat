@@ -242,6 +242,34 @@ public class ApprovalServiceTests : IDisposable
         result.ShouldBe("rejected");
     }
 
+    // A rejected call ends the turn with nothing more from the model, so the call is written into
+    // the topic marked as declined: without it the card went away and the reply stopped with no word
+    // of what had been asked or what the person had said to it.
+    [Fact]
+    public async Task RequestApprovalAsync_Rejected_WritesTheDeclinedCallsMarkedRejected()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200);
+        var (channel, _) = _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+        var reader = channel.Subscribe();
+
+        IReadOnlyList<ToolApprovalRequest> requests =
+            [new ToolApprovalRequest("msg-1", "mcp__library__file_search", new Dictionary<string, object?>())];
+
+        var approvalTask = _sut.RequestApprovalAsync(
+            new RequestApprovalParams { ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = requests });
+
+        var pending = _sut.GetPendingApprovalForTopic("topic1");
+        await _sut.RespondToApprovalAsync(pending!.ApprovalId, "rejected");
+        await approvalTask;
+
+        // Bounded: before the fix nothing followed the card, and an unbounded read waited for ever.
+        using var bound = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        (await reader.ReadAsync(bound.Token)).ApprovalRequest.ShouldNotBeNull();
+        var toolCalls = await reader.ReadAsync(bound.Token);
+        toolCalls.MessageId.ShouldBe("msg-1");
+        toolCalls.ToolCalls.ShouldNotBeNull().ShouldStartWith("🔧 file_search (rejected)");
+    }
+
     // ADR-0035: a question nobody can see must not hold the turn. A request-mode approval with
     // no live session used to register under a value matching nothing and await an answer no
     // deletion could release; it is answered at once as not answered here, which ends it unless

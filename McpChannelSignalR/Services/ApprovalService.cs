@@ -60,10 +60,16 @@ public sealed class ApprovalService(
             var (result, _) = await WaitAsync(approvalId, context, ct);
 
             // Answered here or on another of the asker's channels, what was approved is let through
-            // here the same way, and the topic shows the call.
+            // here the same way, and the topic shows the call. A rejected one shows too, marked: the
+            // turn ends with it and the model says nothing more, so without it the card went away
+            // and the reply stopped with no word of what had been asked.
             if (result is ToolApprovalResult.Approved or ToolApprovalResult.ApprovedAndRemember)
             {
                 await WriteToolCallsAsync(topicId, requests);
+            }
+            else if (result is ToolApprovalResult.Rejected)
+            {
+                await WriteToolCallsAsync(topicId, requests, rejected: true);
             }
 
             return result.ToString().ToLowerInvariant();
@@ -192,14 +198,14 @@ public sealed class ApprovalService(
     // so a reload replays it and it arrives in order; a hub push beside it would be the same text a
     // second time, reaching no browser this does not. Grouped by message id because that is what
     // says which bubble the call belongs to — unlabelled, it lands on whatever is being written.
-    private async Task WriteToolCallsAsync(string topicId, IReadOnlyList<ToolApprovalRequest> requests)
+    private async Task WriteToolCallsAsync(string topicId, IReadOnlyList<ToolApprovalRequest> requests, bool rejected = false)
     {
         var messages = requests
             .GroupBy(request => request.MessageId)
             .Select(g => new ChatStreamMessage
             {
                 MessageId = g.Key,
-                ToolCalls = FormatToolCalls(g.ToArray())
+                ToolCalls = FormatToolCalls(g.ToArray(), rejected)
             });
 
         foreach (var message in messages)
@@ -319,14 +325,14 @@ public sealed class ApprovalService(
         }
     }
 
-    private static string FormatToolCalls(IReadOnlyList<ToolApprovalRequest> requests)
+    private static string FormatToolCalls(IReadOnlyList<ToolApprovalRequest> requests, bool rejected = false)
     {
         var sb = new StringBuilder();
 
         foreach (var request in requests)
         {
             var toolName = request.ToolName.Split("__").Last();
-            sb.AppendLine($"🔧 {toolName}");
+            sb.AppendLine(rejected ? $"🔧 {toolName} (rejected)" : $"🔧 {toolName}");
 
             if (request.Arguments.Count <= 0)
             {
