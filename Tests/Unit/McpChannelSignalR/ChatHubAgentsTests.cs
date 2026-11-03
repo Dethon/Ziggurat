@@ -99,7 +99,7 @@ public sealed class ChatHubAgentsTests : IAsyncLifetime
 
         Wire(agents).ShouldBe(Wire([
             new AgentCatalogEntry("chef", "Chef", jonas.Description, jonas.Model, jonas.ReasoningEffort,
-                _patchable, AgentConfigPatch.SupportedEfforts, [AttachmentKind.Image])
+                _patchable, AgentConfigPatch.SupportedEfforts, [AttachmentKind.Image], IsHouseholdDefault: true)
         ]));
     }
 
@@ -111,7 +111,9 @@ public sealed class ChatHubAgentsTests : IAsyncLifetime
 
         var agents = await connection.InvokeAsync<IReadOnlyList<AgentCatalogEntry>>("GetAgents");
 
-        Wire(agents).ShouldBe(Wire(_registered));
+        // The household's own one agent is the one it answers by default; the registered catalogue
+        // marks none.
+        Wire(agents).ShouldBe(Wire(_registered.Select(e => e with { IsHouseholdDefault = true }).ToList()));
     }
 
     [Fact]

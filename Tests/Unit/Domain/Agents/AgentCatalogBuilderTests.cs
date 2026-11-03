@@ -133,4 +133,28 @@ public class AgentCatalogBuilderTests
 
         catalogue.Single().PatchableModels!.Select(m => m.Id).ShouldBe(["openai/gpt-5.6-luna"]);
     }
+
+    // The household's catalogue says which agent answers by default, so a page with nothing else to
+    // go by opens on that one rather than whichever the household happens to list first.
+    [Fact]
+    public void AHouseholdsCatalogue_MarksTheAgentThatAnswersByDefault()
+    {
+        var household = new global::Domain.DTOs.Household.HouseholdAgentNames("jonas",
+            [new("jack", "Jack"), new("jonas", "Jonas"), new("nabu", "Nabu")]);
+
+        var catalogue = AgentCatalogBuilder.ForHousehold(household, []);
+
+        catalogue.Where(e => e.IsHouseholdDefault).Select(e => e.Id).ShouldBe(["jonas"]);
+    }
+
+    // A household that names none answers by its first agent, which is what the catalogue says.
+    [Fact]
+    public void AHouseholdNamingNoDefault_HasItsFirstAgentMarked()
+    {
+        var household = new global::Domain.DTOs.Household.HouseholdAgentNames(null,
+            [new("jack", "Jack"), new("jonas", "Jonas")]);
+
+        AgentCatalogBuilder.ForHousehold(household, []).Where(e => e.IsHouseholdDefault).Select(e => e.Id)
+            .ShouldBe(["jack"]);
+    }
 }

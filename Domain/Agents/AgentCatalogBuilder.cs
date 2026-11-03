@@ -51,9 +51,15 @@ public static class AgentCatalogBuilder
         HouseholdAgentNames household, IReadOnlyList<AgentCatalogEntry> registered)
     {
         var deployment = registered.FirstOrDefault();
+        var answersByDefault = household.Agents.Any(a => a.Id == household.DefaultAgent)
+            ? household.DefaultAgent
+            : household.Agents.FirstOrDefault()?.Id;
         return
         [
-            .. household.Agents.Select(agent =>
+            .. household.Agents.Select(agent => Entry(agent) with { IsHouseholdDefault = agent.Id == answersByDefault })
+        ];
+
+        AgentCatalogEntry Entry(HouseholdAgentName agent) =>
                 registered.FirstOrDefault(entry => entry.Id == agent.Id && entry.DefaultModel == agent.Model) is { } same
                     ? same with { Name = agent.Name, Description = agent.Description, DefaultReasoningEffort = agent.ReasoningEffort }
                     : new AgentCatalogEntry(
@@ -64,8 +70,7 @@ public static class AgentCatalogBuilder
                         agent.ReasoningEffort,
                         deployment?.PatchableModels,
                         deployment?.PatchableReasoningEfforts,
-                        AcceptedBy(agent.Model, registered)))
-        ];
+                        AcceptedBy(agent.Model, registered));
     }
 
     private static IReadOnlyList<AttachmentKind>? AcceptedBy(string? model, IReadOnlyList<AgentCatalogEntry> registered) =>

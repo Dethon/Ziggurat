@@ -171,6 +171,20 @@ public sealed class InitializationEffectTests : IDisposable
         _calls.Calls.ShouldContain("topics:agent-2");
     }
 
+    // A space that names no agent, on a device that never picked one, opens on the agent the
+    // household answers by default - not on whichever it lists first, which in the home is Jack, the
+    // download assistant, while the Agents page says Jonas answers by default.
+    [Fact]
+    public async Task HandleInitializeAsync_ASpaceNamingNoAgent_OpensOnTheHouseholdsDefault()
+    {
+        _topicService.WithSpace("default");
+        _agentService.Agents = [_agentOne, _agentTwo with { IsHouseholdDefault = true }];
+
+        await _effect.HandleInitializeAsync();
+
+        _topicsStore.State.SelectedAgentId.ShouldBe("agent-2");
+    }
+
     [Fact]
     public async Task HandleInitializeAsync_APickInTheSpace_WinsOverItsDefaultAgent()
     {
