@@ -169,7 +169,10 @@ voice_open() {
 credentials() {
   if [[ ! -s "$KIT_STATE/credentials.env" ]]; then
     local made home
-    made="$(retry docker exec accounts dotnet Accounts.dll create-user --name "Smoke Kit")"
+    # The home household is the operator's: asked of the operator's link, which makes the operator on
+    # a first up (migrate_home asks again under the same name), so no stand-in person is created only
+    # to read a household id off and left listed among the home's members.
+    made="$(retry docker exec accounts dotnet Accounts.dll mint-link --operator --name "Smoke Operator")"
     home="$(grep -o 'household [0-9a-f]\{32\}' <<<"$made" | cut -d' ' -f2)"
     [[ -n "$home" ]] || { echo "no household in: $made" >&2; exit 1; }
     local server minted
