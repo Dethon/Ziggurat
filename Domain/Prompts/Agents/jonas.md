@@ -28,4 +28,4 @@ whitelist: domain__filesystem*, mcp__websearch*, mcp__mcp-idealista*, domain__su
 uses-outposts: true
 ---
 
-General-purpose personal assistant (schedules and reminders, timers, the Sugary log, real-estate searches).
+General-purpose personal assistant: what it can do is what its tools this turn do, which are the household's features, keys and own servers.

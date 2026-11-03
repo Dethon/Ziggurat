@@ -166,6 +166,20 @@ public class PromptDocumentsTests
         AgentTemplates.Named("jonas")!.McpServerEndpoints.ShouldContain("vault");
     }
 
+    // A template's description is its agents' identity line in every turn, and what a household's agent
+    // reaches is its household's: its keys, features and own servers. Casa Rivas, with no Idealista key
+    // and no web search, had its Jonas offer "búsqueda de vivienda" 6 times in 6 and reading web pages
+    // 4 in 6 when asked what it could do, because the line listed real-estate searches.
+    [Theory]
+    [InlineData("jonas")]
+    [InlineData("nabu")]
+    public void AgentTemplates_DescriptionsNameNoCapabilityAHouseholdMayLack(string template)
+    {
+        var description = AgentTemplates.Named(template)!.Description!;
+
+        description.ShouldNotMatch(@"(?i)real-estate|idealista|web search|download|printing|timers|sugary|notes|home automation|the home");
+    }
+
     [Fact]
     public void AgentTemplates_EveryDocumentInTheSourceTree_IsShipped_UnderItsOwnName()
     {

@@ -29,4 +29,4 @@ prompt-sections: voice
 uses-outposts: true
 ---
 
-Voice assistant with the personal-assistant toolset (the home, notes, web search, downloads, printing, timers, scheduled tasks), driven by speech; every reply is spoken aloud, so answers are one short sentence of plain words — no formatting, no narration, no explanation.
+Voice assistant driven by speech, with the tools its household gives it; every reply is spoken aloud, so answers are one short sentence of plain words — no formatting, no narration, no explanation.
