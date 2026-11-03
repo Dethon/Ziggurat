@@ -95,6 +95,18 @@ export KIT_REDIS_PASSWORD="${KIT_REDIS_PASSWORD:-local-kit-redis-password}"
 # fills the kit's required placeholder and never names a printer anything reaches.
 export PRINTER_URI="${PRINTER_URI:-ipp://smoke-printer.local:8631/ipp/print}"
 
+# The kit's web search asks Brave, and CapSolver for a challenge, with the keys a developer keeps in the
+# web search server's user secrets for local testing — read here because the kit's containers mount no
+# user secrets. Without them every web_search on this stack is refused, which is a stack that cannot be
+# driven by hand. Left empty where there are none (or no dotnet), and never printed.
+user_secret() {
+  command -v dotnet > /dev/null || return 0
+  dotnet user-secrets list --project "$1" 2>/dev/null | sed -n "s/^$2 = //p"
+}
+BRAVESEARCH__APIKEY="${BRAVESEARCH__APIKEY:-$(user_secret McpServerWebSearch braveSearch:apiKey)}"
+CAPSOLVER__APIKEY="${CAPSOLVER__APIKEY:-$(user_secret McpServerWebSearch capSolver:apiKey)}"
+export BRAVESEARCH__APIKEY CAPSOLVER__APIKEY
+
 # Asks until the command succeeds: the accounts service's verbs need its store prepared, and Caddy
 # makes its local CA on its first start.
 retry() {
