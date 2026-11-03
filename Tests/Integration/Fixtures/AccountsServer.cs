@@ -110,6 +110,26 @@ public sealed partial class AccountsServer : IAsyncDisposable
         AssertionVerifier().VerifyAsync(assertion, TokenAudiences.Assertion);
 
     // The container's command, run as `docker exec accounts dotnet Accounts.dll <args>` runs it.
+    // What the store holds on disk, the write-ahead log and shared memory included, as each file is
+    // when read. SQLite removes the log when it checkpoints or the last connection closes, so a file
+    // listed a moment ago may be gone by its read; a file that is gone holds nothing.
+    public async Task<IReadOnlyList<(string File, byte[] Bytes)>> StoredFilesAsync()
+    {
+        var read = new List<(string, byte[])>();
+        foreach (var file in System.IO.Directory.GetFiles(Settings.DataDirectory, Path.GetFileName(Settings.DatabasePath) + "*"))
+        {
+            try
+            {
+                read.Add((file, await File.ReadAllBytesAsync(file)));
+            }
+            catch (FileNotFoundException)
+            {
+            }
+        }
+
+        return read;
+    }
+
     public Task<(int Exit, string Output)> RunAsync(params string[] args) => RunAsync(Settings, "", args);
 
     // The command with something on its input, as `docker exec -i accounts ... < file` hands it, and
