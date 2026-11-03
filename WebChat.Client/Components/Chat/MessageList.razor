@@ -285,6 +285,12 @@
     {
         @foreach (var (message, index) in _messages.Select((m, i) => (m, i)))
         {
+            if (ServiceNotice.Of(message) is { } line)
+            {
+                <ServiceNoticeLine Message="@message" Line="@line" />
+                continue;
+            }
+
             <ChatMessage Message="@message"
                          ShowAvatar="@ShouldShowAvatar(index)"
                          IsOwnMessage="@IsOwnMessage(message)"
