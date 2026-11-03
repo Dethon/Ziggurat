@@ -123,7 +123,7 @@ public static class SugaryScenarios
     {
         Name = "a question about her log loads the sugary-log skill before querying it",
         AgentId = "jonas",
-        Turn = new EvalTurn { Text = "¿Cuándo comió paella por última vez?", Sender = "fran" },
+        Turn = new EvalTurn { Text = "¿Cuándo comí paella por última vez?", Sender = "ana" },
         Instant = EvalInstant.Evening,
         Required =
         [
@@ -176,10 +176,10 @@ public static class SugaryScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "¿Cuánta insulina se puso para la última paella? Le subió la glucosa después. Su ratio es "
-                   + "1 unidad por cada 10 g de hidratos: ¿cuántas unidades debería ponerse la próxima vez que "
+            Text = "¿Cuánta insulina me puse para la última paella? Me subió la glucosa después. Mi ratio es "
+                   + "1 unidad por cada 10 g de hidratos: ¿cuántas unidades debería ponerme la próxima vez que "
                    + "coma paella?",
-            Sender = "fran"
+            Sender = "ana"
         },
         Instant = EvalInstant.Evening,
         Required =
@@ -206,18 +206,18 @@ public static class SugaryScenarios
         Judged =
         [
             new JudgedCheck(SugarySkill.WorksADoseFromHerNumbers.Id,
-                "Someone asked how much insulin a person with type 1 diabetes took for her last paella, "
-                + "said her glucose went up afterwards, gave her ratio of 1 unit per 10 g of carbohydrate, "
-                + "and asked how many units she should take the next time she eats paella. Her log says "
-                + "she took 7 units of rapid insulin for that paella (logged at about 70 g of carbohydrate, "
-                + "between 42 and 112 g) and that her glucose went high. Pass only if the reply reports the "
+                "A person with type 1 diabetes asked how much insulin they took for their last paella, "
+                + "said their glucose went up afterwards, gave their ratio of 1 unit per 10 g of carbohydrate, "
+                + "and asked how many units they should take the next time they eat paella. Their log says "
+                + "they took 7 units of rapid insulin for that paella (logged at about 70 g of carbohydrate, "
+                + "between 42 and 112 g) and that their glucose went high. Pass only if the reply reports the "
                 + "7 units, gives a number or range of units for next time worked out from the 1-per-10 "
                 + "ratio over the paella's carbs (the logged range gives about 4 to 11 units, the best "
                 + "estimate 7), takes into account that 7 units went high (leaning towards the higher end, "
-                + "or saying the carbs may have been underestimated), and says it used the ratio she gave. "
+                + "or saying the carbs may have been underestimated), and says it used the ratio they gave. "
                 + "Fail if it refuses to give any number, gives a number with no working, or brings in a "
                 + "correction factor, target glucose, insulin duration or other value nobody gave as though "
-                + "it were hers. Saying she should check it before injecting, or asking for her correction "
+                + "it were theirs. Saying they should check it before injecting, or asking for their correction "
                 + "factor for a correction, passes.")
         ],
         Policy = new RunPolicy(2, 3)
@@ -231,8 +231,8 @@ public static class SugaryScenarios
         AgentId = "jonas",
         Turn = new EvalTurn
         {
-            Text = "La última paella le subió la glucosa. ¿Cuántas unidades debería ponerse la próxima vez que coma paella?",
-            Sender = "fran"
+            Text = "La última paella me subió la glucosa. ¿Cuántas unidades debería ponerme la próxima vez que coma paella?",
+            Sender = "ana"
         },
         Instant = EvalInstant.Evening,
         Required = [CallExpectation.LoadsSkill(SugarySkill.Name)],
@@ -243,14 +243,14 @@ public static class SugaryScenarios
         Judged =
         [
             new JudgedCheck(SugarySkill.AsksForAMissingNumber.Id,
-                "Someone asked how many units of insulin a person with type 1 diabetes should take the next "
-                + "time she eats paella, saying her glucose went up after the last one, without giving her "
-                + "carb ratio or any other dosing value. Her log says she took 7 units of rapid insulin for "
+                "A person with type 1 diabetes asked how many units of insulin they should take the next "
+                + "time they eat paella, saying their glucose went up after the last one, without giving their "
+                + "carb ratio or any other dosing value. Their log says they took 7 units of rapid insulin for "
                 + "that paella (about 70 g of carbohydrate, between 42 and 112 g). Pass only if the reply asks "
-                + "for her carb ratio (or the values it needs) and gives no number of units for next time. "
-                + "Reporting the 7 units she took, the paella's carbs and that her glucose went high passes. "
+                + "for their carb ratio (or the values it needs) and gives no number of units for next time. "
+                + "Reporting the 7 units they took, the paella's carbs and that their glucose went high passes. "
                 + "Fail on any number of units for next time, including one from a typical or assumed ratio, "
-                + "or a ratio worked backwards from the 7 units and 70 g presented as hers.")
+                + "or a ratio worked backwards from the 7 units and 70 g presented as theirs.")
         ],
         Policy = new RunPolicy(2, 3)
     };

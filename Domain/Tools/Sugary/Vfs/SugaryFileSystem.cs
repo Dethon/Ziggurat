@@ -48,37 +48,37 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
     public override string FilesystemName => Name;
 
     public override string DescribeMount =>
-        "Her carb-counting log from Sugary (she has type 1 diabetes), read-only and always current, as "
+        "The carb-counting log from Sugary of the person the turn is for, read-only and always current, as "
         + "Parquet tables: meals/<YYYY-MM>.parquet (one row per meal), items/<YYYY-MM>.parquet (one row per "
-        + "food in a meal), doses/<YYYY-MM>.parquet (one row per insulin dose she recorded taking), "
+        + "food in a meal), doses/<YYYY-MM>.parquet (one row per insulin dose they recorded taking), "
         + "dose-meals.parquet (which meals each dose was for), "
-        + "exercise/<YYYY-MM>.parquet (one row per session of exercise she recorded), foods.parquet (the "
-        + "foods she keeps), periods.parquet (her menstrual periods), day-notes.parquet (what she wrote about "
+        + "exercise/<YYYY-MM>.parquet (one row per session of exercise they recorded), foods.parquet (the "
+        + "foods they keep), periods.parquet (their menstrual periods), day-notes.parquet (what they wrote about "
         + "a day), and README.md, which explains every column — read it before reading a number. Ask with "
         + "query: tables meals, items, doses, dose_meals, exercise, foods, periods and day_notes, every month at once. "
         + "A table is not read as text; a command in the sandbox reads the files with duckdb or polars. "
         + "Times are instants, each with a `<column>_local` wall time beside it in local time (README.md names the zone).";
 
     public override string DescribeRead =>
-        "Read README.md, which explains every table and column of her carb log. The tables are Parquet "
+        "Read README.md, which explains every table and column of the carb log. The tables are Parquet "
         + "and are not read as text: ask them with query.";
 
-    public override string DescribeInfo => "Get info about a path of her carb log: exists, isDirectory, size.";
+    public override string DescribeInfo => "Get info about a path of the carb log: exists, isDirectory, size.";
 
     public override string DescribeGlob =>
-        "List the files of her carb log matching a glob under basePath — one meals and one items table "
-        + "per month she logged a meal in, one doses table per month she recorded a dose in, one exercise "
-        + "table per month she started a session in. "
+        "List the files of the carb log matching a glob under basePath — one meals and one items table "
+        + "per month a meal was logged in, one doses table per month a dose was recorded in, one exercise "
+        + "table per month a session was started in. "
         + "`*` matches one path segment, `**` recurses, `?` one char, "
         + "`{a,b}` brace alternation. A trailing slash (e.g. `*/`) lists directories only.";
 
     public override string DescribeQuery =>
-        "Answer one DuckDB SQL statement over her whole log, every month at once: tables meals, items, "
+        "Answer one DuckDB SQL statement over the whole log, every month at once: tables meals, items, "
         + "doses, dose_meals, exercise, foods, periods and day_notes, with the columns README.md explains. Every time "
         + "column has a `<column>_local` sibling on the home's clock.";
 
     public override string DescribeBlobRead =>
-        "Read a chunk of a file of her carb log as raw bytes (base64): a table's Parquet, or the README.";
+        "Read a chunk of a file of the carb log as raw bytes (base64): a table's Parquet, or the README.";
 
     private static readonly UTF8Encoding _utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
