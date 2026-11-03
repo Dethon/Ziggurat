@@ -61,6 +61,15 @@ public static class HouseholdMembersAdmin
                 issued.Url.ToString(), issued.ExpiresAt, deepLink, deepLink is null ? $"/start {issued.Token}" : null)));
         });
 
+        // Shown once, as the command the group is sent once the bot is in it: only its hash is kept.
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.MemberTelegramGroups), async (
+            AdminCaller caller, HttpContext http, LinkStore links, AdminLog log, CancellationToken ct) =>
+        {
+            var code = await links.MintGroupCodeAsync(caller.HouseholdId, caller.UserId, ct);
+            await log.RecordAsync(http, caller, "Minted a Telegram group code", ct);
+            return Results.Ok(new AdminSaved<TelegramGroupCode>(new TelegramGroupCode($"/bind {code.Code}", code.ExpiresAt)));
+        });
+
         household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.MemberRoute), async (
             AdminCaller caller, string userId, [FromBody] MemberEdit? edit, HttpContext http, MemberStore store, AdminLog log,
             CancellationToken ct) =>

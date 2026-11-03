@@ -46,6 +46,8 @@ public interface IAdminService
 
     Task<AdminAnswer<MemberLink>> MintMemberRecoveryAsync(string userId);
 
+    Task<AdminAnswer<TelegramGroupCode>> MintTelegramGroupCodeAsync();
+
     Task<AdminAnswer<FeaturesSection>> GetFeaturesAsync();
 
     Task<AdminAnswer<FeaturesSection>> SaveFeaturesAsync(FeaturesSection features);

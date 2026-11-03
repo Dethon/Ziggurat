@@ -89,6 +89,39 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
         changes.ShouldAllBe(c => !c.Summary.Contains(token) && !c.Route.Contains(token));
     }
 
+    // A Telegram group is bound to the household from the admin area too, now that it is the one
+    // members page: the code is shown once, as the command to send in the group, binds that group to
+    // the household, and is in the change log without its characters.
+    [Fact]
+    public async Task AGroupCode_BindsATelegramGroupToTheHousehold_AndIsShownOnce()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
+
+        var minted = await PostAsync(admin, AdminProtocol.MemberTelegramGroups);
+
+        minted.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var code = (await minted.Content.ReadFromJsonAsync<AdminSaved<TelegramGroupCode>>())!.Value;
+        code.Bind.ShouldStartWith("/bind ");
+        var token = code.Bind["/bind ".Length..];
+        (await PostInternalAsync(server, "/accounts/internal/telegram/bind", new { chatId = -100_555L, code = token }, TelegramCredential))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+        var changes = await ChangesAsync(admin);
+        changes.Select(c => c.Summary).ShouldBe(["Minted a Telegram group code"]);
+        changes.ShouldAllBe(c => !c.Summary.Contains(token) && !c.Route.Contains(token));
+    }
+
+    [Fact]
+    public async Task AMember_MintsNoGroupCode()
+    {
+        await using var server = await StartAsync();
+        await server.MintOperatorAsync("Fran");
+        var asLaura = server.Admin(await server.MintSessionAsync(await server.SeedMemberAsync("Laura")));
+
+        (await PostAsync(asLaura, AdminProtocol.MemberTelegramGroups)).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
     [Fact]
     public async Task AnInvite_NeedsANameAndARole()
     {

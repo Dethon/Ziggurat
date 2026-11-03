@@ -88,6 +88,9 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
     public Task<AdminAnswer<MemberLink>> MintMemberRecoveryAsync(string userId) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.MemberRecovery(userId)), SavedAsync<MemberLink>);
 
+    public Task<AdminAnswer<TelegramGroupCode>> MintTelegramGroupCodeAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.MemberTelegramGroups), SavedAsync<TelegramGroupCode>);
+
     public Task<AdminAnswer<FeaturesSection>> GetFeaturesAsync() =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Features), async content =>
             new AdminAnswer<FeaturesSection>.Answered((await content.ReadFromJsonAsync<FeaturesSection>())!));

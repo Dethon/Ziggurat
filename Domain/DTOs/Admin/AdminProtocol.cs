@@ -68,6 +68,7 @@ public static class AdminProtocol
     // re-enabling one, and a recovery link for one.
     public const string Members = Household + "/members";
     public const string MemberInvites = Members + "/invites";
+    public const string MemberTelegramGroups = Members + "/telegram-groups";
     public const string MemberRoute = Members + "/{userId}";
     public const string DisableMemberRoute = MemberRoute + "/disable";
     public const string EnableMemberRoute = MemberRoute + "/enable";
