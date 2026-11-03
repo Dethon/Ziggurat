@@ -8,7 +8,7 @@ set -euo pipefail
 #                    spoken volume commands drive, on BOTH unit paths (the PipeWire sink on a
 #                    music unit, the "Nabu" softvol on a voice-only one).
 #   Wake tuning:     THRESHOLD=<0..1> WAKE_WINDOW=<n> scripts/provision-satellite-rs.sh <user@host>
-#                    Defaults 0.5 / 2, tuned for the shipped classifier (custom v10) — applied to
+#                    Defaults 0.5 / 3, tuned for the shipped classifier (custom v10) — applied to
 #                    BOTH unit paths (the voice-only ExecStart and the music drop-in that
 #                    overrides it), so a music unit is tuned by the same two vars. WAKE_WINDOW is how many 80 ms classifier scores are AVERAGED before
 #                    the mean is compared against THRESHOLD (it replaced TRIGGER_LEVEL, which
@@ -91,7 +91,7 @@ mic=${2:-}     # empty => auto-detect the USB audio card, address it by name
 threshold=${THRESHOLD:-0.5}
 # TRIGGER_LEVEL is the pre-sliding-window name, still honoured so muscle memory (and any wrapper
 # script) keeps working instead of being silently ignored; WAKE_WINDOW wins when both are set.
-wake_window=${WAKE_WINDOW:-${TRIGGER_LEVEL:-2}}
+wake_window=${WAKE_WINDOW:-${TRIGGER_LEVEL:-3}}
 [[ $threshold =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "ERROR: THRESHOLD must be a number in 0..1 (got '$threshold')" >&2; exit 1; }
 [[ $wake_window =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: WAKE_WINDOW must be a positive integer (got '$wake_window')" >&2; exit 1; }
 wake_min_rms=${WAKE_MIN_RMS:-350}
