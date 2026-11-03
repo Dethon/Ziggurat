@@ -84,6 +84,15 @@ outlast. `maxRetries: 0` disables everything, the rate-limited case included. A 
 mid-stream (an SSE error event on a 200) is not retried by anything. The eval judge, on its own
 raw `HttpClient`, waits the same way for up to four rate-limited answers.
 
+**The Lemonade box is the home's.** Its models are offered and honoured for the household that
+provides it alone — the home, and agents no household's configuration gave (`HouseholdAgents.ProvidesLemonade`):
+another household's picker lists the configured models only (`AgentCatalogBuilder.ForHousehold`, off
+`HouseholdAgentNames.IsHome` in the `agent-names` view; a household's own channel server's catalogue the
+same, `CatalogOf`), and its turns are built with no Lemonade model on the whitelist and no host address
+(`MultiAgentFactory`), so a patch naming one is refused "no Lemonade chat host serves this household"
+rather than run on hardware and a key it does not pay for. A household bringing a box of its own would
+key this by the household providing it, never open it to everyone.
+
 **A Lemonade turn is not an OpenRouter turn.** A config patch naming a `lemonade/<id>` model
 (`LemonadeModelId`) is routed by `HostRoutingChatClient` to `LemonadeChatClient`, which rides the
 same Responses pipeline pointed at the Lemonade chat host with `providerRouting: null`, so no

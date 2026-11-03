@@ -157,4 +157,23 @@ public class AgentCatalogBuilderTests
         AgentCatalogBuilder.ForHousehold(household, []).Where(e => e.IsHouseholdDefault).Select(e => e.Id)
             .ShouldBe(["jack"]);
     }
+    // A Lemonade model is the box's household's to pick — the home's — so another household's
+    // catalogue offers the configured models alone, while the home's offers the box's beside them.
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AHouseholdsCatalogue_OffersTheLemonadeBoxOnlyToTheHome(bool isHome)
+    {
+        var registered = AgentCatalogBuilder.Build(
+            [_agent], [_configured], _permissive,
+            new FixedLemonadeModelSource([new LemonadeModel("local", [], null)]));
+        var household = new global::Domain.DTOs.Household.HouseholdAgentNames("jonas",
+            [new("jonas", "Jonas", null, "other/model"), new("jack", "Jack", null, _agent.Model)])
+        { IsHome = isHome };
+
+        var catalogue = AgentCatalogBuilder.ForHousehold(household, registered);
+
+        catalogue.ShouldAllBe(entry => entry.PatchableModels!.Any(m => m.Id == _configured.Id));
+        catalogue.ShouldAllBe(entry => entry.PatchableModels!.Any(m => LemonadeModelId.IsLemonade(m.Id)) == isHome);
+    }
 }

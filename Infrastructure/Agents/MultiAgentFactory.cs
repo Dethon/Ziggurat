@@ -48,6 +48,10 @@ public sealed class MultiAgentFactory(
     private readonly IPatchableModelSource _patchableModels = new PatchableModelWhitelist(
         openRouterConfig.PatchableModelIds ?? [], LemonadeModelsOf(serviceProvider));
 
+    // A household that provides no Lemonade box patches to the configured models alone.
+    private readonly IPatchableModelSource _hostedModels = new FixedPatchableModelSource(
+        openRouterConfig.PatchableModelIds ?? []);
+
     private string? LemonadeHostAddress => _lemonadeHost is { IsConfigured: true } host ? host.Address : null;
 
     private static ILemonadeModelSource LemonadeModelsOf(IServiceProvider? serviceProvider) =>
@@ -89,8 +93,10 @@ public sealed class MultiAgentFactory(
         // names whatever its registration said.
         var deployment = new DeploymentEndpoints(household.Agents.SelectMany(a => a.McpServerEndpoints));
         var spec = AgentSpecProjection.ForAgent(
-            definition, agentKey, userId, openRouterConfig, _patchableModels,
-            LemonadeHostAddress, _credentials, deployment, _logger, householdId, household);
+            definition, agentKey, userId, openRouterConfig,
+            household.ProvidesLemonade ? _patchableModels : _hostedModels,
+            household.ProvidesLemonade ? LemonadeHostAddress : null,
+            _credentials, deployment, _logger, householdId, household);
 
         return Build(spec, approvalHandler, household.AsBuilt(definition.Id));
     }
