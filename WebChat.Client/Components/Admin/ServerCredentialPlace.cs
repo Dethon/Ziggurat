@@ -10,6 +10,20 @@ public static class ServerCredentialPlace
     public static readonly IReadOnlyList<string> KitServers =
         ["websearch", "vault", "library", "sandbox", "printer", "homeassistant", "voice"];
 
+    // What each of the kit's servers gives the household's agents, for an owner choosing which to run.
+    private static readonly IReadOnlyDictionary<string, string> _gives = new Dictionary<string, string>
+    {
+        ["websearch"] = "searching the web, reading pages and signing in to sites",
+        ["vault"] = "the household's notes (an Obsidian vault)",
+        ["library"] = "downloads and the media library",
+        ["sandbox"] = "running code and commands",
+        ["printer"] = "printing",
+        ["homeassistant"] = "the home's devices, through Home Assistant",
+        ["voice"] = "voice satellites, and timers that ring on them"
+    };
+
+    public static string? WhatItGives(string serverName) => _gives.GetValueOrDefault(serverName);
+
     public static string For(string serverName) =>
         serverName.StartsWith(OutpostServerName.Prefix, StringComparison.Ordinal)
             ? "the machine's CREDENTIAL when it runs the outpost"

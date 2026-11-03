@@ -28,4 +28,13 @@ public sealed class ServerCredentialPlaceTests
 
         named.ShouldBe(ServerCredentialPlace.KitServers, ignoreOrder: true);
     }
+
+    // The Servers page named no server: Chidi, a new owner, was asked for "the name the server runs
+    // under" with nothing to say which names the kit's servers take or what each gives the agents.
+    [Fact]
+    public void EveryKitServer_IsSaidWhatItGivesTheAgents()
+    {
+        ServerCredentialPlace.KitServers.ShouldAllBe(server => !string.IsNullOrWhiteSpace(ServerCredentialPlace.WhatItGives(server)));
+        ServerCredentialPlace.WhatItGives("my-server").ShouldBeNull();
+    }
 }
