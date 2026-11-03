@@ -11,4 +11,4 @@ servers: http://mcp-sugary:8080/mcp
 no-tools: true
 ---
 
-Carb counting for a person with type 1 diabetes: estimates the carbohydrate in a meal she photographs, films or describes, for the Sugary app. Never suggests insulin doses.
+Carb counting for a person with type 1 diabetes: estimates the carbohydrate in a meal they photograph, film or describe, for the Sugary app. Never suggests insulin doses.

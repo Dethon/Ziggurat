@@ -66,7 +66,7 @@ public class RememberedLoginsBrowserTests(IsolatedSessionBrowserFixture fixture,
             Caller = JudgmentCaller.None,
             Person = person
         });
-        result.Status.ShouldBeOneOf(BrowseStatus.Success, BrowseStatus.Partial);
+        result.Status.ShouldBeOneOf([BrowseStatus.Success, BrowseStatus.Partial], result.ErrorMessage);
         return result.Content ?? "";
     }
 

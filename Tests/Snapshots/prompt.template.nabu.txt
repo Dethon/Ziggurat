@@ -1,4 +1,4 @@
-# template.nabu — 7552 tokens across 18 sections and 7 skills
+# template.nabu — 7553 tokens across 18 sections and 7 skills
 
   core_directive           CoreDirective         642 / 650    The agent assists rather than gatekeeps; it does not refuse or hedge a request the user owns, and it calls a tool only when it needs its answer.
   identity                 Identity               75 / 100    Which agent this is, before any tool or feature prompt is read.
@@ -14,16 +14,16 @@
   library_guide            Client                481 / 500    How media is searched for, fetched and filed in the library, for an agent that is not the download assistant.
   scheduling_prompt        Client                285 / 500    That a schedule is a deferred action of the agent's own, never a human reminder, and that writing one loads the skill.
   printing_prompt          Client                336 / 600    The printer's queue, the formats it takes and what it rejects.
-  timers_prompt            Client                744 / 900    Which mechanism a moment is — a countdown, a calendar alarm, a scheduled task — and the live satellite roster.
+  timers_prompt            Client                745 / 900    Which mechanism a moment is — a countdown, a calendar alarm, a scheduled task — and the live satellite roster.
   date                     Date                    7 / 30     Today's date. Last of the static sections, because it is the only one that changes on its own.
   voice                    ChannelOverride       638 / 800    Every reply is spoken aloud, so it is one short sentence of plain words.
   language                 Language              132 / 300    The reply language, stated absolutely, against a request that is otherwise all English.
   obsidian-vault           Skill                 107 / 120    body 1552 / 1800, served by mcp-vault
   sandbox                  Skill                 123 / 130    body 1291 / 1350, served by mcp-sandbox
   web-browsing             Skill                 121 / 130    body 1941 / 1950, served by mcp-websearch
-  home-watches             Skill                 104 / 120    body 1671 / 2200, served by mcp-homeassistant
-  home-assistant           Skill                 150 / 150    body 3588 / 3600, served by mcp-homeassistant
-  scheduling               Skill                 107 / 130    body 1110 / 1300, served by mcp-scheduling
+  home-watches             Skill                 104 / 120    body 1668 / 2200, served by mcp-homeassistant
+  home-assistant           Skill                 150 / 150    body 3590 / 3600, served by mcp-homeassistant
+  scheduling               Skill                 107 / 130    body 1109 / 1300, served by mcp-scheduling
   countdown-timers         Skill                 126 / 130    body 712 / 900, served by mcp-timers
 
 ================================================================================================
@@ -305,7 +305,7 @@ event at that offset, never a timer, however the offset is phrased; after a dism
 timer it is a new timer.
 
 Neither step applies when the moment is **something in the home changing** ("warn me when
-her sugar goes above 180", "tell me when the washing machine finishes"): that is a watch,
+the glucose goes above 180", "tell me when the washing machine finishes"): that is a watch,
 as the home section says, never a schedule that polls the home.
 
 Whatever is ringing right now on a satellite — a timer or an alarm, whichever it was
@@ -348,7 +348,7 @@ Proper nouns (people, places, titles of works) stay as they are -- do not transl
   </skill>
   <skill>
     <name>home-assistant</name>
-    <description>Doing anything in the home through `/ha`: switching, setting or reading a device (&quot;turn on the AC&quot;, &quot;what is the thermostat at&quot;), its past (&quot;how was her glucose overnight&quot;), a future alarm or reminder on the alarms calendar (&quot;wake me at seven&quot;, &quot;cancel the dentist alarm&quot;), music, radio or a podcast on a room&apos;s player. Never for stopping a ringing alarm or timer (&quot;stop the alarm&quot; is `/timers`), a countdown, a scheduled task, or a watch (&quot;tell me when the washer finishes&quot;). The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.</description>
+    <description>Doing anything in the home through `/ha`: switching, setting or reading a device (&quot;turn on the AC&quot;, &quot;what is the thermostat at&quot;), its past (&quot;how was the glucose overnight&quot;), a future alarm or reminder on the alarms calendar (&quot;wake me at seven&quot;, &quot;cancel the dentist alarm&quot;), music, radio or a podcast on a room&apos;s player. Never for stopping a ringing alarm or timer (&quot;stop the alarm&quot; is `/timers`), a countdown, a scheduled task, or a watch (&quot;tell me when the washer finishes&quot;). The entity layout, the exec workflow, how a result is read, history and statistics, alarm events, Music Assistant playback.</description>
   </skill>
   <skill>
     <name>home-watches</name>

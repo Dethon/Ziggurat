@@ -62,7 +62,7 @@ event at that offset, never a timer, however the offset is phrased; after a dism
 timer it is a new timer.
 
 Neither step applies when the moment is **something in the home changing** ("warn me when
-her sugar goes above 180", "tell me when the washing machine finishes"): that is a watch,
+the glucose goes above 180", "tell me when the washing machine finishes"): that is a watch,
 as the home section says, never a schedule that polls the home.
 
 Whatever is ringing right now on a satellite — a timer or an alarm, whichever it was
