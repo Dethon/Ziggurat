@@ -2,8 +2,8 @@
 # hearing through the stack's own Lemonade (LEMONADE_URL, default its published 127.0.0.1:13305):
 #
 #   voice.py say <text> <out.wav>   Kokoro speaks the text; written as 16 kHz s16 mono, the mic format
-#   voice.py check <dir>            Whisper reads every reply the test satellite recorded in <dir>, and
-#                                   the check passes when the first answer says 56 and an alert rang
+#   voice.py check <dir>            Whisper reads every answer the test satellite recorded in <dir>, and
+#                                   the check passes when the first says 56 and an alert was played
 #   voice.py refused <dir>          the same reading, passing when the answer says the household has no
 #                                   voice agent ("agente de voz", voice's own Spanish for the refusal)
 #
@@ -55,7 +55,9 @@ def heard(directory):
     for path in replies:
         w = wave.open(path)
         seconds = w.getnframes() / w.getframerate()
-        text = hear(path) if seconds >= 0.5 else ""  # the shorter ones are the follow-up listening cue
+        # The shorter ones are the follow-up listening cue, and an alert is the timer's ring, which counts
+        # for having been played: only an answer is read, Whisper on the CPU costing seconds a file.
+        text = hear(path) if seconds >= 0.5 and "alert" not in path else ""
         said.append((os.path.basename(path), text, seconds))
         print(f"{os.path.basename(path)} ({seconds:.1f} s): {text}")
     return said
