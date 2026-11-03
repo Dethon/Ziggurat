@@ -245,6 +245,31 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         history.Select(h => h.Content).ShouldBe(["hello there", "hi, how can I help?"]);
     }
 
+    // A turn that stopped on a call the person turned down has no text: the rejection is the tool's
+    // result and the model says nothing more. Read back as text alone, a reload showed the question
+    // with no answer under it, though the live reply had said the call was rejected.
+    [Fact]
+    public async Task GetHistoryAsync_ATurnEndedByARejectedApproval_ReadsBackAsALineSayingSo()
+    {
+        var store = NewStore();
+        var call = new FunctionCallContent("call-1", "mcp__websearch__web_browse");
+        await store.AppendMessagesAsync(HistoryKey("agent-rejected", 903),
+        [
+            new ChatMessage(ChatRole.User, "log in as me and read the page"),
+            new ChatMessage(ChatRole.Assistant, [call]),
+            new ChatMessage(ChatRole.Tool,
+                [new FunctionResultContent("call-1", ApprovalRejection.ResultFor("mcp__websearch__web_browse"))])
+        ]);
+
+        var history = await store.GetHistoryAsync("agent-rejected", 903, 0);
+
+        history.Count.ShouldBe(2);
+        var line = history[1];
+        line.Role.ShouldBe("assistant");
+        line.Content.ShouldBe(ApprovalRejection.Line("mcp__websearch__web_browse"));
+        line.Content.ShouldContain("web_browse");
+    }
+
     // The read keeps only text and used to discard a message whose text was empty, which would
     // make an image-only message vanish on reload. The transcript is a record of what was sent.
     [Fact]

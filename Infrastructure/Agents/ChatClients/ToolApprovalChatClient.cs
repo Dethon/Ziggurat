@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -208,7 +209,7 @@ public sealed class ToolApprovalChatClient : FunctionInvokingChatClient
             case ToolApprovalResult.Rejected:
             default:
                 context.Terminate = true;
-                return $"Tool execution was rejected by user: {toolName}. Waiting for new input.";
+                return ApprovalRejection.ResultFor(toolName);
         }
     }
 

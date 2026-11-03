@@ -218,13 +218,20 @@ public sealed class RedisThreadStateStore(
     // a conversation is searched by are all the same set. Role alone is not enough — a tool-using
     // turn persists assistant-role function calls with nothing to render, and a message carrying
     // only files must still survive, or an image-only message would vanish on reload.
+    // A call the person turned down reads as a line of the reply: the turn ends on it with no text,
+    // and a transcript of text alone showed the question with nothing under it.
     private static IEnumerable<ChatMessage> Readable(IEnumerable<ChatMessage> messages) =>
         messages.Where(m =>
-            (m.Role == ChatRole.User || m.Role == ChatRole.Assistant)
+            (m.Role == ChatRole.User || m.Role == ChatRole.Assistant || m.Role == ChatRole.Tool)
             && (!string.IsNullOrWhiteSpace(TextOf(m)) || m.GetAttachments() is { Count: > 0 }));
 
     private static string TextOf(ChatMessage message) =>
-        string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text));
+        message.Role == ChatRole.Tool
+            ? string.Join("\n", message.Contents.OfType<FunctionResultContent>()
+                .Select(c => ApprovalRejection.ToolOf(c.Result?.ToString()))
+                .OfType<string>()
+                .Select(ApprovalRejection.Line))
+            : string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text));
 
     private static string Text(IEnumerable<ChatMessage> messages) =>
         string.Join(
@@ -542,7 +549,7 @@ public sealed class RedisThreadStateStore(
         return Readable(messages)
                 .Select(m => new ChatHistoryMessage(
                     m.MessageId,
-                    m.Role.Value,
+                    m.Role == ChatRole.Tool ? ChatRole.Assistant.Value : m.Role.Value,
                     TextOf(m),
                     m.GetAuthorId(),
                     m.GetTimestamp(),
