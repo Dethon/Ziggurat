@@ -232,6 +232,52 @@ public sealed class ChatLiveConnectionTests : IDisposable
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
     }
 
+    // Nothing else retries a first connect: the visibility and online triggers fire only when the
+    // page is backgrounded or the network drops, and a page opened while the hub restarts has
+    // neither happen to it. It keeps trying by itself until it is live.
+    [Fact]
+    public async Task ConnectAsync_FirstConnectFails_KeepsTryingByItselfUntilLive()
+    {
+        foreach (var _ in Enumerable.Range(0, 6))
+        {
+            _factory.Enqueue(new FakeHubConnection
+            {
+                StartBehavior = _ => Task.FromException(new HttpRequestException("502 Bad Gateway"))
+            });
+        }
+
+        await Should.ThrowAsync<HttpRequestException>(() => _liveConnection.ConnectAsync());
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (_connectionStore.State.Status != ConnectionStatus.Connected && DateTime.UtcNow < deadline)
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(5);
+        }
+
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
+        _factory.Created.Count.ShouldBe(7);
+    }
+
+    // A refusal is the session check's answer, which no retry gets past.
+    [Fact]
+    public async Task ConnectAsync_FirstConnectRefused_DoesNotTryAgain()
+    {
+        _factory.Enqueue(new FakeHubConnection
+        {
+            StartBehavior = _ => Task.FromException(Refusal(HttpStatusCode.Forbidden))
+        });
+
+        await Should.ThrowAsync<HttpRequestException>(() => _liveConnection.ConnectAsync());
+        foreach (var _ in Enumerable.Range(0, 120))
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(1);
+        }
+
+        _factory.Created.Count.ShouldBe(1);
+    }
+
     [Fact]
     public async Task ConnectAsync_FirstConnectFails_DropsTheFailedConnectionThere()
     {

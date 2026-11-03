@@ -282,6 +282,27 @@ public sealed class InitializationEffectTests : IDisposable
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
     }
 
+    // A page opened while the hub restarts (a deploy) fails its first connect, and the connection
+    // keeps trying on its own. Its first epoch is the first live one this page ever had: the spaces,
+    // the agents and the topics are all still owed, not only a catalog. It used to come up Connected
+    // with no agents and stay that way.
+    [Fact]
+    public async Task HandleInitializeAsync_TheFirstConnectFailed_TheFirstEpochFinishesInitialization()
+    {
+        _topicService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _liveConnection.ThrowOnConnect = new HttpRequestException("502 Bad Gateway");
+        await Should.ThrowAsync<HttpRequestException>(() => _effect.HandleInitializeAsync());
+
+        _liveConnection.ThrowOnConnect = null;
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
+        _topicService.JoinedSpaces.ShouldBe(["default"]);
+    }
+
     // A retry that also comes up not live must not clear the awaiting flag — the epoch after
     // that one is still owed a retry.
     [Fact]

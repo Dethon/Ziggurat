@@ -17,11 +17,14 @@ public sealed class ChatLiveConnection(
     private static readonly TimeSpan _closedRetryDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan _rebuildAttemptTimeout = TimeSpan.FromSeconds(2.5);
     private static readonly TimeSpan _rebuildRetryDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan _firstRetryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan _maxRetryDelay = TimeSpan.FromSeconds(30);
 
     private readonly ConnectionEventDispatcher _connectionEventDispatcher = connectionEventDispatcher;
     private readonly SemaphoreSlim _reconnectLock = new(1, 1);
     private IChatHubConnection? _connection;
     private bool _disposed;
+    private bool _refused;
 
     // The one place that decides whether a hub call can be made. A connection that is null,
     // still connecting or reconnecting cannot carry one — the last two are present and not
@@ -119,6 +122,30 @@ public sealed class ChatLiveConnection(
         {
             _connectionEventDispatcher.HandleSessionRefused(HubRefusal.IsSignedOut(exception));
             throw;
+        }
+        catch
+        {
+            // Nothing else retries a first connect: the visibility and online triggers fire when a
+            // page is backgrounded or the network drops, and a page opened while the hub restarts (a
+            // deploy) has neither happen to it, so it would sit Disconnected until somebody reloaded.
+            // The caller still sees this attempt fail; becoming live later is a new epoch, which is
+            // where whatever the first connect was for gets done.
+            _ = KeepTryingAsync();
+            throw;
+        }
+    }
+
+    // Waits first, so the attempt that just failed is not repeated at once, and doubles up to a
+    // ceiling, so a hub that stays down is asked about twice a minute rather than hammered. Ends once
+    // live, refused (RebuildAsync has announced it) or disposed.
+    private async Task KeepTryingAsync()
+    {
+        var delay = _firstRetryDelay;
+        while (!_disposed && !_refused && LiveHubConnection is null)
+        {
+            await Task.Delay(delay, timeProvider);
+            delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, _maxRetryDelay.Ticks));
+            await ReconnectIfNeededAsync();
         }
     }
 
@@ -297,6 +324,7 @@ public sealed class ChatLiveConnection(
 
             if (attempt is Attempt.SignedOut or Attempt.NotLetIn)
             {
+                _refused = true;
                 _connectionEventDispatcher.HandleClosed(null);
                 _connectionEventDispatcher.HandleSessionRefused(attempt == Attempt.SignedOut);
                 return;
