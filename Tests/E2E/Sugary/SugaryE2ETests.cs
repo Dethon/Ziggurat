@@ -221,11 +221,15 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         await topic.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
         await WebChatE2ETests.ClickThroughApprovalsAsync(page, topic);
 
-        await Assertions.Expect(page.Locator(".chat-message.user .message-content").First)
-            .ToContainTextAsync(tag, new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
-        await page.Locator(".chat-message.user .message-attachments").First
-            .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-        await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
-            .ToContainTextAsync("items", new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
+        // The app's request is the app's line, its words behind the toggle and its photo shown under it;
+        // the estimate reads as the app shows it.
+        var notice = page.Locator(".service-notice").First;
+        await Assertions.Expect(notice)
+            .ToContainTextAsync("Sent from the Sugary app", new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
+        await notice.Locator(".message-attachments").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        await notice.Locator(".service-notice-toggle").ClickAsync();
+        await Assertions.Expect(notice.Locator(".service-notice-prompt")).ToContainTextAsync(tag);
+        await Assertions.Expect(page.Locator(".chat-message.assistant .meal-estimate").First)
+            .ToContainTextAsync("of carbs", new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
     }
 }
