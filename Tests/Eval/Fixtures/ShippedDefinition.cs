@@ -1,4 +1,6 @@
 using Agent.Settings;
+using Domain.DTOs;
+using Domain.DTOs.Household;
 using Domain.Prompts;
 using Microsoft.Extensions.Configuration;
 using Tests.Eval.Harness;
@@ -21,16 +23,33 @@ public sealed class ShippedDefinition(string path, TestAgents agents)
     // template as one, beside the home's copies, under the template's id with this in front.
     public const string TemplatePrefix = "template-";
 
+    // A template's agent as a household that set up no voice server runs it: nothing of the
+    // household's can ring a countdown, so the timers are withheld as its features would withhold a
+    // server (SharedServers.WithheldBy), and a countdown it asks for is a scheduled task.
+    public const string NoVoiceSuffix = "-novoice";
+
     private readonly Lazy<TestAgentSettings> _settings =
         new(() => WithTemplates(agents.Into(Bind(path))), LazyThreadSafetyMode.ExecutionAndPublication);
 
     public TestAgentSettings Settings => _settings.Value;
 
-    private static TestAgentSettings WithTemplates(TestAgentSettings settings) =>
-        settings with
+    private static TestAgentSettings WithTemplates(TestAgentSettings settings)
+    {
+        var rangNowhere = settings.SharedServers.WithheldBy(new FeaturesSection { Idealista = true }, ringsNowhere: true);
+        return settings with
         {
-            Agents = [.. settings.Agents, .. AgentTemplates.All.Select(t => t with { Id = TemplatePrefix + t.Id })]
+            Agents =
+            [
+                .. settings.Agents,
+                .. AgentTemplates.All.Select(t => t with { Id = TemplatePrefix + t.Id }),
+                .. AgentTemplates.All.Select(t => t with
+                {
+                    Id = TemplatePrefix + t.Id + NoVoiceSuffix,
+                    McpServerEndpoints = [.. t.McpServerEndpoints.Where(e => !SharedServers.Names(rangNowhere, e))]
+                })
+            ]
         };
+    }
 
     // The secrets come from user secrets rather than from the environment the container would
     // have had; everything else is the file's.
