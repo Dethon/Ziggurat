@@ -407,7 +407,9 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
         using var process = Process.Start(psi)!;
         var stdout = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEndAsync();
-        process.WaitForExit(60_000).ShouldBeTrue($"{command} timed out");
+        // The cap bounds a container that will never finish, not one a busy Docker is slow to start:
+        // a minute was a claim about the machine, and a full suite running beside it broke it.
+        process.WaitForExit(TimeSpan.FromMinutes(5)).ShouldBeTrue($"{command} timed out");
         return (process.ExitCode, stdout.Result, stderr.Result);
     }
 }
