@@ -39,10 +39,11 @@ public static class CommandServers
     private static async Task<IReadOnlyList<Redelegation.Server>> EveryHouseholdsAsync(
         string channelId, string serverName, CallTokens tokens, Uri agent, string agentApiSecret, CancellationToken ct)
     {
-        if (await HoldersAsync(serverName, agent, agentApiSecret, ct) is not { } holders)
+        var (holders, failure) = await HoldersAsync(serverName, agent, agentApiSecret, ct);
+        if (holders is null)
         {
             return [new Redelegation.Server(channelId, _ => throw new InvalidOperationException(
-                $"The agent at {agent} did not say which households hold {serverName}"))];
+                $"the agent at {agent} did not say which households hold {serverName}: {failure}"))];
         }
 
         return
@@ -67,7 +68,7 @@ public static class CommandServers
 
     // Null when the agent could not say: never an empty list, which would ask nobody and let a
     // retirement through.
-    private static async Task<IReadOnlyList<HouseholdServer>?> HoldersAsync(
+    private static async Task<(IReadOnlyList<HouseholdServer>? Holders, string? Failure)> HoldersAsync(
         string serverName, Uri agent, string agentApiSecret, CancellationToken ct)
     {
         try
@@ -76,12 +77,16 @@ public static class CommandServers
             using var request = new HttpRequestMessage(HttpMethod.Get, ConnectedServers.Holders(serverName));
             request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(agentApiSecret));
             using var answer = await http.SendAsync(request, ct);
-            answer.EnsureSuccessStatusCode();
-            return await answer.Content.ReadFromJsonAsync<IReadOnlyList<HouseholdServer>>(TunnelProtocol.SerializerOptions, ct);
+            if (!answer.IsSuccessStatusCode)
+            {
+                return (null, $"{(int)answer.StatusCode} {await answer.Content.ReadAsStringAsync(ct)}".Trim());
+            }
+
+            return (await answer.Content.ReadFromJsonAsync<IReadOnlyList<HouseholdServer>>(TunnelProtocol.SerializerOptions, ct), null);
         }
-        catch (Exception) when (!ct.IsCancellationRequested)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
-            return null;
+            return (null, ex.Message);
         }
     }
 }

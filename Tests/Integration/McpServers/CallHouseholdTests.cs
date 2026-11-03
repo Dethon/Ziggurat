@@ -29,6 +29,7 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using Tests.Unit;
 using IdealistaSettings = McpServerIdealista.Settings;
 
 namespace Tests.Integration.McpServers;
@@ -54,9 +55,9 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
 
         (await mount.Backend.CreateAsync("/jonas/dentist/schedule.json",
                 """{"prompt":"remind me of the dentist","runAt":"2030-01-01T09:00:00"}""", false, true, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+            .ShouldBeOk();
         var status = (await mount.Backend.ReadAsync("/jonas/dentist/status.json", null, null, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
+            .ShouldBeOk().Value.Content;
 
         (await scheduling.Store.GetAsync(household, "dentist", CancellationToken.None))!.RunAt
             .ShouldBe(new DateTime(2030, 1, 1, 0, 0, 0, DateTimeKind.Utc));
@@ -78,7 +79,7 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
         await using var mount = await scheduling.MountAsync(household, person);
 
         var listed = (await mount.Backend.GlobAsync("/", "*/", CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsGlobResult>.Ok>().Value.Entries;
+            .ShouldBeOk().Value.Entries;
         var created = await mount.Backend.CreateAsync("/chef/soup/schedule.json",
             """{"prompt":"start the soup","runAt":"2030-01-01T09:00:00Z"}""", false, true, CancellationToken.None);
         var refused = await mount.Backend.CreateAsync("/jack/film/schedule.json",
@@ -88,7 +89,7 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
             .Select(m => m.Content).OfType<TextContentBlock>().Select(t => t.Text));
 
         listed.ShouldBe(["/chef/"]);
-        created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+        created.ShouldBeOk();
         refused.ShouldBeOfType<FsResult<FsCreateResult>.Err>();
         prompt.ShouldNotContain("jack");
         prompt.ShouldNotContain("chef");
@@ -107,9 +108,9 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
         {
             (await mount.Backend.CreateAsync("/jonas/news/schedule.json",
                     """{"prompt":"send me the news","cron":"0 8 * * *"}""", false, true, CancellationToken.None))
-                .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+                .ShouldBeOk();
             (await mount.Backend.ExecAsync("/jonas/news", "./run_now", null, CancellationToken.None))
-                .ShouldBeOfType<FsResult<FsExecResult>.Ok>();
+                .ShouldBeOk();
         }
 
         var fired = await scheduling.FireDueAsync();
@@ -133,7 +134,7 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
         await using var mount = await scheduling.MountAsync(household, person);
         (await mount.Backend.CreateAsync("/jonas/dentist/schedule.json",
                 """{"prompt":"remind me of the dentist","runAt":"2030-01-01T09:00:00+09:00"}""", false, true, CancellationToken.None))
-            .ShouldBeOfType<FsResult<FsCreateResult>.Ok>();
+            .ShouldBeOk();
         var before = await StatusAsync(mount.Backend, "/jonas/dentist");
 
         await SetAsync(accounts, household, HouseholdSections.Settings, """{ "name": "Casa", "timeZone": "Atlantic/Canary" }""");
@@ -157,8 +158,8 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
         var forCasa = await idealista.SearchAsync(casa, ana);
         var forPiso = await idealista.SearchAsync(piso, luis);
 
-        forCasa.IsError.ShouldNotBe(true);
-        forPiso.IsError.ShouldNotBe(true);
+        forCasa.IsError.ShouldNotBe(true, Text(forCasa));
+        forPiso.IsError.ShouldNotBe(true, Text(forPiso));
         api.SignedInWith.ShouldBe([("casa-key", "casa-secret"), ("piso-key", "piso-secret")]);
     }
 
@@ -207,7 +208,7 @@ public class CallHouseholdTests(RedisFixture redis) : IClassFixture<RedisFixture
 
     private static async Task<string> StatusAsync(IFileSystemBackend backend, string schedule) =>
         (await backend.ReadAsync($"{schedule}/status.json", null, null, CancellationToken.None))
-        .ShouldBeOfType<FsResult<FsReadResult>.Ok>().Value.Content;
+        .ShouldBeOk().Value.Content;
 
     private Task<AccountsServer> StartAccountsAsync() =>
         AccountsServer.StartAsync(s => s with
