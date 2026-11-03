@@ -330,6 +330,35 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         NamesOffline(_model.Requests[^1], "vault").ShouldBeFalse();
     }
 
+    // A conversation's agent outlives its first turn, so it is asked before each later one whether its
+    // household still defines it as built: a feature turned off or its instructions changed make it
+    // stale, and the conversation builds it again; an unchanged household, or another agent's change,
+    // leaves it as it is.
+    [Fact]
+    public async Task AnAgentTheHouseholdChangedSinceItWasBuilt_SaysItIsStale()
+    {
+        AgentsSection Agents(string instructions) => new()
+        {
+            DefaultAgent = "ana",
+            Agents =
+            [
+                new HouseholdAgent { Id = "ana", Template = "jonas", Name = "Ana", CustomInstructions = instructions },
+                new HouseholdAgent { Id = "sugary", Template = "sugary", Name = "Sugary" }
+            ]
+        };
+        _households.Add(Household, isHome: false, Settings(), Agents("Rhyme."));
+        await using var agent = await Factory().CreateAsync(
+            new AgentKey("conv-1", "ana"), "fran", "ana", Mock.Of<IToolApprovalHandler>(), tenantId: Household);
+
+        (await agent.IsStaleAsync(CancellationToken.None)).ShouldBeFalse();
+
+        _households.Add(Household, isHome: false, Settings(), Agents("Rhyme."), new FeaturesSection { Memory = false });
+        (await agent.IsStaleAsync(CancellationToken.None)).ShouldBeTrue();
+
+        _households.Add(Household, isHome: false, Settings(), Agents("Sign every reply."));
+        (await agent.IsStaleAsync(CancellationToken.None)).ShouldBeTrue();
+    }
+
     // A worker's profile is the deployment's, and names the vault for every household; one spawned for
     // a household that never set it up reaches it no more than its parent does, and names nothing.
     [Theory]

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Domain.DTOs;
 using Domain.DTOs.Household;
 using Domain.DTOs.Tunnel;
@@ -181,6 +182,16 @@ public sealed record HouseholdAgents
                     .Distinct()
             ];
 
+    // What a turn builds this agent from, which a conversation compares its agent's against before
+    // each later turn (DisposableAgent.IsStaleAsync): the definition as offered — its name, its
+    // instructions, what the features left it — as text, since its lists compare by reference; the
+    // zone it is told its time in; and the key it is paid with, compared as a key and never revealed.
+    // Null for an agent the household does not define (a person's registered one).
+    public AgentAsBuilt? AsBuilt(string agentId) =>
+        Find(agentId) is { } definition
+            ? new AgentAsBuilt(JsonSerializer.Serialize(definition), TimeZone, Payer?.Key)
+            : null;
+
     public AgentDefinition? Find(string agentId) =>
         Agents.FirstOrDefault(agent => agent.Id.Equals(agentId, StringComparison.OrdinalIgnoreCase));
 
@@ -212,3 +223,5 @@ public sealed record HouseholdAgents
             _ => null
         };
 }
+
+public sealed record AgentAsBuilt(string Definition, string? TimeZone, ModelKey? Key);

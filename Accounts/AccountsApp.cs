@@ -35,6 +35,7 @@ public static class AccountsApp
             .AddScoped<PasskeyCeremonies>()
             .AddSingleton<PageGuard>()
             .AddSingleton<AccountPage>()
+            .AddSingleton<HouseholdClock>()
             .AddSingleton<MembersPage>()
             .AddSingleton<AdminLog>()
             .AddSingleton<HouseholdKeyChecks>()

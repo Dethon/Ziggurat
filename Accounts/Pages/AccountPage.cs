@@ -19,6 +19,7 @@ public sealed class AccountPage(
     MemberStore members,
     PersonStore people,
     LinkStore links,
+    HouseholdClock clock,
     AccountsSettings settings)
 {
     public const string Path = "/account";
@@ -117,18 +118,19 @@ public sealed class AccountPage(
         var held = await passkeys.ListAsync(viewer.UserId, ct);
         var devices = await sessions.ListAsync(viewer.UserId, ct);
         var form = guard.FormField(http);
+        var zone = await clock.ZoneAsync(viewer.TenantId, ct);
         var seesAll = household.Where(m => m.SeesAllConversations).ToList();
 
         var passkeyItems = string.Concat(held.Select(p =>
             $"""
-             <li data-passkey-id="{p.Id}">Added {AccountsPages.Date(p.CreatedAt)}{(p.LastUsedAt is { } used ? $", last used {AccountsPages.Date(used)}" : "")}
+             <li data-passkey-id="{p.Id}">Added {AccountsPages.Date(p.CreatedAt, zone)}{(p.LastUsedAt is { } used ? $", last used {AccountsPages.Date(used, zone)}" : "")}
                <form method="post" action="{Url}/passkeys/{p.Id}/revoke">{form}<button type="submit">Revoke passkey</button></form>
              </li>
              """));
         var deviceItems = string.Concat(devices.Select(d =>
             $"""
              <li data-session-id="{d.Id}">{AccountsPages.Encode(string.IsNullOrWhiteSpace(d.Device) ? "Unknown device" : d.Device)}{(d.Id == viewer.SessionId ? " <strong>(this device)</strong>" : "")}<br>
-               Signed in {AccountsPages.Date(d.CreatedAt)}, last seen {AccountsPages.Date(d.LastSeenAt)}
+               Signed in {AccountsPages.Date(d.CreatedAt, zone)}, last seen {AccountsPages.Date(d.LastSeenAt, zone)}
                <form method="post" action="{Url}/sessions/{d.Id}/revoke">{form}<button type="submit">Sign out this device</button></form>
              </li>
              """));
@@ -168,7 +170,7 @@ public sealed class AccountPage(
 
                <section aria-labelledby="telegram">
                  <h2 id="telegram">Telegram</h2>
-                 {Telegram(telegramCode, form)}
+                 {Telegram(telegramCode, form, zone)}
                </section>
 
                <section aria-labelledby="voice">
@@ -187,7 +189,7 @@ public sealed class AccountPage(
              """);
     }
 
-    private string Telegram(TelegramCode? code, string form)
+    private string Telegram(TelegramCode? code, string form, TimeZoneInfo zone)
     {
         if (code is null)
         {
@@ -197,7 +199,7 @@ public sealed class AccountPage(
                     """;
         }
 
-        var note = $"<p>It works once, until {AccountsPages.Date(code.ExpiresAt)}.</p>";
+        var note = $"<p>It works once, until {AccountsPages.Date(code.ExpiresAt, zone)}.</p>";
         if (settings.Telegram.DeepLink(code.Code) is not { } deepLink)
         {
             return $"""

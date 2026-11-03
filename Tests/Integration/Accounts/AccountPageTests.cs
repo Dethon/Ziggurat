@@ -1,7 +1,9 @@
 using System.Net;
+using Accounts.Configuration;
 using Accounts.Sessions;
 using Accounts.Store;
 using Domain.DTOs.Admin;
+using Domain.DTOs.Household;
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -41,6 +43,25 @@ public class AccountPageTests
         page.ShouldContain("Fran");
         page.ShouldContain("Pixel phone browser");
         page.ShouldContain("Laptop browser");
+    }
+
+    // When a device signed in is said on the household's clock and day first, as the admin pages and
+    // the dashboard say a time — not in UTC, which put a person in Madrid an hour behind their own day.
+    [Fact]
+    public async Task ThePage_SaysWhenOnTheHouseholdsClock_DayFirst()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        server.Clock.SetUtcNow(new DateTimeOffset(2026, 11, 3, 0, 8, 0, TimeSpan.Zero));
+        var fran = await server.MintOperatorAsync("Fran");
+        await server.Service<HouseholdConfigStore>().SaveAsync(fran.TenantId, HouseholdSections.SettingsSchema,
+            HouseholdSections.SettingsSchema.Write(new HouseholdSettings { Name = "Casa", TimeZone = "America/New_York" }),
+            CancellationToken.None);
+        var session = await server.MintSessionAsync(fran.UserId);
+
+        var page = await server.SignedIn(session).PageAsync(Account);
+
+        page.ShouldContain("Signed in 02/11/2026 19:08");
+        page.ShouldNotContain("UTC");
     }
 
     [Fact]

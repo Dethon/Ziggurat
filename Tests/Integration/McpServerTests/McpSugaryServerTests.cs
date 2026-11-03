@@ -80,7 +80,7 @@ public class McpSugaryServerTests
         body.ShouldContain("`doses` joined to `dose_meals` on `dose_id`, then to `meals` on `meal_id`");
         body.ShouldContain("so a dose for two meals counts once");
         body.ShouldContain("not only a correction");
-        body.ShouldContain("from her own numbers");
+        body.ShouldContain("from their own numbers");
         body.ShouldContain("ask for any you lack");
         body.ShouldContain("still on board");
         body.ShouldContain("similar meals");
@@ -100,7 +100,7 @@ public class McpSugaryServerTests
 
         body.ShouldContain("- `exercise` —");
         body.ShouldContain("empty while it is running");
-        body.ShouldContain("exercise only by a rule she gave");
+        body.ShouldContain("exercise only by a rule they gave");
         SugarySkill.Description.ShouldContain("exercise");
     }
 
@@ -172,11 +172,11 @@ public class McpSugaryServerTests
         readme.ShouldContain("`rapid` — rapid-acting");
         readme.ShouldContain("`basal` — long-acting");
         readme.ShouldContain("## dose-meals.parquet");
-        readme.ShouldContain("A dose she linked to no meal has no row");
+        readme.ShouldContain("A dose they linked to no meal has no row");
         readme.ShouldContain("does not make it a correction");
         readme.ShouldContain("by time");
         readme.ShouldContain("total a day's insulin from `doses` alone");
-        readme.ShouldContain("carries the meal's time unless she changed it");
+        readme.ShouldContain("carries the meal's time unless they changed it");
         readme.ShouldContain("never a recommendation");
         readme.ShouldNotContain("never a basis");
     }
@@ -642,7 +642,7 @@ public class McpSugaryServerTests
         readme.ShouldContain("`gym`");
         readme.ShouldContain("`other`");
         readme.ShouldContain("empty while it is still running");
-        readme.ShouldContain("is hers to say");
+        readme.ShouldContain("is theirs to say");
         readme.ShouldNotContain("never a basis");
     }
 

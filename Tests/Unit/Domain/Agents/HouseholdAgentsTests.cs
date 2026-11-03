@@ -249,6 +249,32 @@ public class HouseholdAgentsTests
         })).ShouldContain("the voice agent ghost is none of the household's agents");
     }
 
+    // What a conversation's agent was built from, as a turn asks it again: the same configuration read
+    // twice is the same, and a feature turned off, an agent's instructions or its name changed, the
+    // household's zone or its key is not. An agent the household does not define has none.
+    [Fact]
+    public void WhatAnAgentIsBuiltFrom_ChangesWithItsDefinitionZoneAndKey_AndOnlyWithThose()
+    {
+        AgentsSection Section(string instructions = "Rhyme.", string name = "Ana") => new()
+        {
+            DefaultAgent = "ana",
+            Agents = [new HouseholdAgent { Id = "ana", Template = "jonas", Name = name, CustomInstructions = instructions }]
+        };
+        AgentAsBuilt? Of(AgentHouseholdConfig config) => HouseholdAgents.Of(config, _shared).AsBuilt("ana");
+        var built = Of(Household(Section()));
+
+        built.ShouldNotBeNull();
+        Of(Household(Section())).ShouldBe(built);
+        Of(Household(Section(instructions: "Sign every reply."))).ShouldNotBe(built);
+        Of(Household(Section(name: "Anita"))).ShouldNotBe(built);
+        Of(Household(Section(), features: new FeaturesSection { Idealista = true, Timers = false })).ShouldNotBe(built);
+        Of(Household(Section(), features: new FeaturesSection { Idealista = true, Memory = false })).ShouldNotBe(built);
+        Of(Household(Section(), settings: new HouseholdSettings { Name = "Casa", TimeZone = "America/New_York" })).ShouldNotBe(built);
+        Of(Household(Section()) with { OpenRouterApiKey = "sk-or-a" }).ShouldNotBe(Of(Household(Section()) with { OpenRouterApiKey = "sk-or-b" }));
+        Of(Household(Section()) with { OpenRouterApiKey = "sk-or-a" }).ShouldBe(Of(Household(Section()) with { OpenRouterApiKey = "sk-or-a" }));
+        HouseholdAgents.Of(Household(Section()), _shared).AsBuilt("someone-elses").ShouldBeNull();
+    }
+
     private static AgentHouseholdConfig Household(
         AgentsSection agents, HouseholdSettings? settings = null, FeaturesSection? features = null,
         IReadOnlyList<string>? ownServers = null) =>

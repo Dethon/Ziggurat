@@ -1,4 +1,6 @@
+@using Dashboard.Client.Metrics
 @using Dashboard.Client.State.Health
+@inject HouseholdDirectory Directory
 
 <div class="health-grid">
     @foreach (var svc in Services)
@@ -8,7 +10,7 @@
             <span class="health-name">@svc.Service</span>
             @if (svc.Household is { } household)
             {
-                <span class="health-household" title="@household">@household[..Math.Min(8, household.Length)]</span>
+                <span class="health-household" title="@household">@_names.Of(household)</span>
             }
         </div>
     }
@@ -20,6 +22,11 @@
 
 @code {
     [Parameter, EditorRequired] public IEnumerable<ServiceHealth> Services { get; set; } = [];
+
+    // A household's server is labelled by the household's name, as the picker names it.
+    private HouseholdNames _names = new([], Answered: false);
+
+    protected override async Task OnInitializedAsync() => _names = await Directory.NamesAsync();
 }
 
 <style>

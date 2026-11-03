@@ -40,6 +40,9 @@ public sealed class McpAgent : DisposableAgent
     private readonly IOwnServers? _ownServers;
     private readonly IReadOnlyList<string> _withheldServers;
     private readonly Func<CancellationToken, Task<HouseholdAgents>>? _household;
+
+    // What the household defined this agent as when it was built; null for one it does not define.
+    private readonly AgentAsBuilt? _builtFrom;
     private readonly string? _tenantId;
     private readonly ModelPayer _payer;
     private readonly IReadOnlySet<string> _filesystemEnabledTools;
@@ -103,7 +106,8 @@ public sealed class McpAgent : DisposableAgent
         IVfsBridge? bridge = null,
         CallTokens? callTokens = null,
         IOwnServers? ownServers = null,
-        Func<CancellationToken, Task<HouseholdAgents>>? household = null)
+        Func<CancellationToken, Task<HouseholdAgents>>? household = null,
+        AgentAsBuilt? builtFrom = null)
     {
         _endpoints = spec.McpServerEndpoints;
         _tenantId = spec.TenantId;
@@ -111,6 +115,7 @@ public sealed class McpAgent : DisposableAgent
         _ownServers = ownServers;
         _withheldServers = spec.WithheldServers;
         _household = household;
+        _builtFrom = builtFrom;
         _usesOutposts = spec.UsesOutposts;
         _noTools = spec.NoTools;
         _withheldTools = spec.WithheldTools;
@@ -582,6 +587,28 @@ public sealed class McpAgent : DisposableAgent
         catch (ArgumentException)
         {
             return null;
+        }
+    }
+
+    // Asked by the conversation before each later turn, of the same view the agent was built from,
+    // which the reader keeps a moment and drops when the accounts service announces a save. A view
+    // that cannot be read just now keeps the agent as it is: the turn's standing was asked of the same
+    // view a moment before, so this is a blip, and a turn is not refused over it.
+    public override async ValueTask<bool> IsStaleAsync(CancellationToken ct)
+    {
+        if (_household is null || _builtFrom is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return (await _household(ct)).AsBuilt(_agentId) is { } now && now != _builtFrom;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger?.LogWarning(ex, "Agent '{AgentName}' could not ask its household whether it changed; it runs as built", _name);
+            return false;
         }
     }
 

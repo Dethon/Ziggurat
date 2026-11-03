@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs;
@@ -358,7 +359,8 @@ public sealed class ScheduleFileSystem(
         await store.CreateAsync(schedule, ct);
         return new FsResult<FsCreateResult>.Ok(new FsCreateResult
         {
-            Status = "created", FilePath = path, Size = content.Length.ToString(), Lines = content.Split('\n').Length
+            Status = "created", FilePath = path, Size = content.Length.ToString(), Lines = content.Split('\n').Length,
+            Note = NextRun(schedule.NextRunAt, zone)
         });
     }
 
@@ -413,7 +415,7 @@ public sealed class ScheduleFileSystem(
         await store.CreateAsync(updated, ct);
         return new FsResult<FsEditResult>.Ok(new FsEditResult
         {
-            Status = "edited", FilePath = path, TotalOccurrencesReplaced = edits.Count,
+            Status = "edited", FilePath = path, TotalOccurrencesReplaced = edits.Count, Note = NextRun(updated.NextRunAt, zone),
             Edits = edits.Select(_ => new FsEditDetail { OccurrencesReplaced = 1, AffectedLines = new FsLineRange { Start = 1, End = 1 } }).ToList()
         });
     }
@@ -601,6 +603,16 @@ public sealed class ScheduleFileSystem(
     private static DateTimeOffset? ToZone(DateTime? utc, TimeZoneInfo zone) =>
         utc is { } u
             ? TimeZoneInfo.ConvertTime(new DateTimeOffset(DateTime.SpecifyKind(u, DateTimeKind.Utc)), zone)
+            : null;
+
+    // When a written schedule next runs, said by the mount so a reply that states it reads it rather
+    // than working out a cron against the turn's timestamp: at 01:09 on a Tuesday, a model told only
+    // that a weekday 08:15 schedule was created said its first run was tomorrow. The day is named
+    // beside the date, and the wall time carries the zone's name with no offset to apply.
+    private static string? NextRun(DateTime? nextRunAt, TimeZoneInfo zone) =>
+        ToZone(nextRunAt, zone) is { } next
+            ? string.Create(CultureInfo.InvariantCulture,
+                $"It next runs on {next:dddd yyyy-MM-dd} at {next:HH:mm}, the household's time ({zone.Id}).")
             : null;
 
     private DateTime? ComputeNextRunAt(SpecDto spec, TimeZoneInfo zone) =>
