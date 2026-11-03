@@ -145,6 +145,7 @@ public static class BufferRebuildUtility
                     Role = "user",
                     Content = msg.Content ?? "",
                     SenderId = msg.UserMessage.SenderId,
+                    SenderName = msg.UserMessage.SenderName,
                     Timestamp = msg.UserMessage.Timestamp,
                     Attachments = msg.Attachments
                 });

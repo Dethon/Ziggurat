@@ -498,7 +498,8 @@ public sealed class RedisThreadStateStore(
                     TextOf(m),
                     m.GetAuthorId(),
                     m.GetTimestamp(),
-                    m.GetAttachments()))
+                    m.GetAttachments(),
+                    m.GetSenderId()))
                 .ToList();
     }
 

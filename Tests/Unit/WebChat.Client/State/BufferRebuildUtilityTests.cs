@@ -688,4 +688,19 @@ public sealed class BufferRebuildUtilityTests
     }
 
     #endregion
+
+    // Another person's message in a shared topic arrives on the stream with the name they sent it
+    // under, which is how the page draws them.
+    [Fact]
+    public void RebuildFromBuffer_AUserMessage_KeepsItsSendersName()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "hola", UserMessage = new UserMessageInfo("u-2", null, "Marta"), SequenceNumber = 1 }
+        };
+
+        var (completed, _) = BufferRebuildUtility.RebuildFromBuffer(buffer);
+
+        completed.Single().SenderName.ShouldBe("Marta");
+    }
 }

@@ -5,7 +5,8 @@
 #
 #   scripts/smoke-stack.sh up      build and start it (project jackbot-smoke), run the household migration
 #                                  into it as the deploy does, and start the home's tenant kit beside it
-#                                  (project tenant-kit-smoke)
+#                                  (project tenant-kit-smoke); Lemonade starts too, on the CPU, for
+#                                  memory's embeddings
 #   scripts/smoke-stack.sh test    run the Smoke tests against it (Category=Smoke)
 #   scripts/smoke-stack.sh migrate --operator <n> --owner <n> --sugary <n> [--dry-run]
 #                                  the household migration against it
@@ -95,6 +96,18 @@ export KIT_REDIS_PASSWORD="${KIT_REDIS_PASSWORD:-local-kit-redis-password}"
 # fills the kit's required placeholder and never names a printer anything reaches.
 export PRINTER_URI="${PRINTER_URI:-ipp://smoke-printer.local:8631/ipp/print}"
 
+# The kit's web search asks Brave, and CapSolver for a challenge, with the keys a developer keeps in the
+# web search server's user secrets for local testing — read here because the kit's containers mount no
+# user secrets. Without them every web_search on this stack is refused, which is a stack that cannot be
+# driven by hand. Left empty where there are none (or no dotnet), and never printed.
+user_secret() {
+  command -v dotnet > /dev/null || return 0
+  dotnet user-secrets list --project "$1" 2>/dev/null | sed -n "s/^$2 = //p"
+}
+BRAVESEARCH__APIKEY="${BRAVESEARCH__APIKEY:-$(user_secret McpServerWebSearch braveSearch:apiKey)}"
+CAPSOLVER__APIKEY="${CAPSOLVER__APIKEY:-$(user_secret McpServerWebSearch capSolver:apiKey)}"
+export BRAVESEARCH__APIKEY CAPSOLVER__APIKEY
+
 # Asks until the command succeeds: the accounts service's verbs need its store prepared, and Caddy
 # makes its local CA on its first start.
 retry() {
@@ -156,7 +169,10 @@ voice_open() {
 credentials() {
   if [[ ! -s "$KIT_STATE/credentials.env" ]]; then
     local made home
-    made="$(retry docker exec accounts dotnet Accounts.dll create-user --name "Smoke Kit")"
+    # The home household is the operator's: asked of the operator's link, which makes the operator on
+    # a first up (migrate_home asks again under the same name), so no stand-in person is created only
+    # to read a household id off and left listed among the home's members.
+    made="$(retry docker exec accounts dotnet Accounts.dll mint-link --operator --name "Smoke Operator")"
     home="$(grep -o 'household [0-9a-f]\{32\}' <<<"$made" | cut -d' ' -f2)"
     [[ -n "$home" ]] || { echo "no household in: $made" >&2; exit 1; }
     local server minted
@@ -197,12 +213,18 @@ case "${1:-}" in
     fi
     HOUSEHOLD_CONFIG_MASTER_KEY="$(cat "$MASTER_KEY")"
     "${DC[@]}" up -d --no-deps "${SERVICES[@]}" smoke-probe smoke-keys
+    # Lemonade embeds for memory as well as hearing and speaking for voice, so without it every
+    # memory a turn offers is dropped (lemonade:13305 does not resolve) and recall finds nothing. On
+    # the CPU unless STT_BACKEND says otherwise, as voice starts it; its container name is the dev
+    # stack's too, so that one must not be running. Waited for below, before the household migration.
+    STT_BACKEND="${STT_BACKEND:-cpu}" "${DC[@]}" up -d --no-deps lemonade
 
     mkdir -p "$KIT_STATE"/{redis,vault,media,sandbox,machine}
     # The outpost binary, published out of this checkout as scripts/run-outpost.sh publishes it, for
     # the kit's machine to run.
     dotnet publish McpServerOutpost/McpServerOutpost.csproj -c Release -o DockerCompose/volumes/smoke/outpost --nologo
     credentials
+    retry curl -sf -o /dev/null http://127.0.0.1:13305/api/v1/health
     migrate_home
     # Caddy's local root, which the kit's servers are told to trust for the hub; copied out because
     # Caddy keeps it where only root reads.

@@ -24,4 +24,8 @@ public sealed record FsGlobResult
     // a path ready for the next tool, and a decorated one would not be. Null (left off the wire)
     // on every backend without actions, so their answers are unchanged.
     public IReadOnlyList<string>? Executables { get; init; }
+
+    // What this answer leaves out that a reader would otherwise take as absent - a part of the
+    // mount that could not be asked this time. Null (left off the wire) whenever the answer is whole.
+    public string? Note { get; init; }
 }

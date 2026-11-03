@@ -42,7 +42,7 @@
     }
 
     private (string? AvatarUrl, string DisplayName) GetSenderInfo() =>
-        SenderLabel.Of(Message.SenderId, UserIdentityStore.State.SignedIn, TopicOwnerId, TopicOwnerName);
+        SenderLabel.Of(Message.SenderId, UserIdentityStore.State.SignedIn, TopicOwnerId, TopicOwnerName, Message.SenderName);
 
     private string GetMessageClass()
     {

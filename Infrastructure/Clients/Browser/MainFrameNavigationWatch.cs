@@ -89,6 +89,11 @@ internal sealed class MainFrameNavigationWatch : IDisposable
         }
     }
 
+    // Only the requested document's commit ends the flight. Firefox reports a request from its parent
+    // process and a commit from the page's own, so under load the commit of the document already on
+    // screen can arrive after the request its script made next; taken as the arrival, it cleared a
+    // follow-up still in flight and the browse read the bot check itself. A redirect is a request of
+    // its own for each hop, so the pending one is always the address the page commits.
     private void OnFrameNavigated(object? sender, IFrame frame)
     {
         if (frame.ParentFrame is not null)
@@ -98,9 +103,17 @@ internal sealed class MainFrameNavigationWatch : IDisposable
 
         lock (_lock)
         {
-            Arrive();
+            if (_pending is null || SameDocument(_pending.Url, frame.Url))
+            {
+                Arrive();
+            }
         }
     }
+
+    private static bool SameDocument(string requested, string committed) =>
+        string.Equals(WithoutFragment(requested), WithoutFragment(committed), StringComparison.Ordinal);
+
+    private static string WithoutFragment(string url) => url.Split('#', 2)[0];
 
     private void Arrive()
     {

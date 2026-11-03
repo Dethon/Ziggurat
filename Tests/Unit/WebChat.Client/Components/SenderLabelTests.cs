@@ -26,6 +26,15 @@ public sealed class SenderLabelTests
             .ShouldBe(((string?)null, "Pablo"));
     }
 
+    // Somebody else in a shared topic who did not start it: the name their message was sent under,
+    // which the transcript and the live stream carry beside the account id.
+    [Fact]
+    public void AMessageThatCarriesItsSendersName_IsDrawnAsThatName()
+    {
+        SenderLabel.Of("cccc", _lucia, ownerId: "bbbb", ownerName: "Pablo", senderName: "Marta")
+            .ShouldBe(((string?)null, "Marta"));
+    }
+
     [Fact]
     public void AMessageFromSomebodyThePageCannotName_KeepsTheIdTheHubStamped()
     {

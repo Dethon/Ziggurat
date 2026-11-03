@@ -11,6 +11,9 @@ public record ChatMessageModel
     public bool IsError { get; init; }
 
     public string? SenderId { get; init; }
+
+    // The name the message was sent under, for a person the page cannot otherwise name.
+    public string? SenderName { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
     public string? MessageId { get; init; }
 

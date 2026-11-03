@@ -309,6 +309,21 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
             .ShouldBe(["u-1", "scheduler", "FranTG"]);
     }
 
+    // The account says whose message it is; the name it went under is how somebody else reading a
+    // shared topic is told who that was.
+    [Fact]
+    public async Task GetHistoryAsync_APersonsMessage_CarriesTheNameItWasSentUnder()
+    {
+        var store = NewStore();
+        var own = Sent("hello", "Fran", new ConversationContext(
+            "jack", "904:0", "Fran", new ReplyTarget("signalr", "904:0"),
+            Principal: new Principal("signalr", "u-1", new Account("t-1", "u-1"))));
+
+        await store.AppendMessagesAsync(HistoryKey("agent-sender-name", 904), [own]);
+
+        (await store.GetHistoryAsync("agent-sender-name", 904, 0)).Single().SenderName.ShouldBe("Fran");
+    }
+
     private static ChatMessage Sent(string text, string sender, ConversationContext context)
     {
         var message = new ChatMessage(ChatRole.User, text);

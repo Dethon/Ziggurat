@@ -26,6 +26,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly IDisposable _agentsUpdatedRegistration;
     private readonly IDisposable _becameLiveAgainSubscription;
     private int _awaitingAgentCatalog;
+    private int _awaitingFirstConnect;
 
     public InitializationEffect(
         Dispatcher dispatcher,
@@ -80,9 +81,19 @@ public sealed class InitializationEffect : IDisposable
         catch
         {
             _connectionStore.DisarmInlineInitialConnect();
+            // The connection keeps trying by itself, and whichever epoch makes it live first is this
+            // page's first: everything below is owed to it.
+            Volatile.Write(ref _awaitingFirstConnect, 1);
             throw;
         }
 
+        await InitializeConnectedAsync();
+    }
+
+    // Everything a first load does once it is connected, whether that was its own connect or, after
+    // that failed, the first epoch the connection reached by itself.
+    private async Task InitializeConnectedAsync()
+    {
         // Nothing to say about who this is: the hub took the person from the proxy's headers as
         // the connection arrived, so everything below may be asked at once.
 
@@ -135,6 +146,12 @@ public sealed class InitializationEffect : IDisposable
     // retry that also answers not live leaves the flag set for the epoch after this one.
     private async Task RetryAgentCatalogIfAwaitingAsync()
     {
+        if (Interlocked.Exchange(ref _awaitingFirstConnect, 0) == 1)
+        {
+            await InitializeConnectedAsync();
+            return;
+        }
+
         if (Volatile.Read(ref _awaitingAgentCatalog) == 0)
         {
             return;

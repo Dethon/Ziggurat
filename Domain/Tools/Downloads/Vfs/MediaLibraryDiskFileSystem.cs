@@ -18,6 +18,10 @@ public sealed class MediaLibraryDiskFileSystem(
 {
     public const string Name = "media";
 
+    private static readonly string DownloadsUnlisted =
+        $"The download client is not answering, so live downloads under {MediaFilesystem.DownloadsSubdir}/ "
+        + "are missing from this list; every file on disk is here as usual.";
+
     // Read off the parameter here rather than in a member body: the same value goes to the base
     // constructor, and capturing the parameter itself would leave two copies of the disk root.
     private readonly string _rootPath = root.BaseLibraryPath;
@@ -51,6 +55,7 @@ public sealed class MediaLibraryDiskFileSystem(
     public override async Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
         var disk = await base.GlobAsync(basePath, pattern, ct);
+        var onDisk = true;
         // An active download's directory can predate its files on disk (queued, still fetching
         // metadata), and info already reports it as existing — so the disk's not_found is not this
         // mount's answer until the overlay has had its say. Every other disk error stands.
@@ -61,6 +66,7 @@ public sealed class MediaLibraryDiskFileSystem(
                 return disk;
             }
 
+            onDisk = false;
             entries = new FsGlobResult { Entries = [], Truncated = false, Total = 0 };
         }
 
@@ -77,7 +83,27 @@ public sealed class MediaLibraryDiskFileSystem(
             return disk;
         }
 
-        var overlay = await downloads.GlobEntriesAsync(basePath, scoped.Replace('\\', '/'), ct);
+        FsResult<IReadOnlyList<string>> overlay;
+        try
+        {
+            overlay = await downloads.GlobEntriesAsync(basePath, scoped.Replace('\\', '/'), ct);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested && ToolError.IsRetryable(ToolError.CodeFor(ex)))
+        {
+            // The download client is down, not the library: the disk's files are listed whole and
+            // the answer says which part it could not ask, so an empty downloads/ is not read as no
+            // downloads. With nothing on disk either there is nothing to list, and the failure is
+            // the client's.
+            return onDisk
+                ? new FsResult<FsGlobResult>.Ok(entries with { Note = DownloadsUnlisted })
+                : new FsResult<FsGlobResult>.Err(new ToolErrorResult
+                {
+                    ErrorCode = ToolError.CodeFor(ex),
+                    Message = $"The download client is not answering ({ex.Message}), so the live downloads cannot be listed.",
+                    Hint = "Try again shortly; the files already filed in the library list as usual."
+                });
+        }
+
         if (!overlay.TryGetValue(out var virtualEntries, out var overlayError))
         {
             return new FsResult<FsGlobResult>.Err(overlayError);

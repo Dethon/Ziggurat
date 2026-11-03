@@ -64,6 +64,21 @@ public class AccountPageTests
         page.ShouldNotContain("UTC");
     }
 
+    // The chat client opens this page by navigating away from itself, and an installed app has no
+    // Back button: with no way back on the page, a person who looked at their account was stuck there
+    // until they closed the app.
+    [Fact]
+    public async Task ThePage_LeadsBackToTheChat()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var session = await server.MintSessionAsync(fran.UserId);
+
+        var page = await server.SignedIn(session).PageAsync(Account);
+
+        page.ShouldContain("<a href=\"/\">Back to chat</a>");
+    }
+
     [Fact]
     public async Task RevokingADevice_EndsThatSessionAlone()
     {

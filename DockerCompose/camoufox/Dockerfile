@@ -45,6 +45,12 @@ RUN node patch-viewport.js
 COPY check-fingerprint.js fingerprint-fixture.json.gz ./
 RUN node check-fingerprint.js
 
+# Node as PID 1 reaps nothing, so a browser process that exited unwaited stayed a zombie - a test
+# under a busy suite could not remove its container over one Docker could not kill. tini is PID 1
+# instead: it reaps, and hands the stop signal on to node.
+RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
 COPY fingerprint.js server.js ./
 
 # Where the fingerprint lives; the compose service mounts its named volume here. No VOLUME line:

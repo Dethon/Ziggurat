@@ -87,6 +87,49 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         }
     }
 
+    // A person asking for a remembered fact to be forgotten wants it gone. The agent's forget tool
+    // removed it, and the extractor then stored "The user's daughter is not called Lucía; the
+    // earlier information was wrong" from the same message - keeping the very name they asked to be
+    // forgotten. On the shipped extraction model.
+    [SkippableFact]
+    public async Task ExtractAsync_ARequestToForget_ReturnsNoCandidates()
+    {
+        var (apiUrl, apiKey, _) = GetConfig();
+        var (extractor, _) = CreateExtractor(apiUrl, apiKey, "openai/gpt-6-luna");
+
+        var result = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => extractor.ExtractAsync(
+            [
+                new ChatMessage(ChatRole.User, "Por cierto, soy alérgico a los cacahuetes y mi hija se llama Lucía."),
+                new ChatMessage(ChatRole.Assistant, "Anotado: nada de cacahuetes para ti, y Lucía es tu hija."),
+                new ChatMessage(ChatRole.User, "Olvida lo de que mi hija se llama Lucía, no es cierto.")
+            ],
+            "test_user", null, ModelPayer.Deployment, ct));
+
+        result.ShouldBeEmpty(string.Join("; ", result.Select(c => c.Content)));
+    }
+
+    // The other side of the forget rule: a correction that says what is right is still a memory,
+    // and it is the right value that is kept.
+    [SkippableFact]
+    public async Task ExtractAsync_ACorrectionThatSaysWhatIsRight_KeepsTheRightValue()
+    {
+        var (apiUrl, apiKey, _) = GetConfig();
+        var (extractor, warnings) = CreateExtractor(apiUrl, apiKey, "openai/gpt-6-luna");
+
+        var result = await LlmAttempt.UntilAsync(
+            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => extractor.ExtractAsync(
+                [
+                    new ChatMessage(ChatRole.User, "Por cierto, mi hija se llama Lucía."),
+                    new ChatMessage(ChatRole.Assistant, "Anotado: tu hija se llama Lucía."),
+                    new ChatMessage(ChatRole.User, "Me equivoqué al escribir: mi hija se llama Ana.")
+                ],
+                "test_user", null, ModelPayer.Deployment, ct)),
+            candidates => candidates.Count > 0);
+
+        result.ShouldContain(c => c.Content.Contains("Ana"), LlmAttempt.Explain(
+            string.Join("; ", result.Select(c => c.Content)), warnings));
+    }
+
     [SkippableFact]
     public async Task ExtractAsync_WithTrivialMessage_ReturnsEmptyOrFewCandidates()
     {
