@@ -25,6 +25,9 @@ public static class TimerPrompt
     public static readonly PromptClaim AgentActsIsAScheduledTask =
         _document.Claim("timers.agent-acts-is-a-scheduled-task");
 
+    public static readonly PromptClaim NoHomeReminderIsASchedule =
+        _document.Claim("timers.no-home-reminder-is-a-schedule");
+
     public static readonly PromptClaim ClockTimeIsACalendarAlarm =
         _document.Claim("timers.clock-time-is-a-calendar-alarm");
 
