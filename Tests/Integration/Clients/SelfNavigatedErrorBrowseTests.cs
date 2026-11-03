@@ -52,9 +52,10 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
             var result = await fixture.Browser.NavigateAsync(
                 new BrowseRequest(sessionId, $"{host}/thread") { Caller = JudgmentCaller.None });
 
-            result.Status.ShouldBe(BrowseStatus.Success, result.ErrorMessage);
-            result.Content.ShouldNotBeNull().ShouldContain("The comments a reader came for");
-            result.HttpStatus.ShouldBe(200);
+            var seen = $"at {result.Url} after {refusals} refusals, {result.Status} {result.HttpStatus}: {result.ErrorMessage}";
+            result.Status.ShouldBe(BrowseStatus.Success, seen);
+            result.Content.ShouldNotBeNull().ShouldContain("The comments a reader came for", customMessage: seen);
+            result.HttpStatus.ShouldBe(200, seen);
         }
         finally
         {
@@ -90,9 +91,10 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
             var result = await fixture.Browser.NavigateAsync(
                 new BrowseRequest(sessionId, $"{host}/thread") { Caller = JudgmentCaller.None });
 
-            result.HttpStatus.ShouldBe(403);
+            var seen = $"at {result.Url} after {asked} asks, {result.Status}: {result.Content?[..Math.Min(80, result.Content.Length)]}";
+            result.HttpStatus.ShouldBe(403, seen);
             result.Content.ShouldNotBeNull().ShouldContain("You have been blocked");
-            asked.ShouldBe(2);
+            asked.ShouldBe(2, seen);
         }
         finally
         {
