@@ -179,6 +179,37 @@ public class AccountPageTests
         page.ShouldNotContain("nabu");
     }
 
+    // A household with no voice server of its own has no satellites to enroll with: Tomás, in a
+    // household that set none up, was told to run the enrollment "on one of them".
+    [Fact]
+    public async Task AHouseholdWithNoVoiceServer_IsShownNoVoiceEnrollment_UntilItSetsOneUp()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var (casa, ines) = await server.SeedHouseholdAsync("Casa Rivas", "Inés");
+        var session = await server.MintSessionAsync(ines);
+
+        var without = await server.SignedIn(session).PageAsync(Account);
+        await server.MintTunnelCredentialAsync(casa, "voice");
+        var with = await server.SignedIn(session).PageAsync(Account);
+
+        without.ShouldNotContain("scripts/enroll-voice.sh");
+        without.ShouldContain("no voice satellites");
+        with.ShouldContain($"scripts/enroll-voice.sh {ines}");
+    }
+
+    // The role was the role's constant, so a member read "member of the household." under their name.
+    [Fact]
+    public async Task ThePage_SaysWhichHouseholdThePersonIsIn_AsASentence()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var (casa, _) = await server.SeedHouseholdAsync("Casa Rivas", "Inés");
+        var tomas = await server.SeedPersonAsync(casa, "Tomás");
+
+        var page = await server.SignedIn(await server.MintSessionAsync(tomas)).PageAsync(Account);
+
+        page.ShouldContain("A member of Casa Rivas.");
+    }
+
     [Fact]
     public async Task ATelegramCode_IsADeepLinkToTheDeploymentsBot()
     {
