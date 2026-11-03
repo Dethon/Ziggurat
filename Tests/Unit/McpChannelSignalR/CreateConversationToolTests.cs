@@ -142,6 +142,19 @@ public class CreateConversationToolTests
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // The prompt a minted topic opens with is buffered with the time it was sent, as a later turn's
+    // is: a fired reminder's notice was drawn with no time while the page followed it live.
+    [Fact]
+    public async Task McpRun_ATopicItMints_BuffersItsPromptWithTheTimeItWasSent()
+    {
+        await ShowAsync("11:22", "a plate of paella");
+
+        var topicId = _topics.Saved.ShouldHaveSingleItem().TopicId;
+        var prompt = _streamService.GetStreamState(topicId).ShouldNotBeNull().BufferedMessages.ShouldHaveSingleItem();
+        prompt.Content.ShouldBe("a plate of paella");
+        prompt.UserMessage.ShouldNotBeNull().Timestamp.ShouldNotBeNull();
+    }
+
     [Fact]
     public async Task McpRun_ALaterTurnOnTheSameConversation_AttachesToTheTopicItMinted()
     {
