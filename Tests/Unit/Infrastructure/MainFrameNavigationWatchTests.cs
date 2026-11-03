@@ -80,4 +80,35 @@ public sealed class MainFrameNavigationWatchTests
 
         await waiting.WaitAsync(TimeSpan.FromSeconds(10));
     }
+
+    // Firefox stops parsing a page whose script navigates and issues the request only later, so for
+    // a moment the page is complete, says it is leaving, and nothing is in flight. Told so, the watch
+    // waits for the next commit as it waits for a request's.
+    [Fact]
+    public async Task APageThatSaysItIsLeaving_IsInFlightUntilTheNextCommit()
+    {
+        using var watch = new MainFrameNavigationWatch(_page.Object);
+
+        watch.ExpectNextCommit();
+        watch.InFlight.ShouldBeTrue();
+        var waiting = watch.WaitAsync(TimeSpan.FromMinutes(5), CancellationToken.None);
+        Requested("https://site.test/thread?solution=1");
+        Committed("https://site.test/thread?solution=1");
+
+        await waiting.WaitAsync(TimeSpan.FromSeconds(10));
+        watch.InFlight.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task AnExpectedCommitWithNoRequestSeen_StillEndsTheFlight()
+    {
+        using var watch = new MainFrameNavigationWatch(_page.Object);
+
+        watch.ExpectNextCommit();
+        var waiting = watch.WaitAsync(TimeSpan.FromMinutes(5), CancellationToken.None);
+        Committed("https://site.test/elsewhere");
+
+        await waiting.WaitAsync(TimeSpan.FromSeconds(10));
+        watch.InFlight.ShouldBeFalse();
+    }
 }

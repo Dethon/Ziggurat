@@ -302,7 +302,10 @@ public class PlaywrightWebBrowser(
 
         // A page that looks settled may already have sent itself on, its next document not yet
         // answered — a bot check whose server is slow. Read now, the browse would extract the check.
-        for (var followed = 0; !navigationTimedOut && followed < MaxFollowedNavigations && selfNavigation.InFlight; followed++)
+        // Firefox stops parsing a page whose script navigates and asks for the next document only
+        // later, so the page can be complete with no request yet in flight; it says it is leaving
+        // (LeavingMark), and that is waited out as a request would be.
+        for (var followed = 0; !navigationTimedOut && followed < MaxFollowedNavigations && await IsLeavingAsync(page, selfNavigation); followed++)
         {
             await selfNavigation.WaitAsync(_selfNavigationDeadline, ct);
             await WaitForReadyStateAsync(page);
@@ -1213,6 +1216,7 @@ public class PlaywrightWebBrowser(
             }
         });
 
+        await context.AddInitScriptAsync(LeavingMark);
         context.SetDefaultTimeout(DefaultOperationTimeoutMs);
         lock (_contexts)
         {
@@ -1566,6 +1570,46 @@ public class PlaywrightWebBrowser(
     }
 
     // The same readiness the first document is waited for with, for one the page navigated to.
+    // Marks a document once its own script starts a navigation to another document: the Navigation
+    // API's navigate event, else beforeunload. Read by IsLeavingAsync; the next document starts
+    // unmarked.
+    internal const string LeavingMark = """
+        (() => {
+          const mark = () => { document.__zigguratLeaving = true; };
+          if (window.navigation) {
+            window.navigation.addEventListener('navigate', e => { if (!e.destination.sameDocument) mark(); });
+          } else {
+            window.addEventListener('beforeunload', mark);
+          }
+        })();
+        """;
+
+    // In flight: a request the watch saw, or a page that says it is leaving before its request was
+    // seen, which the watch is then told to wait out to the next commit. A page that cannot be asked
+    // (its document is being replaced) is left to the watch.
+    private static async Task<bool> IsLeavingAsync(IPage page, MainFrameNavigationWatch watch)
+    {
+        if (watch.InFlight)
+        {
+            return true;
+        }
+
+        try
+        {
+            if (!await page.EvaluateAsync<bool>("() => !!document.__zigguratLeaving"))
+            {
+                return false;
+            }
+        }
+        catch (PlaywrightException)
+        {
+            return false;
+        }
+
+        watch.ExpectNextCommit();
+        return true;
+    }
+
     private static async Task WaitForReadyStateAsync(IPage page)
     {
         try
