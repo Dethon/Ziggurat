@@ -218,6 +218,22 @@ public class LemonadeEntrypointConfigTests : IClassFixture<LemonadeImageFixture>
         whisperArgs.ShouldContain("--prompt \"Asistente de voz");
     }
 
+    // The embeddings are llama.cpp's, which Lemonade runs on whichever backend it picks unless told.
+    // A host with an NVIDIA GPU and no Vulkan device (WSL) picks the CPU, where memory's embeddings
+    // timed out under a few turns at once; LLAMACPP_BACKEND puts them on CUDA, and unset leaves
+    // Lemonade's own choice alone.
+    [SkippableFact]
+    public void Entrypoint_LlamacppBackend_IsWrittenOnlyWhenNamed()
+    {
+        SeedVadModel();
+
+        var named = RunEntrypoint(("STT_BACKEND", "cpu"), ("LLAMACPP_BACKEND", "cuda"));
+        var unnamed = RunEntrypoint(("STT_BACKEND", "cpu"));
+
+        named["llamacpp"]!["backend"]!.GetValue<string>().ShouldBe("cuda");
+        unnamed.ContainsKey("llamacpp").ShouldBeFalse();
+    }
+
     // A built-in model is already in Lemonade's registry, so naming it is the whole request —
     // sending registration fields for one would claim ownership of a name we do not own.
     [SkippableFact]

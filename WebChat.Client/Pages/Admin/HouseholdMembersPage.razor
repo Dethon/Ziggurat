@@ -54,7 +54,7 @@
                         }
                     </span>
                 </header>
-                <form class="admin-form" @onsubmit="() => Save(member.Id)">
+                <form class="admin-form" @onsubmit="() => Save(member)">
                     <label class="admin-field">
                         <span class="admin-field-label">Role</span>
                         <select name="role" @bind="draft.Role">
@@ -150,7 +150,7 @@
 
 @code {
     private HouseholdMembersState _state = HouseholdMembersState.Initial;
-    private Dictionary<string, MemberDraft> _drafts = [];
+    private readonly MemberDrafts _drafts = new();
     private string? _confirming;
     private string _inviteName = "";
     private string _inviteRole = AdminMember.Member;
@@ -167,10 +167,12 @@
                 return;
             }
 
-            _drafts = members.Members.ToDictionary(m => m.Id, DraftOf);
+            _drafts.Reset(members);
 
             _confirming = null;
         });
+        // A refused change changed nothing: its fields go back to what is saved.
+        Subscribe(Store.StateObservable, state => state.Notice, _ => _drafts.Answered(_state));
         Subscribe(Store.StateObservable, state => state.Minted, minted =>
         {
             if (minted is not null)
@@ -181,17 +183,12 @@
         Dispatcher.Dispatch(new LoadHouseholdMembers());
     }
 
-    private MemberDraft Draft(AdminMember member) =>
-        _drafts.TryGetValue(member.Id, out var draft)
-            ? draft
-            : _drafts[member.Id] = DraftOf(member);
+    private MemberDraft Draft(AdminMember member) => _drafts.For(member);
 
-    private static MemberDraft DraftOf(AdminMember member) => new() { Role = member.Role, SeesAll = member.SeesAll };
-
-    private void Save(string userId)
+    private void Save(AdminMember member)
     {
-        var draft = _drafts[userId];
-        Dispatcher.Dispatch(new SaveHouseholdMember(userId, new MemberEdit(draft.Role, draft.SeesAll)));
+        var draft = _drafts.For(member);
+        Dispatcher.Dispatch(new SaveHouseholdMember(member.Id, new MemberEdit(draft.Role, draft.SeesAll)));
     }
 
     private void Recover(AdminMember member) => Dispatcher.Dispatch(new MintMemberRecovery(member.Id, member.DisplayName));
@@ -207,9 +204,4 @@
 
     private void Invite() => Dispatcher.Dispatch(new InviteHouseholdMember(new MemberInvite(_inviteName.Trim(), _inviteRole)));
 
-    private sealed class MemberDraft
-    {
-        public string Role { get; set; } = AdminMember.Member;
-        public bool SeesAll { get; set; }
-    }
 }

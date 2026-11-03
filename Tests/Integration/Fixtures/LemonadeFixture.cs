@@ -6,7 +6,7 @@ namespace Tests.Integration.Fixtures;
 
 // Spins the real lemonade STT/TTS server (DockerCompose/lemonade) as a testcontainer instead of
 // leaning on a manually-run compose service. Forces the CPU whisper.cpp tier (STT_BACKEND=cpu) so
-// the fixture is portable -- the test pins the transcription *contract*, not GPU throughput, so no
+// the fixture is portable (its embeddings go to an NVIDIA card where Docker has one, NvidiaGpu) -- the test pins the transcription *contract*, not GPU throughput, so no
 // /dev/dri passthrough is needed. The whisper + Kokoro models are multi-GB runtime downloads
 // the compose stack provisions into DockerCompose/volumes/lemonade-*; we bind-mount those (the same
 // paths the compose service uses) rather than re-download them inside a test, so their presence is a
@@ -87,7 +87,7 @@ public class LemonadeFixture : IAsyncLifetime
             // regenerates config.json into the recipe cache on every boot (as it does under compose),
             // and HF hub may touch lock files while loading a cached model. The models themselves are
             // never re-downloaded -- LocateProvisionedVolumes already proved they are present.
-            _container = TestContainers.Container(LemonadeImageFixture.Image)
+            var builder = TestContainers.Container(LemonadeImageFixture.Image)
                 .WithPortBinding(LemonadePort, true)
                 .WithEnvironment("STT_BACKEND", "cpu")
                 .WithEnvironment("STT_MODEL", SttModel)
@@ -98,8 +98,12 @@ public class LemonadeFixture : IAsyncLifetime
                 .WithBindMount(Path.Combine(volumesDir, "lemonade-llama"),
                     "/opt/lemonade/llama", AccessMode.ReadWrite)
                 .WithWaitStrategy(Wait.ForUnixContainer()
-                    .UntilHttpRequestIsSucceeded(r => r.ForPort(LemonadePort).ForPath("/api/v1/health")))
-                .Build();
+                    .UntilHttpRequestIsSucceeded(r => r.ForPort(LemonadePort).ForPath("/api/v1/health")));
+            // The embeddings on the machine's NVIDIA card where Docker can hand it over, as the smoke
+            // stack runs them (docker-compose.override.nvidia.yml); whisper stays on the CPU tier.
+            _container = (NvidiaGpu.Available
+                ? builder.WithTheCard().WithEnvironment("LLAMACPP_BACKEND", "cuda")
+                : builder).Build();
 
             // Health flips ready as soon as the server answers; the whisper model only loads on the
             // first decode (paid by the test's own timeout, not here). Give the port-wait a generous
