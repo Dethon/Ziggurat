@@ -247,7 +247,7 @@ public sealed class RedisThreadStateStore(
     private string? Snippet(IEnumerable<ChatMessage> messages)
     {
         var text = messages
-            .Select(m => TextOf(m).MarkdownToPlainText())
+            .Select(m => TextOf(m) is var text && text.JsonObjectWords() is { } words ? words : text.MarkdownToPlainText())
             .LastOrDefault(t => !string.IsNullOrWhiteSpace(t));
 
         return text is null

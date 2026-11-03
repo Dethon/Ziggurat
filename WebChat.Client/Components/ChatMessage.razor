@@ -170,7 +170,14 @@
         <MessageAttachments Attachments="@Message.Attachments" />
 
         <div class="message-content">
-            @((MarkupString)RenderMarkdown(Message.Content))
+            @if (Message.Role == "assistant" && JsonOutline.Parse(Message.Content) is { } outline)
+            {
+                <JsonOutlineView Nodes="outline" />
+            }
+            else
+            {
+                @((MarkupString)RenderMarkdown(Message.Content))
+            }
         </div>
 
         @{

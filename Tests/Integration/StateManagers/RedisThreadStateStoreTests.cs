@@ -491,6 +491,22 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         topic.ReadPosition.ShouldBe(2);
     }
 
+    // An answer in JSON (a structured format's) previews as its words, never its braces.
+    [Fact]
+    public async Task AppendMessagesAsync_AJsonAnswersSnippet_IsItsWords()
+    {
+        var store = NewStore(snippetLength: 60);
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-snip-json", 562, 0, "agent-snippet-json", "Meal", DateTimeOffset.UtcNow, null, TenantId: "home"));
+
+        await store.AppendMessagesAsync(HistoryKey("agent-snippet-json", 562),
+            [new ChatMessage(ChatRole.Assistant, """{"items":[{"name":"cooked macaroni","portion":"about 200 g","grams":200}],"notes":["Sauce may add sugar."]}""")]);
+
+        var topic = (await store.GetTopicPageAsync("agent-snippet-json", "default", Anyone, null, 10)).Topics
+            .ShouldHaveSingleItem();
+        topic.LastMessageSnippet.ShouldBe("cooked macaroni · about 200 g · Sauce may add sugar.");
+    }
+
     // Unread is a subtraction of two numbers carried on the topic, so a badge reads no messages.
     [Fact]
     public async Task AppendMessagesAsync_CountsWhatTheTopicHolds()

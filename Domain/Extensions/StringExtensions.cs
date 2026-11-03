@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Domain.Extensions;
@@ -9,6 +10,33 @@ public static class StringExtensions
         public string Left(int count)
         {
             return str.Length <= count ? str : str[..count];
+        }
+
+        // The words of an answer that is one JSON object (a structured format's), in the order it
+        // holds them, joined as one line; null for anything else. What a preview of it shows, rather
+        // than its braces.
+        public string? JsonObjectWords()
+        {
+            if (!str.TrimStart().StartsWith('{'))
+            {
+                return null;
+            }
+
+            try
+            {
+                using var document = JsonDocument.Parse(str);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
+                {
+                    return null;
+                }
+
+                var words = Strings(document.RootElement).Where(w => !string.IsNullOrWhiteSpace(w)).ToList();
+                return words.Count == 0 ? null : string.Join(" · ", words);
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         // What a reply says, read as one line of text: markdown's marks dropped and its lines joined.
@@ -59,4 +87,12 @@ public static class StringExtensions
 
     private static string Inline(string line) =>
         _inline.Aggregate(line, (text, rule) => rule.Mark.Replace(text, rule.Keep));
+
+    private static IEnumerable<string> Strings(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.String => [element.GetString()!.Trim()],
+        JsonValueKind.Object => element.EnumerateObject().SelectMany(p => Strings(p.Value)),
+        JsonValueKind.Array => element.EnumerateArray().SelectMany(Strings),
+        _ => []
+    };
 }
