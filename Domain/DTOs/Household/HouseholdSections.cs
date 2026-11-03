@@ -39,21 +39,23 @@ public static partial class HouseholdSections
     // An agent's id rides in Redis keys, URLs and a Telegram chat's choice, so it is a slug.
     public static bool IsAgentId(string? id) => id is { Length: > 0 and <= 64 } && Slugs.IsValid(id);
 
+    // An owner reads these on the settings page, under the fields' own labels, so they speak of the
+    // field rather than of the document's path.
     private static IEnumerable<string> SettingsProblems(HouseholdSettings settings)
     {
         if (string.IsNullOrWhiteSpace(settings.Name) || settings.Name.Length > HouseholdSettings.NameLength)
         {
-            yield return $"settings.name must be 1–{HouseholdSettings.NameLength} characters";
+            yield return $"The name must be 1–{HouseholdSettings.NameLength} characters.";
         }
 
         if (!TimeZoneInfo.TryFindSystemTimeZoneById(settings.TimeZone, out _))
         {
-            yield return $"settings.timeZone '{settings.TimeZone}' is no time zone (an IANA name such as Europe/Madrid)";
+            yield return $"The time zone '{settings.TimeZone}' is not one: write its IANA name, such as Europe/Madrid or America/New_York.";
         }
 
         if (settings.Language is { } language && !LanguageTag().IsMatch(language))
         {
-            yield return $"settings.language '{language}' is no language tag (such as es or en-GB)";
+            yield return $"The language '{language}' is not a language tag, such as es or en-GB.";
         }
     }
 
