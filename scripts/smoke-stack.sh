@@ -5,7 +5,8 @@
 #
 #   scripts/smoke-stack.sh up      build and start it (project jackbot-smoke), run the household migration
 #                                  into it as the deploy does, and start the home's tenant kit beside it
-#                                  (project tenant-kit-smoke)
+#                                  (project tenant-kit-smoke); Lemonade starts too, on the CPU, for
+#                                  memory's embeddings
 #   scripts/smoke-stack.sh test    run the Smoke tests against it (Category=Smoke)
 #   scripts/smoke-stack.sh migrate --operator <n> --owner <n> --sugary <n> [--dry-run]
 #                                  the household migration against it
@@ -209,12 +210,18 @@ case "${1:-}" in
     fi
     HOUSEHOLD_CONFIG_MASTER_KEY="$(cat "$MASTER_KEY")"
     "${DC[@]}" up -d --no-deps "${SERVICES[@]}" smoke-probe smoke-keys
+    # Lemonade embeds for memory as well as hearing and speaking for voice, so without it every
+    # memory a turn offers is dropped (lemonade:13305 does not resolve) and recall finds nothing. On
+    # the CPU unless STT_BACKEND says otherwise, as voice starts it; its container name is the dev
+    # stack's too, so that one must not be running. Waited for below, before the household migration.
+    STT_BACKEND="${STT_BACKEND:-cpu}" "${DC[@]}" up -d --no-deps lemonade
 
     mkdir -p "$KIT_STATE"/{redis,vault,media,sandbox,machine}
     # The outpost binary, published out of this checkout as scripts/run-outpost.sh publishes it, for
     # the kit's machine to run.
     dotnet publish McpServerOutpost/McpServerOutpost.csproj -c Release -o DockerCompose/volumes/smoke/outpost --nologo
     credentials
+    retry curl -sf -o /dev/null http://127.0.0.1:13305/api/v1/health
     migrate_home
     # Caddy's local root, which the kit's servers are told to trust for the hub; copied out because
     # Caddy keeps it where only root reads.
