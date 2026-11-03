@@ -1288,6 +1288,49 @@ h1, h2, h3 {
     color: var(--accent);
 }
 
+/* A Sugary estimate in a review copy. */
+.meal-estimate-total {
+    margin: 0 0 0.5rem;
+}
+
+.meal-estimate-items {
+    list-style: none;
+    margin: 0 0 0.5rem;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+}
+
+.meal-estimate-items li {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 0.5rem;
+    align-items: baseline;
+}
+
+.meal-estimate-item {
+    font-weight: 600;
+}
+
+.meal-estimate-portion,
+.meal-estimate-note {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+}
+
+.meal-estimate-carbs {
+    margin-left: auto;
+}
+
+.meal-estimate-note {
+    flex-basis: 100%;
+}
+
+.meal-estimate-question {
+    margin: 0.25rem 0;
+    font-style: italic;
+}
+
 /* An answer that is one JSON object, as an outline of its fields. */
 .json-outline {
     margin: 0;

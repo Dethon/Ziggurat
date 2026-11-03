@@ -170,7 +170,11 @@
         <MessageAttachments Attachments="@Message.Attachments" />
 
         <div class="message-content">
-            @if (Message.Role == "assistant" && JsonOutline.Parse(Message.Content) is { } outline)
+            @if (StructuredAnswers.MealEstimateOf(Message) is { } estimate)
+            {
+                <MealEstimateView Estimate="estimate" />
+            }
+            else if (Message.Role == "assistant" && JsonOutline.Parse(Message.Content) is { } outline)
             {
                 <JsonOutlineView Nodes="outline" />
             }

@@ -1,4 +1,5 @@
 using Domain.Tools.Sugary.Estimation;
+using WebChat.Client.Models;
 
 namespace WebChat.Client.Components.Chat;
 
@@ -11,4 +12,23 @@ public static class StructuredAnswers
         MealEstimateSchema.Name => "Sugary app",
         _ => null
     };
+
+    // A Sugary estimate, read as the app reads it, so the total shown is the one the app showed; one
+    // it cannot read is drawn as an outline instead.
+    public static MealEstimate? MealEstimateOf(ChatMessageModel message)
+    {
+        if (message.Role != "assistant" || message.ResponseFormat != MealEstimateSchema.Name)
+        {
+            return null;
+        }
+
+        try
+        {
+            return MealEstimateReply.Read(message.Content);
+        }
+        catch (UnreadableEstimateException)
+        {
+            return null;
+        }
+    }
 }
