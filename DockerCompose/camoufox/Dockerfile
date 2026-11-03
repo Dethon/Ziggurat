@@ -40,6 +40,11 @@ RUN node patch-playwright.js
 COPY patch-viewport.js .
 RUN node patch-viewport.js
 
+# The .NET client never acks a screencast frame, and 1.63's server waits for that ack before the
+# next one, so a login handoff's live view froze on its first frame (see patch-screencast-ack.js).
+COPY patch-screencast-ack.js .
+RUN node patch-screencast-ack.js
+
 # The device is pinned (see fingerprint.js): a package that no longer accepts a saved
 # fingerprint, or presents it differently from one launch to the next, fails the build here.
 COPY check-fingerprint.js fingerprint-fixture.json.gz ./
