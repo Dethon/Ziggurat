@@ -421,7 +421,7 @@ public sealed class ChatHub(
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp),
+            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender),
             Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
@@ -505,7 +505,7 @@ public sealed class ChatHub(
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp),
+            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender),
             Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);

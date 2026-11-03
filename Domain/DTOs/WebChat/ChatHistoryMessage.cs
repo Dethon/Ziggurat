@@ -12,4 +12,8 @@ public record ChatHistoryMessage(
     string Content,
     string? SenderId,
     DateTimeOffset? Timestamp,
-    IReadOnlyList<AttachmentReference>? Attachments = null);
+    IReadOnlyList<AttachmentReference>? Attachments = null,
+
+    // The name the message was sent under, beside SenderId's account: how somebody else reading a
+    // shared topic is shown who wrote it.
+    string? SenderName = null);

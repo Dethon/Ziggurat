@@ -27,11 +27,12 @@ public class ChatHubStreamStartedTests
     private readonly SessionService _sessionService = new();
     private readonly Mock<IThreadStateStore> _store = new();
     private readonly Mock<IHubNotificationSender> _sender = new();
+    private readonly StreamService _streamService;
     private readonly ChatHub _hub;
 
     public ChatHubStreamStartedTests()
     {
-        var streamService = new StreamService(
+        var streamService = _streamService = new StreamService(
             _sessionService,
             new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
@@ -99,5 +100,23 @@ public class ChatHubStreamStartedTests
             It.IsAny<CancellationToken>()), Times.Once);
         _sender.Verify(s => s.SendToGroupAsync(
             "space:home:default", It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    // What the other browsers draw the message as: the name the person sent it under, beside the
+    // account id that says whose it is.
+    [Fact]
+    public async Task APersonsMessage_GoesOnTheStreamUnderTheNameTheySentItUnder()
+    {
+        GivenTheTopic(owner: "marta", shared: true);
+        _hub.Context.Items[ChatHub.DisplayNameItem] = "Fran";
+        var (channel, _) = _streamService.GetOrCreateStream(TopicId, "hola", "fran", CancellationToken.None);
+        var subscription = channel.Subscribe();
+
+        await SendAsync();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var userMessage = await subscription.ReadAllAsync(cts.Token).FirstAsync(m => m.UserMessage is not null, cts.Token);
+        userMessage.UserMessage!.SenderId.ShouldBe("fran");
+        userMessage.UserMessage.SenderName.ShouldBe("Fran");
     }
 }
