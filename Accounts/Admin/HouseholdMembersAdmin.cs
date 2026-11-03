@@ -72,7 +72,7 @@ public static class HouseholdMembersAdmin
 
         household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.MemberRoute), async (
             AdminCaller caller, string userId, [FromBody] MemberEdit? edit, HttpContext http, MemberStore store, AdminLog log,
-            CancellationToken ct) =>
+            RedisAnnouncer announcer, CancellationToken ct) =>
         {
             if (edit is null || edit is { Role: null, SeesAll: null })
             {
@@ -103,9 +103,16 @@ public static class HouseholdMembersAdmin
             var after = (await FindAsync(store, caller, userId, ct))!;
             var changed = AdminLog.Changed(
                 ("role", before.Role != after.Role), ("sees all conversations", before.SeesAllConversations != after.SeesAllConversations));
-            await log.RecordAsync(http, caller,
-                changed.Count == 0 ? $"Saved member {userId} unchanged" : $"Changed member {userId}'s {string.Join(", ", changed)}", ct);
-            return Results.Ok(new AdminSaved<AdminMembers>(await AnswerAsync(store, caller, ct)));
+            if (changed.Count == 0)
+            {
+                await log.RecordAsync(http, caller, $"Saved member {userId} unchanged", ct);
+                return Results.Ok(new AdminSaved<AdminMembers>(await AnswerAsync(store, caller, ct)));
+            }
+
+            // What the person may see and do changed, which the chat hub reads off a connection's own
+            // assertion: announced as the people changing, so it tells the household's open pages.
+            return await AnnouncedAsync(http, caller, store, log, announcer,
+                $"Changed member {userId}'s {string.Join(", ", changed)}", ct);
         });
 
         household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.DisableMemberRoute), async (

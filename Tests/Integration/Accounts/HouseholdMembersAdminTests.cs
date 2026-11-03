@@ -7,6 +7,7 @@ using Domain.DTOs;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.Security;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Accounts;
@@ -377,6 +378,29 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
         var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body) };
         request.Headers.TryAddWithoutValidation("Authorization", SharedSecret.Header(credential));
         return server.Client().SendAsync(request);
+    }
+
+    // A role or "sees all conversations" changes what the person may see and do, which the chat hub
+    // reads off a connection's own assertion: the change is announced as the household's people
+    // changing, as a disable is, so the hub can tell the household's open pages to renew.
+    [Fact]
+    public async Task ARoleOrSeesAllChange_IsAnnouncedAsThePeopleChanging()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
+        var laura = await server.SeedMemberAsync("Laura");
+        var heard = new System.Collections.Concurrent.ConcurrentBag<HouseholdConfigSaved>();
+        await redis.Connection.GetSubscriber().SubscribeAsync(
+            StackExchange.Redis.RedisChannel.Literal(HouseholdConfigProtocol.SavedChannel),
+            (_, message) => heard.Add(System.Text.Json.JsonSerializer.Deserialize<HouseholdConfigSaved>(
+                message.ToString(), System.Text.Json.JsonSerializerOptions.Web)!));
+
+        (await EditAsync(admin, laura, new MemberEdit(SeesAll: true))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        await Eventually.Until(
+            () => heard.Contains(new HouseholdConfigSaved(fran.TenantId, HouseholdConfigProtocol.PeopleChanged)),
+            "the change to be announced as the household's people changing");
     }
 
     [Fact]
