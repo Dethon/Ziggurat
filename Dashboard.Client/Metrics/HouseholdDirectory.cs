@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Dashboard.Client.Services;
 using Domain.DTOs.Admin;
 
@@ -37,8 +38,19 @@ public sealed class HouseholdDirectory(HouseholdsAdminService admin)
     }
 }
 
-public sealed record HouseholdNames(IReadOnlyList<HouseholdListEntry> Listed, bool Answered)
+public sealed partial record HouseholdNames(IReadOnlyList<HouseholdListEntry> Listed, bool Answered)
 {
     // Its name where the list has it, else the first eight characters of its id.
     public string Of(string id) => Listed.FirstOrDefault(h => h.Id == id)?.Name ?? id[..Math.Min(8, id.Length)];
+
+    // A household's server reports under its tunnel's address, `<server>.<household>.tunnel`
+    // (ServerAddress.Tunnelled); shown as the server and the household's name. Anything else is a
+    // deployment service's own name.
+    public string ServiceLabel(string service) =>
+        TunnelAddress().Match(service) is { Success: true } address
+            ? $"{address.Groups["server"].Value} · {Of(address.Groups["household"].Value)}"
+            : service;
+
+    [GeneratedRegex(@"^(?<server>[a-z0-9-]+)\.(?<household>[0-9a-f]{32})\.tunnel$")]
+    private static partial Regex TunnelAddress();
 }

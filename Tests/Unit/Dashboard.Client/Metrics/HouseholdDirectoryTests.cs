@@ -46,6 +46,26 @@ public sealed class HouseholdDirectoryTests
         names.Of(HomeId).ShouldBe("924136bf");
     }
 
+    // A household's server reports under its tunnel's address, and the errors feed showed that as
+    // "websearch.924136bf209694f9a0ef99912735ca0a.tunnel".
+    [Fact]
+    public void AHouseholdsServersAddress_IsShownAsTheServerAndTheHouseholdsName()
+    {
+        var names = new HouseholdNames([Household(HomeId, "Home", home: true)], Answered: true);
+
+        names.ServiceLabel($"websearch.{HomeId}.tunnel").ShouldBe("websearch · Home");
+        names.ServiceLabel("outpost-laptop.ffffffffffffffffffffffffffffffff.tunnel").ShouldBe("outpost-laptop · ffffffff");
+    }
+
+    [Fact]
+    public void ADeploymentService_KeepsItsName()
+    {
+        var names = new HouseholdNames([], Answered: false);
+
+        names.ServiceLabel("agent").ShouldBe("agent");
+        names.ServiceLabel("ToolCall").ShouldBe("ToolCall");
+    }
+
     [Fact]
     public async Task TheList_IsAskedOncePerTab()
     {
