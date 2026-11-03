@@ -121,19 +121,21 @@ scripts/provision-satellite-rs.sh dethon@192.168.5.11
 Provisioning installs its defaults for whatever is left out:
 
 - Without `MUSIC_HUB` / `MUSIC_ROOM` the unit is torn down to voice-only (no snapclient, no PipeWire).
-- The wake tuning is the script's defaults, which are this unit's: `THRESHOLD=0.5 WAKE_WINDOW=2`
+- The wake tuning is the script's defaults, which are this unit's: `THRESHOLD=0.5 WAKE_WINDOW=3`
   for the shipped classifier (`models/ok_nabu.onnx` = `ok_nabu_custom_v10.onnx`, retrained on
   this unit's own microphone audio), the loudness floor at `WAKE_MIN_RMS=350` and the quiet-room
   rule at `WAKE_QUIET_RMS=200` (0.9 / 2), both measured on the XVF3800. Swapping the classifier
-  means re-tuning `THRESHOLD` / `WAKE_WINDOW` with it: v7 ran at 0.5 / 3, and v10 at 0.5 / 3
-  loses real wakes it catches at 0.5 / 2.
+  means re-tuning `THRESHOLD` / `WAKE_WINDOW` with it. v10 shipped at 0.5 / 2 and went back to
+  0.5 / 3 a day later: a 2-frame mean let short score blips on ordinary speech wake it (two in
+  an hour on the office mic, both under 0.5 as a 3-frame mean), at the cost of ~1 real wake in
+  34 in the offline tests.
 - `MASTER_VOLUME` is omitted, so the master returns to 50%; pass the current level to keep it
   (`ssh dethon@192.168.5.11 XDG_RUNTIME_DIR=/run/user/1000 wpctl get-volume @DEFAULT_AUDIO_SINK@`).
 - `TTS_VOLUME` / `ALERT_VOLUME` are at their 100% defaults on this unit.
 - `DAC_OVERLAY=hifiberry-dac` is only for a fresh Pi; the overlay is already in its `config.txt`.
 
 It ends in these wake flags on the running process (`pgrep -af nabu-satellite`):
-`--threshold 0.5 --wake-window 2 --wake-min-rms 350 --wake-quiet-rms 200 --wake-quiet-threshold 0.9 --wake-quiet-window 2`.
+`--threshold 0.5 --wake-window 3 --wake-min-rms 350 --wake-quiet-rms 200 --wake-quiet-threshold 0.9 --wake-quiet-window 2`.
 
 **Binary-only update** — what the 2026-10-14 deploy of the floor and the quiet-room rule actually
 ran, because a full provision wipes `nabu-satellite.service.d/` and a temporary mic capture was
