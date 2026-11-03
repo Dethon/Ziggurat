@@ -40,7 +40,7 @@ entity to Home Assistant, which has never heard of it.
 {"name": "Greenhouse above 30",
  "triggers": [{"trigger": "numeric_state", "entity_id": "sensor.<id from the setup index>", "above": 30}],
  "conditions": [],
- "effects": [{"kind": "prompt", "prompt": "The greenhouse crossed 30 degrees. Read its history, say what it is and whether it is rising, and warn me."}],
+ "effects": [{"kind": "prompt", "prompt": "The greenhouse crossed 30 degrees. Read its history, say what it is and whether it is rising."}],
  "once": false}
 ```
 
