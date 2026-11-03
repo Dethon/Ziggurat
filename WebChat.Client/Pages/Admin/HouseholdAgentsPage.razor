@@ -92,7 +92,9 @@
                                         <div>
                                             <strong>@version.Name</strong>
                                             <span class="admin-field-hint">
-                                                replaced @AdminTime.Of(version.ReplacedAt)@(version.ReplacedBy.Length > 0 ? $" by {version.ReplacedBy}" : "")
+                                                @* The name and instructions it went by until a change, and who made it:
+                                                   "replaced ... by Marta" read as the agent replaced by a person. *@
+                                                Until @AdminTime.Of(version.ReplacedAt)@(version.ReplacedBy.Length > 0 ? $", when {version.ReplacedBy} changed it" : "")
                                             </span>
                                             <p class="admin-version-instructions">@(version.CustomInstructions ?? "No custom instructions.")</p>
                                         </div>
