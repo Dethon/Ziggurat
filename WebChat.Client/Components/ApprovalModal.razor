@@ -22,8 +22,11 @@
                 {
                     <div class="tool-request">
                         <div class="tool-name">@FormatToolName(request.ToolName)</div>
-                        @* Why the exec screen asked, as text: a request it had no part in shows no line. *@
-                        @if (ExecScreenReasons.English(request.Screen) is { } reason)
+                        @* Why the exec screen asked, as text: a request it had no part in shows no line. Told
+                           to someone who did not ask, it speaks of the asker rather than of "you". *@
+                        @if ((_card.Status == ApprovalCardStatus.NotYours
+                                 ? ExecScreenReasons.EnglishForOthers(request.Screen)
+                                 : ExecScreenReasons.English(request.Screen)) is { } reason)
                         {
                             <div class="approval-screen">@reason</div>
                         }
