@@ -252,8 +252,11 @@ public class MemoryExtractionWorker(
             ? await threadStateStore.GetMessagesAsync(request.ThreadStateKey)
             : null;
 
+        // What a failed turn's person was told is no fact about them: their own words are kept, the
+        // answer the failure gave them is not.
         return ExtractionWindow.Build(
-            thread, request.Anchor, request.FallbackContent, options.WindowMixedTurns);
+            thread?.Where(m => m.Role != ChatRole.Assistant || !m.IsFailedTurn()).ToArray(),
+            request.Anchor, request.FallbackContent, options.WindowMixedTurns);
     }
 
     private async Task<Extraction> ExtractWithRetryAsync(

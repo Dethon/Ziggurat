@@ -16,4 +16,8 @@ public record ChatHistoryMessage(
 
     // The name the message was sent under, beside SenderId's account: how somebody else reading a
     // shared topic is shown who wrote it.
-    string? SenderName = null);
+    string? SenderName = null,
+
+    // What a person was told instead of an answer, when their turn failed: drawn as the error it
+    // was, with its retry.
+    bool IsError = false);

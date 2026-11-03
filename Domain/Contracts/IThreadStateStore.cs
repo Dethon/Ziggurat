@@ -17,6 +17,10 @@ public interface IThreadStateStore
     Task<ChatMessage[]?> GetTailMessagesAsync(string key, int maxCount);
     Task SetMessagesAsync(string key, ChatMessage[] messages);
     Task AppendMessagesAsync(string key, IReadOnlyList<ChatMessage> messages);
+
+    // The last count messages taken off the conversation, and off its topic's count: a failed turn
+    // that a retry of it replaces.
+    Task DropTailAsync(string key, int count);
     Task<bool> ExistsAsync(string key, CancellationToken ct = default);
 
     // One page of the ordinary list, most recently written first. There is no call that returns
