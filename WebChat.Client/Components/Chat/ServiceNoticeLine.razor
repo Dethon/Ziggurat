@@ -25,6 +25,6 @@
     <MessageAttachments Attachments="@Message.Attachments" />
     @if (_open)
     {
-        <div class="service-notice-prompt">@Message.Content</div>
+        <div class="service-notice-prompt">@ServiceNotice.PromptOf(Message)</div>
     }
 </div>

@@ -1,3 +1,4 @@
+using Domain.Channels;
 using Domain.DTOs.Channel;
 using Shouldly;
 using WebChat.Client.Components.Chat;
@@ -56,4 +57,18 @@ public class ServiceNoticeTests
     public void APersonsMessage_OrAnAnswer_IsNoNotice(string role, string? senderId, string senderName) =>
         ServiceNotice.Of(new ChatMessageModel { Role = role, Content = "hola", SenderId = senderId, SenderName = senderName })
             .ShouldBeNull();
+
+    // A fire's turn reaches its topic framed with the server's report for the model; behind the toggle a
+    // person read Tomás's reminder as '<fire-report note="what the server that raised this turn reports...'
+    // before what the reminder asked.
+    [Fact]
+    public void WhatANoticeShows_IsWhatWasAsked_WithoutTheReportFramedForTheModel()
+    {
+        var framed = FireReports.Frame("Avisa a Tomás: que riegue las plantas.", "This turn is the scheduled task \"plantas\".");
+
+        ServiceNotice.PromptOf(new ChatMessageModel { Role = "user", Content = framed })
+            .ShouldBe("Avisa a Tomás: que riegue las plantas.");
+        ServiceNotice.PromptOf(new ChatMessageModel { Role = "user", Content = "[login finished]" })
+            .ShouldBe("[login finished]");
+    }
 }
