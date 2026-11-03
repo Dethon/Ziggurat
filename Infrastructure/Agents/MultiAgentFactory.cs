@@ -92,7 +92,7 @@ public sealed class MultiAgentFactory(
             definition, agentKey, userId, openRouterConfig, _patchableModels,
             LemonadeHostAddress, _credentials, deployment, _logger, householdId, household);
 
-        return Build(spec, approvalHandler);
+        return Build(spec, approvalHandler, household.AsBuilt(definition.Id));
     }
 
     public DisposableAgent CreateSubAgent(
@@ -108,7 +108,7 @@ public sealed class MultiAgentFactory(
 
     // Everything that differs between an agent and a subagent was resolved by the projection,
     // so nothing here asks which one it is building.
-    private DisposableAgent Build(AgentSpec spec, IToolApprovalHandler approvalHandler)
+    private DisposableAgent Build(AgentSpec spec, IToolApprovalHandler approvalHandler, AgentAsBuilt? builtFrom = null)
     {
         IMetricsPublisher agentPublisher = metricsPublisher is not null
             ? new AgentMetricsPublisher(metricsPublisher, spec.AgentId, spec.MetricsAgentName, spec.TenantId)
@@ -203,7 +203,10 @@ public sealed class MultiAgentFactory(
             // Which own servers the turn's household set up is asked at each turn's start, of the
             // same view the agent was built from: a worker asks its parent's household by this same
             // line, so it reaches no server its parent's household never set up.
-            ct => definitionProvider.ForHouseholdAsync(spec.TenantId, ct));
+            ct => definitionProvider.ForHouseholdAsync(spec.TenantId, ct),
+            // A conversation asks before each later turn whether its household still defines the
+            // agent so, and builds it again if not; a worker is never asked.
+            builtFrom);
     }
 
     // Everything file_read needs to show the model a picture, resolved where the spec and the

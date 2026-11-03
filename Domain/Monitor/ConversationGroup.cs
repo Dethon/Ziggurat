@@ -95,7 +95,11 @@ internal sealed class ConversationGroup(
         Task Warmup,
         // The group's publisher, naming the household its agent was built for: what its turns cost
         // in time and runs is that household's.
-        IMetricsPublisher Metrics);
+        IMetricsPublisher Metrics,
+        // What the agent was built with, so a stale one is built again the same way.
+        ApprovalRelay Approvals,
+        string? TenantId,
+        string ChannelId);
 
     public async IAsyncEnumerable<TurnUpdate> RunAsync(
         IAsyncGrouping<AgentKey, (IChannelConnection Channel, ChannelMessage Message)> messages,
@@ -858,12 +862,39 @@ internal sealed class ConversationGroup(
         var warmup = agent.WarmupSessionAsync(thread, _turnCt);
 
         return _state = new GroupState(
-            x.Message, targets, deliveryKey, agent, thread, warmup, metricsPublisher.ForHousehold(tenantId));
+            x.Message, targets, deliveryKey, agent, thread, warmup, metricsPublisher.ForHousehold(tenantId),
+            approvals, tenantId, x.Channel.ChannelId);
+    }
+
+    // An agent is built by a group's first turn and outlives it, so what an owner changes about it —
+    // a feature turned off, its instructions, its name — would otherwise reach only conversations begun
+    // afterwards. A later turn asks the agent first, and one the household no longer defines as it was
+    // built is replaced the way the first turn built it, its history read back from the store. Turns of
+    // a group run one at a time, so the agent replaced has nothing in flight.
+    private async Task<GroupState> RebuildIfStaleAsync(GroupState state)
+    {
+        if (!await state.Agent.IsStaleAsync(_turnCt))
+        {
+            return state;
+        }
+
+        logger.LogInformation(
+            "Agent {AgentId} of conversation {ConversationId} is built again: its household changed it since its last turn",
+            agentKey.AgentId, agentKey.ConversationId);
+        var stale = state.Agent;
+        var anchor = state.AnchorMessage;
+        var agent = _agent = await agentFactory.CreateAsync(
+            state.DeliveryKey, anchor.Sender, anchor.AgentId, state.Approvals, anchor.Principal?.Account, state.TenantId,
+            _groupCt, state.ChannelId);
+        await stale.DisposeAsync();
+        var thread = await GetOrRestoreThread(agent, state.DeliveryKey);
+        _warmupSurfaced = false;
+        return _state = state with { Agent = agent, Thread = thread, Warmup = agent.WarmupSessionAsync(thread, _turnCt) };
     }
 
     private async Task<IAsyncEnumerable<TurnUpdate>> RunTurnAsync(AdmittedTurn x)
     {
-        var state = await EnsureEstablishedAsync(x);
+        var state = _state is { } established ? await RebuildIfStaleAsync(established) : await EnsureEstablishedAsync(x);
         var targets = await ResolveTurnTargetsAsync(x, state);
         // FirstReply times the turn from the moment it starts to its first delivered reply
         // chunk: memory recall, the wait on session warmup and the turn-start announce for

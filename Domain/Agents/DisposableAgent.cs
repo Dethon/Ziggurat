@@ -29,6 +29,11 @@ public abstract class DisposableAgent : AIAgent, IAsyncDisposable
     // an agent that keeps no history — a preload then has nothing to be judged over or against.
     public virtual IReadOnlyList<PromptSkill> GetSkills(AgentSession thread) => [];
 
+    // Whether the household no longer defines this agent as it was built — a feature turned off, its
+    // instructions or name changed — so the conversation holding it builds it again before its next
+    // turn. An agent no household defines (a person's registered one, a worker) never is.
+    public virtual ValueTask<bool> IsStaleAsync(CancellationToken ct) => ValueTask.FromResult(false);
+
     public virtual Task<IReadOnlyList<ChatMessage>> GetHistoryAsync(AgentSession thread, CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<ChatMessage>>([]);
 

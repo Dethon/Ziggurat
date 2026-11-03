@@ -208,6 +208,18 @@ The agent builds a turn's agents from the turn's household's view (`HouseholdAge
   and reaches no own server its parent does not name (`SpawnContext.OwnServers`, withheld the same way):
   the worker profiles are the deployment's and name Home Assistant, which the voice template does too.
   The home, and agents no household's configuration gave (a test's, the eval's), withhold none.
+- **What an owner changes about an agent reaches its open conversations' next turn.** A conversation's
+  agent is built by its first turn and outlives it, so before each later turn the conversation asks it
+  whether its household still defines it as built (`DisposableAgent.IsStaleAsync`): `McpAgent` compares
+  `HouseholdAgents.AsBuilt` — the definition as offered (name, instructions, what the features left
+  it), the zone and the key, the key compared as a key and never revealed — read again through the same
+  `ForHouseholdAsync`, with what it was built from, and `ConversationGroup.RebuildIfStaleAsync` builds a
+  stale one again as its first turn did, its history read back from the store. So a feature turned off,
+  an agent renamed or given new instructions, a zone or a key changed, is in every agent's next reply,
+  as the Features page says (before, a member's open conversation still set a timer with timers off). It
+  reaches the next turn because a save is announced and the reader drops what it kept; a save nobody
+  could be told of reaches it within the reader's minute. A person's registered agent and a worker are
+  never asked. Own servers stay per turn, above, since a tunnel opening is not a change to the definition.
 - **A turn acting for nobody runs the home's agents** (`@home`) and reaches no household's servers.
 - **The worker profiles stay the deployment's** (`subAgents` in the agent's settings): a worker runs its
   parent's model for its parent's household, and the household's `workers` feature decides whether

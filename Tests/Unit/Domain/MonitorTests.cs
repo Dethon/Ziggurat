@@ -49,6 +49,11 @@ internal sealed class FakeAiAgent : DisposableAgent
 
     public ModelPayer PaidBy { get; set; } = ModelPayer.Deployment;
 
+    // Whether the household no longer defines this agent as it was built.
+    public bool Stale { get; set; }
+
+    public override ValueTask<bool> IsStaleAsync(CancellationToken ct) => ValueTask.FromResult(Stale);
+
     public override ModelPayer Payer => PaidBy;
 
     // Only once warmed up, as the real agent's are: the session that carries the skills is built
