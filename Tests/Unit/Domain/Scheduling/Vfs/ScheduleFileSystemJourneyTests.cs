@@ -690,6 +690,35 @@ public class ScheduleFileSystemJourneyTests
         store.Items["n"].NextRunAt.ShouldBe(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
     }
 
+    // A create and a timing edit say when the schedule next runs, on the household's wall clock, so
+    // a reply that states it reads it: with the turn at 01:09 on a Tuesday, a model told of a weekday
+    // 08:15 schedule only that it was created answered that the first run was tomorrow.
+    [Fact]
+    public async Task Create_SaysWhenItFirstRuns_OnTheHouseholdsWallClock()
+    {
+        var fs = Build();
+
+        var created = await fs.CreateAsync("/jonas/weather/schedule.json",
+            """{"prompt":"tell me the weather","cron":"15 8 * * 1-5"}""", false, true, CancellationToken.None);
+
+        created.ShouldBeOfType<FsResult<FsCreateResult>.Ok>().Value.Note
+            .ShouldBe("It next runs on Thursday 2026-01-01 at 08:15, the household's time (test-plus2).");
+    }
+
+    [Fact]
+    public async Task Edit_ThatChangesTheTiming_SaysWhenItNextRuns()
+    {
+        var fs = Build();
+        await fs.CreateAsync("/jonas/weather/schedule.json",
+            """{"prompt":"tell me the weather","cron":"15 8 * * 1-5"}""", false, true, CancellationToken.None);
+
+        var edited = await fs.EditAsync("/jonas/weather/schedule.json",
+            [new TextEdit("15 8 * * 1-5", "30 1 * * 1-5")], CancellationToken.None);
+
+        edited.ShouldBeOfType<FsResult<FsEditResult>.Ok>().Value.Note
+            .ShouldBe("It next runs on Friday 2026-01-02 at 01:30, the household's time (test-plus2).");
+    }
+
     [Fact]
     public async Task Create_BareRunAt_InDstGap_ReturnsInvalidArgumentError()
     {
