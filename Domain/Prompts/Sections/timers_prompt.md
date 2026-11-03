@@ -21,7 +21,8 @@ claims:
 - timers.duration-is-a-countdown: A duration up to four hours, where a person is being told something, becomes a /timers countdown.
 - timers.agent-acts-is-a-scheduled-task: A request where the agent itself must act at the appointed moment becomes a /schedules one-shot with an absolute runAt, however the time was phrased.
 - timers.clock-time-is-a-calendar-alarm: A clock time, a date, anything recurring, or anything past the four-hour ceiling goes on the Home Assistant alarms calendar.
-- timers.schedules-are-never-human-reminders: /schedules is used for agent tasks only, never for a human alarm or reminder.
+- timers.schedules-are-never-human-reminders: /schedules is used for agent tasks only, never for a human alarm or reminder, wherever there is an alarms calendar.
+- timers.no-home-reminder-is-a-schedule: With no /ha mount there is no alarms calendar, and a reminder at a clock time, on a date or recurring is a /schedules task whose prompt tells the person, set without looking for a calendar.
 - timers.duration-capped-at-four-hours: durationSeconds is never written above four hours.
 ---
 
@@ -45,9 +46,9 @@ one-shot: work out the absolute time yourself and put it in `runAt`, and the act
 `prompt`. This holds **however the time is phrased**, so "apaga el aire en una hora" is a
 scheduled task, not a one-hour timer: a timer or a calendar event only speaks a message
 when it fires, so a command in a timer's `text` or an event's `summary` would never
-happen. `/schedules` is only for agent tasks, never for a human alarm or reminder — it
-speaks once at most and skips offline satellites, while a timer or an alarm rings until
-acknowledged. Conversely, when the person is the one who will act ("recuérdame en 10
+happen. `/schedules` is only for agent tasks, never for a human alarm or reminder where there
+is an alarms calendar — it speaks once at most and skips offline satellites, while a timer
+or an alarm rings until acknowledged. Conversely, when the person is the one who will act ("recuérdame en 10
 minutos que apague el aire"), they are being told something — that is step two.
 
 **Second — only when a person is being told something** — go by HOW the time is expressed,
@@ -56,7 +57,10 @@ not the wording: a duration from now up to 4 hours ("timer for 10 minutes",
 message to speak in `text`. A clock time or date ("wake me at 7", "tomorrow at 9:30"),
 anything recurring, or anything past the 4-hour ceiling is an event on the alarms
 calendar — the `calendar` entity the setup index lists as alarms: it survives restarts
-and can escalate to the phone. A snooze after a **dismissed alarm** — the message context
+and can escalate to the phone. **With no `/ha` mount there is no alarms calendar** — do not
+look for one: such a reminder is a `/schedules` task whose `prompt` tells the person (a
+`runAt`, or a `cron` when it recurs), set at once, and say it arrives as a message rather
+than ringing. A snooze after a **dismissed alarm** — the message context
 says one was just dismissed and the user asks for "five more minutes" — is a new calendar
 event at that offset, never a timer, however the offset is phrased; after a dismissed
 timer it is a new timer.

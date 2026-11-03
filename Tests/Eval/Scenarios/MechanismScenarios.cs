@@ -13,8 +13,51 @@ public static class MechanismScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         RemindMeInTenMinutes, TurnTheAirOffInAnHour, WakeMeAtSeven, SixHoursFromNow,
-        FromTheOfficeAboutTheKitchen, NoSatelliteAtAll
+        FromTheOfficeAboutTheKitchen, NoSatelliteAtAll, TomorrowAtEightWithoutAHome
     ];
+
+    // A household without Home Assistant has no alarms calendar, and the template a new household's
+    // assistant comes from dials none. A reminder at a clock time then has one place to go - a
+    // schedule whose prompt tells the person - and a manual pass found the agent declining the
+    // calendar it lacked and asking instead of setting it.
+    public static Scenario TomorrowAtEightWithoutAHome => new()
+    {
+        Name = "a clock-time reminder without a home is a schedule that tells the person",
+        AgentId = ShippedDefinition.TemplatePrefix + "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "recuérdame mañana a las ocho que riegue las plantas",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            CallExpectation.LoadsSkill(SchedulingSkill.Name),
+            new CallExpectation
+            {
+                Label = "schedule",
+                Tool = EvalTools.Create,
+                Arguments =
+                [
+                    Arg.PathMatches(@"^/schedules/[^/]+/[^/]+(/schedule\.json)?$"),
+                    Arg.Body("content",
+                        Arg.Any(
+                            Arg.Matches("runAt", @"^2026-08-18T08:00(:00)?(\.0+)?(\+02:00)?$"),
+                            Arg.Matches("runAt", @"^2026-08-18T06:00(:00)?(\.0+)?Z$")),
+                        Arg.Mentions("prompt", "(?i)plant|regar|riega|riegue"))
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.Looking("/schedules*"),
+            .. CallPermission.Looking("/timers*"),
+            CallPermission.Load(CountdownTimersSkill.Name)
+        ],
+        CallCeiling = 6,
+        Claims = [TimerPrompt.NoHomeReminderIsASchedule.Id, SchedulingSkill.LoadsForAScheduleRequest.Id],
+        Policy = new RunPolicy(2, 3)
+    };
 
     // A person is being told something, and the time is a duration: a countdown, with the message
     // to speak in `text`. Nothing else in the home is touched — with /schedules and the alarms

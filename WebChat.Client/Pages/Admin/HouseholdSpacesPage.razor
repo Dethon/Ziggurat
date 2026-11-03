@@ -63,7 +63,7 @@
                     <label class="admin-field">
                         <span class="admin-field-label">Opens on</span>
                         <select name="defaultAgent" @bind="draft.DefaultAgent">
-                            <option value="">The household's first agent</option>
+                            <option value="">The household's default agent</option>
                             @foreach (var agent in saved.Agents)
                             {
                                 <option value="@agent.Id">@agent.Name</option>

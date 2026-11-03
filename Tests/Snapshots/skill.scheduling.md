@@ -1,10 +1,10 @@
-# scheduling — description 107 / 130 tokens, body 1109 / 1300 tokens, served by mcp-scheduling
+# scheduling — description 123 / 130 tokens, body 1109 / 1300 tokens, served by mcp-scheduling
 
 ================================================================================================
 
 ---
 name: scheduling
-description: Creating, changing, running now or removing a scheduled task under `/schedules` — an action the agent itself performs later, once or on a cron ("turn the air off in an hour", "every morning at nine send me the news", "cancel the nightly check"). Not for a human alarm, reminder or timer. The layout, which agent's directory, the schedule.json fields, cron and runAt in the local zone, delivery targets, and the managing actions.
+description: Creating, changing, running now or removing a scheduled task under `/schedules` — an action the agent itself performs later, once or on a cron ("turn the air off in an hour", "every morning at nine send me the news", "cancel the nightly check"). Not for a human alarm, reminder or timer — unless there is no `/ha`, when a clock-time reminder is one. The layout, which agent's directory, the schedule.json fields, cron and runAt in the local zone, delivery targets, and the managing actions.
 ---
 
 ### Layout
