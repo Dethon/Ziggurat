@@ -93,7 +93,15 @@ public class PersonContextBrowseTests(IsolatedSessionBrowserFixture fixture)
                 new WebActionRequest(sessionId, buttonRef, WebActionType.Click));
 
             clicked.Status.ShouldBe(WebActionStatus.Success);
-            clicked.Url.ShouldNotBeNull().ShouldContain("/whoami");
+            // The popup is adopted as the current tab whenever the browser reports it. The click
+            // answers from it only if that lands inside its grace, which is the tab protocol's to
+            // pin on a fake clock (TabProtocolTests); a loaded machine reports it later, so this
+            // waits for the adoption rather than asserting on the click's own answer.
+            await Eventually.Until(
+                async () => (await fixture.Browser.EvaluateOnSessionAsync<string>(sessionId, "() => location.href"))
+                    .Contains("/whoami"),
+                "the popup adopted as the session's current tab",
+                TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(100));
             var popupText = await fixture.Browser.EvaluateOnSessionAsync<string>(
                 sessionId, "() => document.body.innerText");
             popupText.ShouldContain("session=signed-in");
