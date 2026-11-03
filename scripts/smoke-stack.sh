@@ -224,7 +224,10 @@ case "${1:-}" in
     # the kit's machine to run.
     dotnet publish McpServerOutpost/McpServerOutpost.csproj -c Release -o DockerCompose/volumes/smoke/outpost --nologo
     credentials
-    retry curl -sf -o /dev/null http://127.0.0.1:13305/api/v1/health
+    # Waited for, not required: a first start pulls several gigabytes of models, and a stack whose
+    # memory writes fail for its first minutes is better than no stack.
+    retry curl -sf -o /dev/null http://127.0.0.1:13305/api/v1/health \
+      || echo "warning: Lemonade is not answering yet; memory is dropped until it does" >&2
     migrate_home
     # Caddy's local root, which the kit's servers are told to trust for the hub; copied out because
     # Caddy keeps it where only root reads.
