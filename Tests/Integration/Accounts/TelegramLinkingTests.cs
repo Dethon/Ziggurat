@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Accounts.Store;
+using Domain.DTOs.Admin;
 using Domain.Security;
 using Microsoft.EntityFrameworkCore;
 using Shouldly;
@@ -17,7 +18,6 @@ namespace Tests.Integration.Accounts;
 public partial class TelegramLinkingTests
 {
     private const string Credential = "telegram-credential";
-    private const string Members = "/accounts/members";
     private const string Account = "/accounts/account";
     private const long LauraTelegram = 5_550_001;
 
@@ -35,7 +35,7 @@ public partial class TelegramLinkingTests
     {
         await using var server = await StartAsync();
         var owner = await OwnerAsync(server);
-        var invite = await InviteAsync(owner, "Laura", "member");
+        var invite = await InviteAsync(owner, "Laura", AdminMember.Member);
 
         var response = await StartWithAsync(server, LauraTelegram, invite);
 
@@ -47,7 +47,7 @@ public partial class TelegramLinkingTests
         resolved["userId"]!.GetValue<string>().ShouldBe(redeemed["userId"]!.GetValue<string>());
         resolved["tenantId"]!.GetValue<string>().ShouldBe(redeemed["tenantId"]!.GetValue<string>());
         resolved["displayName"]!.GetValue<string>().ShouldBe("Laura");
-        (await owner.PageAsync(Members)).ShouldContain(">Laura<");
+        (await NamesAsync(owner)).ShouldContain("Laura");
     }
 
     // The person a redemption makes or links, and a linked Telegram resolved later, are each
@@ -92,7 +92,7 @@ public partial class TelegramLinkingTests
     public async Task ACodeRedeemedOnce_IsRefusedTheSecondTime()
     {
         await using var server = await StartAsync();
-        var invite = await InviteAsync(await OwnerAsync(server), "Laura", "member");
+        var invite = await InviteAsync(await OwnerAsync(server), "Laura", AdminMember.Member);
         (await StartWithAsync(server, LauraTelegram, invite)).StatusCode.ShouldBe(HttpStatusCode.OK);
 
         var again = await StartWithAsync(server, 5_550_002, invite);
@@ -106,13 +106,13 @@ public partial class TelegramLinkingTests
     {
         await using var server = await StartAsync();
         var owner = await OwnerAsync(server);
-        var invite = await InviteAsync(owner, "Laura", "member");
+        var invite = await InviteAsync(owner, "Laura", AdminMember.Member);
         server.Clock.Advance(TimeSpan.FromDays(7));
 
         var response = await StartWithAsync(server, LauraTelegram, invite);
 
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
-        (await owner.PageAsync(Members)).ShouldNotContain(">Laura<");
+        (await NamesAsync(owner)).ShouldNotContain("Laura");
     }
 
     // The start parameter redeems an invite or the account page's code and nothing else: a recovery
@@ -123,8 +123,7 @@ public partial class TelegramLinkingTests
         await using var server = await StartAsync();
         var owner = await OwnerAsync(server);
         var laura = await server.SeedMemberAsync("Laura");
-        var recovery = EnrollLink().Match(await (await owner.PostAsync(Members, $"{Members}/{laura}/recovery"))
-            .Content.ReadAsStringAsync()).Groups["token"].Value;
+        var recovery = TokenOf((await MintAsync<MemberLink>(owner, AdminProtocol.MemberRecovery(laura), new { })).Url);
         var group = await GroupCodeAsync(owner);
 
         (await StartWithAsync(server, LauraTelegram, recovery)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
@@ -157,11 +156,11 @@ public partial class TelegramLinkingTests
         var owner = await OwnerAsync(server);
         var laura = await server.SeedMemberAsync("Laura");
         (await StartWithAsync(server, LauraTelegram, await TelegramCodeAsync(server, laura))).StatusCode.ShouldBe(HttpStatusCode.OK);
-        var invite = await InviteAsync(owner, "Pablo", "member");
+        var invite = await InviteAsync(owner, "Pablo", AdminMember.Member);
 
         (await StartWithAsync(server, LauraTelegram, invite)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
 
-        (await owner.PageAsync(Members)).ShouldNotContain(">Pablo<");
+        (await NamesAsync(owner)).ShouldNotContain("Pablo");
         (await StartWithAsync(server, 5_550_002, invite)).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
@@ -185,7 +184,7 @@ public partial class TelegramLinkingTests
     public async Task AWebLink_AddsAPasskeyToTheLinkedPerson()
     {
         await using var server = await StartAsync();
-        var invite = await InviteAsync(await OwnerAsync(server), "Laura", "member");
+        var invite = await InviteAsync(await OwnerAsync(server), "Laura", AdminMember.Member);
         await StartWithAsync(server, LauraTelegram, invite);
 
         var response = await PostAsync(server, "/accounts/internal/telegram/web-link", new { telegramId = LauraTelegram });
@@ -228,7 +227,7 @@ public partial class TelegramLinkingTests
     {
         await using var server = await StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
-        var owner = server.SignedIn(await server.MintSessionAsync(fran.UserId));
+        var owner = server.Admin(await server.MintSessionAsync(fran.UserId));
         (await GroupTenantStatusAsync(server, FamilyGroup)).ShouldBe(HttpStatusCode.NotFound);
 
         var response = await BindAsync(server, FamilyGroup, await GroupCodeAsync(owner));
@@ -260,7 +259,7 @@ public partial class TelegramLinkingTests
         var owner = await OwnerAsync(server);
         var laura = await server.SeedMemberAsync("Laura");
 
-        (await BindAsync(server, FamilyGroup, await InviteAsync(owner, "Pablo", "member"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await BindAsync(server, FamilyGroup, await InviteAsync(owner, "Pablo", AdminMember.Member))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await BindAsync(server, FamilyGroup, await TelegramCodeAsync(server, laura))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await GroupTenantStatusAsync(server, FamilyGroup)).ShouldBe(HttpStatusCode.NotFound);
     }
@@ -270,9 +269,10 @@ public partial class TelegramLinkingTests
     {
         await using var server = await StartAsync();
         await server.MintOperatorAsync("Fran");
-        var laura = server.SignedIn(await server.MintSessionAsync(await server.SeedMemberAsync("Laura")));
+        var laura = server.Admin(await server.MintSessionAsync(await server.SeedMemberAsync("Laura")));
 
-        (await laura.PostAsync(Account, $"{Members}/telegram-group")).StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await laura.SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.MemberTelegramGroups) { Content = JsonContent.Create(new { }) }))
+            .StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
     // A group is one household's: another household's code cannot take it over.
@@ -283,8 +283,7 @@ public partial class TelegramLinkingTests
         var owner = await OwnerAsync(server);
         var other = await SeedHouseholdAsync(server);
         (await BindAsync(server, FamilyGroup, await GroupCodeAsync(owner))).StatusCode.ShouldBe(HttpStatusCode.OK);
-        var theirs = await server.SignedIn(await server.MintSessionAsync(other.OwnerId)).PostAsync(Account, $"{Members}/telegram-group");
-        var theirCode = BindCommand().Match(await theirs.Content.ReadAsStringAsync()).Groups["code"].Value;
+        var theirCode = await GroupCodeAsync(server.Admin(await server.MintSessionAsync(other.OwnerId)));
 
         (await BindAsync(server, FamilyGroup, theirCode)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
 
@@ -304,11 +303,10 @@ public partial class TelegramLinkingTests
         });
         var owner = await OwnerAsync(server);
 
-        var page = await (await owner.PostAsync(Members, $"{Members}/invite", ("displayName", "Laura"), ("role", "member")))
-            .Content.ReadAsStringAsync();
+        var link = await MintAsync<MemberLink>(owner, AdminProtocol.MemberInvites, new MemberInvite("Laura", AdminMember.Member));
 
-        var token = EnrollLink().Match(page).Groups["token"].Value;
-        page.ShouldContain($"""<a data-telegram-link href="https://t.me/ziggurat_bot?start={token}">""");
+        var token = TokenOf(link.Url);
+        link.TelegramLink.ShouldBe($"https://t.me/ziggurat_bot?start={token}");
         (await StartWithAsync(server, LauraTelegram, token)).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
@@ -343,7 +341,7 @@ public partial class TelegramLinkingTests
     public async Task ACallerWithoutAConfiguredCredential_Is401(string path, string? credential)
     {
         await using var server = await StartAsync();
-        var invite = await InviteAsync(await OwnerAsync(server), "Laura", "member");
+        var invite = await InviteAsync(await OwnerAsync(server), "Laura", AdminMember.Member);
 
         var response = await PostAsync(server, path,
             new { telegramId = LauraTelegram, chatId = -100_123L, code = invite }, credential);
@@ -352,21 +350,28 @@ public partial class TelegramLinkingTests
         (await StartWithAsync(server, LauraTelegram, invite)).StatusCode.ShouldBe(HttpStatusCode.OK, "nothing was spent");
     }
 
-    private static async Task<AccountsServer.PageClient> OwnerAsync(AccountsServer server)
+    // An owner, through the admin API, as the admin area's members page asks it.
+    private static async Task<AccountsServer.AdminClient> OwnerAsync(AccountsServer server)
     {
         var fran = await server.MintOperatorAsync("Fran");
-        return server.SignedIn(await server.MintSessionAsync(fran.UserId));
+        return server.Admin(await server.MintSessionAsync(fran.UserId));
     }
 
     // The invite's token, which is what its Telegram deep link carries as the start parameter.
-    private static async Task<string> InviteAsync(AccountsServer.PageClient owner, string displayName, string role)
+    private static async Task<string> InviteAsync(AccountsServer.AdminClient owner, string displayName, string role) =>
+        TokenOf((await MintAsync<MemberLink>(owner, AdminProtocol.MemberInvites, new MemberInvite(displayName, role))).Url);
+
+    private static async Task<T> MintAsync<T>(AccountsServer.AdminClient owner, string path, object body)
     {
-        var response = await owner.PostAsync(Members, $"{Members}/invite", ("displayName", displayName), ("role", role));
+        var response = await owner.SendAsync(new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body, body.GetType()) });
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        var link = EnrollLink().Match(await response.Content.ReadAsStringAsync());
-        link.Success.ShouldBeTrue();
-        return link.Groups["token"].Value;
+        return (await response.Content.ReadFromJsonAsync<AdminSaved<T>>())!.Value;
     }
+
+    private static string TokenOf(string link) => new Uri(link).Segments[^1];
+
+    private static async Task<IReadOnlyList<string>> NamesAsync(AccountsServer.AdminClient owner) =>
+        [.. (await (await owner.GetAsync(AdminProtocol.Members)).Content.ReadFromJsonAsync<AdminMembers>())!.Members.Select(m => m.DisplayName)];
 
     private static async Task<string> TelegramCodeAsync(AccountsServer server, string userId)
     {
@@ -377,14 +382,8 @@ public partial class TelegramLinkingTests
         return code.Groups["code"].Value;
     }
 
-    private static async Task<string> GroupCodeAsync(AccountsServer.PageClient owner)
-    {
-        var response = await owner.PostAsync(Members, $"{Members}/telegram-group");
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-        var code = BindCommand().Match(await response.Content.ReadAsStringAsync());
-        code.Success.ShouldBeTrue();
-        return code.Groups["code"].Value;
-    }
+    private static async Task<string> GroupCodeAsync(AccountsServer.AdminClient owner) =>
+        (await MintAsync<TelegramGroupCode>(owner, AdminProtocol.MemberTelegramGroups, new { })).Bind["/bind ".Length..];
 
     private static Task<HttpResponseMessage> StartWithAsync(AccountsServer server, long telegramId, string code) =>
         PostAsync(server, "/accounts/internal/telegram/start", new { telegramId, code });

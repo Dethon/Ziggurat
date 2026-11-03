@@ -217,9 +217,9 @@ public class AccountPageTests
         var fran = await server.MintOperatorAsync("Fran");
         var laura = await server.SeedMemberAsync("Laura");
         var pablo = await server.SeedMemberAsync("Pablo");
-        var owner = server.SignedIn(await server.MintSessionAsync(fran.UserId));
-        (await owner.PostAsync("/accounts/members", $"/accounts/members/{laura}/sees-all", ("grant", "true")))
-            .StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+        (await server.Admin(await server.MintSessionAsync(fran.UserId))
+                .PutAsync(AdminProtocol.Member(laura), new MemberEdit(SeesAll: true)))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
 
         var page = await server.SignedIn(await server.MintSessionAsync(pablo)).PageAsync(Account);
 

@@ -263,7 +263,7 @@ does, `HouseholdAgents.VoiceAgentOf`, or null).
 
 ## Members
 
-`HouseholdMembersAdmin` over the members page's own stores (`MemberStore`, `LinkStore`), never a copy
+`HouseholdMembersAdmin` over the accounts service's stores (`MemberStore`, `LinkStore`), never a copy
 of them (`Domain/DTOs/Admin/AdminMembers.cs`): `GET /household/members` (`AdminMembers`: each
 `AdminMember` — id, display name, role `owner`/`member`, operator, sees-all, disabled); `POST
 /household/members/invites` (`MemberInvite { displayName, role }`) and `POST .../{userId}/recovery`, each
@@ -272,6 +272,8 @@ as the bot's deep link (`TelegramLink`) or, with no bot named, `/start <token>` 
 the bot redeems in place of a passkey; `PUT .../{userId}` (`MemberEdit { role?, seesAll? }`, a field left
 out left as it is) and `POST .../{userId}/disable` / `.../enable`, each answering
 `AdminSaved<AdminMembers>`, the whole list. A body-less POST is fine: the path says whom.
+
+A Telegram group is bound from here too: `POST /household/members/telegram-groups` (`AdminProtocol.MemberTelegramGroups`) mints a group code, answered once as `TelegramGroupCode { bind: "/bind <code>", expiresAt }` and recorded as "Minted a Telegram group code", never its characters. This is the household's one members page; the accounts service's `/accounts/members` redirects here.
 
 - **The last enabled owner** is neither demoted nor disabled (400): both are checked inside the one
   `UPDATE` (`MemberStore.ChangeRoleAsync`, `DisableAsync`), counting only enabled owners — a disabled

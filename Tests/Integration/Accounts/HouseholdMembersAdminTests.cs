@@ -379,6 +379,95 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
         return server.Client().SendAsync(request);
     }
 
+    [Fact]
+    public async Task AnInvite_IsRefusedOnceItsWeekIsUp()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var invite = await InviteAsync(server.Admin(await server.MintSessionAsync(fran.UserId)), "Laura", AdminMember.Member);
+
+        server.Clock.Advance(TimeSpan.FromDays(7));
+
+        (await server.Client().GetAsync(invite)).StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await server.Client().PostAsJsonAsync("/accounts/api/enroll/options", new { token = invite.Segments[^1] }))
+            .StatusCode.ShouldBe(HttpStatusCode.Gone);
+    }
+
+    // Redeemed the way Telegram's start parameter redeems it, without a passkey: the person is created as
+    // the invite named them, and the link opens nothing after.
+    [Fact]
+    public async Task AnInviteRedeemedOnce_CreatesThePersonAndThenRefuses()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
+        var invite = await InviteAsync(admin, "Laura", AdminMember.Owner);
+
+        (await PostInternalAsync(server, "/accounts/internal/telegram/start",
+            new { telegramId = LauraTelegram, code = invite.Segments[^1] }, TelegramCredential)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        (await server.Client().GetAsync(invite)).StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await MembersAsync(admin)).Members.ShouldContain(m => m.DisplayName == "Laura" && m.Role == AdminMember.Owner);
+    }
+
+    [Fact]
+    public async Task ChangingARole_IsWhatTheSessionCheckThenSays()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
+        var laura = await server.SeedMemberAsync("Laura");
+        var lauras = await server.MintSessionAsync(laura);
+
+        (await EditAsync(admin, laura, new MemberEdit(Role: AdminMember.Owner))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        (await server.VerifyAsync(lauras)).Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["owner"]);
+    }
+
+    [Fact]
+    public async Task WithASecondOwner_AnOwnerCanStepDown()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var session = await server.MintSessionAsync(fran.UserId);
+        var admin = server.Admin(session);
+        var laura = await server.SeedMemberAsync("Laura");
+        await EditAsync(admin, laura, new MemberEdit(Role: AdminMember.Owner));
+
+        (await EditAsync(admin, fran.UserId, new MemberEdit(Role: AdminMember.Member))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        (await server.VerifyAsync(session)).Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["member,operator"]);
+    }
+
+    // The admin area's members page is the household's one: the accounts service's own, which a link
+    // from before may still name, sends there.
+    [Fact]
+    public async Task TheOldMembersPage_SendsToTheAdminAreas()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var owner = server.SignedIn(await server.MintSessionAsync(fran.UserId));
+
+        var old = await owner.GetAsync("/accounts/members");
+
+        old.StatusCode.ShouldBe(HttpStatusCode.Redirect);
+        old.Headers.Location!.ToString().ShouldBe("/admin/members");
+        (await owner.PageAsync("/accounts/account")).ShouldContain("href=\"/admin/members\"");
+    }
+
+    private static async Task<Uri> InviteAsync(AccountsServer.AdminClient admin, string name, string role)
+    {
+        var minted = await admin.SendAsync(new HttpRequestMessage(HttpMethod.Post, AdminProtocol.MemberInvites)
+        {
+            Content = JsonContent.Create(new MemberInvite(name, role))
+        });
+        minted.StatusCode.ShouldBe(HttpStatusCode.OK);
+        return new Uri((await minted.Content.ReadFromJsonAsync<AdminSaved<MemberLink>>())!.Value.Url);
+    }
+
+    private static Task<HttpResponseMessage> EditAsync(AccountsServer.AdminClient admin, string userId, MemberEdit edit) =>
+        admin.SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Member(userId)) { Content = JsonContent.Create(edit) });
+
     private static Task<HttpResponseMessage> PostAsync(AccountsServer.AdminClient admin, string path) =>
         admin.SendAsync(new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(new { }) });
 

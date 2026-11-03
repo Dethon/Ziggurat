@@ -275,11 +275,8 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         var fran = await server.MintOperatorAsync("Fran");
         var (ownerContext, owner) = await DeviceAsync();
         await SignInWithoutPasskeyAsync(server, ownerContext, await server.MintSessionAsync(fran.UserId));
-        await owner.GotoAsync(new Uri(server.Address, "/accounts/members").ToString());
-        await owner.GetByLabel("Display name").FillAsync("Laura");
-        await owner.GetByLabel("Role", new PageGetByLabelOptions { Exact = true }).SelectOptionAsync("member");
-        await owner.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Create invite" }).ClickAsync();
-        var invite = await owner.Locator("[data-link]").GetAttributeAsync("href");
+        // Minted through the admin API, as the admin area's members page mints it.
+        var invite = (await MintAsync(server, fran.UserId, AdminProtocol.MemberInvites, new MemberInvite("Laura", AdminMember.Member))).Url;
         var (lauraContext, laura) = await DeviceAsync();
 
         await laura.GotoAsync(invite!);
@@ -308,10 +305,7 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         var lauraId = await server.SeedMemberAsync("Laura");
         var (ownerContext, owner) = await DeviceAsync();
         await SignInWithoutPasskeyAsync(server, ownerContext, await server.MintSessionAsync(fran.UserId));
-        await owner.GotoAsync(new Uri(server.Address, "/accounts/members").ToString());
-        await owner.Locator("tr", new PageLocatorOptions { HasText = "Laura" })
-            .GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Recovery link" }).ClickAsync();
-        var recovery = await owner.Locator("[data-link]").GetAttributeAsync("href");
+        var recovery = (await MintAsync(server, fran.UserId, AdminProtocol.MemberRecovery(lauraId), new { })).Url;
         var (lauraContext, laura) = await DeviceAsync();
 
         await laura.GotoAsync(recovery!);
@@ -321,6 +315,14 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         (await server.VerifyAsync(await SessionOfAsync(lauraContext))).Headers.GetValues("X-Ziggurat-User")
             .ShouldBe([lauraId]);
         (await server.Service<PasskeyStore>().ListAsync(lauraId, CancellationToken.None)).ShouldHaveSingleItem();
+    }
+
+    private static async Task<MemberLink> MintAsync(AccountsServer server, string ownerId, string path, object body)
+    {
+        var minted = await server.Admin(await server.MintSessionAsync(ownerId))
+            .SendAsync(new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body, body.GetType()) });
+        minted.StatusCode.ShouldBe(HttpStatusCode.OK);
+        return (await minted.Content.ReadFromJsonAsync<AdminSaved<MemberLink>>())!.Value;
     }
 
     // A browser signed in with a session the operator's command minted, as the E2E stack signs in.
