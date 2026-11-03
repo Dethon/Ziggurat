@@ -171,6 +171,47 @@ public sealed class SpaceEffectTests : IDisposable
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("space lookup failed");
     }
 
+    // First load validates a space the address bar does not name - the slug was a space the
+    // household removed, so the household's first space opened instead. The address follows,
+    // or a reload or a shared link names the removed space again.
+    [Fact]
+    public void ASpaceValidatedThatTheAddressDoesNotName_ReplacesTheAddressWithItsOwn()
+    {
+        var navigation = new FakeNavigationManager("http://localhost/cocina");
+        using var effect = new SpaceEffect(_dispatcher, _topicService, _connectionStore, navigation, _pushService, _logger);
+
+        _dispatcher.Dispatch(new SpaceValidated("default", "Main", "#112233"));
+
+        navigation.NavigatedTo.ShouldBe(["/"]);
+    }
+
+    [Fact]
+    public void ASpaceValidatedThatTheAddressAlreadyNames_LeavesTheAddress()
+    {
+        var navigation = new FakeNavigationManager("http://localhost/kitchen?x=1");
+        using var effect = new SpaceEffect(_dispatcher, _topicService, _connectionStore, navigation, _pushService, _logger);
+
+        _dispatcher.Dispatch(new SpaceValidated("kitchen", "Kitchen", "#112233"));
+
+        navigation.NavigatedTo.ShouldBeEmpty();
+    }
+
+    // The corrected address renders the page again, which selects the space it now names: that
+    // is the space first load already joined, so it is not a switch to make again.
+    [Fact]
+    public async Task TheSelectionTheCorrectedAddressMakes_IsNotASwitch()
+    {
+        _topicService.WithSpace("kitchen", name: "Kitchen");
+        _dispatcher.Dispatch(new ConnectionClosed(null));
+        await _effect.HandleSelectSpaceAsync("cocina");
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new SpaceValidated("kitchen", "Kitchen", "#112233"));
+
+        await _effect.HandleSelectSpaceAsync("kitchen");
+
+        _topicService.JoinedSpaces.ShouldNotContain("kitchen");
+    }
+
     private void GivenLoadedTopicsAndMessages()
     {
         var topic = new StoredTopic

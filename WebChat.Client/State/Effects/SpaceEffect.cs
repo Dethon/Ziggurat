@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.Components;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
@@ -18,6 +19,7 @@ public sealed class SpaceEffect : IDisposable
     private readonly IPushSubscriptionService _pushNotificationService;
     private readonly ILogger<SpaceEffect> _logger;
     private readonly IDisposable _handlerRegistration;
+    private readonly IDisposable _validatedRegistration;
     private string _previousSlug = "default";
 
     public SpaceEffect(
@@ -37,6 +39,22 @@ public sealed class SpaceEffect : IDisposable
 
         _handlerRegistration = dispatcher.RegisterHandler<SelectSpace>(
             action => HandleSelectSpaceAsync(action.Slug).LogFaults(_logger, nameof(SelectSpace)));
+        _validatedRegistration = dispatcher.RegisterHandler<SpaceValidated>(action => FollowTheSpace(action.Slug));
+    }
+
+    // First load opens the household's first space when the address names none of them (a space
+    // the household removed), and the address must say so too, or a reload or a shared link names
+    // the removed space again. The space it names is the one just joined, so the selection the
+    // corrected address makes is not a switch.
+    private void FollowTheSpace(string slug)
+    {
+        _previousSlug = slug;
+        var path = _navigationManager.ToBaseRelativePath(_navigationManager.Uri).Split('?', '#')[0].Trim('/');
+        var named = path.Length == 0 ? SpaceConfig.DefaultSlug : Uri.UnescapeDataString(path);
+        if (named != slug)
+        {
+            _navigationManager.NavigateTo(slug == SpaceConfig.DefaultSlug ? "/" : $"/{slug}", replace: true);
+        }
     }
 
     public async Task HandleSelectSpaceAsync(string slug)
@@ -100,5 +118,6 @@ public sealed class SpaceEffect : IDisposable
     public void Dispose()
     {
         _handlerRegistration.Dispose();
+        _validatedRegistration.Dispose();
     }
 }
