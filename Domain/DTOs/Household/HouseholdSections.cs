@@ -253,7 +253,7 @@ public sealed record LemonadeBox(string ApiUrl, string? ApiKey)
     public static bool IsAddress(string? url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var address)
         && (address.Scheme == Uri.UriSchemeHttp || address.Scheme == Uri.UriSchemeHttps)
-        && !string.IsNullOrEmpty(address.Host);
+        && !string.IsNullOrEmpty(address.Authority);
 
     // Printed — a log line, an assertion's message — it says only whether there is a key.
     public override string ToString() => $"LemonadeBox {{ ApiUrl = {ApiUrl}, ApiKey = {(ApiKey is null ? "none" : "[set]")} }}";

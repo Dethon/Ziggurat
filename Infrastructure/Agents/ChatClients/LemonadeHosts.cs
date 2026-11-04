@@ -42,7 +42,7 @@ public sealed class HouseholdLemonadeHosts(
     ILoggerFactory loggers) : ILemonadeHosts
 {
     private readonly ILogger _logger = loggers.CreateLogger<HouseholdLemonadeHosts>();
-    private readonly ConcurrentDictionary<string, (LemonadeBox Box, LemonadeHost Host, LemonadeModelDiscovery Discovery)> _boxes = new();
+    private readonly ConcurrentDictionary<string, (LemonadeBox Box, LemonadeHost Served, LemonadeModelDiscovery Discovery)> _boxes = new();
     private volatile string? _home;
 
     public LemonadeHost? For(string? householdId, bool home)
@@ -53,7 +53,7 @@ public sealed class HouseholdLemonadeHosts(
         }
 
         return householdId is not null && _boxes.TryGetValue(householdId, out var own)
-            ? own.Host
+            ? own.Served
             : home && deployment.IsConfigured
                 ? new LemonadeHost(deployment, deploymentModels)
                 : null;
@@ -63,7 +63,7 @@ public sealed class HouseholdLemonadeHosts(
     {
         get
         {
-            var models = _boxes.ToDictionary(b => b.Key, b => b.Value.Host.Models.Current);
+            var models = _boxes.ToDictionary(b => b.Key, b => b.Value.Served.Models.Current);
             if (_home is { } home && !models.ContainsKey(home) && deployment.IsConfigured)
             {
                 models[home] = deploymentModels.Current;
