@@ -253,6 +253,33 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         output.ShouldContain($"{neverWritten.Id}", customMessage: "a schedule given to the owner is named, so the operator can tell whose it was");
     }
 
+    // A schedule's fire before the upgrade opened a topic of its own whose first message is the
+    // scheduler's, which names nobody: given to the owner, a member's reminders became the owner's
+    // topics. The fire's text is the schedule's prompt, and the schedule's writer is known, so the
+    // topic is theirs; one no schedule's prompt matches stays the owner's.
+    [Fact]
+    public async Task ATopicAScheduleFiredBeforeOwners_IsTheSchedulesWriters()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var threads = new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System);
+        var water = await BeforeHouseholds.ScheduleAsync(db, Schedule(null) with { Prompt = $"Recuérdale a Ana que beba agua {_tag}" });
+        await ConversationWritingAsync(threads, ana.WebChat, DateTimeOffset.UtcNow.AddDays(-1), (water.Id, "created"));
+        var fired = await TopicAsync(threads, firstSender: ServiceSenders.Scheduler, text: null, firstText: water.Prompt);
+        var firedForNothing = await TopicAsync(threads, firstSender: ServiceSenders.Scheduler, firstText: $"A schedule since deleted {_tag}");
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        var anaAccount = await rig.AccountOfAsync(ana.TelegramId);
+        var home = franAccount.TenantId;
+        (await threads.GetTopicAsync(home, fired.AgentId, fired.ChatId, fired.TopicId))!.OwnerId.ShouldBe(anaAccount.UserId);
+        (await threads.GetTopicAsync(home, firedForNothing.AgentId, firedForNothing.ChatId, firedForNothing.TopicId))!
+            .OwnerId.ShouldBe(franAccount.UserId);
+    }
+
     // The deployment's schedules were all the home household's, so each is moved under it as it was —
     // still due when it was due — and nothing is left under the shape from before households.
     [Fact]
@@ -883,7 +910,7 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     // picker sent, as every message did before accounts.
     private async Task<TopicMetadata> TopicAsync(
         RedisThreadStateStore threads, string firstSender, Func<TopicMetadata, TopicMetadata>? owned = null,
-        string? text = null)
+        string? text = null, string firstText = "What's for dinner?")
     {
         var now = DateTimeOffset.UtcNow;
         var topic = new TopicMetadata(
@@ -891,7 +918,7 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
             "jonas", $"Topic {_tag}", now, now, "default");
         topic = owned?.Invoke(topic) ?? topic;
         await BeforeHouseholds.TopicAsync(redis.Connection.GetDatabase(), topic, text);
-        var first = new ChatMessage(ChatRole.User, "What's for dinner?");
+        var first = new ChatMessage(ChatRole.User, firstText);
         first.SetSenderId(firstSender);
         await threads.AppendMessagesAsync(
             new AgentKey($"{topic.ChatId}:{topic.ThreadId}", topic.AgentId).ToString(),
