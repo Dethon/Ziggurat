@@ -4,7 +4,7 @@
 
 **Blocked by:** 03.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] Saving a kit box through the admin API succeeds without probing anything, and the admin log records that the box is reached through the tenant kit.
 - [ ] Saving an address box over a kit box (and the reverse) replaces it in one save, and the admin log says so.

@@ -4,6 +4,7 @@ using Accounts.Settings;
 using Domain.Contracts;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
+using Domain.DTOs.Tunnel;
 using Infrastructure.Clients.Accounts;
 using Shouldly;
 using Tests.Integration.Fixtures;
@@ -395,6 +396,91 @@ public sealed class KeysAdminTests : IAsyncLifetime
         var saved = await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(_providers.LemonadeUrl, WorkingKey));
 
         saved.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // A box behind the household's router is reached through its kit's forwarder: there is no address
+    // to ask, so it is saved unprobed, and shown by its tunnel's state as the agent's relay tells it.
+    [Fact]
+    public async Task AKitLemonadeBox_IsSavedUnprobed_AndShownByItsTunnelsState()
+    {
+        await using var agent = await AgentListingStub.StartAsync(AgentCredential);
+        await using var server = await StartAsync(s => s with
+        {
+            Callers = new Dictionary<string, string> { ["agent"] = AgentCredential },
+            AgentUrl = agent.Url
+        });
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+
+        var saved = await admin.PutAsync(AdminProtocol.LemonadeBox, LemonadeBox.Kit);
+
+        saved.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var shown = (await saved.Content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!.Value.Lemonade.ShouldNotBeNull();
+        shown.ThroughKit.ShouldBeTrue();
+        shown.ApiUrl.ShouldBeNull();
+        shown.Status.ShouldBeNull();
+        shown.Connection.ShouldBe(ServerConnection.Offline);
+        _providers.Asked.ShouldBeEmpty();
+        (await KeysSectionAsync(server, household)).Lemonade.ShouldBe(LemonadeBox.Kit);
+        (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(["Set the Lemonade box, through the tenant kit"]);
+
+        agent.Connect(household, new ConnectedServer(HouseholdServerNames.Lemonade, 1, server.Clock.GetUtcNow(), []));
+        (await (await admin.GetAsync(AdminProtocol.Keys)).Content.ReadFromJsonAsync<HouseholdKeys>())!
+            .Lemonade!.Connection.ShouldBe(ServerConnection.Connected);
+    }
+
+    [Fact]
+    public async Task AKitLemonadeBox_WithNoAgentToAsk_IsShownUnknown()
+    {
+        await using var server = await StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+
+        var saved = await admin.PutAsync(AdminProtocol.LemonadeBox, LemonadeBox.Kit);
+
+        (await saved.Content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!.Value.Lemonade!.Connection
+            .ShouldBe(ServerConnection.Unknown);
+    }
+
+    // Moving the box home, or back out, is one save of the other shape.
+    [Fact]
+    public async Task ALemonadeBoxMovedBetweenAnAddressAndTheKit_IsOneSave()
+    {
+        await using var server = await StartAsync(LemonadeOnAnyAddress);
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        _providers.Accept(WorkingKey);
+        await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(_providers.LemonadeUrl, WorkingKey));
+        server.Clock.Advance(TimeSpan.FromMinutes(1));
+
+        (await admin.PutAsync(AdminProtocol.LemonadeBox, LemonadeBox.Kit)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await KeysSectionAsync(server, household)).Lemonade.ShouldBe(LemonadeBox.Kit);
+        server.Clock.Advance(TimeSpan.FromMinutes(1));
+
+        var back = await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(_providers.LemonadeUrl, WorkingKey));
+
+        back.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await back.Content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!.Value.Lemonade!.Status!.State
+            .ShouldBe(KeyState.Working);
+        (await KeysSectionAsync(server, household)).Lemonade.ShouldBe(new LemonadeBox(_providers.LemonadeUrl, WorkingKey));
+        (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(
+        [
+            "Replaced the Lemonade box, at an address", "Replaced the Lemonade box, through the tenant kit", "Set the Lemonade box"
+        ]);
+    }
+
+    [Fact]
+    public async Task AKitLemonadeBoxThatNamesAnAddress_IsRefusedByTheRules_AndNoneIsAsked()
+    {
+        await using var server = await StartAsync(LemonadeOnAnyAddress);
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+
+        var refused = await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(_providers.LemonadeUrl, WorkingKey, ThroughKit: true));
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        _providers.Asked.ShouldBeEmpty();
+        (await KeysSectionAsync(server, household)).Lemonade.ShouldBeNull();
     }
 
     private static AccountsSettings LemonadeOnAnyAddress(AccountsSettings settings) =>

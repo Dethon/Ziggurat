@@ -102,7 +102,7 @@ public sealed class LemonadeBoxProbe(IHttpClientFactory http, AccountsSettings s
 
     protected override HttpRequestMessage Request(LemonadeBox box)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, Under(box.ApiUrl, "models"));
+        var request = new HttpRequestMessage(HttpMethod.Get, Under(box.ApiUrl!, "models"));
         if (!string.IsNullOrWhiteSpace(box.ApiKey))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", box.ApiKey);

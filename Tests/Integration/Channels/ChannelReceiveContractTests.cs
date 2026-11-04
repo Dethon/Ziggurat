@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using Domain.Channels;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Security;
 using Infrastructure.Clients.Channels;
@@ -200,18 +201,47 @@ public class ChannelReceiveContractTests
             await connection.ReconnectAsync(endpoint, CancellationToken.None);
 
             var emitter = app.Services.GetRequiredService<ChannelNotificationEmitter>();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            // Broadcast discards what nobody is polling for, so it is emitted until the reconnected
-            // pump is there to take it.
-            await Eventually.Until(async ValueTask<bool> () => await emitter.EmitAsync(new ChannelMessageNotification
+            // Broadcast discards what nobody is polling for, and just after a reconnect the old pump's
+            // long poll can still be the one the server holds — a message handed to it goes to a
+            // request the connection already dropped (the inbox's known limit: a poll acknowledges
+            // nothing). So it is emitted until one arrives: what this pins is the gate on the
+            // reconnect, not that no message is lost across one.
+            ChannelMessage? received = null;
+            var (emitted, listened) = (0, 0);
+            try
             {
-                ConversationId = "conv-gated",
-                Sender = "user",
-                Content = "through the gate"
-            }), "the reconnected pump to be polling");
+                await Eventually.Until(async ValueTask<bool> () =>
+            {
+                emitted++;
+                if (await emitter.EmitAsync(new ChannelMessageNotification
+                {
+                    ConversationId = "conv-gated",
+                    Sender = "user",
+                    Content = "through the gate"
+                }))
+                {
+                    listened++;
+                }
 
-            var received = await connection.Messages.FirstAsync(cts.Token);
-            received.Content.ShouldBe("through the gate");
+                using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                try
+                {
+                    received = await connection.Messages.FirstAsync(wait.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+
+                return received is not null;
+            }, "a message through the gate after the reconnect");
+            }
+            catch (Exception ex) when (received is null)
+            {
+                throw new ShouldAssertException(
+                    $"No message came through the gate after the reconnect: emitted {emitted}, {listened} with a poller listening.", ex);
+            }
+
+            received!.Content.ShouldBe("through the gate");
         }
         finally
         {

@@ -83,28 +83,57 @@
                 A Lemonade server of the household's own: the models on it are offered to the household's
                 people in the chat's model menu while it answers, and run on it. @(keys.PaysWithDeploymentKey
                     ? "Left empty, the deployment's own box is used."
-                    : "It must be reachable at a public https address.")
+                    : "At an address, it must be reachable at a public https address.")
             </p>
-            @if (keys.Lemonade is { } box)
+            @if (keys.Lemonade is { ThroughKit: true } kit)
+            {
+                <p class="admin-key-kit">Through the tenant kit: @ConnectionText(kit.Connection)</p>
+            }
+            else if (keys.Lemonade is { } box)
             {
                 <p class="admin-key-address">@box.ApiUrl</p>
                 <KeyStatusView Status="box.Status" />
             }
-            <label class="admin-field">
-                <span class="admin-field-label">Address</span>
-                <input name="lemonadeUrl" type="url" @bind="_lemonadeUrl" @bind:event="oninput"
-                       placeholder="https://lemonade.example.org/api/v1" spellcheck="false" autocomplete="off" required />
-                <span class="admin-field-hint">Its API's base, ending in /api/v1.</span>
-            </label>
-            <label class="admin-field">
-                <span class="admin-field-label">API key</span>
-                <input name="lemonadeKey" type="password" @bind="_lemonadeKey" @bind:event="oninput"
-                       spellcheck="false" autocomplete="off" />
-                <span class="admin-field-hint">Only if the box checks one.</span>
-            </label>
+            <fieldset class="admin-field admin-choice">
+                <legend class="admin-field-label">Reached</legend>
+                <label>
+                    <input type="radio" name="lemonadeReach" checked="@(!_lemonadeThroughKit)"
+                           @onchange="() => _lemonadeThroughKit = false" />
+                    At an address
+                </label>
+                <label>
+                    <input type="radio" name="lemonadeReach" checked="@_lemonadeThroughKit"
+                           @onchange="() => _lemonadeThroughKit = true" />
+                    Through the tenant kit
+                </label>
+            </fieldset>
+            @if (_lemonadeThroughKit)
+            {
+                <p class="admin-field-hint">
+                    For a box behind the household's router: nothing about it leaves the house. Add a server named
+                    lemonade on the Servers page, put its credential, the box's address on your network and its
+                    key, if it checks one, in the kit's .env (TUNNEL_CREDENTIAL_LEMONADE, LEMONADE_URL,
+                    LEMONADE_API_KEY), and start the kit with --profile lemonade.
+                </p>
+            }
+            else
+            {
+                <label class="admin-field">
+                    <span class="admin-field-label">Address</span>
+                    <input name="lemonadeUrl" type="url" @bind="_lemonadeUrl" @bind:event="oninput"
+                           placeholder="https://lemonade.example.org/api/v1" spellcheck="false" autocomplete="off" required />
+                    <span class="admin-field-hint">Its API's base, ending in /api/v1.</span>
+                </label>
+                <label class="admin-field">
+                    <span class="admin-field-label">API key</span>
+                    <input name="lemonadeKey" type="password" @bind="_lemonadeKey" @bind:event="oninput"
+                           spellcheck="false" autocomplete="off" />
+                    <span class="admin-field-hint">Only if the box checks one.</span>
+                </label>
+            }
             <div class="admin-actions">
                 <button type="submit" class="admin-save" disabled="@(_state.Saving is not null)">
-                    @(_state.Saving == KeyForm.Lemonade ? "Checking" : "Save")
+                    @(_state.Saving == KeyForm.Lemonade ? (_lemonadeThroughKit ? "Saving" : "Checking") : "Save")
                 </button>
                 @if (keys.Lemonade is not null)
                 {
@@ -157,10 +186,14 @@
     private string _telegramToken = "";
     private string _lemonadeUrl = "";
     private string _lemonadeKey = "";
+    private bool _lemonadeThroughKit;
 
     protected override void OnInitialized()
     {
         Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The slot opens on the way the box is saved, and follows a save or a removal of it.
+        Subscribe(Store.StateObservable, state => state.Keys?.Lemonade?.ThroughKit ?? false,
+            throughKit => _lemonadeThroughKit = throughKit);
         // A key typed is the owner's until it is saved, and gone from the page once it is: it is never
         // shown again, so nothing here keeps it.
         Subscribe(Store.StateObservable, state => state.SavedCount, _ =>
@@ -190,8 +223,16 @@
         Dispatcher.Dispatch(new SaveIdealistaKeys(new IdealistaKeys(_idealistaKey.Trim(), _idealistaSecret.Trim())));
 
     private void SaveLemonade() =>
-        Dispatcher.Dispatch(new SaveLemonadeBox(new LemonadeBox(
-            _lemonadeUrl.Trim(), string.IsNullOrWhiteSpace(_lemonadeKey) ? null : _lemonadeKey.Trim())));
+        Dispatcher.Dispatch(new SaveLemonadeBox(_lemonadeThroughKit
+            ? LemonadeBox.Kit
+            : new LemonadeBox(_lemonadeUrl.Trim(), string.IsNullOrWhiteSpace(_lemonadeKey) ? null : _lemonadeKey.Trim())));
+
+    private static string ConnectionText(ServerConnection? connection) => connection switch
+    {
+        ServerConnection.Connected => "connected",
+        ServerConnection.Offline => "not connected — is the kit's forwarder running?",
+        _ => "the deployment could not say whether it is connected just now"
+    };
 
     private void RemoveLemonade() => Dispatcher.Dispatch(new RemoveLemonadeBox());
 

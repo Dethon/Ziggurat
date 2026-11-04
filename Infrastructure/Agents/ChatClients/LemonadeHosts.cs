@@ -2,13 +2,15 @@ using System.Collections.Concurrent;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
+using Domain.DTOs.Tunnel;
 using Infrastructure.Clients;
 using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents.ChatClients;
 
-// A Lemonade chat host and the models it offers now.
-public sealed record LemonadeHost(LemonadeChatHostOptions Options, ILemonadeModelSource Models);
+// A Lemonade chat host and the models it offers now; a box behind a household's router carries the
+// transport onto its kit's tunnel, which its turns go through instead of the shared pool.
+public sealed record LemonadeHost(LemonadeChatHostOptions Options, ILemonadeModelSource Models, HttpMessageHandler? Transport = null);
 
 // Which Lemonade box a household's turns may run on, and the models each household is offered. A box
 // is a household's own (its keys section, set on its Keys page); the home with none of its own runs on
@@ -39,7 +41,8 @@ public sealed class HouseholdLemonadeHosts(
     LemonadeChatHostOptions deployment,
     ILemonadeModelSource deploymentModels,
     IHouseholdConfiguration households,
-    ILoggerFactory loggers) : ILemonadeHosts
+    ILoggerFactory loggers,
+    Func<string, HttpMessageHandler>? kitTransport = null) : ILemonadeHosts
 {
     private readonly ILogger _logger = loggers.CreateLogger<HouseholdLemonadeHosts>();
     private readonly ConcurrentDictionary<string, (LemonadeBox Box, LemonadeHost Served, LemonadeModelDiscovery Discovery)> _boxes = new();
@@ -73,6 +76,27 @@ public sealed class HouseholdLemonadeHosts(
         }
     }
 
+    // A box at an address is dialled through the shared pool with its key. One through the tenant kit is
+    // reached through that household's own forwarder's tunnel, at a name nothing resolves, with no
+    // key: the kit adds its own. Its discovery and its turns go through the one transport.
+    private (LemonadeBox, LemonadeHost, LemonadeModelDiscovery)? Served(string household, LemonadeBox box)
+    {
+        if (box.ThroughKit && kitTransport is null)
+        {
+            _logger.LogWarning("Household {Household}'s Lemonade box is through its tenant kit, which this host cannot reach", household);
+            return null;
+        }
+
+        var transport = box.ThroughKit ? kitTransport!(household) : null;
+        var options = box.ThroughKit
+            ? new LemonadeChatHostOptions { ApiUrl = $"http://{HouseholdServerNames.Lemonade}.{household}.tunnel" }
+            : new LemonadeChatHostOptions { ApiUrl = box.ApiUrl!, ApiKey = box.ApiKey };
+        var discovery = new LemonadeModelDiscovery(
+            new HttpClient(transport ?? HostedConnectionPool.Shared, disposeHandler: false), options,
+            loggers.CreateLogger<LemonadeModelDiscovery>());
+        return (box, new LemonadeHost(options, discovery, transport), discovery);
+    }
+
     public async Task RefreshAsync(CancellationToken ct)
     {
         // The home's id, before any turn of the home's has named it: the pickers are told its box's
@@ -99,11 +123,14 @@ public sealed class HouseholdLemonadeHosts(
 
             foreach (var (household, box) in boxes.Where(b => !_boxes.TryGetValue(b.Key, out var kept) || kept.Box != b.Value))
             {
-                var options = new LemonadeChatHostOptions { ApiUrl = box.ApiUrl, ApiKey = box.ApiKey };
-                var discovery = new LemonadeModelDiscovery(
-                    new HttpClient(HostedConnectionPool.Shared, disposeHandler: false), options,
-                    loggers.CreateLogger<LemonadeModelDiscovery>());
-                _boxes[household] = (box, new LemonadeHost(options, discovery), discovery);
+                if (Served(household, box) is { } served)
+                {
+                    _boxes[household] = served;
+                }
+                else
+                {
+                    _boxes.TryRemove(household, out _);
+                }
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)

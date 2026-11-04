@@ -16,6 +16,7 @@ using Infrastructure.Agents;
 using Infrastructure.Clients.Accounts;
 using Infrastructure.Tunnels;
 using Mcp.Hosting;
+using Mcp.Hosting.Tunnel;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -184,10 +185,25 @@ internal sealed class TunnelledServer : IAsyncDisposable
     // `delegations`, a store it keeps delegations in, as Home Assistant's server keeps its watches'.
     public static async Task<TunnelledServer> StartAsync(
         string hub, string credential, string serverName, Dictionary<string, int>? backCalls = null,
-        string hubAuthority = "", IDelegationStore? delegations = null)
+        string hubAuthority = "", IDelegationStore? delegations = null,
+        // Listeners beside /mcp's, each a loopback port the relay reaches under its tag, answering the
+        // routes `routes` maps.
+        IReadOnlyDictionary<string, int>? listeners = null, Action<WebApplication>? routes = null)
     {
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, 0));
+        builder.WebHost.UseKestrel(options =>
+        {
+            options.Listen(IPAddress.Loopback, 0);
+            foreach (var port in (listeners ?? new Dictionary<string, int>()).Values)
+            {
+                options.Listen(IPAddress.Loopback, port);
+            }
+        });
+        foreach (var (tag, port) in listeners ?? new Dictionary<string, int>())
+        {
+            builder.Services.AddTunnelListener(tag, port);
+        }
+
         var server = builder.Services
             .AddToolServer(new Settings(new McpGateSettings
             {
@@ -207,6 +223,7 @@ internal sealed class TunnelledServer : IAsyncDisposable
 
         var app = builder.Build();
         app.MapMcp("/mcp");
+        routes?.Invoke(app);
         await app.StartAsync();
         return new TunnelledServer(app);
     }

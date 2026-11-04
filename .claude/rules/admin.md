@@ -78,7 +78,7 @@ The operator is also an owner of the home household and manages the home through
 routes like any owner. Today's routes: `GET`/`PUT /household/settings` (`HouseholdSettings`),
 `GET`/`PUT /household/features` (`FeaturesSection`) and `/household/spaces` (`AdminSpaces` read, `SpacesSection` saved; "Features and spaces"),
 `GET /household/keys` (`HouseholdKeys`) and `PUT /household/keys/openrouter` (`OpenRouterKey`),
-`/household/keys/idealista` (`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`), `PUT`/`DELETE /household/keys/lemonade` (`LemonadeBox`, the household's own Lemonade box: probed by its model listing with its key, `LemonadeBoxProbe`; another household's must be a public https address, `LemonadeAddresses`, which a test stack lifts with `KeyProbes:LemonadeOnPrivateAddresses`; shown as `HouseholdKeys.Lemonade`, its address and its key's state) ("Keys and probes"),
+`/household/keys/idealista` (`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`), `PUT`/`DELETE /household/keys/lemonade` (`LemonadeBox`, the household's own Lemonade box: probed by its model listing with its key, `LemonadeBoxProbe`; another household's must be a public https address, `LemonadeAddresses`, which a test stack lifts with `KeyProbes:LemonadeOnPrivateAddresses`; shown as `HouseholdKeys.Lemonade`, its address and its key's state; or `LemonadeBox.Kit`, `{ throughKit: true }`, a box behind the household's router reached through its tenant kit's forwarder, held to neither rule and **saved unprobed** — there is no address to ask — recorded "Set the Lemonade box, through the tenant kit", and shown with `ThroughKit` and its forwarder's tunnel's `Connection` (`ServerConnection`, asked of the agent's relay through `ConnectedServersClient`; `Unknown` when it cannot be asked); one shape saved over the other replaces it. The page's Lemonade slot offers "At an address" or "Through the tenant kit", the latter asking nothing and saying what to set up in the kit) ("Keys and probes"),
 `GET /household/changes?limit=` (the household's change log), the agents, members, own servers and usage routes (below), `GET /operator/changes?household=&limit=`
 (every household's, or one's), and the household list's (below): `GET`/`POST /operator/households` and
 `POST /operator/households/{householdId}/owners/{userId}/recovery`. A route is mapped in `AdminApi.Map` into one of the two groups, with its
@@ -376,6 +376,10 @@ and the agent's relay (`ConnectedServersClient`, the household list's client) (`
 - **A name** is held to `TunnelCredentialProtocol.IsServerName` (a DNS label: it goes into the server's
   synthetic address) before minting, refused 400 in those words with nothing minted. Minting for a name
   already listed adds a second credential; nothing is replaced.
+- **`lemonade` is minted here too**, for a household whose Lemonade box is reached through its tenant kit
+  (the Keys page says so): listed with its state like any server, and never a tool server — no agent dials
+  it (`.claude/rules/household-config.md`). Revoking it closes the forwarder's tunnel, and the box offers no
+  models from the agent's next refresh.
 - **Outposts are minted here too**: a machine's credential is one for `outpost-<NAME>`
   (`OutpostServerName`), and the list marks it by that name, as the relay tells a machine apart — the
   verified name is what makes an outpost, not who minted it, and a household's machines are its owners'.

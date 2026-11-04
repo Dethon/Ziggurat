@@ -26,6 +26,13 @@ this file to it.
 | `mcp-printer` | `printer` | | |
 | `mcp-homeassistant` | `homeassistant` | | `homeassistant`, `music-assistant` |
 | `mcp-channel-voice` | `voice` | accounts, topics, lemonade, metrics | `tse-extractor` |
+| `lemonade-forwarder` | `lemonade` | | the household's own Lemonade box on its LAN (`--profile lemonade`) |
+
+The Lemonade forwarder is for a household with a Lemonade box of its own behind its router. It runs
+only with `--profile lemonade`, told the box's API address on the LAN and its key (`LEMONADE_URL`,
+`LEMONADE_API_KEY`). Its one listener passes the agent's requests to the box and adds the key, which
+never leaves the house. Choose "Through the tenant kit" for the Lemonade box on the Keys page and mint
+`lemonade` on the Servers page: the box's models are then offered to the household's people alone.
 
 Plex (on the host's network, with the render node) and filebrowser (`${LAN_BIND_ADDRESS}:8002`) are
 no servers: nothing reaches them through the deployment, only the household's own LAN.

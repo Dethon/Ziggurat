@@ -263,12 +263,14 @@ internal sealed class TunnelClient(
         await signal.Task;
     }
 
-    // The /mcp listener is the first the server bound unless it named one; any other is named.
+    // The /mcp listener is the first the server bound unless it named one, or serves none; any other
+    // is named.
     private IReadOnlyDictionary<string, int> Listeners()
     {
         var named = services.GetServices<TunnelListener>().ToDictionary(l => l.Tag, l => l.Port);
         var bound = services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()?.Addresses ?? [];
-        if (!named.ContainsKey(TunnelProtocol.McpTag) && bound.FirstOrDefault() is { } first)
+        if (!named.ContainsKey(TunnelProtocol.McpTag) && services.GetService<ServesNoMcp>() is null
+            && bound.FirstOrDefault() is { } first)
         {
             named[TunnelProtocol.McpTag] = BindingAddress.Parse(first).Port;
         }

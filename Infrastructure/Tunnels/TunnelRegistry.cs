@@ -49,6 +49,25 @@ public sealed class TunnelRegistry
         }
     }
 
+    // What the agent's own requests to a listener of one household's server go through: every
+    // connection a stream of that household's tunnel of that name under the tag, the tunnel looked up
+    // again per connection — so a reopened one is used at once and another household's of the same
+    // name never is. Nothing is presented: the listener is not the server's /mcp. A connection of a
+    // generation that closed ends with it, and the pool drops it.
+    public HttpMessageHandler StreamsTo(string tenantId, string serverName, string tag) =>
+        new SocketsHttpHandler
+        {
+            ConnectCallback = async (_, ct) =>
+                await (Find(tenantId, serverName)
+                       ?? throw new HttpRequestException($"{serverName} is offline: its tunnel is not open"))
+                    .OpenStreamAsync(tag, ct),
+            PooledConnectionLifetime = Timeout.InfiniteTimeSpan,
+            UseCookies = false,
+            UseProxy = false,
+            AllowAutoRedirect = false,
+            ActivityHeadersPropagator = null
+        };
+
     // Where a request that names no household goes: a browse page's link, a timer's ring. In this phase
     // the only household with servers is the home one, so such a request is for the home household's
     // server of that name — the opening the accounts service called home when it verified its

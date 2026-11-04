@@ -8,6 +8,7 @@ using Accounts.Commands;
 using Accounts.Signing;
 using Accounts.Store;
 using Accounts.Tunnels;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.Outposts;
@@ -225,6 +226,49 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         HouseholdSections.KeysSchema.Problems(HouseholdSections.KeysSchema.Write(
                 new KeysSection { Lemonade = new LemonadeBox(apiUrl, null) }))
             .ShouldContain(problem => problem.Contains("lemonade"));
+
+    // A box behind the household's router is reached through its kit's forwarder: the section says so
+    // and holds neither an address nor a key, and the views carry exactly that.
+    [Fact]
+    public async Task AKitLemonadeBox_IsCarriedInTheViews_WithNoAddressAndNoKey()
+    {
+        await using var server = await StartAsync();
+        var (household, _) = await server.SeedHouseholdAsync("Casa", "Ana");
+        await SetAsync(server, household, HouseholdSections.Keys, """{ "lemonade": { "throughKit": true } }""");
+
+        var view = await AgentViewAsync(server, household);
+        var boxes = await AskAsync<HouseholdLemonadeBoxes>(server, Agent, HouseholdConfigProtocol.LemonadeBoxesView,
+            new HouseholdConfigQuery(CallToken: AgentToken()));
+
+        view.Lemonade.ShouldBe(LemonadeBox.Kit);
+        boxes.Boxes.ShouldBe([new HouseholdLemonadeBox(household, LemonadeBox.Kit)]);
+    }
+
+    // A box is reached one way: at its address, or through the kit with nothing else said.
+    [Theory]
+    [InlineData("https://box.example.org/api/v1", null)]
+    [InlineData(null, "a-key")]
+    public void AKitLemonadeBoxThatAlsoNamesAnAddressOrKey_IsRefusedByTheSectionsRules(string? apiUrl, string? apiKey) =>
+        HouseholdSections.KeysSchema.Problems(HouseholdSections.KeysSchema.Write(
+                new KeysSection { Lemonade = new LemonadeBox(apiUrl, apiKey, ThroughKit: true) }))
+            .ShouldContain(problem => problem.Contains("lemonade"));
+
+    // The household's lemonade server is its Lemonade forwarder, which carries chat and serves no tools.
+    [Fact]
+    public void AnAgentNamingTheLemonadeServerAsAToolServer_IsRefusedByTheSectionsRules() =>
+        HouseholdSections.AgentsSchema.Problems(HouseholdSections.AgentsSchema.Write(new AgentsSection
+        {
+            Agents = [new HouseholdAgent { Id = "jonas", Definition = new AgentDefinition
+                {
+                    Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["vault", "lemonade"]
+                } }]
+        }))
+            .ShouldContain(problem => problem.Contains("lemonade") && problem.Contains("not a tool server"));
+
+    [Fact]
+    public void AKitLemonadeBox_PassesTheSectionsRules() =>
+        HouseholdSections.KeysSchema.Problems(HouseholdSections.KeysSchema.Write(new KeysSection { Lemonade = LemonadeBox.Kit }))
+            .ShouldBeEmpty();
 
     // The timers server shows when a timer fires on the calling household's clock, so it reads that
     // household's settings on the call token it was called with, for its own audience alone.

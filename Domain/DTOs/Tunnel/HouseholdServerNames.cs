@@ -14,4 +14,12 @@ public static class HouseholdServerNames
 
     // The one server whose exec bridge back-call is its own: its FUSE daemon reads the session's mounts.
     public const string Sandbox = "sandbox";
+
+    // A household's own Lemonade box, through its forwarder: the agent asks it for its models and runs
+    // that household's Lemonade turns on it. Never a tool server.
+    public const string Lemonade = "lemonade";
+
+    // Whether a household's server of that name is a tool server: every one but the Lemonade
+    // forwarder, which serves no MCP. No agent dials it, and nothing asks it for tools.
+    public static bool ServesTools(string serverName) => serverName != Lemonade;
 }

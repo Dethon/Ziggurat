@@ -8,7 +8,7 @@ namespace WebChat.Client.Components.Admin;
 public static class ServerCredentialPlace
 {
     public static readonly IReadOnlyList<string> KitServers =
-        ["websearch", "vault", "library", "sandbox", "printer", "homeassistant", "voice"];
+        ["websearch", "vault", "library", "sandbox", "printer", "homeassistant", "voice", "lemonade"];
 
     // What each of the kit's servers gives the household's agents, for an owner choosing which to run.
     private static readonly IReadOnlyDictionary<string, string> _gives = new Dictionary<string, string>
@@ -19,7 +19,9 @@ public static class ServerCredentialPlace
         ["sandbox"] = "running code and commands",
         ["printer"] = "printing",
         ["homeassistant"] = "the home's devices, through Home Assistant",
-        ["voice"] = "voice satellites, and timers that ring on them"
+        ["voice"] = "voice satellites, and timers that ring on them",
+        ["lemonade"] = "the models of a Lemonade box on the household's own network, in its model menu " +
+                       "(saved \"through the tenant kit\" on the Keys page, and run with --profile lemonade)"
     };
 
     public static string? WhatItGives(string serverName) => _gives.GetValueOrDefault(serverName);

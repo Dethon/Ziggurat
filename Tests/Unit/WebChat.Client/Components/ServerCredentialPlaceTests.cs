@@ -13,6 +13,7 @@ public sealed class ServerCredentialPlaceTests
     [Theory]
     [InlineData("voice", "the tenant kit's TUNNEL_CREDENTIAL_VOICE in its .env")]
     [InlineData("homeassistant", "the tenant kit's TUNNEL_CREDENTIAL_HOMEASSISTANT in its .env")]
+    [InlineData("lemonade", "the tenant kit's TUNNEL_CREDENTIAL_LEMONADE in its .env")]
     [InlineData("outpost-laptop", "the machine's CREDENTIAL when it runs the outpost")]
     [InlineData("my-server", "its own tunnel credential (MCP__TUNNEL__CREDENTIAL)")]
     public void ACredential_IsPutWhereItsServerReadsIt(string server, string place) =>

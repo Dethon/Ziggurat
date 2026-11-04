@@ -149,6 +149,15 @@ public sealed partial class SmokeStack : IAsyncLifetime
         RunAsync(Path.Combine(TestHelpers.FindSolutionRoot(), "scripts", "smoke-stack.sh"), ["household-vault"],
             new Dictionary<string, string> { ["SMOKE_HOUSEHOLD_VAULT_CREDENTIAL"] = credential });
 
+    // A household's Lemonade forwarder in front of a stand-in box (`scripts/smoke-stack.sh
+    // household-lemonade`, the credential in SMOKE_HOUSEHOLD_LEMONADE_CREDENTIAL), and the one model the
+    // stand-in offers (TenantKit/docker-compose.override.smoke.yml).
+    public static Task StartHouseholdLemonadeAsync(string credential) =>
+        RunAsync(Path.Combine(TestHelpers.FindSolutionRoot(), "scripts", "smoke-stack.sh"), ["household-lemonade"],
+            new Dictionary<string, string> { ["SMOKE_HOUSEHOLD_LEMONADE_CREDENTIAL"] = credential });
+
+    public const string KitLemonadeModel = "smoke-kit-box";
+
     // The household's test satellite's Identity (TenantKit/docker-compose.override.smoke.yml), which a
     // guest's turn there goes by as its sender.
     public const string HouseholdSatellite = "Smoke household satellite";

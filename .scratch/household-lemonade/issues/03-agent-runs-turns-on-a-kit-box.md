@@ -4,7 +4,7 @@
 
 **Blocked by:** 01, 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] The keys section's checks refuse a box with both an address and `throughKit`, and one with neither. The address rule (public https for any household but the home) applies only to the address shape.
 - [ ] The agent view's `lemonade` and the `lemonade-boxes` view carry a kit box as `throughKit`, with no key.

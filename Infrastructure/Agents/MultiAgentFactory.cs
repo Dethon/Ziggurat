@@ -323,7 +323,7 @@ public sealed class MultiAgentFactory(
             host,
             effectivePublisher,
             sessionId,
-            transportHandler: lemonadeTransportHandler,
+            transportHandler: lemonade.Transport ?? lemonadeTransportHandler,
             attachmentSource: attachmentSource,
             hydrationDepthMessages: openRouterConfig.HydrationDepthMessages,
             readImageStore: readImageStore,

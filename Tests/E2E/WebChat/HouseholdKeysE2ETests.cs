@@ -79,6 +79,53 @@ public partial class HouseholdKeysE2ETests(WebChatE2EFixture fixture)
             .ToContainTextAsync("answer nobody until it has an OpenRouter key", new LocatorAssertionsToContainTextOptions { Timeout = 30_000 });
     }
 
+    // A box behind the household's router: the owner picks the tenant kit, is told what to set up and
+    // asked for nothing else, and the box saved so is shown by its forwarder's tunnel's state. Nothing is
+    // saved here (the home's turns run beside this test): the read and the save are answered in place.
+    [SkippableFact]
+    public async Task AnOwner_ChoosesTheTenantKitForTheLemonadeBox_AndSeesItsTunnelsState()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var owner = $"Owner {Guid.NewGuid().ToString("N")[..4]}";
+        var page = await fixture.CreatePageSignedInAsync(await OwnerSessionAsync(owner), withoutServiceWorker: true);
+        string? sent = null;
+        await page.RouteAsync($"**{AdminProtocol.Keys}", async route =>
+        {
+            var answered = await route.FetchAsync();
+            var keys = JsonNode.Parse(await answered.TextAsync())!.AsObject();
+            keys["lemonade"] = JsonNode.Parse("""{ "apiUrl": null, "status": null, "throughKit": true, "connection": "Connected" }""");
+            await route.FulfillAsync(new RouteFulfillOptions { Response = answered, Body = keys.ToJsonString() });
+        });
+        await page.RouteAsync($"**{AdminProtocol.LemonadeBox}", async route =>
+        {
+            sent = route.Request.PostData;
+            await route.FulfillAsync(new RouteFulfillOptions
+            {
+                Status = 400,
+                ContentType = "application/json",
+                Body = """{ "message": "The Lemonade box was not saved: answered by the test.", "problems": [] }"""
+            });
+        });
+
+        await page.GotoAsync($"{new Uri(fixture.WebChatUrl).GetLeftPart(UriPartial.Authority)}/admin/keys");
+
+        var lemonade = page.Locator("form[aria-labelledby=admin-key-lemonade]");
+        await Assertions.Expect(lemonade.Locator(".admin-key-kit"))
+            .ToHaveTextAsync("Through the tenant kit: connected", new LocatorAssertionsToHaveTextOptions { Timeout = 30_000 });
+
+        // It opens on the way the box is saved, asking for no address.
+        await Assertions.Expect(lemonade.GetByLabel("Through the tenant kit")).ToBeCheckedAsync();
+        await Assertions.Expect(lemonade.Locator("input[name=lemonadeUrl]")).ToHaveCountAsync(0);
+        await Assertions.Expect(lemonade).ToContainTextAsync("--profile lemonade");
+        await lemonade.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Save" }).ClickAsync();
+
+        await Assertions.Expect(lemonade.GetByRole(AriaRole.Alert))
+            .ToHaveTextAsync("The Lemonade box was not saved: answered by the test.");
+        JsonNode.Parse(sent!)!["throughKit"]!.GetValue<bool>().ShouldBeTrue();
+        JsonNode.Parse(sent!)!["apiUrl"].ShouldBeNull();
+    }
+
     // The stack's people are members; an owner is made for the test, as the operator's command makes one.
     private async Task<string> OwnerSessionAsync(string name)
     {

@@ -1,3 +1,5 @@
+using Domain.DTOs.Tunnel;
+
 namespace Infrastructure.Agents;
 
 // What one server a session is built with was found to be when a turn started — a household server
@@ -53,7 +55,11 @@ internal static class OwnServerEndpoints
         var resolved = endpoints
             .Select(endpoint => (
                 Named: endpoint,
-                Withheld: endpoint.NamesOwnServer && (withheld ?? []).Contains(endpoint.Address, StringComparer.Ordinal)))
+                Withheld: endpoint.NamesOwnServer
+                          && ((withheld ?? []).Contains(endpoint.Address, StringComparer.Ordinal)
+                              // Whatever a definition names, a server that serves no tools (the
+                              // household's Lemonade forwarder) is never dialled as one.
+                              || !HouseholdServerNames.ServesTools(endpoint.Address))))
             .Select(r => (r.Named, r.Withheld, Reached: !r.Named.NamesOwnServer
                 ? r.Named
                 : r.Withheld ? null : servers?.Resolve(tenantId, r.Named.Address)))

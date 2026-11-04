@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] A request sent through the transport for household A, server S and tag T reaches the listener that A's tunnelled S registered under T, and its answer comes back streamed (the first chunk arrives before the server finishes).
 - [ ] When household B has an open tunnel for a server also named S, a request for A never reaches B's server, and a request for a household with no S fails.

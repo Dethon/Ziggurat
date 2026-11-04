@@ -628,6 +628,52 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         }, owner);
     }
 
+    // A household's own Lemonade box behind its router, set up the way its owner would: "through the
+    // tenant kit" saved on its Keys page, lemonade minted on its Servers page, and the kit's forwarder
+    // started at home with it, in front of a stand-in box. The Keys page then says the box is
+    // connected, and the box's model is in that household's model menu — never in the home's.
+    [SkippableFact]
+    public async Task AHouseholdsKitLemonadeBox_IsOfferedInItsOwnPickerAlone()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var (_, owner) = await KeyedHouseholdAsync(tag);
+        var saved = await AdminAsync<AdminSaved<HouseholdKeys>>(HttpMethod.Put, stack.MainHost, AdminProtocol.LemonadeBox,
+            owner, LemonadeBox.Kit);
+        saved.Value.Lemonade.ShouldNotBeNull().ThroughKit.ShouldBeTrue();
+        var minted = await AdminAsync<AdminSaved<MintedServerCredential>>(HttpMethod.Post, stack.MainHost, AdminProtocol.Servers,
+            owner, new ServerAddition(HouseholdServerNames.Lemonade));
+
+        await SmokeStack.StartHouseholdLemonadeAsync(minted.Value.Credential);
+
+        await Eventually.Until(async () => (await AdminReadAsync<HouseholdKeys>(stack.MainHost, AdminProtocol.Keys, owner))
+                .Lemonade is { Connection: ServerConnection.Connected },
+            "the household's Lemonade forwarder connected through its tunnel", TimeSpan.FromMinutes(2), TimeSpan.FromSeconds(2));
+        await InChatAsync(null, async page =>
+        {
+            // The agent asks each box for its models every minute and the picker hears of a change by
+            // the registration that follows: a reload asks again.
+            await Eventually.Until(async () =>
+                {
+                    await page.ReloadAsync();
+                    return await ModelMenuAsync(page) is var offered && offered.Any(m => m.Contains(SmokeStack.KitLemonadeModel));
+                },
+                "the box's model in the household's model menu", TimeSpan.FromMinutes(3), TimeSpan.FromSeconds(5));
+        }, owner);
+        await InChatAsync(null, async page =>
+            (await ModelMenuAsync(page)).ShouldNotContain(m => m.Contains(SmokeStack.KitLemonadeModel)));
+    }
+
+    // The model menu of the agent selected, as a person opens it.
+    private static async Task<IReadOnlyList<string>> ModelMenuAsync(IPage page)
+    {
+        await page.Locator(".agent-config-trigger:visible").First.ClickAsync();
+        await page.Locator(".agent-config-combo-trigger:visible").First.ClickAsync();
+        await Assertions.Expect(page.Locator(".agent-config-item:visible").First).ToBeVisibleAsync();
+        return await page.Locator(".agent-config-item:visible").AllInnerTextsAsync();
+    }
+
     // A household's own voice, set up the way its owner would: a voice agent added from the template
     // on the Agents page (the admin route) under a name of the household's choosing, a voice
     // credential minted on its Servers page and a second kit voice server started at home with it,
