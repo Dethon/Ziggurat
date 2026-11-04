@@ -42,7 +42,8 @@ public sealed class ConversationFactory(IThreadStateStore store, TimeProvider ti
             OwnerId: owner?.UserId,
             TenantId: account?.TenantId ?? p.GuestTenantId,
             Shared: owner is null,
-            OwnerName: owner is null ? null : p.Sender);
+            // A fire opens its person's topic under the service's sender, which is no name of theirs.
+            OwnerName: owner is null || ServiceSenders.IsService(p.Sender) ? null : p.Sender);
 
         await store.SaveTopicAsync(topic);
         return new ConversationCreation(identity, topic);

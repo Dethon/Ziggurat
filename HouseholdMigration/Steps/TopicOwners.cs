@@ -1,9 +1,11 @@
 using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
+using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
 using StackExchange.Redis;
 
@@ -37,6 +39,7 @@ public sealed class TopicOwners(IConnectionMultiplexer redis, IThreadStateStore 
             keys.Add(key.ToString());
         }
 
+        var firedFor = await FiredForAsync(household, db, ct);
         var owned = new List<(TopicMetadata Topic, MigratedPerson Owner, bool Started)>();
         foreach (var key in keys.Where(k => TopicHouseholds.Unmoved(k) is not null))
         {
@@ -47,7 +50,7 @@ public sealed class TopicOwners(IConnectionMultiplexer redis, IThreadStateStore 
                 continue;
             }
 
-            var starter = await StarterAsync(household, topic);
+            var starter = await StarterAsync(household, topic, firedFor);
             var owner = starter ?? household.Owner;
             if (!dryRun)
             {
@@ -76,11 +79,43 @@ public sealed class TopicOwners(IConnectionMultiplexer redis, IThreadStateStore 
         return report;
     }
 
-    private async Task<MigratedPerson?> StarterAsync(Household household, TopicMetadata topic)
+    private async Task<MigratedPerson?> StarterAsync(
+        Household household, TopicMetadata topic, IReadOnlyDictionary<string, MigratedPerson> firedFor)
     {
         var messages = await threads.GetMessagesAsync(
             new AgentKey($"{topic.ChatId}:{topic.ThreadId}", topic.AgentId).ToString());
-        return SenderOf(household, messages?.FirstOrDefault(m => m.Role == ChatRole.User));
+        var first = messages?.FirstOrDefault(m => m.Role == ChatRole.User);
+        return SenderOf(household, first)
+               ?? (first?.GetSenderId() == ServiceSenders.Scheduler ? firedFor.GetValueOrDefault(first.Text) : null);
+    }
+
+    // A schedule's fire opened a topic of its own whose first message is the scheduler's, naming
+    // nobody, and whose text is the schedule's prompt: the topic is whoever the schedule runs as, so
+    // a member's reminders are not the owner's topics. By prompt, to the writer ScheduleCreators
+    // stamped, or in a dry run, which stamped nothing, to the one the schedule's own write names.
+    private async Task<IReadOnlyDictionary<string, MigratedPerson>> FiredForAsync(
+        Household household, IDatabase db, CancellationToken ct)
+    {
+        var server = redis.GetServer(redis.GetEndPoints()[0]);
+        var moved = new List<Schedule>();
+        await foreach (var key in server.KeysAsync(db.Database, RedisScheduleStore.ScheduleKey(household.TenantId, "*")).WithCancellation(ct))
+        {
+            if (await db.StringGetAsync(key) is { IsNullOrEmpty: false } json
+                && JsonSerializer.Deserialize<Schedule>(json.ToString()) is { } schedule)
+            {
+                moved.Add(schedule);
+            }
+        }
+
+        var schedules = moved.Concat(await ScheduleHouseholds.UnmovedAsync(db)).ToList();
+        var written = schedules.Any(s => s.CreatedBy?.Account is null)
+            ? await ScheduleWrites.WritersAsync(redis, threads, household, ct)
+            : new Dictionary<string, MigratedPerson>();
+        return schedules
+            .Select(s => (s.Prompt, Writer: household.Named(s.CreatedBy?.Account?.UserId) ?? written.GetValueOrDefault(s.Id)))
+            .Where(s => s.Writer is not null)
+            .GroupBy(s => s.Prompt)
+            .ToDictionary(g => g.Key, g => g.First().Writer!);
     }
 
     // Who a person's message was from, as far as anything persisted before accounts can say. A message

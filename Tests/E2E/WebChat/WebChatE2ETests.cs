@@ -456,6 +456,62 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             .ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 });
     }
 
+    // A browser that installed the chat client before sign-in existed holds a worker that answers
+    // every navigation with its own cached app, so the passkey link the upgrade's migration prints
+    // opened there showed the old app's "nothing at this address". That navigation is also what
+    // fetches and activates the new worker, which then sends such a page on to the accounts page it
+    // asked for, rather than leaving the person to guess that a reload would.
+    [SkippableFact]
+    public async Task AnEnrollmentLinkAnOldWorkerAnswered_ReachesEnrollmentOnceTheNewWorkerTakesOver()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var (_, created) = await fixture.AccountsAsync("create-user", "--name", $"Old-{Guid.NewGuid().ToString("N")[..4]}");
+        var userId = Regex.Match(created, "user (?<id>[0-9a-f]+),").Groups["id"].Value;
+        var (_, minted) = await fixture.AccountsAsync("mint-link", "--user", userId);
+        var link = minted.Split('\n').Select(l => l.Trim()).Single(l => l.StartsWith("http", StringComparison.Ordinal));
+
+        // The worker a master deployment shipped, as far as this needs it: every navigation is its app.
+        // Installed on a profile of its own, by a browser that routes its script to it.
+        const string oldWorker = """
+                                 self.addEventListener('install', () => self.skipWaiting());
+                                 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+                                 self.addEventListener('fetch', e => {
+                                   if (e.request.mode === 'navigate')
+                                     e.respondWith(new Response('<html><body>the old app</body></html>', { headers: { 'content-type': 'text/html' } }));
+                                 });
+                                 """;
+        var profile = Directory.CreateTempSubdirectory("old-worker-").FullName;
+        try
+        {
+            await using (var before = await fixture.OpenProfileAsync(profile))
+            {
+                await before.RouteAsync("**/service-worker.js", route => route.FulfillAsync(new RouteFulfillOptions
+                {
+                    Status = 200, ContentType = "application/javascript", Body = oldWorker
+                }));
+                var installing = before.Pages.Count > 0 ? before.Pages[0] : await before.NewPageAsync();
+                await installing.GotoAsync(link);
+                await installing.EvaluateAsync(
+                    "async () => { await navigator.serviceWorker.register('/service-worker.js'); await navigator.serviceWorker.ready; }");
+                await installing.GotoAsync(link);
+                await Assertions.Expect(installing.GetByText("the old app")).ToBeVisibleAsync();
+            }
+
+            // The deploy: the same browser opened again, and the worker's script is the new one.
+            await using var after = await fixture.OpenProfileAsync(profile);
+            var page = after.Pages.Count > 0 ? after.Pages[0] : await after.NewPageAsync();
+            await page.GotoAsync(link, new PageGotoOptions { WaitUntil = WaitUntilState.Commit });
+
+            await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Create a passkey" }))
+                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
+        }
+        finally
+        {
+            Directory.Delete(profile, recursive: true);
+        }
+    }
+
     // A platform authenticator that keeps discoverable credentials and verifies its user, standing
     // in for the phone's; it belongs to the page, so enrolling and signing in share one.
     private static async Task AddVirtualAuthenticatorAsync(IPage page)

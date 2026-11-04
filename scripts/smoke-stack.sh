@@ -164,6 +164,16 @@ migrate_home() {
     docker exec redis redis-cli RPUSH "agent-key:jonas:7001:7002" \
       '{"Role":"user","Contents":[{"$type":"text","Text":"Remind me on the first of 2099"}],"AdditionalProperties":{"SenderId":"smoke-writer"}}' \
       "{\"Role\":\"tool\",\"Contents\":[{\"\$type\":\"functionResult\",\"CallId\":\"smoke-call\",\"Result\":{\"status\":\"created\",\"filePath\":\"/schedules/jonas/$WRITTEN_IN_A_TOPIC/schedule.json\"}}],\"AdditionalProperties\":{\"Timestamp\":\"2026-10-01T08:00:00+00:00\"}}" > /dev/null
+    # And a topic one of its fires opened, as master's scheduler did: its first message is the
+    # scheduler's, naming nobody, with the schedule's prompt — so it is the writer's, not the owner's.
+    docker exec redis redis-cli SET "topic:jonas:7003:smoke-fired-topic" \
+      '{"TopicId":"smoke-fired-topic","ChatId":7003,"ThreadId":7004,"AgentId":"jonas","Name":"Scheduled task","CreatedAt":"2026-10-02T08:00:00+00:00","LastMessageAt":"2026-10-02T08:00:00+00:00","SpaceSlug":"default"}' > /dev/null
+    docker exec redis redis-cli SET "topic-of:jonas:7003:7004" smoke-fired-topic > /dev/null
+    docker exec redis redis-cli ZADD "topics:jonas:default" 1790000001000 "7003:smoke-fired-topic" > /dev/null
+    docker exec redis redis-cli HSET "topicdoc:jonas:7003:smoke-fired-topic" topicId smoke-fired-topic chatId 7003 \
+      agentId jonas space default name "Scheduled task" score 1790000001000 > /dev/null
+    docker exec redis redis-cli RPUSH "agent-key:jonas:7003:7004" \
+      '{"Role":"user","Contents":[{"$type":"text","Text":"Smoke: a schedule a person wrote before principals."}],"AdditionalProperties":{"SenderId":"scheduler"}}' > /dev/null
     echo '{ "people": [ { "name": "smoke", "displayName": "Smoke Operator" }, { "name": "smoke-writer", "displayName": "Smoke Writer" } ] }' > "$MIGRATION/people.json"
   fi
   "${DC[@]}" --profile migrate build household-migration

@@ -596,6 +596,16 @@ internal sealed partial class WebChatStack
             "    handle /accounts/* {\n" +
             "        reverse_proxy accounts:8080\n" +
             "    }\n" +
+            // The app's own files to a signed-out browser, which is how an installed app from before
+            // sign-in replaces its worker, mirroring DockerCompose/caddy/Caddyfile's @shell.
+            "    @shell {\n" +
+            "        not header Sec-Fetch-Mode navigate\n" +
+            "        not header Accept *text/html*\n" +
+            "        not path /api/*\n" +
+            "    }\n" +
+            "    handle @shell {\n" +
+            "        reverse_proxy webui:8080\n" +
+            "    }\n" +
             Checked("", "webui:8080") +
             "}\n";
 
