@@ -127,7 +127,12 @@ public static partial class HouseholdSections
             yield return "keys.idealista needs both apiKey and secret; leave idealista out for none";
         }
 
-        if (keys.Lemonade is { } box && !LemonadeBox.IsAddress(box.ApiUrl))
+        if (keys.Lemonade is { ThroughKit: true } kit && (kit.ApiUrl is not null || kit.ApiKey is not null))
+        {
+            yield return "keys.lemonade is reached through the tenant kit or at an address, not both: " +
+                         "a box through the kit takes no apiUrl and no apiKey";
+        }
+        else if (keys.Lemonade is { ThroughKit: false } box && !LemonadeBox.IsAddress(box.ApiUrl))
         {
             yield return "keys.lemonade.apiUrl must be an absolute http or https address; leave lemonade out for none";
         }
@@ -248,15 +253,21 @@ public sealed record KeysSection
 }
 
 [PublicAPI]
-public sealed record LemonadeBox(string ApiUrl, string? ApiKey)
+public sealed record LemonadeBox(string? ApiUrl, string? ApiKey, bool ThroughKit = false)
 {
+    // Behind the household's router, reached through its tenant kit's forwarder (the `lemonade`
+    // server): no address, and no key — the kit holds the box's.
+    public static LemonadeBox Kit { get; } = new(null, null, ThroughKit: true);
+
     public static bool IsAddress(string? url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var address)
         && (address.Scheme == Uri.UriSchemeHttp || address.Scheme == Uri.UriSchemeHttps)
         && !string.IsNullOrEmpty(address.Authority);
 
     // Printed — a log line, an assertion's message — it says only whether there is a key.
-    public override string ToString() => $"LemonadeBox {{ ApiUrl = {ApiUrl}, ApiKey = {(ApiKey is null ? "none" : "[set]")} }}";
+    public override string ToString() => ThroughKit
+        ? "LemonadeBox { through the tenant kit }"
+        : $"LemonadeBox {{ ApiUrl = {ApiUrl}, ApiKey = {(ApiKey is null ? "none" : "[set]")} }}";
 }
 
 [PublicAPI]

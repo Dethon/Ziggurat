@@ -101,7 +101,12 @@ is compared): `AgentCatalogBuilder.ForHousehold` gives a household the configure
 box's, never the registered entries' Lemonade models. Another household's box is a public https address
 (`LemonadeAddresses`, checked when it is saved): the agent dials it with the household's key from inside
 the deployment, so an address of the deployment's own network is refused; the home's may be on its LAN.
-A box behind a home router is reached through the tenant kit's tunnel (`.scratch/household-lemonade/spec.md`).
+A box behind a home router is reached through the tenant kit's tunnel: the section says `throughKit`
+and holds no address and no key, the household's kit runs the Lemonade forwarder (`lemonade`,
+`.claude/rules/tunnel.md`), and `HouseholdLemonadeHosts` gives that household a host at
+`http://lemonade.<household>.tunnel` whose transport is `TunnelRegistry.StreamsTo` onto that household's
+forwarder alone (`LemonadeHost.Transport`) — discovery and turns alike, so a closed tunnel offers no
+models and fails a turn as an unreachable box does (`HouseholdKitLemonadeTests`).
 
 **A Lemonade turn is not an OpenRouter turn.** A config patch naming a `lemonade/<id>` model
 (`LemonadeModelId`) is routed by `HostRoutingChatClient` to `LemonadeChatClient`, which rides the

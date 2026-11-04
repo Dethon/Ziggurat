@@ -5,6 +5,7 @@ using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
+using Tests.Unit.Infrastructure.Agents.ChatClients;
 
 namespace Tests.Unit.Infrastructure.Agents;
 
@@ -22,6 +23,9 @@ public class HouseholdLemonadeHostsTests
 
     private readonly List<HouseholdLemonadeBox> _boxes = [];
 
+    private readonly LemonadeResponsesSseHandler _kitBox = new();
+    private readonly List<string> _kitTransports = [];
+
     private HouseholdLemonadeHosts Hosts()
     {
         var configuration = new Mock<IHouseholdConfiguration>();
@@ -30,7 +34,11 @@ public class HouseholdLemonadeHostsTests
             .ReturnsAsync(new AgentHouseholdConfig(Home, true, new HouseholdSettings(), new AgentsSection(), new FeaturesSection(),
                 new SpacesSection(), null));
         return new HouseholdLemonadeHosts(_deployment, new FixedLemonadeModelSource([new LemonadeModel("deployments", [], null)]), configuration.Object,
-            NullLoggerFactory.Instance);
+            NullLoggerFactory.Instance, household =>
+            {
+                _kitTransports.Add(household);
+                return _kitBox;
+            });
     }
 
     [Fact]
@@ -87,5 +95,39 @@ public class HouseholdLemonadeHostsTests
 
         hosts.ModelsByHousehold.Keys.ShouldBe([Kapoor, Home], ignoreOrder: true);
         hosts.ModelsByHousehold[Home].Select(m => m.Id).ShouldBe(["deployments"]);
+    }
+
+    // A box behind the household's router is reached through its own kit's tunnel: the host's
+    // transport is that household's, and its address the synthetic name the relay never resolves.
+    [Fact]
+    public async Task AKitBox_IsReachedThroughItsHouseholdsOwnTransport()
+    {
+        _boxes.Add(new HouseholdLemonadeBox(Kapoor, LemonadeBox.Kit));
+        var hosts = Hosts();
+
+        await hosts.RefreshAsync(CancellationToken.None);
+
+        var host = hosts.For(Kapoor, home: false)!;
+        host.Transport.ShouldBeSameAs(_kitBox);
+        host.Options.ApiKey.ShouldBeNull();
+        host.Options.Address.ShouldBe($"http://lemonade.{Kapoor}.tunnel");
+        _kitTransports.ShouldBe([Kapoor]);
+    }
+
+    [Fact]
+    public async Task ABoxMovedBetweenAnAddressAndTheKit_GetsAFreshHostOnTheNextRefresh()
+    {
+        _boxes.Add(new HouseholdLemonadeBox(Kapoor, new LemonadeBox("https://box.kapoor.example/api/v1", "key")));
+        var hosts = Hosts();
+        await hosts.RefreshAsync(CancellationToken.None);
+        hosts.For(Kapoor, home: false)!.Transport.ShouldBeNull();
+
+        _boxes[0] = new HouseholdLemonadeBox(Kapoor, LemonadeBox.Kit);
+        await hosts.RefreshAsync(CancellationToken.None);
+        hosts.For(Kapoor, home: false)!.Transport.ShouldBeSameAs(_kitBox);
+
+        _boxes[0] = new HouseholdLemonadeBox(Kapoor, new LemonadeBox("https://box.kapoor.example/api/v1", "key"));
+        await hosts.RefreshAsync(CancellationToken.None);
+        hosts.For(Kapoor, home: false)!.Options.Address.ShouldBe("https://box.kapoor.example/api/v1");
     }
 }

@@ -22,6 +22,7 @@ using Infrastructure.Conversations;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
+using Infrastructure.Tunnels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -241,7 +242,12 @@ public static class InjectorModule
             return services
                 .AddSingleton(sp => new HouseholdLemonadeHosts(
                     host, sp.GetRequiredService<ILemonadeModelSource>(), sp.GetRequiredService<IHouseholdConfiguration>(),
-                    sp.GetRequiredService<ILoggerFactory>()))
+                    sp.GetRequiredService<ILoggerFactory>(),
+                    // A box behind a household's router, through its own forwarder's tunnel: the relay
+                    // is in the serving process alone, so a command's host reaches none.
+                    sp.GetService<TunnelRegistry>() is { } tunnels
+                        ? household => tunnels.StreamsTo(household, HouseholdServerNames.Lemonade, TunnelProtocol.ChatTag)
+                        : null))
                 .AddSingleton<ILemonadeHosts>(sp => sp.GetRequiredService<HouseholdLemonadeHosts>())
                 .AddHostedService<LemonadeModelRefresher>();
         }
