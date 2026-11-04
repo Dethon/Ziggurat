@@ -142,12 +142,7 @@ public sealed record HouseholdLemonadeBox(string HouseholdId, LemonadeBox Box);
 // A household's agents as a person picks among them: each one's id and name, in the section's order,
 // and the one answering where nobody picked (none: the agent's own default decides).
 [PublicAPI]
-public sealed record HouseholdAgentNames(string? DefaultAgent, IReadOnlyList<HouseholdAgentName> Agents)
-{
-    // The home household's, whose people may pick the deployment's Lemonade box: the box is the
-    // home's, so no other household is offered a model on it.
-    public bool IsHome { get; init; }
-}
+public sealed record HouseholdAgentNames(string? DefaultAgent, IReadOnlyList<HouseholdAgentName> Agents);
 
 // What a picker shows of an agent beside its name — its description, and the model and effort it runs
 // on, which only the household's configuration knows for an agent the deployment does not run itself.

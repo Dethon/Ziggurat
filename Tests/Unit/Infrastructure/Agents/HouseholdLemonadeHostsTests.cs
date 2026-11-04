@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Infrastructure.Agents.ChatClients;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -25,7 +26,10 @@ public class HouseholdLemonadeHostsTests
     {
         var configuration = new Mock<IHouseholdConfiguration>();
         configuration.Setup(c => c.LemonadeBoxesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => [.. _boxes]);
-        return new HouseholdLemonadeHosts(_deployment, FixedLemonadeModelSource.None, configuration.Object,
+        configuration.Setup(c => c.ForAgentAsync(HouseholdConfigProtocol.HomeHousehold, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentHouseholdConfig(Home, true, new HouseholdSettings(), new AgentsSection(), new FeaturesSection(),
+                new SpacesSection(), null));
+        return new HouseholdLemonadeHosts(_deployment, new FixedLemonadeModelSource([new LemonadeModel("deployments", [], null)]), configuration.Object,
             NullLoggerFactory.Instance);
     }
 
@@ -69,5 +73,19 @@ public class HouseholdLemonadeHostsTests
         _boxes.Clear();
         await hosts.RefreshAsync(CancellationToken.None);
         hosts.For(Kapoor, home: false).ShouldBeNull();
+    }
+
+    // The pickers are told every household's models, the home's under its id from the first refresh —
+    // before any turn of the home's has named it — so a restart leaves no picker without its box.
+    [Fact]
+    public async Task EveryHouseholdsModels_AreListedByHousehold_TheHomesOnTheDeploymentsBox()
+    {
+        _boxes.Add(new HouseholdLemonadeBox(Kapoor, new LemonadeBox("https://box.kapoor.example/api/v1", "key")));
+        var hosts = Hosts();
+
+        await hosts.RefreshAsync(CancellationToken.None);
+
+        hosts.ModelsByHousehold.Keys.ShouldBe([Kapoor, Home], ignoreOrder: true);
+        hosts.ModelsByHousehold[Home].Select(m => m.Id).ShouldBe(["deployments"]);
     }
 }

@@ -75,6 +75,20 @@ public sealed class HouseholdLemonadeHosts(
 
     public async Task RefreshAsync(CancellationToken ct)
     {
+        // The home's id, before any turn of the home's has named it: the pickers are told its box's
+        // models under it from the first refresh.
+        if (_home is null)
+        {
+            try
+            {
+                _home = (await households.ForAgentAsync(HouseholdConfigProtocol.HomeHousehold, ct)).HouseholdId;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex, "The home household could not be read; its Lemonade models wait for the next refresh");
+            }
+        }
+
         try
         {
             var boxes = (await households.LemonadeBoxesAsync(ct)).ToDictionary(b => b.HouseholdId, b => b.Box);

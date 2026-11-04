@@ -17,7 +17,8 @@ public sealed class HouseholdAgentCatalogue(IHouseholdConfiguration households, 
 {
     public async Task<IReadOnlyList<AgentCatalogEntry>> AgentsAsync(
         string householdId, HouseholdProof proof, CancellationToken ct) =>
-        AgentCatalogBuilder.ForHousehold(await households.AgentNamesAsync(householdId, proof, ct), registered.GetAll());
+        AgentCatalogBuilder.ForHousehold(
+            await households.AgentNamesAsync(householdId, proof, ct), registered.GetAll(), registered.LemonadeModelsOf(householdId));
 
     // The agent a message goes to: the one named, or the household's default where none is. Null
     // where the household has no such agent.
@@ -28,6 +29,7 @@ public sealed class HouseholdAgentCatalogue(IHouseholdConfiguration households, 
         var id = agentId ?? names.DefaultAgent;
         return id is null
             ? null
-            : AgentCatalogBuilder.ForHousehold(names, registered.GetAll()).FirstOrDefault(entry => entry.Id == id);
+            : AgentCatalogBuilder.ForHousehold(names, registered.GetAll(), registered.LemonadeModelsOf(householdId))
+                .FirstOrDefault(entry => entry.Id == id);
     }
 }
