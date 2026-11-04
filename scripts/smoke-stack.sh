@@ -18,6 +18,11 @@
 #                                  (re)start a second household's vault beside the kit's, with the
 #                                  tunnel credential in SMOKE_HOUSEHOLD_VAULT_CREDENTIAL (the smoke
 #                                  test that onboards a household runs it)
+#   scripts/smoke-stack.sh household-lemonade
+#                                  (re)start a household's Lemonade forwarder in front of a stand-in
+#                                  box offering one model, with the tunnel credential in
+#                                  SMOKE_HOUSEHOLD_LEMONADE_CREDENTIAL (the smoke test that sets up a
+#                                  household's kit box runs it)
 #   scripts/smoke-stack.sh household-voice <household> [refused]
 #                                  a second household's voice server and a test satellite of its own
 #                                  beside the running stack, with the voice credential in
@@ -309,6 +314,11 @@ case "${1:-}" in
     mkdir -p "$KIT_STATE/household-vault"
     "${KIT[@]}" --profile household up -d --no-deps --force-recreate mcp-vault-household
     ;;
+  household-lemonade)
+    [[ -n "${SMOKE_HOUSEHOLD_LEMONADE_CREDENTIAL:-}" ]] || { echo "SMOKE_HOUSEHOLD_LEMONADE_CREDENTIAL is not set" >&2; exit 2; }
+    "${KIT[@]}" --profile household-lemonade build lemonade-forwarder
+    "${KIT[@]}" --profile household-lemonade up -d --no-deps --force-recreate lemonade-forwarder smoke-lemonade-box
+    ;;
   migrate)
     # The household migration against the smoke stack, its people file in
     # DockerCompose/volumes/smoke/household-migration/people.json; the rest of the arguments are its.
@@ -317,7 +327,8 @@ case "${1:-}" in
     "${DC[@]}" --profile migrate run --rm --no-deps household-migration --people /input/people.json "$@"
     ;;
   down)
-    "${KIT[@]}" --profile voice --profile household --profile household-voice down --volumes --remove-orphans
+    "${KIT[@]}" --profile voice --profile household --profile household-voice --profile household-lemonade \
+      --profile lemonade down --volumes --remove-orphans
     "${DC[@]}" down --volumes --remove-orphans
     # The containers wrote as their own users; a throwaway container removes what they wrote. Only
     # where there is something: bind-mounting a missing ./volumes makes Docker create it as root,
@@ -327,7 +338,7 @@ case "${1:-}" in
     fi
     ;;
   *)
-    echo "usage: $0 up|test|voice|household-voice|household-vault|migrate|down" >&2
+    echo "usage: $0 up|test|voice|household-voice|household-vault|household-lemonade|migrate|down" >&2
     exit 2
     ;;
 esac

@@ -9,7 +9,7 @@ Then its agent's picker offers that box's model, and the home's picker doesn't. 
 
 **Blocked by:** 03, 04.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] A new smoke-stack verb starts a household forwarder in the smoke kit on a credential passed to it, pointed at the key stub's Lemonade answer.
 - [ ] A smoke test (skipped unless the stack is up, like the others):
@@ -20,3 +20,9 @@ Then its agent's picker offers that box's model, and the home's picker doesn't. 
 - [ ] The key stub answers the forwarder's model listing; if it already does, nothing changes there.
 - [ ] Every connection stays on 127.0.0.1. Nothing reaches the deployment's host.
 - [ ] The project's smoke-tier description lists the new test and verb.
+
+## Comments
+
+Built with a stand-in box of its own (`smoke-lemonade-box` in the kit's smoke override, a Caddy answering one
+model) rather than the key stub: `smoke-keys` sits on the deployment's network alone, which the kit's
+forwarder never reaches — it is a box on the household's own network.

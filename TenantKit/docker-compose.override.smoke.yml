@@ -106,6 +106,29 @@ services:
       MCP__TUNNEL__CREDENTIAL: ${SMOKE_HOUSEHOLD_VAULT_CREDENTIAL:-}
     networks: [kit]
 
+  # A household's Lemonade box behind its router: the kit's forwarder, started by the smoke test that
+  # sets one up (`scripts/smoke-stack.sh household-lemonade`, the credential in
+  # SMOKE_HOUSEHOLD_LEMONADE_CREDENTIAL), in front of a stand-in box that offers one model and answers
+  # nothing else, so no turn is run on it and nothing reaches a real box.
+  lemonade-forwarder:
+    profiles: [household-lemonade]
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+    environment:
+      <<: *hub-ca-env
+      BOX__URL: http://smoke-lemonade-box:8080/api/v1
+      BOX__APIKEY: ""
+      MCP__TUNNEL__HUB: wss://${DEPLOYMENT_HOST}/tunnel
+      MCP__TUNNEL__CREDENTIAL: ${SMOKE_HOUSEHOLD_LEMONADE_CREDENTIAL:-}
+
+  smoke-lemonade-box:
+    profiles: [household-lemonade]
+    image: caddy:2.11.7-alpine
+    command: ["caddy", "respond", "--listen", ":8080", "--body",
+              '{"data":[{"id":"smoke-kit-box","labels":["chat","tool-calling"],"downloaded":true}]}']
+    networks: [kit]
+
   # A printer that prints nothing: it answers IPP as a printer does and keeps each job under /jobs.
   # It refuses a request whose Host is not its own name, which beside its DNS-SD daemon is
   # <hostname>.local, so it is reached by that alias.
