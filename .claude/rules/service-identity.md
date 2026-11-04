@@ -477,8 +477,13 @@ redelegate, then retire (after the call-token lifetime plus skew). A provided ke
 **Deploying over existing objects.** Schedules written before this have no delegation and fire for
 nobody until the operator runs `redelegate` once, which offers each as the writer its `CreatedBy`
 names (the household migration stamped an account on every one); a declined or unoffered one stays
-nobody's until a person's turn rewrites it. Watches fired for nobody before this, and still do until
-a person's turn writes them again. A login handoff lives in memory and none survives the restart.
+nobody's until a person's turn rewrites it. A watch whose delegation is missing and whose writer names no account
+(one written before accounts, under an old chat name) is offered as the owner of the household whose
+server keeps it — the household's longest-standing enabled owner, which the accounts service's
+holders answer names (`TunnelServerHolder.OwnerId`, through the agent's holders route to
+`Redelegation.Server.Owner`) — the migration's answer for a schedule nobody can be traced for (user's
+decision, 2026-11-04); declined, it fires for nobody until a person's turn writes it again. A
+deployment server (no household) offers nothing for nobody's objects. A login handoff lives in memory and none survives the restart.
 Losing the agent's key volume is the same story: the agent generates a new key on start, every
 stored delegation stops verifying, and `redelegate` shows each as it claims to be.
 

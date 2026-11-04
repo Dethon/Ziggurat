@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using Agent.Settings;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Tunnel;
 using Domain.Security;
 using Domain.Security.Signing;
@@ -53,15 +54,15 @@ public static class CommandServers
                 { Connected: true } => Dialled(NameOf(holder), McpServerEndpoint.ThroughAgent(
                     new Uri(agent, ConnectedServers.Mcp(holder.TenantId, serverName)),
                     ServerAddress.Tunnelled(holder.TenantId, serverName),
-                    agentApiSecret), tokens),
+                    agentApiSecret), tokens, holder.OwnerId is { } owner ? new Account(holder.TenantId, owner) : null),
                 { Suspended: true } => Redelegation.Server.NotConnected(NameOf(holder), "its household is suspended"),
                 _ => Redelegation.Server.NotConnected(NameOf(holder), "its tunnel is not open")
             })
         ];
     }
 
-    private static Redelegation.Server Dialled(string name, McpServerEndpoint endpoint, CallTokens tokens) =>
-        new(name, ct => McpClient.CreateAsync(McpEndpointTransport.For(endpoint, tokens), cancellationToken: ct));
+    private static Redelegation.Server Dialled(string name, McpServerEndpoint endpoint, CallTokens tokens, Account? owner = null) =>
+        new(name, ct => McpClient.CreateAsync(McpEndpointTransport.For(endpoint, tokens), cancellationToken: ct), Owner: owner);
 
     private static string NameOf(HouseholdServer server) =>
         $"{server.ServerName} of household {server.Household} ({server.TenantId}{(server.Home ? ", the home" : "")})";

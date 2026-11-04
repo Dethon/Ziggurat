@@ -24,9 +24,10 @@ public static class ConnectedServers
 
 // A household's server of a name, which the key commands must ask: the household (its id, which its
 // call tokens' audience names, and its name, for the operator to read), whether it is the home, whether
-// it is suspended, and whether its tunnel is open now.
+// it is suspended, whether its tunnel is open now, and its owner (TunnelServerHolder.OwnerId).
 public sealed record HouseholdServer(
-    string TenantId, string Household, string ServerName, bool Home, bool Suspended, bool Connected);
+    string TenantId, string Household, string ServerName, bool Home, bool Suspended, bool Connected,
+    string? OwnerId = null);
 
 // One open tunnel: the server's name, the opening it is on and when it opened, the tools it offered
 // when asked through it just now — null when it did not answer the asking — and the id of the

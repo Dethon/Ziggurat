@@ -44,7 +44,7 @@ public static class TunnelApi
             }
 
             return Results.Ok(holders.Select(h => new HouseholdServer(
-                h.TenantId, h.Name, serverName, h.Home, h.Suspended, registry.Find(h.TenantId, serverName) is not null)));
+                h.TenantId, h.Name, serverName, h.Home, h.Suspended, registry.Find(h.TenantId, serverName) is not null, h.OwnerId)));
         });
         group.Map(ConnectedServers.McpRoute, (string tenantId, string serverName, HttpContext http, TunnelForwarder forwarder) =>
             forwarder.ForwardAsync(http, tenantId, serverName, TunnelProtocol.McpTag, "/mcp", ["Authorization"], TunnelForwarder.UnreachableAsync));
