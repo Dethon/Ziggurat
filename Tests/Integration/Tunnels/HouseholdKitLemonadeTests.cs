@@ -13,6 +13,7 @@ using Domain.Tools;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
 using Infrastructure.Agents.Mcp;
+using Infrastructure.Tunnels;
 using LemonadeForwarder;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -133,6 +134,18 @@ public class HouseholdKitLemonadeTests(RedisFixture redis) : IClassFixture<Redis
         await hosts.RefreshAsync(CancellationToken.None);
 
         hosts.ModelsByHousehold[_casa].ShouldBeEmpty();
+    }
+
+    // Listed with its household's servers, the forwarder has no tools to be asked for: it is listed with
+    // none, not as a server that did not answer.
+    [Fact]
+    public async Task TheForwarder_IsListedWithNoTools_NotAsAServerThatDidNotAnswer()
+    {
+        await using var forwarder = await StartForwarderAsync(_casa, _casaBox, "");
+
+        var listed = await new TunnelListing(_relay.Registry, NullLogger<TunnelListing>.Instance).ListAsync(_casa, CancellationToken.None);
+
+        listed.Single(s => s.ServerName == HouseholdServerNames.Lemonade).Tools.ShouldBe([]);
     }
 
     // The forwarder carries chat, never tools: an agent that names lemonade among its servers builds

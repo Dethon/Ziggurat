@@ -22,6 +22,12 @@ public sealed class TunnelListing(TunnelRegistry registry, ILogger<TunnelListing
 
     private async Task<IReadOnlyList<string>?> ToolsOfAsync(OpenTunnel tunnel, CancellationToken ct)
     {
+        // The household's Lemonade forwarder serves no MCP: it has no tools, and nothing to be asked.
+        if (tunnel.ServerName == HouseholdServerNames.Lemonade)
+        {
+            return [];
+        }
+
         using var asking = CancellationTokenSource.CreateLinkedTokenSource(ct, tunnel.Closed);
         asking.CancelAfter(_askFor);
         try
