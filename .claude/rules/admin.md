@@ -132,6 +132,19 @@ disabled members (04) are refused there, not here.
   **404** no such route or household, **503** `AdminRefusal` what the deployment cannot do just now (keys
   with no master key, usage with no Observability host), read or save alike.
 
+## Two owners with the same page open
+
+A page that saves a whole section — settings, features, spaces — or an agent's name and instructions sends
+what it loaded beside what it wants (`AdminEdit.Of`, the body's `loaded`; `AgentEdit.Loaded`), and the route
+lays only what the page changed over the section as it is now (`AdminSections.Merged` over `EditMerge`): a
+field the page left as it loaded it takes the stored value, so another owner's change since stands, and spaces
+merge by slug, so one owner's added space survives another's save. A field both changed to different values —
+or a space one removed and the other changed — is refused **409** `AdminRefusal` naming it ("space attic", "the
+time zone", "its name"), nothing saved or recorded; the chat client shows it as a refusal (`AdminService`). A body
+with nothing loaded (the operator's tools, a test, a client from before) is saved as sent. The user chose merging
+per item over refusing every stale save (2026-11-04). The keys, members and servers routes change one item each
+and need none of it.
+
 ## Configuration is saved as the operator's command saves it
 
 A route that changes a section saves through `HouseholdConfigStore.SaveAsync(household, schema, document)`

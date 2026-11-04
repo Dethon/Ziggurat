@@ -264,7 +264,7 @@ public static class InjectorModule
                         sp.GetServices<IChannelConnection>().OfType<IMcpChannelConnection>().ToList(),
                         // The channels dialled by URL serve every household and are told the home's
                         // agents; a household's own channel server is told its household's.
-                        () => CatalogOf(sp, settings, null),
+                        () => CatalogOf(sp, settings, null, home: true),
                         sp.GetRequiredService<ILogger<ChannelConnectionHost>>(),
                         sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default,
                         sp.GetRequiredService<McpCredentials>(),
@@ -275,7 +275,7 @@ public static class InjectorModule
                         async (household, ct) =>
                         {
                             await sp.GetRequiredService<ChannelAgentCatalogs>().ReadAsync(household.HouseholdId, ct);
-                            return () => CatalogOf(sp, settings, household.HouseholdId);
+                            return () => CatalogOf(sp, settings, household.HouseholdId, household.Home);
                         },
                         (endpoint, household) =>
                         {
@@ -287,13 +287,14 @@ public static class InjectorModule
 
         // Read per registration, not captured once: attachment capability is discovered from the model
         // provider and refreshed while the agent runs.
+        // The Lemonade box is the home's, so only the home's catalogues offer its models.
         private static IReadOnlyList<AgentCatalogEntry> CatalogOf(
-            IServiceProvider sp, AgentSettings settings, string? householdId) =>
+            IServiceProvider sp, AgentSettings settings, string? householdId, bool home) =>
             AgentCatalogBuilder.Build(
                 sp.GetRequiredService<ChannelAgentCatalogs>().Current(householdId),
                 settings.PatchableModels,
                 sp.GetRequiredService<IModelCapabilityCatalog>(),
-                sp.GetRequiredService<ILemonadeModelSource>());
+                home ? sp.GetRequiredService<ILemonadeModelSource>() : FixedLemonadeModelSource.None);
 
         private static bool NamesOwnServer(ChannelEndpoint endpoint) =>
             McpServerEndpoint.Of(endpoint.Endpoint, _ => null).NamesOwnServer;

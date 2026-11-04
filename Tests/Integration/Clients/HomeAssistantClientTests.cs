@@ -209,16 +209,28 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
     public async Task ListHistoryAsync_FirstElement_IsTheStateAtTheWindowsStart_StampedThere()
     {
         var client = fixture.CreateClient();
+        var before = DateTimeOffset.UtcNow.AddMinutes(-5).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        var toggledAt = DateTimeOffset.UtcNow.AddSeconds(-1);
         await client.CallServiceAsync("input_boolean", "toggle", HomeAssistantFixture.TestEntityId, null);
-        await Task.Delay(3000);
+        // The recorder commits on its own schedule, later on a loaded machine: the window opens only
+        // once it keeps the toggle, or a window opening after it finds no state recorded at all.
+        await Eventually.Until(async () =>
+                (await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, before,
+                    DateTimeOffset.UtcNow.AddMinutes(5).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")))
+                .Any(c => c.At >= toggledAt),
+            "the recorder to keep the toggle");
+        await Task.Delay(1100);
         var start = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
         await Task.Delay(1500);
         var end = DateTimeOffset.UtcNow.AddMinutes(5).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
 
         var changes = await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, start, end);
 
-        changes.ShouldHaveSingleItem();
-        changes[0].At.ShouldBe(DateTimeOffset.Parse(start));
+        var whole = await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, before, end);
+        var seen = $"toggled at {toggledAt:O}, window {start}..{end}; since {before}: "
+                   + string.Join(", ", whole.Select(c => $"{c.State}@{c.At:O}"));
+        changes.Count.ShouldBe(1, seen);
+        changes[0].At.ShouldBe(DateTimeOffset.Parse(start), seen);
     }
 
     // The recorder against the real component: toggle the seeded entity, then read the window back

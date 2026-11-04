@@ -33,7 +33,7 @@ public static class PushEndpoints
     // and given to them.
     private static async Task<IResult> SaveAsync(
         SavePushSubscriptionRequest request, SugarySettings settings, SugaryDbContext db, Person person,
-        CancellationToken ct)
+        HomeCalendar calendar, CancellationToken ct)
     {
         if (Keys(settings) is null)
         {
@@ -58,6 +58,8 @@ public static class PushEndpoints
         subscription.P256dh = request.P256dh!;
         subscription.Auth = request.Auth!;
         subscription.Language = request.Language!;
+        subscription.TimeZone = calendar.Zone.Id;
+        subscription.SessionId = person.SessionId;
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }

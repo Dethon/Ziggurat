@@ -28,3 +28,15 @@ describe("the Spanish strings", () => {
     expect(es[key]).not.toBe(en[key]);
   });
 });
+
+// The pantry is the household's: every person in it sees and uses the same foods and recipes, so a
+// person must not read it as theirs alone, nor delete a food thinking it goes only from their own.
+describe("the pantry's words", () => {
+  it.each([
+    ["en", en, /household/],
+    ["es", es, /casa|hogar/],
+  ] as const)("say in %s that it is shared", (_, strings, shared) => {
+    expect(strings.foodsTitle).toMatch(shared);
+    expect(strings.foodDeleteBody).toMatch(shared);
+  });
+});

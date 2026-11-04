@@ -48,7 +48,8 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
     public override string FilesystemName => Name;
 
     public override string DescribeMount =>
-        "The carb-counting log from Sugary of the person the turn is for, read-only and always current, as "
+        "The carb-counting log from Sugary of the person the turn is for, and nobody else's (another person's "
+        + "log cannot be read here), read-only and always current, as "
         + "Parquet tables: meals/<YYYY-MM>.parquet (one row per meal), items/<YYYY-MM>.parquet (one row per "
         + "food in a meal), doses/<YYYY-MM>.parquet (one row per insulin dose they recorded taking), "
         + "dose-meals.parquet (which meals each dose was for), "

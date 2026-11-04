@@ -46,8 +46,8 @@ public static class InternalCallers
     public const string Sugary = "mcp-sugary";
     public const string Timers = "mcp-timers";
 
-    // Sugary's channel (SugaryChannel.ChannelId), spelled again: this service references no server.
-    public const string SugaryChannel = "sugary";
+    // Sugary's channel, which its server serves people on.
+    public const string SugaryChannel = ChannelIds.Sugary;
 
     private const string ItemKey = "accounts.internal.callers";
     private const string HouseholdKey = "accounts.internal.household";
@@ -58,7 +58,9 @@ public static class InternalCallers
         [Telegram] = [TelegramLinks.Channel],
         [Voice] = [ChannelIds.Voice],
         [Agent] = [Tunnels],
-        [HouseholdServer] = [ChannelIds.Voice]
+        [HouseholdServer] = [ChannelIds.Voice],
+        // Sugary asks whether the session that subscribed a phone still lives, before a reminder.
+        [Sugary] = [SugaryChannel]
     };
 
     // Which views of a household's configuration each caller may ask for: the agent its own, each

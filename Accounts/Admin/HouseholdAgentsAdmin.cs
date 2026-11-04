@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Accounts.Configuration;
 using Accounts.Settings;
 using Domain.Agents;
@@ -161,7 +162,7 @@ public static class HouseholdAgentsAdmin
         AgentVersions versions, AccountsSettings settings, CancellationToken ct, Func<IReadOnlyList<string>, string> summary)
     {
         var name = edit.Name?.Trim() ?? "";
-        var instructions = string.IsNullOrWhiteSpace(edit.CustomInstructions) ? null : edit.CustomInstructions.Trim();
+        var instructions = Instructions(edit.CustomInstructions);
         var problems = new[]
         {
             NameProblem(name),
@@ -185,6 +186,22 @@ public static class HouseholdAgentsAdmin
         }
 
         var before = Shown(entry);
+        // The fields this page changed since it loaded them, over the agent as it is now: another
+        // owner's change to the other field stands, and one to the same field is refused.
+        if (edit.Loaded is { } loaded)
+        {
+            var merged = EditMerge.Merge(Fields(loaded.Name?.Trim() ?? "", Instructions(loaded.CustomInstructions)),
+                Fields(name, instructions), Fields(before.Name, before.CustomInstructions), new Dictionary<string, string>());
+            if (merged.Conflicts.Count > 0)
+            {
+                return AdminSections.Conflict("The agent was not saved.", merged,
+                    path => path[0] == "name" ? "its name" : "its custom instructions");
+            }
+
+            name = (string)merged.Value!["name"]!;
+            instructions = (string?)merged.Value["instructions"];
+        }
+
         var changed = AdminLog.Changed(("name", before.Name != name), ("custom instructions", before.CustomInstructions != instructions));
         if (changed.Count == 0)
         {
@@ -203,6 +220,10 @@ public static class HouseholdAgentsAdmin
 
         return result;
     }
+
+    private static string? Instructions(string? written) => string.IsNullOrWhiteSpace(written) ? null : written.Trim();
+
+    private static JsonObject Fields(string name, string? instructions) => new() { ["name"] = name, ["instructions"] = instructions };
 
     private static async Task<IResult> SaveAsync(
         HttpContext http, AdminCaller caller, HouseholdConfigStore store, AdminLog log, AccountsSettings settings,

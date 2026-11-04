@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Accounts.Configuration;
 using Domain.DTOs.Admin;
 
@@ -23,4 +24,28 @@ public static class AdminSections
         };
 
     public static string? Warning(SectionSave.Saved saved) => saved.NotTold is null ? null : NotToldWarning;
+
+    // What an admin page sent, laid over the section as it is now when the page said what it loaded
+    // (AdminEdit), so another owner's change since then stands; sent without, it is saved as sent.
+    public static MergedEdit Merged(
+        JsonObject sent, JsonObject current, IReadOnlyDictionary<string, string>? arrayKeys = null)
+    {
+        if (!sent.Remove(AdminEdit.Loaded, out var loaded) || loaded is null)
+        {
+            return new MergedEdit(sent, []);
+        }
+
+        return EditMerge.Merge(loaded, sent, current, arrayKeys ?? new Dictionary<string, string>());
+    }
+
+    // A field this page and another owner both changed, to different values: nothing is saved, and
+    // the owner is told what to look at again.
+    public static IResult Conflict(string notSaved, MergedEdit merged, Func<IReadOnlyList<string>, string> named)
+    {
+        var what = merged.Conflicts.Select(named).Distinct(StringComparer.Ordinal).ToList();
+        var list = what.Count == 1 ? what[0] : $"{string.Join(", ", what[..^1])} and {what[^1]}";
+        return Results.Conflict(new AdminRefusal(
+            $"{notSaved} Someone else changed {list} since this page was opened, and so did you: reload to see their change, then make yours again.",
+            what));
+    }
 }

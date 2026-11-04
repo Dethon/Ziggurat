@@ -450,7 +450,7 @@ internal static class MonitorTestMocks
     // The households' agents as the agent reads them, the one named suspended from its asking number
     // `from` on (counted from 1) — so a household can be suspended between two of its messages — and
     // every other household running.
-    public static IAgentDefinitionProvider Households(string suspended, int from = 1)
+    public static IAgentDefinitionProvider Households(string suspended, int from = 1, FeaturesSection? features = null)
     {
         var asked = 0;
         var provider = new Mock<IAgentDefinitionProvider>();
@@ -462,7 +462,7 @@ internal static class MonitorTestMocks
                 Agents = [],
                 Configuration = new AgentHouseholdConfig(
                     household ?? "home", household is null, new HouseholdSettings { Name = "Casa", TimeZone = "UTC" },
-                    new AgentsSection(), new FeaturesSection(),
+                    new AgentsSection(), features ?? new FeaturesSection(),
                     new SpacesSection(), null,
                     Suspended: household == suspended && Interlocked.Increment(ref asked) >= from)
             });

@@ -6,7 +6,8 @@ public record LoadHouseholdFeatures : IAction;
 
 public record HouseholdFeaturesLoaded(FeaturesSection Features) : IAction;
 
-public record SaveHouseholdFeatures(FeaturesSection Features) : IAction;
+// Loaded: the features the page was showing, so another owner's change since then is kept (AdminEdit).
+public record SaveHouseholdFeatures(FeaturesSection Features, FeaturesSection? Loaded = null) : IAction;
 
 public record HouseholdFeaturesSaved(FeaturesSection Features, string? Warning) : IAction;
 

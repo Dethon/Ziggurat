@@ -17,7 +17,7 @@ public sealed class SugaryChannel(
     ChannelNotificationEmitter emitter, AgentTurns turns, TimeProvider clock, SugarySettings settings,
     ILogger<SugaryChannel> logger)
 {
-    public const string ChannelId = "sugary";
+    public const string ChannelId = ChannelIds.Sugary;
 
     // Who a turn from the app is from where no person is behind it: the eval's and the benchmark's
     // turns, which stand in for the app.

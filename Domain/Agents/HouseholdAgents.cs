@@ -73,6 +73,10 @@ public sealed record HouseholdAgents
         _ => null
     };
 
+    // Whether its turns may run on the deployment's Lemonade box: the box is the home's, as are agents
+    // no household's configuration gave; any other household provides none and picks none of its models.
+    public bool ProvidesLemonade => Configuration is null or { IsHome: true };
+
     // A new household's agents: one of each shipped template, under the template's own id and name.
     public static IReadOnlyList<HouseholdAgent> Starting { get; } =
     [

@@ -9,7 +9,7 @@ public interface IAdminService
 {
     Task<AdminAnswer<HouseholdSettings>> GetSettingsAsync();
 
-    Task<AdminAnswer<HouseholdSettings>> SaveSettingsAsync(HouseholdSettings settings);
+    Task<AdminAnswer<HouseholdSettings>> SaveSettingsAsync(HouseholdSettings settings, HouseholdSettings? loaded = null);
 
     // The household's keys as their states and last characters; each key is saved on its own and
     // never read back.
@@ -50,12 +50,12 @@ public interface IAdminService
 
     Task<AdminAnswer<FeaturesSection>> GetFeaturesAsync();
 
-    Task<AdminAnswer<FeaturesSection>> SaveFeaturesAsync(FeaturesSection features);
+    Task<AdminAnswer<FeaturesSection>> SaveFeaturesAsync(FeaturesSection features, FeaturesSection? loaded = null);
 
     // The spaces in their order, beside the household's agents a space may open on; saved whole.
     Task<AdminAnswer<AdminSpaces>> GetSpacesAsync();
 
-    Task<AdminAnswer<AdminSpaces>> SaveSpacesAsync(SpacesSection spaces);
+    Task<AdminAnswer<AdminSpaces>> SaveSpacesAsync(SpacesSection spaces, SpacesSection? loaded = null);
 
     // The household's own servers; a minted credential is in its answer alone, never read back.
     Task<AdminAnswer<AdminServers>> GetServersAsync();

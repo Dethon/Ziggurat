@@ -81,7 +81,8 @@ public sealed class SugaryServer : IAsyncDisposable
     public static async Task<SugaryServer> StartAsync(
         string homeZone = "Europe/Madrid", string? openFoodFacts = null,
         string? webRoot = null, TimeProvider? turnClock = null, TimeProvider? estimateClock = null,
-        Func<SugarySettings, SugarySettings>? configure = null, Action<IServiceCollection>? services = null)
+        Func<SugarySettings, SugarySettings>? configure = null, Action<IServiceCollection>? services = null,
+        IReadOnlyDictionary<string, string>? householdZones = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "sugary-tests", Guid.NewGuid().ToString("N"));
         System.IO.Directory.CreateDirectory(directory);
@@ -108,7 +109,8 @@ public sealed class SugaryServer : IAsyncDisposable
                 // And its households' settings without it: every household keeps the home's zone. A
                 // household's own is CallHouseholdTests'.
                 collection.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
-                    new EveryHouseholdIn(ConfigModule.HomeZone(settings), householdAgents)));
+                    new EveryHouseholdIn(ConfigModule.HomeZone(settings), householdAgents,
+                        householdZones?.ToDictionary(z => z.Key, z => TimeZoneInfo.FindSystemTimeZoneById(z.Value)))));
                 if (turnClock is not null)
                 {
                     collection.AddSingleton(sp => ActivatorUtilities.CreateInstance<SugaryChannel>(sp, turnClock));
@@ -139,8 +141,8 @@ public sealed class SugaryServer : IAsyncDisposable
     // A phone signed in as this person, as the proxy hands its requests on: the session check's
     // four headers on every request — the assertion signed for Sugary with the accounts service's
     // test key — and nothing else that says who it is.
-    public HttpClient As(Account person, string roles = "member") =>
-        Forwarded(person, TestAssertions.Of(person, SugaryChannel.ChannelId, roles.Split(',')), roles);
+    public HttpClient As(Account person, string roles = "member", string? sessionId = null) =>
+        Forwarded(person, TestAssertions.Of(person, SugaryChannel.ChannelId, roles.Split(','), sessionId: sessionId), roles);
 
     // The plain headers naming one person and whatever assertion a test chooses beside them, or
     // none: what a container on the network past the proxy could send.

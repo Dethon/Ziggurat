@@ -57,7 +57,9 @@ public static class ConfigModule
             // The household's settings, for the clock its people's times are read on: asked with this
             // server's own credential over a call's token or a request's assertion. It has no Redis to
             // hear a save on, so a saved zone reaches it when what it kept runs out.
-            .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret);
+            .AddHouseholdConfiguration(settings.Accounts, settings.Mcp.SharedSecret)
+            // Whether the session that subscribed a phone still lives, before a pen reminder is sent.
+            .AddAccountResolver(settings.Accounts, settings.Mcp.SharedSecret);
 
         // Pen reminders are pushed with the deployment's VAPID keys, and without them there are none.
         if (settings.WebPush.IsConfigured)

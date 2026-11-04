@@ -1,6 +1,7 @@
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
@@ -295,6 +296,36 @@ public class ChatMonitorAssertionTests
         run.Agent.ReceivedMessages.ShouldHaveSingleItem().ShouldHaveSingleItem().Text.ShouldBe("first");
         run.Errors.ShouldHaveSingleItem().ErrorType.ShouldBe(ChatMonitor.HouseholdSuspendedErrorType);
         run.Channel.SentReplies.ShouldContain(r => r.Content == ConversationGroup.SuspendedAnswer);
+    }
+
+    // The Sugary app is a feature of the household's: turned off, the app's estimates are refused and
+    // said so, rather than run on an estimator its features took its own server — and its rules — from.
+    // The household's other channels answer as before.
+    [Fact]
+    public async Task ASugaryTurn_OfAHouseholdThatTurnedSugaryOff_IsRefusedAndAnswered_AndAChatTurnIsNot()
+    {
+        var off = new FeaturesSection { Sugary = false };
+        var sugary = new Run(ChannelIds.Sugary,
+            households: MonitorTestMocks.Households(suspended: "0123456789abcdef0123456789abcdef", features: off));
+        sugary.Channel.WriteMessage(Message(ChannelIds.Sugary) with
+        {
+            Principal = new Principal(ChannelIds.Sugary, _fran.UserId, _fran),
+            Assertion = TestAssertions.Of(_fran, ChannelIds.Sugary),
+            AgentId = "sugary",
+            TurnKey = "meal-1"
+        });
+        var chat = new Run(households: MonitorTestMocks.Households(suspended: "0123456789abcdef0123456789abcdef", features: off));
+        chat.Channel.WriteMessage(Message() with { Assertion = TestAssertions.Of(_fran, ChatChannel) });
+
+        await sugary.MonitorAsync();
+        await chat.MonitorAsync();
+
+        sugary.Factory.Created.ShouldBeEmpty();
+        sugary.Errors.ShouldHaveSingleItem().ErrorType.ShouldBe(ChatMonitor.FeatureOffErrorType);
+        sugary.Channel.SentReplies.Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, RefusalAnswers.SugaryOff), (ReplyContentType.StreamComplete, "")]);
+        chat.Errors.ShouldBeEmpty();
+        chat.Agent.ReceivedMessages.ShouldHaveSingleItem();
     }
 
     // Another household's suspension is nothing to this one's turns.

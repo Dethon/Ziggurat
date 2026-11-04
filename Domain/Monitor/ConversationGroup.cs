@@ -433,7 +433,8 @@ internal sealed class ConversationGroup(
                     return null;
                 }
 
-                if (await StandingRefusalAsync([identity.TenantId], identity) is { } refusal)
+                if ((await StandingRefusalAsync([identity.TenantId], identity)
+                     ?? await FeatureRefusalAsync(x.Channel.ChannelId, identity.TenantId)) is { } refusal)
                 {
                     await RefuseByStandingAsync(x.Channel, x.Message, refusal);
                     return null;
@@ -585,6 +586,32 @@ internal sealed class ConversationGroup(
         public sealed record Disabled(Account Account) : StandingRefusal(Account.TenantId);
 
         public sealed record Unchecked(string HouseholdId) : StandingRefusal(HouseholdId);
+
+        public sealed record SugaryOff(string HouseholdId) : StandingRefusal(HouseholdId);
+    }
+
+    // The Sugary app is one of the household's features: turned off, its server is withheld from every
+    // agent of the household, the estimator included, whose rules (never a dose among them) that server
+    // serves — so the app's turns are refused rather than estimated without them. Asked for every
+    // message, as a suspension is; the household's view is the one just read.
+    private async Task<StandingRefusal?> FeatureRefusalAsync(string channelId, string householdId)
+    {
+        if (households is null || channelId != ChannelIds.Sugary || householdId.Length == 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            return (await households.ForHouseholdAsync(householdId, _groupCt)).Configuration?.Features.Sugary == false
+                ? new StandingRefusal.SugaryOff(householdId)
+                : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !_groupCt.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Could not read whether household {Household} has Sugary on", householdId);
+            return new StandingRefusal.Unchecked(householdId);
+        }
     }
 
     // An assertion or a delegation says who a message is for as of when it was signed — an assertion
@@ -663,13 +690,15 @@ internal sealed class ConversationGroup(
                 (ChatMonitor.HouseholdSuspendedErrorType, $"household {refusal.HouseholdId} is suspended", SuspendedAnswer),
             StandingRefusal.Disabled { Account: var account } =>
                 (ChatMonitor.AccountDisabledErrorType, $"account {account.UserId} is disabled", DisabledAnswer),
+            StandingRefusal.SugaryOff =>
+                (ChatMonitor.FeatureOffErrorType, $"household {refusal.HouseholdId} turned Sugary off", RefusalAnswers.SugaryOff),
             _ => (ChatMonitor.StandingUnreadableErrorType,
                 $"whether household {refusal.HouseholdId} lets it through could not be read", UncheckedAnswer)
         };
         var what = message.Origin is null ? "turn" : $"{message.Origin.Kind} fire";
         // A suspended household's crons keep firing until it is resumed, which is the operator's doing,
         // not a fault.
-        logger.Log(refusal is StandingRefusal.Suspended ? LogLevel.Information : LogLevel.Warning,
+        logger.Log(refusal is StandingRefusal.Suspended or StandingRefusal.SugaryOff ? LogLevel.Information : LogLevel.Warning,
             "Refused a {What} on {ChannelId} for conversation {ConversationId}: {Why}",
             what, channel.ChannelId, message.ConversationId, why);
         metricsPublisher.ForHousehold(refusal.HouseholdId).Publish(new ErrorEvent

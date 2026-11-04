@@ -55,7 +55,9 @@ public static class HouseholdConfiguration
         MapShared(routes, HouseholdConfigProtocol.IdealistaView, async (store, household, ct) =>
             (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).Idealista);
         MapShared(routes, HouseholdConfigProtocol.AgentNamesView, async (store, household, ct) =>
-            HouseholdAgents.Names(await SectionAsync(store, household, HouseholdSections.AgentsSchema, ct)));
+            HouseholdAgents.Names(await SectionAsync(store, household, HouseholdSections.AgentsSchema, ct))
+                with
+            { IsHome = household.IsHome });
 
         // OpenRouter refused a household's own key in a turn: marked rejected and asked about again
         // (KeysAdmin), so its owner sees it on the keys page. The agent names the household as for its

@@ -26,7 +26,11 @@ public static class SpokenRefusals
             + "Quien administra el hogar puede cambiarla en la página de claves.",
         [RefusalAnswers.OutOfCredit] =
             "La cuenta de OpenRouter de tu hogar se ha quedado sin crédito, así que su asistente no pudo contestar. "
-            + "Quien administra el hogar puede añadir crédito en openrouter.ai."
+            + "Quien administra el hogar puede añadir crédito en openrouter.ai.",
+        // Voice opens no Sugary turn; spoken for completeness, since every refusal has its sentence.
+        [RefusalAnswers.SugaryOff] =
+            "Sugary está desactivado en tu hogar, así que no se ha estimado nada. "
+            + "Quien administra el hogar puede volver a activarlo en la página de funciones."
     };
 
     public static bool TryRender(string refusal, out string spoken) =>

@@ -32,6 +32,18 @@ public abstract class DictationE2EBase
     // Long enough that the recording holds the 8192 samples the spectrum below is measured over.
     protected const int SpectrumHoldMs = 1_400;
 
+    // Holds the button until the recorder itself holds `samples` (at the 16 kHz it encodes), at least
+    // `atLeastMs`: the strip shows once the microphone opened, but under a loaded machine the audio
+    // starts flowing later, and a hold timed from the strip let go with 0.2 s recorded.
+    protected static async Task HoldUntilRecordedAsync(IPage page, int samples, int atLeastMs)
+    {
+        var held = Task.Delay(atLeastMs);
+        await page.WaitForFunctionAsync(
+            "n => (window.dictation && window.dictation._run ? window.dictation._run.samples : 0) >= n",
+            samples, new PageWaitForFunctionOptions { Timeout = 30_000, PollingInterval = 50 });
+        await held;
+    }
+
     protected async Task<IPage> OpenAsync(int? width = null, int? height = null)
     {
         var page = await Fixture.CreateSignedInPageAsync(Fixture.NextUserIndex(), hasTouch: true);

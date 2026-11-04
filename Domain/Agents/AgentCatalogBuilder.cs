@@ -51,6 +51,10 @@ public static class AgentCatalogBuilder
         HouseholdAgentNames household, IReadOnlyList<AgentCatalogEntry> registered)
     {
         var deployment = registered.FirstOrDefault();
+        // The Lemonade box is the home's: another household is offered the configured models alone.
+        var patchable = deployment?.PatchableModels is { } models && !household.IsHome
+            ? [.. models.Where(m => !LemonadeModelId.IsLemonade(m.Id))]
+            : deployment?.PatchableModels;
         var answersByDefault = household.Agents.Any(a => a.Id == household.DefaultAgent)
             ? household.DefaultAgent
             : household.Agents.FirstOrDefault()?.Id;
@@ -61,14 +65,20 @@ public static class AgentCatalogBuilder
 
         AgentCatalogEntry Entry(HouseholdAgentName agent) =>
                 registered.FirstOrDefault(entry => entry.Id == agent.Id && entry.DefaultModel == agent.Model) is { } same
-                    ? same with { Name = agent.Name, Description = agent.Description, DefaultReasoningEffort = agent.ReasoningEffort }
+                    ? same with
+                    {
+                        Name = agent.Name,
+                        Description = agent.Description,
+                        DefaultReasoningEffort = agent.ReasoningEffort,
+                        PatchableModels = patchable
+                    }
                     : new AgentCatalogEntry(
                         agent.Id,
                         agent.Name,
                         agent.Description,
                         agent.Model,
                         agent.ReasoningEffort,
-                        deployment?.PatchableModels,
+                        patchable,
                         deployment?.PatchableReasoningEfforts,
                         AcceptedBy(agent.Model, registered));
     }

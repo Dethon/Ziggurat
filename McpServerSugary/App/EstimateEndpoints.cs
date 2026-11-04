@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.Monitor;
 using Domain.Tools.Sugary.Estimation;
 using McpServerSugary.Channel;
 using McpServerSugary.Clips;
@@ -154,6 +155,9 @@ public static class EstimateEndpoints
     private static IResult Answer(TurnReply reply, string conversation, ILogger log) => reply switch
     {
         TurnReply.Answered answered => Read(answered.Text, conversation, log),
+        // A turn the agent refused for the household (Sugary off, its key refused, out of credit) is
+        // forbidden with the refusal's code, which the app says in her language with who can fix it.
+        TurnReply.Failed failed when RefusalAnswers.CodeOf(failed.Reason) is { } code => Problem(StatusCodes.Status403Forbidden, code),
         TurnReply.Failed => Problem(StatusCodes.Status502BadGateway, ""),
         TurnReply.Unanswered => Problem(StatusCodes.Status502BadGateway, "The model returned no answer."),
         TurnReply.NotListening => Problem(StatusCodes.Status502BadGateway,

@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.FileSystem;
 using Domain.Tools.FileSystem;
 using Moq;
@@ -47,6 +48,27 @@ public class VfsExecToolTests
         var result = await _tool.RunAsync("/sandbox", "pwd");
 
         result!["cwd"]!.GetValue<string>().ShouldBe("/sandbox/");
+    }
+
+    // A mount whose server runs no command (Sugary's tables) in a session with no sandbox to run one
+    // in has nowhere to go: the model is told so, with what the mount does do, instead of the server's
+    // "unknown tool" as a retryable internal error it then retried.
+    [Fact]
+    public async Task RunAsync_OnAMountWithNoExec_AndNoSandbox_SaysSo_AndAsksNothing()
+    {
+        _registry.Setup(r => r.GetMounts()).Returns(
+        [
+            new FileSystemMount("sugary", "/sugary", "The carb log") { Capabilities = ["file_read", "glob", "query"] }
+        ]);
+        _registry.Setup(r => r.Resolve("/sugary")).Returns(Resolved(_backend.Object, "", "/sugary"));
+
+        var result = await _tool.RunAsync("/sugary", "duckdb -c 'select 1'");
+
+        result!["errorCode"]!.GetValue<string>().ShouldBe("unsupported_operation");
+        result["message"]!.GetValue<string>().ShouldContain("/sugary runs no commands");
+        result["hint"]!.GetValue<string>().ShouldContain("query");
+        (result["retryable"]?.GetValue<bool>() ?? false).ShouldBeFalse();
+        _backend.Verify(b => b.ExecAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

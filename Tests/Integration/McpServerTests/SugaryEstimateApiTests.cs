@@ -184,6 +184,26 @@ public class SugaryEstimateApiTests
         (await response.Content.ReadAsStringAsync()).ShouldNotContain("credits");
     }
 
+    // A turn the agent refused for the household — Sugary turned off, its key refused, out of credit —
+    // is not a meal that went wrong: the app is told which refusal by its code, and says it in her
+    // language, still without the agent's English.
+    [Fact]
+    public async Task ATurnTheAgentRefused_IsForbidden_WithTheRefusalsCode()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+
+        var answer = app.PostAsync("/api/estimates", Form("paella"));
+        var turn = await NextTurnAsync(agent);
+        await SendAsync(agent, turn, ReplyContentType.Error, global::Domain.Monitor.RefusalAnswers.SugaryOff);
+        await SendAsync(agent, turn, ReplyContentType.StreamComplete, "", isComplete: true);
+
+        var response = await answer;
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await DetailAsync(response)).ShouldBe("sugary-off");
+    }
+
     // What the agent sends when its provider refuses the call: the exception's message as caught.
     private const string ProviderError =
         "An error occurred: Response status code does not indicate success: 402 (Payment Required). " +

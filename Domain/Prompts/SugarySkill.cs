@@ -27,4 +27,7 @@ public static class SugarySkill
 
     public static readonly PromptClaim AsksForAMissingNumber =
         _document.Claim("sugary-log.asks-for-a-missing-number");
+
+    public static readonly PromptClaim AnotherPersonsLogIsNotHere =
+        _document.Claim("sugary-log.another-persons-log-is-not-here");
 }

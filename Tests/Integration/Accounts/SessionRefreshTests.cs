@@ -16,6 +16,7 @@ namespace Tests.Integration.Accounts;
 public class SessionRefreshTests
 {
     private const string SignalRCredential = "signalr-credential";
+    private const string SugaryCredential = "sugary-credential";
 
     private static Task<AccountsServer> StartAsync() =>
         AccountsServer.StartAsync(s => s with
@@ -24,7 +25,8 @@ public class SessionRefreshTests
             {
                 ["mcp-channel-signalr"] = SignalRCredential,
                 ["mcp-channel-telegram"] = "telegram-credential",
-                ["mcp-channel-voice"] = "voice-credential"
+                ["mcp-channel-voice"] = "voice-credential",
+                ["mcp-sugary"] = SugaryCredential
             }
         });
 
@@ -62,6 +64,28 @@ public class SessionRefreshTests
 
         (await RefreshAsync(server, fran.UserId, phone.Id, SignalRCredential)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
         (await RefreshAsync(server, fran.UserId, laptop.Id, SignalRCredential)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // Sugary keeps a phone subscribed to its person's pen reminders past the request that saved it, so
+    // before telling a phone anything it asks whether the session that subscribed it still lives: the
+    // same question, answered for Sugary's own channel. A disabled member's session lives no more.
+    [Fact]
+    public async Task Sugary_AsksAfterASession_AndIsAnsweredOnItsOwnChannel_UntilItEnds()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var laura = await server.SeedMemberAsync("Laura");
+        var phone = await IssueAsync(server, fran.UserId);
+        var lauras = await IssueAsync(server, laura);
+
+        var live = await RefreshAsync(server, fran.UserId, phone.Id, SugaryCredential);
+        await server.Service<global::Accounts.Members.MemberStore>().DisableAsync(fran.TenantId, laura, CancellationToken.None);
+
+        live.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var assertion = await server.VerifyAssertionAsync(
+            (await live.Content.ReadFromJsonAsync<JsonObject>())!["assertion"]!.GetValue<string>());
+        assertion.Claims.ChannelId.ShouldBe(ChannelIds.Sugary);
+        (await RefreshAsync(server, laura, lauras.Id, SugaryCredential)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
     // A session's id is on its person's account page, so it is no secret: one named under somebody

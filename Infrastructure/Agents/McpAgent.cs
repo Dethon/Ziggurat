@@ -396,14 +396,14 @@ public sealed class McpAgent : DisposableAgent
             // warn-and-continue, because widening it turns every drifted client into failed turns.
             if (LemonadeModelId.IsLemonade(patchedModel))
             {
-                // With no host configured there is no box to name and no Lemonade model was ever
-                // offered, so the only way here is a client that outlived the configuration. Say
-                // that, rather than naming an address that does not exist.
+                // With no host for this household — none configured, or a box that is another
+                // household's — no Lemonade model was offered, so the only way here is a client that
+                // outlived the configuration. Say that, rather than naming an address it may not use.
                 throw _lemonadeHostAddress is { } address
                     ? new LemonadeChatHostException(
                         address, $"it does not offer the model '{LemonadeModelId.Bare(patchedModel)}'")
                     : new LemonadeChatHostException(
-                        "no configured address", "this deployment has no Lemonade chat host");
+                        "no configured address", "no Lemonade chat host serves this household");
             }
 
             LogRejectedPatch("model", patchedModel, _model);

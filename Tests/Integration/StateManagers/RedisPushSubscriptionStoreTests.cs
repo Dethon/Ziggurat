@@ -46,6 +46,42 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     private PushSubscriptionDto CreateSubscription(string endpoint = "https://fcm.googleapis.com/fcm/send/abc123") =>
         new(endpoint, "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUb...", "tBHItJI5svbpC7sc9d8M2w==");
 
+    // A phone is its owner's to unsubscribe: somebody naming another person's endpoint — a page of
+    // theirs that once had it, a shared tablet — takes nothing of theirs away.
+    [Fact]
+    public async Task RemoveAsync_SomebodyElsesEndpoint_LeavesItSubscribed()
+    {
+        var mine = $"test-user-{Guid.NewGuid():N}";
+        var hers = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.AddRange([mine, hers]);
+        var herPhone = CreateSubscription($"https://push.example/{hers}");
+        await _store.SaveAsync(As(hers), herPhone);
+
+        await _store.RemoveAsync(mine, herPhone.Endpoint);
+
+        (await _store.GetBySpaceAsync(_home, "default")).Select(s => s.UserId).ShouldBe([hers]);
+    }
+
+    // A replacement moves the caller's own old phone to its new endpoint. Named with somebody else's
+    // old endpoint — another household's above all — it moves nothing: the new phone joins only the
+    // caller's own space, never the spaces the other phone was in.
+    [Fact]
+    public async Task SaveAsync_ReplacingSomebodyElsesEndpoint_JoinsNoneOfTheirSpaces()
+    {
+        var mine = $"test-user-{Guid.NewGuid():N}";
+        var hers = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.AddRange([mine, hers]);
+        var elsewhere = $"elsewhere{Guid.NewGuid():N}";
+        var herPhone = CreateSubscription($"https://push.example/{hers}");
+        var myPhone = CreateSubscription($"https://push.example/{mine}");
+        await _store.SaveAsync(new Account(elsewhere, hers), herPhone, "kitchen");
+
+        await _store.SaveAsync(As(mine), myPhone, "default", replacingEndpoint: herPhone.Endpoint);
+
+        (await _store.GetBySpaceAsync(elsewhere, "kitchen")).Select(s => s.UserId).ShouldBe([hers]);
+        (await _store.GetBySpaceAsync(_home, "default")).Select(s => s.UserId).ShouldBe([mine]);
+    }
+
     // A space is a household's room, and two households may both have one called "default": a push to
     // one household's space never reaches the other's phones.
     [Fact]

@@ -414,6 +414,26 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         starting.Section.Agents.Select(a => a.Id).ShouldBe(["jonas", "sugary"]);
     }
 
+    // The Lemonade box is the home's, so the picker offers its models to the home's people alone: the
+    // agent-names view says which household is the home.
+    [Fact]
+    public async Task TheAgentNamesView_SaysWhetherTheHouseholdIsTheHome()
+    {
+        await using var server = await StartAsync();
+        var other = await server.SeedHouseholdAsync("Casa");
+        await using var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        var home = (await db.Tenants.SingleAsync(t => t.IsHome)).Id;
+        var assertions = server.Service<Assertions>();
+
+        var ofHome = await AskAsync<HouseholdConfigAnswer<HouseholdAgentNames>>(server, Telegram, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(home, "telegram")));
+        var ofOther = await AskAsync<HouseholdConfigAnswer<HouseholdAgentNames>>(server, Telegram, HouseholdConfigProtocol.AgentNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(other, "telegram")));
+
+        ofHome.Section.IsHome.ShouldBeTrue();
+        ofOther.Section.IsHome.ShouldBeFalse();
+    }
+
     // The chat client's picker is its household's agents: the chat hub reads them on the assertion of
     // the connection's person on its own channel, each with what the picker shows of it — its name,
     // its description, the model and effort it runs on — and none of its custom instructions.

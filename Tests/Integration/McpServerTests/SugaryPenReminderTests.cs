@@ -1,5 +1,6 @@
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Infrastructure.Clients.Push;
 using McpServerSugary.Reminders;
@@ -7,6 +8,7 @@ using McpServerSugary.Store;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
+using Moq;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -19,9 +21,12 @@ public class SugaryPenReminderTests
 {
     private static readonly TimeZoneInfo Madrid = TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid");
 
-    private sealed class Harness(SugaryServer server, RecordingPushSender push, FakeTimeProvider clock)
+    private sealed class Harness(SugaryServer server, RecordingPushSender push, FakeTimeProvider clock, HashSet<string> live)
         : IAsyncDisposable
     {
+        // The sessions the accounts service still vouches for; any other has ended.
+        public HashSet<string> LiveSessions => live;
+
         public SugaryServer Server => server;
         public RecordingPushSender Push => push;
 
@@ -32,9 +37,10 @@ public class SugaryPenReminderTests
             clock.SetUtcNow(TimeZoneInfo.ConvertTimeToUtc(new DateTime(2026, 10, day, hour, 0, 0), Madrid));
 
         public async Task SubscribeAsync(
-            string endpoint = "https://push.example.com/a", string language = "es", Account? person = null)
+            string endpoint = "https://push.example.com/a", string language = "es", Account? person = null,
+            string? session = null)
         {
-            var client = server.As(person ?? SugaryServer.Her);
+            var client = server.As(person ?? SugaryServer.Her, sessionId: session);
             (await client.PutAsJsonAsync("/api/push/subscription", new
             {
                 endpoint,
@@ -61,16 +67,23 @@ public class SugaryPenReminderTests
         public ValueTask DisposeAsync() => server.DisposeAsync();
     }
 
-    private static async Task<Harness> StartAsync()
+    private static async Task<Harness> StartAsync(IReadOnlyDictionary<string, string>? householdZones = null)
     {
         var push = new RecordingPushSender();
         var clock = new FakeTimeProvider();
+        var live = new HashSet<string>();
+        var sessions = new Mock<ISessionAccounts>();
+        sessions.Setup(s => s.SessionAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string user, string session, CancellationToken _) =>
+                live.Contains(session) ? new ResolvedAccount(new Account("household-home", user), "Ana", "assertion") : null);
         var server = await SugaryServer.StartAsync(
+            householdZones: householdZones,
             configure: s => s with { WebPush = SugaryPushApiTests.Keys, PenReminderHour = 9 },
             services: services => services
                 .AddSingleton<IPushMessageSender>(push)
+                .AddSingleton(sessions.Object)
                 .AddSingleton(sp => ActivatorUtilities.CreateInstance<PenReminders>(sp, new HomeCalendar(clock, Madrid))));
-        return new Harness(server, push, clock);
+        return new Harness(server, push, clock, live);
     }
 
     private static string Title(JsonNode payload) => payload["title"]!.GetValue<string>();
@@ -95,6 +108,46 @@ public class SugaryPenReminderTests
         Title(payload).ShouldBe("Mañana toca cambiar la pluma de Fiasp");
         Body(payload).ShouldBe("La empezaste el 1 de octubre y dura 28 días.");
         payload["tag"]!.GetValue<string>().ShouldBe("pen-rapid");
+    }
+
+    // A household keeps its own clock, and so do its pens: the neighbour's household is in New York, so
+    // the reminder hour is nine there — not nine on the deployment's clock, which is three in the
+    // night in New York — and "tomorrow" is New York's tomorrow.
+    [Fact]
+    public async Task APensReminder_ComesAtTheReminderHourOnItsOwnersHouseholdsClock()
+    {
+        await using var harness = await StartAsync(
+            new Dictionary<string, string> { [SugaryServer.Neighbour.TenantId] = "America/New_York" });
+        await harness.SubscribeAsync(language: "en", person: SugaryServer.Neighbour);
+        await harness.PenAsync(person: SugaryServer.Neighbour);
+
+        harness.At(28, 9);
+        await harness.Reminders.RemindAsync(CancellationToken.None);
+        harness.Push.Sent.ShouldBeEmpty("09:00 in Madrid is 04:00 in New York");
+
+        harness.At(28, 15);
+        await harness.Reminders.RemindAsync(CancellationToken.None);
+
+        Title(harness.Push.Sent.ShouldHaveSingleItem().Payload).ShouldBe("Change your Fiasp pen tomorrow");
+    }
+
+    // A phone hears its person's reminders while the session that subscribed it lives: signed out from
+    // the account page — a lost phone — or its person disabled, it is told nothing about their pens and
+    // is dropped.
+    [Fact]
+    public async Task APhoneWhoseSessionEnded_IsToldNothing_AndDropped()
+    {
+        await using var harness = await StartAsync();
+        harness.LiveSessions.Add("laptop");
+        await harness.SubscribeAsync("https://push.example.com/lost", session: "lost-phone");
+        await harness.SubscribeAsync("https://push.example.com/laptop", session: "laptop");
+        await harness.PenAsync();
+
+        harness.At(28, 9);
+        await harness.Reminders.RemindAsync(CancellationToken.None);
+
+        harness.Push.Sent.Select(s => s.Endpoint).ShouldBe(["https://push.example.com/laptop"]);
+        (await harness.EndpointsAsync()).ShouldBe(["https://push.example.com/laptop"]);
     }
 
     // A pen is one person's, and so is a phone that subscribed: each reminder reaches its pen's

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Accounts.Configuration;
 using Domain.Agents;
 using Domain.DTOs.Admin;
@@ -23,21 +25,35 @@ public static class HouseholdSpacesAdmin
             await AnswerAsync(store, caller, ct) is { } spaces ? Results.Ok(spaces) : Results.NotFound());
 
         household.MapPut(path, async (
-            AdminCaller caller, [FromBody] SpacesSection? sent, HttpContext http, HouseholdConfigStore store, AdminLog log,
+            AdminCaller caller, [FromBody] JsonObject? document, HttpContext http, HouseholdConfigStore store, AdminLog log,
             CancellationToken ct) =>
         {
-            if (sent?.Spaces is null)
+            if (document is null)
             {
-                return Results.BadRequest(new AdminRefusal("The spaces were not saved: send them as the spaces section.", []));
+                return Results.BadRequest(_notASection);
             }
-
-            sent = sent with { Spaces = [.. sent.Spaces.Select(s => s with { Name = s.Name?.Trim() ?? "" })] };
 
             if (await store.ReadAsync(caller.HouseholdId, HouseholdSections.SpacesSchema, ct) is not { } before
                 || await AgentsAsync(store, caller, ct) is not { } agents)
             {
                 return Results.NotFound();
             }
+
+            // A space is merged by its slug: another owner's space added, changed or removed since this
+            // page was opened stands beside this page's own changes.
+            var merged = AdminSections.Merged(document, HouseholdSections.SpacesSchema.Write(before), _bySlug);
+            if (merged.Conflicts.Count > 0)
+            {
+                return AdminSections.Conflict("The spaces were not saved.", merged,
+                    path => path.Count > 1 ? $"space {path[1]}" : "the spaces");
+            }
+
+            if (Section(merged.Value!.AsObject()) is not { Spaces: not null } sent)
+            {
+                return Results.BadRequest(_notASection);
+            }
+
+            sent = sent with { Spaces = [.. sent.Spaces.Select(s => s with { Name = s.Name?.Trim() ?? "" })] };
 
             if (before.Spaces.FirstOrDefault(s => s.Slug == SpaceConfig.DefaultSlug) is { } main
                 && sent.Spaces.All(s => s.Slug != SpaceConfig.DefaultSlug))
@@ -63,6 +79,23 @@ public static class HouseholdSpacesAdmin
                     return Results.Ok(new AdminSaved<AdminSpaces>(Answer(after, agents), AdminSections.Warning(saved)));
                 });
         });
+    }
+
+    private static readonly AdminRefusal _notASection = new("The spaces were not saved: send them as the spaces section.", []);
+
+    private static readonly IReadOnlyDictionary<string, string> _bySlug = new Dictionary<string, string> { ["spaces"] = "slug" };
+
+    private static SpacesSection? Section(JsonObject document)
+    {
+        document.Remove(SectionSchema.VersionProperty);
+        try
+        {
+            return document.Deserialize<SpacesSection>(new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static IEnumerable<string> Problems(HouseholdSpace space, IReadOnlyList<AdminSpaceAgent> agents)

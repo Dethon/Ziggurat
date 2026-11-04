@@ -166,7 +166,7 @@
                 Order = order
             })
         ]
-    }));
+    }, _state.Spaces is { } loaded ? new SpacesSection { Spaces = loaded.Spaces } : null));
 
     private sealed class SpaceDraft
     {

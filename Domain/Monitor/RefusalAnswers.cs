@@ -43,6 +43,27 @@ public static class RefusalAnswers
     public const string OutOfCredit =
         "Your household's OpenRouter account is out of credit, so its assistant could not answer. An owner can add credit at openrouter.ai.";
 
+    // A turn of the Sugary app for a household whose owner turned Sugary off on the Features page: its
+    // estimator would run without the rules its own server serves, so nothing is estimated.
+    public const string SugaryOff =
+        "Sugary is turned off for your household, so nothing was estimated. An owner can turn it back on on the Features page.";
+
     public static IReadOnlyList<string> All { get; } =
-        [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent, KeyRefused, OutOfCredit];
+        [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent, KeyRefused, OutOfCredit, SugaryOff];
+
+    // Each refusal by a short code, for a channel that says it in words of its own rather than showing
+    // these (the Sugary app, in the person's language). Null for an answer that is no refusal.
+    public static string? CodeOf(string answer) => answer.Trim() switch
+    {
+        Suspended => "suspended",
+        NotVerified => "not-verified",
+        Disabled => "disabled",
+        Unchecked => "unchecked",
+        WithoutKey => "without-key",
+        NoVoiceAgent => "no-voice-agent",
+        KeyRefused => "key-refused",
+        OutOfCredit => "out-of-credit",
+        SugaryOff => "sugary-off",
+        _ => null
+    };
 }

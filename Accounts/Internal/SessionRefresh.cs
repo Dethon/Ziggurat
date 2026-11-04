@@ -20,14 +20,18 @@ public static class SessionRefresh
         routes.MapPost(Path, async (
             HttpContext http, SessionQuery query, SessionStore sessions, Assertions assertions, CancellationToken ct) =>
         {
-            if (!InternalCallers.MayAskAbout(http, ChannelIds.SignalR))
+            // The chat hub's, or Sugary's for a phone a session subscribed: each answered on its own channel.
+            var channel = InternalCallers.MayAskAbout(http, ChannelIds.SignalR) ? ChannelIds.SignalR
+                : InternalCallers.MayAskAbout(http, ChannelIds.Sugary) ? ChannelIds.Sugary
+                : null;
+            if (channel is null)
             {
                 return InternalCallers.NotYours;
             }
 
             return await sessions.LiveAsync(query.UserId, query.SessionId, ct) is { } session
                 ? Results.Ok(new ResolvedIdentity(
-                    session.TenantId, session.UserId, session.DisplayName, assertions.Of(session, ChannelIds.SignalR)))
+                    session.TenantId, session.UserId, session.DisplayName, assertions.Of(session, channel)))
                 : Results.NotFound();
         });
 }

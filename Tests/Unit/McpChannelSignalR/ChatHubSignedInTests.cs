@@ -318,15 +318,17 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task APushSubscription_IsKeptUnderTheSignedInPerson()
+    public async Task APushSubscription_IsKeptUnderTheSignedInPersonAndTheirSession()
     {
         var connection = await ConnectAsync(SignedIn(), out _);
-        var subscription = new PushSubscriptionDto("https://push.example/1", "key", "auth");
+        // What the browser says of its session is not believed: the connection's own is kept.
+        var subscription = new PushSubscriptionDto("https://push.example/1", "key", "auth") { SessionId = "forged" };
 
         await connection.InvokeAsync("SubscribePush", subscription);
         await connection.InvokeAsync("UnsubscribePush", "https://push.example/1");
 
-        _pushStore.Verify(s => s.SaveAsync(new Account(Home, Fran), subscription, It.IsAny<string>(), null, It.IsAny<CancellationToken>()));
+        var kept = subscription with { SessionId = Phone };
+        _pushStore.Verify(s => s.SaveAsync(new Account(Home, Fran), kept, It.IsAny<string>(), null, It.IsAny<CancellationToken>()));
         _pushStore.Verify(s => s.RemoveAsync(Fran, "https://push.example/1", It.IsAny<CancellationToken>()));
     }
 

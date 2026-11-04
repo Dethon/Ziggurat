@@ -7,7 +7,8 @@ public record LoadHouseholdSpaces : IAction;
 
 public record HouseholdSpacesLoaded(AdminSpaces Spaces) : IAction;
 
-public record SaveHouseholdSpaces(SpacesSection Spaces) : IAction;
+// Loaded: the spaces the page was showing, so another owner's change since then is kept (AdminEdit).
+public record SaveHouseholdSpaces(SpacesSection Spaces, SpacesSection? Loaded = null) : IAction;
 
 public record HouseholdSpacesSaved(AdminSpaces Spaces, string? Warning) : IAction;
 
