@@ -56,9 +56,22 @@ public static class OperatorGate
     // channel no proxy block names, so no browser is ever handed one. It is held to that channel and
     // the owner role, and the owner is kept for the route, which answers their household and no other.
     // Everything else is held to the dashboard's channel and the operator role, as it always was.
+    //
+    // And one kind of request is nobody's: a file of the client's own, asked for by something that is
+    // not a page being opened (ClientFile). An installed dashboard replaces its service worker by
+    // fetching the worker's script and installs the new one by fetching these files, signed out as often
+    // as not, and the worker from before sign-in answers every page with its cached app — so without
+    // them an operator's installed dashboard was stuck on that for good. They hold no figure; a path
+    // that is not a file in the web root, the API, the hub and every page stay behind the gate.
     public static IApplicationBuilder UseOperatorGate(this IApplicationBuilder app) =>
         app.Use(async (context, next) =>
         {
+            if (ClientFile(context))
+            {
+                await next(context);
+                return;
+            }
+
             var usage = context.Request.Path.Equals(HouseholdUsage.Path);
             var admission = await context.RequestServices.GetRequiredService<AssertionVerifier>()
                 .AdmitAsync(
@@ -77,6 +90,19 @@ public static class OperatorGate
 
             await next(context);
         });
+
+    private static bool ClientFile(HttpContext context)
+    {
+        var request = context.Request;
+        return HttpMethods.IsGet(request.Method)
+               && !string.Equals(request.Headers["Sec-Fetch-Mode"], "navigate", StringComparison.OrdinalIgnoreCase)
+               && !request.Headers.Accept.Any(a => a?.Contains("text/html", StringComparison.OrdinalIgnoreCase) == true)
+               && !request.Path.StartsWithSegments("/api")
+               && !request.Path.StartsWithSegments("/hubs")
+               && request.Path.HasValue
+               && context.RequestServices.GetRequiredService<IWebHostEnvironment>().WebRootFileProvider
+                   .GetFileInfo(request.Path.Value) is { Exists: true, IsDirectory: false };
+    }
 }
 
 // The owner the gate verified for the usage route, kept on that request alone and bound by the route

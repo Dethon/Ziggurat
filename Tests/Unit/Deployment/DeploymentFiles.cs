@@ -379,7 +379,7 @@ public sealed record CaddyRoute(string? Matcher, string? Upstream, string Body)
 
 // A forward_auth block: whom it asks, at which path, and the headers of the answer it copies onto
 // the request it passes on.
-public sealed record CaddyForwardAuth(string Upstream, string? Uri, IReadOnlyList<string> CopiedHeaders)
+public sealed record CaddyForwardAuth(string Upstream, string? Uri, IReadOnlyList<string> CopiedHeaders, string? Matcher = null)
 {
     private const string Directive = "forward_auth ";
 
@@ -408,10 +408,14 @@ public sealed record CaddyForwardAuth(string Upstream, string? Uri, IReadOnlyLis
         var settings = body.Split('\n')
             .Select(l => l.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries))
             .ToList();
+        // `forward_auth [<matcher>] <upstream>`: a host-level check that stands in front of what its
+        // named matcher matches, and nothing else.
+        var target = header["forward_auth".Length..].Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return new CaddyForwardAuth(
-            header["forward_auth".Length..].Trim(),
+            target.Last(),
             settings.FirstOrDefault(s => s is ["uri", _])?[1],
-            [.. settings.Where(s => s.FirstOrDefault() == "copy_headers").SelectMany(s => s.Skip(1))]);
+            [.. settings.Where(s => s.FirstOrDefault() == "copy_headers").SelectMany(s => s.Skip(1))],
+            target is [var matcher, _] && matcher.StartsWith('@') ? matcher : null);
     }
 }
 

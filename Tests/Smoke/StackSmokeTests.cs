@@ -60,7 +60,11 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     {
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
-        foreach (var (host, worker, api) in new[] { (stack.MainHost, "/service-worker.js", "/api/config"), (stack.SugaryHost, "/sw.js", "/api/meals") })
+        foreach (var (host, worker, api) in new[]
+                 {
+                     (stack.MainHost, "/service-worker.js", "/api/config"), (stack.SugaryHost, "/sw.js", "/api/meals"),
+                     (stack.DashboardHost, "/service-worker.js", "/api/metrics/summary")
+                 })
         {
             var script = stack.Request(HttpMethod.Get, host, worker);
             script.Headers.Add("Sec-Fetch-Mode", "same-origin");

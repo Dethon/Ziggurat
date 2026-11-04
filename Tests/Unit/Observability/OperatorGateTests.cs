@@ -67,14 +67,61 @@ public sealed class OperatorGateTests
         response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
     }
 
-    private static async Task<WebApplication> StartAsync()
+    // An installed dashboard replaces its service worker by fetching the worker's script, and installs
+    // the new one by fetching the client's files, signed out as often as not — the worker from before
+    // sign-in answers every page with its cached app, so without them the operator's installed app was
+    // stuck on it for good. The client's own files are served to such a request; a page being opened,
+    // anything asking for HTML, the API, the hub and every path that is not a file of the client stay
+    // the operator's.
+    [Theory]
+    [InlineData("/service-worker.js", null, null, HttpStatusCode.OK)]
+    [InlineData("/_framework/blazor.webassembly.js", "same-origin", "*/*", HttpStatusCode.OK)]
+    [InlineData("/service-worker.js", "navigate", null, HttpStatusCode.Unauthorized)]
+    [InlineData("/index.html", null, "text/html,application/xhtml+xml", HttpStatusCode.Unauthorized)]
+    [InlineData("/api/metrics/summary", null, null, HttpStatusCode.Unauthorized)]
+    [InlineData("/hubs/metrics/negotiate", null, null, HttpStatusCode.Unauthorized)]
+    [InlineData("/not-a-file.js", null, null, HttpStatusCode.Unauthorized)]
+    public async Task TheClientsOwnFiles_AreServedSignedOut_AndNothingElse(
+        string path, string? fetchMode, string? accept, HttpStatusCode expected)
     {
-        var builder = WebApplication.CreateBuilder();
+        await using var app = await StartAsync(withClientFiles: true);
+        var request = new HttpRequestMessage(HttpMethod.Get, path);
+        if (fetchMode is not null)
+        {
+            request.Headers.Add("Sec-Fetch-Mode", fetchMode);
+        }
+
+        if (accept is not null)
+        {
+            request.Headers.TryAddWithoutValidation("Accept", accept);
+        }
+
+        using var response = await app.GetTestClient().SendAsync(request);
+
+        response.StatusCode.ShouldBe(expected, path);
+    }
+
+    private static async Task<WebApplication> StartAsync(bool withClientFiles = false)
+    {
+        var webRoot = Directory.CreateTempSubdirectory("operator-gate-").FullName;
+        foreach (var file in new[] { "service-worker.js", "index.html", "_framework/blazor.webassembly.js" })
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(webRoot, file))!);
+            await File.WriteAllTextAsync(Path.Combine(webRoot, file), file);
+        }
+
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { WebRootPath = webRoot });
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton(TestAssertions.Verifier());
         var app = builder.Build();
         app.UseOperatorGate();
+        if (withClientFiles)
+        {
+            app.UseStaticFiles();
+        }
+
         app.MapGet("/", () => "dashboard");
+        app.MapGet("/api/metrics/summary", () => "summary");
         await app.StartAsync();
         return app;
     }
