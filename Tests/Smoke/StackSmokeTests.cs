@@ -39,6 +39,7 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
 
     // The schedule scripts/smoke-stack.sh up writes as it was kept before households.
     private const string BeforeHouseholds = "smoke-before-households";
+    private const string WrittenInATopic = "smoke-written-in-a-topic";
 
     [SkippableFact]
     public async Task ASignedOutPage_IsSentToSignInAndBack()
@@ -280,6 +281,23 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     // A schedule kept as it was before households is the home's after the migration: moved into the
     // home's own keys, due there, and offered as its writer by the agent's redelegate — which reads it
     // through the scheduling server, as every fire and listing does, and saves its delegation back.
+    // A deployment from before principals recorded no writer on any schedule; the migration finds the
+    // person in the topic that wrote it rather than giving it to the owner, who would then receive it
+    // in a private topic its writer never sees.
+    [SkippableFact]
+    public async Task AScheduleWrittenBeforePrincipals_RunsAsThePersonWhoseTopicWroteIt()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        var schedule = JsonNode.Parse(await stack.RedisAsync("GET", RedisScheduleStore.ScheduleKey(stack.Home, WrittenInATopic)))!;
+        var topic = JsonNode.Parse(await stack.RedisAsync("GET",
+            RedisThreadStateStore.TopicKey(stack.Home, "jonas", 7001, "smoke-writers-topic")))!;
+        var writer = topic["OwnerId"]!.GetValue<string>();
+        topic["OwnerName"]!.GetValue<string>().ShouldBe("Smoke Writer");
+        schedule["CreatedBy"]!["Account"]!["UserId"]!.GetValue<string>().ShouldBe(writer);
+        schedule["Delegation"]!.GetValue<string>().ShouldNotBeNullOrEmpty();
+    }
+
     [SkippableFact]
     public async Task AScheduleFromBeforeHouseholds_IsKeptUnderTheHome_AndDelegatedAsItsWriter()
     {
