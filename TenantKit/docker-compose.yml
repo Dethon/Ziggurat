@@ -314,6 +314,30 @@ services:
     depends_on:
       - base-sdk
 
+  # The household's own Lemonade box, reached through this one tunnel: the agent asks it for its
+  # models and runs the household's Lemonade turns on it, so a box behind the router needs no public
+  # address. Only for a household with a box (`--profile lemonade`), and set "through the tenant kit"
+  # on the Keys page. It serves no MCP and makes no back-call; its one listener passes every request to
+  # the box and adds the box's key.
+  lemonade-forwarder:
+    image: lemonade-forwarder:latest
+    profiles: ["lemonade"]
+    logging: *logging
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: LemonadeForwarder/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: [*timezone, *hub]
+      BOX__URL: ${LEMONADE_URL:-}
+      BOX__APIKEY: ${LEMONADE_API_KEY:-}
+      MCP__TUNNEL__SERVERNAME: lemonade
+      MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_LEMONADE}
+    networks:
+      - kit
+    depends_on:
+      - base-sdk
+
   homeassistant:
     image: ghcr.io/home-assistant/home-assistant:stable
     logging: *logging

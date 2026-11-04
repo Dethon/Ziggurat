@@ -170,6 +170,7 @@ public class TenantKitConformanceTests
     [InlineData(BrowseServerListeners.Service, HouseholdServerNames.WebSearch)]
     [InlineData("mcp-channel-voice", HouseholdServerNames.Voice)]
     [InlineData("mcp-sandbox", HouseholdServerNames.Sandbox)]
+    [InlineData("lemonade-forwarder", HouseholdServerNames.Lemonade)]
     public void TheServersTheDeploymentFindsByName_RunUnderTheNamesItLooksFor(string service, string name)
     {
         Kit.Service(service).Environment["MCP__TUNNEL__SERVERNAME"].ShouldBe(name);
@@ -184,7 +185,24 @@ public class TenantKitConformanceTests
         var named = ShippedAgentSettings.ServerNames();
 
         named.ShouldNotBeEmpty();
-        named.ShouldBe(TunnelledServers.Select(s => s.Environment["MCP__TUNNEL__SERVERNAME"]), ignoreOrder: true);
+        named.Append(HouseholdServerNames.Lemonade)
+            .ShouldBe(TunnelledServers.Select(s => s.Environment["MCP__TUNNEL__SERVERNAME"]), ignoreOrder: true,
+                "the Lemonade forwarder is the one kit server no agent names: it carries chat, not tools");
+    }
+
+    // A household's Lemonade box is the kit's only when it has one: the forwarder runs under a profile,
+    // so no `up` starts it unasked, told the box by the kit's .env (empty refuses its start), reaching
+    // it on the household's own network and making no back-call.
+    [Fact]
+    public void TheLemonadeForwarder_RunsOnlyWhenAskedFor_ToldItsBoxByTheKitsEnv()
+    {
+        var forwarder = Kit.Service("lemonade-forwarder");
+
+        forwarder.Profiles.ShouldBe(["lemonade"]);
+        forwarder.Ports.ShouldBeEmpty();
+        forwarder.Environment["BOX__URL"].ShouldBe("${LEMONADE_URL:-}");
+        forwarder.Environment["BOX__APIKEY"].ShouldBe("${LEMONADE_API_KEY:-}");
+        forwarder.Environment.Keys.ShouldNotContain(k => k.StartsWith("MCP__TUNNEL__BACKCALLS__", StringComparison.Ordinal));
     }
 
     // The kit is on networks of its own, and every address a service is told is one of the kit's own

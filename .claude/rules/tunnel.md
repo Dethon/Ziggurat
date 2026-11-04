@@ -519,6 +519,14 @@ to (`TenantKitConformanceTests`, through `DeploymentFiles.KitCompose`):
 - **The names**: `websearch`, `vault`, `library`, `sandbox`, `printer`, `homeassistant`, `voice` — the
   set the shipped definitions and channels name, exactly (a name nothing runs is a server offline
   forever, a context line and nothing louder), with web search and voice under `HouseholdServerNames`.
+  One more runs only under the `lemonade` profile and is named by no agent: **`lemonade`**, the
+  household's Lemonade forwarder (`LemonadeForwarder/`, service `lemonade-forwarder`). It serves no
+  MCP (`AddTunnelledHost`: the tunnel names only its listeners, so the relay's `mcp` tag reaches
+  nothing) and makes no back-call; its one listener, under the `chat` tag (`TunnelProtocol.ChatTag`
+  — not voice's `lemonade` back-call, which goes the other way to the deployment's own speech box),
+  passes every request to the box at `BOX__URL` (the kit's `LEMONADE_URL`, empty refuses its start)
+  and adds `BOX__APIKEY`, so the box's key never leaves the house. The agent reaches it through
+  `TunnelRegistry.StreamsTo` (`LemonadeForwarderTests`).
   Each name is also a server the test stacks host in its place (`AgentAppSettingsTests`, by
   `McpServerRegistrations`: tools for an agent, a channel for a channel).
 - **Back-calls are loopback ports dialled by their client**: voice's `accounts` (`ACCOUNTS__BASEURL`),

@@ -25,6 +25,10 @@ public static class TunnelProtocol
     // a login handoff's live view and a person's logins page.
     public const string PagesTag = "pages";
 
+    // A household's Lemonade forwarder's one listener, which passes the agent's requests to its box.
+    // Not "lemonade": that is voice's back-call to the deployment's own speech box, the other way.
+    public const string ChatTag = "chat";
+
     // How a tunnel ends, as the WebSocket close's description. A refusal is a credential's reason
     // (TunnelCredentialRefusal); the rest are the relay's own.
     public const string Unverified = "Unverified";

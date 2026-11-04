@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 (its tests reach it through the relay transport).
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `lemonade` joins the household server names the deployment itself finds, and `chat` joins the tunnel protocol's tags.
 - [ ] Tunnelled to the relay host with a stub Lemonade behind it (a small Kestrel answering the model list and a streamed Responses call), a request through ticket 01's transport for the household's `lemonade` and `chat`:
