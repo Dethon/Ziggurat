@@ -89,6 +89,19 @@ public class VfsExecTool(
                 .ToNode();
         }
 
+        // A mount whose server advertised no exec, with no sandbox to run the command in instead (a
+        // household that set none up): asking its server would answer "unknown tool", which reads as
+        // a fault worth retrying. What the mount does do is named instead. A mount whose tools are not
+        // known is asked as before.
+        if (ExecReach.MountAt(registry.GetMounts() ?? [], resolution.MountPoint) is { Capabilities.Count: > 0 } mount
+            && !mount.Capabilities.Contains(Key))
+        {
+            return FsError.Fail<FsExecResult>(ToolError.Codes.UnsupportedOperation,
+                    $"{mount.MountPoint} runs no commands, and there is no sandbox here to run one in.",
+                    $"Use what {mount.MountPoint} offers instead: {string.Join(", ", mount.Capabilities)}.")
+                .ToNode();
+        }
+
         return (await resolution.Backend.ExecAsync(resolution.RelativePath, command, timeoutSeconds, cancellationToken))
             .Map(e => e with { Cwd = resolution.ToVirtualPath(e.Cwd) })
             .ToNode();
