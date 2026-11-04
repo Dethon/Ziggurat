@@ -1,5 +1,8 @@
 using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Configurations;
+using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
+using Tests.Integration.Fixtures;
 
 namespace Tests;
 
@@ -68,5 +71,19 @@ internal static class TestContainers
         }
 
         return withoutTag[(withoutTag.LastIndexOf('/') + 1)..];
+    }
+
+    // A container that runs one command and exits — a probe reading a volume — is ready once it has
+    // exited, and is never expected to be running: the readiness check that wants it running raced its
+    // exit, and on a full suite timed out on a probe of a few milliseconds. Bounded by the fixtures'
+    // budget, since a busy Docker takes what it takes to start even this.
+    public static IWaitForContainerOS OneShot() =>
+        Wait.ForUnixContainer().AddCustomWaitStrategy(new UntilExited(),
+            strategy => strategy.WithMode(WaitStrategyMode.OneShot).WithTimeout(ContainerReadiness.Budget));
+
+    private sealed class UntilExited : IWaitUntil
+    {
+        public Task<bool> UntilAsync(IContainer container) =>
+            Task.FromResult(container.State == TestcontainersStates.Exited);
     }
 }

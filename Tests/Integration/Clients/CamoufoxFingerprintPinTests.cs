@@ -83,7 +83,7 @@ public class CamoufoxFingerprintPinTests
         await using var probe = TestContainers.Container(Image, "camoufox-fingerprint")
             .WithVolumeMount(volume, "/data")
             .WithEntrypoint("cat", "/data/fingerprint.json")
-            .WithWaitStrategy(Wait.ForUnixContainer())
+            .WithWaitStrategy(TestContainers.OneShot())
             .Build();
         await probe.StartAsync();
         (await probe.GetExitCodeAsync()).ShouldBe(0, "the launch saved the device it drew");
@@ -97,7 +97,7 @@ public class CamoufoxFingerprintPinTests
         await using var probe = TestContainers.Container(Image, "camoufox-fingerprint")
             .WithVolumeMount(volume, "/data")
             .WithEntrypoint("sh", "-c", "test -s /data/fingerprint.json")
-            .WithWaitStrategy(Wait.ForUnixContainer())
+            .WithWaitStrategy(TestContainers.OneShot())
             .Build();
         await probe.StartAsync();
         return await probe.GetExitCodeAsync() == 0;
