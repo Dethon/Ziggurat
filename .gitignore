@@ -29,3 +29,7 @@ temp
 /Tests/Eval/Sugary/photos
 # ...and the clips and stills of its video cases, made from Nutrition5k by Tests/Eval/Sugary/fetch-clips.sh
 /Tests/Eval/Sugary/clips
+
+# Python bytecode (the smoke stack's test satellite and helper scripts)
+__pycache__/
+*.py[cod]
