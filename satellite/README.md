@@ -122,15 +122,16 @@ Provisioning installs its defaults for whatever is left out:
 
 - Without `MUSIC_HUB` / `MUSIC_ROOM` the unit is torn down to voice-only (no snapclient, no PipeWire).
 - The wake tuning is the script's defaults, which are this unit's: `THRESHOLD=0.5 WAKE_WINDOW=3`
-  for the shipped classifier (`models/ok_nabu.onnx` = `ok_nabu_custom_v12a.onnx`: v10, retrained
-  on this unit's own microphone audio, plus synthetic Spanish "okey + word" phrases as
-  negatives), the loudness floor at `WAKE_MIN_RMS=350` and the quiet-room
+  for the shipped classifier (`models/ok_nabu.onnx` = `ok_nabu_custom_v13b.onnx`: v10, retrained
+  on this unit's own microphone audio, plus synthetic Spanish "okey + word" phrases and the
+  user's own recorded "ok no" / "ok nada" / "okay now" as negatives), the loudness floor at `WAKE_MIN_RMS=350` and the quiet-room
   rule at `WAKE_QUIET_RMS=200` (0.9 / 2), both measured on the XVF3800. Swapping the classifier
   means re-tuning `THRESHOLD` / `WAKE_WINDOW` with it. v10 shipped at 0.5 / 2 and went back to
   0.5 / 3 a day later: a 2-frame mean let short score blips on ordinary speech wake it (two in
   an hour on the office mic, both under 0.5 as a 3-frame mean), at the cost of ~1 real wake in
   34 in the offline tests. v12a kept v10's tuning: same real-wake rate offline, about 40% fewer
-  wakes on deliberately spoken "ok ..." phrases.
+  wakes on deliberately spoken "ok ..." phrases. v13b kept it too; it trades ~2 in 34 real wakes
+  on one test set for far fewer wakes on the user's own "ok no" / "ok nada".
 - `MASTER_VOLUME` is omitted, so the master returns to 50%; pass the current level to keep it
   (`ssh dethon@192.168.5.11 XDG_RUNTIME_DIR=/run/user/1000 wpctl get-volume @DEFAULT_AUDIO_SINK@`).
 - `TTS_VOLUME` / `ALERT_VOLUME` are at their 100% defaults on this unit.

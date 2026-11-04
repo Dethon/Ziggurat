@@ -8,7 +8,7 @@ set -euo pipefail
 #                    spoken volume commands drive, on BOTH unit paths (the PipeWire sink on a
 #                    music unit, the "Nabu" softvol on a voice-only one).
 #   Wake tuning:     THRESHOLD=<0..1> WAKE_WINDOW=<n> scripts/provision-satellite-rs.sh <user@host>
-#                    Defaults 0.5 / 3, tuned for the shipped classifier (custom v12a) — applied to
+#                    Defaults 0.5 / 3, tuned for the shipped classifier (custom v13b) — applied to
 #                    BOTH unit paths (the voice-only ExecStart and the music drop-in that
 #                    overrides it), so a music unit is tuned by the same two vars. WAKE_WINDOW is how many 80 ms classifier scores are AVERAGED before
 #                    the mean is compared against THRESHOLD (it replaced TRIGGER_LEVEL, which
