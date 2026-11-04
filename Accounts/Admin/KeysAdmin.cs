@@ -1,5 +1,6 @@
 using Accounts.Configuration;
 using Accounts.Keys;
+using Accounts.Settings;
 using Domain.Agents;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
@@ -17,6 +18,8 @@ public sealed class KeysAdmin(
     IKeyProbe<OpenRouterKey> openRouter,
     IKeyProbe<IdealistaKeys> idealista,
     IKeyProbe<TelegramBotKey> telegram,
+    IKeyProbe<LemonadeBox> lemonade,
+    AccountsSettings settings,
     ILogger<KeysAdmin> logger)
 {
     public const string SecretsUnavailableMessage =
@@ -49,6 +52,14 @@ public sealed class KeysAdmin(
             (AdminCaller caller, IdealistaKeys? key, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
                 keys.SaveIdealistaAsync(key, new Saving(caller, http, log), ct));
 
+        household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.LemonadeBox),
+            (AdminCaller caller, LemonadeBox? box, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
+                keys.SaveLemonadeAsync(box, new Saving(caller, http, log), ct));
+
+        household.MapDelete(AdminApi.Under(AdminProtocol.Household, AdminProtocol.LemonadeBox),
+            (AdminCaller caller, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
+                keys.RemoveLemonadeAsync(new Saving(caller, http, log), ct));
+
         household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.TelegramBotRoute),
             (string agentId, AdminCaller caller, TelegramBotKey? key, HttpContext http, KeysAdmin keys, AdminLog log,
                 CancellationToken ct) => keys.SaveBotAsync(agentId, key, new Saving(caller, http, log), ct));
@@ -59,6 +70,55 @@ public sealed class KeysAdmin(
 
     private Task<IResult> SaveIdealistaAsync(IdealistaKeys? key, Saving saving, CancellationToken ct) =>
         SaveAsync(KeySlot.Idealista, idealista, key, saving, ct);
+
+    // Another household's box is a public https address; the home's may be on the deployment's own
+    // network, where its box has always been (LemonadeAddresses).
+    private async Task<IResult> SaveLemonadeAsync(LemonadeBox? box, Saving saving, CancellationToken ct)
+    {
+        if (box is not null
+            && !settings.KeyProbes.LemonadeOnPrivateAddresses
+            && await store.HouseholdAsync(saving.Caller.HouseholdId, ct) is { IsHome: false }
+            && !await LemonadeAddresses.IsPublicHttpsAsync(box.ApiUrl, ct))
+        {
+            return Results.BadRequest(new AdminRefusal(
+                "The Lemonade box was not saved: the deployment reaches a household's own box at a public https " +
+                "address, never one on its own network.", []));
+        }
+
+        return await SaveAsync(KeySlot.Lemonade, lemonade, box, saving, ct);
+    }
+
+    private async Task<IResult> RemoveLemonadeAsync(Saving saving, CancellationToken ct)
+    {
+        var caller = saving.Caller;
+        try
+        {
+            if (await store.ReadAsync(caller.HouseholdId, HouseholdSections.KeysSchema, ct) is not { } keys)
+            {
+                return Results.NotFound();
+            }
+
+            if (keys.Lemonade is null)
+            {
+                return Results.Ok(new AdminSaved<HouseholdKeys>((await ViewAsync(caller.HouseholdId, ct))!));
+            }
+
+            return await AdminSections.AnswerAsync(
+                await store.SaveAsync(caller.HouseholdId, HouseholdSections.KeysSchema,
+                    HouseholdSections.KeysSchema.Write(keys with { Lemonade = null }), ct),
+                "The Lemonade box was not removed.",
+                async saved =>
+                {
+                    await saving.Log.RecordAsync(saving.Http, caller, "Removed the Lemonade box", ct);
+                    return Results.Ok(new AdminSaved<HouseholdKeys>(
+                        (await ViewAsync(caller.HouseholdId, ct))!, saved.NotTold is null ? null : NotToldWarning));
+                });
+        }
+        catch (HouseholdSecretsUnavailableException)
+        {
+            return SecretsUnavailable();
+        }
+    }
 
     // A bot is bound to one of the household's agents, the ones its turns are built from.
     private async Task<IResult> SaveBotAsync(string agentId, TelegramBotKey? key, Saving saving, CancellationToken ct)
@@ -94,7 +154,10 @@ public sealed class KeysAdmin(
             [
                 .. keys.TelegramBots.Keys.Order(StringComparer.Ordinal)
                     .Select(agent => new TelegramBotStatus(agent, Status(KeySlot.TelegramBot(agent), keys, known)!))
-            ]);
+            ])
+        {
+            Lemonade = keys.Lemonade is { } box ? new LemonadeBoxStatus(box.ApiUrl, Status(KeySlot.Lemonade, keys, known)!) : null
+        };
     }
 
     // A key OpenRouter refused in a turn: marked rejected at once, then put to OpenRouter again, whose
@@ -221,6 +284,10 @@ public static class KeySlot
     public static readonly KeySlot<IdealistaKeys> Idealista = new(
         "idealista", "Idealista keys", keys => keys.Idealista, (keys, key) => keys with { Idealista = key },
         key => $"{key.ApiKey}\n{key.Secret}", key => key.ApiKey);
+
+    public static readonly KeySlot<LemonadeBox> Lemonade = new(
+        "lemonade", "Lemonade box", keys => keys.Lemonade, (keys, box) => keys with { Lemonade = box },
+        box => $"{box.ApiUrl}\n{box.ApiKey}", box => box.ApiKey ?? "");
 
     public static KeySlot<TelegramBotKey> TelegramBot(string agentId) => new(
         $"telegramBots/{agentId}", $"Telegram bot for {agentId}",

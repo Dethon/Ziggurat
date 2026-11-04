@@ -19,6 +19,10 @@ public interface IAdminService
 
     Task<AdminAnswer<HouseholdKeys>> SaveIdealistaKeysAsync(IdealistaKeys keys);
 
+    Task<AdminAnswer<HouseholdKeys>> SaveLemonadeBoxAsync(LemonadeBox box);
+
+    Task<AdminAnswer<HouseholdKeys>> RemoveLemonadeBoxAsync();
+
     Task<AdminAnswer<HouseholdKeys>> SaveTelegramBotAsync(string agentId, TelegramBotKey bot);
     Task<AdminAnswer<AdminAgents>> GetAgentsAsync();
 

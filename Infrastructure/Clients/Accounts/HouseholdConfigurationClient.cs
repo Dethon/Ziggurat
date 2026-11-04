@@ -77,6 +77,16 @@ public sealed class HouseholdConfigurationClient(
         KeptAsync(HouseholdConfigProtocol.TelegramBotsView, EveryHousehold, async () =>
             (await AskAsync<HouseholdTelegramBots>(HouseholdConfigProtocol.TelegramBotsView, new HouseholdConfigQuery(), ct)).Bots, ct);
 
+    // Asked once a minute by the agent's Lemonade discovery and never kept: a box saved or removed is
+    // in the next answer.
+    public async Task<IReadOnlyList<HouseholdLemonadeBox>> LemonadeBoxesAsync(CancellationToken ct)
+    {
+        var token = agentToken?.Invoke()
+                    ?? throw new InvalidOperationException("only the agent reads every household's Lemonade box, with a token of its own");
+        return (await AskAsync<HouseholdLemonadeBoxes>(HouseholdConfigProtocol.LemonadeBoxesView, new HouseholdConfigQuery(CallToken: token), ct))
+            .Boxes;
+    }
+
     public async Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct)
     {
         var token = agentToken?.Invoke()

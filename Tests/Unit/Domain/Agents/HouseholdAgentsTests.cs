@@ -289,6 +289,11 @@ public class HouseholdAgentsTests
         Of(Household(Section(), settings: new HouseholdSettings { Name = "Casa", TimeZone = "America/New_York" })).ShouldNotBe(built);
         Of(Household(Section()) with { OpenRouterApiKey = "sk-or-a" }).ShouldNotBe(Of(Household(Section()) with { OpenRouterApiKey = "sk-or-b" }));
         Of(Household(Section()) with { OpenRouterApiKey = "sk-or-a" }).ShouldBe(Of(Household(Section()) with { OpenRouterApiKey = "sk-or-a" }));
+        // The routing client is built with the household's box, so a box added, moved or removed is a
+        // rebuild too.
+        Of(Household(Section()) with { Lemonade = new LemonadeBox("https://box.example.org/api/v1", "k") }).ShouldNotBe(built);
+        Of(Household(Section()) with { Lemonade = new LemonadeBox("https://box.example.org/api/v1", "k") })
+            .ShouldBe(Of(Household(Section()) with { Lemonade = new LemonadeBox("https://box.example.org/api/v1", "k") }));
         HouseholdAgents.Of(Household(Section()), _shared).AsBuilt("someone-elses").ShouldBeNull();
     }
 

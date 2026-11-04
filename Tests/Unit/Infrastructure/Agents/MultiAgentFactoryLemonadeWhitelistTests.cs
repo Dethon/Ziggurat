@@ -91,6 +91,46 @@ public sealed class MultiAgentFactoryLemonadeWhitelistTests
         error.Message.ShouldContain("no Lemonade chat host serves this household");
     }
 
+    // A household that saved a box of its own runs a turn patched to one of that box's models on that
+    // box — never the deployment's, which is the home's.
+    [Fact]
+    public async Task APatchNamingAModelOfAHouseholdsOwnBox_IsSentToThatBox()
+    {
+        var definition = new AgentDefinition
+        {
+            Id = "jonas", Name = "Jonas", Model = "configured/model", McpServerEndpoints = []
+        };
+        var household = new AgentHouseholdConfig(
+            "rivas", false, new HouseholdSettings(), new AgentsSection(), new FeaturesSection(), new SpacesSection(),
+            "household-key");
+        var provider = new AgentDefinitionProvider(new OtherHousehold(definition, household), new CustomAgentRegistry());
+        var ownBox = new LemonadeHost(
+            new LemonadeChatHostOptions { ApiUrl = "http://rivas-box.invalid:13305/api/v1" },
+            new LiveSource { Current = [new LemonadeModel("theirs", [], null)] });
+        var hosts = new Mock<ILemonadeHosts>();
+        hosts.Setup(h => h.For("rivas", false)).Returns(ownBox);
+        var services = new Mock<IServiceProvider>();
+        services.Setup(sp => sp.GetService(typeof(ILemonadeHosts))).Returns(hosts.Object);
+        services.Setup(sp => sp.GetService(typeof(LemonadeChatHostOptions)))
+            .Returns(new LemonadeChatHostOptions { ApiUrl = "http://lemonade-chat-host.invalid:13305/api/v1" });
+        services.Setup(sp => sp.GetService(typeof(IThreadStateStore))).Returns(Mock.Of<IThreadStateStore>());
+        var factory = new MultiAgentFactory(
+            services.Object, provider,
+            new OpenRouterConfig { ApiUrl = "http://openrouter.invalid/api/v1", ApiKey = "key" },
+            Mock.Of<IDomainToolRegistry>());
+
+        await using var agent = await factory.CreateAsync(
+            new AgentKey("conv-1", "jonas"), "ines", "jonas", Mock.Of<IToolApprovalHandler>(), tenantId: "rivas");
+        var message = new ChatMessage(ChatRole.User, "hi");
+        message.SetConfigPatch(new AgentConfigPatch { Model = LemonadeModelId.Namespaced("theirs") });
+
+        var error = await Should.ThrowAsync<LemonadeChatHostException>(
+            () => agent.RunStreamingAsync([message]).ToListAsync().AsTask());
+
+        error.Message.ShouldContain("rivas-box.invalid");
+        error.Message.ShouldNotContain("lemonade-chat-host.invalid");
+    }
+
     private sealed class OtherHousehold(AgentDefinition agent, AgentHouseholdConfig configuration) : IHouseholdAgentSource
     {
         public Task<HouseholdAgents> ForAsync(string? householdId, CancellationToken ct) =>

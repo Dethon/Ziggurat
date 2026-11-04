@@ -40,7 +40,8 @@ public static partial class KeyProbes
         return services
             .AddSingleton<IKeyProbe<OpenRouterKey>, OpenRouterKeyProbe>()
             .AddSingleton<IKeyProbe<IdealistaKeys>, IdealistaKeyProbe>()
-            .AddSingleton<IKeyProbe<TelegramBotKey>, TelegramBotProbe>();
+            .AddSingleton<IKeyProbe<TelegramBotKey>, TelegramBotProbe>()
+            .AddSingleton<IKeyProbe<LemonadeBox>, LemonadeBoxProbe>();
     }
 
     // What Telegram issues: the bot's id, a colon, and its secret. Anything else is refused without
@@ -90,6 +91,25 @@ public abstract class HttpKeyProbe<TKey>(IHttpClientFactory http, AccountsSettin
     // Joined as text: a bot's token has a colon in it, which a relative URI's first segment would
     // read as a scheme.
     protected static Uri Under(string baseUrl, string path) => new($"{baseUrl.TrimEnd('/')}/{path}");
+}
+
+// A household's own Lemonade box, asked for its models — what the agent asks it every minute — with
+// its key where it checks one. Its address is the key's own, not a setting.
+public sealed class LemonadeBoxProbe(IHttpClientFactory http, AccountsSettings settings)
+    : HttpKeyProbe<LemonadeBox>(http, settings)
+{
+    public override string Provider => "The Lemonade box";
+
+    protected override HttpRequestMessage Request(LemonadeBox box)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, Under(box.ApiUrl, "models"));
+        if (!string.IsNullOrWhiteSpace(box.ApiKey))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", box.ApiKey);
+        }
+
+        return request;
+    }
 }
 
 // The key's own metadata, which bills nothing (what the judges' keep-alive pings too).

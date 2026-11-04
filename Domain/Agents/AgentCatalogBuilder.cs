@@ -48,13 +48,15 @@ public static class AgentCatalogBuilder
     // any other is the household's word on its model and the deployment's on what that model accepts,
     // none where the registered catalogue is silent (AttachmentCapability is permissive there).
     public static IReadOnlyList<AgentCatalogEntry> ForHousehold(
-        HouseholdAgentNames household, IReadOnlyList<AgentCatalogEntry> registered)
+        HouseholdAgentNames household, IReadOnlyList<AgentCatalogEntry> registered,
+        IReadOnlyList<PatchableModel>? householdLemonade = null)
     {
         var deployment = registered.FirstOrDefault();
-        // The Lemonade box is the home's: another household is offered the configured models alone.
-        var patchable = deployment?.PatchableModels is { } models && !household.IsHome
-            ? [.. models.Where(m => !LemonadeModelId.IsLemonade(m.Id))]
-            : deployment?.PatchableModels;
+        // A Lemonade model is its box's household's: the configured models, then the household's own
+        // box's (the home's own or the deployment's), never the registered ones from the deployment's.
+        IReadOnlyList<PatchableModel>? patchable = deployment?.PatchableModels is { } models
+            ? [.. models.Where(m => !LemonadeModelId.IsLemonade(m.Id)), .. householdLemonade ?? []]
+            : householdLemonade is { Count: > 0 } ? householdLemonade : null;
         var answersByDefault = household.Agents.Any(a => a.Id == household.DefaultAgent)
             ? household.DefaultAgent
             : household.Agents.FirstOrDefault()?.Id;

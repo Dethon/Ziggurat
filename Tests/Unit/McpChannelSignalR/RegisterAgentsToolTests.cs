@@ -28,4 +28,19 @@ public class RegisterAgentsToolTests
             Times.Once);
         sender.VerifyNoOtherCalls();
     }
+
+    // Each household's own Lemonade box's models ride the registration, kept by household for its
+    // picker.
+    [Fact]
+    public void McpRun_KeepsEachHouseholdsLemonadeModels()
+    {
+        var catalog = new MutableAgentCatalog();
+        var tool = new RegisterAgentsTool(catalog, Mock.Of<IHubNotificationSender>());
+
+        tool.McpRun([new AgentCatalogEntry("jonas", "Jonas", "general")],
+            new Dictionary<string, IReadOnlyList<PatchableModel>> { ["kapoor"] = [new PatchableModel("lemonade/theirs", "theirs")] });
+
+        catalog.LemonadeModelsOf("kapoor").Select(m => m.Id).ShouldBe(["lemonade/theirs"]);
+        catalog.LemonadeModelsOf("somebody-else").ShouldBeEmpty();
+    }
 }

@@ -323,6 +323,83 @@ public sealed class KeysAdminTests : IAsyncLifetime
             withAgentToken ? HouseholdConfigurationClient.AgentToken(McpTestSecret.CallTokens) : () => "not-a-token",
             redis: null, TimeProvider.System, TimeSpan.FromMinutes(1));
 
+    // A household's own Lemonade box is asked for its models with the key before it is saved, shown
+    // by its address and its key's last characters, never the key.
+    [Fact]
+    public async Task ALemonadeBoxThatAnswersItsKey_IsSaved_AndShownByItsAddress()
+    {
+        await using var server = await StartAsync(LemonadeOnAnyAddress);
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        _providers.Accept(WorkingKey);
+
+        var saved = await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(_providers.LemonadeUrl, WorkingKey));
+
+        saved.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await saved.Content.ReadAsStringAsync()).ShouldNotContain(WorkingKey);
+        var shown = (await saved.Content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!.Value.Lemonade.ShouldNotBeNull();
+        shown.ApiUrl.ShouldBe(_providers.LemonadeUrl);
+        shown.Status.ShouldBe(new KeyStatus(KeyState.Working, "work", server.Clock.GetUtcNow()));
+        (await KeysSectionAsync(server, household)).Lemonade.ShouldBe(new LemonadeBox(_providers.LemonadeUrl, WorkingKey));
+    }
+
+    [Fact]
+    public async Task ALemonadeBoxThatRefusesItsKey_IsNotSaved_AndOneRemovedIsGone()
+    {
+        await using var server = await StartAsync(LemonadeOnAnyAddress);
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        _providers.Accept(WorkingKey);
+        await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(_providers.LemonadeUrl, WorkingKey));
+        server.Clock.Advance(TimeSpan.FromMinutes(1));
+
+        var refused = await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(_providers.LemonadeUrl, "a-key-it-refuses"));
+        var removed = await admin.SendAsync(new HttpRequestMessage(HttpMethod.Delete, AdminProtocol.LemonadeBox));
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldContain("refused it (401)");
+        removed.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await KeysSectionAsync(server, household)).Lemonade.ShouldBeNull();
+        (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(["Removed the Lemonade box", "Set the Lemonade box"]);
+    }
+
+    // The agent dials the address with the household's key on every turn and every minute, from inside
+    // the deployment: another household's box is a public https address, never one of the deployment's
+    // own (a container name, loopback, a private network). The home's box is the deployment's own LAN.
+    [Theory]
+    [InlineData("http://box.example.org/api/v1")]
+    [InlineData("https://127.0.0.1:8000/api/v1")]
+    [InlineData("https://192.168.5.20/api/v1")]
+    [InlineData("https://accounts:8080/accounts")]
+    public async Task AHouseholdsLemonadeBox_IsAPublicHttpsAddress_AndNoneIsAsked(string apiUrl)
+    {
+        await using var server = await StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+
+        var refused = await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(apiUrl, WorkingKey));
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldContain("public https");
+        _providers.Asked.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task TheHomesLemonadeBox_MayBeOnTheDeploymentsOwnNetwork()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
+        _providers.Accept(WorkingKey);
+
+        var saved = await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(_providers.LemonadeUrl, WorkingKey));
+
+        saved.StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    private static AccountsSettings LemonadeOnAnyAddress(AccountsSettings settings) =>
+        settings with { KeyProbes = settings.KeyProbes with { LemonadeOnPrivateAddresses = true } };
+
     private static async Task<IReadOnlyList<AdminChangeEntry>> ChangesAsync(AccountsServer.AdminClient admin) =>
         (await (await admin.GetAsync(AdminProtocol.HouseholdChanges)).Content.ReadFromJsonAsync<List<AdminChangeEntry>>())!;
 

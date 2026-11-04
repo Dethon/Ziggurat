@@ -24,7 +24,7 @@ public static partial class HouseholdSections
 
     public static readonly SectionSchema<KeysSection> KeysSchema = new(
         Keys, [SectionSteps.Unversioned], KeysProblems,
-        ["openRouter/apiKey", "idealista/apiKey", "idealista/secret", "telegramBots/*/token"]);
+        ["openRouter/apiKey", "idealista/apiKey", "idealista/secret", "telegramBots/*/token", "lemonade/apiKey"]);
 
     public static readonly SectionSchema<FeaturesSection> FeaturesSchema = new(
         Features, [SectionSteps.Unversioned], _ => []);
@@ -125,6 +125,11 @@ public static partial class HouseholdSections
             && (string.IsNullOrWhiteSpace(idealista.ApiKey) || string.IsNullOrWhiteSpace(idealista.Secret)))
         {
             yield return "keys.idealista needs both apiKey and secret; leave idealista out for none";
+        }
+
+        if (keys.Lemonade is { } box && !LemonadeBox.IsAddress(box.ApiUrl))
+        {
+            yield return "keys.lemonade.apiUrl must be an absolute http or https address; leave lemonade out for none";
         }
 
         foreach (var (agentId, bot) in keys.TelegramBots)
@@ -235,6 +240,23 @@ public sealed record KeysSection
     public OpenRouterKey? OpenRouter { get; init; }
     public IdealistaKeys? Idealista { get; init; }
     public IReadOnlyDictionary<string, TelegramBotKey> TelegramBots { get; init; } = new Dictionary<string, TelegramBotKey>();
+
+    // The household's own Lemonade chat host: the models on it are offered to its people alone, and
+    // their turns patched to one run there. The address is configuration the owner sees back; only
+    // the key is sealed.
+    public LemonadeBox? Lemonade { get; init; }
+}
+
+[PublicAPI]
+public sealed record LemonadeBox(string ApiUrl, string? ApiKey)
+{
+    public static bool IsAddress(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var address)
+        && (address.Scheme == Uri.UriSchemeHttp || address.Scheme == Uri.UriSchemeHttps)
+        && !string.IsNullOrEmpty(address.Authority);
+
+    // Printed — a log line, an assertion's message — it says only whether there is a key.
+    public override string ToString() => $"LemonadeBox {{ ApiUrl = {ApiUrl}, ApiKey = {(ApiKey is null ? "none" : "[set]")} }}";
 }
 
 [PublicAPI]

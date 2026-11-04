@@ -131,14 +131,17 @@ public sealed class McpChannelConnection(
         try
         {
             await WithRetryAsync(endpoint, reconnect: false, ct);
-            var entries = catalog();
+            // The catalog and the households' Lemonade models are read once per tick, and that one
+            // reading is both what is sent and what the next tick is compared with: read again after a
+            // registration, a change landing in between would pass for one already sent.
+            var entries = Registration(catalog());
             var registered = await TryRegisterAgentsAsync(entries, ct);
             var lastRegistered = registered ? Fingerprint(entries) : null;
 
             while (!ct.IsCancellationRequested)
             {
                 await Task.Delay(interval, ct);
-                entries = catalog();
+                entries = Registration(catalog());
 
                 if (!await IsHealthyAsync(ct))
                 {
@@ -233,15 +236,21 @@ public sealed class McpChannelConnection(
     // Value equality over a catalog whose members are lists, which records compare by reference.
     // The wire shape is the comparison that matters anyway: two catalogs that serialize the same
     // are the same as far as the channel is concerned.
-    private static string Fingerprint(IReadOnlyList<AgentCatalogEntry> agents) =>
-        JsonSerializer.Serialize(agents, ChannelProtocol.SerializerOptions);
+    // Each household's own Lemonade box's models, sent with the catalog to a channel that shows people
+    // a picker; null sends none. Read with the catalog, so a box gaining or losing a model re-registers.
+    public Func<IReadOnlyDictionary<string, IReadOnlyList<PatchableModel>>>? HouseholdLemonadeModels { get; init; }
 
-    private async Task<bool> TryRegisterAgentsAsync(
-        IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+    private RegisterAgentsParams Registration(IReadOnlyList<AgentCatalogEntry> agents) =>
+        new() { Agents = agents, HouseholdLemonadeModels = HouseholdLemonadeModels?.Invoke() };
+
+    private static string Fingerprint(RegisterAgentsParams registration) =>
+        JsonSerializer.Serialize(registration, ChannelProtocol.SerializerOptions);
+
+    private async Task<bool> TryRegisterAgentsAsync(RegisterAgentsParams registration, CancellationToken ct)
     {
         try
         {
-            await RegisterAgentsAsync(agents, ct);
+            await RegisterAsync(registration, ct);
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -829,7 +838,10 @@ public sealed class McpChannelConnection(
         }
     }
 
-    public async Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct)
+    public Task RegisterAgentsAsync(IReadOnlyList<AgentCatalogEntry> agents, CancellationToken ct) =>
+        RegisterAsync(Registration(agents), ct);
+
+    private async Task RegisterAsync(RegisterAgentsParams registration, CancellationToken ct)
     {
         var client = _client;
         if (client is null)
@@ -844,7 +856,7 @@ public sealed class McpChannelConnection(
 
         var result = await client.CallToolAsync(
             ChannelProtocol.RegisterAgentsTool,
-            ChannelProtocol.ToArguments(new RegisterAgentsParams { Agents = agents }),
+            ChannelProtocol.ToArguments(registration),
             cancellationToken: ct);
 
         // A refused registration reaches the caller as a value, not a throw: the channel-side

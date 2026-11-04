@@ -78,7 +78,7 @@ The operator is also an owner of the home household and manages the home through
 routes like any owner. Today's routes: `GET`/`PUT /household/settings` (`HouseholdSettings`),
 `GET`/`PUT /household/features` (`FeaturesSection`) and `/household/spaces` (`AdminSpaces` read, `SpacesSection` saved; "Features and spaces"),
 `GET /household/keys` (`HouseholdKeys`) and `PUT /household/keys/openrouter` (`OpenRouterKey`),
-`/household/keys/idealista` (`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`) ("Keys and probes"),
+`/household/keys/idealista` (`IdealistaKeys`), `/household/keys/telegram/{agentId}` (`TelegramBotKey`), `PUT`/`DELETE /household/keys/lemonade` (`LemonadeBox`, the household's own Lemonade box: probed by its model listing with its key, `LemonadeBoxProbe`; another household's must be a public https address, `LemonadeAddresses`, which a test stack lifts with `KeyProbes:LemonadeOnPrivateAddresses`; shown as `HouseholdKeys.Lemonade`, its address and its key's state) ("Keys and probes"),
 `GET /household/changes?limit=` (the household's change log), the agents, members, own servers and usage routes (below), `GET /operator/changes?household=&limit=`
 (every household's, or one's), and the household list's (below): `GET`/`POST /operator/households` and
 `POST /operator/households/{householdId}/owners/{userId}/recovery`. A route is mapped in `AdminApi.Map` into one of the two groups, with its

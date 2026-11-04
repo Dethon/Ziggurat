@@ -77,6 +77,44 @@
             <KeyFormNotice Form="KeyForm.Idealista" State="_state" />
         </form>
 
+        <form class="admin-form admin-key" aria-labelledby="admin-key-lemonade" @onsubmit="SaveLemonade">
+            <h2 id="admin-key-lemonade">Lemonade box</h2>
+            <p class="admin-field-hint">
+                A Lemonade server of the household's own: the models on it are offered to the household's
+                people in the chat's model menu while it answers, and run on it. @(keys.PaysWithDeploymentKey
+                    ? "Left empty, the deployment's own box is used."
+                    : "It must be reachable at a public https address.")
+            </p>
+            @if (keys.Lemonade is { } box)
+            {
+                <p class="admin-key-address">@box.ApiUrl</p>
+                <KeyStatusView Status="box.Status" />
+            }
+            <label class="admin-field">
+                <span class="admin-field-label">Address</span>
+                <input name="lemonadeUrl" type="url" @bind="_lemonadeUrl" @bind:event="oninput"
+                       placeholder="https://lemonade.example.org/api/v1" spellcheck="false" autocomplete="off" required />
+                <span class="admin-field-hint">Its API's base, ending in /api/v1.</span>
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">API key</span>
+                <input name="lemonadeKey" type="password" @bind="_lemonadeKey" @bind:event="oninput"
+                       spellcheck="false" autocomplete="off" />
+                <span class="admin-field-hint">Only if the box checks one.</span>
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@(_state.Saving is not null)">
+                    @(_state.Saving == KeyForm.Lemonade ? "Checking" : "Save")
+                </button>
+                @if (keys.Lemonade is not null)
+                {
+                    <button type="button" class="admin-secondary" disabled="@(_state.Saving is not null)"
+                            @onclick="RemoveLemonade">Remove</button>
+                }
+            </div>
+            <KeyFormNotice Form="KeyForm.Lemonade" State="_state" />
+        </form>
+
         <form class="admin-form admin-key" aria-labelledby="admin-key-telegram" @onsubmit="SaveTelegram">
             <h2 id="admin-key-telegram">Telegram bots</h2>
             <p class="admin-field-hint">A bot of the household's own answers as one of its agents, named by the agent's id.</p>
@@ -117,6 +155,8 @@
     private string _idealistaSecret = "";
     private string _telegramAgent = "";
     private string _telegramToken = "";
+    private string _lemonadeUrl = "";
+    private string _lemonadeKey = "";
 
     protected override void OnInitialized()
     {
@@ -136,6 +176,9 @@
                 case KeyForm.Telegram:
                     (_telegramAgent, _telegramToken) = ("", "");
                     break;
+                case KeyForm.Lemonade:
+                    (_lemonadeUrl, _lemonadeKey) = ("", "");
+                    break;
             }
         });
         Dispatcher.Dispatch(new LoadHouseholdKeys());
@@ -145,6 +188,12 @@
 
     private void SaveIdealista() =>
         Dispatcher.Dispatch(new SaveIdealistaKeys(new IdealistaKeys(_idealistaKey.Trim(), _idealistaSecret.Trim())));
+
+    private void SaveLemonade() =>
+        Dispatcher.Dispatch(new SaveLemonadeBox(new LemonadeBox(
+            _lemonadeUrl.Trim(), string.IsNullOrWhiteSpace(_lemonadeKey) ? null : _lemonadeKey.Trim())));
+
+    private void RemoveLemonade() => Dispatcher.Dispatch(new RemoveLemonadeBox());
 
     private void SaveTelegram() =>
         Dispatcher.Dispatch(new SaveTelegramBot(_telegramAgent.Trim(), new TelegramBotKey(_telegramToken.Trim())));

@@ -35,6 +35,12 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
     public Task<AdminAnswer<HouseholdKeys>> SaveIdealistaKeysAsync(IdealistaKeys keys) =>
         SaveKeysAsync(AdminProtocol.IdealistaKeys, keys);
 
+    public Task<AdminAnswer<HouseholdKeys>> SaveLemonadeBoxAsync(LemonadeBox box) =>
+        SaveKeysAsync(AdminProtocol.LemonadeBox, box);
+
+    public Task<AdminAnswer<HouseholdKeys>> RemoveLemonadeBoxAsync() =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Delete, AdminProtocol.LemonadeBox), SavedAsync<HouseholdKeys>);
+
     public Task<AdminAnswer<HouseholdKeys>> SaveTelegramBotAsync(string agentId, TelegramBotKey bot) =>
         SaveKeysAsync(AdminProtocol.TelegramBot(agentId), bot);
 

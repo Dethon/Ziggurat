@@ -8,7 +8,8 @@ public enum KeyForm
 {
     OpenRouter,
     Idealista,
-    Telegram
+    Telegram,
+    Lemonade
 }
 
 public record LoadHouseholdKeys : IAction;
@@ -20,6 +21,10 @@ public record SaveOpenRouterKey(OpenRouterKey Key) : IAction;
 public record SaveIdealistaKeys(IdealistaKeys Keys) : IAction;
 
 public record SaveTelegramBot(string AgentId, TelegramBotKey Bot) : IAction;
+
+public record SaveLemonadeBox(LemonadeBox Box) : IAction;
+
+public record RemoveLemonadeBox : IAction;
 
 public record HouseholdKeysSaved(KeyForm Form, HouseholdKeys Keys, string? Warning) : IAction;
 
@@ -71,6 +76,7 @@ public sealed class HouseholdKeysStore : IDisposable
         HouseholdKeysLoaded a => state with { Keys = a.Keys },
         SaveOpenRouterKey => Saving(state, KeyForm.OpenRouter),
         SaveIdealistaKeys => Saving(state, KeyForm.Idealista),
+        SaveLemonadeBox or RemoveLemonadeBox => Saving(state, KeyForm.Lemonade),
         SaveTelegramBot => Saving(state, KeyForm.Telegram),
         HouseholdKeysSaved a => state with
         {
