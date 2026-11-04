@@ -28,6 +28,10 @@ public static class HouseholdConfigProtocol
     // before any call names a household.
     public const string TelegramBotsView = "telegram-bots";
 
+    // Every household's own Lemonade box, the agent's alone: it keeps each one's models in its
+    // household's picker, so it asks for all of them at once, on its own token.
+    public const string LemonadeBoxesView = "lemonade-boxes";
+
     // The ids and names of a household's agents and which answers by default: what the shared Telegram
     // bot's /agent lists and switches a chat among, and nothing else of their definitions.
     public const string AgentNamesView = "agent-names";
@@ -102,7 +106,8 @@ public sealed record AgentHouseholdConfig(
     string? OpenRouterApiKey,
     IReadOnlyList<string>? DisabledPeople = null,
     bool Suspended = false,
-    IReadOnlyList<string>? OwnServers = null)
+    IReadOnlyList<string>? OwnServers = null,
+    LemonadeBox? Lemonade = null)
 {
     // The key goes over the wire in clear, as the agent needs it; printed — a log line, an assertion's
     // message, the HouseholdAgents built from it — it says only whether there is one.
@@ -111,7 +116,7 @@ public sealed record AgentHouseholdConfig(
         builder.Append($"HouseholdId = {HouseholdId}, IsHome = {IsHome}, Settings = {Settings}, Agents = {Agents}, ");
         builder.Append($"Features = {Features}, Spaces = {Spaces}, OpenRouterApiKey = {(OpenRouterApiKey is null ? "none" : "[set]")}, ");
         builder.Append($"DisabledPeople = [{string.Join(", ", DisabledPeople ?? [])}], Suspended = {Suspended}, ");
-        builder.Append($"OwnServers = [{string.Join(", ", OwnServers ?? [])}]");
+        builder.Append($"OwnServers = [{string.Join(", ", OwnServers ?? [])}], Lemonade = {Lemonade?.ToString() ?? "none"}");
         return true;
     }
 }
@@ -126,6 +131,13 @@ public sealed record HouseholdTelegramBots(IReadOnlyList<HouseholdTelegramBot> B
 
 [PublicAPI]
 public sealed record HouseholdTelegramBot(string HouseholdId, string AgentId, string Token);
+
+// The agent's view of every household's own Lemonade box.
+[PublicAPI]
+public sealed record HouseholdLemonadeBoxes(IReadOnlyList<HouseholdLemonadeBox> Boxes);
+
+[PublicAPI]
+public sealed record HouseholdLemonadeBox(string HouseholdId, LemonadeBox Box);
 
 // A household's agents as a person picks among them: each one's id and name, in the section's order,
 // and the one answering where nobody picked (none: the agent's own default decides).

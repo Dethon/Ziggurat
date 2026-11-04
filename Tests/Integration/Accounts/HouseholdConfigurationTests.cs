@@ -190,6 +190,42 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         bots.ShouldNotContain(IdealistaKey);
     }
 
+    // A household's own Lemonade box is the agent's to reach: its address and key ride the agent's view
+    // of that household, and the agent's own view of every box (to keep each one's models in the
+    // household's picker) lists them all; nobody else is told the key.
+    [Fact]
+    public async Task AHouseholdsLemonadeBox_IsTheAgentsAlone_InItsViewAndInEveryBoxesView()
+    {
+        await using var server = await StartAsync();
+        var (household, _) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var bare = await server.SeedHouseholdAsync("Nueva");
+        await SetAsync(server, household, HouseholdSections.Keys, """
+            { "lemonade": { "apiUrl": "https://box.example.org/api/v1", "apiKey": "lemonade-box-key" } }
+            """);
+
+        var view = await AgentViewAsync(server, household);
+        var boxes = await AskAsync<HouseholdLemonadeBoxes>(server, Agent, HouseholdConfigProtocol.LemonadeBoxesView,
+            new HouseholdConfigQuery(CallToken: AgentToken()));
+        var unsigned = await PostAsync(server, Agent, HouseholdConfigProtocol.LemonadeBoxesView, new HouseholdConfigQuery());
+        var telegram = await PostAsync(server, Telegram, HouseholdConfigProtocol.LemonadeBoxesView, new HouseholdConfigQuery());
+
+        view.Lemonade.ShouldBe(new LemonadeBox("https://box.example.org/api/v1", "lemonade-box-key"));
+        (await AgentViewAsync(server, bare)).Lemonade.ShouldBeNull();
+        boxes.Boxes.ShouldBe([new HouseholdLemonadeBox(household, new LemonadeBox("https://box.example.org/api/v1", "lemonade-box-key"))]);
+        unsigned.StatusCode.ShouldNotBe(HttpStatusCode.OK);
+        telegram.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
+    // The address is dialled by the agent, so the rules hold it to one: absolute, http or https.
+    [Theory]
+    [InlineData("box.local:8000")]
+    [InlineData("ftp://box.example.org/")]
+    [InlineData("")]
+    public void ALemonadeBoxThatIsNoAddress_IsRefusedByTheSectionsRules(string apiUrl) =>
+        HouseholdSections.KeysSchema.Problems(HouseholdSections.KeysSchema.Write(
+                new KeysSection { Lemonade = new LemonadeBox(apiUrl, null) }))
+            .ShouldContain(problem => problem.Contains("lemonade"));
+
     // The timers server shows when a timer fires on the calling household's clock, so it reads that
     // household's settings on the call token it was called with, for its own audience alone.
     [Fact]

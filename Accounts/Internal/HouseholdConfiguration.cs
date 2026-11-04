@@ -45,7 +45,8 @@ public static class HouseholdConfiguration
                     (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).OpenRouter?.ApiKey,
                     await members.DisabledAsync(household.Id, ct),
                     household.Suspended,
-                    await tunnels.SetUpServersAsync(household.Id, ct)), ct);
+                    await tunnels.SetUpServersAsync(household.Id, ct),
+                    (await SectionAsync(store, household, HouseholdSections.KeysSchema, ct)).Lemonade), ct);
         });
 
         MapShared(routes, HouseholdConfigProtocol.SettingsView, (store, household, ct) =>
@@ -95,6 +96,42 @@ public static class HouseholdConfiguration
             return await proofs.AgentItselfAsync(query, ct) is { } refused
                 ? Results.Json(refused.Refusal, statusCode: refused.Status)
                 : Results.Ok(new HouseholdPeople(await store.PeopleAsync(ct)));
+        });
+
+        // Every household's own Lemonade box, asked by the agent on its own token: it discovers each
+        // one's models for its household's picker with no call behind it. A household whose secrets do
+        // not open is left out rather than taking every other household's box down with it.
+        routes.MapPost(Path + HouseholdConfigProtocol.LemonadeBoxesView, async (
+            HttpContext http, HouseholdConfigQuery query, HouseholdProofs proofs, HouseholdConfigStore store,
+            ILogger<HouseholdConfigStore> logger, CancellationToken ct) =>
+        {
+            if (InternalCallers.Reading(http, HouseholdConfigProtocol.LemonadeBoxesView).Count == 0)
+            {
+                return InternalCallers.NotYours;
+            }
+
+            if (await proofs.AgentItselfAsync(query, ct) is { } refused)
+            {
+                return Results.Json(refused.Refusal, statusCode: refused.Status);
+            }
+
+            var boxes = new List<HouseholdLemonadeBox>();
+            foreach (var household in await store.HouseholdsWithAsync(HouseholdSections.Keys, ct))
+            {
+                try
+                {
+                    if ((await store.ReadAsync(household, HouseholdSections.KeysSchema, ct))?.Lemonade is { } box)
+                    {
+                        boxes.Add(new HouseholdLemonadeBox(household, box));
+                    }
+                }
+                catch (HouseholdSecretsUnavailableException ex)
+                {
+                    logger.LogWarning("Left household {Household}'s Lemonade box out: {Reason}", household, ex.Message);
+                }
+            }
+
+            return Results.Ok(new HouseholdLemonadeBoxes(boxes));
         });
 
         // Every household's bots, asked with no household: the Telegram server polls them from its
