@@ -61,11 +61,12 @@ public class SugaryPenReminderTests
         public ValueTask DisposeAsync() => server.DisposeAsync();
     }
 
-    private static async Task<Harness> StartAsync()
+    private static async Task<Harness> StartAsync(IReadOnlyDictionary<string, string>? householdZones = null)
     {
         var push = new RecordingPushSender();
         var clock = new FakeTimeProvider();
         var server = await SugaryServer.StartAsync(
+            householdZones: householdZones,
             configure: s => s with { WebPush = SugaryPushApiTests.Keys, PenReminderHour = 9 },
             services: services => services
                 .AddSingleton<IPushMessageSender>(push)
@@ -95,6 +96,27 @@ public class SugaryPenReminderTests
         Title(payload).ShouldBe("Mañana toca cambiar la pluma de Fiasp");
         Body(payload).ShouldBe("La empezaste el 1 de octubre y dura 28 días.");
         payload["tag"]!.GetValue<string>().ShouldBe("pen-rapid");
+    }
+
+    // A household keeps its own clock, and so do its pens: the neighbour's household is in New York, so
+    // the reminder hour is nine there — not nine on the deployment's clock, which is three in the
+    // night in New York — and "tomorrow" is New York's tomorrow.
+    [Fact]
+    public async Task APensReminder_ComesAtTheReminderHourOnItsOwnersHouseholdsClock()
+    {
+        await using var harness = await StartAsync(
+            new Dictionary<string, string> { [SugaryServer.Neighbour.TenantId] = "America/New_York" });
+        await harness.SubscribeAsync(language: "en", person: SugaryServer.Neighbour);
+        await harness.PenAsync(person: SugaryServer.Neighbour);
+
+        harness.At(28, 9);
+        await harness.Reminders.RemindAsync(CancellationToken.None);
+        harness.Push.Sent.ShouldBeEmpty("09:00 in Madrid is 04:00 in New York");
+
+        harness.At(28, 15);
+        await harness.Reminders.RemindAsync(CancellationToken.None);
+
+        Title(harness.Push.Sent.ShouldHaveSingleItem().Payload).ShouldBe("Change your Fiasp pen tomorrow");
     }
 
     // A pen is one person's, and so is a phone that subscribed: each reminder reaches its pen's

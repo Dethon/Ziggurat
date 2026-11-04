@@ -320,6 +320,9 @@ namespace McpServerSugary.Store.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("TimeZone")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("UserId")
                         .IsRequired()
                         .HasMaxLength(64)

@@ -21,6 +21,11 @@ public sealed class HomeCalendar(TimeProvider clock, TimeZoneInfo zone)
 
     public DateTimeOffset Now => _clock.GetUtcNow();
 
+    public TimeZoneInfo Zone => _zone;
+
+    // The same clock on another household's zone: the pen reminders read each owner's day on theirs.
+    public HomeCalendar In(TimeZoneInfo zone) => new(_clock, zone);
+
     public DateOnly Today => DateOnly.FromDateTime(AtHome(Now).DateTime);
 
     public DateTimeOffset AtHome(DateTimeOffset instant) => TimeZoneInfo.ConvertTime(instant, _zone);

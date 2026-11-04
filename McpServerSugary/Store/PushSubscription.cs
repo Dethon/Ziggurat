@@ -11,4 +11,9 @@ public class PushSubscription : IPersonal
     public string P256dh { get; set; } = "";
     public string Auth { get; set; } = "";
     public string Language { get; set; } = "es";
+
+    // The zone of its person's household when the app last saved it — on every open — so the pen
+    // reminders, which wake for nobody's request, come at the reminder hour on that household's clock.
+    // Null for one saved before it was kept: the server's own zone.
+    public string? TimeZone { get; set; }
 }
