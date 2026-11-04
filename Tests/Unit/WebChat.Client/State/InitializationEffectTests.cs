@@ -36,6 +36,7 @@ public sealed class InitializationEffectTests : IDisposable
     private readonly FakePushSubscriptionService _pushService;
     private readonly RecordingLogger<InitializationEffect> _logger = new();
     private readonly InitializationEffect _effect;
+    private readonly ArmedClock _time = new();
 
     public InitializationEffectTests()
     {
@@ -64,7 +65,8 @@ public sealed class InitializationEffectTests : IDisposable
             _streamResumeService,
             _pushService,
             _spaceStore,
-            _logger);
+            _logger,
+            _time);
     }
 
     [Fact]
@@ -450,6 +452,27 @@ public sealed class InitializationEffectTests : IDisposable
 
         var entry = await _logger.WaitForEntryAsync();
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("agent list unavailable");
+    }
+
+    // The hub answered, but could not read the household just then (the accounts service slow, a
+    // session check refused for a moment): the connection stays live, so nothing else would ever
+    // finish the load — a person was left on an empty, "Connected" page with no agent and no topic
+    // until they reloaded. The first load asks again, later, until it is answered.
+    [Fact]
+    public async Task HandleInitializeAsync_TheHubCouldNotReadTheHousehold_AsksAgainUntilItCan()
+    {
+        _topicService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        _agentService.ThrowOnGetAgents = new Microsoft.AspNetCore.SignalR.HubException("This household's agents could not be read right now.");
+        _agentService.ThrowTimes = 2;
+
+        var loading = _effect.HandleInitializeAsync();
+        await _time.AdvancePastAsync(InitializationEffect.FirstRetryDelay);
+        await _time.AdvancePastAsync(InitializationEffect.FirstRetryDelay * 2);
+        await loading;
+
+        _calls.Calls.Count(c => c == "agents").ShouldBe(3);
+        _calls.Calls.ShouldContain("topics:agent-1");
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Microsoft.AspNetCore.SignalR;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
@@ -25,6 +26,8 @@ public sealed class InitializationEffect : IDisposable
     private readonly IDisposable _setAgentsRegistration;
     private readonly IDisposable _agentsUpdatedRegistration;
     private readonly IDisposable _becameLiveAgainSubscription;
+    private readonly TimeProvider _timeProvider;
+    private readonly CancellationTokenSource _disposal = new();
     private int _awaitingAgentCatalog;
     private int _awaitingFirstConnect;
 
@@ -39,8 +42,10 @@ public sealed class InitializationEffect : IDisposable
         IStreamResumeService streamResumeService,
         IPushSubscriptionService pushNotificationService,
         SpaceStore spaceStore,
-        ILogger<InitializationEffect> logger)
+        ILogger<InitializationEffect> logger,
+        TimeProvider timeProvider)
     {
+        _timeProvider = timeProvider;
         _dispatcher = dispatcher;
         _connectionStore = connectionStore;
         _liveConnection = liveConnection;
@@ -87,7 +92,36 @@ public sealed class InitializationEffect : IDisposable
             throw;
         }
 
-        await InitializeConnectedAsync();
+        await InitializeConnectedAskingAgainAsync();
+    }
+
+    // How long a first load waits before asking again a hub that answered but could not read the
+    // household; each wait doubles, up to MaxRetryDelay.
+    public static readonly TimeSpan FirstRetryDelay = TimeSpan.FromSeconds(1);
+    public static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(30);
+
+    // The hub answered, so the connection is live and no new epoch will come to finish this load; but
+    // it could not read the household just then (HubException: the accounts service slow, a session
+    // check refused for a moment). Without asking again the page stayed "Connected" with no agent and
+    // no topic until a reload. Every step it repeats is one a load may do twice.
+    private async Task InitializeConnectedAskingAgainAsync()
+    {
+        var delay = FirstRetryDelay;
+        while (true)
+        {
+            try
+            {
+                await InitializeConnectedAsync();
+                return;
+            }
+            catch (HubException refused) when (!_disposal.IsCancellationRequested)
+            {
+                _logger.LogWarning(refused, "The first load could not read the household; asking again in {Delay}", delay);
+            }
+
+            await Task.Delay(delay, _timeProvider, _disposal.Token);
+            delay = TimeSpan.FromTicks(Math.Min(delay.Ticks * 2, MaxRetryDelay.Ticks));
+        }
     }
 
     // Everything a first load does once it is connected, whether that was its own connect or, after
@@ -148,7 +182,7 @@ public sealed class InitializationEffect : IDisposable
     {
         if (Interlocked.Exchange(ref _awaitingFirstConnect, 0) == 1)
         {
-            await InitializeConnectedAsync();
+            await InitializeConnectedAskingAgainAsync();
             return;
         }
 
@@ -232,6 +266,7 @@ public sealed class InitializationEffect : IDisposable
 
     public void Dispose()
     {
+        _disposal.Cancel();
         _initializeRegistration.Dispose();
         _setAgentsRegistration.Dispose();
         _agentsUpdatedRegistration.Dispose();
