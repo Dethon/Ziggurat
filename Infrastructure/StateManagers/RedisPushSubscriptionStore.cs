@@ -25,7 +25,10 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
         var db = redis.GetDatabase();
         var endpointIndexKey = $"{EndpointPrefix}{subscription.Endpoint}";
 
-        if (replacingEndpoint is not null && replacingEndpoint != subscription.Endpoint)
+        // Only the caller's own old phone is moved: another person's endpoint named here would carry
+        // this phone into their spaces, another household's included.
+        if (replacingEndpoint is not null && replacingEndpoint != subscription.Endpoint
+            && await IsOwnedByAsync(db, replacingEndpoint, userId))
         {
             await TransferSpaceMembershipsAsync(db, replacingEndpoint, subscription.Endpoint);
             await db.HashDeleteAsync($"{KeyPrefix}{userId}", replacingEndpoint);
@@ -80,9 +83,19 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
         }
     }
 
+    private static async Task<bool> IsOwnedByAsync(IDatabase db, string endpoint, string userId) =>
+        await db.StringGetAsync($"{EndpointPrefix}{endpoint}") is { HasValue: true } owner && owner.ToString() == userId;
+
+    // A person unsubscribes their own phone alone: another's endpoint named here is left as it is.
     public async Task RemoveAsync(string userId, string endpoint, CancellationToken ct = default)
     {
         var db = redis.GetDatabase();
+        if (!await IsOwnedByAsync(db, endpoint, userId))
+        {
+            await db.HashDeleteAsync($"{KeyPrefix}{userId}", endpoint);
+            return;
+        }
+
         await db.HashDeleteAsync($"{KeyPrefix}{userId}", endpoint);
         await db.KeyDeleteAsync($"{EndpointPrefix}{endpoint}");
         await RemoveFromAllSpaceSetsAsync(db, endpoint);
