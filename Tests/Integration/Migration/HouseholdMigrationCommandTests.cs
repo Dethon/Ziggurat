@@ -222,6 +222,37 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
         (await schedules.GetAsync(home, fromBefore.Id))!.Prompt.ShouldBe(fromBefore.Prompt);
     }
 
+    // A schedule from before principals were recorded names nobody, but the conversation that wrote it
+    // does: the write's tool result sits in a topic after its writer's own message. It runs as them —
+    // given to the owner it would fire as the owner, into the owner's private topic, and the person who
+    // asked for it would never see it again. A later write by somebody else wins, as the schedule runs
+    // as whoever last wrote it.
+    [Fact]
+    public async Task ASchedule_WhoseWriterWasNeverRecorded_RunsAsThePersonWhoseConversationWroteIt()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        var threads = new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System);
+        var anas = await BeforeHouseholds.ScheduleAsync(db, Schedule(null));
+        var rewritten = await BeforeHouseholds.ScheduleAsync(db, Schedule(null));
+        await ConversationWritingAsync(threads, ana.WebChat, DateTimeOffset.UtcNow.AddDays(-2), (anas.Id, "created"), (rewritten.Id, "created"));
+        await ConversationWritingAsync(threads, fran.WebChat, DateTimeOffset.UtcNow.AddDays(-1), (rewritten.Id, "edited"));
+        var neverWritten = await BeforeHouseholds.ScheduleAsync(db, Schedule(null));
+
+        var (exit, output) = await RunAsync(rig, fran, ana);
+
+        exit.ShouldBe(0, output);
+        var franAccount = await rig.AccountOfAsync(fran.TelegramId);
+        var anaAccount = await rig.AccountOfAsync(ana.TelegramId);
+        var schedules = new RedisScheduleStore(redis.Connection);
+        var home = franAccount.TenantId;
+        (await schedules.GetAsync(home, anas.Id))!.CreatedBy.ShouldBe(new Principal("signalr", anaAccount.UserId, anaAccount));
+        (await schedules.GetAsync(home, rewritten.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
+        (await schedules.GetAsync(home, neverWritten.Id))!.CreatedBy.ShouldBe(new Principal("signalr", franAccount.UserId, franAccount));
+        output.ShouldContain($"{neverWritten.Id}", customMessage: "a schedule given to the owner is named, so the operator can tell whose it was");
+    }
+
     // The deployment's schedules were all the home household's, so each is moved under it as it was —
     // still due when it was due — and nothing is left under the shape from before households.
     [Fact]
@@ -866,6 +897,31 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
             new AgentKey($"{topic.ChatId}:{topic.ThreadId}", topic.AgentId).ToString(),
             [first, new ChatMessage(ChatRole.Assistant, "Pasta.")]);
         return topic;
+    }
+
+    // A conversation as a chat client person had it before accounts: their message, then the agent's
+    // writes to /schedules, each answered by the schedule mount's own result, one second apart.
+    private async Task ConversationWritingAsync(
+        RedisThreadStateStore threads, string sender, DateTimeOffset at, params (string ScheduleId, string Status)[] writes)
+    {
+        var topic = await TopicAsync(threads, firstSender: sender);
+        var key = new AgentKey($"{topic.ChatId}:{topic.ThreadId}", topic.AgentId).ToString();
+        var asked = new ChatMessage(ChatRole.User, "Remind me every Monday");
+        asked.SetSenderId(sender);
+        var messages = new List<ChatMessage> { asked };
+        foreach (var (id, status) in writes)
+        {
+            var path = $"/schedules/jonas/{id}/schedule.json";
+            var callId = Guid.NewGuid().ToString("N");
+            messages.Add(new ChatMessage(ChatRole.Assistant,
+                [new FunctionCallContent(callId, "domain__filesystem__file_create", new Dictionary<string, object?> { ["filePath"] = path })]));
+            var result = new ChatMessage(ChatRole.Tool,
+                [new FunctionResultContent(callId, JsonSerializer.SerializeToElement(new { status, filePath = path }))]);
+            result.SetTimestamp(at);
+            messages.Add(result);
+        }
+
+        await threads.AppendMessagesAsync(key, [.. messages]);
     }
 
     private static object Entry(Person p, params string[] oldNames) => new
