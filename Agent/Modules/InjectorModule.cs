@@ -215,24 +215,34 @@ public static class InjectorModule
                     sp.GetRequiredService<TimeProvider>(),
                     sp.GetRequiredService<IMetricsPublisher>()));
 
-        // An empty address is the feature switched off: no discovery, no refresher, and an empty
-        // source for the catalogue to read. A configured one is asked for its models on a timer.
+        // The deployment's box is the home's: an empty address is none, and its source answers nothing;
+        // a configured one is asked for its models on a timer. Every household's own box is read from
+        // its configuration and asked on the same timer (HouseholdLemonadeHosts), whether or not the
+        // deployment has a box of its own.
         private IServiceCollection AddLemonadeChatHost(LemonadeChatHostOptions host)
         {
-            if (!host.IsConfigured)
+            if (host.IsConfigured)
             {
-                return services.AddSingleton<ILemonadeModelSource>(FixedLemonadeModelSource.None);
+                services
+                    .AddSingleton(host)
+                    // Shares the chat clients' pool: the pool is per host, so the box gets its own
+                    // connections inside it, and the discovery rides the same ones the turns use.
+                    .AddSingleton(sp => new LemonadeModelDiscovery(
+                        new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
+                        host,
+                        sp.GetRequiredService<ILogger<LemonadeModelDiscovery>>()))
+                    .AddSingleton<ILemonadeModelSource>(sp => sp.GetRequiredService<LemonadeModelDiscovery>());
+            }
+            else
+            {
+                services.AddSingleton<ILemonadeModelSource>(FixedLemonadeModelSource.None);
             }
 
             return services
-                .AddSingleton(host)
-                // Shares the chat clients' pool: the pool is per host, so the box gets its own
-                // connections inside it, and the discovery rides the same ones the turns use.
-                .AddSingleton(sp => new LemonadeModelDiscovery(
-                    new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
-                    host,
-                    sp.GetRequiredService<ILogger<LemonadeModelDiscovery>>()))
-                .AddSingleton<ILemonadeModelSource>(sp => sp.GetRequiredService<LemonadeModelDiscovery>())
+                .AddSingleton(sp => new HouseholdLemonadeHosts(
+                    host, sp.GetRequiredService<ILemonadeModelSource>(), sp.GetRequiredService<IHouseholdConfiguration>(),
+                    sp.GetRequiredService<ILoggerFactory>()))
+                .AddSingleton<ILemonadeHosts>(sp => sp.GetRequiredService<HouseholdLemonadeHosts>())
                 .AddHostedService<LemonadeModelRefresher>();
         }
 

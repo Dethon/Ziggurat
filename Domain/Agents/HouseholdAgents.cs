@@ -73,10 +73,6 @@ public sealed record HouseholdAgents
         _ => null
     };
 
-    // Whether its turns may run on the deployment's Lemonade box: the box is the home's, as are agents
-    // no household's configuration gave; any other household provides none and picks none of its models.
-    public bool ProvidesLemonade => Configuration is null or { IsHome: true };
-
     // A new household's agents: one of each shipped template, under the template's own id and name.
     public static IReadOnlyList<HouseholdAgent> Starting { get; } =
     [
@@ -200,7 +196,7 @@ public sealed record HouseholdAgents
     // Null for an agent the household does not define (a person's registered one).
     public AgentAsBuilt? AsBuilt(string agentId) =>
         Find(agentId) is { } definition
-            ? new AgentAsBuilt(JsonSerializer.Serialize(definition), TimeZone, Payer?.Key)
+            ? new AgentAsBuilt(JsonSerializer.Serialize(definition), TimeZone, Payer?.Key, Configuration?.Lemonade)
             : null;
 
     public AgentDefinition? Find(string agentId) =>
@@ -235,4 +231,6 @@ public sealed record HouseholdAgents
         };
 }
 
-public sealed record AgentAsBuilt(string Definition, string? TimeZone, ModelKey? Key);
+// The Lemonade box is the household's own as its configuration names it: the routing client is built
+// with it, so a box added, moved or removed rebuilds the agent as a key changed does.
+public sealed record AgentAsBuilt(string Definition, string? TimeZone, ModelKey? Key, LemonadeBox? Lemonade = null);

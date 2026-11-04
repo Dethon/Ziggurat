@@ -32,6 +32,11 @@ public interface IHouseholdConfiguration
     // Every household's bots: the Telegram server polls them from startup, before any call.
     Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct);
 
+    // Every household's own Lemonade box: the agent's alone, on its own token. A reader that is not the
+    // agent's has none to read.
+    Task<IReadOnlyList<HouseholdLemonadeBox>> LemonadeBoxesAsync(CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<HouseholdLemonadeBox>>([]);
+
     // Every household and its people, for the agent's work across households with no call behind it
     // (dreaming). Asked afresh each time: nothing announces a person joining.
     Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct);

@@ -1,5 +1,6 @@
 using Domain.DTOs;
 using Domain.Prompts;
+using Infrastructure.Agents.ChatClients;
 
 namespace Infrastructure.Agents;
 
@@ -84,4 +85,8 @@ public sealed record AgentSpec
     // Lemonade model the host does not offer can name the box the person was asking for. Null
     // where no host is configured, which is also where no Lemonade model can ever be named.
     public string? LemonadeHostAddress { get; init; }
+
+    // The Lemonade box the turn's household runs on — its own, or the deployment's for the home — or
+    // none. A worker carries its parent's.
+    public LemonadeHost? Lemonade { get; init; }
 }

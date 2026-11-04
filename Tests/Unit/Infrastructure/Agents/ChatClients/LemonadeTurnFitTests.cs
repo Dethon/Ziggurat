@@ -110,9 +110,11 @@ public sealed class LemonadeTurnFitTests
             new OpenRouterConfig { ApiUrl = "http://openrouter.test/api/v1", ApiKey = "key" },
             Mock.Of<IDomainToolRegistry>());
 
+        // The box the turn's household runs on, as the factory hands it to the client it builds.
         return factory.CreateChatClient(
             "configured/model", _metrics, AgentWindow,
-            transportHandler: _openRouter, lemonadeTransportHandler: lemonade ?? _lemonade);
+            transportHandler: _openRouter, lemonadeTransportHandler: lemonade ?? _lemonade,
+            lemonade: new LemonadeHost(new LemonadeChatHostOptions { ApiUrl = "http://box.test:13305/api/v1" }, _models));
     }
 
     // Four characters to a token in the estimator, so this many tokens of history plus the last

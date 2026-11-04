@@ -351,6 +351,7 @@ public sealed class KeysAdminTests : IAsyncLifetime
         var admin = server.Admin(await server.MintSessionAsync(ana));
         _providers.Accept(WorkingKey);
         await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(_providers.LemonadeUrl, WorkingKey));
+        server.Clock.Advance(TimeSpan.FromMinutes(1));
 
         var refused = await admin.PutAsync(AdminProtocol.LemonadeBox, new LemonadeBox(_providers.LemonadeUrl, "a-key-it-refuses"));
         var removed = await admin.SendAsync(new HttpRequestMessage(HttpMethod.Delete, AdminProtocol.LemonadeBox));
