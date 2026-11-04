@@ -51,6 +51,30 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         response.Headers.Location!.ToString().ShouldStartWith($"https://{stack.MainHost}/accounts/sign-in?returnUrl=");
     }
 
+    // An installed app's service worker is replaced, and its successor installed, by fetches made while
+    // the person may be signed out — a phone holding the worker from before sign-in existed has no other
+    // way to the sign-in page. The apps' own files answer them; opening a page and the APIs do not.
+    [SkippableFact]
+    public async Task AnInstalledAppsFiles_AreServedSignedOut_ButNotItsPagesOrItsApi()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        foreach (var (host, worker, api) in new[] { (stack.MainHost, "/service-worker.js", "/api/config"), (stack.SugaryHost, "/sw.js", "/api/meals") })
+        {
+            var script = stack.Request(HttpMethod.Get, host, worker);
+            script.Headers.Add("Sec-Fetch-Mode", "same-origin");
+            script.Headers.Add("Sec-Fetch-Dest", "serviceworker");
+            (await stack.Http.SendAsync(script)).StatusCode.ShouldBe(HttpStatusCode.OK, $"{host}{worker}");
+
+            var page = stack.Request(HttpMethod.Get, host, "/");
+            page.Headers.Add("Sec-Fetch-Mode", "navigate");
+            page.Headers.Add("Accept", "text/html");
+            (await stack.Http.SendAsync(page)).StatusCode.ShouldBe(HttpStatusCode.Redirect, $"{host}/");
+
+            (await SendAsync(HttpMethod.Get, host, api)).StatusCode.ShouldBe(HttpStatusCode.Unauthorized, $"{host}{api}");
+        }
+    }
+
     [SkippableFact]
     public async Task AnIdentityHeaderTheBrowserSends_IsNotBelieved()
     {

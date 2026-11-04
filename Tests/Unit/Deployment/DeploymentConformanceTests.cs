@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Accounts.Internal;
 using Accounts.Settings;
 using Agent.App;
@@ -609,6 +610,27 @@ public class DeploymentConformanceTests
         check.Upstream.ShouldBe("accounts:8080");
         check.Uri.ShouldBe($"/accounts/verify?channel={channel}");
         check.CopiedHeaders.ShouldBe(ForwardedAccount.Headers, ignoreOrder: true);
+    }
+
+    // An installed app replaces its service worker by fetching the worker's script, and installs the
+    // new one by fetching the files its shell caches — signed out too, which is how a phone holding a
+    // worker from before sign-in existed gets one that lets the sign-in page through. So the app's own
+    // files are served to any request that is not a page being opened: every navigation still goes
+    // through the session check (and to sign-in), and so does the app's API.
+    [Theory]
+    [InlineData(MainHost, "webui:8080")]
+    [InlineData(SugaryHost, "mcp-sugary:8080")]
+    public void TheAppsOwnFiles_AreServedSignedOut_ButNoNavigationAndNoApi(string hostName, string app)
+    {
+        var host = DeploymentFiles.Caddyfile().Host(hostName);
+
+        var shell = host.Routes.Single(r => r.Matcher == "@shell");
+        shell.Upstream.ShouldBe(app);
+        shell.ForwardAuth.ShouldBeNull();
+        var matcher = Regex.Match(host.Body, @"@shell \{(?<conditions>[^}]*)\}").Groups["conditions"].Value
+            .Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        matcher.ShouldBe(["not header Sec-Fetch-Mode navigate", "not header Accept *text/html*", "not path /api/*"], ignoreOrder: true);
+        host.Routes.Single(r => r.Matcher == null).ForwardAuth.ShouldNotBeNull();
     }
 
     // Whatever a forward_auth guards, it hands the app every header the check answers, the signed
