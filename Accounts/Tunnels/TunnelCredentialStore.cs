@@ -135,13 +135,19 @@ public sealed class TunnelCredentialStore(
             .Where(h => h.IsHome || db.TunnelCredentials.Any(
                 t => t.TenantId == h.Id && t.ServerName == serverName && t.RevokedAt == null))
             .ToListAsync(ct);
+        var ids = households.Select(h => h.Id).ToList();
+        var owners = (await db.Users.AsNoTracking()
+                .Where(u => ids.Contains(u.TenantId) && u.Role == Role.Owner && u.DisabledAt == null)
+                .ToListAsync(ct))
+            .GroupBy(u => u.TenantId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(u => u.CreatedAt).ThenBy(u => u.Id, StringComparer.Ordinal).First().Id);
         return
         [
             .. households
                 .OrderByDescending(h => h.IsHome)
                 .ThenBy(h => h.Name, StringComparer.Ordinal)
                 .ThenBy(h => h.Id, StringComparer.Ordinal)
-                .Select(h => new TunnelServerHolder(h.Id, h.Name, h.IsHome, h.SuspendedAt is not null))
+                .Select(h => new TunnelServerHolder(h.Id, h.Name, h.IsHome, h.SuspendedAt is not null, owners.GetValueOrDefault(h.Id)))
         ];
     }
 

@@ -460,6 +460,21 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         _model.Requests.ShouldBeEmpty();
     }
 
+    // The home is paid with the deployment's key. A deployment whose .env left it empty refuses the turn
+    // as a household without a key is refused, saying so; building it threw out of the turn's setup and
+    // the person was answered nothing at all.
+    [Fact]
+    public async Task TheHome_OnADeploymentWithNoKey_IsRefusedItsTurn_AndNothingIsSent()
+    {
+        _households.Add(Home, isHome: true, Settings(), Jonas(), key: null);
+        _deploymentKey = "";
+
+        var refused = await Should.ThrowAsync<HouseholdWithoutKeyException>(() => TurnAsync("jonas", Home));
+
+        refused.HouseholdId.ShouldBe(Home);
+        _model.Requests.ShouldBeEmpty();
+    }
+
     // A worker runs its parent's model for its parent's household, and so on its parent's key.
     [Fact]
     public async Task AWorkerSpawnedByAHouseholdsAgent_IsSentWithThatHouseholdsKey()
@@ -592,6 +607,8 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         return _model.Requests[^1].SystemPrompt.ShouldNotBeNull();
     }
 
+    private string _deploymentKey = "deployment-key";
+
     private MultiAgentFactory Factory()
     {
         var services = new ServiceCollection()
@@ -605,7 +622,7 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         return new MultiAgentFactory(
             services,
             Definitions(),
-            new OpenRouterConfig { ApiUrl = _model.ApiUrl, ApiKey = "deployment-key" },
+            new OpenRouterConfig { ApiUrl = _model.ApiUrl, ApiKey = _deploymentKey },
             new DomainToolRegistry([new SubAgentToolFeature(new SubAgentRegistryOptions
             {
                 SubAgents = [new SubAgentDefinition { Id = "worker", Name = "Worker", McpServerEndpoints = [] }]

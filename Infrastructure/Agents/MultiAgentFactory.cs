@@ -64,7 +64,12 @@ public sealed class MultiAgentFactory(
         var household = await definitionProvider.ForHouseholdAsync(householdId, ct);
         // Before anything is built, so a household that cannot pay is asked nothing: not its agents'
         // servers, and no model.
-        _ = household.Payer ?? throw new HouseholdWithoutKeyException(household.HouseholdId ?? householdId ?? "");
+        // A household paid with the deployment's key (the home) cannot pay either when the deployment's
+        // .env left that key empty: refused the same way, which the person is told, rather than thrown
+        // out of the turn's setup, which answers them nothing.
+        _ = household.Payer is { } payer && (payer.Key is not null || !string.IsNullOrWhiteSpace(openRouterConfig.ApiKey))
+            ? payer
+            : throw new HouseholdWithoutKeyException(household.HouseholdId ?? householdId ?? "");
         var agents = await definitionProvider.GetAllAsync(householdId, account, ct);
 
         // By id or not at all. Falling back to the first configured agent read routing off the

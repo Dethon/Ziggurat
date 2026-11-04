@@ -310,6 +310,11 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
         await using (var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync())
         {
             (await db.Tenants.SingleAsync(t => t.Id == piso)).SuspendedAt = DateTimeOffset.UtcNow;
+            // Casa's first owner was disabled; what its server keeps for nobody goes to the next.
+            db.Users.Add(new User { Id = "casa-first", TenantId = casa, DisplayName = "First", Role = global::Accounts.Store.Role.Owner, CreatedAt = DateTimeOffset.UtcNow.AddDays(-3), DisabledAt = DateTimeOffset.UtcNow });
+            db.Users.Add(new User { Id = "casa-owner", TenantId = casa, DisplayName = "Owner", Role = global::Accounts.Store.Role.Owner, CreatedAt = DateTimeOffset.UtcNow.AddDays(-2) });
+            db.Users.Add(new User { Id = "casa-later", TenantId = casa, DisplayName = "Later", Role = global::Accounts.Store.Role.Owner, CreatedAt = DateTimeOffset.UtcNow.AddDays(-1) });
+            db.Users.Add(new User { Id = "casa-member", TenantId = casa, DisplayName = "Member", Role = global::Accounts.Store.Role.Member, CreatedAt = DateTimeOffset.UtcNow.AddDays(-9) });
             await db.SaveChangesAsync();
         }
 
@@ -318,8 +323,8 @@ public class TunnelCredentialsTests(RedisFixture redis) : IClassFixture<RedisFix
         response.StatusCode.ShouldBe(HttpStatusCode.OK);
         (await response.Content.ReadFromJsonAsync<List<TunnelServerHolder>>())!.ShouldBe(
         [
-            new TunnelServerHolder(fran.TenantId, "Home", Home: true, Suspended: false),
-            new TunnelServerHolder(casa, "Casa", Home: false, Suspended: false),
+            new TunnelServerHolder(fran.TenantId, "Home", Home: true, Suspended: false, OwnerId: fran.UserId),
+            new TunnelServerHolder(casa, "Casa", Home: false, Suspended: false, OwnerId: "casa-owner"),
             new TunnelServerHolder(piso, "Piso", Home: false, Suspended: true)
         ]);
     }

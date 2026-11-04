@@ -175,7 +175,15 @@ Music Assistant would fight over their ports.
    ```
 
    The browser's identity is its one fingerprint: carried over, the sites people are logged into see
-   the same device.
+   the same device. A deployment from master kept no browser identity (`jackbot_camoufox-identity`
+   does not exist there, and `docker volume ls` says so): skip that copy rather than let `docker run`
+   make an empty volume to copy from.
+
+   The kit's `.env` takes the keys that moved with the servers from the deployment's old one (Brave,
+   CapSolver, Jackett, qBittorrent, the Home Assistant and Music Assistant tokens, `Announce__Token`,
+   `LOGINS__STATEKEY`): `scripts/upgrade/carry-env.sh ~/old.env TenantKit/.env` fills every one both
+   files name, and lists the kit's own that are still empty (its credentials, `DEPLOYMENT_HOST`,
+   `KIT_REDIS_PASSWORD`, ...).
 
 6. **Run the state move**: the remembered logins, the one-time links and the library's download
    routing, out of the deployment's Redis and into the kit's. It reaches both on the host's loopback
@@ -195,7 +203,12 @@ Music Assistant would fight over their ports.
    nothing there reads any more.
 
 7. **Check** ("Running it" 4): all seven servers listed, a turn that uses one of them, a login
-   handoff's link opening the live view.
+   handoff's link opening the live view. Then **`docker exec -it agent dotnet Agent.dll redelegate`
+   again**: the pass after the migration could not ask the kit's servers (it lists them as "not
+   asked"), and Home Assistant's watches are kept by the kit's. A watch from master names nobody an
+   account answers to; this pass offers it as the household's owner, and declined it fires for
+   nobody. An outpost still running the binary from before keeps logging "The hub refused outpost
+   …'s registration": run the new one with its `outpost-<name>` credential (`.claude/rules/outpost.md`).
 
 8. **Clean the deployment's `.env`** of what it no longer reads: the moved servers' `MCP_SECRET_*`,
    the Home Assistant and Music Assistant tokens, qBittorrent, Jackett, Brave and CapSolver, and

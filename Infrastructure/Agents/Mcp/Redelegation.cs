@@ -20,7 +20,11 @@ namespace Infrastructure.Agents.Mcp;
 //     only on their yes;
 //   - an object keeping none is offered as its server's recorded writer, when it recorded one: a
 //     schedule written before delegations, stamped by the household migration. That rests on the
-//     operator's yes alone, once, which is the point of asking.
+//     operator's yes alone, once, which is the point of asking;
+//   - one keeping none whose writer names no account — a watch written before accounts, under an old
+//     chat name nothing resolves — is offered as the owner of the household whose server keeps it,
+//     the migration's answer for a schedule nobody can be traced for. Left alone it fires for nobody
+//     and reaches no one, without a word.
 //
 // A delegation signed again is a fresh one over what the object does now, so a yes never blesses
 // anything but what was shown.
@@ -41,8 +45,11 @@ public sealed class Redelegation(
     // with no way to dial it is known to exist and not connected now (a household's server whose tunnel
     // is closed): it is not asked, and said so with why, since the delegations it keeps were not looked
     // at and want a second pass once it is back.
+    // A household's server names that household's owner: what it keeps acting for nobody is offered
+    // as them.
     public sealed record Server(
-        string Name, Func<CancellationToken, Task<McpClient>>? ConnectAsync, string NotConnectedBecause = "")
+        string Name, Func<CancellationToken, Task<McpClient>>? ConnectAsync, string NotConnectedBecause = "",
+        Account? Owner = null)
     {
         public static Server NotConnected(string name, string because) => new(name, null, because);
     }
@@ -89,7 +96,7 @@ public sealed class Redelegation(
 
             foreach (var delegation in stored)
             {
-                failed |= !await RedelegateAsync(dialled, delegation, assumeYes, ct);
+                failed |= !await RedelegateAsync(dialled, delegation, server.Owner, assumeYes, ct);
             }
         }
 
@@ -134,7 +141,8 @@ public sealed class Redelegation(
         return everyServerAsked ? stranded : null;
     }
 
-    private async Task<bool> RedelegateAsync(Dialled server, StoredDelegation stored, bool assumeYes, CancellationToken ct)
+    private async Task<bool> RedelegateAsync(
+        Dialled server, StoredDelegation stored, Account? owner, bool assumeYes, CancellationToken ct)
     {
         var what = new DelegatedObject(stored.Kind, stored.Id, stored.Description);
         switch (await StandingOfAsync(stored, ct))
@@ -151,6 +159,12 @@ public sealed class Redelegation(
                 var person = IdentityClaims.Person(account.UserId, account.TenantId, writer.ChannelId, []);
                 return !await ConfirmAsync(server, stored, $"it has no delegation; it was written by {DescribePerson(person)}", assumeYes)
                        || await ReplaceAsync(server, stored, tokens.Delegate(person, what), ct);
+            case Standing.None when owner is not null:
+                var asOwner = IdentityClaims.Person(owner.UserId, owner.TenantId, stored.Writer?.ChannelId ?? ChannelIds.SignalR, []);
+                var written = stored.Writer is { UserId: { Length: > 0 } name } ? $"written as '{name}', whom no account answers to" : "written by nobody it can name";
+                return !await ConfirmAsync(server, stored,
+                           $"it acts for nobody ({written}); offered as the household's owner, {DescribePerson(asOwner)}", assumeYes)
+                       || await ReplaceAsync(server, stored, tokens.Delegate(asOwner, what), ct);
             default:
                 await output.WriteLineAsync($"{server.Name}: {Name(stored)} acts for nobody, and nothing says for whom it could.");
                 return true;

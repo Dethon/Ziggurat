@@ -136,6 +136,30 @@ public class WatchDelegationTests : IAsyncLifetime
             .Identity.Account.ShouldBe(_fran);
     }
 
+    // A watch written before accounts names its writer by an old chat name nothing resolves, so it acts
+    // for nobody; its server is a household's, so redelegate offers it as that household's owner, the
+    // migration's answer for a schedule nobody can be traced for (user's decision). Left as it was, it
+    // fired for nobody and stopped reaching anyone without a word.
+    [Fact]
+    public async Task AWatchActingForNobody_IsOfferedAsItsHouseholdsOwner_AndThenFiresAsThem()
+    {
+        await WriteAsync(NobodysTurn(), backend => backend.CreateAsync(Path, _watch, false, true, CancellationToken.None));
+        var keys = TestSigningKeys.Store(TestSigningKeys.Agent);
+        var output = new StringWriter();
+
+        var exit = await new Redelegation(keys, new CallTokens(keys, TimeProvider.System), TimeProvider.System,
+                new TokenVerificationSettings(), new StringReader("y\n"), output)
+            .RedelegateAsync(
+                [new Redelegation.Server("homeassistant", ct => McpClient.CreateAsync(McpTestSecret.Transport(Endpoint), cancellationToken: ct), Owner: _fran)],
+                assumeYes: true, _cts.Token);
+
+        exit.ShouldBe(0);
+        output.ToString().ShouldContain("household's owner");
+        var admitted = await TestDelegations.AdmitAsync(await FireAsync(), "homeassistant");
+        admitted.ShouldBeOfType<FireAdmission.Delegated>($"{admitted}\n{output}")
+            .Identity.Account.ShouldBe(_fran);
+    }
+
     // The automation is the home's to edit: one whose callback delivers somewhere the watch never
     // said answers there as nobody.
     [Fact]

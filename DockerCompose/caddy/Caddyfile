@@ -96,6 +96,22 @@ assistants.herfluffness.com {
         reverse_proxy accounts:8080
     }
 
+    # The app's own files, signed out too, to any request that is not a page being opened and is not its
+    # API: an installed app replaces its service worker by fetching the worker's script, and installs
+    # the new one by fetching the files its shell caches, whether or not the person is signed in. A
+    # phone holding a worker from before sign-in existed — one that answers every page, sign-in's
+    # included, with its cached app — has no other way out. Opening a page (a navigation, or anything
+    # asking for HTML) and the API still go through the session check below. After every path route:
+    # Caddy orders a handle with a named matcher after those with a path.
+    @shell {
+        not header Sec-Fetch-Mode navigate
+        not header Accept *text/html*
+        not path /api/*
+    }
+    handle @shell {
+        reverse_proxy webui:8080
+    }
+
     handle {
         forward_auth accounts:8080 {
             uri /accounts/verify?channel=signalr
@@ -239,6 +255,22 @@ sugary.herfluffness.com {
     # Each person's own log, behind the same sign-in as the chat client: the app and its API act
     # for the person the check names in the headers it copies, over any the client sent. A
     # signed-out page is sent to sign-in and back here, a signed-out call to the API is answered 401.
+    # The app's own files, signed out too, to any request that is not a page being opened and is not its
+    # API: an installed app replaces its service worker by fetching the worker's script, and installs
+    # the new one by fetching the files its shell caches, whether or not the person is signed in. A
+    # phone holding a worker from before sign-in existed — one that answers every page, sign-in's
+    # included, with its cached app — has no other way out. Opening a page (a navigation, or anything
+    # asking for HTML) and the API still go through the session check below. After every path route:
+    # Caddy orders a handle with a named matcher after those with a path.
+    @shell {
+        not header Sec-Fetch-Mode navigate
+        not header Accept *text/html*
+        not path /api/*
+    }
+    handle @shell {
+        reverse_proxy mcp-sugary:8080
+    }
+
     handle {
         forward_auth accounts:8080 {
             uri /accounts/verify?channel=sugary

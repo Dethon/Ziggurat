@@ -148,7 +148,7 @@ public static class HouseholdMigrationCommand
         new PushSubscriptions(redis, new RedisPushSubscriptionStore(redis)),
         new PushSpaces(redis),
         new HouseholdSpaces(new HouseholdConfigSeed(accounts, settings.Accounts.Credential)),
-        new ScheduleCreators(redis),
+        new ScheduleCreators(redis, Threads(redis)),
         new ScheduleHouseholds(redis),
         new TopicOwners(redis, Threads(redis)),
         new TopicHouseholds(redis, Threads(redis)),

@@ -56,9 +56,11 @@ public sealed record TunnelServerHoldersQuery(string ServerName);
 
 // A household that holds a live credential for the server asked about — or the home, whose servers the
 // channel endpoints have always named, whether it holds one or not. Suspended says why its tunnel is
-// closed: its credentials stand, and it opens again once resumed.
+// closed: its credentials stand, and it opens again once resumed. OwnerId is the household's
+// longest-standing owner still enabled, as whom redelegate offers what its server keeps acting for
+// nobody; null when it has none (and from an accounts service from before it was said).
 [PublicAPI]
-public sealed record TunnelServerHolder(string TenantId, string Name, bool Home, bool Suspended);
+public sealed record TunnelServerHolder(string TenantId, string Name, bool Home, bool Suspended, string? OwnerId = null);
 
 // By name on the wire: the relay logs it and reports it on the errors feed for the operator to read.
 [JsonConverter(typeof(JsonStringEnumConverter<TunnelCredentialRefusal>))]
