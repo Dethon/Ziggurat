@@ -21,8 +21,8 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Settings), async content =>
             new AdminAnswer<HouseholdSettings>.Answered((await content.ReadFromJsonAsync<HouseholdSettings>())!));
 
-    public Task<AdminAnswer<HouseholdSettings>> SaveSettingsAsync(HouseholdSettings settings) =>
-        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Settings) { Content = JsonContent.Create(settings) },
+    public Task<AdminAnswer<HouseholdSettings>> SaveSettingsAsync(HouseholdSettings settings, HouseholdSettings? loaded = null) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Settings) { Content = JsonContent.Create(AdminEdit.Of(settings, loaded)) },
             SavedAsync<HouseholdSettings>);
 
     public Task<AdminAnswer<HouseholdKeys>> GetKeysAsync() =>
@@ -95,16 +95,16 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Features), async content =>
             new AdminAnswer<FeaturesSection>.Answered((await content.ReadFromJsonAsync<FeaturesSection>())!));
 
-    public Task<AdminAnswer<FeaturesSection>> SaveFeaturesAsync(FeaturesSection features) =>
-        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Features) { Content = JsonContent.Create(features) },
+    public Task<AdminAnswer<FeaturesSection>> SaveFeaturesAsync(FeaturesSection features, FeaturesSection? loaded = null) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Features) { Content = JsonContent.Create(AdminEdit.Of(features, loaded)) },
             SavedAsync<FeaturesSection>);
 
     public Task<AdminAnswer<AdminSpaces>> GetSpacesAsync() =>
         SendAsync(new HttpRequestMessage(HttpMethod.Get, AdminProtocol.Spaces), async content =>
             new AdminAnswer<AdminSpaces>.Answered((await content.ReadFromJsonAsync<AdminSpaces>())!));
 
-    public Task<AdminAnswer<AdminSpaces>> SaveSpacesAsync(SpacesSection spaces) =>
-        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Spaces) { Content = JsonContent.Create(spaces) },
+    public Task<AdminAnswer<AdminSpaces>> SaveSpacesAsync(SpacesSection spaces, SpacesSection? loaded = null) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Put, AdminProtocol.Spaces) { Content = JsonContent.Create(AdminEdit.Of(spaces, loaded)) },
             SavedAsync<AdminSpaces>);
 
     public Task<AdminAnswer<AdminServers>> GetServersAsync() =>
@@ -143,6 +143,8 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
                 HttpStatusCode.Unauthorized => new AdminAnswer<T>.SignedOut(),
                 HttpStatusCode.Forbidden => new AdminAnswer<T>.NotAllowed((await RefusalAsync(response))?.Message ?? NotAllowedMessage),
                 HttpStatusCode.BadRequest when await RefusalAsync(response) is { } refusal => new AdminAnswer<T>.Refused(refusal),
+                // Another owner changed the same field since the page loaded it: said, not "unreachable".
+                HttpStatusCode.Conflict when await RefusalAsync(response) is { } refusal => new AdminAnswer<T>.Refused(refusal),
                 HttpStatusCode.ServiceUnavailable => new AdminAnswer<T>.Unreachable((await RefusalAsync(response))?.Message),
                 _ => new AdminAnswer<T>.Unreachable()
             };

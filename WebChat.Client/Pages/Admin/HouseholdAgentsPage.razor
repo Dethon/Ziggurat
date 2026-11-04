@@ -205,8 +205,13 @@
     private void Save(string agentId)
     {
         var draft = _drafts[agentId];
+        var loaded = _state.Agents?.Agents.FirstOrDefault(a => a.Id == agentId);
         Dispatcher.Dispatch(new SaveHouseholdAgent(agentId, new AgentEdit(
-            draft.Name.Trim(), string.IsNullOrWhiteSpace(draft.Instructions) ? null : draft.Instructions.Trim())));
+            draft.Name.Trim(), string.IsNullOrWhiteSpace(draft.Instructions) ? null : draft.Instructions.Trim())
+        {
+            // What the page showed, so another owner's change to the other field since then stands.
+            Loaded = loaded is null ? null : new AgentEdit(loaded.Name, loaded.CustomInstructions)
+        }));
     }
 
     private void ShowVersions(string agentId) => Dispatcher.Dispatch(new LoadHouseholdAgentVersions(agentId));

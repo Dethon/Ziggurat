@@ -30,8 +30,14 @@ public static class HouseholdFeaturesAdmin
             }
 
             var before = await store.ReadAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, ct);
+            var merged = AdminSections.Merged(document, HouseholdSections.FeaturesSchema.Write(before ?? new FeaturesSection()));
+            if (merged.Conflicts.Count > 0)
+            {
+                return AdminSections.Conflict("The features were not saved.", merged, path => $"the {path[0]} feature");
+            }
+
             return await AdminSections.AnswerAsync(
-                await store.SaveAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, document, ct),
+                await store.SaveAsync(caller.HouseholdId, HouseholdSections.FeaturesSchema, merged.Value!.AsObject(), ct),
                 "The features were not saved.",
                 async saved =>
                 {

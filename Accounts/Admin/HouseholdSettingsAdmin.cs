@@ -30,8 +30,20 @@ public static class HouseholdSettingsAdmin
             }
 
             var before = await store.ReadAsync(caller.HouseholdId, HouseholdSections.SettingsSchema, ct);
+            var merged = before is null
+                ? new MergedEdit(document, [])
+                : AdminSections.Merged(document, HouseholdSections.SettingsSchema.Write(before));
+            if (merged.Conflicts.Count > 0)
+            {
+                return AdminSections.Conflict("The settings were not saved.", merged, path => path[0] switch
+                {
+                    "timeZone" => "the time zone",
+                    var field => $"the {field}"
+                });
+            }
+
             return await AdminSections.AnswerAsync(
-                await store.SaveAsync(caller.HouseholdId, HouseholdSections.SettingsSchema, document, ct),
+                await store.SaveAsync(caller.HouseholdId, HouseholdSections.SettingsSchema, merged.Value!.AsObject(), ct),
                 "The settings were not saved.",
                 async saved =>
                 {

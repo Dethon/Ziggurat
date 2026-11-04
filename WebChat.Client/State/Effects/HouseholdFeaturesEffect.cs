@@ -26,14 +26,14 @@ public sealed class HouseholdFeaturesEffect : IDisposable
         _loadRegistration = dispatcher.RegisterHandler<LoadHouseholdFeatures>(
             _ => LoadAsync().LogFaults(logger, nameof(LoadHouseholdFeatures)));
         _saveRegistration = dispatcher.RegisterHandler<SaveHouseholdFeatures>(
-            action => SaveAsync(action.Features).LogFaults(logger, nameof(SaveHouseholdFeatures)));
+            action => SaveAsync(action.Features, action.Loaded).LogFaults(logger, nameof(SaveHouseholdFeatures)));
     }
 
     public async Task LoadAsync() =>
         Settle(await _admin.GetFeaturesAsync(), answered => new HouseholdFeaturesLoaded(answered.Value));
 
-    public async Task SaveAsync(FeaturesSection features) =>
-        Settle(await _admin.SaveFeaturesAsync(features), answered => new HouseholdFeaturesSaved(answered.Value, answered.Warning));
+    public async Task SaveAsync(FeaturesSection features, FeaturesSection? loaded = null) =>
+        Settle(await _admin.SaveFeaturesAsync(features, loaded), answered => new HouseholdFeaturesSaved(answered.Value, answered.Warning));
 
     private void Settle(AdminAnswer<FeaturesSection> answer, Func<AdminAnswer<FeaturesSection>.Answered, IAction> outcome) =>
         _dispatcher.Settle(_accounts, answer, outcome, notice => new HouseholdFeaturesNotSaved(notice));

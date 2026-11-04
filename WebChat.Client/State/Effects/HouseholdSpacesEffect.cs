@@ -27,14 +27,14 @@ public sealed class HouseholdSpacesEffect : IDisposable
         _loadRegistration = dispatcher.RegisterHandler<LoadHouseholdSpaces>(
             _ => LoadAsync().LogFaults(logger, nameof(LoadHouseholdSpaces)));
         _saveRegistration = dispatcher.RegisterHandler<SaveHouseholdSpaces>(
-            action => SaveAsync(action.Spaces).LogFaults(logger, nameof(SaveHouseholdSpaces)));
+            action => SaveAsync(action.Spaces, action.Loaded).LogFaults(logger, nameof(SaveHouseholdSpaces)));
     }
 
     public async Task LoadAsync() =>
         Settle(await _admin.GetSpacesAsync(), answered => new HouseholdSpacesLoaded(answered.Value));
 
-    public async Task SaveAsync(SpacesSection spaces) =>
-        Settle(await _admin.SaveSpacesAsync(spaces), answered => new HouseholdSpacesSaved(answered.Value, answered.Warning));
+    public async Task SaveAsync(SpacesSection spaces, SpacesSection? loaded = null) =>
+        Settle(await _admin.SaveSpacesAsync(spaces, loaded), answered => new HouseholdSpacesSaved(answered.Value, answered.Warning));
 
     private void Settle(AdminAnswer<AdminSpaces> answer, Func<AdminAnswer<AdminSpaces>.Answered, IAction> outcome) =>
         _dispatcher.Settle(_accounts, answer, outcome, notice => new HouseholdSpacesNotSaved(notice));

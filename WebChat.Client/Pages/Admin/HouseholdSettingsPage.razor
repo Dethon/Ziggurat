@@ -84,5 +84,5 @@
         Name = _name.Trim(),
         TimeZone = _timeZone.Trim(),
         Language = string.IsNullOrWhiteSpace(_language) ? null : _language.Trim()
-    }));
+    }, Store.State.Settings));
 }

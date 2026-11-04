@@ -88,7 +88,7 @@
         Idealista = IsOn("idealista"),
         Memory = IsOn("memory"),
         Workers = IsOn("workers")
-    }));
+    }, Store.State.Features));
 
     private sealed class FeatureToggle(string name, string label, string hint, bool on)
     {

@@ -6,7 +6,8 @@ public record LoadHouseholdSettings : IAction;
 
 public record HouseholdSettingsLoaded(HouseholdSettings Settings) : IAction;
 
-public record SaveHouseholdSettings(HouseholdSettings Settings) : IAction;
+// Loaded: the settings the page was showing, so another owner's change since then is kept (AdminEdit).
+public record SaveHouseholdSettings(HouseholdSettings Settings, HouseholdSettings? Loaded = null) : IAction;
 
 public record HouseholdSettingsSaved(HouseholdSettings Settings, string? Warning) : IAction;
 

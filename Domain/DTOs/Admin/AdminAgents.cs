@@ -36,7 +36,12 @@ public sealed record AdminAgentTemplate(string Name, string AgentName, string? D
 // What an owner sends to change an agent: its name and its custom instructions, both whole. Nothing
 // else about an agent is theirs to send.
 [PublicAPI]
-public sealed record AgentEdit(string Name, string? CustomInstructions);
+public sealed record AgentEdit(string Name, string? CustomInstructions)
+{
+    // The name and instructions the page loaded, so another owner's change to the other field
+    // since then stands (AdminEdit); none is saved as sent.
+    public AgentEdit? Loaded { get; init; }
+}
 
 // An agent added from a shipped template, under the name the owner gives it.
 [PublicAPI]

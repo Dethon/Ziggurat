@@ -27,14 +27,14 @@ public sealed class HouseholdSettingsEffect : IDisposable
         _loadRegistration = dispatcher.RegisterHandler<LoadHouseholdSettings>(
             _ => LoadAsync().LogFaults(logger, nameof(LoadHouseholdSettings)));
         _saveRegistration = dispatcher.RegisterHandler<SaveHouseholdSettings>(
-            action => SaveAsync(action.Settings).LogFaults(logger, nameof(SaveHouseholdSettings)));
+            action => SaveAsync(action.Settings, action.Loaded).LogFaults(logger, nameof(SaveHouseholdSettings)));
     }
 
     public async Task LoadAsync() =>
         Settle(await _admin.GetSettingsAsync(), answered => new HouseholdSettingsLoaded(answered.Value));
 
-    public async Task SaveAsync(HouseholdSettings settings) =>
-        Settle(await _admin.SaveSettingsAsync(settings), answered => new HouseholdSettingsSaved(answered.Value, answered.Warning));
+    public async Task SaveAsync(HouseholdSettings settings, HouseholdSettings? loaded = null) =>
+        Settle(await _admin.SaveSettingsAsync(settings, loaded), answered => new HouseholdSettingsSaved(answered.Value, answered.Warning));
 
     private void Settle(AdminAnswer<HouseholdSettings> answer, Func<AdminAnswer<HouseholdSettings>.Answered, IAction> outcome) =>
         _dispatcher.Settle(_accounts, answer, outcome, notice => new HouseholdSettingsNotSaved(notice));
