@@ -1,4 +1,4 @@
-# sugary-log — description 97 / 100 tokens, body 850 / 850 tokens, served by mcp-sugary
+# sugary-log — description 97 / 100 tokens, body 918 / 920 tokens, served by mcp-sugary
 
 ================================================================================================
 
@@ -10,6 +10,8 @@ description: Reading the asking person's own carb log under `/sugary` — the fo
 ### The asking person's carb log at `/sugary`
 
 Read-only, and rendered from Sugary's database on every read, so it is always current. Nothing under it can be written: it changes only through the Sugary app.
+
+It is the asking person's log and nobody else's. Another person's — a child's, a partner's, however they log — is not here and cannot be read: asked about theirs, say you can see only the asker's own, and never give what this log holds, or that it is empty, as theirs.
 
 `/sugary/README.md` explains every column. Read it before reading a number: carbs are available carbohydrate with fibre excluded, every carb figure is a range, and a meal's first estimate covers only the foods the model estimated.
 

@@ -50,6 +50,16 @@ public class SugaryScenariosTests
     }
 
     [Fact]
+    public void TheAnotherPersonsLogScenario_IsJonass_AndJudgesThatNothingIsReportedAsTheirs()
+    {
+        var other = SugaryScenarios.AnotherPersonsLogIsNotHers;
+
+        other.AgentId.ShouldBe("jonas");
+        other.Judged.Select(check => check.Claim).ShouldBe([SugarySkill.AnotherPersonsLogIsNotHere.Id]);
+        Names(EvalTier.Full).ShouldContain(other.Name);
+    }
+
+    [Fact]
     public void TheMissingRatioScenario_IsJonass_AndJudgesThatHeAsksForIt()
     {
         var missing = SugaryScenarios.AMissingRatioIsAskedFor;
