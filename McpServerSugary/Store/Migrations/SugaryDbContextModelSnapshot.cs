@@ -315,6 +315,9 @@ namespace McpServerSugary.Store.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SessionId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("TenantId")
                         .IsRequired()
                         .HasMaxLength(64)

@@ -48,7 +48,7 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
             }
         }
 
-        var value = JsonSerializer.Serialize(new { subscription.P256dh, subscription.Auth, SpaceSlug = spaceSlug });
+        var value = JsonSerializer.Serialize(new { subscription.P256dh, subscription.Auth, SpaceSlug = spaceSlug, subscription.SessionId });
 
         await db.HashSetAsync($"{KeyPrefix}{userId}", subscription.Endpoint, value);
         await db.StringSetAsync(endpointIndexKey, userId);
@@ -178,7 +178,12 @@ public sealed class RedisPushSubscriptionStore(IConnectionMultiplexer redis) : I
             results.Add((userId.ToString(), new PushSubscriptionDto(
                 endpoint,
                 data.GetProperty("P256dh").GetString()!,
-                data.GetProperty("Auth").GetString()!)));
+                data.GetProperty("Auth").GetString()!)
+            {
+                SessionId = data.TryGetProperty("SessionId", out var session) && session.ValueKind == JsonValueKind.String
+                    ? session.GetString()
+                    : null
+            }));
         }
 
         return results;

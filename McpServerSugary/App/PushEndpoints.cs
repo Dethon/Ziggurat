@@ -59,6 +59,7 @@ public static class PushEndpoints
         subscription.Auth = request.Auth!;
         subscription.Language = request.Language!;
         subscription.TimeZone = calendar.Zone.Id;
+        subscription.SessionId = person.SessionId;
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }

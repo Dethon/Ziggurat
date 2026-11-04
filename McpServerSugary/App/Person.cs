@@ -17,6 +17,10 @@ namespace McpServerSugary.App;
 // to the agent, which believes it and not this server (the agent checks it again as the turn arrives).
 public sealed record Person(Account Account, string Assertion)
 {
+    // The signed-in session the assertion was signed for, where it names one: a phone it subscribes hears
+    // nothing once that session ends.
+    public string? SessionId { get; init; }
+
     private static readonly object _item = new();
 
     public static ValueTask<Person?> BindAsync(HttpContext http) => ValueTask.FromResult(Of(http));
@@ -35,7 +39,7 @@ public sealed record Person(Account Account, string Assertion)
             return null;
         }
 
-        var person = new Person(admitted.Person.Account, admitted.Assertion);
+        var person = new Person(admitted.Person.Account, admitted.Assertion) { SessionId = admitted.Person.SessionId };
         http.Items[_item] = person;
         return person;
     }

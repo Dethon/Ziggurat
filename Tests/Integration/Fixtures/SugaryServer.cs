@@ -141,8 +141,8 @@ public sealed class SugaryServer : IAsyncDisposable
     // A phone signed in as this person, as the proxy hands its requests on: the session check's
     // four headers on every request — the assertion signed for Sugary with the accounts service's
     // test key — and nothing else that says who it is.
-    public HttpClient As(Account person, string roles = "member") =>
-        Forwarded(person, TestAssertions.Of(person, SugaryChannel.ChannelId, roles.Split(',')), roles);
+    public HttpClient As(Account person, string roles = "member", string? sessionId = null) =>
+        Forwarded(person, TestAssertions.Of(person, SugaryChannel.ChannelId, roles.Split(','), sessionId: sessionId), roles);
 
     // The plain headers naming one person and whatever assertion a test chooses beside them, or
     // none: what a container on the network past the proxy could send.
