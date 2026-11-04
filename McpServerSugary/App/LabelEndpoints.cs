@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Channel;
+using Domain.Monitor;
 using Domain.Tools.Sugary.Estimation;
 using Domain.Tools.Sugary.Labels;
 using McpServerSugary.Channel;
@@ -83,6 +84,9 @@ public static class LabelEndpoints
     private static IResult Answer(TurnReply reply, ILogger log) => reply switch
     {
         TurnReply.Answered answered => Read(answered.Text, log),
+        // A turn the agent refused for the household (Sugary off, its key refused, out of credit) is
+        // forbidden with the refusal's code, which the app says in her language with who can fix it.
+        TurnReply.Failed failed when RefusalAnswers.CodeOf(failed.Reason) is { } code => Problem(StatusCodes.Status403Forbidden, code),
         TurnReply.Failed => Problem(StatusCodes.Status502BadGateway, ""),
         TurnReply.Unanswered => Problem(StatusCodes.Status502BadGateway, "The model returned no answer."),
         TurnReply.NotListening => Problem(StatusCodes.Status502BadGateway,

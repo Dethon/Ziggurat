@@ -12,4 +12,7 @@ public static class ChannelIds
     public const string Voice = "voice";
 
     public const string Telegram = "telegram";
+
+    // The Sugary app's estimates and labels, which its server opens as turns.
+    public const string Sugary = "sugary";
 }

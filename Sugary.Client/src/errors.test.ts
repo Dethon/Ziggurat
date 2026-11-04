@@ -68,3 +68,29 @@ describe("an answer the server could not read", () => {
     expect(labelFailureMessage(new ApiError(502, ""), es)).toBe(es("labelNoAnswer"));
   });
 });
+
+// A turn the agent refused for the household comes back as 403 with the refusal's code: Sugary turned
+// off, the household's key refused or out of credit. Each is said in her language and names who can
+// fix it, for an estimate and a label alike; a code the app does not know is the generic failure.
+describe("a refusal for the household", () => {
+  it.each([
+    ["sugary-off", "refusalSugaryOff"],
+    ["key-refused", "refusalKeyRefused"],
+    ["out-of-credit", "refusalOutOfCredit"],
+    ["without-key", "refusalWithoutKey"],
+    ["disabled", "refusalDisabled"],
+  ] as const)("%s is said as %s", async (code, key) => {
+    const { ApiError } = await import("./api");
+    const { errorMessage, labelFailureMessage } = await import("./errors");
+    const es = translator("es");
+    expect(errorMessage(new ApiError(403, code), es, "estimate")).toBe(es(key));
+    expect(labelFailureMessage(new ApiError(403, code), es)).toBe(es(key));
+  });
+
+  it("is the generic failure for a code the app does not know", async () => {
+    const { ApiError } = await import("./api");
+    const { errorMessage } = await import("./errors");
+    const en = translator("en");
+    expect(errorMessage(new ApiError(403, "something-new"), en, "estimate")).toBe(en("errorGeneric"));
+  });
+});

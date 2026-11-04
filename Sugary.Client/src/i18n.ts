@@ -456,6 +456,11 @@ const en = {
   productBadCode: "That isn't a product barcode. Check the digits under the bars.",
   productNoAnswer: "The product database didn't answer. Try again, or photograph the nutrition table.",
   errorGeneric: "Something went wrong. Try again.",
+  refusalSugaryOff: "Sugary is turned off for your household. An owner can turn it back on on the Features page.",
+  refusalKeyRefused: "OpenRouter refused your household's key. An owner can replace it on the Keys page.",
+  refusalOutOfCredit: "Your household's OpenRouter account is out of credit. An owner can add credit at openrouter.ai.",
+  refusalWithoutKey: "Your household has no OpenRouter key yet. Ask an owner to add one.",
+  refusalDisabled: "Your account in this household is disabled. Ask the household's owner.",
   tryAgain: "Try again",
   close: "Close",
 
@@ -949,6 +954,11 @@ const es: Strings = {
   productBadCode: "Eso no es un código de barras de producto. Revisa los números bajo las barras.",
   productNoAnswer: "La base de datos de productos no ha respondido. Inténtalo de nuevo o fotografía la tabla nutricional.",
   errorGeneric: "Algo ha fallado. Inténtalo de nuevo.",
+  refusalSugaryOff: "Sugary está desactivado en tu hogar. Quien lo administra puede volver a activarlo en la página de funciones.",
+  refusalKeyRefused: "OpenRouter ha rechazado la clave de tu hogar. Quien lo administra puede cambiarla en la página de claves.",
+  refusalOutOfCredit: "La cuenta de OpenRouter de tu hogar se ha quedado sin crédito. Quien lo administra puede añadirlo en openrouter.ai.",
+  refusalWithoutKey: "Tu hogar todavía no tiene clave de OpenRouter. Pide a quien lo administra que añada una.",
+  refusalDisabled: "Tu cuenta en este hogar está desactivada. Pregunta a quien administra el hogar.",
   tryAgain: "Reintentar",
   close: "Cerrar",
 
