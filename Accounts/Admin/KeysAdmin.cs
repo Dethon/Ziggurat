@@ -1,9 +1,11 @@
 using Accounts.Configuration;
 using Accounts.Keys;
 using Accounts.Settings;
+using Accounts.Tunnels;
 using Domain.Agents;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
+using Domain.DTOs.Tunnel;
 
 namespace Accounts.Admin;
 
@@ -19,6 +21,7 @@ public sealed class KeysAdmin(
     IKeyProbe<IdealistaKeys> idealista,
     IKeyProbe<TelegramBotKey> telegram,
     IKeyProbe<LemonadeBox> lemonade,
+    ConnectedServersClient servers,
     AccountsSettings settings,
     ILogger<KeysAdmin> logger)
 {
@@ -72,13 +75,19 @@ public sealed class KeysAdmin(
         SaveAsync(KeySlot.Idealista, idealista, key, saving, ct);
 
     // Another household's box is a public https address; the home's may be on the deployment's own
-    // network, where its box has always been (LemonadeAddresses).
+    // network, where its box has always been (LemonadeAddresses). A box through the tenant kit has no
+    // address to hold to that or to ask: it is saved unprobed, and shown by its tunnel's state.
     private async Task<IResult> SaveLemonadeAsync(LemonadeBox? box, Saving saving, CancellationToken ct)
     {
+        if (box is { ThroughKit: true })
+        {
+            return await SaveAsync(KeySlot.Lemonade, null, box, saving, ct, ", through the tenant kit");
+        }
+
         if (box is not null
             && !settings.KeyProbes.LemonadeOnPrivateAddresses
             && await store.HouseholdAsync(saving.Caller.HouseholdId, ct) is { IsHome: false }
-            && !await LemonadeAddresses.IsPublicHttpsAsync(box.ApiUrl, ct))
+            && !await LemonadeAddresses.IsPublicHttpsAsync(box.ApiUrl ?? "", ct))
         {
             return Results.BadRequest(new AdminRefusal(
                 "The Lemonade box was not saved: the deployment reaches a household's own box at a public https " +
@@ -156,9 +165,28 @@ public sealed class KeysAdmin(
                     .Select(agent => new TelegramBotStatus(agent, Status(KeySlot.TelegramBot(agent), keys, known)!))
             ])
         {
-            Lemonade = keys.Lemonade is { } box ? new LemonadeBoxStatus(box.ApiUrl, Status(KeySlot.Lemonade, keys, known)!) : null
+            Lemonade = keys.Lemonade switch
+            {
+                { ThroughKit: true } => new LemonadeBoxStatus(null, null)
+                {
+                    ThroughKit = true,
+                    Connection = await KitConnectionAsync(householdId, ct)
+                },
+                { } box => new LemonadeBoxStatus(box.ApiUrl, Status(KeySlot.Lemonade, keys, known)),
+                null => null
+            }
         };
     }
+
+    // Whether the household's forwarder's tunnel is open, as the agent's relay says: unknown when it
+    // could not be asked, never offline for that.
+    private async Task<ServerConnection> KitConnectionAsync(string householdId, CancellationToken ct) =>
+        await servers.ListAsync(householdId, ct) switch
+        {
+            null => ServerConnection.Unknown,
+            var listed when listed.Any(s => s.ServerName == HouseholdServerNames.Lemonade) => ServerConnection.Connected,
+            _ => ServerConnection.Offline
+        };
 
     // A key OpenRouter refused in a turn: marked rejected at once, then put to OpenRouter again, whose
     // fresh answer stands — a key it takes again works, and one it could not be asked about stays
@@ -187,8 +215,11 @@ public sealed class KeysAdmin(
         }
     }
 
+    // A key nobody can be asked about (a box through the tenant kit) comes with no probe: saved as it is,
+    // with no check recorded.
     private async Task<IResult> SaveAsync<TKey>(
-        KeySlot<TKey> slot, IKeyProbe<TKey> probe, TKey? key, Saving saving, CancellationToken ct) where TKey : class
+        KeySlot<TKey> slot, IKeyProbe<TKey>? probe, TKey? key, Saving saving, CancellationToken ct, string how = "")
+        where TKey : class
     {
         var caller = saving.Caller;
         if (key is null)
@@ -211,7 +242,7 @@ public sealed class KeysAdmin(
                 return Results.BadRequest(new AdminRefusal($"The {slot.Label} was not saved.", problems));
             }
 
-            var outcome = await probe.ProbeAsync(key, ct);
+            var outcome = probe is null ? null : await probe.ProbeAsync(key, ct);
             if (outcome is KeyProbeOutcome.Rejected rejected)
             {
                 return Results.BadRequest(new AdminRefusal($"The {slot.Label} was not saved: {rejected.Why}.", []));
@@ -223,14 +254,19 @@ public sealed class KeysAdmin(
                 async saved =>
                 {
                     var unreachable = outcome as KeyProbeOutcome.Unreachable;
-                    await checks.RecordAsync(caller.HouseholdId, slot.Name, slot.Material(key),
-                        unreachable is null ? KeyState.Working : KeyState.Unchecked, unreachable?.Why, ct);
-                    await saving.Log.RecordAsync(saving.Http, caller, $"{(slot.Read(keys) is null ? "Set" : "Replaced")} the {slot.Label}", ct);
+                    if (outcome is not null)
+                    {
+                        await checks.RecordAsync(caller.HouseholdId, slot.Name, slot.Material(key),
+                            unreachable is null ? KeyState.Working : KeyState.Unchecked, unreachable?.Why, ct);
+                    }
+
+                    await saving.Log.RecordAsync(saving.Http, caller,
+                        $"{(slot.Read(keys) is null ? "Set" : "Replaced")} the {slot.Label}{how}", ct);
                     string?[] warnings =
                     [
                         unreachable is null
                             ? null
-                            : $"Saved, but {probe.Provider} could not be asked whether it works just now ({unreachable.Why}): it shows as unchecked.",
+                            : $"Saved, but {probe!.Provider} could not be asked whether it works just now ({unreachable.Why}): it shows as unchecked.",
                         saved.NotTold is null ? null : NotToldWarning
                     ];
                     var warning = string.Join(" ", warnings.OfType<string>());

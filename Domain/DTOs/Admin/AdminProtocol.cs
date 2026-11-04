@@ -145,12 +145,18 @@ public sealed record HouseholdKeys(
     // Its agents refuse every turn until one is set: what the owner is sent to the keys page for.
     public bool NeedsOpenRouterKey => !PaysWithDeploymentKey && OpenRouter is null;
 
-    // The household's own Lemonade box: its address as saved, and its key's state.
+    // The household's own Lemonade box: at its address with its key's state, or through the tenant kit.
     public LemonadeBoxStatus? Lemonade { get; init; }
 }
 
+// A box at an address: its address as saved and its key's state. A box through the tenant kit: neither,
+// and its forwarder's tunnel's state as the agent's relay tells it (unknown when it cannot be asked).
 [PublicAPI]
-public sealed record LemonadeBoxStatus(string ApiUrl, KeyStatus Status);
+public sealed record LemonadeBoxStatus(string? ApiUrl, KeyStatus? Status)
+{
+    public bool ThroughKit { get; init; }
+    public ServerConnection? Connection { get; init; }
+}
 
 // Working: the provider accepted it when last asked. Rejected: the provider refused it, on saving
 // or in use. Unchecked: saved while the provider could not be asked, or saved by the operator's
