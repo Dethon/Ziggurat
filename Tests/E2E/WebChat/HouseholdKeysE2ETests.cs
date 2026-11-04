@@ -114,7 +114,8 @@ public partial class HouseholdKeysE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(lemonade.Locator(".admin-key-kit"))
             .ToHaveTextAsync("Through the tenant kit: connected", new LocatorAssertionsToHaveTextOptions { Timeout = 30_000 });
 
-        await lemonade.GetByLabel("Through the tenant kit").CheckAsync();
+        // It opens on the way the box is saved, asking for no address.
+        await Assertions.Expect(lemonade.GetByLabel("Through the tenant kit")).ToBeCheckedAsync();
         await Assertions.Expect(lemonade.Locator("input[name=lemonadeUrl]")).ToHaveCountAsync(0);
         await Assertions.Expect(lemonade).ToContainTextAsync("--profile lemonade");
         await lemonade.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Save" }).ClickAsync();

@@ -133,7 +133,7 @@
             }
             <div class="admin-actions">
                 <button type="submit" class="admin-save" disabled="@(_state.Saving is not null)">
-                    @(_state.Saving == KeyForm.Lemonade ? "Checking" : "Save")
+                    @(_state.Saving == KeyForm.Lemonade ? (_lemonadeThroughKit ? "Saving" : "Checking") : "Save")
                 </button>
                 @if (keys.Lemonade is not null)
                 {
@@ -191,6 +191,9 @@
     protected override void OnInitialized()
     {
         Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The slot opens on the way the box is saved, and follows a save or a removal of it.
+        Subscribe(Store.StateObservable, state => state.Keys?.Lemonade?.ThroughKit ?? false,
+            throughKit => _lemonadeThroughKit = throughKit);
         // A key typed is the owner's until it is saved, and gone from the page once it is: it is never
         // shown again, so nothing here keeps it.
         Subscribe(Store.StateObservable, state => state.SavedCount, _ =>
