@@ -342,7 +342,8 @@ claims change in this phase.
   does; the launch-stack skill has the same commands):
   1. **Before deploying**, copy prod's identity map out of its compose environment — the
      `IDENTITY__PEOPLE__<n>__{NAME,TELEGRAM,WEBCHAT,VOICE}` entries of `mcp-websearch`
-     (`docker inspect mcp-websearch`), which the new compose file no longer carries — into
+     (`docker inspect mcp-websearch`), which the new compose file no longer carries; a deployment from
+     master has none, and `scripts/upgrade/people-draft.sh` drafts it from the old `.env` — into
      `DockerCompose/volumes/household-migration/people.json`:
      `{ "people": [ { "name", "telegram", "telegramId", "webChat", "voice", "oldNames", "role", "avatarUrl" } ] }`.
      `telegramId` is each person's numeric Telegram id (the bot now admits people by it alone).

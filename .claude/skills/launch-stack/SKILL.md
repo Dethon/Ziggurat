@@ -77,20 +77,18 @@ The deploy that brings accounts and household configuration runs `household-migr
 
 ```bash
 # people.json: { "people": [ { "name", "telegram", "telegramId", "webChat", "voice", "oldNames": [] }, ... ] }
-#   name/telegram/webChat/voice are prod's IDENTITY__PEOPLE__<n>__* values; telegramId the numeric id.
+#   from master: scripts/upgrade/people-draft.sh ~/old.env DockerCompose/volumes/voices redis drafts it; telegramId the numeric id.
 mkdir -p DockerCompose/volumes/household-migration && cp people.json DockerCompose/volumes/household-migration/
-# In DockerCompose/.env: HOUSEHOLD_CONFIG_MASTER_KEY=<openssl rand -base64 32> (keep a copy), TELEGRAM_SHARED_BOT_TOKEN,
-# HOUSEHOLD_MIGRATION_SECRET=<openssl rand -hex 32>; the old BOTS__0/1__BOTTOKEN and IDEALISTA__* stay until the run. Then:
+# Before the checkout: cp DockerCompose/.env ~/old.env. After it: scripts/upgrade/carry-env.sh ~/old.env DockerCompose/.env --generate
+# (carries what both name, makes HOUSEHOLD_CONFIG_MASTER_KEY — keep a copy —, HOUSEHOLD_MIGRATION_SECRET, REDIS_PASSWORD and the
+# MCP_SECRET_*s, and lists what is left empty: TELEGRAM_SHARED_BOT_TOKEN among them). Then:
 docker compose -f DockerCompose/docker-compose.yml -p jackbot up -d accounts
-# The home's keys, piped from the old .env (never a command line, never a file in the volume):
-set -a; . <(grep -E '^(BOTS__[01]__BOTTOKEN|IDEALISTA__(APIKEY|SECRET))=' DockerCompose/.env); set +a
-home_keys() { jq -n '{ telegramBots: { jack: { token: env.BOTS__0__BOTTOKEN }, jonas: { token: env.BOTS__1__BOTTOKEN } },
-                       idealista: { apiKey: env.IDEALISTA__APIKEY, secret: env.IDEALISTA__SECRET } }'; }
-home_keys | docker compose -f DockerCompose/docker-compose.yml -p jackbot --profile migrate run --rm -T household-migration \
+# The home's keys, piped from the old .env copied aside before the checkout (never a command line, never a file in the volume):
+scripts/upgrade/home-keys.sh ~/old.env | docker compose -f DockerCompose/docker-compose.yml -p jackbot --profile migrate run --rm -T household-migration \
   --people /input/people.json --operator <name> --owner <name> --sugary <name> --home-keys - --dry-run   # then without --dry-run
 docker compose -f DockerCompose/docker-compose.yml -p jackbot restart agent   # conversations keep the agent they were built with
 docker compose -f DockerCompose/docker-compose.yml -p jackbot restart mcp-channel-voice tse-extractor   # before the home moved into the kit
-# delete BOTS__0/1__BOTTOKEN and IDEALISTA__* from .env, empty HOUSEHOLD_MIGRATION_SECRET again, and `up -d accounts`
+# delete ~/old.env once the kit is up (it holds the bots' and Idealista's keys), empty HOUSEHOLD_MIGRATION_SECRET again, and `up -d accounts`
 ```
 
 The migration runs before the home moves into the tenant kit: the voice profiles and remembered logins it renames are still the deployment's then (`./volumes/voices`, the deployment's Redis), and the move carries them over afterwards (`TenantKit/README.md`, "Moving the home onto the tunnel").
