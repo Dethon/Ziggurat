@@ -1,4 +1,5 @@
 using System.Net;
+using Domain.DTOs.Household;
 using Domain.DTOs.Tunnel;
 using Mcp.Hosting.Tunnel;
 using Yarp.ReverseProxy.Forwarder;
@@ -12,8 +13,8 @@ namespace LemonadeForwarder;
 // so it never leaves the house.
 public static class ForwarderApp
 {
-    // Streamed both ways and never timed out by us: a reply is read while the box makes it, and a slow
-    // model is the box's to bound.
+    // Streamed both ways: a reply is read while the box makes it. A box that sends nothing for half an
+    // hour — not a slow model, which streams — is given up on.
     private static readonly ForwarderRequestConfig _config = new()
     {
         ActivityTimeout = TimeSpan.FromMinutes(30)
@@ -21,8 +22,7 @@ public static class ForwarderApp
 
     public static WebApplication Build(ForwarderSettings settings, WebApplicationBuilder builder)
     {
-        if (string.IsNullOrWhiteSpace(settings.Box.Url) || !Uri.TryCreate(settings.Box.Url, UriKind.Absolute, out var box)
-            || box.Scheme is not ("http" or "https"))
+        if (!LemonadeBox.IsAddress(settings.Box.Url))
         {
             throw new InvalidOperationException(
                 "Box:Url (environment variable BOX__URL) must be the box's http(s) API address, such as " +

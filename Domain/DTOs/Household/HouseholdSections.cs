@@ -95,7 +95,7 @@ public static partial class HouseholdSections
 
             // The household's lemonade server is its Lemonade forwarder: it carries chat to the box, and
             // serves no tools.
-            if (agent.Definition?.McpServerEndpoints.Contains(HouseholdServerNames.Lemonade) == true)
+            if (agent.Definition?.McpServerEndpoints.Any(e => !HouseholdServerNames.ServesTools(e)) == true)
             {
                 yield return $"agent {agent.Id} names {HouseholdServerNames.Lemonade} as a server: that is the household's " +
                              "Lemonade box, not a tool server";

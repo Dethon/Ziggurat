@@ -22,8 +22,8 @@ public sealed class TunnelListing(TunnelRegistry registry, ILogger<TunnelListing
 
     private async Task<IReadOnlyList<string>?> ToolsOfAsync(OpenTunnel tunnel, CancellationToken ct)
     {
-        // The household's Lemonade forwarder serves no MCP: it has no tools, and nothing to be asked.
-        if (tunnel.ServerName == HouseholdServerNames.Lemonade)
+        // A server that serves no MCP (the household's Lemonade forwarder) has no tools to be asked for.
+        if (!HouseholdServerNames.ServesTools(tunnel.ServerName))
         {
             return [];
         }

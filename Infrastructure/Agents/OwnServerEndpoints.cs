@@ -57,9 +57,9 @@ internal static class OwnServerEndpoints
                 Named: endpoint,
                 Withheld: endpoint.NamesOwnServer
                           && ((withheld ?? []).Contains(endpoint.Address, StringComparer.Ordinal)
-                              // The household's Lemonade forwarder carries chat to its box and serves no
-                              // tools, whatever a definition names: never dialled as one.
-                              || endpoint.Address == HouseholdServerNames.Lemonade)))
+                              // Whatever a definition names, a server that serves no tools (the
+                              // household's Lemonade forwarder) is never dialled as one.
+                              || !HouseholdServerNames.ServesTools(endpoint.Address))))
             .Select(r => (r.Named, r.Withheld, Reached: !r.Named.NamesOwnServer
                 ? r.Named
                 : r.Withheld ? null : servers?.Resolve(tenantId, r.Named.Address)))
