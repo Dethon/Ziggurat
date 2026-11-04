@@ -300,6 +300,11 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         topic["OwnerName"]!.GetValue<string>().ShouldBe("Smoke Writer");
         schedule["CreatedBy"]!["Account"]!["UserId"]!.GetValue<string>().ShouldBe(writer);
         schedule["Delegation"]!.GetValue<string>().ShouldNotBeNullOrEmpty();
+
+        // A topic one of its fires opened before the upgrade is theirs too, not the owner's.
+        var fired = JsonNode.Parse(await stack.RedisAsync("GET",
+            RedisThreadStateStore.TopicKey(stack.Home, "jonas", 7003, "smoke-fired-topic")))!;
+        fired["OwnerId"]!.GetValue<string>().ShouldBe(writer);
     }
 
     [SkippableFact]
