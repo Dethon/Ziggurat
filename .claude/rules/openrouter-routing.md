@@ -84,14 +84,24 @@ outlast. `maxRetries: 0` disables everything, the rate-limited case included. A 
 mid-stream (an SSE error event on a 200) is not retried by anything. The eval judge, on its own
 raw `HttpClient`, waits the same way for up to four rate-limited answers.
 
-**The Lemonade box is the home's.** Its models are offered and honoured for the household that
-provides it alone — the home, and agents no household's configuration gave (`HouseholdAgents.ProvidesLemonade`):
-another household's picker lists the configured models only (`AgentCatalogBuilder.ForHousehold`, off
-`HouseholdAgentNames.IsHome` in the `agent-names` view; a household's own channel server's catalogue the
-same, `CatalogOf`), and its turns are built with no Lemonade model on the whitelist and no host address
-(`MultiAgentFactory`), so a patch naming one is refused "no Lemonade chat host serves this household"
-rather than run on hardware and a key it does not pay for. A household bringing a box of its own would
-key this by the household providing it, never open it to everyone.
+**A Lemonade box is its household's.** A household may keep a Lemonade chat host of its own (its keys
+section's `lemonade { apiUrl, apiKey }`, set on its Keys page); the home with none of its own runs on the
+deployment's `lemonadeChat` box, and any other household with none runs on none. `ILemonadeHosts`
+(`HouseholdLemonadeHosts` in the agent) answers a household's box: it reads every household's from the
+accounts service's `lemonade-boxes` view on the agent's own token and asks each for its models every
+minute beside the deployment's (`LemonadeModelRefresher`), learning the home's id from the first refresh.
+`MultiAgentFactory` builds a turn with its household's box alone — the whitelist (`PatchableModelWhitelist`
+over that box's models), the host address and the routing client (`AgentSpec.Lemonade`, a worker carrying
+its parent's) — so a patch naming another box's model is refused "no Lemonade chat host serves this
+household" or "it does not offer the model", and never run on hardware and a key the household does not
+own. The box is part of what an agent is built from (`AgentAsBuilt.Lemonade`), so a box added, moved or
+removed rebuilds an open conversation. The pickers learn each household's models from the registration
+(`RegisterAgentsParams.HouseholdLemonadeModels`, by household, read once per tick so what is sent is what
+is compared): `AgentCatalogBuilder.ForHousehold` gives a household the configured models plus its own
+box's, never the registered entries' Lemonade models. Another household's box is a public https address
+(`LemonadeAddresses`, checked when it is saved): the agent dials it with the household's key from inside
+the deployment, so an address of the deployment's own network is refused; the home's may be on its LAN.
+A box behind a home router is reached through the tenant kit's tunnel (`.scratch/household-lemonade/spec.md`).
 
 **A Lemonade turn is not an OpenRouter turn.** A config patch naming a `lemonade/<id>` model
 (`LemonadeModelId`) is routed by `HostRoutingChatClient` to `LemonadeChatClient`, which rides the

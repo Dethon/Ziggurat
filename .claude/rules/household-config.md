@@ -44,7 +44,7 @@ household is readable before anything is seeded.
 |---|---|---|---|
 | `settings` | `HouseholdSettings` | `name` (1–200), `timeZone` (an IANA zone this host knows), `language` (a tag such as `es`, or none: agents follow the conversation) | the tenant row's name, the service's local zone (compose's shared `TZ`), no language |
 | `agents` | `AgentsSection` | `defaultAgent` (one of the ids below, or none), `agents`: each `{ id, template, name, customInstructions }` **or** `{ id, definition }` — a full `AgentDefinition` whose `id` is the entry's and which carries **no** `telegramBotToken` | none at all: accounts knows no template's body (06 decides what a household with none runs) |
-| `keys` | `KeysSection` | `openRouter: { apiKey }`, `idealista: { apiKey, secret }`, `telegramBots: { <agent id>: { token } }` — every leaf a secret | nothing set |
+| `keys` | `KeysSection` | `openRouter: { apiKey }`, `idealista: { apiKey, secret }`, `telegramBots: { <agent id>: { token } }`, `lemonade: { apiUrl, apiKey }` (the household's own Lemonade box: its address, plain, and its key) — every key a secret | nothing set |
 | `features` | `FeaturesSection` | `scheduling`, `timers`, `sugary`, `idealista`, `memory`, `workers`, each a bool | all on but Idealista, which needs the household's own key |
 | `spaces` | `SpacesSection` | `spaces`: each `{ slug, name, accentColor, defaultAgent, order }`, slugs and colours as `SpaceConfig` checks them, at least one | the one `default` space, "Main", `#e9601f` |
 
@@ -104,7 +104,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 
 | View | Caller (`CALLERS__<name>`) | Answer | Secrets unsealed |
 |---|---|---|---|
-| `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces, `disabledPeople` (the user ids of members an owner disabled, which the agent acts for no more), and `suspended` (the operator suspended it: the agent refuses its turns and fires, `.claude/rules/admin.md`) | the OpenRouter key |
+| `agent` | `agent` | `AgentHouseholdConfig`: id, `isHome`, settings, agents, features, spaces, `lemonade` (its own box), `disabledPeople` (the user ids of members an owner disabled, which the agent acts for no more), and `suspended` (the operator suspended it: the agent refuses its turns and fires, `.claude/rules/admin.md`) | the OpenRouter key, the Lemonade box's key |
 | `settings` | `mcp-scheduling`, `mcp-sugary`, `mcp-timers` | `HouseholdConfigAnswer<HouseholdSettings>` | none |
 | `agent-names` (call token) | `mcp-scheduling` | as below: the household's agents, which its `/schedules` directories are (`.claude/rules/scheduling.md`) | none |
 | `idealista` | `mcp-idealista` | `HouseholdConfigAnswer<IdealistaKeys?>` | Idealista's two |
@@ -112,6 +112,7 @@ the callers it is for (`InternalCallers`' view table) — anyone else is 403 bef
 | `telegram-bots` | `mcp-channel-telegram` | `HouseholdTelegramBots`: every household's bots | the bots' tokens |
 | `agent-names` | `mcp-channel-telegram`, `mcp-channel-signalr`, `mcp-sugary` | `HouseholdConfigAnswer<HouseholdAgentNames>`: each agent's id, name, description, model and reasoning effort, and the default (`HouseholdAgents.Names`, the entries its turns are built from: the two templates for a household that saved none, an unshipped template left out; never custom instructions), proven by the person's assertion on the asker's channel | none |
 | `people` | `agent` | `HouseholdPeople`: every household and its people's user ids | none |
+| `lemonade-boxes` | `agent` | `HouseholdLemonadeBoxes`: every household's own Lemonade box, on the agent's own token (as `people`), never kept — its discovery asks every minute | each box's key |
 | `openrouter-key-refused` | `agent` | 204: not a view, the agent saying OpenRouter refused the household's own key in a turn (4c, `.claude/rules/admin.md`, "Keys and probes"); proven as `agent` is | none |
 
 A secret is unsealed into its own server's view and **left out** of every other, never sent sealed.
