@@ -94,7 +94,18 @@ public sealed class KeysAdmin(
                 "address, never one on its own network.", []));
         }
 
-        return await SaveAsync(KeySlot.Lemonade, lemonade, box, saving, ct);
+        // A box moved home and back out says so, as one moved home does.
+        bool wasKit;
+        try
+        {
+            wasKit = (await store.ReadAsync(saving.Caller.HouseholdId, HouseholdSections.KeysSchema, ct))?.Lemonade is { ThroughKit: true };
+        }
+        catch (HouseholdSecretsUnavailableException)
+        {
+            return SecretsUnavailable();
+        }
+
+        return await SaveAsync(KeySlot.Lemonade, lemonade, box, saving, ct, wasKit ? ", at an address" : "");
     }
 
     private async Task<IResult> RemoveLemonadeAsync(Saving saving, CancellationToken ct)

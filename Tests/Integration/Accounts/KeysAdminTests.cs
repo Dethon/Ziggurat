@@ -465,7 +465,7 @@ public sealed class KeysAdminTests : IAsyncLifetime
         (await KeysSectionAsync(server, household)).Lemonade.ShouldBe(new LemonadeBox(_providers.LemonadeUrl, WorkingKey));
         (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(
         [
-            "Replaced the Lemonade box", "Replaced the Lemonade box, through the tenant kit", "Set the Lemonade box"
+            "Replaced the Lemonade box, at an address", "Replaced the Lemonade box, through the tenant kit", "Set the Lemonade box"
         ]);
     }
 
