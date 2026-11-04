@@ -40,7 +40,9 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
             await TouchAsync(cdp, "touchMove", Point(mic.X - step * 5, mic.Y - step * 3));
             await Task.Delay(60);
         }
-        await Task.Delay(SpectrumHoldMs);
+        // Past the opening transient, the measured window, and the closing one.
+        await HoldUntilRecordedAsync(page,
+            FakeMicrophoneAudio.TranscriptionRate / 5 + 8192 + FakeMicrophoneAudio.TranscriptionRate / 5, SpectrumHoldMs);
         await TouchAsync(cdp, "touchEnd");
 
         // The words land in the composer, not in a message: the person is always the one who
