@@ -41,6 +41,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     private readonly DataLoadEffect _dataLoad;
     private readonly RecordingMetricsCatchUp _catchUp;
     private readonly MetricsLiveConnection _liveConnection;
+    private readonly RecordingSignIn _signIn = new();
 
     public MetricsLiveConnectionTests()
     {
@@ -55,7 +56,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _catchUp = new RecordingMetricsCatchUp(new MetricsCatchUp(_families, overview));
         _liveConnection = new MetricsLiveConnection(
             _hub, binder, _connectionStore, _catchUp, _dataLoad, _time,
-            NullLogger<MetricsLiveConnection>.Instance);
+            NullLogger<MetricsLiveConnection>.Instance, _signIn);
     }
 
     public async ValueTask DisposeAsync()
@@ -117,6 +118,29 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connecting);
         _hub.StartGate.SetResult();
         await FinishAsync(connecting);
+    }
+
+    // The proxy refused the hub because nobody is signed in — a session that ran out, or an installed
+    // dashboard opened signed out. Retrying would knock forever ("Connecting" for good, as an upgraded
+    // operator's installed dashboard showed); the page is sent to be opened again, which the proxy
+    // answers with sign-in, once.
+    [Fact]
+    public async Task ConnectAsync_TheHubRefusesASignedOutPage_SendsItToSignInOnceAndStopsKnocking()
+    {
+        _hub.SignedOut = true;
+
+        await ConnectAsync();
+
+        _signIn.Sent.ShouldBe(1);
+        _hub.StartAttempts.ShouldBe(1);
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connecting);
+    }
+
+    private sealed class RecordingSignIn : global::Dashboard.Client.Contracts.ISignIn
+    {
+        public int Sent { get; private set; }
+
+        public void SendToSignIn() => Sent++;
     }
 
     // A dashboard opened while the agent is still starting: nobody up the stack retries, and the

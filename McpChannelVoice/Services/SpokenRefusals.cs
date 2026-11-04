@@ -30,7 +30,9 @@ public static class SpokenRefusals
         // Voice opens no Sugary turn; spoken for completeness, since every refusal has its sentence.
         [RefusalAnswers.SugaryOff] =
             "Sugary está desactivado en tu hogar, así que no se ha estimado nada. "
-            + "Quien administra el hogar puede volver a activarlo en la página de funciones."
+            + "Quien administra el hogar puede volver a activarlo en la página de funciones.",
+        [RefusalAnswers.SetupFailed] =
+            "Algo falló al preparar al asistente, así que no lo he contestado. Vuelve a decírmelo en un momento."
     };
 
     public static bool TryRender(string refusal, out string spoken) =>

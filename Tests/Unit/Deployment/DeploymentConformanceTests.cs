@@ -576,6 +576,15 @@ public class DeploymentConformanceTests
         host.ForwardAuth.Upstream.ShouldBe("accounts:8080");
         host.ForwardAuth.Uri.ShouldBe($"/accounts/verify?role=operator&channel={AppChannels.Dashboard}");
         host.ForwardAuth.CopiedHeaders.ShouldBe(ForwardedAccount.Headers, ignoreOrder: true);
+        // In front of everything but the client's own files asked for by something that is not a page
+        // being opened, which an installed dashboard updates itself with signed out (the dashboard's
+        // gate serves those alone, and only those that are files of its web root).
+        host.ForwardAuth.Matcher.ShouldBe("@checked");
+        var checkedBody = Regex.Match(host.Body, @"@checked \{\s*not \{(?<conditions>[^}]*)\}\s*\}").Groups["conditions"].Value
+            .Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+        checkedBody.ShouldBe(
+            ["not header Sec-Fetch-Mode navigate", "not header Accept *text/html*", "not path /api/* /hubs/* /accounts/*"],
+            ignoreOrder: true);
         host.Routes.ShouldNotBeEmpty();
         host.Routes.Where(r => r.Matcher is not ($"{AdminProtocol.Operator}/*" or "/accounts/internal/*"))
             .ShouldAllBe(r => r.Upstream == "observability:8080");

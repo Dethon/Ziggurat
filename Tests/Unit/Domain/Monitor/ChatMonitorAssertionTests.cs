@@ -167,6 +167,29 @@ public class ChatMonitorAssertionTests
         run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
     }
 
+    // A turn whose agent could not be built for any other reason — a store down, a setting the agent
+    // cannot read — is told so, as a failed turn ends, and may be sent again: it used to end the group
+    // with the person's message standing in the chat unanswered, and only the log knew why.
+    [Fact]
+    public async Task ATurnWhoseSetupFails_IsAnsweredThatItWasNot()
+    {
+        var run = new Run();
+        run.Factory.Refusal = new InvalidOperationException("the thread store is down");
+        run.Channel.WriteMessage(Message() with
+        {
+            Principal = new Principal(ChatChannel, _fran.UserId, _fran),
+            Assertion = TestAssertions.Of(_fran, ChatChannel),
+            TurnKey = "turn-7"
+        });
+
+        await run.MonitorAsync();
+
+        run.Agent.ReceivedMessages.ShouldBeEmpty();
+        run.Channel.SentReplies.Select(r => (r.ContentType, r.Content))
+            .ShouldBe([(ReplyContentType.Error, RefusalAnswers.SetupFailed), (ReplyContentType.StreamComplete, "")]);
+        run.Channel.SentReplies.ShouldAllBe(r => r.TurnKey == "turn-7" && r.ConversationId == "conv-1");
+    }
+
     // An assertion signed before an owner disabled its person still verifies — Telegram keeps the one
     // that admitted a sender for minutes — so the agent asks the household too, and acts for nobody
     // the household disabled: the person is told, the errors feed says whose, and no agent is built.

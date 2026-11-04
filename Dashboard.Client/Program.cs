@@ -60,6 +60,7 @@ builder.Services.AddScoped<OverviewFigures>();
 builder.Services.AddScoped<DataLoadEffect>();
 builder.Services.AddScoped<MetricsHubBinder>();
 builder.Services.AddScoped<IMetricsCatchUp, MetricsCatchUp>();
+builder.Services.AddScoped<ISignIn, NavigationSignIn>();
 builder.Services.AddScoped<MetricsLiveConnection>();
 
 await builder.Build().RunAsync();
