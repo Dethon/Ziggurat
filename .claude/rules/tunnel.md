@@ -156,6 +156,13 @@ server name)**. Each `OpenTunnel` is one connection generation in ADR 0012's sen
   `TunnelOpened`, then every `TunnelOpened` / `TunnelClosed(tunnel, reason)` as it happens, with
   nothing missed between the two. A replacement publishes the old one's `TunnelClosed(Replaced)`
   before the new one's `TunnelOpened`.
+- `StreamsTo(tenantId, serverName, tag)`: an `HttpMessageHandler` for the agent's **own** requests to
+  a listener of one household's server (the household's own Lemonade box, through its forwarder's
+  `chat` listener). Every connection is a stream of the tunnel `Find` answers **at that moment**, so a
+  reopened generation is used at once and another household's server of the same name never is; with
+  none open the connection fails `"<name> is offline: its tunnel is not open"`. It presents nothing —
+  the listener is not the server's `/mcp` — and a pooled connection of a closed generation ends with it.
+  Tested at the round trip (`TunnelStreamsTests`).
 - A server that reconnects while its old socket has not timed out **replaces** it: the old opening is
   closed `Replaced`. Nothing carries over between generations.
 
