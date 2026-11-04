@@ -159,6 +159,8 @@ migrate_home() {
       '{"TopicId":"smoke-writers-topic","ChatId":7001,"ThreadId":7002,"AgentId":"jonas","Name":"Smoke: a topic from before households","CreatedAt":"2026-10-01T08:00:00+00:00","LastMessageAt":"2026-10-01T08:00:00+00:00","SpaceSlug":"default"}' > /dev/null
     docker exec redis redis-cli SET "topic-of:jonas:7001:7002" smoke-writers-topic > /dev/null
     docker exec redis redis-cli ZADD "topics:jonas:default" 1790000000000 "7001:smoke-writers-topic" > /dev/null
+    docker exec redis redis-cli HSET "topicdoc:jonas:7001:smoke-writers-topic" topicId smoke-writers-topic chatId 7001 \
+      agentId jonas space default name "Smoke: a topic from before households" score 1790000000000 > /dev/null
     docker exec redis redis-cli RPUSH "agent-key:jonas:7001:7002" \
       '{"Role":"user","Contents":[{"$type":"text","Text":"Remind me on the first of 2099"}],"AdditionalProperties":{"SenderId":"smoke-writer"}}' \
       "{\"Role\":\"tool\",\"Contents\":[{\"\$type\":\"functionResult\",\"CallId\":\"smoke-call\",\"Result\":{\"status\":\"created\",\"filePath\":\"/schedules/jonas/$WRITTEN_IN_A_TOPIC/schedule.json\"}}],\"AdditionalProperties\":{\"Timestamp\":\"2026-10-01T08:00:00+00:00\"}}" > /dev/null

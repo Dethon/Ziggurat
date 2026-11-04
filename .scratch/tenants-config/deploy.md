@@ -58,6 +58,9 @@ any more. So run the migration straight after the deploy. Meanwhile:
   that saved no features has Idealista off.
 - **The chat client shows one space** (Main, the default of a household that saved none) and **no topic
   from before**. Phones get no push.
+- **No watch reaches anyone**: until the home's Home Assistant server is up in the tenant kit, a watch
+  that fires posts to the deployment's old `mcp-homeassistant` (left running until
+  `--remove-orphans`), which no agent dials any more. That fire is lost, not deferred.
 - **No schedule fires**: the dispatcher reads only the household shapes. A schedule due meanwhile
   fires on the dispatcher's first tick after the migration moves it; a cron then keeps its times.
 - **The dashboard** shows only what was counted since the deploy; the days before are merged in.
