@@ -145,6 +145,18 @@ public abstract class E2EFixtureBase : IAsyncLifetime
         return await context.NewPageAsync();
     }
 
+    // A browser of its own on a profile kept in userDataDir, so what it installed — a service worker
+    // above all — is still there when the profile is opened again. Nothing routes its requests:
+    // CreatePageAsync's catch-all route arms interception, and an intercepted worker script is never
+    // byte-compared, so every update check reinstalls the worker. The caller closes it.
+    public Task<IBrowserContext> OpenProfileAsync(string userDataDir) =>
+        (_sharedPlaywright ?? throw new InvalidOperationException("Browser not initialized. Call InitializeAsync first."))
+            .Chromium.LaunchPersistentContextAsync(userDataDir, new BrowserTypeLaunchPersistentContextOptions
+            {
+                Headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false",
+                IgnoreHTTPSErrors = true
+            });
+
     // Opt-in with PLAYWRIGHT_TRACE=1. A trace zip per page, saved when the next page replaces it
     // or the fixture shuts down, so a run that fails deep inside the suite still leaves the
     // browser-side timeline behind. Off by default: tracing costs time on every test.
