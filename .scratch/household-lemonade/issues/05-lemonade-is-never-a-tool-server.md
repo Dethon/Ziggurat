@@ -4,7 +4,7 @@
 
 **Blocked by:** 02.
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] The Servers page lists a minted `lemonade` with its connection state, and its credential can be minted and revoked like any kit server's.
 - [ ] An agent template is never offered `lemonade` as an own server.

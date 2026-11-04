@@ -8,6 +8,7 @@ using Accounts.Commands;
 using Accounts.Signing;
 using Accounts.Store;
 using Accounts.Tunnels;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.Outposts;
@@ -251,6 +252,18 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         HouseholdSections.KeysSchema.Problems(HouseholdSections.KeysSchema.Write(
                 new KeysSection { Lemonade = new LemonadeBox(apiUrl, apiKey, ThroughKit: true) }))
             .ShouldContain(problem => problem.Contains("lemonade"));
+
+    // The household's lemonade server is its Lemonade forwarder, which carries chat and serves no tools.
+    [Fact]
+    public void AnAgentNamingTheLemonadeServerAsAToolServer_IsRefusedByTheSectionsRules() =>
+        HouseholdSections.AgentsSchema.Problems(HouseholdSections.AgentsSchema.Write(new AgentsSection
+        {
+            Agents = [new HouseholdAgent { Id = "jonas", Definition = new AgentDefinition
+                {
+                    Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["vault", "lemonade"]
+                } }]
+        }))
+            .ShouldContain(problem => problem.Contains("lemonade") && problem.Contains("not a tool server"));
 
     [Fact]
     public void AKitLemonadeBox_PassesTheSectionsRules() =>

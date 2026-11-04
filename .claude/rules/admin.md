@@ -376,6 +376,10 @@ and the agent's relay (`ConnectedServersClient`, the household list's client) (`
 - **A name** is held to `TunnelCredentialProtocol.IsServerName` (a DNS label: it goes into the server's
   synthetic address) before minting, refused 400 in those words with nothing minted. Minting for a name
   already listed adds a second credential; nothing is replaced.
+- **`lemonade` is minted here too**, for a household whose Lemonade box is reached through its tenant kit
+  (the Keys page says so): listed with its state like any server, and never a tool server — no agent dials
+  it (`.claude/rules/household-config.md`). Revoking it closes the forwarder's tunnel, and the box offers no
+  models from the agent's next refresh.
 - **Outposts are minted here too**: a machine's credential is one for `outpost-<NAME>`
   (`OutpostServerName`), and the list marks it by that name, as the relay tells a machine apart — the
   verified name is what makes an outpost, not who minted it, and a household's machines are its owners'.

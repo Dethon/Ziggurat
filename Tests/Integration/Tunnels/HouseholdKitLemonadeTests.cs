@@ -1,17 +1,24 @@
 using System.Collections.Concurrent;
 using System.Net;
+using Domain.Agents;
 using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.Tunnel;
+using Domain.Prompts;
 using Domain.Security;
 using Domain.Security.Signing;
+using Domain.Tools;
+using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Mcp;
 using LemonadeForwarder;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
@@ -35,6 +42,7 @@ public class HouseholdKitLemonadeTests(RedisFixture redis) : IClassFixture<Redis
     private readonly List<WebApplication> _boxes = [];
     private AccountsServer _accounts = null!;
     private RelayHost _relay = null!;
+    private SigningKeyStore _keys = null!;
     private string _casa = null!;
     private string _piso = null!;
     private int _casaBox;
@@ -49,9 +57,8 @@ public class HouseholdKitLemonadeTests(RedisFixture redis) : IClassFixture<Redis
         });
         _casa = (await _accounts.MintOperatorAsync("Fran")).TenantId;
         _piso = await _accounts.SeedHouseholdAsync("Piso");
-        _relay = await RelayHost.StartAsync(
-            _accounts, AgentCredential, redis.ConnectionString,
-            SigningKeyStore.Open(new SigningKeySettings { KeyDirectory = _keyDirectory }), _metrics);
+        _keys = SigningKeyStore.Open(new SigningKeySettings { KeyDirectory = _keyDirectory });
+        _relay = await RelayHost.StartAsync(_accounts, AgentCredential, redis.ConnectionString, _keys, _metrics);
         _casaBox = await StartBoxAsync("casa");
         _pisoBox = await StartBoxAsync("piso");
     }
@@ -108,6 +115,51 @@ public class HouseholdKitLemonadeTests(RedisFixture redis) : IClassFixture<Redis
         await using var reopened = await StartForwarderAsync(_casa, _casaBox, "", credential);
         await hosts.RefreshAsync(CancellationToken.None);
         hosts.ModelsByHousehold[_casa].Select(m => m.Id).ShouldBe(["casa-model"]);
+    }
+
+    // Revoking the forwarder's credential cuts the box off from the deployment's side: its tunnel is
+    // closed and refused, and the box offers nothing from the next refresh on.
+    [Fact]
+    public async Task ARevokedForwarderCredential_TakesTheBoxsModelsAwayOnTheNextRefresh()
+    {
+        var minted = await _accounts.MintTunnelCredentialAsync(_casa, HouseholdServerNames.Lemonade);
+        await using var forwarder = await StartForwarderAsync(_casa, _casaBox, "", minted.Credential);
+        var hosts = Hosts();
+        await hosts.RefreshAsync(CancellationToken.None);
+        hosts.ModelsByHousehold[_casa].ShouldNotBeEmpty();
+
+        (await _accounts.RunAsync(global::Accounts.Commands.AccountsCommand.RevokeTunnelCredential, "--id", minted.Id)).Exit.ShouldBe(0);
+        await Eventually.Until(() => _relay.Registry.Find(_casa, HouseholdServerNames.Lemonade) is null, "the revoked tunnel closes");
+        await hosts.RefreshAsync(CancellationToken.None);
+
+        hosts.ModelsByHousehold[_casa].ShouldBeEmpty();
+    }
+
+    // The forwarder carries chat, never tools: an agent that names lemonade among its servers builds
+    // its session without dialling it, though its tunnel is open — dialled, its mcp tag reaches nothing
+    // and the session would fail.
+    [Fact]
+    public async Task AnAgentNamingTheLemonadeServer_NeverDialsItAsAToolServer()
+    {
+        await using var forwarder = await StartForwarderAsync(_casa, _casaBox, "");
+        AgentDefinition[] agents = [new AgentDefinition { Id = "jonas", Name = "Jonas", Model = "m", McpServerEndpoints = ["lemonade"] }];
+        var factory = new MultiAgentFactory(
+            new ServiceCollection()
+                .AddSingleton(new CallTokens(_keys, TimeProvider.System))
+                .AddSingleton(_relay.OwnServers)
+                .AddSingleton(new Mock<IThreadStateStore>().Object)
+                .BuildServiceProvider(),
+            FixedHouseholdAgents.Provider(new CustomAgentRegistry(), agents),
+            new OpenRouterConfig { ApiUrl = "http://test", ApiKey = "test-key" },
+            Mock.Of<IDomainToolRegistry>(r =>
+                r.GetToolsForFeatures(It.IsAny<IEnumerable<string>>(), It.IsAny<FeatureConfig>()) == Enumerable.Empty<AIFunction>()
+                && r.GetPromptsForFeatures(It.IsAny<IEnumerable<string>>()) == Enumerable.Empty<PromptSection>()));
+
+        await using var agent = await factory.CreateAsync(
+            new AgentKey("conv-1", "jonas"), "fran", "jonas", Mock.Of<IToolApprovalHandler>(), tenantId: _casa);
+        var session = await agent.CreateSessionAsync();
+
+        await agent.WarmupSessionAsync(session);
     }
 
     private HouseholdLemonadeHosts Hosts()

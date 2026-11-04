@@ -172,6 +172,11 @@ household's save, since a save names the home by an id the reader may not have b
 The agent builds a turn's agents from the turn's household's view (`HouseholdAgents.Of`, Domain, over
 `HouseholdAgentSource`, the agent's `IHouseholdAgentSource`):
 
+- **`lemonade` is never a tool server.** It is the household's Lemonade forwarder (`.claude/rules/tunnel.md`),
+  which carries chat to its box: the section's rules refuse a definition naming it among its servers
+  ("…is the household's Lemonade box, not a tool server"), and a turn never dials it whatever a
+  definition, a registered agent or a template names (`OwnServerEndpoints.Resolve` withholds it, so it
+  is not on the offline line either; `HouseholdKitLemonadeTests`).
 - **An entry is a template or a definition.** `{ id, template, name, customInstructions }` is the
   shipped template (`AgentTemplates`, `Domain/Prompts/Agents/<name>.md`, `.claude/rules/prompts.md`) under
   the entry's id, with the entry's name and custom instructions and nothing else of the owner's; it

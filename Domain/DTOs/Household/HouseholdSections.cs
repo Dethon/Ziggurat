@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Domain.DTOs.Tunnel;
 using Domain.DTOs.WebChat;
 using JetBrains.Annotations;
 
@@ -90,6 +91,14 @@ public static partial class HouseholdSections
                 case { Definition.TelegramBotToken: not null }:
                     yield return $"agent {agent.Id}'s definition carries a Telegram bot token, which belongs in the keys section";
                     break;
+            }
+
+            // The household's lemonade server is its Lemonade forwarder: it carries chat to the box, and
+            // serves no tools.
+            if (agent.Definition?.McpServerEndpoints.Contains(HouseholdServerNames.Lemonade) == true)
+            {
+                yield return $"agent {agent.Id} names {HouseholdServerNames.Lemonade} as a server: that is the household's " +
+                             "Lemonade box, not a tool server";
             }
         }
 
