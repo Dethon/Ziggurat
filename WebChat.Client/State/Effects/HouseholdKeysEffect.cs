@@ -29,6 +29,10 @@ public sealed class HouseholdKeysEffect : IDisposable
                 SaveAsync(KeyForm.OpenRouter, _admin.SaveOpenRouterKeyAsync(action.Key)).LogFaults(logger, nameof(SaveOpenRouterKey))),
             dispatcher.RegisterHandler<SaveIdealistaKeys>(action =>
                 SaveAsync(KeyForm.Idealista, _admin.SaveIdealistaKeysAsync(action.Keys)).LogFaults(logger, nameof(SaveIdealistaKeys))),
+            dispatcher.RegisterHandler<SaveLemonadeBox>(action =>
+                SaveAsync(KeyForm.Lemonade, _admin.SaveLemonadeBoxAsync(action.Box)).LogFaults(logger, nameof(SaveLemonadeBox))),
+            dispatcher.RegisterHandler<RemoveLemonadeBox>(_ =>
+                SaveAsync(KeyForm.Lemonade, _admin.RemoveLemonadeBoxAsync()).LogFaults(logger, nameof(RemoveLemonadeBox))),
             dispatcher.RegisterHandler<SaveTelegramBot>(action =>
                 SaveAsync(KeyForm.Telegram, _admin.SaveTelegramBotAsync(action.AgentId, action.Bot))
                     .LogFaults(logger, nameof(SaveTelegramBot)))

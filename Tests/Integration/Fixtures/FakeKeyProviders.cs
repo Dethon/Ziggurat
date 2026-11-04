@@ -27,6 +27,9 @@ public sealed class FakeKeyProviders : IAsyncDisposable
 
     public string TelegramUrl => RootOn("127.0.0.1");
 
+    // A household's own Lemonade box: its address carries its API's base.
+    public string LemonadeUrl => $"{RootOn("127.0.0.1")}lemonade";
+
     // As a container reaches this process (the host's gateway, by the name it is given): OpenRouter's
     // API, and the root Idealista's and Telegram's are under.
     public string OpenRouterUrlOn(string host) => $"{RootOn(host)}api/v1/";
@@ -63,6 +66,11 @@ public sealed class FakeKeyProviders : IAsyncDisposable
             var pair = Encoding.UTF8.GetString(Convert.FromBase64String(basic)).Split(':', 2);
             return fake.AnswerAsync(http, pair[0], """{"access_token":"t","token_type":"bearer","expires_in":43199,"scope":"read"}""");
         });
+
+        // A Lemonade box's model listing, under /lemonade as a box's API is under its own base.
+        fake._app.MapGet("/lemonade/models", (HttpContext http, CancellationToken _) =>
+            fake.AnswerAsync(http, http.Request.Headers.Authorization.ToString().Replace("Bearer ", "", StringComparison.Ordinal),
+                """{"data":[]}"""));
 
         fake._app.MapGet("/{bot}/getMe", (string bot, HttpContext http) =>
             fake.AnswerAsync(http, bot.StartsWith("bot", StringComparison.Ordinal) ? bot[3..] : "",

@@ -22,6 +22,7 @@ public static class AdminProtocol
     // provider has been asked about it. A bot is put under the id of the agent it is bound to.
     public const string Keys = Household + "/keys";
     public const string OpenRouterKey = Keys + "/openrouter";
+    public const string LemonadeBox = Keys + "/lemonade";
     public const string IdealistaKeys = Keys + "/idealista";
     public const string TelegramBots = Keys + "/telegram";
     public const string TelegramBotRoute = TelegramBots + "/{agentId}";
@@ -143,7 +144,13 @@ public sealed record HouseholdKeys(
 {
     // Its agents refuse every turn until one is set: what the owner is sent to the keys page for.
     public bool NeedsOpenRouterKey => !PaysWithDeploymentKey && OpenRouter is null;
+
+    // The household's own Lemonade box: its address as saved, and its key's state.
+    public LemonadeBoxStatus? Lemonade { get; init; }
 }
+
+[PublicAPI]
+public sealed record LemonadeBoxStatus(string ApiUrl, KeyStatus Status);
 
 // Working: the provider accepted it when last asked. Rejected: the provider refused it, on saving
 // or in use. Unchecked: saved while the provider could not be asked, or saved by the operator's

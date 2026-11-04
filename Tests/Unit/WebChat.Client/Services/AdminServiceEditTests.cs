@@ -17,9 +17,11 @@ public class AdminServiceEditTests
     private sealed class Recording(HttpStatusCode status, string answer) : HttpMessageHandler
     {
         public string? Sent { get; private set; }
+        public HttpRequestMessage? Request { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
+            Request = request;
             Sent = request.Content is null ? null : await request.Content.ReadAsStringAsync(ct);
             return new HttpResponseMessage(status) { Content = new StringContent(answer, Encoding.UTF8, "application/json") };
         }
@@ -64,5 +66,23 @@ public class AdminServiceEditTests
         var answer = await Service(handler).SaveSpacesAsync(new SpacesSection(), new SpacesSection());
 
         answer.ShouldBeOfType<AdminAnswer<AdminSpaces>.Refused>().Refusal.Message.ShouldContain("space attic");
+    }
+
+    // The household's own Lemonade box is saved with its address and key, and removed by name alone.
+    [Fact]
+    public async Task ALemonadeBox_IsPutWithItsAddressAndKey_AndRemovedWithADelete()
+    {
+        var keys = """{"value":{"paysWithDeploymentKey":false,"telegramBots":[]}}""";
+        var save = new Recording(HttpStatusCode.OK, keys);
+        var remove = new Recording(HttpStatusCode.OK, keys);
+
+        await Service(save).SaveLemonadeBoxAsync(new LemonadeBox("https://box.example.org/api/v1", "box-key"));
+        await Service(remove).RemoveLemonadeBoxAsync();
+
+        save.Request!.Method.ShouldBe(HttpMethod.Put);
+        save.Request.RequestUri!.AbsolutePath.ShouldBe(AdminProtocol.LemonadeBox);
+        ((string)JsonNode.Parse(save.Sent!)!["apiUrl"]!).ShouldBe("https://box.example.org/api/v1");
+        remove.Request!.Method.ShouldBe(HttpMethod.Delete);
+        remove.Request.RequestUri!.AbsolutePath.ShouldBe(AdminProtocol.LemonadeBox);
     }
 }

@@ -168,6 +168,12 @@ public record KeyProbeSettings
     // Telegram's Bot API, whose getMe answers the bot a token belongs to.
     public string TelegramUrl { get; init; } = "https://api.telegram.org/";
 
+    // Whether a household other than the home may name its Lemonade box at a private address. Off:
+    // the agent dials that address with the household's key from inside the deployment, so another
+    // household's box is a public https address, never one of the deployment's own. A test stack,
+    // whose fake box is on loopback, turns it on.
+    public bool LemonadeOnPrivateAddresses { get; init; }
+
     // A provider that has not answered by then could not be asked: the key is saved unchecked.
     public TimeSpan Timeout { get; init; } = TimeSpan.FromSeconds(10);
 }
