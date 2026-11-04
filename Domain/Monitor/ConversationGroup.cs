@@ -277,9 +277,16 @@ internal sealed class ConversationGroup(
                     // stay registered, and every later message for this conversation would
                     // queue into it unread until restart. Cancelling the context completes
                     // the group, so the next message opens a fresh one.
+                    // The person is told, as a failed turn ends: left unanswered, their message stood
+                    // in the chat with nothing under it and only this log knew why.
                     logger.LogError(ex,
                         "Turn setup failed for conversation {ConversationId} and agent {AgentId}; ending the group",
                         agentKey.ConversationId, agentKey.AgentId);
+                    if (x.Message.Origin is null)
+                    {
+                        await AnswerRefusedAsync(x.Channel, x.Message, RefusalAnswers.SetupFailed);
+                    }
+
                     await EndFailedSetupAsync();
                     break;
                 }

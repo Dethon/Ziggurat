@@ -48,8 +48,14 @@ public static class RefusalAnswers
     public const string SugaryOff =
         "Sugary is turned off for your household, so nothing was estimated. An owner can turn it back on on the Features page.";
 
+    // A turn whose agent could not be built for a reason that is nobody's to fix here — a store the
+    // agent reads was down, say: nothing was asked of any model, and the same message may simply be
+    // sent again. Not the household's refusal, so it has no code: an app says its own "try again".
+    public const string SetupFailed =
+        "Something went wrong getting the assistant ready for this message, so it was not answered. Try sending it again in a moment.";
+
     public static IReadOnlyList<string> All { get; } =
-        [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent, KeyRefused, OutOfCredit, SugaryOff];
+        [Suspended, NotVerified, Disabled, Unchecked, WithoutKey, NoVoiceAgent, KeyRefused, OutOfCredit, SugaryOff, SetupFailed];
 
     // Each refusal by a short code, for a channel that says it in words of its own rather than showing
     // these (the Sugary app, in the person's language). Null for an answer that is no refusal.
