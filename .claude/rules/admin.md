@@ -262,8 +262,11 @@ does, `HouseholdAgents.VoiceAgentOf`, or null).
   first"): they would stay and be refused at every fire with nobody told. `HouseholdSchedules` counts them
   where the scheduler keeps them (`ScheduleKeys`, the deployment's Redis, through `AccountsRedis`, which
   `RedisAnnouncer` shares); a Redis that cannot be read refuses the removal 503, and no Redis configured
-  counts none. A Telegram bot bound to a removed agent's id
-  is not checked: the keys section is sealed. **A removed agent's id is never given to another**
+  counts none. So is removing an agent a household Telegram
+  bot answers as ("The household's Telegram bot answers as Chef, so it stays: bind the bot to another
+  agent first"; user's decision, 2026-11-05) — a bot's token saved under another agent on the Keys page
+  moves there (`KeySlot.TelegramBot` drops the token's other binding: one bot is never polled twice).
+  **A removed agent's id is never given to another**
   (`AgentsSection.RemovedIds`, appended by the removal and skipped by `FreeId`): an id keys its people's
   conversations, its schedules and a bot bound to it, and none of that goes with the agent, so the next
   agent of the template under the same id inherited all of it.

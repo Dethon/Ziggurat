@@ -352,6 +352,27 @@ public sealed class HouseholdAgentsAdminTests(RedisFixture redis) : IClassFixtur
         (await SendAsync(admin, HttpMethod.Delete, AdminProtocol.Agent("jonas-2"))).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
+    // A household's own Telegram bot answers as the agent it is bound to, by id; with that agent gone,
+    // and its id never given to another, the bot would answer nobody again. So the agent stays until
+    // the bot is bound to another one, as one a space opens on does.
+    [Fact]
+    public async Task AnAgentATelegramBotAnswersAs_IsNotRemoved_AndSaysWhy()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        await SendAsync(admin, HttpMethod.Post, AdminProtocol.Agents, new AgentAddition("jonas", "Chef"));
+        await SetAsync(server, household, HouseholdSections.Keys, """{ "telegramBots": { "jonas-2": { "token": "2:chef" } } }""");
+
+        var refused = await SendAsync(admin, HttpMethod.Delete, AdminProtocol.Agent("jonas-2"));
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldBe(
+            "The household's Telegram bot answers as Chef, so it stays: bind the bot to another agent first.");
+        (await AgentsAsync(admin)).Agents.Select(a => a.Id).ShouldContain("jonas-2");
+        (await SendAsync(admin, HttpMethod.Delete, AdminProtocol.Agent("sugary"))).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
     private static Schedule Scheduled(string household, string id, string agentId) => new()
     {
         Id = id, TenantId = household, AgentId = agentId, Prompt = "Tell them", CronExpression = "*/5 * * * *",

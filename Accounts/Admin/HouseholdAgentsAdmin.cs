@@ -104,6 +104,14 @@ public static class HouseholdAgentsAdmin
                 return Results.BadRequest(new AdminRefusal("A household keeps at least one agent.", []));
             }
 
+            // A bot bound to it would answer nobody, its id never being another agent's again.
+            if (await store.ReadAsync(caller.HouseholdId, HouseholdSections.KeysSchema, ct) is { } keys
+                && keys.TelegramBots.ContainsKey(agentId))
+            {
+                return Results.BadRequest(new AdminRefusal(
+                    $"The household's Telegram bot answers as {Shown(removing).Name}, so it stays: bind the bot to another agent first.", []));
+            }
+
             // Its schedules would stay and be refused at every fire, with nobody told.
             switch (await schedules.CountOfAgentAsync(caller.HouseholdId, agentId, ct))
             {
