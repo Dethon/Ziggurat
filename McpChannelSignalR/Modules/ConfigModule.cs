@@ -58,7 +58,8 @@ public static class ConfigModule
             .AddSingleton<AttachmentStore>()
             .AddSingleton<AttachmentService>()
             .AddHostedService<AttachmentSweeper>()
-            .AddHostedService<HouseholdAgentsAnnouncer>();
+            .AddHostedService<HouseholdAgentsAnnouncer>()
+            .AddHostedService<EndedSessionsListener>();
 
         if (settings.WebPush?.IsConfigured == true)
         {
@@ -112,6 +113,7 @@ public static class ConfigModule
     // served behind it.
     internal static IServiceCollection AddChatSignalR(this IServiceCollection services) =>
         services.AddSingleton<AccountConnections>()
+            .AddSingleton<SessionConnections>()
             .AddSignalR(options => options.ClientTimeoutInterval = _frozenPageTolerance)
             .AddHubOptions<ChatHub>(options => options.AddFilter<SignedInConnectionFilter>())
             .Services;

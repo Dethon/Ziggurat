@@ -21,6 +21,7 @@ internal sealed class SignedInConnectionFilter(
     AssertionVerifier assertions,
     ISessionAccounts sessions,
     AccountConnections connections,
+    SessionConnections sessionConnections,
     ILogger<SignedInConnectionFilter> logger) : IHubFilter
 {
     private const string NotSignedInError = "This connection is not signed in.";
@@ -45,6 +46,7 @@ internal sealed class SignedInConnectionFilter(
             context.Context.ConnectionId, TopicAudience.Household(account.TenantId), context.Context.ConnectionAborted);
         await next(context);
         connections.Opened(account.UserId);
+        sessionConnections.Opened(context.Context, account);
     }
 
     public Task OnDisconnectedAsync(
@@ -53,6 +55,7 @@ internal sealed class SignedInConnectionFilter(
         if (context.Context.Items.TryGetValue(ChatHub.AccountItem, out var item) && item is ForwardedAccount account)
         {
             connections.Closed(account.UserId);
+            sessionConnections.Closed(context.Context.ConnectionId);
         }
 
         return next(context, exception);
