@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, cycleStatus, dayAction, daysBetween, forecast, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, shiftMonth } from "./cycle";
+import { addDays, cycleStatus, dayAction, daysBetween, forecast, history, localDay, MAX_PERIOD_DAYS, monthGrid, periodProblem, refusedBecause, shiftMonth } from "./cycle";
 import type { Period } from "./types";
 
 const period = (start: string, end: string | null, id = start): Period => ({ id, start, end });
@@ -243,5 +243,29 @@ describe("monthGrid with a forecast", () => {
       "2026-10-24",
     ]);
     expect(october.some((cell) => cell?.period && (cell.expected || cell.fertile))).toBe(false);
+  });
+});
+
+describe("a save the server refused", () => {
+  // Two of her phones tapping "my period started today": the page that lost read her log before the
+  // other's period was there, so its own check passed and the server's refusal read as a bad number.
+  it("is read again against her log as it is now, and says the clash", async () => {
+    const now = [period("2026-11-05", null, "other-phone")];
+
+    const refused = await refusedBecause({ start: "2026-11-05", end: null }, undefined, "2026-11-05", async () => now);
+
+    expect(refused).toEqual({ periods: now, problem: { key: "periodOverlaps", start: "2026-11-05" } });
+  });
+
+  it("says nothing of its own when her log as it is now has no clash", async () => {
+    const refused = await refusedBecause({ start: "2026-11-05", end: null }, undefined, "2026-11-05", async () => []);
+
+    expect(refused).toEqual({ periods: [], problem: null });
+  });
+
+  it("is null when her log cannot be read again", async () => {
+    const refused = await refusedBecause({ start: "2026-11-05", end: null }, undefined, "2026-11-05", () => Promise.reject(new Error("offline")));
+
+    expect(refused).toBeNull();
   });
 });

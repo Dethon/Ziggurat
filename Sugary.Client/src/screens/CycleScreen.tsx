@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { CycleCalendar } from "../components/CycleCalendar";
 import { Icon } from "../components/Icon";
-import { cycleStatus, forecast, history, localDay, periodProblem } from "../cycle";
+import { cycleStatus, forecast, history, localDay, periodProblem, refusedBecause } from "../cycle";
 import { errorMessage } from "../errors";
 import { formatDays } from "../format";
 import { useMinute } from "../clock";
@@ -65,7 +65,11 @@ export function CycleScreen() {
       toast({ text: t("periodSaved") });
       await load();
     } catch (failure) {
-      setError(errorMessage(failure, t, "save"));
+      const refused = await refusedBecause(values, period?.id, today, api.periods);
+      if (refused) {
+        setPeriods(refused.periods);
+      }
+      setError(refused?.problem ? problemText(refused.problem, t, language) : errorMessage(failure, t, "save"));
     } finally {
       setBusy(false);
     }
