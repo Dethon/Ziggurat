@@ -188,8 +188,10 @@
 
     private void Save(AdminMember member)
     {
-        var draft = _drafts.For(member);
-        Dispatcher.Dispatch(new SaveHouseholdMember(member.Id, new MemberEdit(draft.Role, draft.SeesAll)));
+        if (_drafts.EditOf(member) is { } edit)
+        {
+            Dispatcher.Dispatch(new SaveHouseholdMember(member.Id, edit));
+        }
     }
 
     private void Recover(AdminMember member) => Dispatcher.Dispatch(new MintMemberRecovery(member.Id, member.DisplayName));
