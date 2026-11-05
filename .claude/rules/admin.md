@@ -326,7 +326,9 @@ A Telegram group is bound from here too: `POST /household/members/telegram-group
 - **Role and sees-all reach the member's next turn**: the chat hub asks a fresh assertion for every turn
   (`SessionRefresh`), signed with the roles as they are then, and so does every voice utterance. Two
   things keep the old ones a while: the hub's own topic view (`TopicViewer`, its sees-all) is the
-  connection's, so a grant or a withdrawal shows in the chat client's topic list on its next load; and
+  connection's, so the change is announced (`PeopleChanged`) and each open page renews its connection
+  (`OnAccessChanged`): a grant shows the topics at once, a withdrawal takes them away and closes one it had
+  open (`ReconnectionEffect`); and
   Telegram keeps the assertion that admitted a sender for `LinkCache:Linked` (5 minutes).
 - Summaries name the member's id and what changed, never a name or any part of a link: "Invited somebody
   as a member" / "as an owner", "Changed member <id>'s role, sees all conversations", "Disabled member
