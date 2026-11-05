@@ -159,6 +159,26 @@ public sealed class StreamingServiceTests : IDisposable
             [("user", "Yo pongo el vino.", "Carlos"), ("assistant", "Apuntado.", null)]);
     }
 
+    // Carlos says "ok" twice in a shared topic: the second is a message of its own, not the first one
+    // again — the page drew only the first until a reload.
+    [Fact]
+    public async Task SendMessageAsync_AnotherPersonRepeatingTheSameWords_IsDrawnAgain()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId,
+        [
+            new ChatMessageModel { Role = "user", Content = "ok", SenderId = "carlos", CorrelationId = "first" },
+            new ChatMessageModel { Role = "assistant", Content = "Vale.", MessageId = "m0" }
+        ]));
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "ok", UserMessage = new UserMessageInfo("carlos", DateTimeOffset.UtcNow, "Carlos", "second") },
+            new ChatStreamMessage { Content = "Vale otra vez.", MessageId = "m1" });
+
+        await SendAndDrainAsync(topic);
+
+        MessagesFor(topic.TopicId).Count(m => m is { Role: "user", Content: "ok" }).ShouldBe(2);
+    }
+
     // The page's own message comes back on its stream too, and is already on the page.
     [Fact]
     public async Task SendMessageAsync_ThisPagesOwnMessageOnTheStream_IsNotDrawnTwice()

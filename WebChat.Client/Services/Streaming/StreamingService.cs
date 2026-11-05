@@ -272,7 +272,7 @@ public sealed class StreamingService(
                     var mine = pipeline.WasSentByThisClient(sent.CorrelationId);
                     if (!mine && BufferRebuildUtility.IsShown(
                             messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []),
-                            sent.SenderId, chunk.Content ?? ""))
+                            sent.SenderId, chunk.Content ?? "", sent.CorrelationId))
                     {
                         continue;
                     }
@@ -284,6 +284,7 @@ public sealed class StreamingService(
                         {
                             Role = "user",
                             Content = chunk.Content ?? "",
+                            CorrelationId = sent.CorrelationId,
                             SenderId = sent.SenderId,
                             SenderName = sent.SenderName,
                             Timestamp = sent.Timestamp,

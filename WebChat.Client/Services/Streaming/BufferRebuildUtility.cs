@@ -103,11 +103,12 @@ public static class BufferRebuildUtility
         // and its state names only the one sent last, so the other was never drawn.
         var carried = buffer.Where(m => m.UserMessage is not null).ToList();
         merged.AddRange(carried
-            .Where(m => !IsShown(existingHistory, m.UserMessage!.SenderId, m.Content ?? ""))
+            .Where(m => !IsShown(existingHistory, m.UserMessage!.SenderId, m.Content ?? "", m.UserMessage.CorrelationId))
             .Select(m => new ChatMessageModel
             {
                 Role = "user",
                 Content = m.Content ?? "",
+                CorrelationId = m.UserMessage!.CorrelationId,
                 SenderId = m.UserMessage!.SenderId,
                 SenderName = m.UserMessage.SenderName,
                 Timestamp = m.UserMessage.Timestamp,
@@ -133,12 +134,18 @@ public static class BufferRebuildUtility
     // the turns sent while it ran, and the persisted history ends with them.
     private const int ShownWindow = 4;
 
-    // Whether the page already shows this person's message, among its last few: the stream's own
-    // copy of a message the page drew when it was sent, or loaded with the history, is not a new one.
-    public static bool IsShown(IReadOnlyList<ChatMessageModel> page, string? senderId, string content) =>
-        page.Where(m => m.Role == "user")
+    // Whether the page already shows this person's message: the stream's copy of a message the page
+    // drew when it was sent, or loaded with the history, is not a new one. A message drawn from a send
+    // carries that send's id, so it is the one shown exactly when the ids match — the same words sent
+    // again ("ok", twice) are a message of their own. One loaded with the history carries none, and
+    // is matched by who sent it and its words among the page's last few.
+    public static bool IsShown(
+        IReadOnlyList<ChatMessageModel> page, string? senderId, string content, string? correlationId = null) =>
+        correlationId is not null && page.Any(m => m.CorrelationId == correlationId)
+        || page.Where(m => m.Role == "user")
             .TakeLast(ShownWindow)
-            .Any(m => m.Content == content && (m.SenderId == senderId || m.SenderId is null || senderId is null));
+            .Any(m => (m.CorrelationId is null || correlationId is null) && m.Content == content
+                      && (m.SenderId == senderId || m.SenderId is null || senderId is null));
 
     internal static (List<ChatMessageModel> CompletedTurns, ChatMessageModel StreamingMessage) RebuildFromBuffer(
         IReadOnlyList<ChatStreamMessage> bufferedMessages)
