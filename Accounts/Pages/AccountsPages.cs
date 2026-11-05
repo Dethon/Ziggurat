@@ -30,7 +30,7 @@ public static class AccountsPages
                     $"""
                      <main>
                        <h1>{PasskeyEndpoints.RefusedLink}</h1>
-                       <p>It has been used already, a newer one was made, or its week is up. Ask an owner of your household for a new one.</p>
+                       <p>It has been used already, a newer one was made, its week is up, or whoever made it no longer manages the household. Ask an owner of your household for a new one.</p>
                      </main>
                      """,
                     StatusCodes.Status410Gone);

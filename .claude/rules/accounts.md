@@ -74,7 +74,11 @@ clearing the column:
   an unknown passkey (`SignInOutcome`).
 - **Links** (`LinkStore.FindOpenAsync`): a link naming a disabled person — recovery, a Telegram link code
   — opens nothing (the enrollment page is 410); one still in date opens again once they are re-enabled.
-  Invites and group codes name nobody yet and are unaffected.
+  Invites and group codes name nobody yet and are unaffected by that; but **what an owner handed out** — an
+  invite, a group code, another person's recovery link — opens only while its minter (`Link.CreatedBy`) is still
+  an enabled owner of the household, or the operator (user's decision, 2026-11-05): a demoted owner's owner invite
+  made somebody an owner after the fact. A link minted by nobody (the command) or by the person it names (their
+  Telegram code, their web link) is left alone, and one still in date opens again once its minter is an owner again.
 - **Channel identities**: `resolve` answers 404 for them on every channel (voice falls to the household's
   guest, Telegram to a stranger), and the Telegram calls that find a person by their Telegram
   (`TelegramLinks.PersonAsync`: `web-link`; `TelegramIdOfAsync`: `of-account`) find nobody.

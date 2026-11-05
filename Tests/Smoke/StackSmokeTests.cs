@@ -436,6 +436,37 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         }, owner);
     }
 
+    // An owner's owner invite opened after they were demoted made somebody an owner after the fact:
+    // what an owner hands out opens only while they still manage the household, through Caddy as the
+    // browser meets it, and again once they do. The person is the home's own, made for this run.
+    [SkippableFact]
+    public async Task AnInviteADemotedOwnerMinted_OpensNothing_UntilTheyAreAnOwnerAgain()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var (pablo, session) = await SmokeStack.HomePersonAsync($"Smoke Pablo {tag}", AdminMember.Owner);
+        var invite = await AdminAsync<AdminSaved<MemberLink>>(HttpMethod.Post, stack.MainHost, AdminProtocol.MemberInvites,
+            session, new MemberInvite($"Smoke Zoe {tag}", AdminMember.Owner));
+        var path = new Uri(invite.Value.Url).PathAndQuery;
+        (await SendAsync(HttpMethod.Get, stack.MainHost, path, null, "text/html")).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        try
+        {
+            await AdminAsync<AdminSaved<AdminMembers>>(HttpMethod.Put, stack.MainHost, AdminProtocol.Member(pablo),
+                stack.OperatorSession, new MemberEdit(AdminMember.Member));
+            (await SendAsync(HttpMethod.Get, stack.MainHost, path, null, "text/html")).StatusCode.ShouldBe(HttpStatusCode.Gone);
+
+            await AdminAsync<AdminSaved<AdminMembers>>(HttpMethod.Put, stack.MainHost, AdminProtocol.Member(pablo),
+                stack.OperatorSession, new MemberEdit(AdminMember.Owner));
+            (await SendAsync(HttpMethod.Get, stack.MainHost, path, null, "text/html")).StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await SendAsync(HttpMethod.Post, stack.MainHost, AdminProtocol.DisableMember(pablo), stack.OperatorSession, "application/json");
+        }
+    }
+
     // The stack's key stub answers as a provider would for the key it is shown: one with "refused" in
     // it is refused, one with "unreachable" in it finds the provider down, anything else works — so an
     // owner's keys page is tried by hand down every path, and nothing is sent to a real provider.

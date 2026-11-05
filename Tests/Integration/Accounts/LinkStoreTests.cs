@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Accounts.Store;
+using Microsoft.EntityFrameworkCore;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -88,6 +89,53 @@ public class LinkStoreTests
         asFran.ShouldContain("signs it in as Sara instead");
         asSara.ShouldNotContain("This device is signed in as");
         signedOut.ShouldNotContain("This device is signed in as");
+    }
+
+    // Pablo, an owner, minted an owner invite for Zoe; Lola demoted him, and the invite still made Zoe an
+    // owner — a demoted or disabled owner could keep a seat through what they had handed out. What an
+    // owner hands out (an invite, a group code, another person's recovery link) opens only while they
+    // still manage the household, and again once they do (user's decision, 2026-11-05); the operator's
+    // and a person's own are untouched.
+    [Fact]
+    public async Task WhatAnOwnerHandedOut_OpensOnlyWhileTheyStillManageTheHousehold()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (casa, lola) = await server.SeedHouseholdAsync("Casa", "Lola");
+        var pablo = await server.SeedPersonAsync(casa, "Pablo", Role.Owner);
+        var marta = await server.SeedPersonAsync(casa, "Marta");
+        var links = server.Service<global::Accounts.Links.LinkStore>();
+        var zoes = await links.MintInviteAsync(casa, pablo, "Zoe", Role.Owner, CancellationToken.None);
+        var martas = Minted(await links.MintRecoveryAsync(casa, pablo, marta, CancellationToken.None));
+        var group = await links.MintGroupCodeAsync(casa, pablo, CancellationToken.None);
+        var lolas = await links.MintInviteAsync(casa, lola, "Iker", Role.Member, CancellationToken.None);
+        var operators = Minted(await links.MintRecoveryAsync(casa, fran.UserId, lola, CancellationToken.None));
+
+        async Task<HttpStatusCode[]> PablosAsync() =>
+        [
+            (await server.Client().GetAsync(zoes.Url)).StatusCode,
+            (await BeginAsync(server, zoes.Token)).StatusCode,
+            (await server.Client().GetAsync(martas.Url)).StatusCode,
+            await links.FindOpenAsync(group.Code, [LinkKind.TelegramGroup], CancellationToken.None) is null ? HttpStatusCode.Gone : HttpStatusCode.OK
+        ];
+
+        await SetAsync(server, pablo, u => u.Role = Role.Member);
+        (await PablosAsync()).ShouldAllBe(s => s == HttpStatusCode.Gone, "demoted");
+        (await server.Client().GetAsync(lolas.Url)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await server.Client().GetAsync(operators.Url)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        await SetAsync(server, pablo, u => u.Role = Role.Owner);
+        (await PablosAsync()).ShouldAllBe(s => s == HttpStatusCode.OK, "an owner again");
+
+        await SetAsync(server, pablo, u => u.DisabledAt = server.Clock.GetUtcNow());
+        (await PablosAsync()).ShouldAllBe(s => s == HttpStatusCode.Gone, "disabled");
+    }
+
+    private static async Task SetAsync(AccountsServer server, string userId, Action<User> change)
+    {
+        await using var db = await server.Service<Microsoft.EntityFrameworkCore.IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        change(await db.Users.SingleAsync(u => u.Id == userId));
+        await db.SaveChangesAsync();
     }
 
     private static global::Accounts.Links.MintedLink Minted(global::Accounts.Links.RecoveryMint mint) =>
