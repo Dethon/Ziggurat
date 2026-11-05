@@ -391,4 +391,37 @@ public class SugaryMealApiTests
             """)).Single()!.AsArray();
         return [.. row.Select(cell => cell!.ToString())];
     }
+
+    // One person, two phones: one records how her glucose went while the other, open on the meal since
+    // before, changes a portion. Each change stands; the same field changed on both is refused.
+    [Fact]
+    public async Task TwoPhonesChangingOneMeal_EachChangeStands_AndTheSameFieldIsRefused()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var phone = await server.SignedInAsync();
+        var other = await server.SignedInAsync();
+        var saved = await ReadAsync(await phone.PostAsJsonAsync("/api/meals", Meal()));
+        var id = saved["id"]!.GetValue<string>();
+        var opened = Meal();
+        opened["eatenAt"] = saved["eatenAt"]!.DeepClone();
+        opened["notes"] = "lunch out";
+        opened["items"] = saved["items"]!.DeepClone();
+
+        var outcome = (JsonObject)opened.DeepClone();
+        outcome["outcome"] = "high";
+        outcome["loaded"] = opened.DeepClone();
+        (await phone.PutAsJsonAsync($"/api/meals/{id}", outcome)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var portion = (JsonObject)opened.DeepClone();
+        portion["notes"] = "lunch out, half the rice";
+        portion["loaded"] = opened.DeepClone();
+        var merged = await ReadAsync(await other.PutAsJsonAsync($"/api/meals/{id}", portion));
+        merged["outcome"]!.GetValue<string>().ShouldBe("high");
+        merged["notes"]!.GetValue<string>().ShouldBe("lunch out, half the rice");
+
+        var clash = (JsonObject)opened.DeepClone();
+        clash["outcome"] = "low";
+        clash["loaded"] = opened.DeepClone();
+        (await other.PutAsJsonAsync($"/api/meals/{id}", clash)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+    }
 }

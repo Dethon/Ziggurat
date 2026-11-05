@@ -203,4 +203,41 @@ public class SugaryRecipeApiTests
             ["recipeId"] = recipeId
         })
     };
+
+    // Two people of the household with the recipe open: Ana raised the flour and saved, then Dani —
+    // whose sheet still had the old amount — changed the servings and saved, and Ana's flour was back
+    // to what it was, the carbs per helping wrong with nobody told. A sheet sends what it opened with
+    // beside what it wants, and only what it changed is laid over the recipe as it is now.
+    [Fact]
+    public async Task TwoPeopleChangingOneRecipe_EachChangeStands_AndTheSameFieldIsRefused()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var ana = server.As(SugaryServer.Her);
+        var dani = server.As(SugaryServer.Him);
+        var lentils = await FoodAsync(ana, Lentils());
+        var potato = await FoodAsync(ana, Potato());
+        var opened = Stew((lentils, 300), (potato, 400));
+        var id = (await ReadAsync(await ana.PostAsJsonAsync("/api/recipes", opened)))["id"]!.GetValue<string>();
+        opened["name"] = "Lentejas de la abuela";
+
+        var anas = (JsonObject)opened.DeepClone();
+        anas["ingredients"]![0]!["amount"] = 350;
+        anas["loaded"] = opened.DeepClone();
+        (await ana.PutAsJsonAsync($"/api/recipes/{id}", anas)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var danis = (JsonObject)opened.DeepClone();
+        danis["cookedGrams"] = 2000;
+        danis["loaded"] = opened.DeepClone();
+        var merged = await ReadAsync(await dani.PutAsJsonAsync($"/api/recipes/{id}", danis));
+        merged["cookedGrams"]!.GetValue<double>().ShouldBe(2000);
+        merged["ingredients"]!.AsArray().Select(i => i!["amount"]!.GetValue<double>()).ShouldBe([350d, 400d]);
+
+        var clash = (JsonObject)opened.DeepClone();
+        clash["ingredients"]![0]!["amount"] = 200;
+        clash["loaded"] = opened.DeepClone();
+        (await dani.PutAsJsonAsync($"/api/recipes/{id}", clash)).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        var kept = (await ReadAsync(await ana.GetAsync("/api/recipes"))).AsArray().ShouldHaveSingleItem()!;
+        kept["ingredients"]!.AsArray().Select(i => i!["amount"]!.GetValue<double>()).ShouldBe([350d, 400d]);
+        kept["cookedGrams"]!.GetValue<double>().ShouldBe(2000);
+    }
 }

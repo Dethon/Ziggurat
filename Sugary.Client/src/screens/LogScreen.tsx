@@ -120,19 +120,19 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
   // One tap records it; the toast offers it back.
   async function record(meal: Meal, outcome: Outcome) {
     const was = meal.outcome;
-    const put = (next: Outcome) => {
+    const put = (next: Outcome, from: Outcome) => {
       setMeals((current) => current?.map((m) => (m.id === meal.id ? { ...m, outcome: next } : m)) ?? null);
       loaded.current = loaded.current.map((m) => (m.id === meal.id ? { ...m, outcome: next } : m));
-      return api.updateMeal(meal.id, asSaved(meal, next));
+      return api.updateMeal(meal.id, asSaved(meal, next), asSaved(meal, from));
     };
     try {
-      await put(outcome);
+      await put(outcome, was);
       onChanged();
       toast({
         text: t("outcomeNoted", { outcome: t(`outcome_${outcome}`) }),
         action: {
           label: t("undo"),
-          run: () => void put(was).then(onChanged, (failure) => setError(errorMessage(failure, t, "save"))),
+          run: () => void put(was, outcome).then(onChanged, (failure) => setError(errorMessage(failure, t, "save"))),
         },
       });
     } catch (failure) {
@@ -697,12 +697,16 @@ function MealSheet({
 
   const save = () =>
     run(async () => {
-      await api.updateMeal(meal.id, {
-        ...asSaved(meal, outcome),
-        eatenAt: when ? new Date(when).toISOString() : meal.eatenAt,
-        notes: notes.trim() || null,
-        items: items.map(toMealItem),
-      });
+      await api.updateMeal(
+        meal.id,
+        {
+          ...asSaved(meal, outcome),
+          eatenAt: when ? new Date(when).toISOString() : meal.eatenAt,
+          notes: notes.trim() || null,
+          items: items.map(toMealItem),
+        },
+        asSaved(meal, meal.outcome),
+      );
       toast({ text: t("mealChangesSaved") });
     });
 

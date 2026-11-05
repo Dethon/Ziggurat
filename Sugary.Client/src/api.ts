@@ -120,7 +120,9 @@ export const api = {
 
   meals: (skip = 0, take = 50) => request<Meal[]>(`/meals?skip=${skip}&take=${take}`),
   createMeal: (meal: SaveMeal) => request<Meal>("/meals", json("POST", meal)),
-  updateMeal: (id: string, meal: SaveMeal) => request<Meal>(`/meals/${id}`, json("PUT", meal)),
+  // `loaded` is what the sheet opened with: the server keeps whatever another phone changed since.
+  updateMeal: (id: string, meal: SaveMeal, loaded: SaveMeal) =>
+    request<Meal>(`/meals/${id}`, json("PUT", { ...meal, loaded })),
   deleteMeal: (id: string) => request<void>(`/meals/${id}`, { method: "DELETE" }),
   photoUrl: (id: string) => `/api/meals/${id}/photo`,
   // The photo kept with a meal, to send with a correction of it.
@@ -188,11 +190,13 @@ export const api = {
 
   foods: () => request<Food[]>("/foods"),
   createFood: (food: SaveFood) => request<Food>("/foods", json("POST", food)),
-  updateFood: (id: string, food: SaveFood) => request<Food>(`/foods/${id}`, json("PUT", food)),
+  updateFood: (id: string, food: SaveFood, loaded: SaveFood) =>
+    request<Food>(`/foods/${id}`, json("PUT", { ...food, loaded })),
   deleteFood: (id: string) => request<void>(`/foods/${id}`, { method: "DELETE" }),
   recipes: () => request<Recipe[]>("/recipes"),
   createRecipe: (recipe: SaveRecipe) => request<Recipe>("/recipes", json("POST", recipe)),
-  updateRecipe: (id: string, recipe: SaveRecipe) => request<Recipe>(`/recipes/${id}`, json("PUT", recipe)),
+  updateRecipe: (id: string, recipe: SaveRecipe, loaded: SaveRecipe) =>
+    request<Recipe>(`/recipes/${id}`, json("PUT", { ...recipe, loaded })),
   deleteRecipe: (id: string) => request<void>(`/recipes/${id}`, { method: "DELETE" }),
 
   // Each time carries its offset in the phone's own zone, so the file reads like the clock on the wall.
