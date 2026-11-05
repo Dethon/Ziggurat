@@ -56,6 +56,40 @@ public class SugaryPeriodApiTests
         Day(listed, "end").ShouldBe("2026-09-07");
     }
 
+    // Two of her phones open on the Cycle page, each tapping "My period started today": both were
+    // checked against a log that had neither, and both were kept — two periods starting the same day,
+    // and a forecast drawn from a cycle of no days.
+    [Fact]
+    public async Task ThePeriodSavedFromTwoPhonesAtOnce_IsKeptOnce()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var today = FromToday(0);
+
+        var answers = await Task.WhenAll(Enumerable.Range(0, 6)
+            .Select(_ => client.PostAsJsonAsync("/api/periods", Period(today, null))));
+
+        answers.Count(a => a.StatusCode == HttpStatusCode.Created).ShouldBe(1);
+        answers.Count(a => a.StatusCode == HttpStatusCode.BadRequest).ShouldBe(5);
+        (await ListAsync(client)).Count.ShouldBe(1);
+    }
+
+    // The day is a note's key: two phones writing the same day's note at once both found none, both
+    // added one, and the second was refused by the key — a 500, and its words lost.
+    [Fact]
+    public async Task TheDaysNoteWrittenFromTwoPhonesAtOnce_IsSavedAndKeptOnce()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var client = await server.SignedInAsync();
+        var today = FromToday(0);
+
+        var answers = await Task.WhenAll(Enumerable.Range(0, 6)
+            .Select(i => client.PutAsJsonAsync($"/api/day-notes/{today}", new { text = $"note {i}" })));
+
+        answers.Select(a => a.StatusCode).ShouldAllBe(status => status == HttpStatusCode.OK);
+        (await client.GetFromJsonAsync<JsonNode>("/api/day-notes"))!.AsArray().Count.ShouldBe(1);
+    }
+
     [Fact]
     public async Task Periods_AreListedNewestFirst()
     {

@@ -58,6 +58,7 @@ public static class SugaryApp
         });
 
         var api = app.MapGroup("/api");
+        OneLogWriteAtATime.Apply(api);
         api.MapSessionEndpoints();
         api.MapMealEndpoints();
         api.MapDoseEndpoints();
