@@ -1,6 +1,7 @@
 using System.Runtime.ExceptionServices;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Microsoft.Extensions.Logging;
 
 namespace Domain.Monitor;
@@ -25,15 +26,21 @@ public sealed class ApprovalRelay(
     // read as each question is asked, so a connection that appeared since is offered it too.
     IEnumerable<IChannelConnection> channels,
     ILogger logger,
-    TimeProvider time) : IToolApprovalHandler
+    TimeProvider time,
+    IAccountStanding? standing = null) : IToolApprovalHandler
 {
+    // How often a waiting question asks whether its asker is still somebody the agent acts for. The
+    // standing is the household view's, kept a minute and dropped on the announcement, so this is the
+    // grain a disabling reaches a question at, not a cost.
+    public static readonly TimeSpan StandingCheck = TimeSpan.FromSeconds(15);
+
     // As long as Telegram has always waited for a tap: long enough to reach a phone, short enough
     // that a turn nobody could be asked in does not hold its conversation.
     public static readonly TimeSpan UnshownWindow = TimeSpan.FromMinutes(2);
 
     public async Task<ToolApprovalResult> RequestApprovalAsync(ApprovalAsk ask, CancellationToken ct)
     {
-        if (ask.Asker is null)
+        if (ask.Asker is not { } asker)
         {
             return await anchor.AskApprovalAsync(ask, ct) ?? ToolApprovalResult.Rejected;
         }
@@ -46,17 +53,32 @@ public sealed class ApprovalRelay(
             .Prepend((Channel: anchor, Task: anchorTask))
             .ToList();
         var window = Task.Delay(Timeout.InfiniteTimeSpan, asking.Token);
+        // A member disabled while their question waits can answer it nowhere any more, and the agent
+        // acts for them no longer: it is refused everywhere it shows instead of holding the turn
+        // until they are re-enabled.
+        var disabled = standing is null
+            ? Task.Delay(Timeout.InfiniteTimeSpan, asking.Token)
+            : DisabledAsync(asker, asking.Token);
         Exception? anchorFailure = null;
 
         try
         {
             while (waiting.Count > 0)
             {
-                var done = await Task.WhenAny(waiting.Select(w => w.Task).Append(window));
+                var done = await Task.WhenAny(waiting.Select(w => w.Task).Append(window).Append(disabled));
                 ct.ThrowIfCancellationRequested();
                 if (done == window)
                 {
                     break;
+                }
+
+                if (done == disabled)
+                {
+                    logger.LogInformation(
+                        "Approval {ApprovalId} is refused: its asker {UserId} was disabled while it waited",
+                        ask.ApprovalId, asker.UserId);
+                    _ = SettleAsync(ask, winner: null, ToolApprovalResult.Rejected, asking);
+                    return ToolApprovalResult.Rejected;
                 }
 
                 // By position, never by task alone: an offer answered before it awaited anything is
@@ -66,8 +88,9 @@ public sealed class ApprovalRelay(
                 var (channel, task) = waiting[finished];
                 waiting.RemoveAt(finished);
                 var answer = AnswerOf(channel, task);
-                if (answer is { } result)
+                if (answer is { } given)
                 {
+                    var result = await StillTheAskersAsync(ask, given, ct);
                     _ = SettleAsync(ask, channel, result, asking);
                     return result;
                 }
@@ -122,11 +145,63 @@ public sealed class ApprovalRelay(
         return null;
     }
 
+    // Asked again each StandingCheck; a standing that cannot be read refuses nothing here — an outage
+    // is not a disabling — and the answer, when it comes, is checked once more.
+    private async Task DisabledAsync(Account asker, CancellationToken ct)
+    {
+        while (true)
+        {
+            await Task.Delay(StandingCheck, time, ct);
+            try
+            {
+                if (await standing!.StandingAsync(asker, ct) == AccountStanding.Disabled)
+                {
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogDebug(ex, "The standing of {UserId} could not be read while their approval waits", asker.UserId);
+            }
+        }
+    }
+
+    // An answer that lets something through is the asker's word only while the agent still acts for
+    // them: a channel may hold who a sender is for minutes (Telegram's link cache), so a member
+    // disabled since could still approve there. One whose asker cannot be checked is refused, as a
+    // turn whose person cannot be checked is. A refusal needs nobody's standing.
+    private async Task<ToolApprovalResult> StillTheAskersAsync(ApprovalAsk ask, ToolApprovalResult given, CancellationToken ct)
+    {
+        if (standing is null || ask.Asker is not { } asker
+            || given is not (ToolApprovalResult.Approved or ToolApprovalResult.ApprovedAndRemember))
+        {
+            return given;
+        }
+
+        try
+        {
+            if (await standing.StandingAsync(asker, ct) == AccountStanding.Active)
+            {
+                return given;
+            }
+
+            logger.LogInformation("Approval {ApprovalId} is refused: its asker {UserId} is disabled", ask.ApprovalId, asker.UserId);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Approval {ApprovalId} is refused: the standing of {UserId} could not be read",
+                ask.ApprovalId, asker.UserId);
+        }
+
+        return ToolApprovalResult.Rejected;
+    }
+
     // Off the turn: the answer is in, and telling the others is no reason to make the tool wait.
     // Settled before being called off, so a channel still showing the question says who answered it
     // rather than only taking it down.
+    // With no winner — refused for a disabling — every channel is told, the one the turn asked in too.
     private async Task SettleAsync(
-        ApprovalAsk ask, IChannelConnection winner, ToolApprovalResult result, CancellationTokenSource asking)
+        ApprovalAsk ask, IChannelConnection? winner, ToolApprovalResult result, CancellationTokenSource asking)
     {
         try
         {

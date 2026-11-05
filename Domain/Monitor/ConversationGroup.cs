@@ -892,7 +892,7 @@ internal sealed class ConversationGroup(
         // Asked where the delivery anchors, and offered to the turn's person wherever else they are.
         var approvals = new ApprovalRelay(
             approvalChannel, channels.Serving(HouseholdChannels.HouseholdOfTurn(x.Message, x.Channel)), logger,
-            TimeProvider.System);
+            TimeProvider.System, standing);
         // Built for the channel of the turn that opened the group, whose rules it keeps for the group's
         // life: a satellite's conversation is answered aloud by whichever agent serves it.
         var agent = _agent = await agentFactory.CreateAsync(
