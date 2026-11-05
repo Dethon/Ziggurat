@@ -26,7 +26,9 @@ points at the document that says what it does; this file is only the order and w
 6. `.scratch/tenants-config/deploy.md` steps 5–8: build `base-sdk`, `up -d --build` (without
    `--remove-orphans` yet), mint the operator's link (`docker exec accounts dotnet Accounts.dll
    mint-link --operator --name <their "name" in people.json>`: the first one needs the name, and
-   the migration adopts that account as the operator), the migration's dry run and run with
+   the migration adopts that account as the operator; mint it once and use that link — every later
+   `mint-link` for the same person, and every recovery link an owner mints, closes their earlier open
+   one), the migration's dry run and run with
    `scripts/upgrade/home-keys.sh ~/old.env | … --home-keys -`, restart the agent, `redelegate`.
    Read the dry run's "Schedules" lines: a schedule from master recorded no writer and is given to
    the person whose topic wrote it; one named "goes to the owner" was found nowhere.
