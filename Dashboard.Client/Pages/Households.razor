@@ -109,7 +109,7 @@
                             @if (!household.IsHome && _confirmingSuspend == household.Id)
                             {
                                 @* Suspending stops every turn, fire and server of the household at once, so it is asked first. *@
-                                <span class="confirm">Suspend @household.Name? Nothing of theirs runs until you resume it.</span>
+                                <span class="confirm">Suspend @household.Name? Nothing of theirs runs until you resume it. A one-time schedule due meanwhile never runs.</span>
                                 <button type="button" disabled="@_state.Busy"
                                         @onclick="() => _confirmingSuspend = null">Keep it running</button>
                                 <button type="button" class="danger" disabled="@_state.Busy"

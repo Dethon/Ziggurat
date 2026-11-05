@@ -536,7 +536,8 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
   chat client's turn reaches the agent, which answers `SuspendedAnswer` — a refused refresh would end the
   stream "signed out", the wrong words. `/accounts/me` still names the person. A refused fire has been
   emitted all the same, so the scheduler advances a cron and deletes a one-shot as if it ran: a one-shot
-  due while its household is suspended is gone when it is resumed.
+  due while its household is suspended is gone when it is resumed (kept so by the user, 2026-11-05), and
+  the dashboard's Suspend confirmation and the members page (for a disabled member's) say so.
 
 ## The admin area (chat client)
 

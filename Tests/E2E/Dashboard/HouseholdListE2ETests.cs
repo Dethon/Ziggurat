@@ -82,6 +82,9 @@ public class HouseholdListE2ETests(DashboardAdminE2EFixture fixture)
         // Suspending stops everything a household does, so the row asks first, and keeping it running
         // leaves it running.
         await suspend.ClickAsync();
+        // A one-time schedule due while suspended is refused and gone by the resume: the confirmation
+        // says so rather than promise that everything waits.
+        await Assertions.Expect(row).ToContainTextAsync("A one-time schedule due meanwhile never runs");
         await row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Keep it running" }).ClickAsync();
         await Assertions.Expect(row).ToContainTextAsync("running");
         await suspend.ClickAsync();

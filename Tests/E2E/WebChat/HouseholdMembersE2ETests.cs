@@ -73,6 +73,9 @@ public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
         var page = await MembersPageAsync(await SessionOfAsync($"Owner {tag}", "owner"));
         var row = page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = name });
         await Assertions.Expect(row).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        // A one-time schedule of theirs due while they are disabled is refused and gone by the time they
+        // are re-enabled: the page says so rather than promise that it waits.
+        await Assertions.Expect(page.Locator(".admin-lede").First).ToContainTextAsync("a one-time schedule of theirs due meanwhile never runs");
 
         await row.GetByLabel("Sees all conversations").CheckAsync();
         await row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Save" }).ClickAsync();
