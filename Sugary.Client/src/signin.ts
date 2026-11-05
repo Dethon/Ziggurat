@@ -10,3 +10,13 @@ export function signInUrl(here: string): string {
 export function goSignIn(): void {
   window.location.assign(signInUrl(window.location.href));
 }
+
+// Where a person whose household the operator suspended is sent: its notice, which the accounts
+// service serves on this host too, asks again until the household is resumed and comes back here.
+export function noticeUrl(here: string): string {
+  return `/accounts/account?returnUrl=${encodeURIComponent(here)}`;
+}
+
+export function goNotice(): void {
+  window.location.assign(noticeUrl(window.location.href));
+}
