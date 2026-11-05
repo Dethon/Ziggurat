@@ -535,6 +535,10 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
 
   The list's `HouseholdListEntry.SuspendedAt` and the row's Status cell (Suspend / Resume, none for the
   home) are the dashboard's.
+- **Its open pages are told at once**: the chat hub hears `SuspensionChanged` as it hears the people
+  changing (`HouseholdAgentsAnnouncer`) and sends the household's pages `OnAccessChanged`, so each opens
+  a fresh connection, which the session check refuses as suspended and the page shows as the household's
+  notice — before, a page stayed "Connected" until its person reloaded or sent something.
 - **Not stopped by it, deliberately**: the chat hub's per-turn session refresh still answers, so an open
   chat client's turn reaches the agent, which answers `SuspendedAnswer` — a refused refresh would end the
   stream "signed out", the wrong words. `/accounts/me` still names the person. A refused fire has been
