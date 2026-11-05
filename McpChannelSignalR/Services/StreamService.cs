@@ -20,6 +20,10 @@ public sealed class StreamService(
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
     private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
     private readonly ConcurrentDictionary<string, int> _pendingPromptCounts = new();
+
+    // Bumped whenever who may see a topic changes (its owner shares it or stops), so a reply streaming
+    // to a page asks again whether that page's person still may, and only then.
+    private readonly ConcurrentDictionary<string, int> _audiences = new();
     private readonly Lock _streamLock = new();
 
     // A chunk is added to the buffer and written to the readers as one step, and a reader joining
@@ -269,6 +273,10 @@ public sealed class StreamService(
         }
     }
 
+    public int AudienceOf(string topicId) => _audiences.GetValueOrDefault(topicId);
+
+    public void AudienceChanged(string topicId) => _audiences.AddOrUpdate(topicId, 1, (_, version) => version + 1);
+
     public bool IsStreaming(string topicId)
     {
         lock (_streamLock)
@@ -315,6 +323,7 @@ public sealed class StreamService(
         _currentPrompts.TryRemove(topicId, out _);
         _currentSenderIds.TryRemove(topicId, out _);
         _pendingPromptCounts.TryRemove(topicId, out _);
+        _audiences.TryRemove(topicId, out _);
 
         if (_cancellationTokens.TryRemove(topicId, out var cts))
         {

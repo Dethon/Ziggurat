@@ -355,9 +355,33 @@ public sealed class ChatHub(
             yield return new ChatStreamMessage { ApprovalRequest = pendingApproval };
         }
 
-        await foreach (var msg in liveStream.ReadAllAsync(cancellationToken).IgnoreCancellation(cancellationToken))
+        await foreach (var msg in WhileTheyMaySee(topicId, liveStream.ReadAllAsync(cancellationToken))
+                           .IgnoreCancellation(cancellationToken))
         {
             yield return msg;
+        }
+    }
+
+    // A reply streams to a page only while its person may see the topic: its owner making it private
+    // mid-reply took the row off the other members' lists, and the hub kept sending them the reply as
+    // it was written. Asked again only when who may see it changed (StreamService.AudienceOf).
+    private async IAsyncEnumerable<ChatStreamMessage> WhileTheyMaySee(
+        string topicId, IAsyncEnumerable<ChatStreamMessage> chunks)
+    {
+        var seen = streamService.AudienceOf(topicId);
+        await foreach (var chunk in chunks)
+        {
+            if (streamService.AudienceOf(topicId) is var now && now != seen)
+            {
+                seen = now;
+                if (!sessionService.TryGetSession(topicId, out var session) || session is null
+                    || await threadStore.TopicOfAsync(session) is not { } topic || !Viewer.Sees(topic))
+                {
+                    yield break;
+                }
+            }
+
+            yield return chunk;
         }
     }
 
@@ -473,7 +497,8 @@ public sealed class ChatHub(
 
         // Stream responses back to the browser — the loop ends when the channel completes
         // (i.e. when the last pending agent finishes), not on individual IsComplete messages.
-        await foreach (var msg in subscription.ReadAllAsync(linkedToken).IgnoreCancellation(cancellationToken))
+        await foreach (var msg in WhileTheyMaySee(topicId, subscription.ReadAllAsync(linkedToken))
+                           .IgnoreCancellation(cancellationToken))
         {
             yield return msg;
         }
@@ -761,6 +786,7 @@ public sealed class ChatHub(
 
         var changed = stored with { Shared = shared };
         await threadStore.SaveTopicAsync(changed, keepTtl: true);
+        streamService.AudienceChanged(topicId);
         var heardIn = HeardIn(changed.SpaceSlug);
         await hubSender.SendToGroupAsync(
             TopicAudience.Space(SignedIn.TenantId, heardIn),
