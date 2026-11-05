@@ -382,7 +382,8 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     // and its agent renamed there, then a reply from that agent under its new name, paid for with the
     // household's own key. That key is the deployment's, on this machine's stack alone, so the turn is
     // real and costs one cheap model call. Then the operator suspends it: the open page is sent to the
-    // household's notice at once, and a page asked for again says it is suspended. Each run
+    // household's notice at once, and a page asked for again says it is suspended; resumed, the notice
+    // goes back to the chat by itself. Each run
     // makes a household of its own, so a rerun starts as fresh and needs nothing resumed.
     [SkippableFact]
     public async Task AHouseholdTheOperatorCreates_IsAnsweredByTheAgentItsOwnerNamed_UntilItIsSuspended()
@@ -417,11 +418,53 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             // agent is refused there with the same reason (ChatMonitorDelegationTests).
             await page.WaitForURLAsync(new Regex("/accounts/account"), new PageWaitForURLOptions { Timeout = 60_000 });
             await Assertions.Expect(page.Locator("body")).ToContainTextAsync(SessionCheck.SuspendedNotice);
-        }, owner);
 
-        var refused = await SendAsync(HttpMethod.Get, stack.MainHost, "/", owner, "text/html");
-        refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
-        (await refused.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
+            var refused = await SendAsync(HttpMethod.Get, stack.MainHost, "/", owner, "text/html");
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            (await refused.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
+
+            // Resumed, the notice finds it is let in again by itself and goes back to the chat it was sent
+            // from: before, it said "suspended" until its person reloaded, and a reload kept them on
+            // their account page.
+            var resumed = await AdminAsync<AdminSaved<HouseholdSuspension>>(HttpMethod.Put, stack.DashboardHost,
+                AdminProtocol.Suspension(household), stack.OperatorSession, new HouseholdSuspension(false));
+            resumed.Value.Suspended.ShouldBeFalse();
+            await page.WaitForURLAsync(url => !url.Contains("/accounts/", StringComparison.Ordinal),
+                new PageWaitForURLOptions { Timeout = 90_000 });
+            await Assertions.Expect(page.GetByPlaceholder("Type your message...")).ToBeVisibleAsync(
+                new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
+        }, owner);
+    }
+
+    // An owner's owner invite opened after they were demoted made somebody an owner after the fact:
+    // what an owner hands out opens only while they still manage the household, through Caddy as the
+    // browser meets it, and again once they do. The person is the home's own, made for this run.
+    [SkippableFact]
+    public async Task AnInviteADemotedOwnerMinted_OpensNothing_UntilTheyAreAnOwnerAgain()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var (pablo, session) = await SmokeStack.HomePersonAsync($"Smoke Pablo {tag}", AdminMember.Owner);
+        var invite = await AdminAsync<AdminSaved<MemberLink>>(HttpMethod.Post, stack.MainHost, AdminProtocol.MemberInvites,
+            session, new MemberInvite($"Smoke Zoe {tag}", AdminMember.Owner));
+        var path = new Uri(invite.Value.Url).PathAndQuery;
+        (await SendAsync(HttpMethod.Get, stack.MainHost, path, null, "text/html")).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        try
+        {
+            await AdminAsync<AdminSaved<AdminMembers>>(HttpMethod.Put, stack.MainHost, AdminProtocol.Member(pablo),
+                stack.OperatorSession, new MemberEdit(AdminMember.Member));
+            (await SendAsync(HttpMethod.Get, stack.MainHost, path, null, "text/html")).StatusCode.ShouldBe(HttpStatusCode.Gone);
+
+            await AdminAsync<AdminSaved<AdminMembers>>(HttpMethod.Put, stack.MainHost, AdminProtocol.Member(pablo),
+                stack.OperatorSession, new MemberEdit(AdminMember.Owner));
+            (await SendAsync(HttpMethod.Get, stack.MainHost, path, null, "text/html")).StatusCode.ShouldBe(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await SendAsync(HttpMethod.Post, stack.MainHost, AdminProtocol.DisableMember(pablo), stack.OperatorSession, "application/json");
+        }
     }
 
     // The stack's key stub answers as a provider would for the key it is shown: one with "refused" in

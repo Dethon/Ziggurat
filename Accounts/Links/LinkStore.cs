@@ -141,6 +141,12 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
     // A link naming a member an owner disabled opens nothing while they are: a recovery link would add
     // them a way in, and a Telegram code a way to be somebody on Telegram. One still in date opens again
     // once they are re-enabled.
+    //
+    // And what an owner handed out — an invite, a group code, another person's recovery link — opens
+    // only while they still manage the household: a demoted or disabled owner's owner invite made
+    // somebody an owner after the fact. The operator's links, the command's (minted by nobody) and a
+    // person's own Telegram code or web link are left alone; one still in date opens again once its
+    // owner is (user's decision, 2026-11-05).
     public async Task<OpenLink?> FindOpenAsync(string token, IReadOnlyCollection<LinkKind> kinds, CancellationToken ct)
     {
         var hash = Tokens.Hash(token);
@@ -152,10 +158,13 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
             {
                 Link = l,
                 Named = db.Users.Where(u => u.Id == l.UserId).Select(u => u.DisplayName).FirstOrDefault(),
-                Disabled = db.Users.Any(u => u.Id == l.UserId && u.DisabledAt != null)
+                Disabled = db.Users.Any(u => u.Id == l.UserId && u.DisabledAt != null),
+                MinterStands = l.CreatedBy == null || l.CreatedBy == l.UserId || db.Users.Any(u =>
+                    u.Id == l.CreatedBy && u.DisabledAt == null
+                    && (u.IsOperator || (u.TenantId == l.TenantId && u.Role == Role.Owner)))
             })
             .SingleOrDefaultAsync(ct);
-        return found is null || found.Disabled || !kinds.Contains(found.Link.Kind)
+        return found is null || found.Disabled || !found.MinterStands || !kinds.Contains(found.Link.Kind)
             ? null
             : new OpenLink(found.Link.Id, found.Link.Kind, found.Link.TenantId, found.Link.UserId,
                 found.Named ?? found.Link.DisplayName ?? "", found.Link.Role);

@@ -1,3 +1,5 @@
+using Domain.DTOs.WebChat;
+using Microsoft.AspNetCore.SignalR;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Models;
@@ -92,7 +94,20 @@ public sealed class ReconnectionEffect : IDisposable
 
     private async Task ReloadTopicHistoryAsync(StoredTopic topic)
     {
-        var history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
+        HubResult<IReadOnlyList<ChatHistoryMessage>> history;
+        try
+        {
+            history = await _topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
+        }
+        catch (HubException refused) when (refused.Message.Contains(TopicRefusals.NoSuchConversation, StringComparison.Ordinal))
+        {
+            // The renewed connection may not see it any more — a sees-all grant withdrawn, its owner
+            // made it private, somebody deleted it — and what this page already showed of it must not
+            // stay on screen as if it still did: it is closed as a delete closes it.
+            _dispatcher.Dispatch(new TopicRemoved(topic.TopicId));
+            return;
+        }
+
         if (!history.IsLive)
         {
             return;

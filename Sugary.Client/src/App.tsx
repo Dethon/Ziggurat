@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, UNAUTHORIZED_EVENT } from "./api";
+import { api, SUSPENDED_EVENT, UNAUTHORIZED_EVENT } from "./api";
 import { Icon, type IconName } from "./components/Icon";
 import type { StringKey } from "./i18n";
 import { useMinute } from "./clock";
@@ -11,7 +11,7 @@ import { LogScreen } from "./screens/LogScreen";
 import { MealScreen } from "./screens/MealScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { useSettings } from "./settings";
-import { goSignIn } from "./signin";
+import { goNotice, goSignIn } from "./signin";
 import { ToastProvider, useToast } from "./toast";
 import type { DraftItem, SessionState } from "./types";
 import { useTypingMark } from "./typing";
@@ -35,12 +35,16 @@ export function App() {
 
   useEffect(() => {
     window.addEventListener(UNAUTHORIZED_EVENT, goSignIn);
+    window.addEventListener(SUSPENDED_EVENT, goNotice);
     api
       .session()
       .then(setSession)
       // Offline at launch: show the app rather than a dead screen; calls will report it.
       .catch(() => setSession({ estimates: false, labels: false }));
-    return () => window.removeEventListener(UNAUTHORIZED_EVENT, goSignIn);
+    return () => {
+      window.removeEventListener(UNAUTHORIZED_EVENT, goSignIn);
+      window.removeEventListener(SUSPENDED_EVENT, goNotice);
+    };
   }, []);
 
   if (session === null) {

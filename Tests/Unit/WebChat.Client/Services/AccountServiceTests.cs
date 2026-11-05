@@ -77,6 +77,19 @@ public sealed class AccountServiceTests
             "/accounts/sign-in?returnUrl=" + Uri.EscapeDataString("http://localhost/x?topic=7"));
     }
 
+    // The notice asks again until the household is resumed, then comes back to the page it was sent from.
+    [Fact]
+    public void SendToNotice_GoesToTheNoticeAndSaysWhereToComeBack()
+    {
+        var navigation = new FakeNavigationManager("http://localhost/cocina");
+        var service = new AccountService(new HttpClient(), navigation);
+
+        service.SendToNotice();
+
+        navigation.NavigatedTo.ShouldHaveSingleItem().ShouldBe(
+            "/accounts/account?returnUrl=" + Uri.EscapeDataString("http://localhost/cocina"));
+    }
+
     private AccountService Service(HttpStatusCode status, string body) =>
         new(new HttpClient(new AnsweringHandler(status, body)) { BaseAddress = new Uri("http://localhost/") }, _navigation);
 

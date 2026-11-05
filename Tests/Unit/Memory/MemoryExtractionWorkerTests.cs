@@ -612,6 +612,33 @@ public class MemoryExtractionWorkerTests
         _extractor.Verify(e => e.ExtractAsync(It.IsAny<IReadOnlyList<ChatMessage>>(), "user1", It.IsAny<string?>(), payer, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // What a household's member said about themselves is theirs: the operator's dashboard lists the
+    // check's judgments, so a candidate of any household but the home is published without its words.
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(true, "Trabaja en Globex")]
+    public async Task ProcessRequestAsync_TheChecksJudgment_CarriesTheCandidatesWordsForTheHomeAlone(bool home, string? shown)
+    {
+        _agentDefinitionProvider.Setup(p => p.ForHouseholdAsync(Household, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HouseholdAgents
+            {
+                HouseholdId = Household,
+                Agents = [],
+                Configuration = new AgentHouseholdConfig(
+                    Household, home, new HouseholdSettings { Name = "Casa", TimeZone = "UTC" }, new AgentsSection(),
+                    new FeaturesSection(), new SpacesSection(), "casa-key")
+            });
+        ExtractorReturns(Fact("Trabaja en Globex"));
+        var published = Recording();
+        var worker = Worker(Verifying(_ => Verified(0.9)));
+
+        await worker.ProcessRequestAsync(Current("trabajo en Globex") with { TenantId = Household }, CancellationToken.None);
+
+        var verify = published.OfType<MemoryJudgmentEvent>().Single(j => j.Kind == MemoryJudgmentKinds.Verify);
+        verify.Candidate.ShouldBe(shown);
+        verify.Category.ShouldBe("Fact");
+    }
+
     // A household of its own with no key pays for nothing: no judge, no extractor.
     [Fact]
     public async Task ProcessRequestAsync_ForAHouseholdWithNoKey_AsksNoModel()

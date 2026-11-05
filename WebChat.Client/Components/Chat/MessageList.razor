@@ -14,6 +14,7 @@
     private string? _topicId;
     private bool _isStreaming;
     private AgentCatalogEntry? _selectedAgent;
+    private string? _removedAgentName;
     private StoredTopic? _topic;
     private string? _carriedReasoning;
     private string? _carriedToolCalls;
@@ -45,6 +46,10 @@
         Subscribe(TopicsStore.StateObservable,
             state => state.Agents.FirstOrDefault(a => a.Id == state.SelectedAgentId),
             agent => _selectedAgent = agent);
+
+        Subscribe(TopicsStore.StateObservable,
+            state => state.RemovedAgentName,
+            removed => _removedAgentName = removed);
 
         // Subscribe to messages for current topic
         Subscribe(MessagesStore.StateObservable,
@@ -279,7 +284,7 @@
 <div class="messages-area" @ref="_messagesArea">
     @if (_messages.Count == 0 && !_isStreaming)
     {
-        <EmptyState SelectedAgent="_selectedAgent" OnSuggestionClicked="HandleSuggestionClicked"/>
+        <EmptyState SelectedAgent="_selectedAgent" RemovedAgentName="@_removedAgentName" OnSuggestionClicked="HandleSuggestionClicked"/>
     }
     else
     {

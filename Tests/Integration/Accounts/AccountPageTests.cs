@@ -131,6 +131,37 @@ public class AccountPageTests
         (await server.VerifyAsync(laptop.Token)).StatusCode.ShouldBe(HttpStatusCode.OK);
     }
 
+    // The chat client sends a page refused as suspended here, with where it was. Nothing pushes to a
+    // page the hub let go, so the notice itself asks again until the household is resumed and then
+    // goes back there: where it says, if that is one of the deployment's, else this page again.
+    [Theory]
+    [InlineData("/cocina", "/cocina")]
+    [InlineData("https://elsewhere.example/phish", null)]
+    [InlineData(null, null)]
+    public async Task ASuspendedHouseholdsNotice_AsksAgainAndSaysWhereToGoBack(string? returnUrl, string? goesBackTo)
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (casa, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var browser = server.SignedIn(await server.MintSessionAsync(ana));
+        (await server.Admin(await server.MintSessionAsync(fran.UserId))
+            .PutAsync(AdminProtocol.Suspension(casa), new HouseholdSuspension(true))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var response = await browser.GetAsync(returnUrl is null ? Account : $"{Account}?returnUrl={Uri.EscapeDataString(returnUrl)}");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        var page = await response.Content.ReadAsStringAsync();
+        page.ShouldContain("data-suspended");
+        if (goesBackTo is null)
+        {
+            page.ShouldNotContain("data-return");
+        }
+        else
+        {
+            page.ShouldContain($"data-return=\"{goesBackTo}\"");
+        }
+    }
+
     // Nothing here is open to a suspended household's people, as nothing behind the session check is:
     // no Telegram code, no new passkey, no profile change, each told why — the page in the check's own
     // words, the passkey script's call as plain text it can show.

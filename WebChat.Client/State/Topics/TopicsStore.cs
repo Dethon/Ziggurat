@@ -117,6 +117,7 @@ public sealed class TopicsStore : IDisposable
         SelectTopic a => state with
         {
             SelectedTopicId = a.TopicId,
+            RemovedAgentName = a.TopicId is null ? state.RemovedAgentName : null,
             SelectedTopic = a.TopicId is null
                 ? null
                 : state.Topics.FirstOrDefault(t => t.TopicId == a.TopicId)
@@ -168,6 +169,7 @@ public sealed class TopicsStore : IDisposable
             state with
             {
                 Agents = a.Agents,
+                RemovedAgentName = state.Agents.FirstOrDefault(ag => ag.Id == state.SelectedAgentId)?.Name,
                 SelectedAgentId = a.Agents.FirstOrDefault()?.Id,
                 SelectedTopicId = null,
                 SelectedTopic = null,
@@ -188,6 +190,7 @@ public sealed class TopicsStore : IDisposable
         SelectAgent a => state with
         {
             SelectedAgentId = a.AgentId,
+            RemovedAgentName = a.Picked ? null : state.RemovedAgentName,
             SelectedTopicId = null,
             SelectedTopic = null,
             SearchQuery = "",

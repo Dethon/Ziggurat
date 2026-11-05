@@ -24,6 +24,10 @@ public sealed record TopicsState
     // than in the sidebar because it decides which call every page fetch makes.
     public string SearchQuery { get; init; } = "";
 
+    // The agent this page was on when the household removed it, named until the person picks another
+    // or opens a conversation: its conversations went with it, and what they write now goes elsewhere.
+    public string? RemovedAgentName { get; init; }
+
     public bool IsLoading { get; init; }
     public string? Error { get; init; }
 

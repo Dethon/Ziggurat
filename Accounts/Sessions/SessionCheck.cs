@@ -26,6 +26,11 @@ public static class SessionCheck
     public const string SuspendedNotice =
         "Your household is suspended, so nothing here is open to you until whoever runs this deployment resumes it.";
 
+    // Said on every suspended refusal, which forward_auth copies back with it, so an app's script tells
+    // the proxy's 403 from its own (Sugary's are JSON with a code of their own).
+    public const string RefusalHeader = "X-Ziggurat-Refusal";
+    public const string SuspendedRefusal = "suspended";
+
     public static void Map(IEndpointRouteBuilder routes) =>
         routes.MapGet(Path, async (
             HttpContext http, SessionStore sessions, Assertions assertions, AccountsSettings settings,
@@ -69,17 +74,22 @@ public static class SessionCheck
     // What a suspended household's person gets wherever they are let in nowhere: here, and on the
     // account and members pages, which read their own cookie (PageGuard). A page in words a person
     // reads; a script's call as plain text it can show them.
-    public static IResult Suspended(HttpContext http, bool page) =>
-        page
+    // A page's notice asks again until the household is resumed (PasskeyScript), then goes where
+    // goesBackTo says — a page the chat client sent here from — or loads itself again.
+    public static IResult Suspended(HttpContext http, bool page, string? goesBackTo = null)
+    {
+        http.Response.Headers[RefusalHeader] = SuspendedRefusal;
+        return page
             ? AccountsPages.Page(http, "Household suspended",
                 $"""
-                 <main>
+                 <main data-suspended{(goesBackTo is null ? "" : $" data-return=\"{AccountsPages.Encode(goesBackTo)}\"")}>
                    <h1>Household suspended</h1>
                    <p class="notice">{SuspendedNotice}</p>
                  </main>
                  """,
                 StatusCodes.Status403Forbidden)
             : Results.Text(SuspendedNotice, statusCode: StatusCodes.Status403Forbidden);
+    }
 }
 
 // The request the proxy is asking about, as forward_auth describes it in its forwarded headers.

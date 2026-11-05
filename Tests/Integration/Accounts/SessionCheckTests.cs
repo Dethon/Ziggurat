@@ -219,6 +219,10 @@ public class SessionCheckTests
         (await page.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
         hub.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
         (await hub.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
+        // An app's script tells it from its own refusals by the proxy's word for it, which forward_auth
+        // copies back with the answer (Sugary's open app said "Something went wrong").
+        hub.Headers.GetValues(SessionCheck.RefusalHeader).ShouldBe([SessionCheck.SuspendedRefusal]);
+        page.Headers.GetValues(SessionCheck.RefusalHeader).ShouldBe([SessionCheck.SuspendedRefusal]);
         foreach (var refused in new[] { page, hub })
         {
             refused.Headers.Contains(ForwardedAccount.AssertionHeader).ShouldBeFalse();

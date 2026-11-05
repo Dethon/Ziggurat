@@ -76,6 +76,32 @@ public sealed class ReconnectionEffectTests : IDisposable
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("catch-up failed");
     }
 
+    // Marta, granted every topic, had Nico's private one open when the grant was withdrawn: the renewed
+    // connection's list no longer had it and the hub refused its history, but it stayed on her screen.
+    // A topic the hub says does not exist for this person is closed, as a delete closes it.
+    [Fact]
+    public async Task WhenTheOpenTopicIsNoLongerThisPersons_ItIsClosed()
+    {
+        var topic = new StoredTopic { TopicId = "topic-1", Name = "Nico's", AgentId = "agent-1", ChatId = 1, ThreadId = 1 };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _dispatcher.Dispatch(new SelectTopic(topic.TopicId));
+        _mockTopicService
+            .Setup(s => s.GetHistoryAsync("agent-1", 1, 1))
+            .ThrowsAsync(new Microsoft.AspNetCore.SignalR.HubException(
+                $"An unexpected error occurred invoking 'GetHistory' on the server. HubException: {TopicRefusals.NoSuchConversation}"));
+        _mockSessionService
+            .Setup(s => s.StartSessionAsync(It.IsAny<StoredTopic>()))
+            .ReturnsAsync(HubResult<bool>.Answered(true));
+
+        CreateEffect();
+        _dispatcher.Dispatch(new ConnectionConnected());
+        _dispatcher.Dispatch(new ConnectionReconnecting());
+        _dispatcher.Dispatch(new ConnectionReconnected());
+
+        await Eventually.Until(() => _topicsStore.State.SelectedTopicId is null, "the open topic is closed");
+        _topicsStore.State.SelectedTopic.ShouldBeNull();
+    }
+
     [Fact]
     public async Task WhenConnectionReconnected_StartsSessionForSelectedTopic()
     {

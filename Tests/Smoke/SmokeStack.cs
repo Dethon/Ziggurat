@@ -245,6 +245,14 @@ public sealed partial class SmokeStack : IAsyncLifetime
                 : throw new InvalidOperationException($"no OpenRouter key in the agent's user secrets ({secrets}) or OPENROUTER__APIKEY");
     }
 
+    // Somebody new in the home household, signed in: a test that changes a person's standing makes its
+    // own rather than touch the stack's.
+    public static async Task<(string UserId, string Session)> HomePersonAsync(string name, string role)
+    {
+        var userId = UserIn(await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "create-user", "--name", name, "--role", role));
+        return (userId, await SessionOfAsync(userId));
+    }
+
     public static async Task<string> SessionOfAsync(string userId) =>
         (await DockerAsync("exec", "accounts", "dotnet", "Accounts.dll", "mint-session", "--user", userId)).Trim()
             .Split('\n').Last().Trim();

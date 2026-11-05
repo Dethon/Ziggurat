@@ -30,6 +30,13 @@ export class ApiError extends Error {
 }
 
 export const UNAUTHORIZED_EVENT = "sugary:unauthorized";
+export const SUSPENDED_EVENT = "sugary:suspended";
+
+// The proxy's session check refuses a suspended household's every call 403 and says so in a header
+// of its own, which the app's own 403s (Sugary turned off, a refused key) never carry.
+export function isSuspension(response: Response): boolean {
+  return response.status === 403 && response.headers.get("X-Ziggurat-Refusal") === "suspended";
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
@@ -43,6 +50,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // person to sign in (App).
   if (response.status === 401) {
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
+  if (isSuspension(response)) {
+    window.dispatchEvent(new Event(SUSPENDED_EVENT));
   }
   if (!response.ok) {
     const problem = await response.json().catch(() => null);

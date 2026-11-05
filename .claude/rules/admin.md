@@ -270,6 +270,11 @@ does, `HouseholdAgents.VoiceAgentOf`, or null).
   (`AgentsSection.RemovedIds`, appended by the removal and skipped by `FreeId`): an id keys its people's
   conversations, its schedules and a bot bound to it, and none of that goes with the agent, so the next
   agent of the template under the same id inherited all of it.
+  **Its people's conversations with it are no longer shown** (kept under its id, listed nowhere; user's
+  decision, 2026-11-05: say so rather than refuse): the confirmation says so, and a chat page that was on it
+  when it went names it above the agent it fell back to (`TopicsState.RemovedAgentName`, until the person
+  picks an agent or opens a conversation) — before, Marta's open Chef conversation closed under her and her
+  next message went to Jonas with nothing said.
 - **Versions** are the name and instructions a change replaced (an edit's or a restore's, so a restore is
   undone the same way), the last `Admin:AgentVersionsKept` (5) per agent, by whom and when, written after
   the save stood and dropped with the agent. **A table, not the section**: no turn reads history, and the
@@ -321,7 +326,9 @@ A Telegram group is bound from here too: `POST /household/members/telegram-group
 - **Role and sees-all reach the member's next turn**: the chat hub asks a fresh assertion for every turn
   (`SessionRefresh`), signed with the roles as they are then, and so does every voice utterance. Two
   things keep the old ones a while: the hub's own topic view (`TopicViewer`, its sees-all) is the
-  connection's, so a grant or a withdrawal shows in the chat client's topic list on its next load; and
+  connection's, so the change is announced (`PeopleChanged`) and each open page renews its connection
+  (`OnAccessChanged`): a grant shows the topics at once, a withdrawal takes them away and closes one it had
+  open (`ReconnectionEffect`); and
   Telegram keeps the assertion that admitted a sender for `LinkCache:Linked` (5 minutes).
 - Summaries name the member's id and what changed, never a name or any part of a link: "Invited somebody
   as a member" / "as an owner", "Changed member <id>'s role, sees all conversations", "Disabled member
@@ -538,7 +545,7 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
 - **Its open pages are told at once**: the chat hub hears `SuspensionChanged` as it hears the people
   changing (`HouseholdAgentsAnnouncer`) and sends the household's pages `OnAccessChanged`, so each opens
   a fresh connection, which the session check refuses as suspended and the page shows as the household's
-  notice — before, a page stayed "Connected" until its person reloaded or sent something.
+  notice — before, a page stayed "Connected" until its person reloaded or sent something. **And back again once resumed**: the chat client goes to the notice as `/accounts/account?returnUrl=<where it was>`, and the notice (`SessionCheck.Suspended`, `data-suspended`, with `data-return` only for a return address `ReturnUrls` accepts) asks for itself again every 20 s (`PasskeyScript`) and goes back there once it is no longer 403 — before, a resumed household's pages said "suspended" until a reload, which kept them on the account page.
 - **Not stopped by it, deliberately**: the chat hub's per-turn session refresh still answers, so an open
   chat client's turn reaches the agent, which answers `SuspendedAnswer` — a refused refresh would end the
   stream "signed out", the wrong words. `/accounts/me` still names the person. A refused fire has been
@@ -643,4 +650,5 @@ agent's name through the main host's household routes, every call with the admin
 accounts service has a master key made for its smoke state and its `KEYPROBES__*` at `smoke-keys`, a stub
 answering 200 to everything (`DockerCompose/docker-compose.override.smoke.yml`), so the key set is the
 deployment's own, read from the agent's user secrets, and only the turn reaches OpenRouter. Each run makes
-its own household and leaves it suspended; `down` removes it.
+its own household, suspends it (the open page goes to the notice) and resumes it (the notice goes back to the
+chat by itself); `down` removes it.
