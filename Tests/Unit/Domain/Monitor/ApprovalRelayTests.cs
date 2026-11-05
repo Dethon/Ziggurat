@@ -237,6 +237,99 @@ public class ApprovalRelayTests
         webchat.Notified.ShouldHaveSingleItem().ShouldBe("1:2");
         telegram.Notified.ShouldBeEmpty();
     }
+
+    // A member disabled while their question waits: nobody can answer it any more — their sessions
+    // ended and their phones stopped hearing — and the agent acts for them no longer, so it is
+    // refused everywhere it is showing rather than holding the turn until they are re-enabled.
+    [Fact]
+    public async Task AnAskerDisabledWhileTheQuestionWaits_IsRefusedEverywhere()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram");
+        var standing = new Standing();
+        var ask = Ask(PersonsTurn("signalr", _fran));
+
+        var answered = Watched(standing, webchat, telegram).RequestApprovalAsync(ask, CancellationToken.None);
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        await _clock.AdvancePastAsync(ApprovalRelay.StandingCheck);
+        answered.IsCompleted.ShouldBeFalse("an asker in good standing keeps their question");
+        standing.Now = AccountStanding.Disabled;
+        await _clock.AdvancePastAsync(ApprovalRelay.StandingCheck, previously: 1);
+
+        (await answered).ShouldBe(ToolApprovalResult.Rejected);
+        await Eventually.Until(() => webchat.Settled.Count == 1 && telegram.Settled.Count == 1, "every channel to be settled");
+        webchat.Settled.ShouldHaveSingleItem().ShouldBe((ask.ApprovalId, ToolApprovalResult.Rejected));
+        telegram.Settled.ShouldHaveSingleItem().ShouldBe((ask.ApprovalId, ToolApprovalResult.Rejected));
+    }
+
+    // A standing that cannot be read while the question waits refuses nothing: an outage is not a
+    // disabling, and the person may still answer.
+    [Fact]
+    public async Task AnUnreadableStandingWhileTheQuestionWaits_LeavesItOpen()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var standing = new Standing { Unreadable = true };
+
+        var answered = Watched(standing, webchat).RequestApprovalAsync(Ask(PersonsTurn("signalr", _fran)), CancellationToken.None);
+        await Eventually.Until(() => webchat.Asked.Count == 1, "the anchor to be asked");
+        await _clock.AdvancePastAsync(ApprovalRelay.StandingCheck);
+        await Eventually.Settle();
+
+        answered.IsCompleted.ShouldBeFalse();
+        standing.Unreadable = false;
+        webchat.Answer(ToolApprovalResult.Approved);
+        (await answered).ShouldBe(ToolApprovalResult.Approved);
+    }
+
+    // An answer that approves is the asker's word only while they are still somebody the agent acts
+    // for: a channel can hold who a sender is for minutes (Telegram's link cache), so a member disabled
+    // since could still tap approve there. That, and an answer whose asker cannot be checked, refuses.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AnApprovalFromAnAskerNoLongerInGoodStanding_IsRefused(bool unreadable)
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var telegram = new ApprovalChannel("telegram");
+        var standing = new Standing();
+        var ask = Ask(PersonsTurn("signalr", _fran));
+
+        var answered = Watched(standing, webchat, telegram).RequestApprovalAsync(ask, CancellationToken.None);
+        await Eventually.Until(() => telegram.Offered.Count == 1, "the offer to go out");
+        (standing.Now, standing.Unreadable) = (AccountStanding.Disabled, unreadable);
+        telegram.Answer(ToolApprovalResult.Approved);
+
+        (await answered).ShouldBe(ToolApprovalResult.Rejected);
+        await Eventually.Until(() => webchat.Settled.Count == 1, "the anchor to be settled");
+        webchat.Settled.ShouldHaveSingleItem().ShouldBe((ask.ApprovalId, ToolApprovalResult.Rejected));
+    }
+
+    // A refusal needs nobody's standing: it is let through as it was given.
+    [Fact]
+    public async Task ARefusalFromAnAskerDisabledSince_IsARefusal()
+    {
+        var webchat = new ApprovalChannel("signalr");
+        var standing = new Standing { Now = AccountStanding.Disabled };
+
+        var answered = Watched(standing, webchat).RequestApprovalAsync(Ask(PersonsTurn("signalr", _fran)), CancellationToken.None);
+        await Eventually.Until(() => webchat.Asked.Count == 1, "the anchor to be asked");
+        webchat.Answer(ToolApprovalResult.Rejected);
+
+        (await answered).ShouldBe(ToolApprovalResult.Rejected);
+    }
+
+    private ApprovalRelay Watched(Standing standing, ApprovalChannel anchor, params ApprovalChannel[] others) =>
+        new(anchor, [anchor, .. others], NullLogger.Instance, _clock, standing);
+
+    private sealed class Standing : IAccountStanding
+    {
+        public AccountStanding Now { get; set; } = AccountStanding.Active;
+
+        public bool Unreadable { get; set; }
+
+        public Task<AccountStanding> StandingAsync(Account account, CancellationToken ct) =>
+            Unreadable ? Task.FromException<AccountStanding>(new HttpRequestException("accounts down")) : Task.FromResult(Now);
+    }
 }
 
 // A channel whose answer the test gives, recording what it was asked, offered and told.

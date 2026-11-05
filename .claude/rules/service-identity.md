@@ -313,7 +313,13 @@ cannot be read refuses the turn as `StandingUnreadable` (`ChatMonitor.StandingUn
 `ConversationGroup.UncheckedAnswer` — "could not be checked right now", never "suspended" or
 "disabled", which may not be so, and never let through: the turn could not be built without that view
 anyway. One `StandingRefusal` (`Suspended`, `Disabled`, `Unchecked`) answers both checks and one
-`RefuseByStandingAsync` reports it, for a turn and a fire alike. The guest and nobody are never asked
+`RefuseByStandingAsync` reports it, for a turn and a fire alike. **An approval is held to the
+same standing** (`ApprovalRelay`, given the group's `IAccountStanding`; user's decision, 2026-11-05): a
+question waiting on a member who is disabled meanwhile is refused everywhere it shows, asked again every
+`ApprovalRelay.StandingCheck` (15 s; one that cannot be read refuses nothing), and an answer that lets
+something through is believed only while its asker is still active — Telegram holds who a sender is for
+minutes, so a member disabled since could still tap approve there; an asker who cannot be checked is
+refused. A refusal needs nobody's standing. The guest and nobody are never asked
 about their standing (the guest's household is asked whether it runs). A monitor built with no
 `IAccountStanding` or no `IAgentDefinitionProvider` (a test harness) asks nobody that question; the
 agent's host registers both in `AddAgent`.
