@@ -211,4 +211,6 @@ export interface SessionState {
   // the app then shows them as not available rather than letting them fail.
   estimates: boolean;
   labels: boolean;
+  // Who the phone is signed in as (their account's id); none when the app opened offline.
+  person?: string | null;
 }

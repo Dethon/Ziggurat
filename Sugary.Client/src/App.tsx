@@ -91,6 +91,7 @@ function Shell({ session }: { session: SessionState }) {
             adder={adder}
             estimates={session.estimates}
             labels={session.labels}
+            person={session.person ?? null}
             onSaved={() => {
               toast({ text: t("saved") });
               setTab("log");
