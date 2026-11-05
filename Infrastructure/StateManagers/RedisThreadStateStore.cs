@@ -152,18 +152,25 @@ public sealed class RedisThreadStateStore(
         local count = math.max(0, (topic['MessageCount'] or 0) - tonumber(ARGV[1]))
         topic['MessageCount'] = count
         if (topic['ReadPosition'] or 0) > count then topic['ReadPosition'] = count end
+        if type(topic['ReadBy']) == 'table' then
+            for person, position in pairs(topic['ReadBy']) do
+                if position > count then topic['ReadBy'][person] = count end
+            end
+        end
         {{KeepWideIds}}
         redis.call('SET', KEYS[1], updated, 'KEEPTTL')
         """;
 
     // KEEPTTL, because reading a conversation is not writing to it: a mark-read that reset the
-    // clock would keep the record alive months past the history it describes.
+    // clock would keep the record alive months past the history it describes. The reader's own
+    // position alone (ReadBy): the shared ReadPosition is what a topic read before was left at.
     private static readonly string _markReadScript =
         $$"""
         local json = redis.call('GET', KEYS[1])
         if not json then return nil end
         local topic = cjson.decode(json)
-        topic['ReadPosition'] = topic['MessageCount'] or 0
+        if type(topic['ReadBy']) ~= 'table' then topic['ReadBy'] = {} end
+        topic['ReadBy'][ARGV[1]] = topic['MessageCount'] or 0
         {{KeepWideIds}}
         redis.call('SET', KEYS[1], updated, 'KEEPTTL')
         """;
@@ -243,9 +250,9 @@ public sealed class RedisThreadStateStore(
     // as unread on the conversation the person is looking at. The read position is set from the
     // count inside the script, so a stamp landing between a read and this write loses nothing.
     // The record is all it touches: the index score is the last write, which reading is not.
-    public async Task MarkTopicReadAsync(string tenantId, string agentId, long chatId, string topicId)
+    public async Task MarkTopicReadAsync(string tenantId, string agentId, long chatId, string topicId, string userId)
     {
-        await _db.ScriptEvaluateAsync(_markReadScript, [TopicKey(tenantId, agentId, chatId, topicId)]);
+        await _db.ScriptEvaluateAsync(_markReadScript, [TopicKey(tenantId, agentId, chatId, topicId)], [userId]);
     }
 
     // The last thing said that had anything to say, as text — a reply's markdown read, not shown
@@ -325,7 +332,7 @@ public sealed class RedisThreadStateStore(
             {
                 if (topic is not null && viewer.Sees(topic))
                 {
-                    shown.Add(topic);
+                    shown.Add(topic.ReadFor(viewer.UserId));
                 }
 
                 if (shown.Count == pageSize)

@@ -827,7 +827,17 @@ public sealed class ChatHub(
         RequireSees(stored);
         if (stored is null || Viewer.MayContinue(stored))
         {
-            await threadStore.MarkTopicReadAsync(SignedIn.TenantId, agentId, chatId, topicId);
+            await threadStore.MarkTopicReadAsync(SignedIn.TenantId, agentId, chatId, topicId, SignedIn.UserId);
+        }
+
+        // Told to whoever may have it on screen, as a rename is: read on the phone, the desktop kept
+        // its unread badge until a reload. Each page reads its own person's position off it (ReadFor).
+        if (stored is not null && Viewer.MayContinue(stored)
+            && await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId) is { } read)
+        {
+            var heardIn = HeardIn(read.SpaceSlug);
+            await hubSender.SendToTopicAsync(read, heardIn, "OnTopicChanged",
+                new TopicChangedNotification(TopicChangeType.Updated, read.TopicId, read, heardIn));
         }
     }
 

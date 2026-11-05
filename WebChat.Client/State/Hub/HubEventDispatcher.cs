@@ -25,14 +25,14 @@ public sealed class HubEventDispatcher(
             case TopicChangeType.Created when notification.Topic is not null:
                 if (MaySee(notification.Topic))
                 {
-                    dispatcher.Dispatch(new AddTopic(StoredTopic.FromMetadata(notification.Topic)));
+                    dispatcher.Dispatch(new AddTopic(StoredTopic.FromMetadata(AsRead(notification.Topic))));
                 }
 
                 break;
             // Sharing and unsharing are told to the whole space, so the same news adds a row for
             // whoever may now see the topic and takes it from whoever no longer may.
             case TopicChangeType.Updated when notification.Topic is not null && MaySee(notification.Topic):
-                dispatcher.Dispatch(new UpdateTopic(StoredTopic.FromMetadata(notification.Topic)));
+                dispatcher.Dispatch(new UpdateTopic(StoredTopic.FromMetadata(AsRead(notification.Topic))));
                 break;
             case TopicChangeType.Updated when notification.Topic is not null:
                 dispatcher.Dispatch(new RemoveTopic(notification.TopicId));
@@ -47,6 +47,10 @@ public sealed class HubEventDispatcher(
                     "Invalid TopicChangeType or missing Topic");
         }
     }
+
+    // News of a topic goes to everyone who may see it, carrying each person's read position: this
+    // page counts its own person's.
+    private TopicMetadata AsRead(TopicMetadata topic) => topic.ReadFor(identityStore.State.SignedIn?.UserId);
 
     // Until the accounts service has answered, the server's own audience is the only rule.
     private bool MaySee(TopicMetadata topic) =>
