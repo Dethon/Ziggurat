@@ -325,8 +325,19 @@ public sealed class ChatHub(
         return streamService.GetStreamState(topicId);
     }
 
-    public async IAsyncEnumerable<ChatStreamMessage> ResumeStream(
+    // A page from before StreamSeen: handed the people's messages the stream carried, which it skips
+    // where it shows them.
+    public IAsyncEnumerable<ChatStreamMessage> ResumeStream(
         string topicId,
+        CancellationToken cancellationToken) =>
+        ResumeStreamFrom(topicId, null, cancellationToken);
+
+    // A page resuming a stream read its state a moment ago, and says how much of it it drew: whatever
+    // the stream carried since — the rest of a message it had begun, a person's message, the end — is
+    // handed to it first, taken with the subscription, so nothing written between the two is lost.
+    public async IAsyncEnumerable<ChatStreamMessage> ResumeStreamFrom(
+        string topicId,
+        StreamSeen? seen,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         await SessionToReadAsync(topicId);
@@ -336,15 +347,14 @@ public sealed class ChatHub(
             yield break;
         }
 
-        // Joined with what it carried, as a send joining a stream is: the page drew the stream's state
-        // a moment ago, and a person's message written since was on neither until this wire carried it.
-        // The page skips the ones it shows already.
-        if (streamService.Join(topicId) is not var (liveStream, carried))
+        if (streamService.Join(topicId, seen) is not var (liveStream, carried))
         {
             yield break;
         }
 
-        foreach (var earlier in carried.Where(m => m.UserMessage is not null))
+        // A page that said what it drew is handed the rest; one from before is handed the people's
+        // messages alone, since it cannot be told the rest of a message from the whole of it.
+        foreach (var earlier in carried.Where(m => seen is not null ? m.ApprovalRequest is null : m.UserMessage is not null))
         {
             yield return earlier;
         }

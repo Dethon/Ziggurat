@@ -171,4 +171,22 @@ public class ChatHubStreamStartedTests
         first.UserMessage!.SenderId.ShouldBe("carlos");
         first.Content.ShouldBe("vino");
     }
+
+    // Carlos opened a topic mid-reply: his page read the stream's state, then opened its wire, and the
+    // 34 characters written between the two were on neither, missing from the middle of a word.
+    [Fact]
+    public async Task AResumedStream_StartsWithWhatTheStreamCarriedSinceThePageReadItsState()
+    {
+        GivenTheTopic(owner: "marta", shared: true);
+        _streamService.GetOrCreateStream(TopicId, "cocido", "marta", CancellationToken.None);
+        _streamService.TryIncrementPending(TopicId);
+        await _streamService.WriteMessageAsync(TopicId, new ChatStreamMessage { Content = "Se llam", MessageId = "m1" });
+        var seen = StreamSeen.Of(_streamService.GetStreamState(TopicId)!.BufferedMessages);
+        await _streamService.WriteMessageAsync(TopicId, new ChatStreamMessage { Content = "aron vuelcos", MessageId = "m1" });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var first = await _hub.ResumeStreamFrom(TopicId, seen, cts.Token).FirstAsync(cts.Token);
+
+        first.Content.ShouldBe("aron vuelcos");
+    }
 }

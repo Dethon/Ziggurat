@@ -156,7 +156,7 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
     public static TheoryData<string> CallsByName =>
     [
         "GetHistory", "MarkTopicRead", "SaveTopic", "DeleteTopic", "SetTopicShared", "CancelTopic",
-        "SendMessage", "EnqueueMessage", "ResumeStream", "GetStreamState", "IsProcessing",
+        "SendMessage", "EnqueueMessage", "ResumeStream", "ResumeStreamFrom", "GetStreamState", "IsProcessing",
         "CreateUploadTicket", "GetPendingApprovalForTopic"
     ];
 
@@ -173,6 +173,8 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
             "SendMessage", topic.TopicId, "let me in", null, null, null)),
         "EnqueueMessage" => connection.InvokeAsync<bool>("EnqueueMessage", topic.TopicId, "let me in", null, null, null),
         "ResumeStream" => ReadAllAsync(connection.StreamAsync<ChatStreamMessage>("ResumeStream", topic.TopicId)),
+        "ResumeStreamFrom" => ReadAllAsync(connection.StreamAsync<ChatStreamMessage>(
+            "ResumeStreamFrom", topic.TopicId, new StreamSeen(0, []))),
         "GetStreamState" => connection.InvokeAsync<StreamState?>("GetStreamState", topic.TopicId),
         "IsProcessing" => connection.InvokeAsync<bool>("IsProcessing", topic.TopicId),
         "CreateUploadTicket" => connection.InvokeAsync<UploadTicket>("CreateUploadTicket", topic.TopicId),

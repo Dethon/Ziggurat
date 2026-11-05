@@ -130,12 +130,21 @@ public sealed class StreamService(
     }
 
     // A page resuming the topic's stream (the same join, found by topic): null when none is running.
-    public (ChannelReader<ChatStreamMessage> Live, IReadOnlyList<ChatStreamMessage> Carried)? Join(string topicId)
+    // Carried is what the stream carried since the state the page drew (StreamSeen.Since), or, for a
+    // page that says nothing of it, everything.
+    public (ChannelReader<ChatStreamMessage> Live, IReadOnlyList<ChatStreamMessage> Carried)? Join(
+        string topicId, StreamSeen? seen = null)
     {
         lock (_writeLock)
         {
             // ReSharper disable once InconsistentlySynchronizedField
-            return _responseChannels.TryGetValue(topicId, out var channel) ? Join(topicId, channel) : null;
+            if (!_responseChannels.TryGetValue(topicId, out var channel))
+            {
+                return null;
+            }
+
+            var (live, carried) = Join(topicId, channel);
+            return (live, seen?.Since(carried) ?? carried);
         }
     }
 

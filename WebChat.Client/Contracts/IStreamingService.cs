@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 
@@ -22,5 +23,5 @@ public interface IStreamingService
     // the reply only once the agent spoke again.
     bool TryShowResumedStream(StreamLease lease, ChatMessageModel streamingMessage, string? startMessageId);
 
-    Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic);
+    Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic, StreamSeen? seen = null);
 }

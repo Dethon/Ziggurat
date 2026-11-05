@@ -124,9 +124,9 @@ public sealed class StreamingService(
     // Opening the stream is what waits for the reply's next chunk, so it happens after the
     // reply is already showing. Recovery the user never asked for: nothing is said when it
     // cannot be opened — the caller ends the stream, which keeps what was shown as a message.
-    public async Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic)
+    public async Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic, StreamSeen? seen = null)
     {
-        var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
+        var chunks = await messagingService.ResumeStreamAsync(topic.TopicId, seen);
         if (!chunks.IsLive)
         {
             return false;
