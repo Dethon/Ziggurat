@@ -109,7 +109,8 @@ public static class HouseholdAgentsAdmin
                 section with
                 {
                     Agents = [.. section.Agents.Where(a => a.Id != agentId)],
-                    VoiceAgent = section.VoiceAgent == agentId ? null : section.VoiceAgent
+                    VoiceAgent = section.VoiceAgent == agentId ? null : section.VoiceAgent,
+                    RemovedIds = [.. section.RemovedIds.Append(agentId).Distinct(StringComparer.Ordinal)]
                 }, $"Removed agent {agentId}", ct);
             if (Stood(result))
             {
@@ -278,10 +279,11 @@ public static class HouseholdAgentsAdmin
 
     // The template's own id while it is free, else the first numbered one that is: an id rides in
     // Redis keys, URLs and a Telegram chat's choice, so it is the slug a template's name already is.
+    // A removed agent's id is never free again (AgentsSection.RemovedIds).
     private static string FreeId(AgentsSection section, string template) =>
-        Enumerable.Range(1, section.Agents.Count + 1)
+        Enumerable.Range(1, section.Agents.Count + section.RemovedIds.Count + 1)
             .Select(n => n == 1 ? template : $"{template}-{n}")
-            .First(id => section.Agents.All(a => a.Id != id));
+            .First(id => section.Agents.All(a => a.Id != id) && !section.RemovedIds.Contains(id));
 
     private static string? NameProblem(string? name) =>
         string.IsNullOrWhiteSpace(name) || name.Trim().Length > AdminAgent.NameLength

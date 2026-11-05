@@ -297,8 +297,28 @@ public sealed class HouseholdAgentsAdminTests(RedisFixture redis) : IClassFixtur
         removed.StatusCode.ShouldBe(HttpStatusCode.OK);
         await Eventually.Until(async () => (await agents.ForAsync(household, CancellationToken.None)).Find("jonas-2") is null,
             "the removal to reach the agent's reader");
-        await SendAsync(admin, HttpMethod.Post, AdminProtocol.Agents, new AgentAddition("jonas", "Otra"));
-        (await VersionsAsync(admin, "jonas-2")).ShouldBeEmpty("a new agent under a freed id starts with no history");
+        (await admin.GetAsync(AdminProtocol.AgentVersions("jonas-2"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    // An id keys everything that points at an agent — its people's conversations, the schedules it
+    // runs, a Telegram bot bound to it — and none of that goes with the agent. Given to the next agent
+    // of the template, it handed that agent the removed one's conversations and schedules: 'Tutor' came
+    // with Iker's conversation with 'Chef' in its list and Chef's cron firing on it.
+    [Fact]
+    public async Task ARemovedAgentsId_IsNeverGivenToAnotherAgent()
+    {
+        await using var server = await StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        await SendAsync(admin, HttpMethod.Post, AdminProtocol.Agents, new AgentAddition("jonas", "Chef"));
+        (await SendAsync(admin, HttpMethod.Delete, AdminProtocol.Agent("jonas-2"))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await SendAsync(admin, HttpMethod.Delete, AdminProtocol.Agent("sugary"))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        await SendAsync(admin, HttpMethod.Post, AdminProtocol.Agents, new AgentAddition("jonas", "Tutor"));
+        await SendAsync(admin, HttpMethod.Post, AdminProtocol.Agents, new AgentAddition("sugary", "Sugary"));
+
+        (await AgentsAsync(admin)).Agents.Select(a => (a.Id, a.Name)).ShouldBe(
+            [("jonas", "Jonas"), ("jonas-3", "Tutor"), ("sugary-2", "Sugary")]);
     }
 
     // A household always has an agent that answers when nobody named one: the default stays, and the

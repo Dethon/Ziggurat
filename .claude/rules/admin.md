@@ -258,8 +258,10 @@ does, `HouseholdAgents.VoiceAgentOf`, or null).
   section with none reads as the two starting templates again. So is removing the agent a space opens on
   ("The Kitchen space opens on Chef, so it stays: pick another agent for that space first"), refused rather
   than cleared so the removal stays one save of one section. A Telegram bot bound to a removed agent's id
-  is not checked: the keys section is sealed, and an id freed by a removal is the next one an addition of
-  that template takes.
+  is not checked: the keys section is sealed. **A removed agent's id is never given to another**
+  (`AgentsSection.RemovedIds`, appended by the removal and skipped by `FreeId`): an id keys its people's
+  conversations, its schedules and a bot bound to it, and none of that goes with the agent, so the next
+  agent of the template under the same id inherited all of it.
 - **Versions** are the name and instructions a change replaced (an edit's or a restore's, so a restore is
   undone the same way), the last `Admin:AgentVersionsKept` (5) per agent, by whom and when, written after
   the save stood and dropped with the agent. **A table, not the section**: no turn reads history, and the
