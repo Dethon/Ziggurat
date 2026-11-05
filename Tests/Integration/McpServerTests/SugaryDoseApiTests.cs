@@ -335,4 +335,26 @@ public class SugaryDoseApiTests
         dose[field] = value;
         return dose;
     }
+
+    // One person, two phones: one raises a dose's units while the other, open on it since before, adds
+    // a note. Each change stands; the same field changed on both is refused and nothing is saved.
+    [Fact]
+    public async Task TwoPhonesChangingOneDose_EachChangeStands_AndTheSameFieldIsRefused()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var phone = await server.SignedInAsync();
+        var other = await server.SignedInAsync();
+        var saved = await ReadAsync(await phone.PostAsJsonAsync("/api/doses", Dose()));
+        var url = $"/api/doses/{saved["id"]!.GetValue<string>()}";
+        var opened = StaleSheet.Opened(saved, "takenAt", "units", "kind", "note", "mealIds");
+
+        (await phone.PutAsJsonAsync(url, StaleSheet.Changed(opened, "units", 16))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var merged = await ReadAsync(await other.PutAsJsonAsync(url, StaleSheet.Changed(opened, "note", "after the walk")));
+
+        merged["units"]!.GetValue<double>().ShouldBe(16);
+        merged["note"]!.GetValue<string>().ShouldBe("after the walk");
+        (await other.PutAsJsonAsync(url, StaleSheet.Changed(opened, "units", 12))).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await ListAsync(phone)).Single()!["units"]!.GetValue<double>().ShouldBe(16);
+    }
+
 }

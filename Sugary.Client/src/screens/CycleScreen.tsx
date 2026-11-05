@@ -4,6 +4,7 @@ import { CycleCalendar } from "../components/CycleCalendar";
 import { Icon } from "../components/Icon";
 import { cycleStatus, forecast, history, localDay, periodProblem, refusedBecause } from "../cycle";
 import { errorMessage } from "../errors";
+import { openedPeriod } from "../stale";
 import { formatDays } from "../format";
 import { useMinute } from "../clock";
 import { useSettings } from "../settings";
@@ -60,7 +61,7 @@ export function CycleScreen() {
     }
     setBusy(true);
     try {
-      await (period ? api.updatePeriod(period.id, values) : api.createPeriod(values));
+      await (period ? api.updatePeriod(period.id, values, openedPeriod(period)) : api.createPeriod(values));
       setOpenDay(null);
       toast({ text: t("periodSaved") });
       await load();

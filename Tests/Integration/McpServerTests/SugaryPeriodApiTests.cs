@@ -300,4 +300,26 @@ public class SugaryPeriodApiTests
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    // One person, two phones: one moves a period's last day while the other, open on it since before,
+    // moves its first. Each change stands; the same field changed on both is refused.
+    [Fact]
+    public async Task TwoPhonesChangingOnePeriod_EachChangeStands_AndTheSameFieldIsRefused()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var phone = await server.SignedInAsync();
+        var other = await server.SignedInAsync();
+        var saved = await ReadAsync(await phone.PostAsJsonAsync("/api/periods", Period()));
+        var url = $"/api/periods/{Day(saved, "id")}";
+        var opened = StaleSheet.Opened(saved, "start", "end");
+
+        (await phone.PutAsJsonAsync(url, StaleSheet.Changed(opened, "end", "2026-09-08"))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var merged = await ReadAsync(await other.PutAsJsonAsync(url, StaleSheet.Changed(opened, "start", "2026-09-02")));
+
+        Day(merged, "start").ShouldBe("2026-09-02");
+        Day(merged, "end").ShouldBe("2026-09-08");
+        (await other.PutAsJsonAsync(url, StaleSheet.Changed(opened, "end", "2026-09-06"))).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        Day((await ListAsync(phone)).Single(), "end").ShouldBe("2026-09-08");
+    }
+
 }
