@@ -130,7 +130,9 @@ public static class MechanismScenarios
             NeverSays = ["Hecho", "Listo", "mañana", "a las ", "te aviso", "una sola vez", "programad", "recordatorio"]
         },
         Claims = [LanguagePrompt.ReplyFollowsTheMessage.Id, SchedulingSkill.LoadsForAScheduleRequest.Id],
-        Policy = new RunPolicy(2, 3)
+        // Measured at 11 of 15 on the shipped prompt (2026-11-05): four runs keep a pass at that rate
+        // from reddening one full pass in six.
+        Policy = new RunPolicy(2, 4)
     };
 
     // A person is being told something, and the time is a duration: a countdown, with the message
