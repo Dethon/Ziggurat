@@ -343,6 +343,24 @@ public class TopicsStoreTests : IDisposable
         metadata.SpaceSlug.ShouldBe("my-space");
     }
 
+    // A conversation started by attaching a file is named after the file until its opening message
+    // names it, which the row's marker says. News of the topic from the hub (its having been read,
+    // which is told at once now) carries no marker, and replacing the row with it left the
+    // conversation named after the file for good.
+    [Fact]
+    public void UpdateTopic_UnderTheSameName_KeepsTheMarkThatTheNameIsTheFiles()
+    {
+        var started = CreateTopic("topic-1", "photo.png");
+        started.NameFromFile = true;
+        _dispatcher.Dispatch(new AddTopic(started));
+
+        _dispatcher.Dispatch(new UpdateTopic(StoredTopic.FromMetadata(started.ToMetadata() with { ReadPosition = 0 })));
+        _store.State.Topics.Single().NameFromFile.ShouldBeTrue();
+
+        _dispatcher.Dispatch(new UpdateTopic(StoredTopic.FromMetadata(started.ToMetadata() with { Name = "Renamed elsewhere" })));
+        _store.State.Topics.Single().NameFromFile.ShouldBeFalse();
+    }
+
     private static StoredTopic CreateTopic(
         string topicId, string name, string agentId = "agent-1", DateTime? writtenAt = null)
     {
