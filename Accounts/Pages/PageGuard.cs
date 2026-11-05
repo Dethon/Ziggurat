@@ -61,11 +61,16 @@ public sealed class PageGuard(SessionStore sessions, IAntiforgery antiforgery, A
 
     // Where a suspended household's notice goes once it is resumed: the page that sent it here, when that
     // is one of the deployment's; nowhere named otherwise, and the notice loads itself again.
-    private string? GoesBackTo(string? returnUrl) =>
-        string.IsNullOrEmpty(returnUrl) || ReturnUrls.Resolve(settings, returnUrl) is var resolved
-        && resolved == settings.PublicBase.ToString() && returnUrl != resolved
-            ? null
-            : ReturnUrls.Resolve(settings, returnUrl);
+    private string? GoesBackTo(string? returnUrl)
+    {
+        if (string.IsNullOrEmpty(returnUrl))
+        {
+            return null;
+        }
+
+        var resolved = ReturnUrls.Resolve(settings, returnUrl);
+        return resolved == settings.PublicBase.ToString() && returnUrl != resolved ? null : resolved;
+    }
 
     // The hidden field a page's forms post back, and the cookie it is checked against.
     public string FormField(HttpContext http)

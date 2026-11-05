@@ -650,4 +650,5 @@ agent's name through the main host's household routes, every call with the admin
 accounts service has a master key made for its smoke state and its `KEYPROBES__*` at `smoke-keys`, a stub
 answering 200 to everything (`DockerCompose/docker-compose.override.smoke.yml`), so the key set is the
 deployment's own, read from the agent's user secrets, and only the turn reaches OpenRouter. Each run makes
-its own household and leaves it suspended; `down` removes it.
+its own household, suspends it (the open page goes to the notice) and resumes it (the notice goes back to the
+chat by itself); `down` removes it.
