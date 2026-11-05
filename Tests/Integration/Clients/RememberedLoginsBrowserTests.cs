@@ -75,9 +75,10 @@ public class RememberedLoginsBrowserTests(IsolatedSessionBrowserFixture fixture,
         await rig.Browser.RouteOnContextAsync($"{site}/**", ServeAsync, person);
         await using var lease = await rig.Logins.BeginHandoffAsync(person, $"{site}/login");
         var handoff = await rig.Browser.OpenHandoffAsync(person, $"{site}/login?as={name}");
+        // As LoginHandoffs does: saved while the tab is open, then closed.
         var hosts = rig.Browser.HandoffVisitedHosts(handoff);
-        await rig.Browser.CloseHandoffAsync(handoff);
         await lease.CompleteAsync(hosts, remember);
+        await rig.Browser.CloseHandoffAsync(handoff);
     }
 
     private RedisPersonStateStore Store(byte[] key) => new(redis.Connection, SealingKey.Import(key));

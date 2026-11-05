@@ -145,9 +145,12 @@ public sealed class LoginHandoffs(
             return false;
         }
 
-        // Read before the close, which forgets the handoff and the hosts with it.
+        // Read before the close, which forgets the handoff and the hosts with it. Saved before the
+        // close too: the export reads a page's storage from the page while it is open, and an origin
+        // with no page left is read by opening a fresh one there, which in Firefox may not yet see what
+        // the page just closed wrote — a remembered login came back with its cookie and without its
+        // localStorage, once under the full suite.
         var hosts = browser.HandoffVisitedHosts(handoff.Id);
-        await browser.CloseHandoffAsync(handoff.Id);
         try
         {
             await handoff.Lease.CompleteAsync(hosts, remember);
@@ -157,6 +160,8 @@ public sealed class LoginHandoffs(
             // The login is in the person's context either way; only its surviving a restart is lost.
             logger.LogWarning(ex, "Saving the login {Person} handed off failed", handoff.Person);
         }
+
+        await browser.CloseHandoffAsync(handoff.Id);
 
         await wakes.EmitAsync(LoginWake.Compose(handoff, time.GetUtcNow()));
         return true;
