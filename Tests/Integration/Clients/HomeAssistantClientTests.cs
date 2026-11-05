@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Domain.Contracts;
 using Domain.Exceptions;
 using Infrastructure.Clients.HomeAssistant;
 using Shouldly;
@@ -210,24 +211,35 @@ public class HomeAssistantClientTests(HomeAssistantFixture fixture, ITestOutputH
     {
         var client = fixture.CreateClient();
         var before = DateTimeOffset.UtcNow.AddMinutes(-5).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        var toggledAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+        var later = DateTimeOffset.UtcNow.AddMinutes(5).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        var had = (await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, before, later)).Count;
         await client.CallServiceAsync("input_boolean", "toggle", HomeAssistantFixture.TestEntityId, null);
-        // The recorder commits on its own schedule, later on a loaded machine: the window opens only
-        // once it keeps the toggle, or a window opening after it finds no state recorded at all.
-        await Eventually.Until(async () =>
-                (await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, before,
-                    DateTimeOffset.UtcNow.AddMinutes(5).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'")))
-                .Any(c => c.At >= toggledAt),
-            "the recorder to keep the toggle");
-        await Task.Delay(1100);
-        var start = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        await Task.Delay(1500);
-        var end = DateTimeOffset.UtcNow.AddMinutes(5).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
 
-        var changes = await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, start, end);
+        // The recorder commits on its own schedule, later on a loaded machine: the window opens only
+        // once it keeps the toggle. And on the home's own clock, read off the toggle it recorded: under
+        // Docker Desktop the container's clock is another VM's, and a window opened by this host's
+        // clock began before the toggle the home stamped a second later (failed once in a full suite:
+        // the window's first element was the toggle itself).
+        var toggled = DateTimeOffset.MinValue;
+        await Eventually.Until(async () =>
+            {
+                var kept = await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, before, later);
+                toggled = kept.Count > had ? kept[^1].At : toggled;
+                return kept.Count > had;
+            },
+            "the recorder to keep the toggle");
+        var opens = DateTimeOffset.FromUnixTimeSeconds(toggled.AddSeconds(2).ToUnixTimeSeconds());
+        var start = opens.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+        var end = opens.AddMinutes(5).UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+
+        // A window the home's clock has not reached yet has no state at its start to answer.
+        IReadOnlyList<HaStateChange> changes = [];
+        await Eventually.Until(async () =>
+            (changes = await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, start, end)).Count > 0,
+            "the home's clock to pass the window's start");
 
         var whole = await client.ListHistoryAsync(HomeAssistantFixture.TestEntityId, before, end);
-        var seen = $"toggled at {toggledAt:O}, window {start}..{end}; since {before}: "
+        var seen = $"toggled at {toggled:O} (the home's clock), window {start}..{end}; since {before}: "
                    + string.Join(", ", whole.Select(c => $"{c.State}@{c.At:O}"));
         changes.Count.ShouldBe(1, seen);
         changes[0].At.ShouldBe(DateTimeOffset.Parse(start), seen);
