@@ -99,6 +99,7 @@ public static class AccountsApp
             // every command before anything is read.
             .AddSingleton(new HouseholdDataKeys(settings))
             .AddSingleton<HouseholdConfigStore>()
+            .AddSingleton<OneChangeAtATime>()
             .AddSingleton<HouseholdProofs>()
             .AddHttpClient();
 
