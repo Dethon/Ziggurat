@@ -42,7 +42,7 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   (`Domain/Editing/EditMerge`, the admin pages' merge; a recipe's ingredients by food). Ana raised a recipe's
   flour, Dani's sheet opened before then changed its servings, and Ana's flour went back. A field both changed
   to different values is refused 409, nothing saved, and the app says to open it again (`errorChangedElsewhere`);
-  a meal's photo and dose are not compared. A save with nothing loaded is saved as sent.
+  a meal's photo and dose are not compared. A save with nothing loaded is saved as sent. The household's pantry changes (`/foods`, `/recipes`) wait for each other across the household in the same queue (keyed by household), since two saves of one recipe at the same instant each read it before the other wrote (one change lost, or a 500).
 
 ## Turns, the mount and reminders
 

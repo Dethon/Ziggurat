@@ -240,4 +240,39 @@ public class SugaryRecipeApiTests
         kept["ingredients"]!.AsArray().Select(i => i!["amount"]!.GetValue<double>()).ShouldBe([350d, 400d]);
         kept["cookedGrams"]!.GetValue<double>().ShouldBe(2000);
     }
+
+    // The same two saves at the same instant: each read the recipe before the other wrote, so both
+    // saw nothing changed since their sheets opened and the second wrote the first's change away.
+    [Fact]
+    public async Task TwoPeopleSavingOneRecipeAtOnce_EachChangeStands()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var ana = server.As(SugaryServer.Her);
+        var dani = server.As(SugaryServer.Him);
+        var lentils = await FoodAsync(ana, Lentils());
+        var potato = await FoodAsync(ana, Potato());
+
+        foreach (var round in Enumerable.Range(1, 8))
+        {
+            var opened = Stew((lentils, 300), (potato, 400));
+            var id = (await ReadAsync(await ana.PostAsJsonAsync("/api/recipes", opened)))["id"]!.GetValue<string>();
+            opened["name"] = "Lentejas de la abuela";
+            var anas = (JsonObject)opened.DeepClone();
+            anas["ingredients"]![0]!["amount"] = 300 + round;
+            anas["loaded"] = opened.DeepClone();
+            var danis = (JsonObject)opened.DeepClone();
+            danis["cookedGrams"] = 1800 + round;
+            danis["loaded"] = opened.DeepClone();
+
+            var answers = await Task.WhenAll(
+                ana.PutAsJsonAsync($"/api/recipes/{id}", anas), dani.PutAsJsonAsync($"/api/recipes/{id}", danis));
+
+            answers.Select(a => a.StatusCode).ShouldAllBe(status => status == HttpStatusCode.OK);
+            var kept = (await ReadAsync(await ana.GetAsync("/api/recipes"))).AsArray()
+                .Single(r => r!["id"]!.GetValue<string>() == id)!;
+            kept["cookedGrams"]!.GetValue<double>().ShouldBe(1800 + round, $"round {round}");
+            kept["ingredients"]!.AsArray().Select(i => i!["amount"]!.GetValue<double>())
+                .ShouldBe([300d + round, 400d], $"round {round}");
+        }
+    }
 }

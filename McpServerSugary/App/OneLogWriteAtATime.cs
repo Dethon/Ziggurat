@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Domain.DTOs.Channel;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -12,10 +13,15 @@ namespace McpServerSugary.App;
 // started the same day, and a day's note written twice was refused by its key with the words lost.
 // Each change of hers now waits for the one before it and is checked against what that one saved.
 // Only her log's own routes: an estimate or a label waits on a model, and holding her other changes
-// behind it would be the app freezing for no reason; the pantry is the household's and keyed by id.
+// behind it would be the app freezing for no reason. The pantry is the household's, so its changes
+// wait for each other across the household: a save is laid over the food or recipe as it is now
+// (StaleEdits), and two people saving one recipe at the same instant each read it before the other
+// wrote — one change was written away, or the save failed outright — and a food deleted while a
+// recipe that uses it was saved slipped past the check that keeps it.
 public sealed class OneLogWriteAtATime
 {
     private static readonly string[] _log = ["/meals", "/doses", "/pens", "/exercise", "/periods", "/day-notes"];
+    private static readonly string[] _pantry = ["/foods", "/recipes"];
 
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _people = new(StringComparer.Ordinal);
 
@@ -24,14 +30,14 @@ public sealed class OneLogWriteAtATime
         {
             var http = context.HttpContext;
             if (HttpMethods.IsGet(http.Request.Method) || HttpMethods.IsHead(http.Request.Method)
-                || !_log.Any(group => http.Request.Path.StartsWithSegments("/api" + group))
-                || Person.Of(http) is not { } person)
+                || Person.Of(http) is not { } person
+                || KeyOf(http.Request.Path, person.Account) is not { } key)
             {
                 return await next(context);
             }
 
             var turn = http.RequestServices.GetRequiredService<OneLogWriteAtATime>()
-                ._people.GetOrAdd($"{person.Account.TenantId}:{person.Account.UserId}", _ => new SemaphoreSlim(1, 1));
+                ._people.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
             await turn.WaitAsync(http.RequestAborted);
             try
             {
@@ -42,4 +48,9 @@ public sealed class OneLogWriteAtATime
                 turn.Release();
             }
         });
+
+    private static string? KeyOf(PathString path, Account account) =>
+        _log.Any(group => path.StartsWithSegments("/api" + group)) ? $"{account.TenantId}:{account.UserId}"
+        : _pantry.Any(group => path.StartsWithSegments("/api" + group)) ? $"{account.TenantId}:pantry"
+        : null;
 }
