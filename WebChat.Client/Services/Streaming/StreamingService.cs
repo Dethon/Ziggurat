@@ -263,14 +263,22 @@ public sealed class StreamingService(
                 // A user message closes off the assistant content written so far; what follows
                 // it is a new response. The page that sent it shows it already; anybody else's —
                 // another person in a shared topic, this person on another device — sent at the
-                // same moment as this page's own reaches the page here and nowhere else.
+                // same moment as this page's own reaches the page here and nowhere else. One the page
+                // shows already (a resumed wire opens with the messages its stream carried, which
+                // the stream's state drew) is no new message, and closes nothing: taking it as one
+                // cut the reply shown so far from the rest of it.
                 if (chunk.UserMessage is { } sent)
                 {
-                    lease.StartMessage(currentMessageId);
-                    if (!pipeline.WasSentByThisClient(sent.CorrelationId)
-                        && !BufferRebuildUtility.IsShown(
+                    var mine = pipeline.WasSentByThisClient(sent.CorrelationId);
+                    if (!mine && BufferRebuildUtility.IsShown(
                             messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []),
                             sent.SenderId, chunk.Content ?? ""))
+                    {
+                        continue;
+                    }
+
+                    lease.StartMessage(currentMessageId);
+                    if (!mine)
                     {
                         dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
                         {

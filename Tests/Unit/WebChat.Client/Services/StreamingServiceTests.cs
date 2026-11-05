@@ -763,6 +763,28 @@ public sealed class StreamingServiceTests : IDisposable
         messages[0].Content.ShouldContain("more content");
     }
 
+    // A resumed wire opens with the people's messages its stream carried, which the page drew from the
+    // stream's state already. Taking one as a new message closed off the reply shown so far, and the
+    // rest of it filled a fresh bubble: Ana's phone, opening a topic mid-reply, lost its first 3,000
+    // characters for good.
+    [Fact]
+    public async Task TryStartResumeStreamAsync_AMessageThePageShowsAlready_LeavesTheReplyWhole()
+    {
+        var topic = CreateTopic();
+        var asked = new ChatMessageModel { Role = "user", Content = "Cuéntame la historia del gazpacho.", SenderId = "ana" };
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, [asked]));
+
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = asked.Content, UserMessage = new UserMessageInfo("ana", null, "Ana", "desktop-send") },
+            new ChatStreamMessage { Content = " y siguió.", MessageId = "msg-1" },
+            new ChatStreamMessage { IsComplete = true, MessageId = "msg-1" });
+
+        await ResumeAndDrainAsync(topic, new ChatMessageModel { Role = "assistant", Content = "Empezó en Al-Ándalus" }, "msg-1");
+
+        MessagesFor(topic.TopicId).Select(m => (m.Role, m.Content)).ShouldBe(
+            [("user", asked.Content), ("assistant", "Empezó en Al-Ándalus y siguió.")]);
+    }
+
     #endregion
 
     private static Exception ExceptionFor(ExceptionKind kind) => kind switch
