@@ -198,8 +198,15 @@ public sealed class LinkStore(IDbContextFactory<AccountsDbContext> contexts, Acc
     public Uri UrlOf(string token) =>
         new(settings.PublicBase, $"{AccountsApp.PathBase.TrimStart('/')}{EnrollPath}/{token}");
 
+    // A person's newest recovery link closes their earlier ones (their week ends now, so each reads as
+    // any spent link does): one sent to the wrong person is taken back by minting another, which is
+    // what an owner does on finding out. An invite or a Telegram code is another kind and stays.
     private async Task<MintedLink> MintRecoveryAsync(AccountsDbContext db, User user, string? createdBy, CancellationToken ct)
     {
+        var now = clock.Time.GetUtcNow();
+        await db.Links
+            .Where(l => l.Kind == LinkKind.Recovery && l.UserId == user.Id && l.UsedAt == null && l.ExpiresAt > now)
+            .ExecuteUpdateAsync(l => l.SetProperty(x => x.ExpiresAt, now), ct);
         var (token, link) = await AddAsync(db, LinkKind.Recovery, user.TenantId, user.Id, null, null, createdBy, ct);
         return new MintedLink(user.Id, user.TenantId, user.DisplayName, UrlOf(token), link.ExpiresAt);
     }
