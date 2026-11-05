@@ -85,8 +85,11 @@ public static class AccountsApp
             .AddSingleton<MemberStore>()
             .AddSingleton<PersonStore>()
             .AddSingleton<HouseholdImporter>()
+            .AddSingleton<AccountsRedis>()
             .AddSingleton<RedisAnnouncer>()
+            .AddSingleton<HouseholdSchedules>()
             .AddSingleton<TunnelRevocationPublisher>()
+            .AddSingleton<SessionEndings>()
             .AddSingleton<TunnelCredentialStore>()
             // Opened when first asked rather than here, so a command that signs nothing never
             // writes a key; the server's first assertion or JWKS request generates it.

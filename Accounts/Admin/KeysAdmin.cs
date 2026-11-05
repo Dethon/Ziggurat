@@ -336,9 +336,16 @@ public static class KeySlot
         "lemonade", "Lemonade box", keys => keys.Lemonade, (keys, box) => keys with { Lemonade = box },
         box => $"{box.ApiUrl}\n{box.ApiKey}", box => box.ApiKey ?? "");
 
+    // One bot answers as one agent: a token saved under another agent moves there rather than being
+    // polled twice, which is also how an owner frees an agent the bot answered as to be removed.
     public static KeySlot<TelegramBotKey> TelegramBot(string agentId) => new(
         $"telegramBots/{agentId}", $"Telegram bot for {agentId}",
         keys => keys.TelegramBots.GetValueOrDefault(agentId),
-        (keys, key) => keys with { TelegramBots = new Dictionary<string, TelegramBotKey>(keys.TelegramBots) { [agentId] = key } },
+        (keys, key) => keys with
+        {
+            TelegramBots = new Dictionary<string, TelegramBotKey>(
+                keys.TelegramBots.Where(bot => bot.Key != agentId && bot.Value.Token != key.Token))
+            { [agentId] = key }
+        },
         key => key.Token, key => key.Token);
 }

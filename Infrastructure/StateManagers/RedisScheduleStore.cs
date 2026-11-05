@@ -16,14 +16,13 @@ namespace Infrastructure.StateManagers;
 public sealed class RedisScheduleStore(IConnectionMultiplexer redis, TimeProvider? clock = null) : IScheduleStore
 {
     public const string DueSetKey = "schedules-due";
-    private const string HouseholdSetPrefix = "schedules@";
     private static readonly TimeSpan _oneShotBuffer = TimeSpan.FromHours(1);
 
     private readonly IDatabase _db = redis.GetDatabase();
 
-    public static string ScheduleKey(string tenantId, string id) => $"schedule@{tenantId}:{id}";
+    public static string ScheduleKey(string tenantId, string id) => ScheduleKeys.Schedule(tenantId, id);
 
-    public static string HouseholdSetKey(string tenantId) => $"{HouseholdSetPrefix}{tenantId}";
+    public static string HouseholdSetKey(string tenantId) => ScheduleKeys.Household(tenantId);
 
     public static string DueMember(string tenantId, string id) => $"{tenantId}:{id}";
 
@@ -75,9 +74,9 @@ public sealed class RedisScheduleStore(IConnectionMultiplexer redis, TimeProvide
         foreach (var endpoint in redis.GetEndPoints())
         {
             await foreach (var key in redis.GetServer(endpoint)
-                               .KeysAsync(_db.Database, $"{HouseholdSetPrefix}*").WithCancellation(ct))
+                               .KeysAsync(_db.Database, $"{ScheduleKeys.HouseholdPrefix}*").WithCancellation(ct))
             {
-                households.Add(key.ToString()[HouseholdSetPrefix.Length..]);
+                households.Add(key.ToString()[ScheduleKeys.HouseholdPrefix.Length..]);
             }
         }
 

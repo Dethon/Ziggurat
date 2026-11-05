@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using Accounts.Links;
 using Accounts.Passkeys;
+using Accounts.Sessions;
 
 namespace Accounts.Pages;
 
@@ -20,7 +21,8 @@ public static class AccountsPages
 
     public static void Map(IEndpointRouteBuilder accounts)
     {
-        accounts.MapGet(LinkStore.EnrollPath + "/{token}", async (string token, HttpContext http, LinkStore links, CancellationToken ct) =>
+        accounts.MapGet(LinkStore.EnrollPath + "/{token}", async (
+            string token, HttpContext http, LinkStore links, SessionStore sessions, CancellationToken ct) =>
         {
             if (await links.FindOpenAsync(token, ct) is not { } link)
             {
@@ -28,16 +30,28 @@ public static class AccountsPages
                     $"""
                      <main>
                        <h1>{PasskeyEndpoints.RefusedLink}</h1>
-                       <p>It has been used already, or its week is up. Ask an owner of your household for a new one.</p>
+                       <p>It has been used already, a newer one was made, or its week is up. Ask an owner of your household for a new one.</p>
                      </main>
                      """,
                     StatusCodes.Status410Gone);
             }
 
+            // A link opened where somebody else is signed in — an owner trying the link they meant to send,
+            // a link sent to the wrong person — would sign this device in as the link's person without a
+            // word: Hugo opened Sara's and was Sara afterwards.
+            var cookie = http.Request.Cookies[SessionCookie.Name];
+            var signedIn = string.IsNullOrEmpty(cookie) ? null : await sessions.VerifyAsync(cookie, ct);
+            var somebodyElse = signedIn is not null && signedIn.UserId != link.UserId
+                ? $"""
+                   <p role="alert">This device is signed in as <strong>{Encode(signedIn.DisplayName)}</strong>. Creating a passkey here
+                   signs it in as {Encode(link.DisplayName)} instead: if this link is not yours, close this page and tell whoever sent it.</p>
+                   """
+                : "";
             return Page(http, "Add a passkey",
                 $"""
                  <main data-passkey="enroll" data-token="{Encode(token)}">
                    <h1>Add a passkey</h1>
+                   {somebodyElse}
                    <p>For <strong>{Encode(link.DisplayName)}</strong>. This device keeps the passkey, and signing in is
                    choosing it, with nothing to type.</p>
                    <button type="button" id="go">Create a passkey</button>

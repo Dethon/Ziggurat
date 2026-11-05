@@ -30,8 +30,9 @@ public sealed class HouseholdAgentsAnnouncer(IHouseholdConfigSaves saves, IHubNo
             _ = hub.SendToGroupAsync(TopicAudience.Household(saved.HouseholdId), "OnAgentsUpdated", new AgentsUpdatedNotification());
         }
 
-        // Who may see what is read off a connection's own assertion, so its page opens a fresh one.
-        if (saved.Section == HouseholdConfigProtocol.PeopleChanged)
+        // Who may see what is read off a connection's own assertion, so its page opens a fresh one; a
+        // suspended household's fresh one is refused by the session check, and its page says why.
+        if (saved.Section is HouseholdConfigProtocol.PeopleChanged or HouseholdConfigProtocol.SuspensionChanged)
         {
             _ = hub.SendToGroupAsync(TopicAudience.Household(saved.HouseholdId), "OnAccessChanged", new AccessChangedNotification());
         }

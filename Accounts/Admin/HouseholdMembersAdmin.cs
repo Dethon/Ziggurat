@@ -2,6 +2,7 @@ using Accounts.Announcements;
 using Accounts.Links;
 using Accounts.Members;
 using Accounts.People;
+using Accounts.Sessions;
 using Accounts.Settings;
 using Accounts.Store;
 using Domain.DTOs.Admin;
@@ -117,7 +118,7 @@ public static class HouseholdMembersAdmin
 
         household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.DisableMemberRoute), async (
             AdminCaller caller, string userId, HttpContext http, MemberStore store, AdminLog log, RedisAnnouncer announcer,
-            CancellationToken ct) =>
+            SessionEndings endings, CancellationToken ct) =>
         {
             switch (await store.DisableAsync(caller.HouseholdId, userId, ct))
             {
@@ -129,6 +130,9 @@ public static class HouseholdMembersAdmin
                     return Results.BadRequest(_lastOwner);
             }
 
+            // Their open pages are told twice over: the people changing renews every page of the
+            // household, and their sessions ending closes theirs whatever its page does with that.
+            await endings.TellAsync(caller.HouseholdId, userId, ct);
             return await AnnouncedAsync(http, caller, store, log, announcer, $"Disabled member {userId}", ct);
         });
 

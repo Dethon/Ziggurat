@@ -41,6 +41,22 @@ public class HouseholdAgentsAnnouncerTests
         hub.Sent.ShouldBe([("household:casa", "OnAccessChanged")]);
     }
 
+    // A household the operator suspended: its open pages stayed "Connected" and showed nothing until
+    // their person reloaded or sent something. Told their access changed, they open a fresh connection,
+    // which the session check refuses as suspended, and the page says so.
+    [Fact]
+    public async Task ASuspension_TellsThatHouseholdsPagesTheirAccessChanged()
+    {
+        var saves = new FakeSaves();
+        var hub = new RecordingHub();
+        var announcer = new HouseholdAgentsAnnouncer(saves, hub);
+        await announcer.StartAsync(CancellationToken.None);
+
+        saves.Save(new HouseholdConfigSaved("casa", HouseholdConfigProtocol.SuspensionChanged));
+
+        hub.Sent.ShouldBe([("household:casa", "OnAccessChanged")]);
+    }
+
     [Fact]
     public async Task AStoppedAnnouncer_TellsNothing()
     {

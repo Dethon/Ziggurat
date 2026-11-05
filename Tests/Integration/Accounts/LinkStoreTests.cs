@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using Accounts.Store;
 using Shouldly;
 using Tests.Integration.Fixtures;
 
@@ -45,18 +46,52 @@ public class LinkStoreTests
         (await BeginAsync(server, "made-up")).StatusCode.ShouldBe(HttpStatusCode.Gone);
     }
 
-    // Minting a fresh link for the operator leaves the one already handed out working: recovering
-    // is adding a way in, not closing one.
+    // A recovery link sent to the wrong person could not be taken back: the owner minted a fresh one
+    // and the first stayed open for its week, so whoever held it could still add a passkey to the
+    // account. A person's newest recovery link closes their earlier ones, whoever minted which.
     [Fact]
-    public async Task MintingAnotherLink_LeavesTheFirstOpen()
+    public async Task MintingAnotherRecoveryLink_ClosesTheEarlierOnes()
     {
         await using var server = await AccountsServer.StartAsync();
         var first = await server.MintOperatorAsync("Fran");
+        var sara = await server.SeedMemberAsync("Sara");
+        var links = server.Service<global::Accounts.Links.LinkStore>();
+        var sarasFirst = Minted(await links.MintRecoveryAsync(sara, CancellationToken.None));
+        var invite = await links.MintInviteAsync(first.TenantId, first.UserId, "Iker", Role.Member, CancellationToken.None);
 
-        await server.MintOperatorAsync("Fran");
+        var second = await server.MintOperatorAsync("Fran");
+        var sarasSecond = Minted(await links.MintRecoveryAsync(first.TenantId, first.UserId, sara, CancellationToken.None));
 
-        (await server.Client().GetAsync(first.Url)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await server.Client().GetAsync(first.Url)).StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await BeginAsync(server, first.Token)).StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await server.Client().GetAsync(second.Url)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await server.Client().GetAsync(sarasFirst.Url)).StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await server.Client().GetAsync(sarasSecond.Url)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await server.Client().GetAsync(invite.Url)).StatusCode.ShouldBe(HttpStatusCode.OK, "an invite names nobody yet");
     }
+
+    // An owner, signed in, who opened another person's recovery link was asked nothing and became that
+    // person on their own device: the page says whose this device is now and whose it will be.
+    [Fact]
+    public async Task ALinkOpenedOnADeviceSignedInAsSomebodyElse_SaysSo()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var sara = await server.SeedMemberAsync("Sara");
+        var link = Minted(await server.Service<global::Accounts.Links.LinkStore>().MintRecoveryAsync(sara, CancellationToken.None));
+
+        var asFran = await server.SignedIn(await server.MintSessionAsync(fran.UserId)).PageAsync(link.Url.PathAndQuery);
+        var asSara = await server.SignedIn(await server.MintSessionAsync(sara)).PageAsync(link.Url.PathAndQuery);
+        var signedOut = await (await server.Client().GetAsync(link.Url)).Content.ReadAsStringAsync();
+
+        asFran.ShouldContain("This device is signed in as <strong>Fran</strong>");
+        asFran.ShouldContain("signs it in as Sara instead");
+        asSara.ShouldNotContain("This device is signed in as");
+        signedOut.ShouldNotContain("This device is signed in as");
+    }
+
+    private static global::Accounts.Links.MintedLink Minted(global::Accounts.Links.RecoveryMint mint) =>
+        mint.ShouldBeOfType<global::Accounts.Links.RecoveryMint.Minted>().Link;
 
     private static Task<HttpResponseMessage> BeginAsync(AccountsServer server, string token) =>
         server.Client().PostAsJsonAsync("/accounts/api/enroll/options", new { token });

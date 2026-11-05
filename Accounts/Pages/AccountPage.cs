@@ -26,6 +26,7 @@ public sealed class AccountPage(
     HouseholdClock clock,
     HouseholdConfigStore configuration,
     TunnelCredentialStore tunnels,
+    SessionEndings endings,
     AccountsSettings settings)
 {
     public const string Path = "/account";
@@ -59,9 +60,13 @@ public sealed class AccountPage(
             return refusal!;
         }
 
-        return await sessions.RevokeAsync(viewer.UserId, sessionId, ct)
-            ? AccountsPages.SeeOther(http, Url)
-            : NotFound(http);
+        if (!await sessions.RevokeAsync(viewer.UserId, sessionId, ct))
+        {
+            return NotFound(http);
+        }
+
+        await endings.TellAsync(viewer.TenantId, viewer.UserId, ct);
+        return AccountsPages.SeeOther(http, Url);
     }
 
     private async Task<IResult> RevokePasskeyAsync(HttpContext http, string passkeyId, CancellationToken ct)
@@ -72,7 +77,13 @@ public sealed class AccountPage(
             return refusal!;
         }
 
-        return await passkeys.RevokeOwnAsync(viewer.UserId, passkeyId, ct) switch
+        var revocation = await passkeys.RevokeOwnAsync(viewer.UserId, passkeyId, ct);
+        if (revocation == OwnRevocation.Revoked)
+        {
+            await endings.TellAsync(viewer.TenantId, viewer.UserId, ct);
+        }
+
+        return revocation switch
         {
             OwnRevocation.Revoked => AccountsPages.SeeOther(http, Url),
             OwnRevocation.Last => AccountsPages.Page(http, "Not revoked",

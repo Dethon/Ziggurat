@@ -257,9 +257,19 @@ does, `HouseholdAgents.VoiceAgentOf`, or null).
   else names which agent answers a message that names none — and so is removing the last agent, since a
   section with none reads as the two starting templates again. So is removing the agent a space opens on
   ("The Kitchen space opens on Chef, so it stays: pick another agent for that space first"), refused rather
-  than cleared so the removal stays one save of one section. A Telegram bot bound to a removed agent's id
-  is not checked: the keys section is sealed, and an id freed by a removal is the next one an addition of
-  that template takes.
+  than cleared so the removal stays one save of one section. So is removing an agent that still runs
+  schedules ("Chef runs 2 schedules, so it stays: ask it to delete them, or to move them to another agent,
+  first"): they would stay and be refused at every fire with nobody told. `HouseholdSchedules` counts them
+  where the scheduler keeps them (`ScheduleKeys`, the deployment's Redis, through `AccountsRedis`, which
+  `RedisAnnouncer` shares); a Redis that cannot be read refuses the removal 503, and no Redis configured
+  counts none. So is removing an agent a household Telegram
+  bot answers as ("The household's Telegram bot answers as Chef, so it stays: bind the bot to another
+  agent first"; user's decision, 2026-11-05) — a bot's token saved under another agent on the Keys page
+  moves there (`KeySlot.TelegramBot` drops the token's other binding: one bot is never polled twice).
+  **A removed agent's id is never given to another**
+  (`AgentsSection.RemovedIds`, appended by the removal and skipped by `FreeId`): an id keys its people's
+  conversations, its schedules and a bot bound to it, and none of that goes with the agent, so the next
+  agent of the template under the same id inherited all of it.
 - **Versions** are the name and instructions a change replaced (an edit's or a restore's, so a restore is
   undone the same way), the last `Admin:AgentVersionsKept` (5) per agent, by whom and when, written after
   the save stood and dropped with the agent. **A table, not the section**: no turn reads history, and the
@@ -525,11 +535,16 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
 
   The list's `HouseholdListEntry.SuspendedAt` and the row's Status cell (Suspend / Resume, none for the
   home) are the dashboard's.
+- **Its open pages are told at once**: the chat hub hears `SuspensionChanged` as it hears the people
+  changing (`HouseholdAgentsAnnouncer`) and sends the household's pages `OnAccessChanged`, so each opens
+  a fresh connection, which the session check refuses as suspended and the page shows as the household's
+  notice — before, a page stayed "Connected" until its person reloaded or sent something.
 - **Not stopped by it, deliberately**: the chat hub's per-turn session refresh still answers, so an open
   chat client's turn reaches the agent, which answers `SuspendedAnswer` — a refused refresh would end the
   stream "signed out", the wrong words. `/accounts/me` still names the person. A refused fire has been
   emitted all the same, so the scheduler advances a cron and deletes a one-shot as if it ran: a one-shot
-  due while its household is suspended is gone when it is resumed.
+  due while its household is suspended is gone when it is resumed (kept so by the user, 2026-11-05), and
+  the dashboard's Suspend confirmation and the members page (for a disabled member's) say so.
 
 ## The admin area (chat client)
 

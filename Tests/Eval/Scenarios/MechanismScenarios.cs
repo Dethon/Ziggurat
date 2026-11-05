@@ -13,7 +13,8 @@ public static class MechanismScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         RemindMeInTenMinutes, TurnTheAirOffInAnHour, WakeMeAtSeven, SixHoursFromNow,
-        FromTheOfficeAboutTheKitchen, NoSatelliteAtAll, TomorrowAtEightWithoutAHome, ACountdownWithoutAVoiceServer
+        FromTheOfficeAboutTheKitchen, NoSatelliteAtAll, TomorrowAtEightWithoutAHome, ACountdownWithoutAVoiceServer,
+        AnEnglishScheduleRequest
     ];
 
     // A household that set up no voice server has nothing that rings, and its agents reach no timers
@@ -96,6 +97,42 @@ public static class MechanismScenarios
         CallCeiling = 6,
         Claims = [TimerPrompt.NoHomeReminderIsASchedule.Id, SchedulingSkill.LoadsForAScheduleRequest.Id],
         Policy = new RunPolicy(2, 3)
+    };
+
+    // A household that pins no language is answered in the language of each message. An English
+    // member of a household on Madrid's clock asked for a schedule four times by hand and was answered
+    // in Spanish every time ("Hecho: ... hoy a las 00:35"), while their plain questions stayed English:
+    // the turn that schedules is the one that drifts.
+    public static Scenario AnEnglishScheduleRequest => new()
+    {
+        Name = "an English schedule request is answered in English",
+        AgentId = ShippedDefinition.TemplatePrefix + "jonas" + ShippedDefinition.NoVoiceSuffix,
+        Turn = new EvalTurn
+        {
+            Text = "Schedule a one-time task tomorrow at 9 that tells me \"buy milk\". Just do it.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            CallExpectation.LoadsSkill(SchedulingSkill.Name),
+            new CallExpectation
+            {
+                Label = "schedule",
+                Tool = EvalTools.Create,
+                Arguments = [Arg.PathMatches(@"^/schedules/[^/]+/[^/]+(/schedule\.json)?$")]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/schedules*")],
+        CallCeiling = 6,
+        Reply = new ReplyExpectation
+        {
+            NeverSays = ["Hecho", "Listo", "mañana", "a las ", "te aviso", "una sola vez", "programad", "recordatorio"]
+        },
+        Claims = [LanguagePrompt.ReplyFollowsTheMessage.Id, SchedulingSkill.LoadsForAScheduleRequest.Id],
+        // Measured at 11 of 15 on the shipped prompt (2026-11-05): four runs keep a pass at that rate
+        // from reddening one full pass in six.
+        Policy = new RunPolicy(2, 4)
     };
 
     // A person is being told something, and the time is a duration: a countdown, with the message

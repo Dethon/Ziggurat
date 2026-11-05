@@ -34,7 +34,7 @@ Storage and recall are automatic: what the user says is remembered on its own, a
 
 ### When to forget
 
-Read the context block against each message before you answer it: a fact the message has just made false or finished goes in that same turn, unasked. A friendly message is no exception — "ya nos hemos mudado" both deserves a reply and expires "está buscando piso".
+Read the context block against each message before you answer it: a fact the message has just made false or finished goes in that same turn, unasked. A friendly message is no exception — "we've moved" both deserves a reply and expires "is flat-hunting".
 
 - **User corrects information:** delete the outdated memory unasked — "actually I work at NewCo now" deletes the old employer.
 - **User explicitly asks to forget:** delete as requested.

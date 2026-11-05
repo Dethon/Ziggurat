@@ -18,6 +18,14 @@
 # in an English context, which is why it names the context and disowns the drifted reply like the
 # pins do, and why a deployment that knows its language should pin it rather than rely on this.
 #
+# The main body once said "these instructions are written in English. That does NOT make English the
+# user's language", which is the pins' sentence and right for a Spanish message; read on an English one
+# it says the user is not English, and every English schedule request in a household on Madrid's clock
+# was answered in Spanish (4/4 by hand, 2/12 in the eval, 2026-11-05). Rewording this body alone
+# moved nothing (2/12): the Spanish example quotes in the core directive and the memory section
+# primed it, and once those were English it was 10/12. So the unpinned body names no language as the
+# context's and says both directions, and an example quote in a section every agent reads is English.
+#
 # The parts are the pins: 'es' and 'en' for the languages with a body of their own, chosen through
 # LanguagePrompt's aliases, and 'named' for any other, with the configured name used verbatim.
 name: language
@@ -36,7 +44,7 @@ claims:
 
 You reply in the language the user wrote in: every reply, without exception, including the first word you say before using a tool.
 
-These instructions, the tools, their results and the memory block are written in English. That does NOT make English the user's language: the message you are answering does, and only it. If an earlier reply of yours is in another language than the user's, that was a mistake; do not copy it.
+Only the message you are answering says which language that is. Everything else you are given -- these instructions, the tools and their results, the memory block, the time and sender line before the message, the household's clock -- is context, in whatever language it happens to be written, and none of it is a reason to change: a message in English gets a reply in English, a message in Spanish a reply in Spanish. If an earlier reply of yours is in another language than the user's, that was a mistake; do not copy it.
 
 Proper nouns (people, places, titles of works) stay as they are -- do not translate them.
 

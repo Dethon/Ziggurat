@@ -98,6 +98,10 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
 
     private const string Somebody = "91eb477ecd34251c52fd4493523a0334";
     private const string Phone = "5e55105e55105e55105e55105e55105e";
+    private const string Laptop = "1a9701a9701a9701a9701a9701a9701a";
+
+    private static Dictionary<string, string> SignedInOn(string sessionId) =>
+        Forwarded(Fran, TestAssertions.Of(new Account(Home, Fran), ChannelIds.SignalR, ["owner"], sessionId: sessionId));
 
     // The session check's four headers as the proxy copies them: the plain three naming whoever a
     // test likes, and the assertion, signed with the accounts service's test key, naming the person
@@ -253,6 +257,45 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         chunks.ShouldContain(c => c.Error != null && c.Error.Contains("signed out") && c.IsComplete);
         await Eventually.Settle();
         (await ReceiveAsync()).ShouldBeEmpty();
+    }
+
+    // A device signed out from another one — its session revoked on the account page, or every
+    // session of a passkey revoked there — must stop hearing the person at once: until it tried to
+    // send it stayed in the person's groups, was pushed their new private conversations and read
+    // them. Told the person's sessions ended, the hub closes each connection whose session the
+    // accounts service no longer vouches for, and leaves their other devices connected.
+    [Fact]
+    public async Task WhenAPersonsSessionsEnded_TheConnectionsOfEndedSessionsAreClosed_AndTheRestKept()
+    {
+        _store.Setup(s => s.GetHistoryAsync("jack", 7, 42)).ReturnsAsync([]);
+        var phone = await ConnectAsync(SignedInOn(Phone), out var phoneClosed);
+        var laptop = await ConnectAsync(SignedInOn(Laptop), out var laptopClosed);
+        _accounts.Revoked.Add(Phone);
+
+        await _app.Services.GetRequiredService<SessionConnections>()
+            .CloseEndedAsync(new SessionsEnded(Home, Fran), CancellationToken.None);
+
+        (await phoneClosed.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBeNull();
+        await Should.ThrowAsync<Exception>(
+            () => phone.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", "jack", 7L, 42L));
+        (await laptop.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", "jack", 7L, 42L)).ShouldBeEmpty();
+        laptopClosed.IsCompleted.ShouldBeFalse();
+    }
+
+    // An accounts service that cannot be asked just now closes nothing: an outage is not a revocation.
+    [Fact]
+    public async Task WhenEndedSessionsCannotBeChecked_NoConnectionIsClosed()
+    {
+        _store.Setup(s => s.GetHistoryAsync("jack", 7, 42)).ReturnsAsync([]);
+        var phone = await ConnectAsync(SignedInOn(Phone), out var phoneClosed);
+        _accounts.Fails = true;
+
+        await _app.Services.GetRequiredService<SessionConnections>()
+            .CloseEndedAsync(new SessionsEnded(Home, Fran), CancellationToken.None);
+
+        _accounts.Fails = false;
+        (await phone.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", "jack", 7L, 42L)).ShouldBeEmpty();
+        phoneClosed.IsCompleted.ShouldBeFalse();
     }
 
     // A conversation is kept for what was said in it. One whose first message was refused because its

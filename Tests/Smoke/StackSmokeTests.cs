@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Accounts.Sessions;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
@@ -380,8 +381,8 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     // OpenRouter key set through the admin API — probed against the stack's stub, which takes it —
     // and its agent renamed there, then a reply from that agent under its new name, paid for with the
     // household's own key. That key is the deployment's, on this machine's stack alone, so the turn is
-    // real and costs one cheap model call. Then the operator suspends it: its next turn on the same
-    // open page is refused with the reason, and a page asked for again says it is suspended. Each run
+    // real and costs one cheap model call. Then the operator suspends it: the open page is sent to the
+    // household's notice at once, and a page asked for again says it is suspended. Each run
     // makes a household of its own, so a rerun starts as fresh and needs nothing resumed.
     [SkippableFact]
     public async Task AHouseholdTheOperatorCreates_IsAnsweredByTheAgentItsOwnerNamed_UntilItIsSuspended()
@@ -411,9 +412,11 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             suspended.Value.Suspended.ShouldBeTrue();
             suspended.Warning.ShouldBeNull();
 
-            await SayAsync(page, $"Smoke {tag}: and another.");
-            await Assertions.Expect(page.Locator(".chat-message.error", new PageLocatorOptions { HasText = ConversationGroup.SuspendedAnswer }))
-                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
+            // The open page is told at once, not at its next turn: it opens a fresh connection, which
+            // the session check refuses, and shows the household's notice. A turn that still reached the
+            // agent is refused there with the same reason (ChatMonitorDelegationTests).
+            await page.WaitForURLAsync(new Regex("/accounts/account"), new PageWaitForURLOptions { Timeout = 60_000 });
+            await Assertions.Expect(page.Locator("body")).ToContainTextAsync(SessionCheck.SuspendedNotice);
         }, owner);
 
         var refused = await SendAsync(HttpMethod.Get, stack.MainHost, "/", owner, "text/html");

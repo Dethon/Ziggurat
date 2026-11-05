@@ -223,6 +223,11 @@ public sealed record AgentsSection
     // marked is its agent of the voice template (HouseholdAgents.VoiceAgent).
     public string? VoiceAgent { get; init; }
     public IReadOnlyList<HouseholdAgent> Agents { get; init; } = [];
+
+    // The ids of agents removed from the household, never given to another: an id keys its people's
+    // conversations, the schedules it runs and a Telegram bot bound to it, none of which goes with
+    // the agent, and a new agent under it inherited them all.
+    public IReadOnlyList<string> RemovedIds { get; init; } = [];
 }
 
 // One of the household's agents: either a shipped template with the name and custom instructions the

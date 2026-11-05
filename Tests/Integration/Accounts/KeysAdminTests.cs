@@ -144,6 +144,27 @@ public sealed class KeysAdminTests : IAsyncLifetime
         _providers.Asked.ShouldNotContain("https://example.com/x");
     }
 
+    // One bot answers as one agent: saved under another, the same token moves there rather than being
+    // polled twice, which is how an owner frees an agent to be removed.
+    [Fact]
+    public async Task ABotsTokenSavedUnderAnotherAgent_MovesThere()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        const string token = "123456789:AAH-bot-token-0123456789abcdefghij";
+        const string other = "987654321:AAH-bot-token-9876543210zyxwvutsrq";
+        _providers.Accept(token);
+        _providers.Accept(other);
+        (await admin.PutAsync(AdminProtocol.TelegramBot("sugary"), new TelegramBotKey(other))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await admin.PutAsync(AdminProtocol.TelegramBot("jonas"), new TelegramBotKey(token))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        (await admin.PutAsync(AdminProtocol.TelegramBot("sugary"), new TelegramBotKey(token))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        (await KeysSectionAsync(server, household)).TelegramBots.ShouldBe(
+            new Dictionary<string, TelegramBotKey> { ["sugary"] = new(token) });
+    }
+
     // Setting one key keeps every other the household holds, sealed as they were.
     [Fact]
     public async Task SettingOneKey_KeepsTheOthers()
