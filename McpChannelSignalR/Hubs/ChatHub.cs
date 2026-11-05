@@ -71,9 +71,7 @@ public sealed class ChatHub(
     private const string HouseholdSpacesItem = "HouseholdSpaces";
     private const string ListedWithItem = "ListedWith";
 
-    // The one answer for a topic the caller may not see, worded as for one that does not exist, so
-    // naming another person's private topic tells the namer nothing about it — not even that it is.
-    private const string NoSuchConversation = "No such conversation.";
+    private const string NoSuchConversation = TopicRefusals.NoSuchConversation;
 
     // Seeing a topic is not writing in it: someone who sees every topic of the household reads
     // another person's private one and changes nothing in it.
