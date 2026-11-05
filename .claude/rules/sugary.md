@@ -31,6 +31,11 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
 - A route's `SugaryDbContext` parameter is **bound**, not resolved: `SugaryDbContext.BindAsync` (in `App/PersonsLog.cs`) opens the store for the request's `Person` and disposes it with the response. Minimal APIs prefer `BindAsync` to the container for a parameter, so a route cannot be handed the unowned context. A route that needs the person itself (an estimate, a label, a push subscription) takes `Person` too.
 - A push subscription's key is its endpoint, one browser: a browser that subscribes as somebody else becomes their phone (`UserId` reassigned), so her reminders stop reaching it.
 - Foods' and recipes' use counts come from the asking person's own meals.
+- **A person's log changes run one at a time** (`OneLogWriteAtATime`, on meals, doses, pens, exercise, periods and
+  day notes; never an estimate or a label, which wait on a model): a change is checked against the log as it is,
+  so two phones tapping "my period started today" at once kept two periods, and a day's note written twice at once
+  was a 500. A save the server refuses is read again on the page (`refusedBecause`), so the clash another phone made
+  is said in her language rather than as a bad number.
 
 ## Turns, the mount and reminders
 
