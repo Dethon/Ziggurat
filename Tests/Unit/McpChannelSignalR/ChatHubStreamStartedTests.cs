@@ -119,4 +119,56 @@ public class ChatHubStreamStartedTests
         userMessage.UserMessage!.SenderId.ShouldBe("fran");
         userMessage.UserMessage.SenderName.ShouldBe("Fran");
     }
+
+    // Two people sending in a shared topic at the same moment: the second send joins the stream the
+    // first opened, and its browser reads that send's wire alone, so whatever the stream carried
+    // before it subscribed was never shown there — Ana's page never showed Carlos's message, only the
+    // reply to it, until a reload. A send joining a running stream is handed what it carried first.
+    [Fact]
+    public async Task ASendJoiningAStreamAlreadyRunning_IsHandedWhatItCarriedFirst()
+    {
+        GivenTheTopic(owner: "marta", shared: true);
+        _streamService.GetOrCreateStream(TopicId, "vino", "carlos", CancellationToken.None);
+        _streamService.TryIncrementPending(TopicId);
+        await _streamService.WriteMessageAsync(TopicId, new ChatStreamMessage
+        {
+            Content = "vino", UserMessage = new UserMessageInfo("carlos", DateTimeOffset.UtcNow, "Carlos")
+        });
+        await _streamService.WriteMessageAsync(TopicId, new ChatStreamMessage { Content = "Apunt", MessageId = "m1" });
+
+        var seen = new List<ChatStreamMessage>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await foreach (var message in _hub.SendMessage(TopicId, "hola", null, null, null, cts.Token))
+        {
+            seen.Add(message);
+            if (message.UserMessage?.SenderId == "fran")
+            {
+                break;
+            }
+        }
+
+        seen.Select(m => m.Content).ShouldBe(["vino", "Apunt", "hola"]);
+    }
+
+    // A page resuming a stream asks for its state, then for its wire: a message written between the
+    // two was on neither, so the person who sent it at that moment was never shown there. The wire
+    // starts with the people's messages the stream carried, which the page skips where it shows them.
+    [Fact]
+    public async Task AResumedStream_StartsWithThePeoplesMessagesItCarried()
+    {
+        GivenTheTopic(owner: "marta", shared: true);
+        _streamService.GetOrCreateStream(TopicId, "vino", "carlos", CancellationToken.None);
+        _streamService.TryIncrementPending(TopicId);
+        await _streamService.WriteMessageAsync(TopicId, new ChatStreamMessage
+        {
+            Content = "vino", UserMessage = new UserMessageInfo("carlos", DateTimeOffset.UtcNow, "Carlos")
+        });
+        await _streamService.WriteMessageAsync(TopicId, new ChatStreamMessage { Content = "Apunt", MessageId = "m1" });
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var first = await _hub.ResumeStream(TopicId, cts.Token).FirstAsync(cts.Token);
+
+        first.UserMessage!.SenderId.ShouldBe("carlos");
+        first.Content.ShouldBe("vino");
+    }
 }

@@ -50,7 +50,8 @@ public sealed class StreamResumeServiceTests : IDisposable
             _messagesStore,
             _agentSettingsStore,
             new ComposerStore(_dispatcher),
-            _topicStreams);
+            _topicStreams,
+            new MessagePipeline(_dispatcher, _messagesStore, _topicStreams, NullLogger<MessagePipeline>.Instance));
         var pipeline = new MessagePipeline(_dispatcher, _messagesStore, _topicStreams,
             NullLogger<MessagePipeline>.Instance);
         _resumeService = new StreamResumeService(

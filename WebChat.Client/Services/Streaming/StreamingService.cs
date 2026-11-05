@@ -7,6 +7,7 @@ using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
@@ -20,7 +21,8 @@ public sealed class StreamingService(
     MessagesStore messagesStore,
     AgentSettingsStore agentSettingsStore,
     ComposerStore composerStore,
-    TopicStreams topicStreams) : IStreamingService
+    TopicStreams topicStreams,
+    IMessagePipeline pipeline) : IStreamingService
 {
     // Serialises deciding whether to open a stream and opening it. TopicStreams answers who
     // holds a topic, but that answer is only atomic on its own; the send has a round trip
@@ -259,10 +261,28 @@ public sealed class StreamingService(
                 var currentMessageId = lease.CurrentMessageId;
 
                 // A user message closes off the assistant content written so far; what follows
-                // it is a new response, and HandleUserMessage adds the user's own bubble.
-                if (chunk.UserMessage is not null)
+                // it is a new response. The page that sent it shows it already; anybody else's —
+                // another person in a shared topic, this person on another device — sent at the
+                // same moment as this page's own reaches the page here and nowhere else.
+                if (chunk.UserMessage is { } sent)
                 {
                     lease.StartMessage(currentMessageId);
+                    if (!pipeline.WasSentByThisClient(sent.CorrelationId)
+                        && !BufferRebuildUtility.IsShown(
+                            messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []),
+                            sent.SenderId, chunk.Content ?? ""))
+                    {
+                        dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
+                        {
+                            Role = "user",
+                            Content = chunk.Content ?? "",
+                            SenderId = sent.SenderId,
+                            SenderName = sent.SenderName,
+                            Timestamp = sent.Timestamp,
+                            Attachments = chunk.Attachments
+                        }));
+                    }
+
                     continue;
                 }
 

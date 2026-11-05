@@ -336,10 +336,17 @@ public sealed class ChatHub(
             yield break;
         }
 
-        var liveStream = streamService.SubscribeToStream(topicId, cancellationToken);
-        if (liveStream is null)
+        // Joined with what it carried, as a send joining a stream is: the page drew the stream's state
+        // a moment ago, and a person's message written since was on neither until this wire carried it.
+        // The page skips the ones it shows already.
+        if (streamService.Join(topicId) is not var (liveStream, carried))
         {
             yield break;
+        }
+
+        foreach (var earlier in carried.Where(m => m.UserMessage is not null))
+        {
+            yield return earlier;
         }
 
         var pendingApproval = approvalService.GetPendingApprovalForTopic(topicId);
@@ -348,7 +355,7 @@ public sealed class ChatHub(
             yield return new ChatStreamMessage { ApprovalRequest = pendingApproval };
         }
 
-        await foreach (var msg in liveStream.IgnoreCancellation(cancellationToken))
+        await foreach (var msg in liveStream.ReadAllAsync(cancellationToken).IgnoreCancellation(cancellationToken))
         {
             yield return msg;
         }
@@ -380,7 +387,7 @@ public sealed class ChatHub(
         streamService.TryIncrementPending(topicId);
 
         // Subscribe before emitting so no early reply chunks are lost
-        var subscription = broadcastChannel.Subscribe();
+        var (subscription, carried) = streamService.Join(topicId, broadcastChannel);
 
         // Refused before anything is written or emitted, for the race where the model changes
         // between picking a file and sending it: no turn is created, no agent is woken, and no
@@ -419,7 +426,7 @@ public sealed class ChatHub(
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender),
+            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender, correlationId),
             Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
@@ -456,6 +463,12 @@ public sealed class ChatHub(
             // caller so every browser on the topic sees the same end, and it ends the turn: one
             // pending prompt finished, in error.
             await AnswerNotLiveAsync(topicId, conversationId);
+        }
+
+        // An approval it carried is the other person's, shown to them where it was asked.
+        foreach (var earlier in carried.Where(m => m.ApprovalRequest is null))
+        {
+            yield return earlier;
         }
 
         // Stream responses back to the browser — the loop ends when the channel completes
@@ -503,7 +516,7 @@ public sealed class ChatHub(
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender),
+            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender, correlationId),
             Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);

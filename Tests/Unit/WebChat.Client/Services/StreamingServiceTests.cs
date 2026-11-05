@@ -1,5 +1,6 @@
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
+using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
@@ -9,6 +10,7 @@ using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
@@ -49,7 +51,8 @@ public sealed class StreamingServiceTests : IDisposable
             _messagesStore,
             _agentSettingsStore,
             new ComposerStore(_dispatcher),
-            _topicStreams);
+            _topicStreams,
+            new MessagePipeline(_dispatcher, _messagesStore, _topicStreams, NullLogger<MessagePipeline>.Instance));
     }
 
     public void Dispose()
@@ -132,6 +135,49 @@ public sealed class StreamingServiceTests : IDisposable
     }
 
     #region SendMessageAsync stream body tests
+
+    // Two people sending in a shared topic at the same moment, or one person on two devices: the
+    // other's message reaches this page on the stream it reads, and nothing else draws it — the page
+    // drew only the reply to it until a reload.
+    [Fact]
+    public async Task SendMessageAsync_AMessageSomebodyElseSentOnTheStream_IsDrawnBeforeItsReply()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage
+            {
+                Content = "Yo pongo el vino.",
+                UserMessage = new UserMessageInfo("carlos", DateTimeOffset.UtcNow, "Carlos", "their-send")
+            },
+            new ChatStreamMessage { Content = "Apuntado.", MessageId = "m1" });
+
+        await SendAndDrainAsync(topic);
+
+        var messages = MessagesFor(topic.TopicId);
+        messages.Select(m => (m.Role, m.Content, m.SenderName)).ShouldBe(
+            [("user", "Yo pongo el vino.", "Carlos"), ("assistant", "Apuntado.", null)]);
+    }
+
+    // The page's own message comes back on its stream too, and is already on the page.
+    [Fact]
+    public async Task SendMessageAsync_ThisPagesOwnMessageOnTheStream_IsNotDrawnTwice()
+    {
+        var topic = CreateTopic();
+        _dispatcher.Dispatch(new MessagesLoaded(topic.TopicId, []));
+        var pipeline = new MessagePipeline(_dispatcher, _messagesStore, _topicStreams, NullLogger<MessagePipeline>.Instance);
+        var service = new StreamingService(_messagingService, _dispatcher, _topicService, _topicsStore, _messagesStore,
+            _agentSettingsStore, new ComposerStore(_dispatcher), _topicStreams, pipeline);
+        var mine = pipeline.SubmitUserMessage(topic.TopicId, "hola", "ana");
+        _messagingService.EnqueueMessages(
+            new ChatStreamMessage { Content = "hola", UserMessage = new UserMessageInfo("ana", DateTimeOffset.UtcNow, "Ana", mine) },
+            new ChatStreamMessage { Content = "Hola.", MessageId = "m1" });
+
+        await service.SendMessageAsync(topic, "hola", mine);
+        await DrainAsync(topic);
+
+        MessagesFor(topic.TopicId).Select(m => m.Role).ShouldBe(["user", "assistant"]);
+    }
 
     [Fact]
     public async Task SendMessageAsync_WithContent_AccumulatesInStreamingMessage()

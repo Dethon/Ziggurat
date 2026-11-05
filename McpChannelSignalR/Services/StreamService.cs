@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -20,6 +21,11 @@ public sealed class StreamService(
     private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
     private readonly ConcurrentDictionary<string, int> _pendingPromptCounts = new();
     private readonly Lock _streamLock = new();
+
+    // A chunk is added to the buffer and written to the readers as one step, and a reader joining
+    // takes the buffer and subscribes as one, so it misses nothing written meanwhile and sees nothing
+    // twice.
+    private readonly Lock _writeLock = new();
     private bool _disposed;
 
     public async Task WriteReplyAsync(SendReplyParams p)
@@ -119,6 +125,16 @@ public sealed class StreamService(
         }
     }
 
+    // A page resuming the topic's stream (the same join, found by topic): null when none is running.
+    public (ChannelReader<ChatStreamMessage> Live, IReadOnlyList<ChatStreamMessage> Carried)? Join(string topicId)
+    {
+        lock (_writeLock)
+        {
+            // ReSharper disable once InconsistentlySynchronizedField
+            return _responseChannels.TryGetValue(topicId, out var channel) ? Join(topicId, channel) : null;
+        }
+    }
+
     public IAsyncEnumerable<ChatStreamMessage>? SubscribeToStream(
         string topicId,
         CancellationToken cancellationToken)
@@ -129,22 +145,39 @@ public sealed class StreamService(
             : channel.Subscribe().ReadAllAsync(cancellationToken);
     }
 
-    public async Task WriteMessageAsync(
+    public Task WriteMessageAsync(
         string topicId,
         ChatStreamMessage message)
     {
-        // ReSharper disable once InconsistentlySynchronizedField
-        if (!_responseChannels.TryGetValue(topicId, out var channel))
+        lock (_writeLock)
         {
-            // No subscriber means no stream was ever created — the same designed miss as above,
-            // one map further down.
-            logger.LogDebug("WriteMessage: topicId {TopicId} not found in _responseChannels", topicId);
-            return;
+            // ReSharper disable once InconsistentlySynchronizedField
+            if (!_responseChannels.TryGetValue(topicId, out var channel))
+            {
+                // No subscriber means no stream was ever created — the same designed miss as above,
+                // one map further down.
+                logger.LogDebug("WriteMessage: topicId {TopicId} not found in _responseChannels", topicId);
+                return Task.CompletedTask;
+            }
+
+            _streamBuffers.GetOrAdd(topicId, _ => new StreamBuffer()).Add(message);
+            channel.Write(message);
         }
 
-        var buffer = _streamBuffers.GetOrAdd(topicId, _ => new StreamBuffer());
-        buffer.Add(message);
-        await channel.WriteAsync(message, CancellationToken.None);
+        return Task.CompletedTask;
+    }
+
+    // A send joining a stream another send opened (two people sending in a shared topic at once) is
+    // read on its own wire alone, so it is handed what the stream carried before it subscribed: the
+    // other person's message, and the reply to it as far as it got. A new stream has carried nothing.
+    public (ChannelReader<ChatStreamMessage> Live, IReadOnlyList<ChatStreamMessage> Carried) Join(
+        string topicId, BroadcastChannel<ChatStreamMessage> channel)
+    {
+        lock (_writeLock)
+        {
+            var carried = _streamBuffers.TryGetValue(topicId, out var buffer) ? buffer.GetAll() : [];
+            return (channel.Subscribe(), carried);
+        }
     }
 
     private void CompleteStream(string topicId)

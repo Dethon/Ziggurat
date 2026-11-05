@@ -377,6 +377,30 @@ public sealed class BufferRebuildUtilityTests
         prompt.SenderName.ShouldBe("Login");
     }
 
+    // Two people sending in a shared topic at once put both their messages on one stream, and the
+    // stream's state names one prompt — whichever send came last. A page resuming it drew only that
+    // one, so Ana, whose own message it was, never saw Carlos's until a reload.
+    [Fact]
+    public void ResumeFromBuffer_EveryMessageTheStreamCarried_IsDrawnOnceAndInItsOrder()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Yo pongo el vino.", UserMessage = new UserMessageInfo("carlos", null, "Carlos") },
+            new() { Content = "Yo traigo el postre.", UserMessage = new UserMessageInfo("ana", null, "Ana") },
+            new() { Content = "Apuntado el vino.", MessageId = "m1", SequenceNumber = 1 },
+            new() { Content = "Apuntado el postre.", MessageId = "m2", SequenceNumber = 2 }
+        };
+        List<ChatMessageModel> page =
+        [
+            new() { Role = "user", Content = "Yo traigo el postre.", SenderId = "ana" }
+        ];
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, page, "Yo traigo el postre.", "ana");
+
+        result.MergedMessages.Where(m => m.Role == "user").Select(m => (m.SenderId, m.Content)).ShouldBe(
+            [("ana", "Yo traigo el postre."), ("carlos", "Yo pongo el vino.")]);
+    }
+
     public static IEnumerable<object[]> AnchorPositioningCases
     {
         get
