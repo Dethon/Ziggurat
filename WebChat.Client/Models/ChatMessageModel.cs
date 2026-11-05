@@ -20,6 +20,10 @@ public record ChatMessageModel
     public DateTimeOffset? Timestamp { get; init; }
     public string? MessageId { get; init; }
 
+    // A person's message as the page that sent it named the send (UserMessageInfo.CorrelationId): the
+    // stream's copy of a message is the one shown when the ids match. None for one loaded from history.
+    public string? CorrelationId { get; init; }
+
     // References, never bytes: the browser mints a short-lived download URL when the transcript
     // renders one, so a reload costs the same whether or not files were sent.
     public IReadOnlyList<AttachmentReference>? Attachments { get; init; }

@@ -401,6 +401,22 @@ public sealed class BufferRebuildUtilityTests
             [("ana", "Yo traigo el postre."), ("carlos", "Yo pongo el vino.")]);
     }
 
+    // The same words sent again are a message of their own: the page shows the first "ok", the stream
+    // carries the second.
+    [Fact]
+    public void ResumeFromBuffer_TheSameWordsSentAgain_AreDrawnAgain()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "ok", UserMessage = new UserMessageInfo("carlos", null, "Carlos", "second") }
+        };
+        List<ChatMessageModel> page = [new() { Role = "user", Content = "ok", SenderId = "carlos", CorrelationId = "first" }];
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, page, "ok", "carlos");
+
+        result.MergedMessages.Count(m => m.Role == "user").ShouldBe(2);
+    }
+
     public static IEnumerable<object[]> AnchorPositioningCases
     {
         get
