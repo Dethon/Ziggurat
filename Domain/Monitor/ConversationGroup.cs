@@ -1162,8 +1162,11 @@ internal sealed class ConversationGroup(
                 onCompletion: async (faulted, _) =>
                 {
                     var error = faulted ? "Agent run reported an error" : null;
-                    var evt = ScheduleExecutionEvent.FromMessage(
-                        turn.Message, stopwatch.ElapsedMilliseconds, !faulted, error);
+                    var evt = turn.Message.Origin is { Kind: MessageOriginKind.Schedule }
+                        ? ScheduleExecutionEvent.FromMessage(
+                            turn.Message, stopwatch.ElapsedMilliseconds, !faulted, error,
+                            withPrompt: await IsHomeAsync(state.TenantId))
+                        : null;
                     if (evt is not null)
                     {
                         state.Metrics.Publish(evt);
@@ -1179,6 +1182,26 @@ internal sealed class ConversationGroup(
                 },
                 ct)
             .Select(pair => new TurnUpdate(pair.Item1, turn));
+    }
+
+    // Whether a household is the home, whose fires' prompts the operator's dashboard may show. One
+    // that cannot be read is not: the prompt is left out rather than shown by mistake.
+    private async Task<bool> IsHomeAsync(string? tenantId)
+    {
+        if (households is null)
+        {
+            return true;
+        }
+
+        try
+        {
+            // Not the turn's token: a turn given up on still records how long it ran.
+            return (await households.ForHouseholdAsync(tenantId, CancellationToken.None)).Configuration is null or { IsHome: true };
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 
     private ValueTask<AgentSession> GetOrRestoreThread(DisposableAgent agent, AgentKey deliveryKey)

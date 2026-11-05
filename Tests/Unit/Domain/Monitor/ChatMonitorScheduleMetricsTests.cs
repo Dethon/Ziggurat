@@ -143,6 +143,33 @@ public class ChatMonitorScheduleMetricsTests
         }
     }
 
+    // The operator's dashboard listed every household's fire prompts ("Dile a Iker, en una sola línea:
+    // «Beber agua»"), while their conversations are theirs alone: a household's own schedule says its
+    // id, its duration and how it went, and only the home's say what they asked.
+    [Theory]
+    [InlineData(null, "do the thing")]
+    [InlineData("casa", "")]
+    public async Task Monitor_ScheduledMessage_RecordsItsPromptForTheHomeAlone(string? household, string recorded)
+    {
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", ScheduledMessage() with { HouseholdId = household });
+        var published = CapturePublishedMetrics(out var metricsPublisher);
+
+        var monitor = new ChatMonitor(
+            ConnectionSet.Of([scheduling]),
+            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
+            MonitorTestMocks.CreateThreadResolver(),
+            metricsPublisher.Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier(),
+            agentDefinitions: MonitorTestMocks.Households(suspended: "nobody"));
+        await monitor.Monitor(CancellationToken.None);
+
+        var evt = published.OfType<ScheduleExecutionEvent>().ShouldHaveSingleItem();
+        evt.ScheduleId.ShouldBe("morning-news");
+        evt.Prompt.ShouldBe(recorded);
+    }
+
     private static ChannelMessage ScheduledMessage(params ReplyTarget[] replyTo) => new()
     {
         ConversationId = "fire-1",
