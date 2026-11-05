@@ -11,6 +11,7 @@ import { Sheet } from "../components/Sheet";
 import { DOSE_ICON, restored } from "../dose";
 import { canStopNow, duration, elapsedMinutes, EXERCISE_ICON, restored as restoredSession, running, sessionMinutes, startNow } from "../exercise";
 import { errorMessage } from "../errors";
+import { openedExercise } from "../stale";
 import { formatDay, formatTime, formatUnits, rationCount, rationText, toLocalInput } from "../format";
 import { localDay } from "../cycle";
 import { attachedDoses, byDay, dayKey, dayUnits, insulinBelow, matches, mealEdited, onPeriod, outcomeState, pendingOutcomes, rapidUnits, timeline, withDose, withoutDose } from "../log";
@@ -212,10 +213,11 @@ export function LogScreen({ estimates, labels, onChanged }: { estimates: boolean
       return;
     }
     try {
-      const stopped = await api.updateExercise(session.id, {
-        ...session,
-        endedAt: new Date().toISOString(),
-      });
+      const stopped = await api.updateExercise(
+        session.id,
+        { ...openedExercise(session), endedAt: new Date().toISOString() },
+        openedExercise(session),
+      );
       setSessions((current) => current.map((s) => (s.id === stopped.id ? stopped : s)));
       toast({
         text: t("exerciseStopped", {

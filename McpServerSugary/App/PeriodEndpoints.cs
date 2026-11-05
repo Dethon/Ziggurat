@@ -9,8 +9,8 @@ namespace McpServerSugary.App;
 public record PeriodDto(Guid Id, DateOnly Start, DateOnly? End);
 
 // The start is nullable so a missing one is refused with a sentence rather than stored as the first
-// day of the calendar.
-public record SavePeriodRequest(DateOnly? Start, DateOnly? End);
+// day of the calendar. Loaded is what the sheet opened with, on a change (StaleEdits).
+public record SavePeriodRequest(DateOnly? Start, DateOnly? End, SavePeriodRequest? Loaded = null);
 
 // Her periods, recorded by her. What the app forecasts from them is the app's own and never stored.
 public static class PeriodEndpoints
@@ -46,11 +46,24 @@ public static class PeriodEndpoints
     }
 
     private static async Task<IResult> ReplaceAsync(
-        Guid id, SavePeriodRequest request, SugaryDbContext db, HomeCalendar calendar, CancellationToken ct)
+        Guid id, SavePeriodRequest request, SugaryDbContext db, HomeCalendar calendar, HttpContext http,
+        CancellationToken ct)
     {
         if (await db.Periods.FindAsync([id], ct) is not { } period)
         {
             return Results.NotFound();
+        }
+
+        if (request.Loaded is { } loaded)
+        {
+            var merged = StaleEdits.Merge(http, loaded with { Loaded = null }, request with { Loaded = null },
+                new SavePeriodRequest(period.Start, period.End));
+            if (merged.Value is not { } value)
+            {
+                return StaleEdits.Conflict(merged.Conflicts);
+            }
+
+            request = value;
         }
 
         if (await ValidateAsync(request, id, db, calendar, ct) is { } problem)

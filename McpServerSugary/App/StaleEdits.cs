@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 
 namespace McpServerSugary.App;
 
-// A sheet open on a recipe, a food or a meal saves the whole record, and another person — or the same
+// A sheet open on a recipe, a food, a meal, a dose, a pen, an exercise session or a period saves the whole record, and another person — or the same
 // person's other phone — may have saved it since the sheet opened: Ana raised a recipe's flour, Dani's
 // sheet changed its servings, and Ana's flour went back to what Dani had loaded. A save that says what
 // it opened with has only what it changed laid over the record as it is now, field by field (as the

@@ -6,8 +6,8 @@ namespace Domain.Editing;
 // names, and an array element by its key), in which case the value is not to be saved.
 public sealed record MergedEdit(JsonNode? Value, IReadOnlyList<IReadOnlyList<string>> Conflicts);
 
-// Two owners with the same admin page open, or two people with the same Sugary recipe, food or meal
-// open (McpServerSugary's StaleEdits): each page sends what it loaded beside what it wants, and
+// Two owners with the same admin page open, or two people (or one person's two phones) with the same
+// Sugary record open (McpServerSugary's StaleEdits): each page sends what it loaded beside what it wants, and
 // what it changed is laid over the section as it is now, field by field, so another owner's change to
 // anything else stands. An array of objects is merged element by element where its property names the
 // element's key (a space by its slug); any other value is one field. A field changed on both sides to

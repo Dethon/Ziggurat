@@ -148,7 +148,8 @@ export const api = {
     }
   },
   createDose: (dose: SaveDose) => request<Dose>("/doses", json("POST", dose)),
-  updateDose: (id: string, dose: SaveDose) => request<Dose>(`/doses/${id}`, json("PUT", dose)),
+  updateDose: (id: string, dose: SaveDose, loaded: SaveDose) =>
+    request<Dose>(`/doses/${id}`, json("PUT", { ...dose, loaded })),
   deleteDose: (id: string) => request<void>(`/doses/${id}`, { method: "DELETE" }),
 
   exercise: (from: string | null, skip = 0, take = RECORD_PAGE) =>
@@ -165,7 +166,8 @@ export const api = {
     }
   },
   createExercise: (session: SaveExercise) => request<Exercise>("/exercise", json("POST", session)),
-  updateExercise: (id: string, session: SaveExercise) => request<Exercise>(`/exercise/${id}`, json("PUT", session)),
+  updateExercise: (id: string, session: SaveExercise, loaded: SaveExercise) =>
+    request<Exercise>(`/exercise/${id}`, json("PUT", { ...session, loaded })),
   deleteExercise: (id: string) => request<void>(`/exercise/${id}`, { method: "DELETE" }),
   // What she called her other sessions, the latest first, for Otro to offer back.
   exerciseNames: () => request<string[]>("/exercise/names"),
@@ -173,7 +175,8 @@ export const api = {
   // All of them, newest first: a few a year, and the forecast reads every one.
   pens: () => request<Pen[]>("/pens"),
   createPen: (pen: SavePen) => request<Pen>("/pens", json("POST", pen)),
-  updatePen: (id: string, pen: SavePen) => request<Pen>(`/pens/${id}`, json("PUT", pen)),
+  updatePen: (id: string, pen: SavePen, loaded: SavePen) =>
+    request<Pen>(`/pens/${id}`, json("PUT", { ...pen, loaded })),
   deletePen: (id: string) => request<void>(`/pens/${id}`, { method: "DELETE" }),
   push: () => request<{ publicKey: string | null }>("/push"),
   savePushSubscription: (subscription: SavePushSubscription) =>
@@ -182,7 +185,8 @@ export const api = {
     request<void>(`/push/subscription?endpoint=${encodeURIComponent(endpoint)}`, { method: "DELETE" }),
   periods: () => request<Period[]>("/periods"),
   createPeriod: (period: SavePeriod) => request<Period>("/periods", json("POST", period)),
-  updatePeriod: (id: string, period: SavePeriod) => request<Period>(`/periods/${id}`, json("PUT", period)),
+  updatePeriod: (id: string, period: SavePeriod, loaded: SavePeriod) =>
+    request<Period>(`/periods/${id}`, json("PUT", { ...period, loaded })),
   deletePeriod: (id: string) => request<void>(`/periods/${id}`, { method: "DELETE" }),
   dayNotes: () => request<DayNote[]>("/day-notes"),
   // Empty text deletes the note; the server then answers with nothing.

@@ -37,12 +37,15 @@ The app has no sign-in. `sugary.*` in the Caddyfile puts the accounts service's 
   was a 500. A save the server refuses is read again on the page (`refusedBecause`), so the clash another phone made
   is said in her language rather than as a bad number.
 - **A sheet's save keeps what somebody else saved meanwhile** (`StaleEdits`, the user's choice of merging per
-  field, 2026-11-05): a recipe, a food or a meal is saved whole, and the app sends what the sheet opened with
-  beside it (`loaded`, `stale.ts`), so the server lays only what the sheet changed over the record as it is now
+  field, 2026-11-05, for doses, pens, exercise sessions and periods too): every record a sheet changes is saved
+  whole, and the app sends what the sheet opened with beside it (`loaded`, `stale.ts`), so the server lays only what the sheet changed over the record as it is now
   (`Domain/Editing/EditMerge`, the admin pages' merge; a recipe's ingredients by food). Ana raised a recipe's
   flour, Dani's sheet opened before then changed its servings, and Ana's flour went back. A field both changed
   to different values is refused 409, nothing saved, and the app says to open it again (`errorChangedElsewhere`);
-  a meal's photo and dose are not compared. A save with nothing loaded is saved as sent. The household's pantry changes (`/foods`, `/recipes`) wait for each other across the household in the same queue (keyed by household), since two saves of one recipe at the same instant each read it before the other wrote (one change lost, or a 500).
+  a meal's photo and dose are not compared. A save with nothing loaded is saved as sent. A sheet shows a time to
+  the minute and a note trimmed, so each field she left as it showed goes back as recorded (`overRecord`), or an
+  untouched time would read as her change and another phone's change of it as a clash; the server compares a
+  note, a name and a dose's meals as it would keep them. The household's pantry changes (`/foods`, `/recipes`) wait for each other across the household in the same queue (keyed by household), since two saves of one recipe at the same instant each read it before the other wrote (one change lost, or a 500).
 
 ## Turns, the mount and reminders
 

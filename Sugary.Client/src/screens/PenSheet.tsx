@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
+import { openedPen, overRecord, useShown } from "../stale";
 import { MAX_INSULIN, MAX_PEN_DAYS, penProblem } from "../pens";
 import { useSettings } from "../settings";
 import type { Pen, SavePen } from "../types";
@@ -35,6 +36,7 @@ export function PenSheet({
   const problem = penProblem(insulin, openedOn, days, today);
   const values: SavePen = { kind: initial.kind, insulin: insulin.trim(), openedOn, days: Number(days) };
   const edited = useEdited(values);
+  const shown = useShown(values);
   const ready = problem === null && (!pen || edited);
 
   async function save() {
@@ -44,7 +46,7 @@ export function PenSheet({
     setBusy(true);
     setError(null);
     try {
-      await (pen ? api.updatePen(pen.id, values) : api.createPen(values));
+      await (pen ? api.updatePen(pen.id, overRecord(openedPen(pen), shown, values), openedPen(pen)) : api.createPen(values));
       onSaved();
     } catch (failure) {
       setError(errorMessage(failure, t, "save"));
