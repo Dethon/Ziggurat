@@ -13,6 +13,11 @@ public sealed record MemoryJudgmentContext(string UserId, string? AgentId = null
 {
     public ModelPayer Payer { get; init; } = ModelPayer.Deployment;
 
+    // Whether a candidate's words may go on the operator's dashboard with its judgment: what a person
+    // said about themselves is their household's, so only the home's are shown, and a context that
+    // says nothing shows nothing.
+    public bool ShowsContent { get; init; }
+
     // No turn is behind a memory question — dreaming has none, and extraction is never enqueued
     // for a turn addressed to the local box — so it bills the user alone.
     public JudgmentCaller Caller => new(TurnModel: null, UserId, AgentId, ConversationId) { Payer = Payer, UserId = UserId };
@@ -281,7 +286,7 @@ public sealed class MemoryJudge(
         Publish(Answered(MemoryJudgmentKinds.Verify, context, answered.Judgment, latency) with
         {
             Scores = scores,
-            Candidate = candidate.Content,
+            Candidate = context.ShowsContent ? candidate.Content : null,
             Category = candidate.Category.ToString(),
             Dropped = dropped
         });

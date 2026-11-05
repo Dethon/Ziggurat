@@ -53,10 +53,16 @@ public class MemoryExtractionWorker(
         // Every model call made here — the gate, the extractor, the check — is the household's, on its
         // key, so who pays is settled before anything is asked: a household that cannot be read just
         // now is not extracted from, rather than paid for on the deployment's key.
-        if (await PayerAsync(request, metrics, ct) is not { } payer)
+        if (await PayerAsync(request, metrics, ct) is not { } paying)
         {
             return;
         }
+
+        var judging = new MemoryJudgmentContext(request.UserId, request.AgentId, request.ConversationId)
+        {
+            Payer = paying.Payer,
+            ShowsContent = paying.ShowsContent
+        };
 
         var agent = await AgentAsync(request, ct);
         if (agent is not null && !agent.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
@@ -76,14 +82,14 @@ public class MemoryExtractionWorker(
 
         try
         {
-            var extraction = await ExtractWithRetryAsync(request, agentName, payer, ct);
+            var extraction = await ExtractWithRetryAsync(request, judging, ct);
             candidateCount = extraction.Candidates.Count;
 
             // Each candidate is checked and then stored, in parallel across candidates as the
             // store fan-out always was. The embedding dedup runs after the check, unchanged.
             await Task.WhenAll(
                 extraction.Candidates.Take(options.MaxCandidatesPerMessage)
-                    .Select(c => VerifyThenStoreAsync(request, agentName, payer, extraction.Window, c, outcomes, ct)));
+                    .Select(c => VerifyThenStoreAsync(request, judging, extraction.Window, c, outcomes, ct)));
 
             sw.Stop();
             metrics.Publish(Event(request, agentName, sw, candidateCount, outcomes, extraction.Outcome));
@@ -137,7 +143,7 @@ public class MemoryExtractionWorker(
     // answer for just now: the turn's memory is lost rather than paid for on somebody else's key. None
     // either for a household suspended, or a person disabled, after their turn was admitted: both stop
     // every model call made for them, as dreaming skips them off the same view.
-    private async Task<ModelPayer?> PayerAsync(MemoryExtractionRequest request, IMetricsPublisher metrics, CancellationToken ct)
+    private async Task<Paying?> PayerAsync(MemoryExtractionRequest request, IMetricsPublisher metrics, CancellationToken ct)
     {
         try
         {
@@ -151,8 +157,8 @@ public class MemoryExtractionWorker(
                     logger.LogInformation("User {UserId} is disabled in household {Household}; nothing is extracted",
                         request.UserId, request.TenantId);
                     return null;
-                case { Payer: { } payer }:
-                    return payer with { TenantId = request.TenantId };
+                case { Payer: { } payer } view:
+                    return new Paying(payer with { TenantId = request.TenantId }, view.Configuration is null or { IsHome: true });
                 default:
                     logger.LogWarning("Household {Household} has set no OpenRouter key; nothing is extracted for user {UserId}",
                         request.TenantId, request.UserId);
@@ -210,6 +216,10 @@ public class MemoryExtractionWorker(
             candidates.Count == 0 ? Empty : new Extraction(candidates, MemoryExtractionOutcomes.Extracted, window);
     }
 
+    // Who pays for a turn's extraction, and whether its candidates' words may be shown with their
+    // judgments: the home's alone, the operator's dashboard listing every household's.
+    private sealed record Paying(ModelPayer Payer, bool ShowsContent);
+
     private enum CandidateOutcome
     {
         Dropped,
@@ -218,7 +228,7 @@ public class MemoryExtractionWorker(
     }
 
     private async Task<Extraction> ExtractWithRetryAsync(
-        MemoryExtractionRequest request, string? agentName, ModelPayer payer, CancellationToken ct)
+        MemoryExtractionRequest request, MemoryJudgmentContext judging, CancellationToken ct)
     {
         var window = await BuildExtractionWindowAsync(request);
         if (window.Count == 0)
@@ -233,18 +243,15 @@ public class MemoryExtractionWorker(
         // the extractor, so an unsure, late or absent answer costs a fraction of a cent and never
         // a memory. A Lemonade turn never reaches here — the recall hook did not enqueue it — so
         // the ADR 0042 boundary covers Jev without a second gate.
-        var gate = await judge.GateAsync(window, Context(request, agentName, payer), ct);
+        var gate = await judge.GateAsync(window, judging, ct);
         if (gate.Skip)
         {
             logger.LogDebug("Extraction gated for user {UserId}: nothing lasting in the turn", request.UserId);
             return Extraction.Gated;
         }
 
-        return await ExtractWithRetryAsync(window, request.UserId, request.AgentId, payer, ct);
+        return await ExtractWithRetryAsync(window, request.UserId, request.AgentId, judging.Payer, ct);
     }
-
-    private static MemoryJudgmentContext Context(MemoryExtractionRequest request, string? agentName, ModelPayer payer) =>
-        new(request.UserId, request.AgentId, request.ConversationId) { Payer = payer };
 
     private async Task<IReadOnlyList<ChatMessage>> BuildExtractionWindowAsync(MemoryExtractionRequest request)
     {
@@ -279,10 +286,10 @@ public class MemoryExtractionWorker(
     }
 
     private async Task VerifyThenStoreAsync(
-        MemoryExtractionRequest request, string? agentName, ModelPayer payer, IReadOnlyList<ChatMessage> window,
+        MemoryExtractionRequest request, MemoryJudgmentContext judging, IReadOnlyList<ChatMessage> window,
         ExtractionCandidate candidate, List<CandidateOutcome> outcomes, CancellationToken ct)
     {
-        var outcome = await VerifyThenStoreAsync(request, agentName, payer, window, candidate, ct);
+        var outcome = await VerifyThenStoreAsync(request, judging, window, candidate, ct);
         lock (outcomes)
         {
             outcomes.Add(outcome);
@@ -290,10 +297,10 @@ public class MemoryExtractionWorker(
     }
 
     private async Task<CandidateOutcome> VerifyThenStoreAsync(
-        MemoryExtractionRequest request, string? agentName, ModelPayer payer, IReadOnlyList<ChatMessage> window,
+        MemoryExtractionRequest request, MemoryJudgmentContext judging, IReadOnlyList<ChatMessage> window,
         ExtractionCandidate candidate, CancellationToken ct)
     {
-        var verdict = await judge.VerifyAsync(window, candidate, Context(request, agentName, payer), ct);
+        var verdict = await judge.VerifyAsync(window, candidate, judging, ct);
         if (!verdict.Store)
         {
             logger.LogDebug("Dropping candidate for user {UserId}: {Content}", request.UserId, candidate.Content);
