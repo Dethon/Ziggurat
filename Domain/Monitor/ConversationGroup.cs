@@ -868,14 +868,6 @@ internal sealed class ConversationGroup(
             return _state;
         }
 
-        var targets = await targetResolver.ResolveAsync(x.Message, x.Channel, _groupCt);
-        var (approvalChannel, deliveryKey) = targets.Count > 0
-            ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, x.Message.AgentId))
-            : (x.Channel, agentKey);
-        // Asked where the delivery anchors, and offered to the turn's person wherever else they are.
-        var approvals = new ApprovalRelay(
-            approvalChannel, channels.Serving(HouseholdChannels.HouseholdOfTurn(x.Message, x.Channel)), logger,
-            TimeProvider.System);
         // The household the verified identity names — the guest's too, who has no account — is the
         // one whose own servers the agent reaches.
         // A turn acting for nobody is still the household it came through or its fire names: a
@@ -884,6 +876,23 @@ internal sealed class ConversationGroup(
         var tenantId = x.Identity is { TenantId.Length: > 0 } identity
             ? identity.TenantId
             : HouseholdChannels.HouseholdOfTurn(x.Message, x.Channel);
+        // Resolving a message delivered elsewhere mints a conversation there, so an agent its household
+        // no longer has is refused first: a removed agent's fire left an empty 'Scheduled task'
+        // conversation saying a scheduled task ran.
+        if (households is not null && x.Message.ReplyTo is { Count: > 0 }
+            && await households.GetByIdAsync(x.Message.AgentId ?? "", tenantId, x.Message.Principal?.Account, _groupCt) is null)
+        {
+            throw new AgentNotFoundException(x.Message.AgentId, tenantId);
+        }
+
+        var targets = await targetResolver.ResolveAsync(x.Message, x.Channel, _groupCt);
+        var (approvalChannel, deliveryKey) = targets.Count > 0
+            ? (targets[0].Channel, new AgentKey(targets[0].ConversationId, x.Message.AgentId))
+            : (x.Channel, agentKey);
+        // Asked where the delivery anchors, and offered to the turn's person wherever else they are.
+        var approvals = new ApprovalRelay(
+            approvalChannel, channels.Serving(HouseholdChannels.HouseholdOfTurn(x.Message, x.Channel)), logger,
+            TimeProvider.System);
         // Built for the channel of the turn that opened the group, whose rules it keeps for the group's
         // life: a satellite's conversation is answered aloud by whichever agent serves it.
         var agent = _agent = await agentFactory.CreateAsync(

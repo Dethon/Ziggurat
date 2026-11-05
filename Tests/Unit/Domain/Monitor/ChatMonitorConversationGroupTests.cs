@@ -74,6 +74,44 @@ public class ChatMonitorConversationGroupTests
         agentFactory.Created.ShouldBeEmpty();
     }
 
+    // A fire for an agent its household no longer has is refused, and minted nowhere first: Chef's
+    // cron, refused "household has no agent jonas-2" after Chef was removed, left Iker an empty
+    // conversation titled 'Scheduled task' that said a scheduled task ran.
+    [Fact]
+    public async Task Monitor_FireForAnAgentTheHouseholdLacks_MintsNoConversation()
+    {
+        var signalr = new FakeChannelConnection { ChannelId = "signalr", ConversationIdToReturn = "minted-signalr" };
+        signalr.Complete();
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", new ChannelMessage
+        {
+            ConversationId = "fire-1",
+            Content = "Stir the stew",
+            Sender = "scheduler",
+            ChannelId = "scheduling",
+            AgentId = "jonas-2",
+            ReplyTo = [new ReplyTarget("signalr", null)]
+        });
+        var agentFactory = MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent());
+        agentFactory.Refusal = new AgentNotFoundException("jonas-2", null);
+        var households = new Mock<IAgentDefinitionProvider>();
+        households.Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HouseholdAgents { Agents = [] });
+
+        var monitor = new ChatMonitor(
+            [scheduling, signalr],
+            agentFactory,
+            MonitorTestMocks.CreateThreadResolver(),
+            new Mock<IMetricsPublisher>().Object,
+            null,
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier(),
+            agentDefinitions: households.Object);
+
+        await monitor.Monitor(CancellationToken.None);
+
+        signalr.CreatedConversations.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task Monitor_TurnAfterAClearCommand_IsRoutedToTheChannelThatSentIt()
     {
