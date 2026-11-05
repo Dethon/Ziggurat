@@ -382,7 +382,8 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     // and its agent renamed there, then a reply from that agent under its new name, paid for with the
     // household's own key. That key is the deployment's, on this machine's stack alone, so the turn is
     // real and costs one cheap model call. Then the operator suspends it: the open page is sent to the
-    // household's notice at once, and a page asked for again says it is suspended. Each run
+    // household's notice at once, and a page asked for again says it is suspended; resumed, the notice
+    // goes back to the chat by itself. Each run
     // makes a household of its own, so a rerun starts as fresh and needs nothing resumed.
     [SkippableFact]
     public async Task AHouseholdTheOperatorCreates_IsAnsweredByTheAgentItsOwnerNamed_UntilItIsSuspended()
@@ -417,11 +418,22 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             // agent is refused there with the same reason (ChatMonitorDelegationTests).
             await page.WaitForURLAsync(new Regex("/accounts/account"), new PageWaitForURLOptions { Timeout = 60_000 });
             await Assertions.Expect(page.Locator("body")).ToContainTextAsync(SessionCheck.SuspendedNotice);
-        }, owner);
 
-        var refused = await SendAsync(HttpMethod.Get, stack.MainHost, "/", owner, "text/html");
-        refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
-        (await refused.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
+            var refused = await SendAsync(HttpMethod.Get, stack.MainHost, "/", owner, "text/html");
+            refused.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+            (await refused.Content.ReadAsStringAsync()).ShouldContain(SessionCheck.SuspendedNotice);
+
+            // Resumed, the notice finds it is let in again by itself and goes back to the chat it was sent
+            // from: before, it said "suspended" until its person reloaded, and a reload kept them on
+            // their account page.
+            var resumed = await AdminAsync<AdminSaved<HouseholdSuspension>>(HttpMethod.Put, stack.DashboardHost,
+                AdminProtocol.Suspension(household), stack.OperatorSession, new HouseholdSuspension(false));
+            resumed.Value.Suspended.ShouldBeFalse();
+            await page.WaitForURLAsync(url => !url.Contains("/accounts/", StringComparison.Ordinal),
+                new PageWaitForURLOptions { Timeout = 90_000 });
+            await Assertions.Expect(page.GetByPlaceholder("Type your message...")).ToBeVisibleAsync(
+                new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
+        }, owner);
     }
 
     // The stack's key stub answers as a provider would for the key it is shown: one with "refused" in

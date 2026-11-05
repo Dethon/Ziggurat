@@ -538,7 +538,7 @@ The operator's households, from the dashboard (`HouseholdListAdmin`, `/household
 - **Its open pages are told at once**: the chat hub hears `SuspensionChanged` as it hears the people
   changing (`HouseholdAgentsAnnouncer`) and sends the household's pages `OnAccessChanged`, so each opens
   a fresh connection, which the session check refuses as suspended and the page shows as the household's
-  notice — before, a page stayed "Connected" until its person reloaded or sent something.
+  notice — before, a page stayed "Connected" until its person reloaded or sent something. **And back again once resumed**: the chat client goes to the notice as `/accounts/account?returnUrl=<where it was>`, and the notice (`SessionCheck.Suspended`, `data-suspended`, with `data-return` only for a return address `ReturnUrls` accepts) asks for itself again every 20 s (`PasskeyScript`) and goes back there once it is no longer 403 — before, a resumed household's pages said "suspended" until a reload, which kept them on the account page.
 - **Not stopped by it, deliberately**: the chat hub's per-turn session refresh still answers, so an open
   chat client's turn reaches the agent, which answers `SuspendedAnswer` — a refused refresh would end the
   stream "signed out", the wrong words. `/accounts/me` still names the person. A refused fire has been

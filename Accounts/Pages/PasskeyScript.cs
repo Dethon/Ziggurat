@@ -8,6 +8,27 @@ public static class PasskeyScript
     public const string Source =
         """
         (() => {
+          // A suspended household's notice: nothing pushes to a page the hub let go, so it asks for itself
+          // again until the household is resumed, then goes back to where it was sent from.
+          const notice = document.querySelector('[data-suspended]');
+          if (!notice) return;
+          const again = async () => {
+            try {
+              const answer = await fetch(location.href, {
+                cache: 'no-store', credentials: 'same-origin', redirect: 'manual', headers: { Accept: 'text/html' }
+              });
+              if (answer.status !== 403) {
+                location.replace(notice.dataset.return || location.href);
+                return;
+              }
+            } catch {
+              // Unreachable says nothing about the household; ask again later.
+            }
+            setTimeout(again, 20000);
+          };
+          setTimeout(again, 20000);
+        })();
+        (() => {
           const root = document.querySelector('[data-passkey]');
           if (!root) return;
           const button = document.getElementById('go');

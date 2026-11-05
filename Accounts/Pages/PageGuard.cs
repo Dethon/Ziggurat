@@ -29,7 +29,7 @@ public sealed class PageGuard(SessionStore sessions, IAntiforgery antiforgery, A
         // minted here would be a way in that outlasts the suspension.
         if (viewer.HouseholdSuspended)
         {
-            return (null, SessionCheck.Suspended(http, page: !script));
+            return (null, SessionCheck.Suspended(http, page: !script, GoesBackTo(http.Request.Query["returnUrl"])));
         }
 
         if (!await antiforgery.IsRequestValidAsync(http))
@@ -58,6 +58,14 @@ public sealed class PageGuard(SessionStore sessions, IAntiforgery antiforgery, A
 
         return (viewer, null);
     }
+
+    // Where a suspended household's notice goes once it is resumed: the page that sent it here, when that
+    // is one of the deployment's; nowhere named otherwise, and the notice loads itself again.
+    private string? GoesBackTo(string? returnUrl) =>
+        string.IsNullOrEmpty(returnUrl) || ReturnUrls.Resolve(settings, returnUrl) is var resolved
+        && resolved == settings.PublicBase.ToString() && returnUrl != resolved
+            ? null
+            : ReturnUrls.Resolve(settings, returnUrl);
 
     // The hidden field a page's forms post back, and the cookie it is checked against.
     public string FormField(HttpContext http)
