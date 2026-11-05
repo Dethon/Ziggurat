@@ -27,10 +27,10 @@
     @if (_state.Spaces is { } saved)
     {
         <form class="admin-form" @onsubmit="Save" aria-label="The household's spaces">
-            @for (var i = 0; i < _drafts.Count; i++)
+            @for (var i = 0; i < _drafts.All.Count; i++)
             {
                 var index = i;
-                var draft = _drafts[index];
+                var draft = _drafts.All[index];
                 <article class="admin-agent" aria-label="@(draft.SavedName ?? draft.Slug)">
                     <header class="admin-agent-header">
                         <h2>@(draft.SavedName ?? draft.Slug)</h2>
@@ -71,12 +71,12 @@
                         </select>
                     </label>
                     <div class="admin-actions">
-                        <button type="button" class="admin-secondary" disabled="@(index == 0)" @onclick="() => Move(index, -1)">Move up</button>
-                        <button type="button" class="admin-secondary" disabled="@(index == _drafts.Count - 1)"
-                                @onclick="() => Move(index, 1)">Move down</button>
+                        <button type="button" class="admin-secondary" disabled="@(index == 0)" @onclick="() => _drafts.Move(index, -1)">Move up</button>
+                        <button type="button" class="admin-secondary" disabled="@(index == _drafts.All.Count - 1)"
+                                @onclick="() => _drafts.Move(index, 1)">Move down</button>
                         @if (draft.Slug != SpaceConfig.DefaultSlug)
                         {
-                            <button type="button" class="admin-secondary" @onclick="() => _drafts.RemoveAt(index)">Remove</button>
+                            <button type="button" class="admin-secondary" @onclick="() => _drafts.Remove(index)">Remove</button>
                         }
                     </div>
                 </article>
@@ -114,7 +114,7 @@
 
 @code {
     private HouseholdSpacesState _state = HouseholdSpacesState.Initial;
-    private List<SpaceDraft> _drafts = [];
+    private SpaceDrafts _drafts = new([]);
     private string _newSlug = "";
     private string _newName = "";
 
@@ -127,7 +127,7 @@
         {
             if (spaces is not null)
             {
-                _drafts = [.. spaces.Spaces.Select(SpaceDraft.Of)];
+                _drafts = new SpaceDrafts(spaces.Spaces);
             }
         });
         Dispatcher.Dispatch(new LoadHouseholdSpaces());
@@ -137,56 +137,12 @@
     private static string Picked(string colour) =>
         colour.Length == 7 && SpaceConfig.IsValidHexColor(colour) ? colour : SpaceConfig.DefaultAccentColor;
 
-    private void Move(int index, int by)
-    {
-        var moved = _drafts[index];
-        _drafts.RemoveAt(index);
-        _drafts.Insert(index + by, moved);
-    }
-
     private void Add()
     {
-        _drafts.Add(new SpaceDraft
-        {
-            Slug = _newSlug.Trim(), Name = _newName.Trim(), AccentColor = SpaceConfig.DefaultAccentColor
-        });
+        _drafts.Add(_newSlug, _newName);
         (_newSlug, _newName) = ("", "");
     }
 
-    private void Save() => Dispatcher.Dispatch(new SaveHouseholdSpaces(new SpacesSection
-    {
-        Spaces =
-        [
-            .. _drafts.Select((draft, order) => new HouseholdSpace
-            {
-                Slug = draft.Slug,
-                Name = draft.Name.Trim(),
-                AccentColor = draft.AccentColor.Trim(),
-                DefaultAgent = string.IsNullOrEmpty(draft.DefaultAgent) ? null : draft.DefaultAgent,
-                Order = order
-            })
-        ]
-    }, _state.Spaces is { } loaded ? new SpacesSection { Spaces = loaded.Spaces } : null));
-
-    private sealed class SpaceDraft
-    {
-        public string Slug { get; init; } = "";
-
-        // What the space is called as saved, so an article keeps its name while its field is edited;
-        // none for a space added here and not saved yet.
-        public string? SavedName { get; init; }
-
-        public string Name { get; set; } = "";
-        public string AccentColor { get; set; } = "";
-        public string DefaultAgent { get; set; } = "";
-
-        public static SpaceDraft Of(HouseholdSpace space) => new()
-        {
-            Slug = space.Slug,
-            SavedName = space.Name,
-            Name = space.Name,
-            AccentColor = space.AccentColor,
-            DefaultAgent = space.DefaultAgent ?? ""
-        };
-    }
+    private void Save() => Dispatcher.Dispatch(new SaveHouseholdSpaces(_drafts.ToSection(),
+        _state.Spaces is { } loaded ? new SpacesSection { Spaces = loaded.Spaces } : null));
 }

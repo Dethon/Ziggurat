@@ -201,13 +201,13 @@ public sealed class TopicStreamFlowTests
         var resumed = new GatedChatStream();
         transport.Answer("GetStreamState", new StreamState(
             true, [new ChatStreamMessage { Content = "half written", MessageId = "m-1" }], "m-1", null, null));
-        transport.Answer("ResumeStream", _ => resumed.Chunks());
+        transport.Answer("ResumeStreamFrom", _ => resumed.Chunks());
 
         transport.Raise("OnStreamStarted", new StreamStartedNotification("topic-1"));
         transport.Raise("OnStreamStarted", new StreamStartedNotification("topic-1"));
 
         await TestChat.Eventually(() => client.Streaming.State.StreamingTopics.Contains("topic-1"));
-        transport.Calls.Count(call => call.MethodName == "ResumeStream").ShouldBe(1);
+        transport.Calls.Count(call => call.MethodName == "ResumeStreamFrom").ShouldBe(1);
         resumed.Release();
     }
 
@@ -224,7 +224,7 @@ public sealed class TopicStreamFlowTests
         var resumed = new GatedChatStream { Opening = null };
         transport.Answer("GetStreamState", new StreamState(
             true, [new ChatStreamMessage { Content = "half written", MessageId = "m-1" }], "m-1", "hello", null));
-        transport.Answer("ResumeStream", _ => resumed.Chunks());
+        transport.Answer("ResumeStreamFrom", _ => resumed.Chunks());
 
         transport.Raise("OnStreamStarted", new StreamStartedNotification("topic-1"));
 

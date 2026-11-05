@@ -143,7 +143,13 @@ or a space one removed and the other changed — is refused **409** `AdminRefusa
 time zone", "its name"), nothing saved or recorded; the chat client shows it as a refusal (`AdminService`). A body
 with nothing loaded (the operator's tools, a test, a client from before) is saved as sent. The user chose merging
 per item over refusing every stale save (2026-11-04). The keys, members and servers routes change one item each
-and need none of it.
+and need none of it. **A household's changes run one at a time** (`OneChangeAtATime`, a filter on the owners' group for
+every method but GET/HEAD): each change reads its section, lays itself over it and saves it whole — a key's save asks
+its provider in between — so two in flight at once saved over each other (Bruno's Idealista keys were lost to Ana's
+OpenRouter save). A slow probe (at most `KeyProbes:Timeout`) delays another owner's save of the same household; the
+operator's routes and the container's commands are not queued. **The spaces page keeps each space's loaded order**
+(`SpaceDrafts`: a move swaps two, an added space goes last): numbering every space again made one owner's removal a
+change to every space after it, and another owner's removal of a different space was refused 409.
 
 ## Configuration is saved as the operator's command saves it
 

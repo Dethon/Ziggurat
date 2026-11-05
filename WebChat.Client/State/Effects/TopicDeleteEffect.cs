@@ -49,13 +49,12 @@ public sealed class TopicDeleteEffect : IDisposable
 
         if (_topicStreams.Snapshot(topicId).HasStream)
         {
-            var cancelled = await _messagingService.CancelTopicAsync(topicId);
-
-            // Only a user-initiated delete stops on a cancel that could not be made. For a
-            // server-initiated removal the cancel is best-effort cleanup of a stream the server
-            // already ended: toasting would blame the user for an action they never took, and
-            // stopping would leave a ghost row for a topic that no longer exists.
-            if (!cancelled.IsLive && userInitiated)
+            // Only the person deleting their own topic stops its reply. A removal the server told of —
+            // a topic deleted elsewhere, whose reply the delete already stopped, or one its owner made
+            // private, whose reply is still theirs — only stops this page reading it: asking the server
+            // to cancel was refused for a topic this person may no longer see, and the removal never
+            // happened, the reply still growing on their screen.
+            if (userInitiated && !(await _messagingService.CancelTopicAsync(topicId)).IsLive)
             {
                 _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
                 return;

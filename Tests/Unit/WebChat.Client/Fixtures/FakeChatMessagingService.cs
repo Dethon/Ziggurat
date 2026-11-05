@@ -112,8 +112,10 @@ public sealed class FakeChatMessagingService : IChatMessagingService
     // first chunk, so a real resume does not come back until the reply next speaks. That
     // timing is modelled one seam down, in FakeHubConnection, and pinned by
     // TopicStreamFlowTests.AResume_WhileTheReplyIsBetweenChunks_ShowsWhatItHasWrittenWithoutWaiting.
-    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId) =>
-        Task.FromResult(NotLive
+    public StreamSeen? LastResumeSeen { get; private set; }
+
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId, StreamSeen? seen = null) =>
+        Task.FromResult((LastResumeSeen = seen) is var _ && NotLive
             ? HubResult<IAsyncEnumerable<ChatStreamMessage>>.NotLive
             : HubResult<IAsyncEnumerable<ChatStreamMessage>>.Answered(ResumeChunks()));
 

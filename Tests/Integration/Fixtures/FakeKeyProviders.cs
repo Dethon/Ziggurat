@@ -18,6 +18,7 @@ public sealed class FakeKeyProviders : IAsyncDisposable
 
     private readonly ConcurrentDictionary<string, int> _answers = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<string> _asked = new();
+    private readonly ConcurrentDictionary<string, TaskCompletionSource> _held = new(StringComparer.Ordinal);
     private WebApplication _app = null!;
     private int _port;
 
@@ -45,6 +46,18 @@ public sealed class FakeKeyProviders : IAsyncDisposable
 
     // Never answers this key: the request is held until the asker gives up on it.
     public void Stall(string key) => _answers[key] = Stalled;
+
+    // Answers this key as the test said only once the returned release is called: a probe in flight
+    // for as long as the test needs something else to happen meanwhile.
+    public Action Hold(string key)
+    {
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _held[key] = held;
+        return () => held.TrySetResult();
+    }
+
+    // Whether the provider has been asked about this key yet (a held one is asked and still waiting).
+    public bool WasAsked(string key) => _asked.Contains(key);
 
     // On every address when a container asks it, which reaches this process through the host's gateway.
     public static async Task<FakeKeyProviders> StartAsync(bool forContainers = false)
@@ -89,6 +102,11 @@ public sealed class FakeKeyProviders : IAsyncDisposable
     private async Task<IResult> AnswerAsync(HttpContext http, string key, string accepted)
     {
         _asked.Enqueue(key);
+        if (_held.TryGetValue(key, out var held))
+        {
+            await held.Task.WaitAsync(http.RequestAborted);
+        }
+
         switch (_answers.GetValueOrDefault(key, StatusCodes.Status401Unauthorized))
         {
             case Stalled:

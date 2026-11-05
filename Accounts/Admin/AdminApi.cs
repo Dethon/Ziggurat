@@ -24,6 +24,7 @@ public static class AdminApi
     {
         var household = accounts.MapGroup(Relative(AdminProtocol.Household));
         var deployment = accounts.MapGroup(Relative(AdminProtocol.Operator));
+        OneChangeAtATime.Apply(household);
 
         HouseholdSettingsAdmin.Map(household);
         KeysAdmin.Map(household);

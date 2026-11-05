@@ -85,7 +85,7 @@ public sealed class NotLiveRemainingReadTests
         client.Dispatcher.Dispatch(new MessagesLoaded("topic-1", []));
         transport.Answer("GetStreamState", new StreamState(true, [], "m-1", null, null));
         var stream = new GatedChatStream();
-        transport.Answer("ResumeStream", _ => stream.Chunks());
+        transport.Answer("ResumeStreamFrom", _ => stream.Chunks());
 
         await client.Service<IStreamResumeService>().TryResumeStreamAsync(topic);
 

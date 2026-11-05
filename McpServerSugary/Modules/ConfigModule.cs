@@ -28,6 +28,7 @@ public static class ConfigModule
         services
             .AddSugaryStore(settings)
             .AddSingleton<ISugaryLog, SqliteSugaryLog>()
+            .AddSingleton<OneLogWriteAtATime>()
             // Her log's tables are queried on DuckDB, in this server's image alone.
             .AddSingleton<ITableEngine, DuckDbTableEngine>()
             .AddSingleton(sp => new SugaryFileSystem(

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using Accounts.Settings;
+using Accounts.Store;
 using Domain.Contracts;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
@@ -182,6 +183,32 @@ public sealed class KeysAdminTests : IAsyncLifetime
         var keys = await KeysSectionAsync(server, household);
         keys.Idealista.ShouldBe(pair);
         keys.OpenRouter.ShouldBe(new OpenRouterKey(WorkingKey));
+    }
+
+    // Two owners saving two keys at once: the one whose provider answered last was saved over the
+    // section as it was read before its probe, so the other owner's key, saved meanwhile, was lost.
+    [Fact]
+    public async Task AKeySavedWhileAnotherKeysProbeIsInFlight_KeepsBoth()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var bruno = await server.SeedPersonAsync(household, "Bruno", Role.Owner);
+        var anas = server.Admin(await server.MintSessionAsync(ana));
+        var brunos = server.Admin(await server.MintSessionAsync(bruno));
+        var pair = new IdealistaKeys("idealista-api-key-0123456789-apik", "idealista-secret-9876543210-secr");
+        _providers.Accept(pair.ApiKey);
+        _providers.Accept(WorkingKey);
+        var release = _providers.Hold(WorkingKey);
+
+        var openRouter = anas.PutAsync(AdminProtocol.OpenRouterKey, new OpenRouterKey(WorkingKey));
+        await Eventually.Until(() => _providers.WasAsked(WorkingKey), "the OpenRouter key's probe is in flight");
+        (await brunos.PutAsync(AdminProtocol.IdealistaKeys, pair)).StatusCode.ShouldBe(HttpStatusCode.OK);
+        release();
+        (await openRouter).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var keys = await KeysSectionAsync(server, household);
+        keys.OpenRouter.ShouldBe(new OpenRouterKey(WorkingKey));
+        keys.Idealista.ShouldBe(pair);
     }
 
     // The operator's command asks no provider, so a key it saved over a checked one is not that one's.

@@ -325,8 +325,19 @@ public sealed class ChatHub(
         return streamService.GetStreamState(topicId);
     }
 
-    public async IAsyncEnumerable<ChatStreamMessage> ResumeStream(
+    // A page from before StreamSeen: handed the people's messages the stream carried, which it skips
+    // where it shows them.
+    public IAsyncEnumerable<ChatStreamMessage> ResumeStream(
         string topicId,
+        CancellationToken cancellationToken) =>
+        ResumeStreamFrom(topicId, null, cancellationToken);
+
+    // A page resuming a stream read its state a moment ago, and says how much of it it drew: whatever
+    // the stream carried since — the rest of a message it had begun, a person's message, the end — is
+    // handed to it first, taken with the subscription, so nothing written between the two is lost.
+    public async IAsyncEnumerable<ChatStreamMessage> ResumeStreamFrom(
+        string topicId,
+        StreamSeen? seen,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         await SessionToReadAsync(topicId);
@@ -336,10 +347,16 @@ public sealed class ChatHub(
             yield break;
         }
 
-        var liveStream = streamService.SubscribeToStream(topicId, cancellationToken);
-        if (liveStream is null)
+        if (streamService.Join(topicId, seen) is not var (liveStream, carried))
         {
             yield break;
+        }
+
+        // A page that said what it drew is handed the rest; one from before is handed the people's
+        // messages alone, since it cannot be told the rest of a message from the whole of it.
+        foreach (var earlier in carried.Where(m => seen is not null ? m.ApprovalRequest is null : m.UserMessage is not null))
+        {
+            yield return earlier;
         }
 
         var pendingApproval = approvalService.GetPendingApprovalForTopic(topicId);
@@ -348,9 +365,33 @@ public sealed class ChatHub(
             yield return new ChatStreamMessage { ApprovalRequest = pendingApproval };
         }
 
-        await foreach (var msg in liveStream.IgnoreCancellation(cancellationToken))
+        await foreach (var msg in WhileTheyMaySee(topicId, liveStream.ReadAllAsync(cancellationToken))
+                           .IgnoreCancellation(cancellationToken))
         {
             yield return msg;
+        }
+    }
+
+    // A reply streams to a page only while its person may see the topic: its owner making it private
+    // mid-reply took the row off the other members' lists, and the hub kept sending them the reply as
+    // it was written. Asked again only when who may see it changed (StreamService.AudienceOf).
+    private async IAsyncEnumerable<ChatStreamMessage> WhileTheyMaySee(
+        string topicId, IAsyncEnumerable<ChatStreamMessage> chunks)
+    {
+        var seen = streamService.AudienceOf(topicId);
+        await foreach (var chunk in chunks)
+        {
+            if (streamService.AudienceOf(topicId) is var now && now != seen)
+            {
+                seen = now;
+                if (!sessionService.TryGetSession(topicId, out var session) || session is null
+                    || await threadStore.TopicOfAsync(session) is not { } topic || !Viewer.Sees(topic))
+                {
+                    yield break;
+                }
+            }
+
+            yield return chunk;
         }
     }
 
@@ -380,7 +421,7 @@ public sealed class ChatHub(
         streamService.TryIncrementPending(topicId);
 
         // Subscribe before emitting so no early reply chunks are lost
-        var subscription = broadcastChannel.Subscribe();
+        var (subscription, carried) = streamService.Join(topicId, broadcastChannel);
 
         // Refused before anything is written or emitted, for the race where the model changes
         // between picking a file and sending it: no turn is created, no agent is woken, and no
@@ -419,7 +460,7 @@ public sealed class ChatHub(
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender),
+            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender, correlationId),
             Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
@@ -458,9 +499,16 @@ public sealed class ChatHub(
             await AnswerNotLiveAsync(topicId, conversationId);
         }
 
+        // An approval it carried is the other person's, shown to them where it was asked.
+        foreach (var earlier in carried.Where(m => m.ApprovalRequest is null))
+        {
+            yield return earlier;
+        }
+
         // Stream responses back to the browser — the loop ends when the channel completes
         // (i.e. when the last pending agent finishes), not on individual IsComplete messages.
-        await foreach (var msg in subscription.ReadAllAsync(linkedToken).IgnoreCancellation(cancellationToken))
+        await foreach (var msg in WhileTheyMaySee(topicId, subscription.ReadAllAsync(linkedToken))
+                           .IgnoreCancellation(cancellationToken))
         {
             yield return msg;
         }
@@ -503,7 +551,7 @@ public sealed class ChatHub(
         var userMessage = new ChatStreamMessage
         {
             Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender),
+            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender, correlationId),
             Attachments = attachments
         };
         await streamService.WriteMessageAsync(topicId, userMessage);
@@ -704,7 +752,15 @@ public sealed class ChatHub(
         if (stored is not null)
         {
             RequireMayRenameOrDelete(stored);
-            await threadStore.SaveTopicAsync(stored with { Name = topic.Name }, keepTtl: true);
+            var renamed = stored with { Name = topic.Name };
+            await threadStore.SaveTopicAsync(renamed, keepTtl: true);
+
+            // Told to whoever may have it on screen, as a share change is: a household member reading
+            // a shared topic, the owner's other device, whoever sees all. Before, their list and header
+            // kept the old name until a reply next ended in the topic.
+            var heardIn = HeardIn(renamed.SpaceSlug);
+            await hubSender.SendToTopicAsync(renamed, heardIn, "OnTopicChanged",
+                new TopicChangedNotification(TopicChangeType.Updated, renamed.TopicId, renamed, heardIn));
             return;
         }
 
@@ -740,6 +796,7 @@ public sealed class ChatHub(
 
         var changed = stored with { Shared = shared };
         await threadStore.SaveTopicAsync(changed, keepTtl: true);
+        streamService.AudienceChanged(topicId);
         var heardIn = HeardIn(changed.SpaceSlug);
         await hubSender.SendToGroupAsync(
             TopicAudience.Space(SignedIn.TenantId, heardIn),

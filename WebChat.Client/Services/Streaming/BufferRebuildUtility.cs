@@ -96,23 +96,28 @@ public static class BufferRebuildUtility
             }
         }
 
-        // Add current prompt before unanchored buffer content so the user message
-        // appears before the assistant responses it triggered (fixes ordering on
-        // page refresh while the agent is still responding).
-        if (!string.IsNullOrEmpty(currentPrompt) &&
-            !existingHistory.Any(m => m.Role == "user" && m.Content == currentPrompt))
-        {
-            // The stream's state carries the prompt alone; the time and name it was sent with ride
-            // on its buffered user message.
-            var sent = buffer.LastOrDefault(m => m.UserMessage is not null && m.Content == currentPrompt)?.UserMessage;
-            merged.Add(new ChatMessageModel
+        // Every message the stream carried that the page does not show yet goes before the
+        // unanchored buffer content, so a user message appears before the responses it triggered
+        // (a page refreshed while the agent is still responding). Not the stream's current prompt
+        // alone: two people sending in a shared topic at once put both their messages on one stream,
+        // and its state names only the one sent last, so the other was never drawn.
+        var carried = buffer.Where(m => m.UserMessage is not null).ToList();
+        merged.AddRange(carried
+            .Where(m => !IsShown(existingHistory, m.UserMessage!.SenderId, m.Content ?? ""))
+            .Select(m => new ChatMessageModel
             {
                 Role = "user",
-                Content = currentPrompt,
-                SenderId = currentSenderId,
-                SenderName = sent?.SenderName,
-                Timestamp = sent?.Timestamp
-            });
+                Content = m.Content ?? "",
+                SenderId = m.UserMessage!.SenderId,
+                SenderName = m.UserMessage.SenderName,
+                Timestamp = m.UserMessage.Timestamp,
+                Attachments = m.Attachments
+            }));
+
+        // A buffer that kept no user message (it holds the last hundred chunks) still names its prompt.
+        if (carried.Count == 0 && !string.IsNullOrEmpty(currentPrompt) && !IsShown(existingHistory, currentSenderId, currentPrompt))
+        {
+            merged.Add(new ChatMessageModel { Role = "user", Content = currentPrompt, SenderId = currentSenderId });
         }
 
         // Append leading new if no anchors were found
@@ -123,6 +128,17 @@ public static class BufferRebuildUtility
 
         return new BufferResumeResult(merged, streamingMessage);
     }
+
+    // How far back a page is looked through for a message a stream carried: a stream carries only
+    // the turns sent while it ran, and the persisted history ends with them.
+    private const int ShownWindow = 4;
+
+    // Whether the page already shows this person's message, among its last few: the stream's own
+    // copy of a message the page drew when it was sent, or loaded with the history, is not a new one.
+    public static bool IsShown(IReadOnlyList<ChatMessageModel> page, string? senderId, string content) =>
+        page.Where(m => m.Role == "user")
+            .TakeLast(ShownWindow)
+            .Any(m => m.Content == content && (m.SenderId == senderId || m.SenderId is null || senderId is null));
 
     internal static (List<ChatMessageModel> CompletedTurns, ChatMessageModel StreamingMessage) RebuildFromBuffer(
         IReadOnlyList<ChatStreamMessage> bufferedMessages)

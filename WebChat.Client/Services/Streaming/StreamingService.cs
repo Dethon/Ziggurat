@@ -7,6 +7,7 @@ using WebChat.Client.State.AgentSettings;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
@@ -20,7 +21,8 @@ public sealed class StreamingService(
     MessagesStore messagesStore,
     AgentSettingsStore agentSettingsStore,
     ComposerStore composerStore,
-    TopicStreams topicStreams) : IStreamingService
+    TopicStreams topicStreams,
+    IMessagePipeline pipeline) : IStreamingService
 {
     // Serialises deciding whether to open a stream and opening it. TopicStreams answers who
     // holds a topic, but that answer is only atomic on its own; the send has a round trip
@@ -122,9 +124,9 @@ public sealed class StreamingService(
     // Opening the stream is what waits for the reply's next chunk, so it happens after the
     // reply is already showing. Recovery the user never asked for: nothing is said when it
     // cannot be opened — the caller ends the stream, which keeps what was shown as a message.
-    public async Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic)
+    public async Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic, StreamSeen? seen = null)
     {
-        var chunks = await messagingService.ResumeStreamAsync(topic.TopicId);
+        var chunks = await messagingService.ResumeStreamAsync(topic.TopicId, seen);
         if (!chunks.IsLive)
         {
             return false;
@@ -259,10 +261,36 @@ public sealed class StreamingService(
                 var currentMessageId = lease.CurrentMessageId;
 
                 // A user message closes off the assistant content written so far; what follows
-                // it is a new response, and HandleUserMessage adds the user's own bubble.
-                if (chunk.UserMessage is not null)
+                // it is a new response. The page that sent it shows it already; anybody else's —
+                // another person in a shared topic, this person on another device — sent at the
+                // same moment as this page's own reaches the page here and nowhere else. One the page
+                // shows already (a resumed wire opens with the messages its stream carried, which
+                // the stream's state drew) is no new message, and closes nothing: taking it as one
+                // cut the reply shown so far from the rest of it.
+                if (chunk.UserMessage is { } sent)
                 {
+                    var mine = pipeline.WasSentByThisClient(sent.CorrelationId);
+                    if (!mine && BufferRebuildUtility.IsShown(
+                            messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, []),
+                            sent.SenderId, chunk.Content ?? ""))
+                    {
+                        continue;
+                    }
+
                     lease.StartMessage(currentMessageId);
+                    if (!mine)
+                    {
+                        dispatcher.Dispatch(new AddMessage(topic.TopicId, new ChatMessageModel
+                        {
+                            Role = "user",
+                            Content = chunk.Content ?? "",
+                            SenderId = sent.SenderId,
+                            SenderName = sent.SenderName,
+                            Timestamp = sent.Timestamp,
+                            Attachments = chunk.Attachments
+                        }));
+                    }
+
                     continue;
                 }
 

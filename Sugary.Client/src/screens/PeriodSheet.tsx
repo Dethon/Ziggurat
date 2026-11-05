@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { api } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
-import { MAX_PERIOD_DAYS, periodProblem, type PeriodProblem } from "../cycle";
+import { MAX_PERIOD_DAYS, periodProblem, refusedBecause, type PeriodProblem } from "../cycle";
 import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
 import { formatDays } from "../format";
@@ -60,7 +60,8 @@ export function PeriodSheet({
     try {
       onSaved(await (period ? api.updatePeriod(period.id, values) : api.createPeriod(values)));
     } catch (failure) {
-      setError(errorMessage(failure, t, "save"));
+      const refused = await refusedBecause(values, period?.id, today, api.periods);
+      setError(refused?.problem ? problemText(refused.problem, t, language) : errorMessage(failure, t, "save"));
       setBusy(false);
     }
   }

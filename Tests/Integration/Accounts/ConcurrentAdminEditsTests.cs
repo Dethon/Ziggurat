@@ -4,6 +4,7 @@ using Domain.DTOs.Admin;
 using Domain.DTOs.Household;
 using Shouldly;
 using Tests.Integration.Fixtures;
+using WebChat.Client.State.Admin;
 
 namespace Tests.Integration.Accounts;
 
@@ -49,6 +50,34 @@ public sealed class ConcurrentAdminEditsTests
         (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldContain("space attic");
         var spaces = (await (await admin.GetAsync(AdminProtocol.Spaces)).Content.ReadFromJsonAsync<AdminSpaces>())!;
         spaces.Spaces.Select(s => s.Name).ShouldBe(["Main", "Loft"]);
+    }
+
+    // Each page removes a different space, as the spaces page builds its save: Bea's removal of the
+    // attic was refused because Ana's removal of the kitchen had numbered the attic's order again.
+    [Fact]
+    public async Task TwoOwnersEachRemovingADifferentSpace_FromPagesOpenedTogether_BothStand()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        var start = new SpaceDrafts([HouseholdSpace.Default]);
+        start.Add("kitchen", "Kitchen");
+        start.Add("attic", "Attic");
+        start.Add("garden", "Garden");
+        await admin.PutAsync(AdminProtocol.Spaces, start.ToSection());
+        var loaded = (await (await admin.GetAsync(AdminProtocol.Spaces)).Content.ReadFromJsonAsync<AdminSpaces>())!.Spaces;
+        var anas = new SpaceDrafts(loaded);
+        var beas = new SpaceDrafts(loaded);
+        anas.Remove(1);
+        beas.Remove(2);
+
+        (await admin.PutAsync(AdminProtocol.Spaces, AdminEdit.Of(anas.ToSection(), new SpacesSection { Spaces = loaded })))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+        var second = await admin.PutAsync(AdminProtocol.Spaces, AdminEdit.Of(beas.ToSection(), new SpacesSection { Spaces = loaded }));
+
+        second.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await second.Content.ReadFromJsonAsync<AdminSaved<AdminSpaces>>())!.Value.Spaces.Select(s => s.Slug)
+            .ShouldBe(["default", "garden"]);
     }
 
     [Fact]
