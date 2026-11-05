@@ -12,7 +12,8 @@ const SAID: Record<Asking, Partial<Record<number, StringKey>>> = {
   estimate: { 400: "errorMediaRefused", 500: "errorClipsDown", 502: "errorUnreadable", 504: "errorTimeout" },
   label: { 400: "labelRefused", 502: "labelNoAnswer", 504: "labelTimeout" },
   product: { 400: "productBadCode", 502: "productNoAnswer", 504: "productNoAnswer" },
-  save: { 400: "errorNotSaved" },
+  // 409: somebody — or her other phone — changed the same field since the sheet opened.
+  save: { 400: "errorNotSaved", 409: "errorChangedElsewhere" },
   // 409: a food a recipe still uses, deleted from a pantry that had not heard of the recipe.
   deleteFood: { 409: "foodInRecipe" },
   load: {},

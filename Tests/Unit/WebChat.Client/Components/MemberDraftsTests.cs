@@ -41,4 +41,53 @@ public class MemberDraftsTests
 
         drafts.For(Ines).SeesAll.ShouldBeTrue();
     }
+
+    // Two owners on the members page: Ana made Carlos an owner, then Bea — whose page still said
+    // Member — ticked "Sees all conversations" for him and saved. The page sent the role it had
+    // loaded beside the tick, and Carlos was a member again with nobody told. A save says only what
+    // this page changed, so another owner's change to the other field stands.
+    private static readonly AdminMember Carlos = new("carlos", "Carlos", AdminMember.Member, false, false, false);
+
+    [Fact]
+    public void ASaveOfOneField_SendsThatFieldAlone()
+    {
+        var drafts = new MemberDrafts();
+        drafts.Reset(new AdminMembers([Carlos]));
+        drafts.For(Carlos).SeesAll = true;
+
+        drafts.EditOf(Carlos).ShouldBe(new MemberEdit(null, true));
+    }
+
+    [Fact]
+    public void ASaveOfTheRole_SendsTheRoleAlone()
+    {
+        var drafts = new MemberDrafts();
+        drafts.Reset(new AdminMembers([Carlos]));
+        drafts.For(Carlos).Role = AdminMember.Owner;
+
+        drafts.EditOf(Carlos).ShouldBe(new MemberEdit(AdminMember.Owner, null));
+    }
+
+    [Fact]
+    public void AFieldChangedAndChangedBack_IsNotSent()
+    {
+        var drafts = new MemberDrafts();
+        drafts.Reset(new AdminMembers([Carlos]));
+        drafts.For(Carlos).Role = AdminMember.Owner;
+        drafts.For(Carlos).Role = AdminMember.Member;
+        drafts.For(Carlos).SeesAll = true;
+
+        drafts.EditOf(Carlos).ShouldBe(new MemberEdit(null, true));
+    }
+
+    [Fact]
+    public void NothingChanged_IsNothingToSave()
+    {
+        var drafts = new MemberDrafts();
+        drafts.Reset(new AdminMembers([Carlos]));
+        drafts.For(Carlos).SeesAll = true;
+        drafts.For(Carlos).SeesAll = false;
+
+        drafts.EditOf(Carlos).ShouldBeNull();
+    }
 }

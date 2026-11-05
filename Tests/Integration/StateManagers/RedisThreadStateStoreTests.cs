@@ -506,7 +506,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var key = HistoryKey("agent-drop", 591);
         await store.AppendMessagesAsync(key, [new ChatMessage(ChatRole.User, "one"), new ChatMessage(ChatRole.Assistant, "two")]);
         await store.AppendMessagesAsync(key, [new ChatMessage(ChatRole.User, "Hola"), new ChatMessage(ChatRole.Assistant, "refused")]);
-        await store.MarkTopicReadAsync("home", "agent-drop", 591, "t-drop");
+        await store.MarkTopicReadAsync("home", "agent-drop", 591, "t-drop", Anyone.UserId);
 
         await store.DropTailAsync(key, 2);
 
@@ -625,7 +625,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
             "t-wide-read", wideChatId, 0, "agent-wide-read", "Wide id", DateTimeOffset.UtcNow, null,
             MessageCount: 2, TenantId: "home"));
 
-        await store.MarkTopicReadAsync("home", "agent-wide-read", wideChatId, "t-wide-read");
+        await store.MarkTopicReadAsync("home", "agent-wide-read", wideChatId, "t-wide-read", Anyone.UserId);
 
         var topic = (await store.GetTopicPageAsync("agent-wide-read", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
@@ -644,11 +644,38 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         await store.AppendMessagesAsync(HistoryKey("agent-read", 590),
             [new ChatMessage(ChatRole.User, "one"), new ChatMessage(ChatRole.Assistant, "two")]);
 
-        await store.MarkTopicReadAsync("home", "agent-read", 590, "t-read");
+        await store.MarkTopicReadAsync("home", "agent-read", 590, "t-read", Anyone.UserId);
 
         var topic = (await store.GetTopicPageAsync("agent-read", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
         topic.ReadPosition.ShouldBe(topic.MessageCount);
+    }
+
+    // How far a topic was read is each person's own: in a shared topic Carlos wrote and read the
+    // reply, and Ana — who had not — was shown nothing unread, the topic holding one position for all.
+    // A topic read before positions were a person's keeps that one for whoever has none of their own.
+    [Fact]
+    public async Task MarkTopicReadAsync_IsThePersonsOwn_AndAPositionFromBeforeStandsForEveryoneElse()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t-read-own", 592, 0, "agent-read-own", "Shared", DateTimeOffset.UtcNow, null,
+            ReadPosition: 1, TenantId: "home"));
+        await store.AppendMessagesAsync(HistoryKey("agent-read-own", 592),
+            [new ChatMessage(ChatRole.User, "one"), new ChatMessage(ChatRole.Assistant, "two"), new ChatMessage(ChatRole.User, "three")]);
+
+        await store.MarkTopicReadAsync("home", "agent-read-own", 592, "t-read-own", "carlos");
+
+        var carlos = (await store.GetTopicPageAsync("agent-read-own", "default", new TopicViewer("carlos", "home"), null, 10))
+            .Topics.ShouldHaveSingleItem();
+        carlos.ReadPosition.ShouldBe(3);
+        var ana = (await store.GetTopicPageAsync("agent-read-own", "default", new TopicViewer("ana", "home"), null, 10))
+            .Topics.ShouldHaveSingleItem();
+        ana.ReadPosition.ShouldBe(1, "Carlos's reading is not Ana's");
+
+        await store.DropTailAsync(HistoryKey("agent-read-own", 592), 2);
+        (await store.GetTopicPageAsync("agent-read-own", "default", new TopicViewer("carlos", "home"), null, 10))
+            .Topics.ShouldHaveSingleItem().ReadPosition.ShouldBe(1, "a position past what is left is what is left");
     }
 
     // Stamp runs on the Agent host and mark-read on the channel host, against the same record.
@@ -673,11 +700,11 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
             {
                 store.AppendMessagesAsync(
                     HistoryKey("agent-race", 650), [new ChatMessage(ChatRole.Assistant, $"reply {i}")]),
-                store.MarkTopicReadAsync("home", "agent-race", 650, "t-race")
+                store.MarkTopicReadAsync("home", "agent-race", 650, "t-race", Anyone.UserId)
             }));
         }
 
-        await store.MarkTopicReadAsync("home", "agent-race", 650, "t-race");
+        await store.MarkTopicReadAsync("home", "agent-race", 650, "t-race", Anyone.UserId);
 
         var topic = (await store.GetTopicPageAsync("agent-race", "default", Anyone, null, 10)).Topics
             .ShouldHaveSingleItem();
@@ -887,7 +914,7 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var db = redisFixture.Connection.GetDatabase();
         await db.KeyExpireAsync("topic@home:agent-keep:680:t-keep", TimeSpan.FromDays(10));
 
-        await store.MarkTopicReadAsync("home", "agent-keep", 680, "t-keep");
+        await store.MarkTopicReadAsync("home", "agent-keep", 680, "t-keep", Anyone.UserId);
 
         var ttl = await db.KeyTimeToLiveAsync("topic@home:agent-keep:680:t-keep");
         ttl.ShouldNotBeNull();

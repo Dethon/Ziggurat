@@ -1,5 +1,5 @@
 using System.Text.Json.Nodes;
-using Accounts.Admin;
+using Domain.Editing;
 using Shouldly;
 
 namespace Tests.Unit.Accounts;

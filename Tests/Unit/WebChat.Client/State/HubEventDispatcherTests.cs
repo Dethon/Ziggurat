@@ -86,6 +86,27 @@ public sealed class HubEventDispatcherTests : IDisposable
             Times.Once);
     }
 
+    // News of a shared topic goes to all its people with each one's read position: this page counts
+    // its own person's, so Carlos having read it leaves Laura's badge as it was.
+    [Fact]
+    public void HandleTopicChanged_Updated_CountsTheSignedInPersonsOwnReadPosition()
+    {
+        _realDispatcher.Dispatch(new SignedIn(new SignedInPerson("laura", "Laura", null, "home", ["member"])));
+        var read = CreateTopicMetadata() with
+        {
+            OwnerId = "fran",
+            TenantId = "home",
+            Shared = true,
+            MessageCount = 6,
+            ReadPosition = 1,
+            ReadBy = new Dictionary<string, long> { ["carlos"] = 6, ["laura"] = 4 }
+        };
+
+        _sut.HandleTopicChanged(new TopicChangedNotification(TopicChangeType.Updated, "topic-1", read));
+
+        _mockDispatcher.Verify(d => d.Dispatch(It.Is<UpdateTopic>(a => a.Topic.UnreadCount == 2)), Times.Once);
+    }
+
     // Unsharing is told to the whole space, so a list that held the topic while it was shared lets
     // it go: the person may no longer know it exists.
     [Fact]

@@ -47,6 +47,7 @@ export function MealScreen({
   adder,
   estimates,
   labels,
+  person,
   onSaved,
 }: {
   // Whether the Meal tab is the one on screen; the screen stays mounted behind the others.
@@ -55,10 +56,12 @@ export function MealScreen({
   adder: RefObject<((item: DraftItem) => void) | null>;
   estimates: boolean;
   labels: boolean;
+  // Who is signed in: the meal she has not saved is kept on the phone for her alone.
+  person: string | null;
   onSaved: () => void;
 }) {
   const { t, language } = useSettings();
-  const [draft, dispatch] = useDraft();
+  const [draft, dispatch] = useDraft(person);
   const [confirm, confirming] = useConfirm();
   const [photos, setPhotos] = useState<Photo[]>([]);
   // At most one clip, shown as she filmed it; the server makes it small and takes its stills.

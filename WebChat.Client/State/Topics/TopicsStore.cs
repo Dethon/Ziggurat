@@ -146,9 +146,12 @@ public sealed class TopicsStore : IDisposable
             Error = null
         },
 
+        // A row's mark that its name is still the file's is the client's alone, so news of the topic
+        // under the same name keeps it: the hub telling every page a topic was read replaced the row
+        // and left a conversation started by a file named after the file for good.
         UpdateTopic a => state with
         {
-            Paging = state.Paging.Upsert(a.Topic),
+            Paging = state.Paging.Upsert(KeepingNameFromFile(state, a.Topic)),
             Error = null
         },
 
@@ -211,4 +214,18 @@ public sealed class TopicsStore : IDisposable
 
         _ => state
     };
+
+    private static StoredTopic KeepingNameFromFile(TopicsState state, StoredTopic topic)
+    {
+        if (topic.NameFromFile
+            || state.Topics.FirstOrDefault(t => t.TopicId == topic.TopicId) is not { NameFromFile: true } held
+            || held.Name != topic.Name)
+        {
+            return topic;
+        }
+
+        var kept = StoredTopic.FromMetadata(topic.ToMetadata());
+        kept.NameFromFile = true;
+        return kept;
+    }
 }

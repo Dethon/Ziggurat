@@ -627,6 +627,49 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         heard.About(topic.TopicId).Select(h => h.Who).ShouldBe(["fran", "olga"], ignoreOrder: true);
     }
 
+    // A topic read on one of its person's devices is read on the other: Ana read it on her phone and
+    // her desktop kept its unread badge until a reload. Its being read is told to whoever may have it
+    // on screen, as a rename is; someone who sees all reads it without marking it, and tells nobody.
+    [Fact]
+    public async Task ATopicReadOnOneDevice_IsToldToTheOthers()
+    {
+        var phone = await ConnectAsync(Fran);
+        var desktop = await ConnectAsync(Fran);
+        var olga = await ConnectAsync(Olga, "sees-all");
+        var topic = await StartTopicAsync(phone, "Fran's plum jam");
+        var heard = Listen(("desktop", desktop), ("olga", olga));
+
+        await olga.InvokeAsync("MarkTopicRead", topic.AgentId, topic.ChatId, topic.TopicId);
+        await Eventually.Settle();
+        heard.About(topic.TopicId).ShouldBeEmpty("reading as someone who sees all marks nothing");
+
+        await phone.InvokeAsync("MarkTopicRead", topic.AgentId, topic.ChatId, topic.TopicId);
+        await Eventually.Until(() => heard.About(topic.TopicId).Any(h => h.Who == "desktop"), "the desktop to hear it was read");
+    }
+
+    // A member reading a shared topic reads it for themselves alone: the owner's next page still
+    // counts what they have not seen.
+    [Fact]
+    public async Task AMemberReadingASharedTopic_LeavesItUnreadForItsOwner()
+    {
+        var fran = await ConnectAsync(Fran);
+        var laura = await ConnectAsync(Laura);
+        var topic = await StartTopicAsync(fran, "Fran's plum jam");
+        await fran.InvokeAsync("SetTopicShared", topic.AgentId, topic.ChatId, topic.TopicId, true);
+        await _store.AppendMessagesAsync(
+            new AgentKey(new ConversationIdentity(topic.ChatId, topic.ThreadId).ConversationId, _agent).ToString(),
+            [new ChatMessage(ChatRole.User, "jam?"), new ChatMessage(ChatRole.Assistant, "plum")]);
+
+        await laura.InvokeAsync("MarkTopicRead", topic.AgentId, topic.ChatId, topic.TopicId);
+
+        var frans = (await fran.InvokeAsync<TopicPage>("GetTopicPage", _agent, "default", null, 50, false))
+            .Topics.Single(t => t.TopicId == topic.TopicId);
+        (frans.MessageCount - frans.ReadPosition).ShouldBe(2);
+        var lauras = (await laura.InvokeAsync<TopicPage>("GetTopicPage", _agent, "default", null, 50, false))
+            .Topics.Single(t => t.TopicId == topic.TopicId);
+        (lauras.MessageCount - lauras.ReadPosition).ShouldBe(0);
+    }
+
     // Sharing is news for the whole space: whoever could not see the topic now can, and unsharing
     // tells them again so their list can let it go.
     [Fact]

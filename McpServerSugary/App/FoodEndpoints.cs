@@ -26,7 +26,9 @@ public record SaveFoodRequest(
     double? PortionGrams,
     double? PortionCarbs,
     string? Barcode,
-    ItemSource Source);
+    ItemSource Source,
+    // What the sheet opened with, on a change (StaleEdits).
+    SaveFoodRequest? Loaded = null);
 
 // The household's foods, ported from the standalone app as they were and shared by everyone in it.
 public static class FoodEndpoints
@@ -79,16 +81,29 @@ public static class FoodEndpoints
     }
 
     private static async Task<IResult> UpdateAsync(
-        Guid id, SaveFoodRequest request, SugaryDbContext db, CancellationToken ct)
+        Guid id, SaveFoodRequest request, SugaryDbContext db, HttpContext http, CancellationToken ct)
     {
-        if (Validate(request) is { } problem)
-        {
-            return Results.Problem(problem, statusCode: StatusCodes.Status400BadRequest);
-        }
-
         if (await db.Foods.FindAsync([id], ct) is not { } food)
         {
             return Results.NotFound();
+        }
+
+        if (request.Loaded is { } loaded)
+        {
+            var merged = StaleEdits.Merge(http, loaded with { Loaded = null }, request with { Loaded = null },
+                new SaveFoodRequest(food.Name, food.CarbsPer100g, food.Unit, food.PortionGrams, food.PortionCarbs,
+                    food.Barcode, food.Source));
+            if (merged.Value is not { } value)
+            {
+                return StaleEdits.Conflict(merged.Conflicts);
+            }
+
+            request = value;
+        }
+
+        if (Validate(request) is { } problem)
+        {
+            return Results.Problem(problem, statusCode: StatusCodes.Status400BadRequest);
         }
 
         Apply(request, food);

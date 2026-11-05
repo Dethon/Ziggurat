@@ -56,7 +56,7 @@ public interface IThreadStateStore
     // Moves the topic's read position up to what it currently holds. Asked of the store rather
     // than told by a caller, so a message that landed while the reader was reading is not
     // counted unread.
-    Task MarkTopicReadAsync(string tenantId, string agentId, long chatId, string topicId);
+    Task MarkTopicReadAsync(string tenantId, string agentId, long chatId, string topicId, string userId);
 
     // The conversation as a reader sees it, which is the same history the agent restores read
     // through a projection. It lives here rather than beside the chat hub so there is one
