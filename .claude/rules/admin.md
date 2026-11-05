@@ -257,7 +257,12 @@ does, `HouseholdAgents.VoiceAgentOf`, or null).
   else names which agent answers a message that names none — and so is removing the last agent, since a
   section with none reads as the two starting templates again. So is removing the agent a space opens on
   ("The Kitchen space opens on Chef, so it stays: pick another agent for that space first"), refused rather
-  than cleared so the removal stays one save of one section. A Telegram bot bound to a removed agent's id
+  than cleared so the removal stays one save of one section. So is removing an agent that still runs
+  schedules ("Chef runs 2 schedules, so it stays: ask it to delete them, or to move them to another agent,
+  first"): they would stay and be refused at every fire with nobody told. `HouseholdSchedules` counts them
+  where the scheduler keeps them (`ScheduleKeys`, the deployment's Redis, through `AccountsRedis`, which
+  `RedisAnnouncer` shares); a Redis that cannot be read refuses the removal 503, and no Redis configured
+  counts none. A Telegram bot bound to a removed agent's id
   is not checked: the keys section is sealed. **A removed agent's id is never given to another**
   (`AgentsSection.RemovedIds`, appended by the removal and skipped by `FreeId`): an id keys its people's
   conversations, its schedules and a bot bound to it, and none of that goes with the agent, so the next

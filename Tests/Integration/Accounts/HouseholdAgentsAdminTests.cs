@@ -11,6 +11,7 @@ using Domain.DTOs.Household;
 using Domain.Prompts;
 using Infrastructure.Agents;
 using Infrastructure.Clients.Accounts;
+using Infrastructure.StateManagers;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
@@ -320,6 +321,42 @@ public sealed class HouseholdAgentsAdminTests(RedisFixture redis) : IClassFixtur
         (await AgentsAsync(admin)).Agents.Select(a => (a.Id, a.Name)).ShouldBe(
             [("jonas", "Jonas"), ("jonas-3", "Tutor"), ("sugary-2", "Sugary")]);
     }
+
+    // A removed agent's schedules stayed and were refused at every fire — Chef's five-minute cron,
+    // "household has no agent jonas-2", forever, nobody told. So an agent that still runs schedules
+    // stays, as one a space opens on does, and the refusal says how many; another household's
+    // schedule for an agent of the same id is not this household's.
+    [Fact]
+    public async Task AnAgentWithSchedules_IsNotRemoved_AndSaysWhy()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var (elsewhere, _) = await server.SeedHouseholdAsync("Otra", "Bea");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        await SendAsync(admin, HttpMethod.Post, AdminProtocol.Agents, new AgentAddition("jonas", "Chef"));
+        var schedules = new RedisScheduleStore(redis.Connection);
+        await schedules.CreateAsync(Scheduled(household, "stir", "jonas-2"));
+        await schedules.CreateAsync(Scheduled(household, "shop", "jonas-2"));
+        await schedules.CreateAsync(Scheduled(household, "plain", "jonas"));
+        await schedules.CreateAsync(Scheduled(elsewhere, "theirs", "sugary"));
+
+        var refused = await SendAsync(admin, HttpMethod.Delete, AdminProtocol.Agent("jonas-2"));
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldBe(
+            "Chef runs 2 schedules, so it stays: ask it to delete them, or to move them to another agent, first.");
+        (await AgentsAsync(admin)).Agents.Select(a => a.Id).ShouldContain("jonas-2");
+        (await SendAsync(admin, HttpMethod.Delete, AdminProtocol.Agent("sugary"))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        await schedules.DeleteAsync(household, "stir");
+        await schedules.DeleteAsync(household, "shop");
+        (await SendAsync(admin, HttpMethod.Delete, AdminProtocol.Agent("jonas-2"))).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    private static Schedule Scheduled(string household, string id, string agentId) => new()
+    {
+        Id = id, TenantId = household, AgentId = agentId, Prompt = "Tell them", CronExpression = "*/5 * * * *",
+        CreatedAt = DateTime.UtcNow, NextRunAt = DateTime.UtcNow.AddMinutes(5)
+    };
 
     // A household always has an agent that answers when nobody named one: the default stays, and the
     // last agent too, since a section with none would be read as the two starting templates again.

@@ -71,7 +71,7 @@ public static class HouseholdAgentsAdmin
 
         household.MapDelete(agent, async (
             AdminCaller caller, string agentId, HttpContext http, HouseholdConfigStore store, AdminLog log, AgentVersions versions,
-            AccountsSettings settings, CancellationToken ct) =>
+            HouseholdSchedules schedules, AccountsSettings settings, CancellationToken ct) =>
         {
             if (await SectionAsync(store, caller, ct) is not { } section)
             {
@@ -102,6 +102,18 @@ public static class HouseholdAgentsAdmin
             if (section.Agents.Count == 1)
             {
                 return Results.BadRequest(new AdminRefusal("A household keeps at least one agent.", []));
+            }
+
+            // Its schedules would stay and be refused at every fire, with nobody told.
+            switch (await schedules.CountOfAgentAsync(caller.HouseholdId, agentId, ct))
+            {
+                case null:
+                    return Results.Json(new AdminRefusal(
+                        $"{Shown(removing).Name} was not removed: whether it still runs schedules could not be checked right now.", []),
+                        statusCode: StatusCodes.Status503ServiceUnavailable);
+                case > 0 and var count:
+                    return Results.BadRequest(new AdminRefusal(
+                        $"{Shown(removing).Name} runs {count} schedule{(count == 1 ? "" : "s")}, so it stays: ask it to delete them, or to move them to another agent, first.", []));
             }
 
             // The mark goes with the agent, in the same save: the satellites fall back as if none were marked.
