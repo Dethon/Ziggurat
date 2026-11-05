@@ -717,7 +717,15 @@ public sealed class ChatHub(
         if (stored is not null)
         {
             RequireMayRenameOrDelete(stored);
-            await threadStore.SaveTopicAsync(stored with { Name = topic.Name }, keepTtl: true);
+            var renamed = stored with { Name = topic.Name };
+            await threadStore.SaveTopicAsync(renamed, keepTtl: true);
+
+            // Told to whoever may have it on screen, as a share change is: a household member reading
+            // a shared topic, the owner's other device, whoever sees all. Before, their list and header
+            // kept the old name until a reply next ended in the topic.
+            var heardIn = HeardIn(renamed.SpaceSlug);
+            await hubSender.SendToTopicAsync(renamed, heardIn, "OnTopicChanged",
+                new TopicChangedNotification(TopicChangeType.Updated, renamed.TopicId, renamed, heardIn));
             return;
         }
 
