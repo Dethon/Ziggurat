@@ -270,6 +270,11 @@ does, `HouseholdAgents.VoiceAgentOf`, or null).
   (`AgentsSection.RemovedIds`, appended by the removal and skipped by `FreeId`): an id keys its people's
   conversations, its schedules and a bot bound to it, and none of that goes with the agent, so the next
   agent of the template under the same id inherited all of it.
+  **Its people's conversations with it are no longer shown** (kept under its id, listed nowhere; user's
+  decision, 2026-11-05: say so rather than refuse): the confirmation says so, and a chat page that was on it
+  when it went names it above the agent it fell back to (`TopicsState.RemovedAgentName`, until the person
+  picks an agent or opens a conversation) — before, Marta's open Chef conversation closed under her and her
+  next message went to Jonas with nothing said.
 - **Versions** are the name and instructions a change replaced (an edit's or a restore's, so a restore is
   undone the same way), the last `Admin:AgentVersionsKept` (5) per agent, by whom and when, written after
   the save stood and dropped with the agent. **A table, not the section**: no turn reads history, and the

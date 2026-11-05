@@ -64,7 +64,7 @@
                 @if (_confirming == agent.Id)
                 {
                     <div class="admin-confirm" role="group" aria-label="Remove @agent.Name">
-                        <p>Remove @agent.Name? Nobody in the household can talk to it after.</p>
+                        <p>Remove @agent.Name? Nobody in the household can talk to it after, and everyone's conversations with it are no longer shown.</p>
                         <div class="admin-actions">
                             <button type="button" class="admin-secondary" @onclick="() => _confirming = null">Keep it</button>
                             <button type="button" class="admin-save" @onclick="() => Remove(agent.Id)">Remove @agent.Name</button>

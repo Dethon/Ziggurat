@@ -187,6 +187,36 @@ public class TopicsStoreTests : IDisposable
         _store.State.SelectedTopicId.ShouldBeNull();
     }
 
+    // Marta's open Chef conversation closed under her when an owner removed Chef, and her next message
+    // went to Jonas with nothing said: the page names the agent that went until she picks another.
+    [Fact]
+    public void SetAgents_WhenSelectedAgentRemoved_NamesItUntilAnotherIsPicked()
+    {
+        _dispatcher.Dispatch(new SetAgents([new("a", "Jonas", null), new("b", "Chef", null)]));
+        _dispatcher.Dispatch(new SelectAgent("b"));
+
+        _dispatcher.Dispatch(new SetAgents([new("a", "Jonas", null)]));
+        _store.State.RemovedAgentName.ShouldBe("Chef");
+
+        _dispatcher.Dispatch(new SetAgents([new("a", "Jonas", null)]));
+        _store.State.RemovedAgentName.ShouldBe("Chef", "a later catalogue removes nothing more");
+
+        _dispatcher.Dispatch(new SelectAgent("a"));
+        _store.State.RemovedAgentName.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SetAgents_WhenSelectedAgentRemoved_IsForgottenOnceAConversationOpens()
+    {
+        _dispatcher.Dispatch(new SetAgents([new("a", "Jonas", null), new("b", "Chef", null)]));
+        _dispatcher.Dispatch(new SelectAgent("b"));
+        _dispatcher.Dispatch(new SetAgents([new("a", "Jonas", null)]));
+
+        _dispatcher.Dispatch(new SelectTopic("topic-a"));
+
+        _store.State.RemovedAgentName.ShouldBeNull();
+    }
+
     [Fact]
     public void SetAgents_WhenSelectedAgentStillPresent_KeepsSelectedTopic()
     {

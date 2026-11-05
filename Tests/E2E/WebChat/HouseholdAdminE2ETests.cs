@@ -112,6 +112,9 @@ public partial class HouseholdAdminE2ETests(WebChatE2EFixture fixture)
             await Assertions.Expect(agent.Locator("textarea[name=customInstructions]")).ToHaveValueAsync("");
 
             await agent.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Remove", Exact = true }).ClickAsync();
+            // What goes with it is said before it goes: nobody's conversations with it are shown again.
+            await Assertions.Expect(agent.GetByRole(AriaRole.Group, new LocatorGetByRoleOptions { Name = $"Remove {added}" }))
+                .ToContainTextAsync("conversations with it are no longer shown");
             await agent.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = $"Remove {added}" }).ClickAsync();
             await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");
             await Assertions.Expect(page.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = added })).ToHaveCountAsync(0);
