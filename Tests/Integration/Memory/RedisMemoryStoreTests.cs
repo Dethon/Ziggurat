@@ -163,11 +163,11 @@ public class RedisMemoryStoreTests(MemorySearchFixture redisFixture) : IClassFix
         // Arrange
         var store = CreateStore();
         var userId = $"user_{Guid.NewGuid():N}";
-        var memory = CreateMemory(userId, "Accessed memory");
+        // Last read an hour ago: the update reads the wall clock, which this machine's VM has been seen
+        // to step back by a second between two readings ten milliseconds apart (pass 18's suite).
+        var memory = CreateMemory(userId, "Accessed memory") with { LastAccessedAt = DateTimeOffset.UtcNow.AddHours(-1) };
         await store.StoreAsync(memory);
         var originalAccessTime = memory.LastAccessedAt;
-
-        await Task.Delay(10); // Ensure time difference
 
         // Act
         var updated = await store.UpdateAccessAsync(userId, memory.Id);
