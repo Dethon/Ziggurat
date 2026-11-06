@@ -74,7 +74,7 @@ public sealed class RequestApprovalTool
 
         var sent = await botClient.SendMessage(
             chatId,
-            ApprovalCallbackRouter.FormatApprovalMessage(p.Requests),
+            ApprovalCallbackRouter.FormatApprovalMessage(p.Requests, group: chatId < 0),
             ParseMode.Html,
             replyMarkup: ApprovalCallbackRouter.CreateApprovalKeyboard(id),
             messageThreadId: threadId,

@@ -266,8 +266,9 @@ public sealed class ApprovalCallbackRouter
         }));
 
     // The question as both of its senders put it: the group or chat that asked, and a private chat it is
-    // offered or copied to.
-    public static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests)
+    // offered or copied to. A group's copy is read by everyone in it, so its reason speaks of the person
+    // who asked rather than of "you".
+    public static string FormatApprovalMessage(IReadOnlyList<ToolApprovalRequest> requests, bool group = false)
     {
         var sb = new StringBuilder();
         var toolNames = string.Join(", ", requests.Select(r => r.ToolName.Split("__").Last()));
@@ -296,7 +297,8 @@ public sealed class ApprovalCallbackRouter
         }
 
         // Why the exec screen put this to the person, last so it sits right above the keyboard.
-        var reason = ExecScreenReasons.English([.. requests.SelectMany(r => r.Screen ?? []).Distinct()]);
+        IReadOnlyList<string> codes = [.. requests.SelectMany(r => r.Screen ?? []).Distinct()];
+        var reason = group ? ExecScreenReasons.EnglishForOthers(codes) : ExecScreenReasons.English(codes);
         if (reason is not null)
         {
             sb.AppendLine($"<i>Why you're asked: {HtmlEncode(reason)}</i>");

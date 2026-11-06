@@ -159,6 +159,43 @@ public class RequestApprovalToolTests : IDisposable
         message.ShouldEndWith("<i>Why you're asked: It would delete or change something that's already there.</i>");
     }
 
+    // A group's copy is read by everyone in it, so its reason speaks of the person who asked: "logged
+    // in as you" read to the group as being about each of them (pass 9's note, still so in pass 20).
+    // The asker's private copy keeps "you".
+    [Fact]
+    public async Task McpRun_AQuestionAskedInAGroup_SaysWhyAsThePersonWhoAsked()
+    {
+        _harness.BotRegistry.RegisterChat(TelegramPollingHarness.FamilyGroup, _harness.Bot);
+        IReadOnlyList<ToolApprovalRequest> requests =
+        [
+            new ToolApprovalRequest(null, "mcp__websearch__web_browse", new Dictionary<string, object?> { ["asMe"] = true })
+            {
+                Screen = [ExecScreenCodes.AsPerson]
+            }
+        ];
+        var group = $"{TelegramPollingHarness.FamilyGroup}:{TelegramPollingHarness.FamilyGroup}";
+        var turn = new ConversationContext(TelegramPollingHarness.AgentId, group, "alice", new ReplyTarget("telegram", group));
+
+        var asked = RequestApprovalTool.RunAsync(group, ApprovalMode.Request, requests, turn, _services);
+
+        await Eventually.Until(() => _harness.Sent.Any(m => m.ChatId.Identifier == TelegramPollingHarness.FamilyGroup), "the group is asked");
+        _harness.Sent.Single(m => m.ChatId.Identifier == TelegramPollingHarness.FamilyGroup).Text
+            .ShouldEndWith("<i>Why you're asked: It would browse this site logged in as the person who asked.</i>");
+        asked.IsCompleted.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ApprovalMessage_ForItsAsker_SaysWhyAsThem()
+    {
+        var request = new ToolApprovalRequest(null, "mcp__websearch__web_browse", new Dictionary<string, object?>())
+        {
+            Screen = [ExecScreenCodes.AsPerson]
+        };
+
+        ApprovalCallbackRouter.FormatApprovalMessage([request])
+            .ShouldEndWith("<i>Why you're asked: It would browse this site logged in as you.</i>");
+    }
+
     [Fact]
     public void ApprovalMessage_WithoutScreen_IsUnchanged()
     {
