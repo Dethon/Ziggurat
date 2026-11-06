@@ -10,6 +10,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Tunnel;
+using Domain.Exceptions;
 using Domain.Metrics;
 using Domain.Monitor;
 using Domain.Prompts;
@@ -489,6 +490,38 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
             owner, new OpenRouterKey($"sk-or-v1-smoke-unreachable-{tag}-000000"));
         unreachable.Value.OpenRouter!.State.ShouldBe(KeyState.Unchecked);
         unreachable.Warning.ShouldNotBeNull();
+    }
+
+    // A household's turn that fails — here on a key the stub could not check and OpenRouter refuses —
+    // is that household's error on the dashboard: the reply's error was filed as the deployment's own,
+    // so an operator looking at the household saw none of its failed turns.
+    [SkippableFact]
+    public async Task AHouseholdsFailedTurn_IsFiledUnderThatHousehold()
+    {
+        Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
+
+        var since = DateTimeOffset.UtcNow;
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var created = await AdminAsync<AdminSaved<OwnerLink>>(HttpMethod.Post, stack.DashboardHost, AdminProtocol.Households,
+            stack.OperatorSession, new NewHousehold($"Smoke Failing {tag}", $"Smoke Failing Owner {tag}"));
+        var owner = await SmokeStack.SessionOfAsync(created.Value.UserId);
+        var household = created.Value.HouseholdId;
+        (await AdminAsync<AdminSaved<HouseholdKeys>>(HttpMethod.Put, stack.MainHost, AdminProtocol.OpenRouterKey,
+            owner, new OpenRouterKey($"sk-or-v1-smoke-unreachable-{tag}-000000"))).Value.OpenRouter!.State
+            .ShouldBe(KeyState.Unchecked);
+
+        await InChatAsync(null, async page =>
+        {
+            await SayAsync(page, $"Smoke {tag}: reply with one short sentence.");
+            await Assertions.Expect(page.Locator(".chat-message.error"))
+                .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 180_000 });
+        }, owner);
+
+        await Eventually.Until(async () => (await ErrorsAsync(household, since))
+                .Any(e => e.ErrorType == nameof(TurnRefusedException)),
+            "the refused turn's error, under the household",
+            TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(2));
+        (await ErrorsAsync("deployment", since)).ShouldNotContain(e => e.ErrorType == nameof(TurnRefusedException));
     }
 
     // A tunnel is opened with the credential minted for that server and no other: a forged one, and
