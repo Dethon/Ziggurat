@@ -957,7 +957,7 @@ internal sealed class ConversationGroup(
         // (voice does). Everything else arrives without one, and gets one here, so from this point
         // on every turn has a key whichever channel the message came from.
         var turn = new Turn(
-            x.Message, targets, firstReply, x.Message.TurnKey ?? TurnKey.Mint(), x.Identity,
+            x.Message, targets, firstReply, x.Message.TurnKey ?? TurnKey.Mint(), state.Metrics, x.Identity,
             HouseholdChannels.HouseholdOf(x.Channel).HouseholdId);
         // Agent-initiated turns (downloads, schedules) land in conversations with no live
         // stream on the receiving channel; announce the turn so the channel can set one up
