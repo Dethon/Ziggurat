@@ -381,6 +381,16 @@ internal class McpFileSystemBackend(
                 Meta = meta
             }, ct);
         }
+        catch (Exception ex) when (ex is HttpRequestException or IOException)
+        {
+            // The server did not answer at all — a household's tunnel closed, a container down. That is
+            // the server away, not the mount lacking the operation: another mount is not the remedy.
+            return ToolError.Create(
+                ToolError.Codes.TransientDependency,
+                $"The '{filesystemName}' filesystem's server did not answer, so the '{toolName}' operation was not done: {ex.Message}",
+                hint: "Tell the user it is unreachable; calling it again this turn gets the same answer. "
+                      + "You cannot retry it yourself after this reply, so do not promise to.");
+        }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Client-side dispatch failure: the call never reached the server's

@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Admin;
 using Domain.DTOs.Channel;
+using Domain.DTOs.FileSystem;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Tunnel;
 using Domain.Prompts;
@@ -181,6 +182,26 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         error.ShouldNotBeNull().Message.ShouldContain("vault is offline");
         error.Message.ShouldContain("not sent");
         error.Message.ShouldNotContain("unknown");
+    }
+
+    // A mount's call after its server's tunnel closed is the server being away, not the mount lacking
+    // the operation: it is answered transient_dependency, never unsupported_operation with a hint to
+    // pick another mount (pass 19: a /media glob after the library's tunnel closed said 'does not
+    // support the fs_glob operation').
+    [Fact]
+    public async Task AMountsCallAfterItsTunnelClosed_IsTheServerAway_NotAnUnsupportedOperation()
+    {
+        var credential = await _accounts.MintTunnelCredentialAsync(_household, "vault");
+        var server = await TunnelledServer.StartAsync(_relay.Hub, credential.Credential, "vault");
+        await using var agent = await DialAsync(_relay, "vault");
+        var backend = new McpFileSystemBackend(agent.Clients.Single(), "vault", advertisedOperations: null);
+
+        await server.DisposeAsync();
+        await Eventually.Until(() => _relay.Registry.Find(_household, "vault") is null, "the tunnel closes");
+
+        var error = (await backend.InfoAsync("/notes.md", CancellationToken.None))
+            .ShouldBeOfType<FsResult<FsInfoResult>.Err>().Error;
+        error.ErrorCode.ShouldBe(ToolError.Codes.TransientDependency, error.Message);
     }
 
     // The server's tunnel drops between two turns and the server opens a new one: the second turn is
