@@ -41,6 +41,17 @@ public class PromptAudienceTests
         PromptAudience.ForAgents("nabu").Includes(agentId).ShouldBe(included);
     }
 
+    // A household's chat agent dials its kit's library too, and is not the home's download assistant.
+    [Fact]
+    public void TheLibrarysWorkings_ReachTheTemplatesAgents_AndNotTheDownloadAssistant()
+    {
+        var guide = PromptManifest.Declarations.Single(d => d.Name == LibraryGuide.Name).Audience;
+
+        guide.Includes("nabu").ShouldBeTrue();
+        guide.Includes("jonas-2").ShouldBeTrue();
+        guide.Includes("jack").ShouldBeFalse();
+    }
+
     [Fact]
     public void TheEstimatingWords_ReachTheSugaryAgentAlone_ThoughJonasDialsTheirServer()
     {

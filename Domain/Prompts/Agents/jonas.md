@@ -7,10 +7,11 @@
 # household's features (scheduling, timers, Sugary, Idealista), and so are its memory and its
 # workers. Which of the own servers it reaches is what the household set up — a server name it holds
 # a live tunnel credential for — asked at every turn: one it never set up is left out of the turn
-# and never named, since a household told every turn that its vault is offline never had one. The
-# kit's Home Assistant, voice and library are not named as servers this agent dials, though each is a
-# channel the deployment follows for every household that runs it: its watches fire turns, its
-# downloads announce themselves, and voice is answered by a voice agent (the nabu template). This
+# and never named, since a household told every turn that its vault is offline never had one. That
+# holds for every kit server it names, Home Assistant and the library among them: a household that
+# runs them has its chat agent reach them as its voice agent does (Casa Vidal's Jonas, without the
+# library, hunted a torrent's file server from the sandbox for ten minutes, and only its Nabu could
+# set a watch). Voice is not named: it is answered by a voice agent (the nabu template). This
 # template carries none of the home's Home Assistant or library tuning. Web search searches and reads
 # pages for any household, and its login handoff opens on the household's own web search (a browse
 # link names its household).
@@ -22,7 +23,7 @@ reasoning-effort: high
 # The home's jonas runs the same model: relace garbles images, morph drops a tool's ref after the
 # first call (2026-10).
 provider-routing: {"ignore": ["relace", "morph"]}
-servers: http://mcp-scheduling:8080/mcp, http://mcp-timers:8080/mcp, http://mcp-sugary:8080/mcp, http://mcp-idealista:8080/mcp, vault, sandbox, websearch, printer
+servers: http://mcp-scheduling:8080/mcp, http://mcp-timers:8080/mcp, http://mcp-sugary:8080/mcp, http://mcp-idealista:8080/mcp, vault, sandbox, websearch, homeassistant, library, printer
 features: filesystem, subagents, memory
 whitelist: domain__filesystem*, mcp__websearch*, mcp__mcp-idealista*, domain__subagents*, domain__memory*
 uses-outposts: true
