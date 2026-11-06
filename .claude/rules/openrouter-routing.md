@@ -92,8 +92,8 @@ accounts service's `lemonade-boxes` view on the agent's own token and asks each 
 minute beside the deployment's (`LemonadeModelRefresher`), learning the home's id from the first refresh.
 `MultiAgentFactory` builds a turn with its household's box alone — the whitelist (`PatchableModelWhitelist`
 over that box's models), the host address and the routing client (`AgentSpec.Lemonade`, a worker carrying
-its parent's) — so a patch naming another box's model is refused "no Lemonade chat host serves this
-household" or "it does not offer the model", and never run on hardware and a key the household does not
+its parent's) — so a patch naming another box's model is refused "No Lemonade box serves this household now … pick another model in the menu" (no box at all)
+or "it does not offer the model" (a box that lacks it), and never run on hardware and a key the household does not
 own. The box is part of what an agent is built from (`AgentAsBuilt.Lemonade`), so a box added, moved or
 removed rebuilds an open conversation. The pickers learn each household's models from the registration
 (`RegisterAgentsParams.HouseholdLemonadeModels`, by household, read once per tick so what is sent is what
