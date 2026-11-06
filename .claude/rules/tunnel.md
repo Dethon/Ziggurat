@@ -164,7 +164,10 @@ server name)**. Each `OpenTunnel` is one connection generation in ADR 0012's sen
   `chat` listener). Every connection is a stream of the tunnel `Find` answers **at that moment**, so a
   reopened generation is used at once and another household's server of the same name never is; with
   none open the connection fails `"<name> is offline: its tunnel is not open"`. It presents nothing —
-  the listener is not the server's `/mcp` — and a pooled connection of a closed generation ends with it.
+  the listener is not the server's `/mcp`. Its pool is the current tunnel's alone (`CurrentTunnelStreams`):
+  every request asks `Find` first and a pool of a tunnel no longer answered is let go, because a revoked
+  tunnel leaves the registry before its close reaches the server and its streams still carry bytes in
+  between — a revoked forwarder's box answered a refresh in that moment.
   Tested at the round trip (`TunnelStreamsTests`).
 - A server that reconnects while its old socket has not timed out **replaces** it: the old opening is
   closed `Replaced`. Nothing carries over between generations.

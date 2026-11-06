@@ -103,6 +103,24 @@ public class TunnelStreamsTests(RedisFixture redis) : IClassFixture<RedisFixture
         (await client.GetStringAsync("/who")).ShouldBe("after");
     }
 
+    // A revocation takes the tunnel out of the registry before its close reaches the server, so for a
+    // moment its streams still carry bytes. A connection pooled on it then must not take the next request:
+    // a revoked Lemonade forwarder's box answered the refresh straight after (pass 18, the full suite's
+    // HouseholdKitLemonadeTests), and a turn could have gone the same way.
+    [Fact]
+    public async Task ATunnelTakenOutOfTheRegistry_CarriesNoFurtherRequest_ThoughItsSocketIsStillOpen()
+    {
+        await using var server = await StartAsync(_casa, "casa");
+        using var client = Client(_casa);
+        (await client.GetStringAsync("/who")).ShouldBe("casa");
+        var tunnel = _relay.Registry.Find(_casa, ServerName)!;
+
+        _relay.Registry.Remove(tunnel, "test: revoked, its close not yet sent");
+
+        var failure = await Should.ThrowAsync<HttpRequestException>(() => client.GetStringAsync("/who"));
+        failure.ToString().ShouldContain($"{ServerName} is offline");
+    }
+
     [Fact]
     public async Task ATagTheServerDoesNotTake_FailsTheRequest()
     {
