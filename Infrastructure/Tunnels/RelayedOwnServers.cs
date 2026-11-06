@@ -10,7 +10,11 @@ namespace Infrastructure.Tunnels;
 public sealed class RelayedOwnServers(TunnelRegistry registry) : IOwnServers, IOwnChannelServers
 {
     public McpServerEndpoint? Resolve(string? tenantId, string serverName) =>
-        tenantId is null ? null : registry.Find(tenantId, serverName)?.Endpoint;
+        tenantId is null
+            ? null
+            : registry.Find(tenantId, serverName) is { } tunnel
+                ? tunnel.Endpoint with { Reconnected = registry.ReopenedSince(tunnel) }
+                : null;
 
     // Every household's tunnel of that name, each opening with the household its credential was
     // verified for. A replacement's TunnelClosed arrives before its TunnelOpened, and each opening's own

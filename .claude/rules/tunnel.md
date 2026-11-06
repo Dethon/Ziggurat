@@ -307,8 +307,13 @@ broken. Shared servers' URL endpoints keep ADR 0027's rule: retried, then fatal.
   it is cancelled (the stream's `IOException` wrapped in `HttpRequestException`, the client's
   went-offline refusal, the linked cancellation) becomes `CapabilityError.For(Unavailable, "<name> went
   offline: its tunnel closed while the call was in flight, …")` — `transient_dependency`, with a hint
-  to tell the user and that its tools return on a later turn. A call made later in the same turn gets
-  the same envelope without being sent.
+  to tell the user and that its tools return on a later turn. A call made later in the same turn is not sent, and says so: `"<name> is offline: its tunnel closed
+  before this call, so the call was not sent and nothing was done"` — or, when the server has opened a newer
+  tunnel since (`McpServerEndpoint.Reconnected`, `TunnelRegistry.ReopenedSince`; a turn that waited on an
+  approval across a reconnect), `"<name> reconnected after this turn began, on a new connection this turn
+  cannot use, so this call was not sent"` with a hint that asking again works. Every one of these hints says
+  the model cannot retry by itself after its reply (user's decision, pass 19: Jonas told Nuria the library
+  was down and promised to retry; measured on a replayed request, 0/7 replies right before, 12/12 after).
 
 ### Listing a household's connected servers
 

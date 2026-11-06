@@ -62,6 +62,10 @@ public sealed record McpServerEndpoint(string Address, McpEndpointOrigin Origin)
     // failed because the server went offline. Never cancelled for an endpoint not on a tunnel.
     public CancellationToken Offline { get; private init; }
 
+    // Whether that server has opened a newer tunnel since — so a call that finds this one closed is
+    // told the server is back rather than away. Null for everything not on a tunnel.
+    public Func<bool>? Reconnected { get; init; }
+
     // An endpoint as the deployment's settings write it — an agent definition's, a channel's — read the
     // one way every caller reads one: a household server's bare name (TunnelCredentialProtocol.IsServerName),
     // or a URL presenting what `credential` hands the server it reaches. An address that is neither
