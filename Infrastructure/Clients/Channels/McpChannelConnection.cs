@@ -892,7 +892,16 @@ public sealed class McpChannelConnection(
 
         try
         {
-            await client.ListToolsAsync(cancellationToken: ct);
+            // The listing is the probe's answer too: the server behind this client can be replaced
+            // without the client reconnecting (a channel's container recreated with a new image is
+            // answered by the same client, whose pump only retries), and a tool it gained must not
+            // stay unseen until the agent restarts.
+            var tools = await client.ListToolsAsync(cancellationToken: ct);
+            if (ReferenceEquals(_client, client))
+            {
+                _tools = new ToolSet(client, tools.Select(tool => tool.Name).ToHashSet(StringComparer.Ordinal));
+            }
+
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
