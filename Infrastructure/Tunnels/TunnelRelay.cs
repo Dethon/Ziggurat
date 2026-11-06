@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using Domain.Contracts;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Tunnel;
+using Domain.Metrics;
 using Domain.Security;
 using Domain.Security.Signing;
 using Infrastructure.Clients.Accounts;
@@ -66,8 +67,8 @@ public sealed class TunnelRelay(
             case TunnelVerdict.Opens { Credential: var credential }:
                 await RelayAsync(mux, credential, presented, tunnel => Volatile.Write(ref admitted, tunnel), ct);
                 break;
-            case TunnelVerdict.Refused { Reason: var reason }:
-                Report(claimed, reason);
+            case TunnelVerdict.Refused { Reason: var reason, TenantId: var household }:
+                Report(claimed, reason, household);
                 await EndAsync(mux, WebSocketCloseStatus.PolicyViolation, reason.ToString());
                 break;
             default:
@@ -129,15 +130,20 @@ public sealed class TunnelRelay(
         }
     }
 
-    // The credential itself never reaches a log or the feed: only the name it was presented for.
-    private void Report(string claimed, TunnelCredentialRefusal reason)
+    // The credential itself never reaches a log or the feed: only the name it was presented for, and the
+    // household the accounts service says it is, so a revoked server knocking every minute is its
+    // household's and says whose; an unknown credential is nobody's, the deployment's own.
+    private void Report(string claimed, TunnelCredentialRefusal reason, string? household)
     {
-        logger.LogWarning("Refused a tunnel claiming {ServerName}: its credential is {Reason}", claimed, reason);
-        metrics.Publish(new ErrorEvent
+        logger.LogWarning("Refused a tunnel claiming {ServerName} for household {TenantId}: its credential is {Reason}",
+            claimed, household ?? "unknown", reason);
+        metrics.ForHousehold(household).Publish(new ErrorEvent
         {
             Service = "agent",
             ErrorType = RefusedErrorType,
-            Message = $"A tunnel claiming server '{claimed}' was refused: {reason}"
+            Message = household is null
+                ? $"A tunnel claiming server '{claimed}' was refused: {reason}"
+                : $"A tunnel claiming server '{claimed}' of household {household} was refused: {reason}"
         });
     }
 

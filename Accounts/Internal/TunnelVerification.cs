@@ -36,7 +36,7 @@ public static class TunnelVerification
             return await credentials.VerifyAsync(query.Credential, query.ServerName, ct) switch
             {
                 TunnelVerdict.Opens opens => Results.Ok(opens.Credential),
-                TunnelVerdict.Refused refused => Results.NotFound(new TunnelCredentialRefused(refused.Reason)),
+                TunnelVerdict.Refused refused => Results.NotFound(new TunnelCredentialRefused(refused.Reason, refused.TenantId)),
                 _ => Results.StatusCode(StatusCodes.Status500InternalServerError)
             };
         });

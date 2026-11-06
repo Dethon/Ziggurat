@@ -29,7 +29,7 @@ public abstract record TunnelVerdict
 {
     public sealed record Opens(TunnelCredentialVerified Credential) : TunnelVerdict;
 
-    public sealed record Refused(TunnelCredentialRefusal Reason) : TunnelVerdict;
+    public sealed record Refused(TunnelCredentialRefusal Reason, string? TenantId = null) : TunnelVerdict;
 }
 
 // A tunnel credential belongs to one household and one server name. A server may hold more than one
@@ -88,9 +88,10 @@ public sealed class TunnelCredentialStore(
         return found switch
         {
             null => new TunnelVerdict.Refused(TunnelCredentialRefusal.Unknown),
-            { Row.RevokedAt: not null } => new TunnelVerdict.Refused(TunnelCredentialRefusal.Revoked),
-            _ when found.Row.ServerName != serverName => new TunnelVerdict.Refused(TunnelCredentialRefusal.AnotherServer),
-            { Household.SuspendedAt: not null } => new TunnelVerdict.Refused(TunnelCredentialRefusal.Suspended),
+            { Row.RevokedAt: not null } => new TunnelVerdict.Refused(TunnelCredentialRefusal.Revoked, found.Row.TenantId),
+            _ when found.Row.ServerName != serverName =>
+                new TunnelVerdict.Refused(TunnelCredentialRefusal.AnotherServer, found.Row.TenantId),
+            { Household.SuspendedAt: not null } => new TunnelVerdict.Refused(TunnelCredentialRefusal.Suspended, found.Row.TenantId),
             _ => new TunnelVerdict.Opens(new TunnelCredentialVerified(
                 found.Row.Id, found.Row.TenantId, found.Row.ServerName, Home: found.Household.IsHome))
         };

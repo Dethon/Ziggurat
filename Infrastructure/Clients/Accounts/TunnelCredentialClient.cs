@@ -26,7 +26,7 @@ public sealed class TunnelCredentialClient(HttpClient http, string credential)
         {
             var refused = await response.Content.ReadFromJsonAsync<TunnelCredentialRefused>(ct)
                           ?? throw new HttpRequestException("The accounts service refused a tunnel without a reason.");
-            return new TunnelVerdict.Refused(refused.Reason);
+            return new TunnelVerdict.Refused(refused.Reason, refused.TenantId);
         }
 
         response.EnsureSuccessStatusCode();
@@ -54,5 +54,5 @@ public abstract record TunnelVerdict
 {
     public sealed record Opens(TunnelCredentialVerified Credential) : TunnelVerdict;
 
-    public sealed record Refused(TunnelCredentialRefusal Reason) : TunnelVerdict;
+    public sealed record Refused(TunnelCredentialRefusal Reason, string? TenantId = null) : TunnelVerdict;
 }
