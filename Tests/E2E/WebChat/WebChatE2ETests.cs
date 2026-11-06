@@ -11,6 +11,45 @@ namespace Tests.E2E.WebChat;
 [Trait("Category", "E2E")]
 public class WebChatE2ETests(WebChatE2EFixture fixture)
 {
+    // A message is drawn as Markdown, never as markup: whoever wrote it — another member of a shared
+    // topic, or a model talked into echoing a page — would otherwise run a script as the reader, on the
+    // origin the admin API shares (pass 18: Óscar's `<img onerror>` ran in Nuria's page). Live, and
+    // again from the history after a reload.
+    [SkippableFact]
+    public async Task AMessageCarryingMarkup_IsShownAsText_AndRunsNothing()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var tag = Guid.NewGuid().ToString("N")[..6];
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await SelectAgentAsync(page);
+
+        var chatInput = page.Locator("textarea.chat-input");
+        await chatInput.FillAsync(
+            $"markup {tag} <img src=\"x\" onerror=\"document.body.dataset.xss='ran'\"> [pulsa](javascript:document.body.dataset.xss='ran')");
+        await chatInput.PressAsync("Enter");
+
+        var bubble = page.Locator(".message-content", new PageLocatorOptions { HasText = $"markup {tag} <img" }).First;
+        await bubble.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+        (await bubble.Locator("a").CountAsync()).ShouldBe(0);
+        (await page.EvaluateAsync<string?>("() => document.body.dataset.xss ?? null")).ShouldBeNull();
+        (await bubble.Locator("img").CountAsync()).ShouldBe(0);
+
+        // The reply is the proof the turn's record was written; reloading before it races the history
+        // read against the agent's own persistence (as the attachment test waits).
+        await DismissApprovalOverlayAsync(page);
+        await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
+            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 90_000 });
+        await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await DismissApprovalOverlayAsync(page);
+        await page.Locator(".topic-item", new PageLocatorOptions { HasText = $"markup {tag}" })
+            .First.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
+        var kept = page.Locator(".message-content", new PageLocatorOptions { HasText = $"markup {tag} <img" }).First;
+        await kept.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        (await page.EvaluateAsync<string?>("() => document.body.dataset.xss ?? null")).ShouldBeNull();
+        (await kept.Locator("img").CountAsync()).ShouldBe(0);
+    }
+
     [SkippableFact]
     public async Task SendMessage_AppearsInChat()
     {

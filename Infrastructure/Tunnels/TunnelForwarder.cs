@@ -47,8 +47,9 @@ public sealed class TunnelForwarder(IHttpForwarder forwarder, TunnelRegistry reg
         string tag,
         PathString path,
         IReadOnlyCollection<string> withheld,
-        Func<HttpContext, string, Task> offline) =>
-        ForwardToAsync(context, registry.FindHome(serverName), serverName, tag, path, withheld, offline);
+        Func<HttpContext, string, Task> offline,
+        Action<HttpContext>? answered = null) =>
+        ForwardToAsync(context, registry.FindHome(serverName), serverName, tag, path, withheld, offline, answered);
 
     // To one household's server of that name, and never another household's of the same name.
     public Task ForwardAsync(
@@ -58,8 +59,9 @@ public sealed class TunnelForwarder(IHttpForwarder forwarder, TunnelRegistry reg
         string tag,
         PathString path,
         IReadOnlyCollection<string> withheld,
-        Func<HttpContext, string, Task> offline) =>
-        ForwardToAsync(context, registry.Find(tenantId, serverName), serverName, tag, path, withheld, offline);
+        Func<HttpContext, string, Task> offline,
+        Action<HttpContext>? answered = null) =>
+        ForwardToAsync(context, registry.Find(tenantId, serverName), serverName, tag, path, withheld, offline, answered);
 
     private async Task ForwardToAsync(
         HttpContext context,
@@ -68,13 +70,14 @@ public sealed class TunnelForwarder(IHttpForwarder forwarder, TunnelRegistry reg
         string tag,
         PathString path,
         IReadOnlyCollection<string> withheld,
-        Func<HttpContext, string, Task> offline)
+        Func<HttpContext, string, Task> offline,
+        Action<HttpContext>? answered)
     {
         if (found is not { } tunnel)
         {
             await offline(context, $"{serverName} is offline: its tunnel is not open");
         }
-        else if (!await ForwardAsync(context, tunnel, tag, path, withheld) && !context.Response.HasStarted)
+        else if (!await ForwardAsync(context, tunnel, tag, path, withheld, answered) && !context.Response.HasStarted)
         {
             await offline(context, $"{serverName} went offline: its tunnel closed");
         }
@@ -82,10 +85,11 @@ public sealed class TunnelForwarder(IHttpForwarder forwarder, TunnelRegistry reg
 
     // False when the exchange could not be forwarded; the caller answers it if nothing was sent yet.
     private async Task<bool> ForwardAsync(
-        HttpContext context, OpenTunnel tunnel, string tag, PathString path, IReadOnlyCollection<string> withheld)
+        HttpContext context, OpenTunnel tunnel, string tag, PathString path, IReadOnlyCollection<string> withheld,
+        Action<HttpContext>? answered)
     {
         var error = await forwarder.SendAsync(
-            context, $"http://{tunnel.Address.Name}", tunnel.Forwarding(tag), _config, new Passing(path, withheld));
+            context, $"http://{tunnel.Address.Name}", tunnel.Forwarding(tag), _config, new Passing(path, withheld, answered));
         if (error == ForwarderError.None)
         {
             return true;
@@ -98,8 +102,18 @@ public sealed class TunnelForwarder(IHttpForwarder forwarder, TunnelRegistry reg
         return false;
     }
 
-    private sealed class Passing(PathString path, IReadOnlyCollection<string> withheld) : HttpTransformer
+    // `answered`, when given, has the last word on the answer's headers before any byte of it is sent.
+    private sealed class Passing(PathString path, IReadOnlyCollection<string> withheld, Action<HttpContext>? answered)
+        : HttpTransformer
     {
+        public override async ValueTask<bool> TransformResponseAsync(
+            HttpContext httpContext, HttpResponseMessage? proxyResponse, CancellationToken cancellationToken)
+        {
+            var proceed = await base.TransformResponseAsync(httpContext, proxyResponse, cancellationToken);
+            answered?.Invoke(httpContext);
+            return proceed;
+        }
+
         public override async ValueTask TransformRequestAsync(
             HttpContext httpContext, HttpRequestMessage proxyRequest, string destinationPrefix, CancellationToken cancellationToken)
         {

@@ -164,7 +164,10 @@ server name)**. Each `OpenTunnel` is one connection generation in ADR 0012's sen
   `chat` listener). Every connection is a stream of the tunnel `Find` answers **at that moment**, so a
   reopened generation is used at once and another household's server of the same name never is; with
   none open the connection fails `"<name> is offline: its tunnel is not open"`. It presents nothing —
-  the listener is not the server's `/mcp` — and a pooled connection of a closed generation ends with it.
+  the listener is not the server's `/mcp`. Its pool is the current tunnel's alone (`CurrentTunnelStreams`):
+  every request asks `Find` first and a pool of a tunnel no longer answered is let go, because a revoked
+  tunnel leaves the registry before its close reaches the server and its streams still carry bytes in
+  between — a revoked forwarder's box answered a refresh in that moment.
   Tested at the round trip (`TunnelStreamsTests`).
 - A server that reconnects while its old socket has not timed out **replaces** it: the old opening is
   closed `Replaced`. Nothing carries over between generations.
@@ -438,6 +441,19 @@ under `/browse/{household}` (a route group, `HandoffEndpoints`), scopes both vie
 claim, Done, the live view's socket, the logins list and Forget — carries the household too. With
 that household's tunnel not open it answers **502 with a page of its own** saying the household's
 browser is offline.
+
+**The answer is not trusted on the main origin.** A household's web search runs on its own machine,
+and under `/browse` its page is same-origin with the chat client and the admin API, so a script of a
+swapped server's would act as whoever opened its link. `BrowsePages` gives every answer it forwards
+(through `TunnelForwarder`'s `answered` hook, before a byte is sent) the deployment's
+`BrowsePagePolicy.ContentSecurityPolicy` in place of the server's — the handoff and logins scripts
+alone may run, pinned by hash, no other script, plugin, form, frame or base — drops `Clear-Site-Data`,
+and keeps a `Set-Cookie` only when it is one of the two view cookies on exactly
+`Path=/browse/<household>` with no `Domain`. The scripts live in `Domain/DTOs/Tunnel/BrowsePagePolicy.cs`
+for both ends, held with LF line ends (a browser hashes what its parser read), and read their link's
+values from a JSON data element so their text is the same for every link. A kit whose scripts differ
+shows its page without them until it is updated; when they change, the last release's hashes stay
+pinned for one release (`BrowsePagesTests`, in a real browser too; smoke checks the header through Caddy).
 
 ### A shared server's calls to a household's server
 

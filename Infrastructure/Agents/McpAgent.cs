@@ -402,8 +402,7 @@ public sealed class McpAgent : DisposableAgent
                 throw _lemonadeHostAddress is { } address
                     ? new LemonadeChatHostException(
                         address, $"it does not offer the model '{LemonadeModelId.Bare(patchedModel)}'")
-                    : new LemonadeChatHostException(
-                        "no configured address", "no Lemonade chat host serves this household");
+                    : LemonadeChatHostException.NoHost(LemonadeModelId.Bare(patchedModel));
             }
 
             LogRejectedPatch("model", patchedModel, _model);

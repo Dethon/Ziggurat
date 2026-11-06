@@ -52,6 +52,81 @@ public class TimerFireServiceTests
         }
     }
 
+    private sealed class RecordingChannels : IChannelAlerts
+    {
+        private readonly List<string> _rung = [];
+        public IReadOnlyList<string> Rung
+        {
+            get { lock (_rung) { return _rung.ToList(); } }
+        }
+
+        public Task<bool> RingAsync(ArmedTimer timer, CancellationToken ct)
+        {
+            lock (_rung)
+            { _rung.Add(timer.Id); }
+            return Task.FromResult(true);
+        }
+
+        public Task<IReadOnlyList<DismissedAlert>> StopAllAsync(string tenantId, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<DismissedAlert>>([]);
+    }
+
+    // A voice server that answers the ring with each satellite's status as given.
+    private sealed class AnsweringAnnouncer(params string[] statuses) : IInsistentAnnouncer
+    {
+        public int Calls;
+
+        public Task<AnnounceResponse> StartAsync(AnnounceRequest request, CancellationToken ct)
+        {
+            Interlocked.Increment(ref Calls);
+            return Task.FromResult(new AnnounceResponse
+            {
+                AnnouncementId = "a1",
+                Satellites = [.. statuses.Select((status, i) => new AnnouncementOutcome { Id = $"sat-{i}", Status = status })]
+            });
+        }
+    }
+
+    private static async Task<(RecordingChannels Channels, AnsweringAnnouncer Voice)> FireOneAsync(params string[] statuses)
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new InMemoryTimerStore();
+        var voice = new AnsweringAnnouncer(statuses);
+        var channels = new RecordingChannels();
+        var now = time.GetUtcNow().UtcDateTime;
+        await store.ArmAsync(new ArmedTimer
+        {
+            Id = "pasta", TenantId = Home, Owner = new global::Domain.DTOs.Channel.Account(Home, "nuria"),
+            Target = new AnnounceTarget { Room = "Salón" }, DurationSeconds = 1, CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(1)
+        });
+        var service = new TimerFireService(store, new OneVoice(voice), channels, time, NullLogger<TimerFireService>.Instance);
+        await service.StartAsync(CancellationToken.None);
+        time.Advance(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => voice.Calls == 1, TimeSpan.FromSeconds(5));
+        await Eventually.Settle();
+        await service.StopAsync(CancellationToken.None);
+        return (channels, voice);
+    }
+
+    // The satellite it names is off when it comes due: the voice server takes the ring and says every
+    // target is offline, so nothing would be heard. It rings on its owner's channels instead, as a timer
+    // with no satellite does (user's decision, pass 18: "pasta" in Casa Vidal's Salón rang nowhere).
+    [Fact]
+    public async Task ExecuteAsync_EverySatelliteItNamesOffline_RingsOnItsOwnersChannels()
+    {
+        var (channels, _) = await FireOneAsync(AnnouncementOutcome.Offline);
+
+        channels.Rung.ShouldBe(["pasta"]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ASatelliteItNamesRinging_DoesNotRingOnChannelsToo()
+    {
+        var (channels, _) = await FireOneAsync(AnnouncementOutcome.Started, AnnouncementOutcome.Offline);
+
+        channels.Rung.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ExecuteAsync_DueTimer_RingsAsInsistentTimerAlert()
     {

@@ -88,7 +88,10 @@ public sealed class MultiAgentFactoryLemonadeWhitelistTests
             () => agent.RunStreamingAsync([message]).ToListAsync().AsTask());
 
         error.Message.ShouldNotContain("lemonade-chat-host.invalid");
-        error.Message.ShouldContain("no Lemonade chat host serves this household");
+        // A device that kept its pick after the household's box went away is told what to do about it,
+        // in words a person reads, not an address that is not there.
+        error.Message.ShouldBe(
+            "No Lemonade box serves this household now, so 'local' was not run: pick another model in the menu.");
     }
 
     // A household that saved a box of its own runs a turn patched to one of that box's models on that

@@ -693,6 +693,9 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
 
         page.StatusCode.ShouldBe(HttpStatusCode.Gone);
         (await page.Content.ReadAsStringAsync()).ShouldContain("This link has been used or has run out");
+        // The household's server is not the deployment's to trust on this origin: what reaches the
+        // browser runs the deployment's pinned scripts alone, whatever the server said.
+        page.Headers.GetValues("Content-Security-Policy").ShouldHaveSingleItem().ShouldBe(BrowsePagePolicy.ContentSecurityPolicy);
         (await SmokeStack.FromInsideTheKitAsync(HttpMethod.Get, $"http://{BrowseServerListeners.Service}:{BrowseServerListeners.Mcp}{BrowsePagePath.For(stack.Home)}/handoff/x"))
             .Status.ShouldBe(HttpStatusCode.NotFound);
         (await SmokeStack.FromInsideTheKitAsync(HttpMethod.Post, $"http://{BrowseServerListeners.Service}:{BrowseServerListeners.Pages}/mcp"))

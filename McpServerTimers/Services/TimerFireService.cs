@@ -64,13 +64,22 @@ public sealed class TimerFireService(
                 return;
             }
 
-            await voices.For(armed.TenantId).Announcer.StartAsync(new AnnounceRequest
+            var rung = await voices.For(armed.TenantId).Announcer.StartAsync(new AnnounceRequest
             {
                 Target = target,
                 Text = armed.Text ?? $"{armed.Id} timer",
                 Kind = AnnounceKind.Timer,
                 Insistent = _timerRing
             }, ct);
+            if (RangNowhere(rung))
+            {
+                // Every satellite it names is off: nothing would be heard. It rings where a timer with
+                // no satellite rings, on its owner's channels (user's decision, 2026-11-06).
+                logger.LogInformation("Timer {TimerId}'s satellites are all offline; ringing it on its owner's channels", armed.Id);
+                await RingOnChannelsAsync(armed, ct);
+                return;
+            }
+
             logger.LogInformation("Timer {TimerId} fired", armed.Id);
         }
         catch (Exception ex) when (!ct.IsCancellationRequested)
@@ -86,6 +95,9 @@ public sealed class TimerFireService(
             logger.LogWarning(ex, "Timer {TimerId} failed to ring", armed.Id);
         }
     }
+
+    private static bool RangNowhere(AnnounceResponse rung) =>
+        rung.Satellites.Count > 0 && rung.Satellites.All(s => s.Status == AnnouncementOutcome.Offline);
 
     // The same accepted trade as a satellite's: one attempt, and an agent that was not listening to
     // take it is a timer that did not ring.

@@ -1,6 +1,7 @@
 using System.Net;
 using Domain.DTOs.Tunnel;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Net.Http.Headers;
 
 namespace Infrastructure.Tunnels;
 
@@ -17,18 +18,61 @@ public sealed class BrowsePages(TunnelForwarder forwarder)
 {
     public const string Path = BrowsePagePath.Root;
 
+    // Headers of the server's that the policy answers for instead, or that would reach past its pages:
+    // Clear-Site-Data wipes the whole origin's cookies, the chat client's session among them.
+    private static readonly string[] _dropped =
+    [
+        "Content-Security-Policy", "Content-Security-Policy-Report-Only", "Clear-Site-Data", "Service-Worker-Allowed",
+        "X-Content-Type-Options"
+    ];
+
     public Task ForwardAsync(HttpContext context) =>
         BrowsePagePath.HouseholdOf(context.Request.Path) is { } household
             ? forwarder.ForwardAsync(
                 context, household, HouseholdServerNames.WebSearch, TunnelProtocol.PagesTag, context.Request.Path, [],
-                OfflineAsync)
+                OfflineAsync, answer => Confine(answer, BrowsePagePath.For(household)))
             : forwarder.ForwardHomeAsync(
-                context, HouseholdServerNames.WebSearch, TunnelProtocol.PagesTag, context.Request.Path, [], OfflineAsync);
+                context, HouseholdServerNames.WebSearch, TunnelProtocol.PagesTag, context.Request.Path, [], OfflineAsync,
+                answer => Confine(answer, BrowsePagePath.Root));
+
+    // The answer of a server the deployment does not run, on the deployment's own origin: it runs the
+    // pinned scripts alone (BrowsePagePolicy), and keeps a cookie only when it is one of the page's view
+    // cookies on exactly its own pages, for this host alone.
+    private static void Confine(HttpContext context, string pages)
+    {
+        var headers = context.Response.Headers;
+        foreach (var name in _dropped)
+        {
+            headers.Remove(name);
+        }
+
+        var kept = headers.SetCookie.Where(cookie => cookie is not null && IsAViewCookieOf(cookie, pages)).ToArray();
+        headers.Remove(HeaderNames.SetCookie);
+        if (kept.Length > 0)
+        {
+            headers.SetCookie = kept;
+        }
+
+        headers.ContentSecurityPolicy = BrowsePagePolicy.ContentSecurityPolicy;
+        headers.XContentTypeOptions = "nosniff";
+    }
+
+    private static bool IsAViewCookieOf(string cookie, string pages)
+    {
+        var parts = cookie.Split(';', StringSplitOptions.TrimEntries);
+        var name = parts[0].Split('=', 2)[0];
+        var attributes = parts.Skip(1).Select(a => a.Split('=', 2)).ToList();
+        return BrowsePagePolicy.ViewCookies.Contains(name)
+               && attributes.Count(a => a[0].Equals("path", StringComparison.OrdinalIgnoreCase)) == 1
+               && attributes.Any(a => a[0].Equals("path", StringComparison.OrdinalIgnoreCase) && a.Length == 2 && a[1] == pages)
+               && !attributes.Any(a => a[0].Equals("domain", StringComparison.OrdinalIgnoreCase));
+    }
 
     private static async Task OfflineAsync(HttpContext context, string reason)
     {
         context.Response.StatusCode = StatusCodes.Status502BadGateway;
         context.Response.ContentType = "text/html; charset=utf-8";
+        context.Response.Headers.ContentSecurityPolicy = BrowsePagePolicy.ContentSecurityPolicy;
         await context.Response.WriteAsync(OfflinePage(reason), context.RequestAborted);
     }
 

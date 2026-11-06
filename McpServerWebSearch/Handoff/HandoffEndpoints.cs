@@ -19,8 +19,8 @@ namespace McpServerWebSearch.Handoff;
 // Everything after — frames, input, Done — answers to the cookie.
 public static class HandoffEndpoints
 {
-    public const string ViewCookie = "zg_handoff";
-    public const string LoginsCookie = "zg_logins";
+    public const string ViewCookie = BrowsePagePolicy.ViewCookie;
+    public const string LoginsCookie = BrowsePagePolicy.LoginsCookie;
 
     // Sent back to this household's pages alone: one browser holding views of two households' pages
     // must never hand one household's server the other's key.

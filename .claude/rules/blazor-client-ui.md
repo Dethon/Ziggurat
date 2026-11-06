@@ -97,3 +97,13 @@ activation), and `CreatePageAsync`'s catch-all route arms interception on every 
 test installs the old worker on a profile of its own (`OpenProfileAsync`) and opens it again with
 nothing routed. The E2E stack's Caddyfile mirrors the deployment's `@shell` route, without which a
 signed-out browser can never fetch the new worker at all.
+
+## A message is Markdown, never markup
+
+WebChat draws a message through `ChatMarkdown` (`WebChat.Client/Helpers`) alone: Markdig with raw HTML
+disabled, and a link or image whose destination names a scheme other than http(s), mailto or tel
+replaced by its own words. A message is whoever wrote it — another member of a shared topic, or a
+model a page or a household server talked into echoing something — and the page is same-origin with
+the admin API, so markup in it ran as the reader (pass 18: a member's `<img onerror>` in a shared topic
+ran in the owner's page). Never render message text as a `MarkupString` any other way
+(`ChatMarkdownTests`, `WebChatE2ETests.AMessageCarryingMarkup_IsShownAsText_AndRunsNothing`).
