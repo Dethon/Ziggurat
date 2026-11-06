@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Infrastructure.Timers;
 using McpServerTimers.Services;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -87,11 +88,26 @@ public class TimerFireServiceTests
         }
     }
 
-    private static async Task<(RecordingChannels Channels, AnsweringAnnouncer Voice)> FireOneAsync(params string[] statuses)
+    // A voice server that cannot be reached at all: a household's kit whose tunnel is not open.
+    private sealed class UnreachableAnnouncer : IInsistentAnnouncer
+    {
+        public int Calls;
+
+        public Task<AnnounceResponse> StartAsync(AnnounceRequest request, CancellationToken ct)
+        {
+            Interlocked.Increment(ref Calls);
+            throw new VoiceHubUnavailableException("The voice hub is unreachable: voice is offline: its tunnel is not open");
+        }
+    }
+
+    private static Task<(RecordingChannels Channels, AnsweringAnnouncer Voice)> FireOneAsync(params string[] statuses) =>
+        FireOneAsync(new AnsweringAnnouncer(statuses), voice => voice.Calls);
+
+    private static async Task<(RecordingChannels Channels, TVoice Voice)> FireOneAsync<TVoice>(TVoice voice, Func<TVoice, int> calls)
+        where TVoice : IInsistentAnnouncer
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var store = new InMemoryTimerStore();
-        var voice = new AnsweringAnnouncer(statuses);
         var channels = new RecordingChannels();
         var now = time.GetUtcNow().UtcDateTime;
         await store.ArmAsync(new ArmedTimer
@@ -102,7 +118,7 @@ public class TimerFireServiceTests
         var service = new TimerFireService(store, new OneVoice(voice), channels, time, NullLogger<TimerFireService>.Instance);
         await service.StartAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(2));
-        await WaitUntilAsync(() => voice.Calls == 1, TimeSpan.FromSeconds(5));
+        await WaitUntilAsync(() => calls(voice) == 1, TimeSpan.FromSeconds(5));
         await Eventually.Settle();
         await service.StopAsync(CancellationToken.None);
         return (channels, voice);
@@ -115,6 +131,17 @@ public class TimerFireServiceTests
     public async Task ExecuteAsync_EverySatelliteItNamesOffline_RingsOnItsOwnersChannels()
     {
         var (channels, _) = await FireOneAsync(AnnouncementOutcome.Offline);
+
+        channels.Rung.ShouldBe(["pasta"]);
+    }
+
+    // The household's voice server itself is unreachable when it comes due — its kit restarting, the
+    // house without power, the household suspended: nothing would be heard either, so it rings on its
+    // owner's channels too (user's decision, pass 19: "horno" in Casa Vidal's Salón rang nowhere).
+    [Fact]
+    public async Task ExecuteAsync_TheVoiceServerUnreachable_RingsOnItsOwnersChannels()
+    {
+        var (channels, _) = await FireOneAsync(new UnreachableAnnouncer(), voice => voice.Calls);
 
         channels.Rung.ShouldBe(["pasta"]);
     }

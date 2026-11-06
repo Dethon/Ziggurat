@@ -41,6 +41,11 @@ public sealed class TunnelRegistry
 
     // A household's server of that name, while its tunnel is open: one whose socket has closed and
     // that is still on its way out is no tunnel to reach it through, so no caller checks again.
+    // Whether the server of that opening has opened a newer one since: what a call bound to a closed
+    // opening says, so a turn that waited across a reconnect is told the server is back.
+    public Func<bool> ReopenedSince(OpenTunnel tunnel) =>
+        () => Find(tunnel.TenantId, tunnel.ServerName) is { } now && now.Generation > tunnel.Generation;
+
     public OpenTunnel? Find(string tenantId, string serverName)
     {
         lock (_lock)

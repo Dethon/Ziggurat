@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -82,11 +83,21 @@ public sealed class TimerFireService(
 
             logger.LogInformation("Timer {TimerId} fired", armed.Id);
         }
+        catch (VoiceHubUnavailableException ex) when (!ct.IsCancellationRequested)
+        {
+            // The voice server itself is not there to take it — a household's kit restarting, its house
+            // without power, or the deployment's hub redeploying — so no satellite would be heard either:
+            // it rings on its owner's channels like a timer whose satellites are all off (user's
+            // decision, 2026-11-06, pass 19).
+            logger.LogWarning("Timer {TimerId} could not reach its voice server ({Reason}); ringing it on its owner's channels",
+                armed.Id, ex.Message);
+            await RingOnChannelsAsync(armed, ct);
+        }
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
-            // One attempt, then the timer is gone — TakeDueAsync already claimed it. Targets are
-            // validated at create, so failing here means the hub was unreachable at the due second
-            // (typically a hub redeploy overlapping it). Accepted trade, not an oversight:
+            // One attempt, then the timer is gone — TakeDueAsync already claimed it. An unreachable hub
+            // rings on channels above; anything else failing here is the hub answering wrongly at the
+            // due second. Accepted trade, not an oversight:
             // retry/durability machinery isn't worth it for kitchen-scale countdowns on a
             // deliberately non-durable store. Guard on the host token, not the exception type:
             // whatever the announcer throws while the host is live (the HTTP adapter's typed

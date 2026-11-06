@@ -15,7 +15,7 @@ internal sealed class McpClientManager : IAsyncDisposable
 {
     // A dial that produced a client: the server it reached, and what says that server went offline
     // (McpServerEndpoint.Offline).
-    private sealed record Dialled(McpClient Client, ServerAddress Server, CancellationToken Offline);
+    private sealed record Dialled(McpClient Client, ServerAddress Server, CancellationToken Offline, Func<bool>? Reconnected);
 
     // A tool server is dialled on the way into a session, so a server that is down is paid for by
     // the turn waiting behind it. The SDK's default is a minute; the retry below cannot shorten
@@ -150,7 +150,7 @@ internal sealed class McpClientManager : IAsyncDisposable
                 },
                 cancellationToken: ct);
 
-            Dialled dialled(McpClient client) => new(client, ServerOf(endpoint), endpoint.Offline);
+            Dialled dialled(McpClient client) => new(client, ServerOf(endpoint), endpoint.Offline, endpoint.Reconnected);
 
             // A household server's tunnel is dialled once: an opening that failed its handshake is a
             // generation that is going, and waiting out the retry would not bring it back. Gone by the
@@ -221,7 +221,7 @@ internal sealed class McpClientManager : IAsyncDisposable
         var tasks = clients.Select(async c =>
         {
             var tools = await c.Client.ListToolsAsync(cancellationToken: ct);
-            return tools.Select(t => new QualifiedMcpTool(c.Server.Qualifier, t, readImageStore, c.Offline));
+            return tools.Select(t => new QualifiedMcpTool(c.Server.Qualifier, t, readImageStore, c.Offline, c.Reconnected));
         });
 
         var results = await Task.WhenAll(tasks);
