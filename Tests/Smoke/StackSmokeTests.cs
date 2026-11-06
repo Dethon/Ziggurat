@@ -17,6 +17,7 @@ using Domain.Prompts;
 using Domain.Security;
 using Domain.Security.Signing;
 using Infrastructure.StateManagers;
+using Infrastructure.Tunnels;
 using McpServerSugary.Channel;
 using Microsoft.Playwright;
 using Shouldly;
@@ -532,6 +533,7 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
     {
         Skip.IfNot(SmokeStack.IsEnabled, "no smoke stack");
 
+        var since = DateTimeOffset.UtcNow;
         await KitConnectedAsync();
         var vault = (await SmokeStack.DockerAsync("exec", await SmokeStack.KitContainerAsync("mcp-vault"),
             "printenv", "MCP__TUNNEL__CREDENTIAL")).Trim();
@@ -545,6 +547,15 @@ public sealed class StackSmokeTests(SmokeStack stack) : IClassFixture<SmokeStack
         (await TunnelClosedAsync(SmokeStack.Outpost, vault)).ShouldBe(
             (WebSocketCloseStatus.PolicyViolation, nameof(TunnelCredentialRefusal.AnotherServer)));
         (await stack.ConnectedKitServersAsync()).ShouldContain("vault");
+        // A refusal of a credential the deployment minted is its household's on the dashboard, naming it;
+        // only the forged one, which nobody minted, is the deployment's own.
+        await Eventually.Until(async () => (await ErrorsAsync(stack.Home, since))
+                .Any(e => e.ErrorType == TunnelRelay.RefusedErrorType && e.Message.Contains(stack.Home, StringComparison.Ordinal)
+                          && e.Message.Contains(nameof(TunnelCredentialRefusal.AnotherServer), StringComparison.Ordinal)),
+            "the vault's credential presented for another server, refused under the home",
+            TimeSpan.FromMinutes(1), TimeSpan.FromSeconds(2));
+        (await ErrorsAsync("deployment", since)).ShouldContain(e => e.ErrorType == TunnelRelay.RefusedErrorType
+            && e.Message.Contains(nameof(TunnelCredentialRefusal.Unknown), StringComparison.Ordinal));
     }
 
     // Holding a server's credential lets a container talk to it; only the agent's signature says who a
