@@ -1,14 +1,14 @@
 ---
 # The library's workings without the download assistant's persona: jack's own section
 # (library_prompt) is Captain Jack, whom no other agent should sound like, so an agent that dials the
-# library for a person — the voice template's, whose every request reaches all it can do — reads
-# this instead. Same mechanics, plain words.
+# library for a person — the voice template's and the chat template's, each reached where the
+# household runs a library — reads this instead. Same mechanics, plain words.
 name: library_guide
 purpose: How media is searched for, fetched and filed in the library, for an agent that is not the download assistant.
 priority: Client
 budget: 500
 served-by: mcp-library
-audience-agents: nabu
+audience-agents: nabu, jonas
 ---
 
 ## The library (`/media`)

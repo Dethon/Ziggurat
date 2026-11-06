@@ -28,6 +28,16 @@ public sealed class ShippedDefinition(string path, TestAgents agents)
     // server (SharedServers.WithheldBy), and a countdown it asks for is a scheduled task.
     public const string NoVoiceSuffix = "-novoice";
 
+    // What the household a template's agent runs for never set up, by template: a turn withholds a
+    // server its household holds no credential for, and the eval hosts every server a definition names,
+    // so its copy leaves them out instead. The jonas template's scenarios are a household with no home
+    // and no library (its no-home reminder, its countdowns as schedules); the nabu template's, one whose
+    // home answers.
+    private static readonly IReadOnlyDictionary<string, string[]> NeverSetUp = new Dictionary<string, string[]>
+    {
+        [AgentTemplates.Jonas] = ["homeassistant", "library"]
+    };
+
     private readonly Lazy<TestAgentSettings> _settings =
         new(() => WithTemplates(agents.Into(Bind(path))), LazyThreadSafetyMode.ExecutionAndPublication);
 
@@ -41,8 +51,8 @@ public sealed class ShippedDefinition(string path, TestAgents agents)
             Agents =
             [
                 .. settings.Agents,
-                .. AgentTemplates.All.Select(t => t with { Id = TemplatePrefix + t.Id }),
-                .. AgentTemplates.All.Select(t => t with
+                .. AgentTemplates.All.Select(SetUp).Select(t => t with { Id = TemplatePrefix + t.Id }),
+                .. AgentTemplates.All.Select(SetUp).Select(t => t with
                 {
                     Id = TemplatePrefix + t.Id + NoVoiceSuffix,
                     McpServerEndpoints = [.. t.McpServerEndpoints.Where(e => !SharedServers.Names(rangNowhere, e))]
@@ -50,6 +60,11 @@ public sealed class ShippedDefinition(string path, TestAgents agents)
             ]
         };
     }
+
+    private static AgentDefinition SetUp(AgentDefinition template) =>
+        NeverSetUp.TryGetValue(template.Id, out var withheld)
+            ? template with { McpServerEndpoints = [.. template.McpServerEndpoints.Where(e => !withheld.Contains(e))] }
+            : template;
 
     // The secrets come from user secrets rather than from the environment the container would
     // have had; everything else is the file's.

@@ -24,6 +24,13 @@ public sealed record PromptAudience
 
     public static PromptAudience ForChannels(params string[] channels) => new() { Channels = channels };
 
+    // An agent named here, or one a household made from the template of that name: a household's second
+    // agent of a template goes by its id and a number (nabu-2), and is the same agent.
     public bool Includes(string agentId) =>
-        Agents.Count == 0 || Agents.Any(a => a.Equals(agentId, StringComparison.OrdinalIgnoreCase));
+        Agents.Count == 0 || Agents.Any(a => a.Equals(agentId, StringComparison.OrdinalIgnoreCase) || IsNumbered(agentId, a));
+
+    private static bool IsNumbered(string agentId, string template) =>
+        agentId.Length > template.Length + 1
+        && agentId.StartsWith(template + "-", StringComparison.OrdinalIgnoreCase)
+        && agentId[(template.Length + 1)..].All(char.IsAsciiDigit);
 }

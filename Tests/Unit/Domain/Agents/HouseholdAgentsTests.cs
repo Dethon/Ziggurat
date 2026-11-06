@@ -94,7 +94,7 @@ public class HouseholdAgentsTests
             features: new FeaturesSection { Scheduling = false, Idealista = false, Memory = false, Workers = false }), _shared);
 
         var jonas = agents.Find("jonas")!;
-        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "http://mcp-sugary:8080/mcp", "vault", "sandbox", "websearch", "printer"]);
+        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "http://mcp-sugary:8080/mcp", "vault", "sandbox", "websearch", "homeassistant", "library", "printer"]);
         jonas.EnabledFeatures.ShouldBe(["filesystem"]);
         agents.WithheldServers.ShouldBe(["http://mcp-scheduling:8080/mcp", "http://mcp-idealista:8080/mcp"]);
     }
@@ -124,7 +124,7 @@ public class HouseholdAgentsTests
         var jonas = HouseholdAgents.Of(Household(new AgentsSection(), ownServers: ["voice"]), new SharedServers { Timers = "http://mcp-timers:8080/mcp" })
             .Find("jonas")!;
 
-        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "vault", "sandbox", "websearch", "printer"]);
+        jonas.McpServerEndpoints.ShouldBe(["http://mcp-timers:8080/mcp", "vault", "sandbox", "websearch", "homeassistant", "library", "printer"]);
     }
 
     // A countdown rings on the household's satellites, and a household that set up no voice server has
@@ -181,7 +181,7 @@ public class HouseholdAgentsTests
 
         var named = agents.Agents.SelectMany(a => a.McpServerEndpoints).ToList();
 
-        agents.NotSetUp(named).ShouldBe(["sandbox", "websearch"]);
+        agents.NotSetUp(named).ShouldBe(["sandbox", "websearch", "homeassistant", "library"]);
         agents.NotSetUp(agents.Find("sugary")!.McpServerEndpoints).ShouldBeEmpty();
         agents.WithheldServers.ShouldBe(["http://mcp-scheduling:8080/mcp"]);
     }

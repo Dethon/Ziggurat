@@ -1,3 +1,4 @@
+using Domain.Contracts;
 using Domain.DTOs;
 using Domain.Metrics;
 using Domain.Security.Signing;
@@ -14,6 +15,9 @@ internal sealed record Turn(
     IReadOnlyList<DeliveryTarget> Targets,
     LatencyScope FirstReply,
     string TurnKey,
+    // The group's publisher, naming the household its agent was built for: an error the turn's reply
+    // carries, or a failure to deliver it, is that household's, as its latency and runs are.
+    IMetricsPublisher Metrics,
     IdentityClaims? Identity = null,
     // The household whose own connection the message came on, none for a channel serving every
     // household: whose server still holds the message's files.

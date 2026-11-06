@@ -79,7 +79,10 @@ then:
   refusal with its reason; any other failure is the service's, not the credential's.
 - **Refused** (`Unknown`, `Revoked`, `AnotherServer`, `Suspended`): closed `PolicyViolation` with the reason as the
   close description, logged at warning, and published as an `ErrorEvent` (`Service` `agent`,
-  `ErrorType` `TunnelRefused`, the claimed name and the reason — **never the credential**). No
+  `ErrorType` `TunnelRefused`, the claimed name and the reason — **never the credential**). A refusal
+  of a credential the accounts service knows (`Revoked`, `AnotherServer`, `Suspended`) carries its
+  household (`TunnelCredentialRefused.TenantId`), and the event is filed under that household and names
+  it, so a revoked server knocking every minute says whose it is; an `Unknown` one is the deployment's. No
   credential at all is `Unknown` without asking.
 - **Unverified** (the accounts service did not answer): closed `InternalServerError`, `Unverified`.
   Not reported as a refusal; the server retries with backoff.

@@ -47,8 +47,11 @@ public sealed record TunnelCredentialQuery(string Credential, string ServerName)
 [PublicAPI]
 public sealed record TunnelCredentialVerified(string CredentialId, string TenantId, string ServerName, bool Home = false);
 
+// The household is the credential's where the service knows it — a revoked one, one presented for another
+// server, one whose household is suspended — so the refusal is reported as that household's; an unknown
+// credential is nobody's.
 [PublicAPI]
-public sealed record TunnelCredentialRefused(TunnelCredentialRefusal Reason);
+public sealed record TunnelCredentialRefused(TunnelCredentialRefusal Reason, string? TenantId = null);
 
 // The agent's question for its key commands: who holds a server of this name.
 [PublicAPI]

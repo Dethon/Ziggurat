@@ -284,17 +284,20 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         AgentApi = new global::Agent.Settings.AgentApiConfiguration { SharedSecret = AgentCredential }
     };
 
-    public static TheoryData<string, TunnelCredentialRefusal> Refusals => new()
+    // A credential the accounts service knows is a household's, and so is its refusal: a revoked vault
+    // that kept knocking every minute was the deployment's error, naming nobody, so the operator could
+    // not tell whose it was. One nobody minted is nobody's.
+    public static TheoryData<string, TunnelCredentialRefusal, bool> Refusals => new()
     {
-        { "unknown", TunnelCredentialRefusal.Unknown },
-        { "revoked", TunnelCredentialRefusal.Revoked },
-        { "another server's", TunnelCredentialRefusal.AnotherServer }
+        { "unknown", TunnelCredentialRefusal.Unknown, false },
+        { "revoked", TunnelCredentialRefusal.Revoked, true },
+        { "another server's", TunnelCredentialRefusal.AnotherServer, true }
     };
 
     [Theory]
     [MemberData(nameof(Refusals))]
     public async Task ACredentialThatDoesNotOpenTheServersTunnel_IsRefusedWithItsReasonAndReported(
-        string credential, TunnelCredentialRefusal reason)
+        string credential, TunnelCredentialRefusal reason, bool householdKnown)
     {
         await using var server = await TunnelledServer.StartAsync(_relay.Hub, await CredentialAsync(credential), "vault");
 
@@ -303,6 +306,9 @@ public class TunnelRelayTests(RedisFixture redis) : IClassFixture<RedisFixture>,
             "the refusal is reported");
         _metrics.Published.OfType<ErrorEvent>().ShouldContain(e =>
             e.ErrorType == TunnelRelay.RefusedErrorType && e.Service == "agent" && e.Message.Contains(reason.ToString()));
+        var refused = _metrics.Published.OfType<ErrorEvent>().First(e => e.ErrorType == TunnelRelay.RefusedErrorType);
+        refused.TenantId.ShouldBe(householdKnown ? _household : null);
+        refused.Message.Contains(_household, StringComparison.Ordinal).ShouldBe(householdKnown, refused.Message);
         _relay.Registry.Open.ShouldBeEmpty();
     }
 

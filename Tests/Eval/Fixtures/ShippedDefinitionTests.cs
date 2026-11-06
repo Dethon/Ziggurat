@@ -43,6 +43,23 @@ public class ShippedDefinitionTests
         settings.DefaultAgent.ShouldBe("jack");
     }
 
+    // The jonas template names the kit's Home Assistant and library, which a household that never set
+    // them up does not reach; the eval hosts what a definition names, so its copy is that household's.
+    [Fact]
+    public void Settings_TheJonasTemplatesCopies_AreAHouseholdsWithNoHomeAndNoLibrary()
+    {
+        var agents = ShippedDefinition.Repository.Settings.Agents;
+
+        foreach (var id in new[] { "template-jonas", "template-jonas-novoice" })
+        {
+            agents.Single(a => a.Id == id).McpServerEndpoints.ShouldNotContain("homeassistant");
+            agents.Single(a => a.Id == id).McpServerEndpoints.ShouldNotContain("library");
+            agents.Single(a => a.Id == id).McpServerEndpoints.ShouldContain("vault");
+        }
+
+        agents.Single(a => a.Id == "template-nabu").McpServerEndpoints.ShouldContain("homeassistant");
+    }
+
     private static string Settings(string redis, string? agents = null) =>
         $$"""
             {

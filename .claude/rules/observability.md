@@ -25,7 +25,7 @@ Published events reach the Redis Pub/Sub channel `metrics:events`. A household's
 
 ## Households
 
-Every event names the household it was for in `MetricEvent.TenantId`; null is the **deployment's own** (a keep-alive, a relay refusal, a deployment service's heartbeat, a probed container). Who says:
+Every event names the household it was for in `MetricEvent.TenantId`; null is the **deployment's own** (a keep-alive, the relay's refusal of a credential nobody minted, a deployment service's heartbeat, a probed container). Who says:
 
 - **A kit server never does.** The relay stamps a back-call's event with its tunnel's verified household (and `Origin`), over whatever the server posted (`BackCallGatewayTests`), so a household cannot bill its use to another.
 - **What acts for a household carries a publisher for it**, not a household per call: `AgentMetricsPublisher` stamps `AgentSpec.TenantId` (tokens, tool calls, truncations, the agent's latencies), a conversation group holds `metricsPublisher.ForHousehold(tenant)` for its turns (first reply, schedule runs, a failed preload), recall and extraction take the account's (`MemoryExtractionRequest.TenantId`), Telegram's dictation the sender's linked account's, and the chat client's the household the hub verified when the dictation ticket was minted (`DictationScope.TenantId`).

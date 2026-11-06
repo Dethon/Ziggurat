@@ -166,6 +166,18 @@ public class PromptDocumentsTests
         AgentTemplates.Named("jonas")!.McpServerEndpoints.ShouldContain("vault");
     }
 
+    // A household's chat agent reaches every kit server its household set up, Home Assistant and the
+    // library among them: Casa Vidal's Jonas, asked for a download with its library connected, tried
+    // fetching the torrent by hand on the person's laptop, and only its voice agent could set a watch.
+    // What a household never set up is withheld per turn, so naming them costs it nothing.
+    [Fact]
+    public void JonasTemplate_NamesEveryKitServerAChatAgentUses()
+    {
+        AgentTemplates.Named("jonas")!.McpServerEndpoints
+            .Where(TunnelCredentialProtocol.IsServerName)
+            .ShouldBe(["vault", "sandbox", "websearch", "homeassistant", "library", "printer"], ignoreOrder: true);
+    }
+
     // A template's description is its agents' identity line in every turn, and what a household's agent
     // reaches is its household's: its keys, features and own servers. Casa Rivas, with no Idealista key
     // and no web search, had its Jonas offer "búsqueda de vivienda" 6 times in 6 and reading web pages

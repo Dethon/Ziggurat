@@ -79,7 +79,7 @@ public class ChatMonitor(
     public const string StandingUnreadableErrorType = "StandingUnreadable";
 
     private readonly DeliveryTargetResolver _targetResolver = new(channels, logger, topics);
-    private readonly ReplyDispatcher _replyDispatcher = new(metricsPublisher, logger);
+    private readonly ReplyDispatcher _replyDispatcher = new(logger);
 
     public async Task Monitor(CancellationToken cancellationToken)
     {
