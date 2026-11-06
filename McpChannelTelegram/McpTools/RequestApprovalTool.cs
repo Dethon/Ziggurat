@@ -51,22 +51,16 @@ public sealed class RequestApprovalTool
         var registry = services.GetRequiredService<BotRegistry>();
         var router = services.GetRequiredService<ApprovalCallbackRouter>();
         var (chatId, threadId) = TelegramConversation.Resolve(p.ConversationId);
-        var botClient = registry.GetBotForChat(chatId)
-                        ?? throw new InvalidOperationException($"No bot registered for chat {chatId}");
 
+        // A tool that ran unasked needs nothing from the person, and a chat is no place for a line per
+        // call (user's decision, 2026-11-06): the notification is acknowledged and shown nowhere.
         if (p.Mode == ApprovalMode.Notify)
         {
-            var toolNames = p.Requests.Select(r => r.ToolName.Split("__").Last());
-            var message = $"✅ Auto-approved: {string.Join(", ", toolNames)}";
-
-            await botClient.SendMessage(
-                chatId,
-                message,
-                messageThreadId: threadId,
-                cancellationToken: CancellationToken.None);
-
             return "notified";
         }
+
+        var botClient = registry.GetBotForChat(chatId)
+                        ?? throw new InvalidOperationException($"No bot registered for chat {chatId}");
 
         var access = services.GetRequiredService<TelegramAccess>();
         var answerers = await AnswerersOfAsync(turn, chatId, access);

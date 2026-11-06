@@ -31,38 +31,25 @@ public class RequestApprovalToolTests : IDisposable
     private static ConversationContext Turn(string userId, MessageOriginKind? originKind) =>
         new(TelegramPollingHarness.AgentId, "100:100", userId, new ReplyTarget("telegram", "100:100"), OriginKind: originKind);
 
+    // A tool that runs unasked is nothing the person has to act on, and a chat is no place for a
+    // line per call: in pass 20 one reminder posted four "Auto-approved" messages ahead of its
+    // one-line answer (user's decision, 2026-11-06). The notification is acknowledged and shown
+    // nowhere.
     [Fact]
-    public async Task McpRun_NotifyMode_SendsAutoApprovedMessage()
-    {
-        IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "mcp__server__search", new Dictionary<string, object?> { ["q"] = "test" })];
-
-        var result = await RequestApprovalTool.RunAsync("100:100", ApprovalMode.Notify, requests, null, _services);
-
-        result.ShouldBe("notified");
-        _harness.BotClient.Verify(b => b.SendRequest(
-            It.Is<SendMessageRequest>(r => r.Text.Contains("Auto-approved") && r.Text.Contains("search")),
-            It.IsAny<CancellationToken>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task McpRun_NotifyMode_MultipleTools_ListsAllNames()
+    public async Task McpRun_NotifyMode_SendsNothing()
     {
         IReadOnlyList<ToolApprovalRequest> requests =
         [
-            new ToolApprovalRequest(null, "mcp__a__search", new Dictionary<string, object?>()),
+            new ToolApprovalRequest(null, "mcp__a__search", new Dictionary<string, object?> { ["q"] = "test" }),
             new ToolApprovalRequest(null, "mcp__b__write", new Dictionary<string, object?>())
         ];
 
         var result = await RequestApprovalTool.RunAsync("100:100", ApprovalMode.Notify, requests, null, _services);
 
         result.ShouldBe("notified");
-        _harness.BotClient.Verify(b => b.SendRequest(
-            It.Is<SendMessageRequest>(r => r.Text.Contains("search") && r.Text.Contains("write")),
-            It.IsAny<CancellationToken>()), Times.Once);
+        _harness.Sent.ShouldBeEmpty();
     }
 
-    // A fire's turn was started by nobody's message, so any linked member of the household whose
-    // chat it is may answer it. Chat 100 is Carol's private chat: a private chat's id is its person's.
     [Fact]
     public async Task McpRun_RequestModeForAFire_AnyLinkedMemberOfTheChatsHouseholdAnswers()
     {
@@ -127,7 +114,7 @@ public class RequestApprovalToolTests : IDisposable
         IReadOnlyList<ToolApprovalRequest> requests = [new ToolApprovalRequest(null, "tool", new Dictionary<string, object?>())];
 
         await Should.ThrowAsync<InvalidOperationException>(
-            () => RequestApprovalTool.RunAsync("999:999", ApprovalMode.Notify, requests, null, _services));
+            () => RequestApprovalTool.RunAsync("999:999", ApprovalMode.Request, requests, null, _services));
     }
 
     // A Telegram tool should never receive another channel's address; when it does, the error
