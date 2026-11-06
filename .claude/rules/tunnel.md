@@ -439,6 +439,19 @@ claim, Done, the live view's socket, the logins list and Forget — carries the 
 that household's tunnel not open it answers **502 with a page of its own** saying the household's
 browser is offline.
 
+**The answer is not trusted on the main origin.** A household's web search runs on its own machine,
+and under `/browse` its page is same-origin with the chat client and the admin API, so a script of a
+swapped server's would act as whoever opened its link. `BrowsePages` gives every answer it forwards
+(through `TunnelForwarder`'s `answered` hook, before a byte is sent) the deployment's
+`BrowsePagePolicy.ContentSecurityPolicy` in place of the server's — the handoff and logins scripts
+alone may run, pinned by hash, no other script, plugin, form, frame or base — drops `Clear-Site-Data`,
+and keeps a `Set-Cookie` only when it is one of the two view cookies on exactly
+`Path=/browse/<household>` with no `Domain`. The scripts live in `Domain/DTOs/Tunnel/BrowsePagePolicy.cs`
+for both ends, held with LF line ends (a browser hashes what its parser read), and read their link's
+values from a JSON data element so their text is the same for every link. A kit whose scripts differ
+shows its page without them until it is updated; when they change, the last release's hashes stay
+pinned for one release (`BrowsePagesTests`, in a real browser too; smoke checks the header through Caddy).
+
 ### A shared server's calls to a household's server
 
 A shared deployment server reaches a household's own server through the relay's internal endpoint,

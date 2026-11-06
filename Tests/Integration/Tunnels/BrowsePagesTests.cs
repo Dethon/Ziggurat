@@ -13,6 +13,8 @@ using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients.Browser;
 using Infrastructure.StateManagers;
 using McpServerWebSearch.Handoff;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ModelContextProtocol.Client;
@@ -118,7 +120,7 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         var (person, _) = NewBrowserSession();
         (await person.PostAsync($"{handoff}/claim", null)).EnsureSuccessStatusCode();
         (await person.PostAsync($"{Pages(_household)}/handoff/done", Json("""{"remember":true}"""))).EnsureSuccessStatusCode();
-        var logins = await CallAsync(Home, "web_logins", []);
+        var logins = await CallAsync(Home, "web_logins", new());
         var (page, _) = NewBrowserSession();
 
         (await page.GetAsync(logins)).StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -198,6 +200,109 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         var answer = await browser.GetAsync("/browse/handoff/anything");
 
         answer.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+    }
+
+    // A household's web search runs on its own machine, and its owner may swap it: a page it serves under
+    // /browse is same-origin with the chat client and the admin API, so its own script would act as
+    // whoever opened the link, and a cookie of its own on Path=/ would sign them in as somebody else.
+    // The relay sends its answer under the deployment's policy instead — the pinned scripts alone — and
+    // keeps only the page's view cookies on that household's pages.
+    [Fact]
+    public async Task AHouseholdsOwnWebSearch_RunsNoScriptOfItsOwn_AndSetsNoCookieBeyondItsPages()
+    {
+        var pages = Pages(_lucia.TenantId);
+        await using var hostile = await StartHostileWebSearchAsync(_lucia.TenantId);
+        using var raw = new HttpClient(new HttpClientHandler { UseCookies = false }) { BaseAddress = new Uri(_relay.Address) };
+
+        var answer = await raw.GetAsync($"{pages}/evil");
+
+        answer.StatusCode.ShouldBe(HttpStatusCode.OK);
+        answer.Headers.GetValues("Content-Security-Policy").ShouldHaveSingleItem().ShouldBe(BrowsePagePolicy.ContentSecurityPolicy);
+        answer.Headers.Contains("Clear-Site-Data").ShouldBeFalse();
+        answer.Headers.GetValues("X-Content-Type-Options").ShouldHaveSingleItem().ShouldBe("nosniff");
+        answer.Headers.GetValues("Set-Cookie").ShouldHaveSingleItem().ShouldStartWith($"{BrowsePagePolicy.ViewCookie}=kept;");
+        var script = (await answer.Content.ReadAsStringAsync()).Split("<script>")[1].Split("</script>")[0];
+        BrowsePagePolicy.ContentSecurityPolicy.ShouldNotContain(BrowsePagePolicy.HashOf(script));
+    }
+
+    // The deployment's own pages still run under that policy: every script the handoff and logins pages
+    // carry is one the policy pins, and their link's values travel as data beside them.
+    [Fact]
+    public async Task TheHandoffAndLoginsPages_RunOnlyThePinnedScripts()
+    {
+        await using var server = await StartWebSearchAsync(_household, _browser);
+        var (browser, _) = NewBrowserSession();
+
+        foreach (var link in new[]
+                 {
+                     await CallAsync(Home, "web_login", new() { ["url"] = "https://shop.test/login" }),
+                     await CallAsync(Home, "web_logins", new())
+                 })
+        {
+            var answer = await browser.GetAsync(link);
+            answer.StatusCode.ShouldBe(HttpStatusCode.OK);
+            answer.Headers.GetValues("Content-Security-Policy").ShouldHaveSingleItem().ShouldBe(BrowsePagePolicy.ContentSecurityPolicy);
+            var html = await answer.Content.ReadAsStringAsync();
+            var scripts = System.Text.RegularExpressions.Regex.Matches(html, "<script>(.*?)</script>",
+                System.Text.RegularExpressions.RegexOptions.Singleline).Select(m => m.Groups[1].Value).ToList();
+            scripts.ShouldHaveSingleItem();
+            BrowsePagePolicy.ScriptHashes.ShouldContain(BrowsePagePolicy.HashOf(scripts[0]), link);
+            html.ShouldContain($"<script type=\"application/json\" id=\"{BrowsePagePolicy.DataElementId}\">");
+            html.ShouldContain(link.Split('/').Last());
+        }
+    }
+
+    // In a real browser on the relay's origin: the handoff page's own script claims its link and names
+    // the site, while a household server's script of its own is refused by the policy.
+    [Fact]
+    public async Task InABrowser_TheHandoffPagesScriptRuns_AndAHouseholdServersOwnDoesNot()
+    {
+        await using var server = await StartWebSearchAsync(_household, _browser);
+        await using var hostile = await StartHostileWebSearchAsync(_lucia.TenantId);
+        var link = await CallAsync(Home, "web_login", new() { ["url"] = "https://shop.test/login" });
+        using var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
+        await using var chromium = await playwright.Chromium.LaunchAsync(new Microsoft.Playwright.BrowserTypeLaunchOptions
+        {
+            Headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false"
+        });
+        var page = await chromium.NewPageAsync();
+        var refused = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        page.Console += (_, message) => refused.Enqueue(message.Text);
+
+        await page.GotoAsync(_relay.Address + link);
+        await Microsoft.Playwright.Assertions.Expect(page.Locator("#title")).ToHaveTextAsync("Log in to shop.test");
+        refused.ShouldNotContain(m => m.Contains("Content Security Policy"));
+
+        await page.GotoAsync(_relay.Address + Pages(_lucia.TenantId) + "/evil");
+        await Eventually.Until(
+            () => refused.Any(m => m.Contains("Content Security Policy") && m.Contains("script")),
+            "the browser to refuse the household server's own script");
+        (await page.TitleAsync()).ShouldBe("kit");
+    }
+
+    // A web search whose owner replaced it: its pages answer with a script and cookies of its own, and
+    // with headers that would loosen the page's policy or wipe the origin's cookies.
+    private async Task<TunnelledServer> StartHostileWebSearchAsync(string household)
+    {
+        var credential = await _accounts.MintTunnelCredentialAsync(household, HouseholdServerNames.WebSearch);
+        var pages = Pages(household);
+        var hostile = await TunnelledServer.StartAsync(
+            _relay.Hub, credential.Credential, HouseholdServerNames.WebSearch,
+            listeners: new Dictionary<string, int> { [TunnelProtocol.PagesTag] = TestPort.GetAvailable() },
+            routes: app => app.MapGet($"{pages}/evil", (HttpContext http) =>
+            {
+                http.Response.Headers.Append("Set-Cookie", "ziggurat_session=the-owners-own; Path=/; HttpOnly");
+                http.Response.Headers.Append("Set-Cookie", $"{BrowsePagePolicy.ViewCookie}=kept; Path={pages}; HttpOnly");
+                http.Response.Headers.Append("Set-Cookie", $"{BrowsePagePolicy.LoginsCookie}=wider; Path=/browse; HttpOnly");
+                http.Response.Headers.Append("Content-Security-Policy", "script-src * 'unsafe-inline'");
+                http.Response.Headers.Append("Clear-Site-Data", "\"cookies\"");
+                return Results.Content(
+                    "<title>kit</title><script>document.title = 'ran'; fetch('/accounts/admin/household/members', {headers: {'X-Requested-With': 'ziggurat-admin'}})</script>",
+                    "text/html");
+            }));
+        await Eventually.Until(
+            () => _relay.Registry.Find(household, HouseholdServerNames.WebSearch) is not null, "the web search's tunnel opens");
+        return hostile;
     }
 
     private Account Home => new(_household, Fran);
