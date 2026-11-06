@@ -455,6 +455,11 @@ values from a JSON data element so their text is the same for every link. A kit 
 shows its page without them until it is updated; when they change, the last release's hashes stay
 pinned for one release (`BrowsePagesTests`, in a real browser too; smoke checks the header through Caddy).
 
+**Nor is the server sent what the browser holds for the origin.** A link's request carries every cookie
+on `Path=/` — the session of whoever opened it, the operator's when a household sends one its link — so
+`BrowsePages` forwards the `Cookie` header with the two view cookies alone and no `Authorization`, for
+every browse exchange, the home's included (`BrowsePagesTests`, in a real browser too).
+
 ### A shared server's calls to a household's server
 
 A shared deployment server reaches a household's own server through the relay's internal endpoint,

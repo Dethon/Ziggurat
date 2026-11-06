@@ -26,14 +26,34 @@ public sealed class BrowsePages(TunnelForwarder forwarder)
         "X-Content-Type-Options"
     ];
 
-    public Task ForwardAsync(HttpContext context) =>
-        BrowsePagePath.HouseholdOf(context.Request.Path) is { } household
+    public Task ForwardAsync(HttpContext context)
+    {
+        Withhold(context.Request);
+        return BrowsePagePath.HouseholdOf(context.Request.Path) is { } household
             ? forwarder.ForwardAsync(
                 context, household, HouseholdServerNames.WebSearch, TunnelProtocol.PagesTag, context.Request.Path, [],
                 OfflineAsync, answer => Confine(answer, BrowsePagePath.For(household)))
             : forwarder.ForwardHomeAsync(
                 context, HouseholdServerNames.WebSearch, TunnelProtocol.PagesTag, context.Request.Path, [], OfflineAsync,
                 answer => Confine(answer, BrowsePagePath.Root));
+    }
+
+    // The browser sends every cookie of the origin on Path=/ with a link's request, the person's
+    // session among them, and the server it goes to may be a household's own machine: it is sent the
+    // page's view cookies alone, so whoever runs it never holds the session of whoever opened the link.
+    private static void Withhold(HttpRequest request)
+    {
+        request.Headers.Remove(HeaderNames.Authorization);
+        var kept = request.Headers.Cookie
+            .SelectMany(header => (header ?? "").Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+            .Where(pair => BrowsePagePolicy.ViewCookies.Contains(pair.Split('=', 2)[0]))
+            .ToArray();
+        request.Headers.Remove(HeaderNames.Cookie);
+        if (kept.Length > 0)
+        {
+            request.Headers.Cookie = string.Join("; ", kept);
+        }
+    }
 
     // The answer of a server the deployment does not run, on the deployment's own origin: it runs the
     // pinned scripts alone (BrowsePagePolicy), and keeps a cookie only when it is one of the page's view

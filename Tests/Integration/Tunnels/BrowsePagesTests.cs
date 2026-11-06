@@ -225,6 +225,32 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         BrowsePagePolicy.ContentSecurityPolicy.ShouldNotContain(BrowsePagePolicy.HashOf(script));
     }
 
+    // The browser sends a link's request with every cookie of the origin on Path=/, the person's
+    // session among them, and the household's server is not the deployment's: it is sent the page's
+    // own view cookies and nothing else, so whoever runs it never holds the session of the person who
+    // opened its link — the operator's included.
+    [Fact]
+    public async Task AHouseholdsOwnWebSearch_IsSentOnlyItsPagesViewCookies_NeverTheSession()
+    {
+        var pages = Pages(_lucia.TenantId);
+        await using var hostile = await StartHostileWebSearchAsync(_lucia.TenantId);
+        using var raw = new HttpClient(new HttpClientHandler { UseCookies = false }) { BaseAddress = new Uri(_relay.Address) };
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{pages}/cookies");
+        request.Headers.Add("Cookie",
+            $"ziggurat_session=the-operators-session; {BrowsePagePolicy.ViewCookie}=view; other=x; {BrowsePagePolicy.LoginsCookie}=logins");
+        request.Headers.Add("Authorization", "Bearer the-operators-token");
+
+        var answer = await raw.SendAsync(request);
+
+        answer.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var seen = await answer.Content.ReadAsStringAsync();
+        seen.ShouldNotContain("the-operators-session");
+        seen.ShouldNotContain("other=x");
+        seen.ShouldNotContain("the-operators-token");
+        seen.ShouldContain($"{BrowsePagePolicy.ViewCookie}=view");
+        seen.ShouldContain($"{BrowsePagePolicy.LoginsCookie}=logins");
+    }
+
     // The deployment's own pages still run under that policy: every script the handoff and logins pages
     // carry is one the policy pins, and their link's values travel as data beside them.
     [Fact]
@@ -278,6 +304,12 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
             () => refused.Any(m => m.Contains("Content Security Policy") && m.Contains("script")),
             "the browser to refuse the household server's own script");
         (await page.TitleAsync()).ShouldBe("kit");
+
+        await page.Context.AddCookiesAsync([
+            new Microsoft.Playwright.Cookie { Name = "ziggurat_session", Value = "the-readers-session", Url = _relay.Address + "/" }
+        ]);
+        await page.GotoAsync(_relay.Address + Pages(_lucia.TenantId) + "/cookies");
+        (await page.InnerTextAsync("body")).ShouldNotContain("the-readers-session");
     }
 
     // A web search whose owner replaced it: its pages answer with a script and cookies of its own, and
@@ -289,7 +321,11 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
         var hostile = await TunnelledServer.StartAsync(
             _relay.Hub, credential.Credential, HouseholdServerNames.WebSearch,
             listeners: new Dictionary<string, int> { [TunnelProtocol.PagesTag] = TestPort.GetAvailable() },
-            routes: app => app.MapGet($"{pages}/evil", (HttpContext http) =>
+            routes: app =>
+            {
+                app.MapGet($"{pages}/cookies", (HttpContext http) => Results.Text(
+                    $"cookie: {http.Request.Headers.Cookie}\nauthorization: {http.Request.Headers.Authorization}"));
+                app.MapGet($"{pages}/evil", (HttpContext http) =>
             {
                 http.Response.Headers.Append("Set-Cookie", "ziggurat_session=the-owners-own; Path=/; HttpOnly");
                 http.Response.Headers.Append("Set-Cookie", $"{BrowsePagePolicy.ViewCookie}=kept; Path={pages}; HttpOnly");
@@ -299,7 +335,8 @@ public class BrowsePagesTests(RedisFixture redis) : IClassFixture<RedisFixture>,
                 return Results.Content(
                     "<title>kit</title><script>document.title = 'ran'; fetch('/accounts/admin/household/members', {headers: {'X-Requested-With': 'ziggurat-admin'}})</script>",
                     "text/html");
-            }));
+            });
+            });
         await Eventually.Until(
             () => _relay.Registry.Find(household, HouseholdServerNames.WebSearch) is not null, "the web search's tunnel opens");
         return hostile;
