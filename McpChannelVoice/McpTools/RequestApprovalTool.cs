@@ -162,6 +162,7 @@ public sealed class RequestApprovalTool
                 ExecScreenCodes.Destructive => "Borraría o cambiaría algo que ya existe.",
                 ExecScreenCodes.SendsOut => "Enviaría datos a un servidor.",
                 ExecScreenCodes.RunsDownloaded => "Descargaría un programa y lo ejecutaría.",
+                ExecScreenCodes.ReachesLan => "Entraría en aparatos de la red de casa.",
                 ExecScreenCodes.Unjudged => "Se ejecuta en tu ordenador y no he podido comprobarlo.",
                 ExecScreenCodes.AsPerson => "Entraría en esa web con tu cuenta.",
                 _ => null

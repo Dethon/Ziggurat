@@ -11,6 +11,7 @@ public static class ExecScreenReasons
         [ExecScreenCodes.Destructive] = "It would delete or change something that's already there.",
         [ExecScreenCodes.SendsOut] = "It would send data to a remote server.",
         [ExecScreenCodes.RunsDownloaded] = "It would download a program and run it.",
+        [ExecScreenCodes.ReachesLan] = "It would reach devices on your home network.",
         [ExecScreenCodes.Unjudged] = "It runs on your computer and couldn't be checked first.",
         [ExecScreenCodes.AsPerson] = "It would browse this site logged in as you."
     };
@@ -23,6 +24,7 @@ public static class ExecScreenReasons
         [ExecScreenCodes.Destructive] = "It would delete or change something that's already there.",
         [ExecScreenCodes.SendsOut] = "It would send data to a remote server.",
         [ExecScreenCodes.RunsDownloaded] = "It would download a program and run it.",
+        [ExecScreenCodes.ReachesLan] = "It would reach devices on the household's network.",
         [ExecScreenCodes.Unjudged] = "It runs on the asker's computer and couldn't be checked first.",
         [ExecScreenCodes.AsPerson] = "It would browse this site logged in as the person who asked."
     };

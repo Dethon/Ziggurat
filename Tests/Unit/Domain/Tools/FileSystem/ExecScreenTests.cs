@@ -19,11 +19,12 @@ public class ExecScreenTests
         ServesBar = 0.6,
         DestroysBar = 0.4,
         SendsOutBar = 0.5,
-        RunsDownloadedBar = 0.5
+        RunsDownloadedBar = 0.5,
+        ReachesLanBar = 0.5
     };
 
     private static JudgmentOutcome Answered(
-        double serves, double destroys = 0.02, double sendsOut = 0.02, double runsDownloaded = 0.02) =>
+        double serves, double destroys = 0.02, double sendsOut = 0.02, double runsDownloaded = 0.02, double reachesLan = 0.02) =>
         new JudgmentOutcome.Answered(new Judgment(
             "jev-test",
             new Dictionary<string, JudgmentAnswer>
@@ -31,7 +32,8 @@ public class ExecScreenTests
                 [ExecScreen.ServesQuestionId] = new NoulAnswer(serves),
                 [ExecScreen.DestroysQuestionId] = new NoulAnswer(destroys),
                 [ExecScreen.SendsOutQuestionId] = new NoulAnswer(sendsOut),
-                [ExecScreen.RunsDownloadedQuestionId] = new NoulAnswer(runsDownloaded)
+                [ExecScreen.RunsDownloadedQuestionId] = new NoulAnswer(runsDownloaded),
+                [ExecScreen.ReachesLanQuestionId] = new NoulAnswer(reachesLan)
             },
             new JudgmentUsage(508, 12, 0.000021m)));
 
@@ -103,11 +105,32 @@ public class ExecScreenTests
     [Fact]
     public async Task EveryDangerRaised_IsNamed()
     {
-        var verdict = await Screen(new ScriptedJudge(_ => Answered(0.01, 0.9, 0.9, 0.9)))
+        var verdict = await Screen(new ScriptedJudge(_ => Answered(0.01, 0.9, 0.9, 0.9, 0.9)))
             .ScreenAsync(Request(ShellReach.Contained), CancellationToken.None);
 
         verdict.Codes.ShouldBe(
-            [ExecScreenCodes.NotRequested, ExecScreenCodes.Destructive, ExecScreenCodes.SendsOut, ExecScreenCodes.RunsDownloaded]);
+        [
+            ExecScreenCodes.NotRequested, ExecScreenCodes.Destructive, ExecScreenCodes.SendsOut, ExecScreenCodes.RunsDownloaded,
+            ExecScreenCodes.ReachesLan
+        ]);
+    }
+
+    // A command that probes the household's own network — a sweep of 192.168.0.0/24 from the sandbox
+    // while hunting a file server, a NAS's shares — destroys nothing, sends nothing out and runs
+    // nothing downloaded, so none of the other three dangers named it and it ran unasked; a sandbox in
+    // a household's kit reaches that network. Asked when the person did not ask for it, on either machine.
+    [Theory]
+    [InlineData(ShellReach.Contained)]
+    [InlineData(ShellReach.Host)]
+    public async Task ACommandReachingTheLocalNetworkThatDoesNotServeTheRequest_IsAsked(ShellReach reach)
+    {
+        var asked = await Screen(new ScriptedJudge(_ => Answered(0.3, reachesLan: 0.9)))
+            .ScreenAsync(Request(reach), CancellationToken.None);
+        var requested = await Screen(new ScriptedJudge(_ => Answered(0.95, reachesLan: 0.9)))
+            .ScreenAsync(Request(reach), CancellationToken.None);
+
+        asked.Codes.ShouldBe([ExecScreenCodes.NotRequested, ExecScreenCodes.ReachesLan]);
+        requested.Asks.ShouldBeFalse();
     }
 
     // At the bar: serving is short of it below, a danger raised at or above it.
@@ -281,7 +304,10 @@ public class ExecScreenTests
         asked.State["working_directory"]!.GetValue<string>().ShouldBe("/laptop/home/fran/app");
         asked.State["machine"]!.GetValue<string>().ShouldBe(ExecScreen.HostMachine);
         asked.Questions.Keys.ShouldBe(
-            [ExecScreen.ServesQuestionId, ExecScreen.DestroysQuestionId, ExecScreen.SendsOutQuestionId, ExecScreen.RunsDownloadedQuestionId],
+            [
+                ExecScreen.ServesQuestionId, ExecScreen.DestroysQuestionId, ExecScreen.SendsOutQuestionId,
+                ExecScreen.RunsDownloadedQuestionId, ExecScreen.ReachesLanQuestionId
+            ],
             ignoreOrder: true);
         asked.Questions.Values.ShouldAllBe(q => q is NoulQuestion);
     }
@@ -331,7 +357,7 @@ public class ExecScreenTests
     public async Task EveryScreenedCall_PublishesWhatWasAnsweredAndWhatHappened()
     {
         var metrics = new RecordingMetricsPublisher();
-        var judge = new ScriptedJudge(_ => Answered(0.3, 0.9, 0.1, 0.05));
+        var judge = new ScriptedJudge(_ => Answered(0.3, 0.9, 0.1, 0.05, 0.07));
         var request = Request(ShellReach.Host) with { Caller = new JudgmentCaller(null, null, "jonas", "7:42") };
 
         await Screen(judge, metrics: metrics).ScreenAsync(request, CancellationToken.None);
@@ -344,6 +370,7 @@ public class ExecScreenTests
         screened.Destroys.ShouldBe(0.9);
         screened.SendsOut.ShouldBe(0.1);
         screened.RunsDownloaded.ShouldBe(0.05);
+        screened.ReachesLan.ShouldBe(0.07);
         screened.AbsenceReason.ShouldBeNull();
         screened.Outcome.ShouldBe(ExecScreenOutcomes.Asked);
         screened.Codes.ShouldBe([ExecScreenCodes.NotRequested, ExecScreenCodes.Destructive]);
