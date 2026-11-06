@@ -3,6 +3,7 @@ using Shouldly;
 using Telegram.Bot;
 using Telegram.Bot.Requests;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace Tests.Unit.McpChannelTelegram;
 
@@ -118,7 +119,7 @@ public class TelegramBotServiceRefusalTests : IDisposable
     [Fact]
     public async Task AnUnaddressedMessageWithARefusableFile_SaysNothing()
     {
-        var message = TelegramPollingHarness.MediaMessage(caption: "just sharing");
+        var message = TelegramPollingHarness.MediaMessage(caption: "just sharing", chatId: TelegramPollingHarness.FamilyGroup, chatType: ChatType.Supergroup);
         message.Document = TelegramPollingHarness.Document(
             fileName: "sheet.xlsx", mimeType: "application/vnd.ms-excel");
 

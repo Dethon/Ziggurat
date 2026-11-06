@@ -394,11 +394,15 @@ public sealed class TelegramBotService : BackgroundService
         return capabilityRefusal is not null;
     }
 
-    // Unchanged from the day this channel only took text, with the caption standing in for it: a
-    // command prefix, or any message in a forum thread. A media message therefore qualifies under
-    // exactly the same rule, and one with an empty caption is a legitimate turn.
+    // Everything in a private chat is said to the bot, so it all qualifies — a stranger's plain "hola"
+    // included, who is then shown the ways in rather than silence (user's decision, 2026-11-06). In a
+    // group only a command prefix or a forum thread addresses the bot, with the caption standing in
+    // for the text, so a media message qualifies under exactly the same rule and one with an empty
+    // caption is a legitimate turn.
     private static bool IsBotMessage(string content, IReadOnlyList<Message> messages) =>
-        content.StartsWith('/') || messages.Any(m => m.MessageThreadId.HasValue);
+        messages[0].Chat.Type == ChatType.Private
+        || content.StartsWith('/')
+        || messages.Any(m => m.MessageThreadId.HasValue);
 
     public override void Dispose()
     {

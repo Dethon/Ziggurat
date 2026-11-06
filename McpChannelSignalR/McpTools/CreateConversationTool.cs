@@ -61,14 +61,30 @@ public sealed class CreateConversationTool
         string conversationId, CreateConversationParams p, IServiceProvider services)
     {
         // Only a conversation spelled as a topic spells its own has a history a topic can read.
-        if (services.GetRequiredService<SessionService>().GetTopicIdByConversationId(conversationId) is not null
-            || ConversationIdentity.Parse(conversationId) is not { } identity)
+        var sessions = services.GetRequiredService<SessionService>();
+        var live = sessions.GetSessionByConversationId(conversationId);
+        if (live?.AgentId == p.AgentId || ConversationIdentity.Parse(conversationId) is not { } identity)
         {
             return null;
         }
 
         var creation = await services.GetRequiredService<IConversationFactory>().CreateOverAsync(identity, p);
-        return creation is null ? null : await OpenAsync(creation, p, services);
+        if (creation is not null)
+        {
+            return await OpenAsync(creation, p, services);
+        }
+
+        // A private chat's conversation is the chat's whichever agent answers it — a shared bot's chat
+        // that switched agents, one person writing to two agents' bots — and each agent's history has a
+        // copy of its own. The live session was another agent's, so it moves to this agent's copy,
+        // which the turn is then announced on: the session follows the turn being announced.
+        if (live is not null && await services.GetRequiredService<IThreadStateStore>()
+                .GetTopicByChatIdAndThreadIdAsync(p.AgentId, identity.ChatId, identity.ThreadId) is { } held)
+        {
+            sessions.StartSession(held.TopicId, p.AgentId, identity.ChatId, identity.ThreadId, held.SpaceSlug, held.Name);
+        }
+
+        return null;
     }
 
     private static async Task<string> OpenAsync(

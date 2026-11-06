@@ -59,6 +59,8 @@ public static class ConfigModule
             // already performs on connect and on every reconnect, so no new protocol call is added.
             .WithTools<RegisterAgentsTool>()
             .WithTools<FetchAttachmentTool>()
+            // A fire whose author asked for it here opens their private chat (CreateConversationTool).
+            .WithTools<CreateConversationTool>()
             // Buffer-always: Telegram has no channel-level way to tell a sender "try again later",
             // so a message arriving during a cold start or just after an idle eviction must be
             // buffered rather than fanned out to nobody. The target is the id McpChannelConnection

@@ -12,6 +12,12 @@ public static class TestPort
     // assigned unless it is asked for by number.
     public static readonly int EphemeralRangeStart = ReadEphemeralRangeStart();
 
+    // Where Docker's daemon begins handing out random host ports: its own kernel's range, which is not
+    // necessarily this machine's (Docker Desktop's daemon runs in a VM on the kernel default). A
+    // container published with a random port can take any number from here up, so the band stays
+    // below this too.
+    public const int DockerEphemeralRangeStart = 32768;
+
     // A thousand-wide band was thought to be far more than a run holds, until the full eval tier
     // walked it to its end: seven servers per run, every scenario retried, and nothing given back.
     // What makes a band enough is fixtures releasing their ports on dispose, so the walk only has
@@ -19,7 +25,9 @@ public static class TestPort
     // run, and the admin phase's accounts tests took a full run past a thousand, so the band is
     // three thousand wide.
     private static readonly PortPool _pool =
-        new(Math.Max(1024, EphemeralRangeStart - 3000), EphemeralRangeStart, IsFree);
+        new(Math.Max(1024, BandTop - 3000), BandTop, IsFree);
+
+    private static int BandTop => Math.Min(EphemeralRangeStart, DockerEphemeralRangeStart);
 
     public static int GetAvailable() => _pool.Get();
 

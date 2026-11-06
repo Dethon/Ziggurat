@@ -38,10 +38,30 @@ public abstract class DictationE2EBase
     protected static async Task HoldUntilRecordedAsync(IPage page, int samples, int atLeastMs)
     {
         var held = Task.Delay(atLeastMs);
-        await page.WaitForFunctionAsync(
+        await WithTraceAsync(page, () => page.WaitForFunctionAsync(
             "n => (window.dictation && window.dictation._run ? window.dictation._run.samples : 0) >= n",
-            samples, new PageWaitForFunctionOptions { Timeout = 30_000, PollingInterval = 50 });
+            samples, new PageWaitForFunctionOptions { Timeout = 30_000, PollingInterval = 50 }));
         await held;
+    }
+
+    // A wait on the recorder that gives up says what the recorder did: under a full suite every
+    // dictation case of one run failed at once (pass 20, ten of nineteen, the silence case hearing
+    // "no sound at all") while beside a second suite they passed, and the page's own trace is the only
+    // record of where the microphone got to.
+    protected static async Task WithTraceAsync(IPage page, Func<Task> wait)
+    {
+        try
+        {
+            await wait();
+        }
+        catch (Exception ex) when (ex is TimeoutException or PlaywrightException)
+        {
+            var trace = await page.EvaluateAsync<string>(
+                "() => JSON.stringify({ trace: window.dictation ? window.dictation._trace : null, " +
+                "samples: window.dictation && window.dictation._run ? window.dictation._run.samples : null, " +
+                "ctx: window.dictation && window.dictation._run && window.dictation._run.ctx ? window.dictation._run.ctx.state : null })");
+            throw new TimeoutException($"{ex.Message}\nDictation trace: {trace}", ex);
+        }
     }
 
     protected async Task<IPage> OpenAsync(int? width = null, int? height = null)
@@ -97,8 +117,8 @@ public abstract class DictationE2EBase
     {
         var mic = await PressableMicAsync(page);
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+        await WithTraceAsync(page, () => Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 }));
         await Task.Delay(holdMs);
         await TouchAsync(cdp, "touchEnd");
     }
