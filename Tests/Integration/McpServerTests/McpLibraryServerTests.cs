@@ -57,6 +57,30 @@ public class McpLibraryServerTests(McpLibraryServerFixture fixture) : IClassFixt
 
     #region FileDownload Tests
 
+    // The description tells the model to omit the arguments that do not apply, and models do: a
+    // call by link alone, or by search result alone, must reach the tool's own checks rather than
+    // fail binding for a parameter the model was told to leave out.
+    [Theory]
+    [InlineData("link")]
+    [InlineData("searchResultId")]
+    public async Task DownloadFile_OmittingTheArgumentsThatDoNotApply_ReachesTheToolsOwnChecks(string given)
+    {
+        var downloadTool = await GetToolAsync("download_file");
+        var arguments = given == "link"
+            ? new Dictionary<string, object?> { ["link"] = "magnet:?xt=urn:btih:x" }
+            : new Dictionary<string, object?> { ["searchResultId"] = 987654 };
+
+        var result = await downloadTool.WithMeta(MetaFor($"conv-omit-{given}")).CallAsync(
+            arguments, cancellationToken: CancellationToken.None);
+
+        var text = GetTextContent(result);
+        text.ShouldNotContain("missing a value");
+        text.ShouldNotContain("An error occurred");
+        (downloadTool.JsonSchema.TryGetProperty("required", out var required)
+            ? required.EnumerateArray().Select(r => r.GetString()).ToList()
+            : []).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task DownloadFile_WithConversationContextMeta_RecordsRoutingAndServesMediaOverlay()
     {
