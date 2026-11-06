@@ -58,6 +58,24 @@ public class TelegramBotServiceHouseholdBotsTests
         (await harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.AgentId.ShouldBe(TelegramPollingHarness.AgentId);
     }
 
+    // The agent goes by the name its owner gave it, so the bot does too: in pass 20 Casa Ruiz's Jonas,
+    // renamed Lola, was still "jonas's" on the household's own bot while the shared bot listed Lola.
+    [Fact]
+    public async Task AgentOnAHouseholdsBot_NamesItsAgentAsTheHouseholdNamedIt()
+    {
+        using var harness = new TelegramPollingHarness();
+        harness.Households.Agents[FakeTelegramAccounts.Household] = new AgentsSection
+        {
+            Agents = [new HouseholdAgent { Id = TelegramPollingHarness.AgentId, Template = "jonas", Name = "Lola" }]
+        };
+        await harness.ReceiveAsync();
+        harness.Enqueue(Update(TelegramPollingHarness.TextMessage("/agent")));
+
+        await harness.RunAsync();
+
+        harness.Sent.ShouldHaveSingleItem().Text.ShouldStartWith("This bot is Lola's");
+    }
+
     // Saved while the server runs, a household's bot starts polling with no restart and answers with the
     // agent it is bound to; saved away again, it stops.
     [Fact]

@@ -31,14 +31,8 @@ public sealed class ChatAgents(IChatAgentChoices choices, IHouseholdConfiguratio
     // The answer to /agent, with or without an agent's id after it.
     public async Task<string> AnswerAsync(TelegramBot bot, long chatId, ResolvedAccount person, string argument, CancellationToken ct)
     {
-        if (!bot.IsShared)
-        {
-            return $"This bot is {bot.AgentId}'s: everything sent here goes to it. "
-                   + "The shared bot switches between your household's agents with /agent.";
-        }
-
         var household = person.Account.TenantId;
-        HouseholdAgentNames agents;
+        HouseholdAgentNames? agents;
         try
         {
             agents = await households.AgentNamesAsync(household, HouseholdProof.OfAssertion(person.Assertion), ct);
@@ -47,6 +41,20 @@ public sealed class ChatAgents(IChatAgentChoices choices, IHouseholdConfiguratio
                                    && !ct.IsCancellationRequested)
         {
             logger.LogWarning(ex, "Could not read the agents of household {Household} for Telegram chat {ChatId}", household, chatId);
+            agents = null;
+        }
+
+        // A household's bot is its agent's, named as the household named it; by its id when the names
+        // cannot be read just now.
+        if (!bot.IsShared)
+        {
+            var name = agents?.Agents.FirstOrDefault(a => a.Id == bot.AgentId)?.Name ?? bot.AgentId;
+            return $"This bot is {name}'s: everything sent here goes to it. "
+                   + "The shared bot switches between your household's agents with /agent.";
+        }
+
+        if (agents is null)
+        {
             return "I can't read your household's agents right now. Try again in a moment.";
         }
 
