@@ -58,19 +58,55 @@ public class TelegramBotServiceTests : IDisposable
         (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Sender.ShouldBe("bob");
     }
 
+    // A group's chatter is not addressed to the bot: only a command or a forum thread is.
     [Fact]
-    public async Task ExecuteAsync_MessageWithoutSlashOrThread_IsIgnored()
+    public async Task ExecuteAsync_GroupMessageWithoutSlashOrThread_IsIgnored()
     {
         await _harness.ReceiveAsync();
         _harness.Enqueue(new Update
         {
             Id = 1,
-            Message = TelegramPollingHarness.TextMessage("just chatting")
+            Message = TelegramPollingHarness.GroupMessage("just chatting")
         });
 
         await _harness.RunAsync();
 
         _harness.Sent.ShouldBeEmpty();
+        (await _harness.ReceiveAsync()).ShouldBeEmpty();
+    }
+
+    // Everything said in a private chat is said to the bot (user's decision, 2026-11-06): a linked
+    // person's plain words are their turn, as a slash or a thread made them before.
+    [Fact]
+    public async Task ExecuteAsync_PrivateMessageWithoutSlashOrThread_IsATurn()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("hola, ¿qué tal?")
+        });
+
+        await _harness.RunAsync();
+
+        _harness.Sent.ShouldBeEmpty();
+        (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Content.ShouldBe("hola, ¿qué tal?");
+    }
+
+    // And a stranger's plain words are answered with the ways in, not with silence.
+    [Fact]
+    public async Task ExecuteAsync_StrangersPrivateMessageWithoutSlash_IsShownTheWaysIn()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("hola", username: "eve", userId: 3)
+        });
+
+        await _harness.RunAsync();
+
+        _harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("ask an owner of the household for an invite");
         (await _harness.ReceiveAsync()).ShouldBeEmpty();
     }
 

@@ -1,5 +1,6 @@
 using Shouldly;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace Tests.Unit.McpChannelTelegram;
 
@@ -71,7 +72,7 @@ public class TelegramBotServiceAttachmentTests : IDisposable
     [Fact]
     public async Task MediaThatDoesNotQualifyUnderTheAddressingRule_IsStillIgnored()
     {
-        var message = TelegramPollingHarness.MediaMessage(caption: "look at this");
+        var message = TelegramPollingHarness.MediaMessage(caption: "look at this", chatId: TelegramPollingHarness.FamilyGroup, chatType: ChatType.Supergroup);
         message.Photo = TelegramPollingHarness.Photo();
 
         await _harness.ReceiveAsync();

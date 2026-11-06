@@ -292,14 +292,15 @@ internal sealed class TelegramPollingHarness : IDisposable
         long chatId = 100,
         string username = "alice",
         int? threadId = null,
-        string? mediaGroupId = null) => new()
+        string? mediaGroupId = null,
+        ChatType chatType = ChatType.Private) => new()
         {
             Id = messageId,
             Date = DateTime.UtcNow,
             Caption = caption,
             MessageThreadId = threadId,
             MediaGroupId = mediaGroupId,
-            Chat = new Chat { Id = chatId, Type = ChatType.Private },
+            Chat = new Chat { Id = chatId, Type = chatType },
             From = new User { Id = AliceId, IsBot = false, FirstName = username, Username = username }
         };
 
