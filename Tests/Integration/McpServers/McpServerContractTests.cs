@@ -158,6 +158,22 @@ public class McpServerContractTests
         tools.ShouldContain(ChannelProtocol.RequestApprovalTool, $"{id} must advertise request_approval");
     }
 
+    // A schedule's or a watch's fire names the channels it is delivered to by id, and the agent opens
+    // its conversation there with create_conversation: a channel a person can name as a delivery and
+    // that cannot open one takes the fire into nothing. Telegram was such a channel until pass 20
+    // (a reminder "por Telegram" fired and reached nobody).
+    [Theory]
+    [InlineData("signalr")]
+    [InlineData("telegram")]
+    [InlineData("voice")]
+    public void EveryChannelAFireIsDeliveredTo_AdvertisesCreateConversation(string id)
+    {
+        using var server = new ConfiguredServer(McpServerRegistrations.Get(id));
+
+        server.Provider.GetServices<McpServerTool>().Select(tool => tool.ProtocolTool.Name)
+            .ShouldContain(ChannelProtocol.CreateConversationTool, $"{id} must advertise create_conversation");
+    }
+
     // One row per skill the manifest declares: the server it names publishes the index and the
     // skill's body. A server that stops shipping a skill its tools are taught by fails here, before
     // an agent finds the advertisement gone.
