@@ -115,12 +115,14 @@ public sealed class BotRegistry
     // household's others, then the shared bot. A bot can write first only in a chat the person opened
     // with it, so the rest are there to be tried after; another household's bot is never one.
     public IReadOnlyList<ITelegramBotClient> BotsPreferring(string householdId, string? agentId) =>
+        [.. Preferring(householdId, agentId).Select(bot => bot.Client)];
+
+    public IReadOnlyList<TelegramBot> Preferring(string householdId, string? agentId) =>
     [
         .. _households.Select(h => h.Bot)
             .Where(bot => bot.HouseholdId == householdId)
             .OrderBy(bot => bot.AgentId == agentId ? 0 : 1)
             .Concat(Shared is null ? [] : [Shared])
-            .Select(bot => bot.Client)
     ];
 }
 
