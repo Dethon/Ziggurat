@@ -40,8 +40,9 @@ argument about where a `Prepend` goes.
   `PromptAudience.ForAgents(...)` is filtered in `PromptAssembly.Build`: `sugary_prompt` is the
   `sugary` agent's, though Jonas dials `mcp-sugary` too for her log. `library_prompt` (Captain Jack) is
   `jack`'s, and the library serves the same workings without him as `library_guide` for the voice
-  template's agent, which dials the library too. `PromptAudienceTests` checks an
-  audience names a configured agent.
+  and chat templates' agents, which dial the library too. An audience naming an agent's id also
+  takes the numbered ids a household gives a second agent of that template (`nabu-2`).
+  `PromptAudienceTests` checks an audience names a configured agent.
 - **An agent may dial its servers for their prompts alone.** `noTools` on a definition: the session
   offers no tool, no skill and no mount, so no `load_skill`, no `skills` section and no preload is
   asked (`sugary`, a one-answer estimator). It enables no features and no outposts, or the
