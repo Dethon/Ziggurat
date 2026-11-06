@@ -16,6 +16,9 @@ public static class ExecScreenCodes
     // It would download code or a program and run it.
     public const string RunsDownloaded = "runs_downloaded";
 
+    // It would reach devices on the local network: the household's router, printer, NAS, cameras.
+    public const string ReachesLan = "reaches_lan";
+
     // Nobody could say: the judge was late, down, unconfigured, or the turn was the local box's.
     public const string Unjudged = "unjudged";
 

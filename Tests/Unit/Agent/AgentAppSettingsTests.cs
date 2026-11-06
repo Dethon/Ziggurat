@@ -452,7 +452,8 @@ public class AgentAppSettingsTests
         var shipped = section.Get<ExecScreenSettings>()!;
 
         section.GetChildren().Select(c => c.Key).ShouldBe(
-            ["enabled", "deadlineMs", "recentRequests", "requestChars", "servesBar", "destroysBar", "sendsOutBar", "runsDownloadedBar"],
+            ["enabled", "deadlineMs", "recentRequests", "requestChars", "servesBar", "destroysBar", "sendsOutBar", "runsDownloadedBar",
+                "reachesLanBar"],
             ignoreOrder: true);
         shipped.Enabled.ShouldBeTrue();
         shipped.DeadlineMs.ShouldBe(1500);
@@ -462,6 +463,7 @@ public class AgentAppSettingsTests
         shipped.DestroysBar.ShouldBe(0.4);
         shipped.SendsOutBar.ShouldBe(0.5);
         shipped.RunsDownloadedBar.ShouldBe(0.5);
+        shipped.ReachesLanBar.ShouldBe(0.5);
         shipped.ShouldBe(new ExecScreenSettings());
     }
 
