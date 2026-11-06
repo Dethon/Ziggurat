@@ -1,4 +1,4 @@
-@using Markdig
+@using WebChat.Client.Helpers
 @using WebChat.Client.Components.Chat
 @inject UserIdentityStore UserIdentityStore
 @inject IJSRuntime Js
@@ -31,15 +31,7 @@
         StateHasChanged();
     }
 
-    // Static pipeline to avoid allocation on every render
-    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
-        .UseAdvancedExtensions()
-        .Build();
-
-    private static string RenderMarkdown(string? content)
-    {
-        return string.IsNullOrEmpty(content) ? "" : Markdown.ToHtml(content, MarkdownPipeline);
-    }
+    private static string RenderMarkdown(string? content) => ChatMarkdown.ToHtml(content);
 
     private (string? AvatarUrl, string DisplayName) GetSenderInfo() =>
         SenderLabel.Of(Message.SenderId, UserIdentityStore.State.SignedIn, TopicOwnerId, TopicOwnerName, Message.SenderName);
