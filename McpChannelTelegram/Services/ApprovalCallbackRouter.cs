@@ -333,6 +333,17 @@ public sealed class ApprovalCallbackRouter
         }
         catch (OperationCanceledException)
         {
+            // Nobody answered: the copies must stop asking, or a keyboard that looks live stays in the
+            // chat and the person is told nothing. An alert is called off by its settle, which says so.
+            if (waiter.AlertText is null && _pending.TryRemove(approvalId, out _))
+            {
+                await EditAllAsync(waiter,
+                    waiter.TimedOut
+                        ? "\u231b Not answered in time, so it was not run"
+                        : "This question is no longer asked",
+                    CancellationToken.None);
+            }
+
             return "denied";
         }
         finally
@@ -361,6 +372,8 @@ public sealed class ApprovalCallbackRouter
         }
 
         public ApprovalAnswerer MayAnswer { get; }
+
+        public bool TimedOut => _timeoutCts.IsCancellationRequested;
 
         // What a ringing timer's message says, for its edits; null on an approval.
         public string? AlertText { get; init; }

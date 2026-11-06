@@ -40,6 +40,44 @@ public class ApprovalCallbackRouterTests
         result.ShouldBe("denied");
     }
 
+    // A question nobody answered in its two minutes is turned down, and every copy says so and offers
+    // its buttons no more: in pass 20 the operator's timed-out web_browse kept a live-looking
+    // keyboard in their private chat, nothing else was said there, and a later tap answered only
+    // "This approval request has expired."
+    [Fact]
+    public async Task RegisterApproval_Timeout_EditsEveryCopyToSayItWasNotAnsweredInTime()
+    {
+        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromMilliseconds(50), Asker, CancellationToken.None);
+        _sut.Shown(approvalId, _botClient.Object, 100, 7);
+        _sut.Shown(approvalId, _botClient.Object, -200, 9);
+
+        (await resultTask).ShouldBe("denied");
+
+        foreach (var (chat, message) in new[] { (100L, 7), (-200L, 9) })
+        {
+            _botClient.Verify(b => b.SendRequest(
+                It.Is<Telegram.Bot.Requests.EditMessageTextRequest>(r =>
+                    r.ChatId.Identifier == chat && r.MessageId == message && r.Text.Contains("Not answered in time")),
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+    }
+
+    // The turn that asked was called off (stopped, or the agent went away): the copies stop asking too.
+    [Fact]
+    public async Task RegisterApproval_Cancelled_EditsEveryCopyToSayItIsNoLongerAsked()
+    {
+        using var cts = new CancellationTokenSource();
+        var (approvalId, resultTask) = _sut.RegisterApproval(TimeSpan.FromSeconds(30), Asker, cts.Token);
+        _sut.Shown(approvalId, _botClient.Object, 100, 7);
+
+        await cts.CancelAsync();
+
+        (await resultTask).ShouldBe("denied");
+        _botClient.Verify(b => b.SendRequest(
+            It.Is<Telegram.Bot.Requests.EditMessageTextRequest>(r => r.MessageId == 7 && r.Text.Contains("no longer asked")),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
     [Fact]
     public async Task RegisterApproval_Cancelled_ReturnsDenied()
     {
