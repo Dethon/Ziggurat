@@ -3,6 +3,7 @@ using Domain.Prompts;
 using Domain.Tools.HomeAssistant.Vfs;
 using Infrastructure.Clients.Voice;
 using Infrastructure.Extensions;
+using Infrastructure.Metrics;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerHomeAssistant.McpPrompts;
@@ -79,6 +80,11 @@ public static class ConfigModule
                 // without the home cannot advertise how to watch it.
                 .AddSkills(HomeWatchesSkill.Text, HomeAssistantSkill.Text)
                 .WithPrompts<McpSystemPrompt>();
+
+            if (settings.Metrics.Url.Length > 0)
+            {
+                services.AddMetricsPublishing("mcp-homeassistant", settings.Metrics);
+            }
 
             return services;
         }

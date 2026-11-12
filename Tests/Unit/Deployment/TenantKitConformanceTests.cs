@@ -244,6 +244,37 @@ public class TenantKitConformanceTests
             .ShouldBe($"http://127.0.0.1:{environment[$"MCP__TUNNEL__BACKCALLS__{tag}".ToUpperInvariant()]}{path}");
     }
 
+    // Every server of the household is a tile on the deployment's dashboard, which only its own
+    // heartbeat can light: it has no other way out than its tunnel, so it posts it on its metrics
+    // back-call. The Lemonade forwarder is no server of ours, only a pipe to the household's box.
+    [Fact]
+    public void EveryTunnelledServer_PostsItsHeartbeatOnItsMetricsBackCall()
+    {
+        var servers = TunnelledServers.Where(s => s.Name != "lemonade-forwarder").ToList();
+
+        servers.ShouldNotBeEmpty();
+        foreach (var server in servers)
+        {
+            var environment = Setting.Of(server);
+            environment.ShouldContainKey("MCP__TUNNEL__BACKCALLS__METRICS", server.Name);
+            environment.GetValueOrDefault("METRICS__URL").ShouldBe(
+                $"http://127.0.0.1:{environment["MCP__TUNNEL__BACKCALLS__METRICS"]}{BackCallProtocol.MetricsPath}",
+                server.Name);
+        }
+    }
+
+    // A helper container has no tunnel, so the server beside it reports it: each probes its own, on
+    // the network they share.
+    [Theory]
+    [InlineData("mcp-channel-voice", "tse-extractor", "http://tse-extractor:9098/")]
+    [InlineData("mcp-homeassistant", "homeassistant", "http://homeassistant:8123/")]
+    [InlineData("mcp-homeassistant", "music-assistant", "http://host.docker.internal:8095/")]
+    [InlineData("mcp-library", "qbittorrent", "http://qbittorrent:8001/")]
+    [InlineData("mcp-library", "jackett", "http://jackett:9117/")]
+    [InlineData(BrowseServerListeners.Service, "camoufox", "http://camoufox:9377/json")]
+    public void EveryHelper_IsReportedByTheServerBesideIt(string server, string helper, string url) =>
+        Setting.Of(Kit.Service(server)).GetValueOrDefault($"METRICS__HELPERS__{helper}".ToUpperInvariant()).ShouldBe(url);
+
     // Anything running beside a server can dial its back-call ports, a sandbox command included, so a
     // server names only the back-calls it makes, each a tag the relay knows, and every one is used.
     [Fact]

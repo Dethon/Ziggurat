@@ -28,6 +28,15 @@ public static class MetricsPublishingRegistration
             });
         }
 
+        if (feed.Helpers.Count > 0)
+        {
+            services.AddHttpClient(HelperHealthProbes.ClientName, http => http.Timeout = HelperHealthProbes.Timeout);
+            services.AddHostedService(sp => new HelperHealthProbes(
+                sp.GetRequiredService<IMetricsPublisher>(),
+                sp.GetRequiredService<IHttpClientFactory>().CreateClient(HelperHealthProbes.ClientName),
+                feed.Helpers));
+        }
+
         return services
             .AddSingleton<IMetricSink>(sp => feed.Url.Length > 0
                 ? new HttpMetricSink(sp.GetRequiredService<IHttpClientFactory>().CreateClient(HttpMetricSink.ClientName))
@@ -48,4 +57,8 @@ public sealed record MetricsFeedConfig
 
     // Bounds one post, so a tunnel that is down drops an event rather than holding the buffer.
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(5);
+
+    // The containers beside this server that have no tunnel of their own (METRICS__HELPERS__<name>=
+    // <url>): each is probed and, while it answers, reported under its own name on this feed.
+    public Dictionary<string, string> Helpers { get; init; } = [];
 }

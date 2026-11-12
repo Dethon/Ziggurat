@@ -1,3 +1,4 @@
+using Domain.DTOs.Metrics;
 using Domain.DTOs.Tunnel;
 using Domain.Outposts;
 
@@ -42,7 +43,17 @@ public sealed class BackCallTargets(Uri accounts, Uri lemonade)
     public static BackCallTargets From(BackCallSettings settings, string accountsUrl) =>
         new(new Uri(accountsUrl.TrimEnd('/') + "/"), new Uri(settings.LemonadeUrl.TrimEnd('/') + "/"));
 
+    // The heartbeat the sandbox's server beats (McpServerSandbox's AddMetricsPublishing).
+    public const string SandboxHeartbeat = "mcp-sandbox";
+
     public bool Knows(string tag) => _allowed.ContainsKey(tag);
+
+    // The model's commands run in the sandbox's container and can dial its metrics back-call, so
+    // the sandbox publishes its own heartbeat and nothing else: a command can keep that one tile
+    // green, never post a household's costs, errors or another server's heartbeat (user, 2026-11-12).
+    public static bool MayPublish(string serverName, MetricEvent published) =>
+        serverName != HouseholdServerNames.Sandbox
+        || published is HeartbeatEvent { Service: SandboxHeartbeat };
 
     public bool Allows(string tag, string serverName, string path) =>
         _allowed.TryGetValue(tag, out var allowed)

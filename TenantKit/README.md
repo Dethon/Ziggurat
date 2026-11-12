@@ -20,13 +20,17 @@ this file to it.
 | Server | Tunnel name | Back-calls | Beside it |
 |---|---|---|---|
 | `mcp-websearch` | `websearch` | metrics | `camoufox`, the kit's `redis` |
-| `mcp-vault` | `vault` | | |
-| `mcp-library` | `library` | | `qbittorrent`, `jackett`, the kit's `redis` |
-| `mcp-sandbox` | `sandbox` | vfs-bridge | a network of its own |
-| `mcp-printer` | `printer` | | |
-| `mcp-homeassistant` | `homeassistant` | | `homeassistant`, `music-assistant` |
+| `mcp-vault` | `vault` | metrics | |
+| `mcp-library` | `library` | metrics | `qbittorrent`, `jackett`, the kit's `redis` |
+| `mcp-sandbox` | `sandbox` | vfs-bridge, metrics | a network of its own |
+| `mcp-printer` | `printer` | metrics | |
+| `mcp-homeassistant` | `homeassistant` | metrics | `homeassistant`, `music-assistant` |
 | `mcp-channel-voice` | `voice` | accounts, topics, lemonade, metrics | `tse-extractor` |
 | `lemonade-forwarder` | `lemonade` | | the household's own Lemonade box on its LAN (`--profile lemonade`) |
+
+Every server's metrics back-call carries its heartbeat to the deployment's dashboard, and the
+heartbeats of the containers beside it (the last column), which it probes because they have no
+tunnel of their own: each is a tile under the household's name.
 
 The Lemonade forwarder is for a household with a Lemonade box of its own behind its router. It runs
 only with `--profile lemonade`, told the box's API address on the LAN and its key (`LEMONADE_URL`,

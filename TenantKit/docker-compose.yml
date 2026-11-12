@@ -99,6 +99,8 @@ services:
       # The name the deployment finds the household's browser by (HouseholdServerNames.WebSearch).
       MCP__TUNNEL__SERVERNAME: websearch
       MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_WEBSEARCH}
+      # The browser beside it, probed and reported on its feed: it has no tunnel of its own.
+      METRICS__HELPERS__camoufox: http://camoufox:9377/json
       MCP__TUNNEL__BACKCALLS__metrics: "7801"
       METRICS__URL: http://127.0.0.1:7801/events
     networks:
@@ -125,6 +127,10 @@ services:
       <<: [*timezone, *hub]
       MCP__TUNNEL__SERVERNAME: vault
       MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_VAULT}
+      # Its heartbeat (and its helpers') on the deployment's dashboard, over its tunnel's metrics
+      # back-call: the only way out it has.
+      MCP__TUNNEL__BACKCALLS__metrics: "7801"
+      METRICS__URL: http://127.0.0.1:7801/events
     networks:
       - kit
     depends_on:
@@ -197,6 +203,13 @@ services:
       REDISCONNECTIONSTRING: redis:6379,password=${KIT_REDIS_PASSWORD}
       MCP__TUNNEL__SERVERNAME: library
       MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_LIBRARY}
+      # Its heartbeat (and its helpers') on the deployment's dashboard, over its tunnel's metrics
+      # back-call: the only way out it has.
+      MCP__TUNNEL__BACKCALLS__metrics: "7801"
+      METRICS__URL: http://127.0.0.1:7801/events
+      # The helpers beside it, probed and reported on its feed: neither has a tunnel of its own.
+      METRICS__HELPERS__qbittorrent: http://qbittorrent:8001/
+      METRICS__HELPERS__jackett: http://jackett:9117/
     networks:
       - kit
     depends_on:
@@ -282,6 +295,10 @@ services:
       PGID: ${PGID:-1654}
       MCP__TUNNEL__SERVERNAME: sandbox
       MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_SANDBOX}
+      # Its heartbeat (and its helpers') on the deployment's dashboard, over its tunnel's metrics
+      # back-call: the only way out it has.
+      MCP__TUNNEL__BACKCALLS__metrics: "7801"
+      METRICS__URL: http://127.0.0.1:7801/events
       # A command's file operations on the session's other mounts: the agent's exec bridge, reached
       # over this server's tunnel from its own loopback.
       MCP__TUNNEL__BACKCALLS__vfs-bridge: "7805"
@@ -309,6 +326,10 @@ services:
       PRINTERURI: ${PRINTER_URI:?set PRINTER_URI in .env}
       MCP__TUNNEL__SERVERNAME: printer
       MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_PRINTER}
+      # Its heartbeat (and its helpers') on the deployment's dashboard, over its tunnel's metrics
+      # back-call: the only way out it has.
+      MCP__TUNNEL__BACKCALLS__metrics: "7801"
+      METRICS__URL: http://127.0.0.1:7801/events
     networks:
       - kit
     depends_on:
@@ -384,6 +405,13 @@ services:
       Announce__Token: ${Announce__Token}
       MCP__TUNNEL__SERVERNAME: homeassistant
       MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_HOMEASSISTANT}
+      # Its heartbeat (and its helpers') on the deployment's dashboard, over its tunnel's metrics
+      # back-call: the only way out it has.
+      MCP__TUNNEL__BACKCALLS__metrics: "7801"
+      METRICS__URL: http://127.0.0.1:7801/events
+      # The helpers beside it, probed and reported on its feed: neither has a tunnel of its own.
+      METRICS__HELPERS__homeassistant: http://homeassistant:8123/
+      METRICS__HELPERS__music-assistant: http://host.docker.internal:8095/
     networks:
       - kit
     depends_on:
@@ -425,6 +453,8 @@ services:
       # The name the deployment's timers server rings through (HouseholdServerNames.Voice).
       MCP__TUNNEL__SERVERNAME: voice
       MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_VOICE}
+      # The speech extractor beside it, probed and reported on its feed: it has no tunnel of its own.
+      METRICS__HELPERS__tse-extractor: http://tse-extractor:9098/
       # Every deployment service it needs, each through its own tunnel from a port on its loopback:
       # the accounts service for a speaker and the guest, the agent's topic minting, the shared
       # Lemonade's speech-to-text and text-to-speech, and the metrics feed — so it opens no Redis.

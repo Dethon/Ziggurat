@@ -155,6 +155,13 @@ public sealed class BackCallGateway(
             return;
         }
 
+        if (!BackCallTargets.MayPublish(tunnel.ServerName, published))
+        {
+            Refuse(tunnel, $"a {published.GetType().Name} on its '{BackCallProtocol.Metrics}' back-call");
+            http.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return;
+        }
+
         metrics.Publish(published with { Origin = tunnel.Address.Name, TenantId = tunnel.TenantId });
         http.Response.StatusCode = StatusCodes.Status202Accepted;
     }

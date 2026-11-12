@@ -183,7 +183,7 @@ that: a stream it opens with one of `BackCallProtocol`'s tags, carrying HTTP/1.1
 | `topics` | `voice` only | the agent's own `TopicMinting.Path` | `/internal/topics` | voice's topics |
 | `lemonade` | `voice` only | the shared Lemonade (`backCalls:lemonadeUrl`) | `/v1/audio/transcriptions`, `/v1/audio/speech` | voice's STT and TTS |
 | `vfs-bridge` | `sandbox` only | the agent's own exec bridge | under `/api/vfs-bridge/` | the sandbox's FUSE daemon |
-| `metrics` | any but an outpost | the relay itself | `BackCallProtocol.MetricsPath` (`/events`) | any server's metric events |
+| `metrics` | any but an outpost | the relay itself | `BackCallProtocol.MetricsPath` (`/events`) | any server's metric events; the sandbox's own heartbeat alone (`BackCallTargets.MayPublish`: its container runs the model's commands, which can dial the port) |
 
 **A back-call is for the servers that make it**, by the server name the tunnel's credential was
 minted for (`HouseholdServerNames.Voice`/`.Sandbox`; an outpost is `outpost-<NAME>`, which publishes
@@ -560,8 +560,8 @@ to (`TenantKitConformanceTests`, through `DeploymentFiles.KitCompose`):
   `McpServerRegistrations`: tools for an agent, a channel for a channel).
 - **Back-calls are loopback ports dialled by their client**: voice's `accounts` (`ACCOUNTS__BASEURL`),
   `topics` (`AGENT__BASEURL`), `lemonade` (`Stt__OpenAi__BaseUrl`/`Tts__OpenAi__BaseUrl`, `/v1`) and
-  `metrics` (`METRICS__URL`, so voice opens no Redis); web search's `metrics`; the sandbox's
-  `vfs-bridge` (`VFSBRIDGEURL`). A server names only the back-calls it makes, and every loopback URL it
+  `metrics` (`METRICS__URL`, so voice opens no Redis); every other server's `metrics`, for its heartbeat
+  and its helpers' (`.claude/rules/observability.md`); the sandbox's `vfs-bridge` (`VFSBRIDGEURL`). A server names only the back-calls it makes, and every loopback URL it
   is given is one.
 - **The deployment is reached through the tunnels alone**: every address a kit service is told is a kit
   service, its own loopback, the host's gateway (Music Assistant) or the deployment's main host (the

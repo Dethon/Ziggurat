@@ -128,6 +128,25 @@ public class BackCallGatewayTests(RedisFixture redis) : IClassFixture<RedisFixtu
             e => e.Origin.ShouldBe(ServerAddress.Tunnelled(_home, serverName).Name));
     }
 
+    // The model's commands run in the sandbox's container, beside its metrics back-call, so the relay
+    // takes nothing from it but the sandbox's own heartbeat: a command can at most keep that one tile
+    // green, never post a household's costs, errors or another server's heartbeat (user, 2026-11-12).
+    [Fact]
+    public async Task TheSandbox_PublishesItsOwnHeartbeatAndNothingElse()
+    {
+        var port = await ServerOfAsync(_home, HouseholdServerNames.Sandbox, BackCallProtocol.Metrics);
+        var sink = new HttpMetricSink(new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}{BackCallProtocol.MetricsPath}") });
+
+        await sink.SendAsync(new HeartbeatEvent { Service = "mcp-sandbox" });
+        await Should.ThrowAsync<HttpRequestException>(() =>
+            sink.SendAsync(new HeartbeatEvent { Service = "mcp-vault" }));
+        await Should.ThrowAsync<HttpRequestException>(() =>
+            sink.SendAsync(new ErrorEvent { Service = "agent", ErrorType = "Forged", Message = "a command's" }));
+
+        _metrics.Published.OfType<HeartbeatEvent>().ShouldHaveSingleItem().Service.ShouldBe("mcp-sandbox");
+        _metrics.Published.OfType<ErrorEvent>().Where(e => e.ErrorType == "Forged").ShouldBeEmpty();
+    }
+
     // A back-call's connection outlives its request (keep-alive), so a server going away closes its
     // tunnel under a connection the gateway's Kestrel still holds — which Kestrel then aborts with no
     // reason given. The tunnel ends as any other does, and nothing in the gateway fails over it.
