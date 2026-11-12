@@ -67,6 +67,10 @@
                         <input type="checkbox" name="seesAll" @bind="draft.SeesAll" />
                         <span>Sees all conversations</span>
                     </label>
+                    <label class="admin-check">
+                        <input type="checkbox" name="readsSugaryLogs" @bind="draft.ReadsSugaryLogs" />
+                        <span>Reads everyone's Sugary log</span>
+                    </label>
                     <div class="admin-actions">
                         @if (!member.IsOperator && !member.Disabled)
                         {

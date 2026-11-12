@@ -21,6 +21,10 @@ public interface ICallHousehold
 
     // The agents the household runs, under their names: what the schedules mount shows it.
     Task<HouseholdAgentNames> AgentNamesAsync(CancellationToken ct);
+
+    // The household's people and who an owner let read everyone's Sugary log: the /sugary mount opens
+    // another person's log to a reader it lists as granted.
+    Task<HouseholdSugaryPeople> SugaryPeopleAsync(CancellationToken ct);
 }
 
 public static class CallHouseholds

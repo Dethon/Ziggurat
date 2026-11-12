@@ -48,6 +48,17 @@ public class MemberDraftsTests
     // this page changed, so another owner's change to the other field stands.
     private static readonly AdminMember Carlos = new("carlos", "Carlos", AdminMember.Member, false, false, false);
 
+    // Letting Carlos's agent read everyone's Sugary log is its own field, sent alone like the others.
+    [Fact]
+    public void ASugaryLogGrant_IsSentAlone()
+    {
+        var drafts = new MemberDrafts();
+        drafts.Reset(new AdminMembers([Carlos]));
+        drafts.For(Carlos).ReadsSugaryLogs = true;
+
+        drafts.EditOf(Carlos).ShouldBe(new MemberEdit(ReadsSugaryLogs: true));
+    }
+
     [Fact]
     public void ASaveOfOneField_SendsThatFieldAlone()
     {

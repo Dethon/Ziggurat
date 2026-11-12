@@ -20,10 +20,15 @@ namespace Domain.Tools.Sugary.Vfs;
 // is refused with what it can do.
 //
 // Each person keeps a log of their own, so the mount answers for the person whose turn a call
-// serves and nobody else: the account on the principal the call's `_meta` carries. The server's one
-// instance has no caller; the registrar asks for a view per call (For). A call that names no account
-// — a voice guest's turn, a fire with no person behind it, a call with no context — is refused, never
-// shown an empty log, since "she logged nothing" would be a false fact about a health record.
+// serves: the account on the principal the call's `_meta` carries. The server's one instance has no
+// caller; the registrar asks for a view per call (For). A call that names no account — a voice
+// guest's turn, a fire with no person behind it, a call with no context — is refused, never shown an
+// empty log, since "she logged nothing" would be a false fact about a health record.
+//
+// A reader an owner let read everyone's Sugary log (the members page) also finds each other person of
+// the household under people/<name>/, with the same files. Who holds that grant is the household's
+// people view, asked through the household the call proved, and only a reader it lists as granted, of
+// that very household, sees people/; anyone else asking into it is refused, never shown an empty log.
 public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, ITableEngine engine) : FileSystemBackendBase
 {
     public const string Name = "sugary";
@@ -48,8 +53,7 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
     public override string FilesystemName => Name;
 
     public override string DescribeMount =>
-        "The carb-counting log from Sugary of the person the turn is for, and nobody else's (another person's "
-        + "log cannot be read here), read-only and always current, as "
+        "The carb-counting log from Sugary of the person the turn is for, read-only and always current, as "
         + "Parquet tables: meals/<YYYY-MM>.parquet (one row per meal), items/<YYYY-MM>.parquet (one row per "
         + "food in a meal), doses/<YYYY-MM>.parquet (one row per insulin dose they recorded taking), "
         + "dose-meals.parquet (which meals each dose was for), "
@@ -58,7 +62,10 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
         + "a day), and README.md, which explains every column — read it before reading a number. Ask with "
         + "query: tables meals, items, doses, dose_meals, exercise, foods, periods and day_notes, every month at once. "
         + "A table is not read as text; a command in the sandbox reads the files with duckdb or polars. "
-        + "Times are instants, each with a `<column>_local` wall time beside it in local time (README.md names the zone).";
+        + "Times are instants, each with a `<column>_local` wall time beside it in local time (README.md names the zone). "
+        + "Another person's log is not here, unless an owner of the household let this person read everyone's: "
+        + "then each other person's log is under people/<name>/ with the same files, and a query asked at "
+        + "people/<name> answers over theirs.";
 
     public override string DescribeRead =>
         "Read README.md, which explains every table and column of the carb log. The tables are Parquet "
@@ -74,9 +81,10 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
         + "`{a,b}` brace alternation. A trailing slash (e.g. `*/`) lists directories only.";
 
     public override string DescribeQuery =>
-        "Answer one DuckDB SQL statement over the whole log, every month at once: tables meals, items, "
+        "Answer one DuckDB SQL statement over one person's whole log, every month at once: tables meals, items, "
         + "doses, dose_meals, exercise, foods, periods and day_notes, with the columns README.md explains. Every time "
-        + "column has a `<column>_local` sibling on the home's clock.";
+        + "column has a `<column>_local` sibling on the home's clock. Asked anywhere outside people/, it reads the "
+        + "turn's person's own log; asked at or under people/<name>, that person's.";
 
     public override string DescribeBlobRead =>
         "Read a chunk of a file of the carb log as raw bytes (base64): a table's Parquet, or the README.";
@@ -91,6 +99,18 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
 
     private static FsResult<T> Nobody<T>() where T : class => Fail<T>(ToolError.Codes.PermissionDenied, ForNobody);
 
+    // What a reader without the grant is answered for anything under people/.
+    private const string NotGranted =
+        "This turn's person may read only their own Sugary log: other people's logs are under people/ only for "
+        + "someone an owner of the household lets read everyone's Sugary log, on the household's members page.";
+
+    // Another person's log as this reader may open it: their folder under people/, and their account,
+    // always of the reader's own household.
+    private sealed record OtherLog(string Folder, Account Owner);
+
+    // Whose log a path is in, and which node of it.
+    private sealed record Target(Account Owner, SugaryNode Node);
+
     public override async Task<FsResult<FsReadResult>> ReadAsync(
         string path, int? offset, int? limit, CancellationToken ct)
     {
@@ -99,18 +119,22 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
             return Nobody<FsReadResult>();
         }
 
-        var node = SugaryPath.Parse(path);
-        if (node.IsDirectory)
+        if (!(await ResolveAsync(reader, path, ct)).TryGetValue(out var target, out var refused))
+        {
+            return new FsResult<FsReadResult>.Err(refused);
+        }
+
+        if (target.Node.IsDirectory)
         {
             return Invalid<FsReadResult>($"'{path}' is a directory; glob it to see its files.");
         }
 
-        if (node.Kind == SugaryNodeKind.Readme)
+        if (target.Node.Kind == SugaryNodeKind.Readme)
         {
             return new FsResult<FsReadResult>.Ok(Window(path, SugaryReadme.For(await ZoneAsync(ct)), offset, limit));
         }
 
-        return await TableAsync(reader, node, await ZoneAsync(ct), ct) is null
+        return await TableAsync(target.Owner, target.Node, await ZoneAsync(ct), ct) is null
             ? NotFound<FsReadResult>(path)
             : FsError.QueryOnly<FsReadResult>(FileSystemResolution.ToVirtualPath(MountPoint, path), MountPoint);
     }
@@ -128,7 +152,12 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
             });
         }
 
-        var bytes = await BytesAsync(reader, SugaryPath.Parse(path), await ZoneAsync(ct), ct);
+        if (!(await ResolveAsync(reader, path, ct)).TryGetValue(out var target, out var refused))
+        {
+            throw new FileSystemOperationException(refused);
+        }
+
+        var bytes = target.Node.IsDirectory ? null : await BytesAsync(target.Owner, target.Node, await ZoneAsync(ct), ct);
         if (bytes is null)
         {
             throw new FileSystemOperationException(new ToolErrorResult
@@ -142,12 +171,20 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
     }
 
     // The byte read as the wire asks it. A refusal thrown from the stream above would reach the wire
-    // as a failure to retry, so a call that names nobody is answered with the refusal itself here.
-    public override Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
-        string path, long offset, int length, CancellationToken ct) =>
-        _reader is null
-            ? Task.FromResult(Nobody<FsBlobReadResult>())
-            : base.ReadBlobAsync(path, offset, length, ct);
+    // as a failure to retry, so a call that names nobody, or asks into a log it may not read, is
+    // answered with the refusal itself here.
+    public override async Task<FsResult<FsBlobReadResult>> ReadBlobAsync(
+        string path, long offset, int length, CancellationToken ct)
+    {
+        if (_reader is not { } reader)
+        {
+            return Nobody<FsBlobReadResult>();
+        }
+
+        return (await ResolveAsync(reader, path, ct)).TryGetValue(out _, out var refused)
+            ? await base.ReadBlobAsync(path, offset, length, ct)
+            : new FsResult<FsBlobReadResult>.Err(refused);
+    }
 
     // A table's size is its Parquet's, rendered to be measured: a reader of Parquet seeks to the end
     // of the file for its footer, so an unknown size would read as a broken file.
@@ -158,8 +195,15 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
             return Nobody<FsInfoResult>();
         }
 
-        var node = SugaryPath.Parse(path);
-        var bytes = node.IsDirectory ? null : await BytesAsync(reader, node, await ZoneAsync(ct), ct);
+        if (!(await ResolveAsync(reader, path, ct)).TryGetValue(out var target, out var refused))
+        {
+            return refused.ErrorCode == ToolError.Codes.NotFound
+                ? new FsResult<FsInfoResult>.Ok(new FsInfoResult { Exists = false, Path = path })
+                : new FsResult<FsInfoResult>.Err(refused);
+        }
+
+        var node = target.Node;
+        var bytes = node.IsDirectory ? null : await BytesAsync(target.Owner, node, await ZoneAsync(ct), ct);
         var exists = node.IsDirectory || bytes is not null;
         return new FsResult<FsInfoResult>.Ok(new FsInfoResult
         {
@@ -182,18 +226,36 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
             return new FsResult<FsGlobResult>.Err(invalidPattern);
         }
 
+        if (!(await ResolveAsync(reader, basePath, ct)).TryGetValue(out _, out var refused))
+        {
+            return new FsResult<FsGlobResult>.Err(refused);
+        }
+
         var (dirsOnly, matches) = scope;
-        var nodes = await NodesAsync(reader, await ZoneAsync(ct), ct);
-        return Glob(pattern, () => nodes
-            .Where(node => node.Kind != SugaryNodeKind.Root && (!dirsOnly || node.IsDirectory))
-            .Where(node => matches(node.Path.TrimStart('/')))
-            .Select(node => node.IsDirectory ? node.Path + "/" : node.Path)
+        var zone = await ZoneAsync(ct);
+        var entries = (await NodesAsync(reader, zone, ct)).Select(node => (node.Path, node.IsDirectory)).ToList();
+        if (await OthersAsync(reader, ct) is { } others)
+        {
+            entries.Add(("/" + SugaryPath.PeopleDirName, true));
+            foreach (var other in others)
+            {
+                var prefix = PrefixOf(other);
+                entries.AddRange((await NodesAsync(other.Owner, zone, ct)).Select(node =>
+                    (node.Kind == SugaryNodeKind.Root ? prefix : prefix + node.Path, node.IsDirectory)));
+            }
+        }
+
+        return Glob(pattern, () => entries
+            .Where(entry => entry.Path != "/" && (!dirsOnly || entry.IsDirectory))
+            .Where(entry => matches(entry.Path.TrimStart('/')))
+            .Select(entry => entry.IsDirectory ? entry.Path + "/" : entry.Path)
             .OrderBy(entry => entry, StringComparer.Ordinal)
             .ToList());
     }
 
-    // Whichever path inside the mount it was asked at, a statement sees the whole log: a month is
-    // where a file is filed, not a limit on a question.
+    // Whichever path inside a person's log it was asked at, a statement sees that whole log: a month is
+    // where a file is filed, not a limit on a question. Whose log is the path's: under people/<name>,
+    // that person's; anywhere else, the reader's own.
     public override async Task<FsResult<FsQueryResult>> QueryAsync(
         string path, string sql, int maxRows, CancellationToken ct)
     {
@@ -202,8 +264,20 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
             return Nobody<FsQueryResult>();
         }
 
+        if (!(await ResolveAsync(reader, path, ct)).TryGetValue(out var target, out var refused))
+        {
+            return new FsResult<FsQueryResult>.Err(refused);
+        }
+
+        if (target.Node.Kind == SugaryNodeKind.People)
+        {
+            return Invalid<FsQueryResult>(
+                $"{MountPoint}/{SugaryPath.PeopleDirName} holds one folder per person: ask at "
+                + $"{MountPoint}/{SugaryPath.PeopleDirName}/<name> for theirs.");
+        }
+
         var zone = await ZoneAsync(ct);
-        var result = await engine.QueryAsync(await TablesAsync(reader, zone, ct), zone, sql, maxRows, ct);
+        var result = await engine.QueryAsync(await TablesAsync(target.Owner, zone, ct), zone, sql, maxRows, ct);
         return result.TryGetValue(out var answer, out var error)
             ? new FsResult<FsQueryResult>.Ok(answer with { Path = path })
             : new FsResult<FsQueryResult>.Err(error.ErrorCode == ToolError.Codes.InvalidArgument
@@ -211,14 +285,80 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
                 : error);
     }
 
+    // Whose log a path is in, as this reader may open it: the reader's own outside people/; under it,
+    // only for a reader granted everyone's, the person whose folder it names, or not found naming who
+    // is there.
+    private async Task<FsResult<Target>> ResolveAsync(Account reader, string? path, CancellationToken ct)
+    {
+        var location = SugaryPath.Locate(path);
+        if (location is { Person: null, IsPeople: false })
+        {
+            return new FsResult<Target>.Ok(new Target(reader, SugaryPath.Parse(location.Rest)));
+        }
+
+        if (await OthersAsync(reader, ct) is not { } others)
+        {
+            return Fail<Target>(ToolError.Codes.PermissionDenied, NotGranted);
+        }
+
+        if (location.IsPeople)
+        {
+            return new FsResult<Target>.Ok(new Target(reader, new SugaryNode(SugaryNodeKind.People)));
+        }
+
+        return others.FirstOrDefault(other => other.Folder == location.Person) is { } found
+            ? new FsResult<Target>.Ok(new Target(found.Owner, SugaryPath.Parse(location.Rest)))
+            : Fail<Target>(ToolError.Codes.NotFound,
+                $"Nobody's log is at {SugaryPath.PeopleDirName}/{location.Person}. The people whose logs are here: "
+                + (others.Count == 0 ? "none" : string.Join(", ", others.Select(other => other.Folder))) + ".");
+    }
+
+    // Everyone else of the reader's household, each under a folder of their own, when the household the
+    // call proved is the reader's and its people view lists the reader as granted everyone's log; null
+    // otherwise. Two people whose names make one folder are told apart in the order they joined.
+    private async Task<IReadOnlyList<OtherLog>?> OthersAsync(Account reader, CancellationToken ct)
+    {
+        if (_household is not { } household || household.Id != reader.TenantId)
+        {
+            return null;
+        }
+
+        var people = (await household.SugaryPeopleAsync(ct)).People;
+        if (!people.Any(person => person.UserId == reader.UserId && person.ReadsEveryLog))
+        {
+            return null;
+        }
+
+        var taken = new HashSet<string>(StringComparer.Ordinal);
+        return people
+            .Where(person => person.UserId != reader.UserId)
+            .Select(person => new OtherLog(FreeFolder(SugaryPath.FolderOf(person.DisplayName), taken),
+                new Account(reader.TenantId, person.UserId)))
+            .ToList();
+    }
+
+    // The folder itself where nobody took it yet, else the first numbered one free.
+    private static string FreeFolder(string folder, HashSet<string> taken)
+    {
+        var candidate = folder;
+        for (var n = 2; !taken.Add(candidate); n++)
+        {
+            candidate = $"{folder}-{n}";
+        }
+
+        return candidate;
+    }
+
+    private static string PrefixOf(OtherLog other) => $"/{SugaryPath.PeopleDirName}/{other.Folder}";
+
     // Asked once per operation, of the reader the configuration client keeps, and only by an
     // operation that reads a time.
     private Task<TimeZoneInfo> ZoneAsync(CancellationToken ct) => _household.ZoneAsync(serverZone, ct);
 
-    private async Task<IReadOnlyList<Table>> TablesAsync(Account reader, TimeZoneInfo zone, CancellationToken ct)
+    private async Task<IReadOnlyList<Table>> TablesAsync(Account owner, TimeZoneInfo zone, CancellationToken ct)
     {
-        var meals = await log.MealsAsync(reader, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
-        var doses = await log.DosesAsync(reader, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
+        var meals = await log.MealsAsync(owner, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
+        var doses = await log.DosesAsync(owner, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct);
         return
         [
             SugaryTables.Meals(meals, zone),
@@ -226,10 +366,10 @@ public sealed class SugaryFileSystem(ISugaryLog log, TimeZoneInfo serverZone, IT
             SugaryTables.Doses(doses, zone),
             SugaryTables.DoseMeals(doses),
             SugaryTables.Exercise(
-                await log.ExerciseAsync(reader, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), zone),
-            SugaryTables.Foods(await log.FoodsAsync(reader, ct)),
-            SugaryTables.Periods(await log.PeriodsAsync(reader, ct)),
-            SugaryTables.DayNotes(await log.DayNotesAsync(reader, ct))
+                await log.ExerciseAsync(owner, DateTimeOffset.MinValue, DateTimeOffset.MaxValue, ct), zone),
+            SugaryTables.Foods(await log.FoodsAsync(owner, ct)),
+            SugaryTables.Periods(await log.PeriodsAsync(owner, ct)),
+            SugaryTables.DayNotes(await log.DayNotesAsync(owner, ct))
         ];
     }
 

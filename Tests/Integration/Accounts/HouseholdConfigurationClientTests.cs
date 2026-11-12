@@ -22,6 +22,7 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
     private const string Agent = "agent-credential";
     private const string Scheduling = "scheduling-credential";
     private const string Telegram = "telegram-credential";
+    private const string Sugary = "sugary-credential";
 
     private static readonly TimeSpan _lifetime = TimeSpan.FromMinutes(10);
 
@@ -32,7 +33,8 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
             {
                 ["agent"] = Agent,
                 ["mcp-scheduling"] = Scheduling,
-                ["mcp-channel-telegram"] = Telegram
+                ["mcp-channel-telegram"] = Telegram,
+                ["mcp-sugary"] = Sugary
             },
             Redis = new() { ConnectionString = redis.ConnectionString }
         });
@@ -172,6 +174,25 @@ public class HouseholdConfigurationClientTests(RedisFixture redis) : IClassFixtu
             async () => (await client.AgentNamesAsync(household, proof, CancellationToken.None)).Agents
                 .Select(a => (a.Id, a.Name)).SequenceEqual([("chef", "Chef")]),
             "the saved agents to be listed");
+    }
+
+    // Sugary's mount opens another person's log to a reader granted everyone's: it reads who is, on the
+    // call token the agent handed it for the turn.
+    [Fact]
+    public async Task Sugary_ReadsWhoReadsEveryonesLog_OnTheCallToken()
+    {
+        await using var server = await StartAsync();
+        var (household, dethon) = await server.SeedHouseholdAsync("Casa", "Dethon");
+        var tradaly = await server.SeedPersonAsync(household, "Tradaly");
+        await server.Service<global::Accounts.Members.MemberStore>()
+            .SetReadsSugaryLogsAsync(household, dethon, true, CancellationToken.None);
+        await using var client = Client(server, Sugary, listening: false);
+        var proof = HouseholdProof.OfCallToken(McpTestSecret.CallTokens.For(
+            IdentityClaims.Person(dethon, household, "signalr", ["owner"]), TokenAudiences.CallTo(ServerAddress.Named("mcp-sugary"))));
+
+        var people = await client.SugaryPeopleAsync(household, proof, CancellationToken.None);
+
+        people.People.ShouldBe([new SugaryPerson(dethon, "Dethon", true), new SugaryPerson(tradaly, "Tradaly", false)]);
     }
 
     [Fact]

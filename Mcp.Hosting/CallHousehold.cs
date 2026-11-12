@@ -32,6 +32,8 @@ public sealed class CallHousehold : ICallHousehold
 
     public Task<HouseholdAgentNames> AgentNamesAsync(CancellationToken ct) => _configuration().AgentNamesAsync(Id, _proof, ct);
 
+    public Task<HouseholdSugaryPeople> SugaryPeopleAsync(CancellationToken ct) => _configuration().SugaryPeopleAsync(Id, _proof, ct);
+
     // A person the server's own app serves, on the assertion the proxy's session check signed for its
     // channel (Sugary's /api).
     public static CallHousehold OfPerson(string householdId, string assertion, IHouseholdConfiguration configuration) =>

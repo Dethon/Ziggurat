@@ -299,12 +299,12 @@ does, `HouseholdAgents.VoiceAgentOf`, or null).
 
 `HouseholdMembersAdmin` over the accounts service's stores (`MemberStore`, `LinkStore`), never a copy
 of them (`Domain/DTOs/Admin/AdminMembers.cs`): `GET /household/members` (`AdminMembers`: each
-`AdminMember` — id, display name, role `owner`/`member`, operator, sees-all, disabled); `POST
+`AdminMember` — id, display name, role `owner`/`member`, operator, sees-all, disabled, reads-Sugary-logs); `POST
 /household/members/invites` (`MemberInvite { displayName, role }`) and `POST .../{userId}/recovery`, each
 answering `AdminSaved<MemberLink>` — the link once, never again (only its hash is kept), an invite's also
 as the bot's deep link (`TelegramLink`) or, with no bot named, `/start <token>` (`TelegramStart`), which
-the bot redeems in place of a passkey; `PUT .../{userId}` (`MemberEdit { role?, seesAll? }`, a field left
-out left as it is) and `POST .../{userId}/disable` / `.../enable`, each answering
+the bot redeems in place of a passkey; `PUT .../{userId}` (`MemberEdit { role?, seesAll?, readsSugaryLogs? }`, a field left
+out left as it is; `readsSugaryLogs` lets the member's agent read everyone's Sugary log, `.claude/rules/sugary.md`) and `POST .../{userId}/disable` / `.../enable`, each answering
 `AdminSaved<AdminMembers>`, the whole list. A body-less POST is fine: the path says whom.
 
 A Telegram group is bound from here too: `POST /household/members/telegram-groups` (`AdminProtocol.MemberTelegramGroups`) mints a group code, answered once as `TelegramGroupCode { bind: "/bind <code>", expiresAt }` and recorded as "Minted a Telegram group code", never its characters. This is the household's one members page; the accounts service's `/accounts/members` redirects here.
@@ -337,11 +337,11 @@ A Telegram group is bound from here too: `POST /household/members/telegram-group
   open (`ReconnectionEffect`); and
   Telegram keeps the assertion that admitted a sender for `LinkCache:Linked` (5 minutes).
 - Summaries name the member's id and what changed, never a name or any part of a link: "Invited somebody
-  as a member" / "as an owner", "Changed member <id>'s role, sees all conversations", "Disabled member
+  as a member" / "as an owner", "Changed member <id>'s role, sees all conversations, reads everyone's Sugary log", "Disabled member
   <id>", "Re-enabled member <id>", "Minted a recovery link for member <id>".
 - **The page** is `/admin/members` (`HouseholdMembersPage`, `HouseholdMembersStore`,
-  `HouseholdMembersEffect`): one article per person named by their display name, with a role select and
-  a sees-all checkbox saved together, Recovery link (not for the operator or the disabled), Disable
+  `HouseholdMembersEffect`): one article per person named by their display name, with a role select,
+  a sees-all and a "Reads everyone's Sugary log" checkbox saved together, Recovery link (not for the operator or the disabled), Disable
   behind a confirmation (not offered for the operator) or Re-enable, and the invite form. A minted link
   is shown in a `New link` region until the next change or a reload, never again. The E2E test makes its
   own people (`create-user`) and changes only them.

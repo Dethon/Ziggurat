@@ -209,6 +209,9 @@ public class TimerFileSystemJourneyTests
 
         public Task<HouseholdAgentNames> AgentNamesAsync(CancellationToken ct) =>
             Task.FromResult(new HouseholdAgentNames(null, []));
+
+        public Task<HouseholdSugaryPeople> SugaryPeopleAsync(CancellationToken ct) =>
+            Task.FromResult(new HouseholdSugaryPeople([]));
     }
 
     [Fact]

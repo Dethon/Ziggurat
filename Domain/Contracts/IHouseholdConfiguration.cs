@@ -29,6 +29,11 @@ public interface IHouseholdConfiguration
     // The household's agents by id and name, and its default: what a person picks among on a channel.
     Task<HouseholdAgentNames> AgentNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct);
 
+    // The household's people and who reads everyone's Sugary log: Sugary's alone. A reader that is not
+    // Sugary's has none to read, and nobody listed holds a grant.
+    Task<HouseholdSugaryPeople> SugaryPeopleAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        Task.FromResult(new HouseholdSugaryPeople([]));
+
     // Every household's bots: the Telegram server polls them from startup, before any call.
     Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct);
 

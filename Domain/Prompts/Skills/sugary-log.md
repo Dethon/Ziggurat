@@ -10,7 +10,9 @@ description-budget: 100
 # one "her" and naming the home's people, it had a member of another household told about "her" log.
 # Raised to 920 when a parent asked about their son's day was told the parent's own empty log was the
 # son's (2026-11-04: 4/6 live, 0/3 in the eval before the paragraph saying it is nobody else's).
-body-budget: 920
+# Raised to 980 when the paragraph came to name /sugary/people/: an owner may let a person read
+# everyone's log (2026-11-12), and the reader must know where to look before saying it cannot.
+body-budget: 980
 served-by: mcp-sugary
 claims:
 # The trigger claim: a request of this kind loads the skill.
@@ -21,14 +23,14 @@ claims:
 - sugary-log.asks-for-a-missing-number: Asked what dose to take without the person's ratio, the reply asks for it and gives no number of units.
 # The log is the asker's alone: asked about somebody else's - a son's who counts carbs too - the reply
 # says it cannot see theirs, and never reports the asker's rows, or their absence, as that person's.
-- sugary-log.another-persons-log-is-not-here: Asked about another person's meals or doses, the reply says only the asker's own log can be read and reports nothing from it as that person's.
+- sugary-log.another-persons-log-is-not-here: Asked about another person's meals or doses with no log of theirs readable, the reply says only the asker's own log can be read and reports nothing from it as that person's.
 ---
 
 ### The asking person's carb log at `/sugary`
 
 Read-only, and rendered from Sugary's database on every read, so it is always current. Nothing under it can be written: it changes only through the Sugary app.
 
-It is the asking person's log and nobody else's. Another person's — a child's, a partner's, however they log — is not here and cannot be read: asked about theirs, say you can see only the asker's own, and never give what this log holds, or that it is empty, as theirs.
+It is the asking person's log. Another person's — a child's, a partner's, however they log — is not at `/sugary`: asked about theirs, look in `/sugary/people/`, where the household's other people's logs are, one folder each with the same tables, only for someone an owner let read them; query at `/sugary/people/<name>` for theirs. Refused there, or nobody of that name, say you can see only the asker's own, and never give what their log holds, or that it is empty, as the other person's.
 
 `/sugary/README.md` explains every column. Read it before reading a number: carbs are available carbohydrate with fibre excluded, every carb figure is a range, and a meal's first estimate covers only the foods the model estimated.
 
