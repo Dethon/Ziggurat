@@ -82,7 +82,7 @@ public sealed class SugaryServer : IAsyncDisposable
         string homeZone = "Europe/Madrid", string? openFoodFacts = null,
         string? webRoot = null, TimeProvider? turnClock = null, TimeProvider? estimateClock = null,
         Func<SugarySettings, SugarySettings>? configure = null, Action<IServiceCollection>? services = null,
-        IReadOnlyDictionary<string, string>? householdZones = null)
+        IReadOnlyDictionary<string, string>? householdZones = null, HouseholdSugaryPeople? sugaryPeople = null)
     {
         var directory = Path.Combine(Path.GetTempPath(), "sugary-tests", Guid.NewGuid().ToString("N"));
         System.IO.Directory.CreateDirectory(directory);
@@ -110,7 +110,8 @@ public sealed class SugaryServer : IAsyncDisposable
                 // household's own is CallHouseholdTests'.
                 collection.Replace(ServiceDescriptor.Singleton<IHouseholdConfiguration>(
                     new EveryHouseholdIn(ConfigModule.HomeZone(settings), householdAgents,
-                        householdZones?.ToDictionary(z => z.Key, z => TimeZoneInfo.FindSystemTimeZoneById(z.Value)))));
+                        householdZones?.ToDictionary(z => z.Key, z => TimeZoneInfo.FindSystemTimeZoneById(z.Value)),
+                        sugaryPeople)));
                 if (turnClock is not null)
                 {
                     collection.AddSingleton(sp => ActivatorUtilities.CreateInstance<SugaryChannel>(sp, turnClock));

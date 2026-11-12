@@ -3,6 +3,7 @@ using System.Text;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
+using Domain.DTOs.Household;
 using Domain.DTOs.Sugary;
 using Domain.Prompts;
 using Domain.Tools;
@@ -724,6 +725,48 @@ public class McpSugaryServerTests
         his.Select(row => row![0]!.GetValue<string>()).ShouldBe(["his pizza"]);
         herFoods.Select(row => row![0]!.GetValue<string>()).ShouldBe(["Lentejas"]);
         herMonths.ShouldBe(["/meals/2026-10.parquet"]);
+    }
+
+    // An owner let him read everyone's Sugary log (to run analytics on her diabetes): on his turn her
+    // whole log is under people/<her name>/, read from the store under her account, and his own stays at
+    // the root. She holds no grant, so on her turn people/ is refused on every route, the byte read
+    // included, rather than shown empty.
+    [Fact]
+    public async Task AReaderGrantedEveryonesLog_ReadsAnotherPersonsUnderTheirName_AndNobodyElseDoes()
+    {
+        await using var server = await SugaryServer.StartAsync(sugaryPeople: new HouseholdSugaryPeople([
+            new SugaryPerson(SugaryServer.Her.UserId, "Laura", false),
+            new SugaryPerson(SugaryServer.Him.UserId, "Pablo", true)
+        ]));
+        await server.As(SugaryServer.Her).PostAsJsonAsync("/api/meals", AppMeal("2026-10-11T13:30:00+02:00", "her paella"));
+        await server.As(SugaryServer.Him).PostAsJsonAsync("/api/meals", AppMeal("2026-09-02T21:00:00+02:00", "his pizza"));
+        var his = SugaryServer.TurnOf(SugaryServer.Him);
+        var hers = SugaryServer.TurnOf(SugaryServer.Her);
+
+        var herMealsOnHisTurn = await server.CallAsync("fs_query", new Dictionary<string, object?>
+        {
+            ["path"] = "/people/laura", ["sql"] = "select notes from meals"
+        }, his);
+        var hisOwn = await server.QueryAsync("select notes from meals", his);
+        var herFileOnHisTurn = await server.CallAsync("fs_blob_read",
+            new Dictionary<string, object?> { ["path"] = "/people/laura/meals/2026-10.parquet" }, his);
+        var peopleOnHerTurn = await server.CallAsync("fs_query", new Dictionary<string, object?>
+        {
+            ["path"] = "/people/pablo", ["sql"] = "select notes from meals"
+        }, hers);
+        var hisFileOnHerTurn = await server.CallAsync("fs_blob_read",
+            new Dictionary<string, object?> { ["path"] = "/people/pablo/meals/2026-09.parquet" }, hers);
+        var herListing = await server.CallAsync("fs_glob", new Dictionary<string, object?> { ["pattern"] = "**", ["basePath"] = "" }, hers);
+
+        herMealsOnHisTurn["rows"]!.AsArray().Select(row => row![0]!.GetValue<string>()).ShouldBe(["her paella"]);
+        hisOwn.Select(row => row![0]!.GetValue<string>()).ShouldBe(["his pizza"]);
+        herFileOnHisTurn["contentBase64"].ShouldNotBeNull(herFileOnHisTurn.ToJsonString());
+        foreach (var refused in new[] { peopleOnHerTurn, hisFileOnHerTurn })
+        {
+            refused["errorCode"]!.GetValue<string>().ShouldBe(ToolError.Codes.PermissionDenied, refused.ToJsonString());
+        }
+
+        herListing["entries"]!.AsArray().Select(e => e!.GetValue<string>()).ShouldNotContain(e => e.StartsWith("/people"));
     }
 
     // A turn that acts for nobody — a voice guest, a fire with no person behind it, a call with no
