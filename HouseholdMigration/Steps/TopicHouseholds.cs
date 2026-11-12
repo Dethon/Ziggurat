@@ -138,8 +138,18 @@ public sealed class TopicHouseholds(IConnectionMultiplexer redis, RedisThreadSta
     private async Task<int> ClearDanglingAsync(IDatabase db, bool dryRun, CancellationToken ct)
     {
         var cleared = 0;
-        foreach (var index in await KeysAsync(db, $"{UnmovedIndexPrefix}*", ct))
+        // A space's ordering is topics:{agentId}:{space}, a sorted set. Anything else under the prefix is
+        // no index (the retired index migration's once-only marker, topics:migrated, a string) and is
+        // none of this step's to clear.
+        var orderings = (await KeysAsync(db, $"{UnmovedIndexPrefix}*", ct))
+            .Where(index => index.LastIndexOf(':') > UnmovedIndexPrefix.Length);
+        foreach (var index in orderings)
         {
+            if (await db.KeyTypeAsync(index) != RedisType.SortedSet)
+            {
+                continue;
+            }
+
             var agentId = index[UnmovedIndexPrefix.Length..index.LastIndexOf(':')];
             foreach (var member in await db.SortedSetRangeByRankAsync(index))
             {

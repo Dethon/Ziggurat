@@ -346,6 +346,33 @@ public class HouseholdMigrationCommandTests(HouseholdMigrationRedisFixture redis
     // listed in its space, still found by what was said in it, its conversation still leading to it —
     // and the search index from before households, which had no household to filter on, is gone.
     // Another household's topic is nothing this run touches.
+    // The topic-index migration retired in August left its once-only marker under the index prefix,
+    // a string where every index is a space's ordering: prod's run died on it in the dry run.
+    [Fact]
+    public async Task TheRetiredIndexMigrationsMarker_IsNoSpacesOrdering_AndIsLeftAsItWas()
+    {
+        await using var rig = await MigrationRig.StartAsync(redis, Dimension);
+        var (fran, ana) = (Fran(), Ana());
+        var db = redis.Connection.GetDatabase();
+        await db.StringSetAsync("topics:migrated", "2026-08-13T17:29:06.9846127+00:00");
+        try
+        {
+            var threads = new RedisThreadStateStore(redis.Connection, new RetentionSettings(), TimeProvider.System);
+            await TopicAsync(threads, firstSender: ana.WebChat, text: $"marker{_tag}");
+
+            var (dryExit, dryOutput) = await RunAsync(rig, fran, ana, input: null, "--dry-run");
+            var (exit, output) = await RunAsync(rig, fran, ana);
+
+            dryExit.ShouldBe(0, dryOutput);
+            exit.ShouldBe(0, output);
+            (await db.StringGetAsync("topics:migrated")).ToString().ShouldBe("2026-08-13T17:29:06.9846127+00:00");
+        }
+        finally
+        {
+            await db.KeyDeleteAsync("topics:migrated");
+        }
+    }
+
     [Fact]
     public async Task ATopic_IsListedAndSearchedInTheHomeHousehold_AndItsConversationStillLeadsToIt()
     {
