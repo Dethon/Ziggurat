@@ -266,7 +266,7 @@ public class TenantKitConformanceTests
     // A helper container has no tunnel, so the server beside it reports it: each probes its own, on
     // the network they share.
     [Theory]
-    [InlineData("mcp-channel-voice", "tse-extractor", "http://tse-extractor:9098/")]
+    [InlineData("mcp-channel-voice", "tse-extractor", "http://tse-extractor:9098/health")]
     [InlineData("mcp-homeassistant", "homeassistant", "http://homeassistant:8123/")]
     [InlineData("mcp-homeassistant", "music-assistant", "http://host.docker.internal:8095/")]
     [InlineData("mcp-library", "qbittorrent", "http://qbittorrent:8001/")]

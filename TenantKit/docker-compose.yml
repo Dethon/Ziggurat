@@ -454,7 +454,7 @@ services:
       MCP__TUNNEL__SERVERNAME: voice
       MCP__TUNNEL__CREDENTIAL: ${TUNNEL_CREDENTIAL_VOICE}
       # The speech extractor beside it, probed and reported on its feed: it has no tunnel of its own.
-      METRICS__HELPERS__tse-extractor: http://tse-extractor:9098/
+      METRICS__HELPERS__tse-extractor: http://tse-extractor:9098/health
       # Every deployment service it needs, each through its own tunnel from a port on its loopback:
       # the accounts service for a speaker and the guest, the agent's topic minting, the shared
       # Lemonade's speech-to-text and text-to-speech, and the metrics feed — so it opens no Redis.
