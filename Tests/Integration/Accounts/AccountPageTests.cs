@@ -292,6 +292,28 @@ public class AccountPageTests
         holders.ShouldNotContain("Pablo");
     }
 
+    // A Sugary log is a health record: everyone in the household can see whose agent may read it.
+    [Fact]
+    public async Task ThePage_NamesWhoReadsEveryonesSugaryLog()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var laura = await server.SeedMemberAsync("Laura");
+        var pablo = await server.SeedMemberAsync("Pablo");
+        (await server.Admin(await server.MintSessionAsync(fran.UserId))
+                .PutAsync(AdminProtocol.Member(laura), new MemberEdit(ReadsSugaryLogs: true)))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var page = await server.SignedIn(await server.MintSessionAsync(pablo)).PageAsync(Account);
+
+        var start = page.IndexOf("data-reads-sugary-logs", StringComparison.Ordinal);
+        start.ShouldBeGreaterThan(0);
+        var holders = page[start..page.IndexOf("</section>", start, StringComparison.Ordinal)];
+        holders.ShouldContain("Laura");
+        holders.ShouldNotContain("Fran");
+        holders.ShouldNotContain("Pablo");
+    }
+
     // A person's name and picture are their own to set, and every app asking who is signed in shows
     // what they set.
     [Fact]

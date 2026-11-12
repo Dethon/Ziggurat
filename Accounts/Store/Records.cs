@@ -38,6 +38,11 @@ public sealed class User
     public bool IsOperator { get; set; }
 
     public bool SeesAllConversations { get; set; }
+
+    // An owner let this person's agent read everyone else's Sugary log in the household, read-only
+    // (Sugary's /sugary mount, under people/). Not a role: nothing but Sugary decides by it, and it
+    // reads it from the household's configuration, not from an assertion.
+    public bool ReadsSugaryLogs { get; set; }
     public DateTimeOffset CreatedAt { get; init; }
 
     // When an owner disabled them; none while they are enabled. A disabled person is kept with

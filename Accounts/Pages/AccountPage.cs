@@ -150,6 +150,7 @@ public sealed class AccountPage(
         var form = guard.FormField(http);
         var zone = await clock.ZoneAsync(viewer.TenantId, ct);
         var seesAll = household.Where(m => m.SeesAllConversations).ToList();
+        var readsSugaryLogs = household.Where(m => m.ReadsSugaryLogs && !m.Disabled).ToList();
         var configured = await configuration.HouseholdAsync(viewer.TenantId, ct);
         var householdName = (await configuration.ReadAsync(viewer.TenantId, HouseholdSections.SettingsSchema, ct))?.Name
                             ?? configured?.Name ?? "the household";
@@ -222,6 +223,13 @@ public sealed class AccountPage(
                  {(seesAll.Count == 0
                      ? "<p>Nobody in the household.</p>"
                      : $"<p>These people can read every conversation in the household, yours included:</p><ul>{string.Concat(seesAll.Select(m => $"<li>{AccountsPages.Encode(m.DisplayName)}</li>"))}</ul>")}
+               </section>
+
+               <section aria-labelledby="reads-sugary-logs" data-reads-sugary-logs>
+                 <h2 id="reads-sugary-logs">Reads everyone's Sugary log</h2>
+                 {(readsSugaryLogs.Count == 0
+                     ? "<p>Nobody in the household.</p>"
+                     : $"<p>These people's agents can read everyone's Sugary log in the household, yours included:</p><ul>{string.Concat(readsSugaryLogs.Select(m => $"<li>{AccountsPages.Encode(m.DisplayName)}</li>"))}</ul>")}
                </section>
              </main>
              """);

@@ -36,6 +36,12 @@ public static class HouseholdConfigProtocol
     // bot's /agent lists and switches a chat among, and nothing else of their definitions.
     public const string AgentNamesView = "agent-names";
 
+    // Sugary's, proven by the agent's call token: the household's people, each with whether an owner let
+    // their agent read everyone's Sugary log, so the /sugary mount opens another person's log to a
+    // reader granted it and to nobody else. The same answer for everyone in the household, since a
+    // reader keeps a view per household.
+    public const string SugaryPeopleView = "sugary-people";
+
     // The agent's, for work no call is behind (dreaming): every household and the people in it, each
     // then read on its own view for its key. Asked naming no household.
     public const string PeopleView = "people";
@@ -154,6 +160,14 @@ public sealed record HouseholdAgentName(
     string? Description = null,
     string? Model = null,
     string? ReasoningEffort = null);
+
+// Sugary's view of a household's people: everyone not disabled, in the order they joined, under the
+// name they go by, and whether an owner let their agent read everyone's Sugary log.
+[PublicAPI]
+public sealed record HouseholdSugaryPeople(IReadOnlyList<SugaryPerson> People);
+
+[PublicAPI]
+public sealed record SugaryPerson(string UserId, string DisplayName, bool ReadsEveryLog);
 
 // The agent's view across households: each household, and the user ids of its people (none for a
 // household nobody has joined yet).

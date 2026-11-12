@@ -322,6 +322,37 @@ public sealed class HouseholdMembersAdminTests(RedisFixture redis) : IClassFixtu
         (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe([$"Changed member {laura}'s role, sees all conversations"]);
     }
 
+    // An owner lets a member's agent read everyone's Sugary log (to run analytics on another person's
+    // diabetes): saved alone, listed, recorded by what changed, and announced as the people changing so
+    // Sugary's reader drops what it kept.
+    [Fact]
+    public async Task ASugaryLogGrant_IsSavedListedRecordedAndAnnounced()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var admin = server.Admin(await server.MintSessionAsync(fran.UserId));
+        var laura = await server.SeedMemberAsync("Laura");
+        var heard = new System.Collections.Concurrent.ConcurrentBag<HouseholdConfigSaved>();
+        await redis.Connection.GetSubscriber().SubscribeAsync(
+            StackExchange.Redis.RedisChannel.Literal(HouseholdConfigProtocol.SavedChannel),
+            (_, message) => heard.Add(System.Text.Json.JsonSerializer.Deserialize<HouseholdConfigSaved>(
+                message.ToString(), System.Text.Json.JsonSerializerOptions.Web)!));
+
+        var granted = await EditAsync(admin, laura, new MemberEdit(ReadsSugaryLogs: true));
+
+        granted.StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await granted.Content.ReadFromJsonAsync<AdminSaved<AdminMembers>>())!.Value.Members.Single(m => m.Id == laura)
+            .ShouldSatisfyAllConditions(m => m.ReadsSugaryLogs.ShouldBeTrue(), m => m.SeesAll.ShouldBeFalse());
+        (await MembersAsync(admin)).Members.Single(m => m.Id == fran.UserId).ReadsSugaryLogs.ShouldBeFalse();
+        (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe([$"Changed member {laura}'s reads everyone's Sugary log"]);
+        await Eventually.Until(
+            () => heard.Contains(new HouseholdConfigSaved(fran.TenantId, HouseholdConfigProtocol.PeopleChanged)),
+            "the grant to be announced as the household's people changing");
+
+        (await EditAsync(admin, laura, new MemberEdit(ReadsSugaryLogs: false))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        (await MembersAsync(admin)).Members.Single(m => m.Id == laura).ReadsSugaryLogs.ShouldBeFalse();
+    }
+
     private Task<AccountsServer> StartAsync() =>
         AccountsServer.StartAsync(s => s with
         {

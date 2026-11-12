@@ -58,6 +58,27 @@ public static class HouseholdConfiguration
         MapShared(routes, HouseholdConfigProtocol.AgentNamesView, async (store, household, ct) =>
             HouseholdAgents.Names(await SectionAsync(store, household, HouseholdSections.AgentsSchema, ct)));
 
+        // Sugary's: the household's people and who an owner let read everyone's log. A person, not a
+        // section, so the members are read rather than the configuration; nobody disabled is in it,
+        // neither as a reader nor as a log to read.
+        routes.MapPost(Path + HouseholdConfigProtocol.SugaryPeopleView, async (
+            HttpContext http, HouseholdConfigQuery query, HouseholdProofs proofs, HouseholdConfigStore store, MemberStore members,
+            ILogger<HouseholdConfigStore> logger, CancellationToken ct) =>
+        {
+            var callers = InternalCallers.Reading(http, HouseholdConfigProtocol.SugaryPeopleView);
+            if (callers.Count == 0)
+            {
+                return InternalCallers.NotYours;
+            }
+
+            return await AnswerAsync(await proofs.SharedAsync(query, callers, ct), store, logger, async household =>
+                new HouseholdConfigAnswer<HouseholdSugaryPeople>(household.Id, new HouseholdSugaryPeople([
+                    .. (await members.ListAsync(household.Id, ct))
+                        .Where(m => !m.Disabled)
+                        .Select(m => new SugaryPerson(m.Id, m.DisplayName, m.ReadsSugaryLogs))
+                ])), ct);
+        });
+
         // OpenRouter refused a household's own key in a turn: marked rejected and asked about again
         // (KeysAdmin), so its owner sees it on the keys page. The agent names the household as for its
         // own view; nothing of the key travels.

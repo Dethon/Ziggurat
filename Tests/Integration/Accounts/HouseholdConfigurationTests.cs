@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Accounts.Commands;
+using Accounts.Members;
 using Accounts.Signing;
 using Accounts.Store;
 using Accounts.Tunnels;
@@ -309,6 +310,33 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         (await RefusalAsync(onTheHub, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
     }
 
+    // Sugary opens another person's log to a reader an owner granted it, so on the agent's call token it
+    // reads the household's people — each one's id, name and whether they read everyone's log, nobody
+    // disabled — and decides itself. The same for everybody in the household, since the reader keeps it
+    // per household.
+    [Fact]
+    public async Task Sugary_ReadsTheHouseholdsSugaryPeople_OnTheCallToken()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var bea = await server.SeedPersonAsync(household, "Bea");
+        var gone = await server.SeedPersonAsync(household, "Gone");
+        var (elsewhere, _) = await server.SeedHouseholdAsync("Lejos", "Stranger");
+        var members = server.Service<MemberStore>();
+        await members.SetReadsSugaryLogsAsync(household, ana, true, CancellationToken.None);
+        await members.DisableAsync(household, gone, CancellationToken.None);
+
+        var people = await AskAsync<HouseholdConfigAnswer<HouseholdSugaryPeople>>(server, Sugary,
+            HouseholdConfigProtocol.SugaryPeopleView, new HouseholdConfigQuery(CallToken: CallToken("mcp-sugary", household, bea)));
+        var anotherServers = await PostAsync(server, Sugary, HouseholdConfigProtocol.SugaryPeopleView,
+            new HouseholdConfigQuery(CallToken: CallToken("mcp-scheduling", household, bea)));
+
+        people.HouseholdId.ShouldBe(household);
+        people.Section.People.ShouldBe([new SugaryPerson(ana, "Ana", true), new SugaryPerson(bea, "Bea", false)]);
+        (await RefusalAsync(anotherServers, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
+        elsewhere.ShouldNotBe(household);
+    }
+
     public static TheoryData<string, string> AnotherServersViews => new()
     {
         { Scheduling, HouseholdConfigProtocol.IdealistaView },
@@ -320,7 +348,10 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         { SignalR, HouseholdConfigProtocol.TelegramBotsView },
         { Idealista, HouseholdConfigProtocol.AgentNamesView },
         { Agent, HouseholdConfigProtocol.IdealistaView },
-        { Agent, HouseholdConfigProtocol.TelegramBotsView }
+        { Agent, HouseholdConfigProtocol.TelegramBotsView },
+        { Scheduling, HouseholdConfigProtocol.SugaryPeopleView },
+        { SignalR, HouseholdConfigProtocol.SugaryPeopleView },
+        { Agent, HouseholdConfigProtocol.SugaryPeopleView }
     };
 
     [Theory]

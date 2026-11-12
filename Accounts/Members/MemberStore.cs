@@ -4,7 +4,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Accounts.Members;
 
 public sealed record Member(
-    string Id, string DisplayName, Role Role, bool IsOperator, bool SeesAllConversations, bool Disabled = false);
+    string Id, string DisplayName, Role Role, bool IsOperator, bool SeesAllConversations, bool Disabled = false,
+    bool ReadsSugaryLogs = false);
 
 public enum RoleChange
 {
@@ -34,7 +35,8 @@ public sealed class MemberStore(IDbContextFactory<AccountsDbContext> contexts, A
         return await db.Users
             .Where(u => u.TenantId == tenantId)
             .OrderBy(u => u.CreatedAt)
-            .Select(u => new Member(u.Id, u.DisplayName, u.Role, u.IsOperator, u.SeesAllConversations, u.DisabledAt != null))
+            .Select(u => new Member(
+                u.Id, u.DisplayName, u.Role, u.IsOperator, u.SeesAllConversations, u.DisabledAt != null, u.ReadsSugaryLogs))
             .ToListAsync(ct);
     }
 
@@ -73,6 +75,14 @@ public sealed class MemberStore(IDbContextFactory<AccountsDbContext> contexts, A
         return await db.Users
             .Where(u => u.Id == userId && u.TenantId == tenantId)
             .ExecuteUpdateAsync(u => u.SetProperty(x => x.SeesAllConversations, granted), ct) > 0;
+    }
+
+    public async Task<bool> SetReadsSugaryLogsAsync(string tenantId, string userId, bool granted, CancellationToken ct)
+    {
+        await using var db = await contexts.CreateDbContextAsync(ct);
+        return await db.Users
+            .Where(u => u.Id == userId && u.TenantId == tenantId)
+            .ExecuteUpdateAsync(u => u.SetProperty(x => x.ReadsSugaryLogs, granted), ct) > 0;
     }
 
     // The member and every session they hold, in one transaction: nothing signed in survives the

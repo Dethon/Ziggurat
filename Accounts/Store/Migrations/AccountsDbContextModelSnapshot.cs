@@ -436,6 +436,8 @@ namespace Accounts.Store.Migrations
 
                     b.Property<bool>("IsOperator");
 
+                    b.Property<bool>("ReadsSugaryLogs");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasMaxLength(16);

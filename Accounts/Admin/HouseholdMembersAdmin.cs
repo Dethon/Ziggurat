@@ -75,9 +75,10 @@ public static class HouseholdMembersAdmin
             AdminCaller caller, string userId, [FromBody] MemberEdit? edit, HttpContext http, MemberStore store, AdminLog log,
             RedisAnnouncer announcer, CancellationToken ct) =>
         {
-            if (edit is null || edit is { Role: null, SeesAll: null })
+            if (edit is null || edit is { Role: null, SeesAll: null, ReadsSugaryLogs: null })
             {
-                return Results.BadRequest(new AdminRefusal("Nothing was changed: send a role, sees-all, or both.", []));
+                return Results.BadRequest(new AdminRefusal(
+                    "Nothing was changed: send a role, sees-all, reads-Sugary-logs, or any of them.", []));
             }
 
             var role = edit.Role is null ? null : RoleOf(edit.Role);
@@ -101,9 +102,15 @@ public static class HouseholdMembersAdmin
                 await store.SetSeesAllConversationsAsync(caller.HouseholdId, userId, seesAll, ct);
             }
 
+            if (edit.ReadsSugaryLogs is { } readsSugaryLogs)
+            {
+                await store.SetReadsSugaryLogsAsync(caller.HouseholdId, userId, readsSugaryLogs, ct);
+            }
+
             var after = (await FindAsync(store, caller, userId, ct))!;
             var changed = AdminLog.Changed(
-                ("role", before.Role != after.Role), ("sees all conversations", before.SeesAllConversations != after.SeesAllConversations));
+                ("role", before.Role != after.Role), ("sees all conversations", before.SeesAllConversations != after.SeesAllConversations),
+                ("reads everyone's Sugary log", before.ReadsSugaryLogs != after.ReadsSugaryLogs));
             if (changed.Count == 0)
             {
                 await log.RecordAsync(http, caller, $"Saved member {userId} unchanged", ct);
@@ -111,7 +118,8 @@ public static class HouseholdMembersAdmin
             }
 
             // What the person may see and do changed, which the chat hub reads off a connection's own
-            // assertion: announced as the people changing, so it tells the household's open pages.
+            // assertion: announced as the people changing, so it tells the household's open pages, and
+            // every reader of the household's views (Sugary's people among them) drops what it kept.
             return await AnnouncedAsync(http, caller, store, log, announcer,
                 $"Changed member {userId}'s {string.Join(", ", changed)}", ct);
         });
@@ -190,7 +198,7 @@ public static class HouseholdMembersAdmin
         new([
             .. (await store.ListAsync(caller.HouseholdId, ct)).Select(m => new AdminMember(
                 m.Id, m.DisplayName, m.Role == Role.Owner ? AdminMember.Owner : AdminMember.Member, m.IsOperator,
-                m.SeesAllConversations, m.Disabled))
+                m.SeesAllConversations, m.Disabled, m.ReadsSugaryLogs))
         ]);
 
     private static Role? RoleOf(string? role) => role switch
