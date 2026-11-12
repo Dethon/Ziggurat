@@ -547,7 +547,8 @@ services:
       # The bot people link their Telegram through, the shared bot, without the @: the account page's
       # link code and an invite are shown as its t.me deep link. Left empty they are shown as a bare code to
       # send the bot as /start <code>, which is safe; a wrong name would send codes to a stranger's bot.
-      TELEGRAM__BOTUSERNAME: ""
+      # This deployment's shared bot is jonas's own (TELEGRAM_SHARED_BOT_TOKEN is its token).
+      TELEGRAM__BOTUSERNAME: giver_jonasbot
       # The servers that may ask whose account an identity is, each by the credential it already
       # holds for its own /mcp, so no secret exists for this alone. Caddy answers the internal API
       # 404 from outside. A household's voice server is no caller here: it asks on its tunnel's
