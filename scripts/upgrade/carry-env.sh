@@ -19,7 +19,9 @@ set -euo pipefail
 OLD=$1 NEW=$2 GENERATE=${3:-}
 [[ -r $OLD && -w $NEW ]] || { echo "$OLD must be readable and $NEW writable" >&2; exit 2; }
 
-value_in() { sed -n "s/^$1=//p" "$OLD" | tail -1; }
+# By name regardless of case: .NET's configuration reads ANNOUNCE__TOKEN as Announce__Token, and a
+# deployment's hand-written file spelt them as it liked.
+value_in() { N="$1" awk 'toupper(substr($0, 1, index($0, "=") - 1)) == toupper(ENVIRON["N"]) { v = substr($0, index($0, "=") + 1) } END { print v }' "$OLD"; }
 
 set_value() {
   local name=$1 value=$2 tmp
