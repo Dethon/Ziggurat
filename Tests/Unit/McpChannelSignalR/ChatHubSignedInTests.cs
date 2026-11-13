@@ -145,7 +145,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
     {
         var connection = await ConnectAsync(Forwarded(Fran, assertion), out var closed);
 
-        var reason = await closed.WaitAsync(TimeSpan.FromSeconds(10));
+        var reason = await closed.WaitAsync(TimeSpan.FromSeconds(30));
 
         reason.ShouldNotBeNull().Message.ShouldContain("not signed in");
         await Should.ThrowAsync<Exception>(
@@ -275,7 +275,9 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         await _app.Services.GetRequiredService<SessionConnections>()
             .CloseEndedAsync(new SessionsEnded(Home, Fran), CancellationToken.None);
 
-        (await phoneClosed.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBeNull();
+        // The close crosses a real socket to the client; the wait ends when it lands, and only a hang
+        // spends the cap, which a fully loaded suite reached at ten seconds.
+        (await phoneClosed.WaitAsync(TimeSpan.FromSeconds(30))).ShouldBeNull();
         await Should.ThrowAsync<Exception>(
             () => phone.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", "jack", 7L, 42L));
         (await laptop.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", "jack", 7L, 42L)).ShouldBeEmpty();

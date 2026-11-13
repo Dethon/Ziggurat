@@ -22,6 +22,7 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         "WebChatE2E.",
         "Lemonade",
         "DashboardE2E",
+        "DashboardAdminE2E",
         // Every Camoufox collection — the shared chain, the timing pair and the isolated lanes —
         // waits on a browser container before its first test, and the class pinning a fingerprint
         // launches two of its own.
@@ -39,7 +40,7 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         "ToolApprovalChatClientTests",
         "ThreadSessionTests",
         "OpenRouterToolCallingWithReasoningTests",
-        "SugaryClipApiTests",
+        "SugaryClip",
         "EvalWebTests",
         // Home Assistant cold-starts on a freshly seeded /config and does not serve its API until
         // the integration loader has run — seconds on an idle machine, but it was being offered a
