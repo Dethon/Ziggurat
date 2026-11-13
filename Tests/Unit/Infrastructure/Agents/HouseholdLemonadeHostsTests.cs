@@ -56,6 +56,21 @@ public class HouseholdLemonadeHostsTests
         hosts.For(Other, home: false).ShouldBeNull();
     }
 
+    // The boxes the households saved, each under its household, are what the dashboard's tiles are probed
+    // from; the deployment's own box is not among them.
+    [Fact]
+    public async Task TheBoxesListed_AreEachHouseholdsOwn()
+    {
+        _boxes.Add(new HouseholdLemonadeBox(Kapoor, new LemonadeBox("https://box.kapoor.example/api/v1", "key")));
+        _boxes.Add(new HouseholdLemonadeBox(Home, new LemonadeBox("http://other-box.lan:8001/api/v1", null)));
+        var hosts = Hosts();
+
+        await hosts.RefreshAsync(CancellationToken.None);
+
+        hosts.Boxes.Select(b => (b.Household, b.Box.Options.Address)).ShouldBe(
+            [(Kapoor, "https://box.kapoor.example/api/v1"), (Home, "http://other-box.lan:8001/api/v1")], ignoreOrder: true);
+    }
+
     [Fact]
     public async Task TheHomesOwnBox_IsUsedOverTheDeployments()
     {

@@ -10,6 +10,8 @@ namespace Infrastructure.Agents.ChatClients;
 
 // A Lemonade chat host and the models it offers now; a box behind a household's router carries the
 // transport onto its kit's tunnel, which its turns go through instead of the shared pool.
+public sealed record HouseholdLemonadeTarget(string Household, LemonadeHost Box);
+
 public sealed record LemonadeHost(LemonadeChatHostOptions Options, ILemonadeModelSource Models, HttpMessageHandler? Transport = null);
 
 // Which Lemonade box a household's turns may run on, and the models each household is offered. A box
@@ -61,6 +63,11 @@ public sealed class HouseholdLemonadeHosts(
                 ? new LemonadeHost(deployment, deploymentModels)
                 : null;
     }
+
+    // Every household's own box as last read, each under its household: what the dashboard's Lemonade
+    // tiles are probed from (LemonadeBoxHealthProbes). The deployment's own box is not among them.
+    public IReadOnlyList<HouseholdLemonadeTarget> Boxes =>
+        [.. _boxes.Select(b => new HouseholdLemonadeTarget(b.Key, b.Value.Served))];
 
     public IReadOnlyDictionary<string, IReadOnlyList<LemonadeModel>> ModelsByHousehold
     {
