@@ -678,6 +678,34 @@ public class TabProtocolTests
     }
 
     [Fact]
+    public async Task APopupThatClosedItselfBeforeTheActingTabsTail_HandsCurrentBackToTheOpener()
+    {
+        // A login window that shuts once it has done its work: adopted while the click answered,
+        // gone before the click's tail. Current is the opener again, never a page that is closed.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+        var popup = FakePage.Create("https://popup.test/window");
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+
+        await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            ActThat(),
+            answer: _ =>
+            {
+                pages[0].RaisePopup(popup);
+                popup.Closed = true;
+                return Task.FromResult("from the acting tab");
+            },
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
+
+        (await manager.OnCurrentTabAsync("s1", StampPolicy.None, cx => Task.FromResult(cx.Page)))
+            .ShouldBe(new TabOutcome<IPage>.Ran(pages[0].Mock.Object));
+    }
+
+    [Fact]
     public async Task APopupAdoptedWhileRefLessCallsQueueOnTheOpener_IsWhereTheyRun_AndStaysCurrent()
     {
         // A ref-less call reads "current" before it waits for that tab's lock. The popup adopted

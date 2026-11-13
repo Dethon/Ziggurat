@@ -1188,7 +1188,9 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
         lock (_touchGate)
         {
             tab.LastTouch = ++_touchSequence;
-            if (CurrentTab is { AdoptedAt: { } adopted } popup
+            // A popup that has already closed itself — a login window done with its work — keeps
+            // nothing: current goes back to the tab that just worked, never to a dead page.
+            if (CurrentTab is { AdoptedAt: { } adopted, Page.IsClosed: false } popup
                 && !ReferenceEquals(popup, tab)
                 && adopted > startedAt)
             {
