@@ -257,8 +257,11 @@ public sealed class KeysAdminTests : IAsyncLifetime
         keys.Idealista.ShouldBe(new KeyStatus(KeyState.Working, "apik", now));
         keys.TelegramBots.ShouldHaveSingleItem().Key.ShouldBe(new KeyStatus(KeyState.Working, "ghij", now));
         (await KeysSectionAsync(server, household)).OpenRouter.ShouldBe(new OpenRouterKey(WorkingKey));
+        // All three are recorded at the one instant the clock stands at, so "newest first" ties them:
+        // which order the log lists them in is the database's, not a claim of this test.
         (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(
-            ["Checked the Telegram bot for jonas", "Checked the Idealista keys", "Checked the OpenRouter key"]);
+            ["Checked the Telegram bot for jonas", "Checked the Idealista keys", "Checked the OpenRouter key"],
+            ignoreOrder: true);
     }
 
     // A check its provider refuses keeps the key — it was saved, and the owner decides what replaces
