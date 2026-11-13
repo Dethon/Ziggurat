@@ -9,7 +9,7 @@ namespace Tests.E2E.WebChat;
 // neither drew the other person's message: the resume drew only the stream's one current prompt and
 // a send's wire dropped people's messages. Ana saw the reply to Carlos's message, never the message,
 // until a reload. Several rounds, both orders, since which page wins is the race.
-[Collection(WebChatE2ECollections.People)]
+[Collection(WebChatE2ECollections.Sharing)]
 [Trait("Category", "E2E")]
 public partial class SharedTopicSimultaneousSendE2ETests(WebChatE2EFixture fixture)
 {
@@ -93,11 +93,7 @@ public partial class SharedTopicSimultaneousSendE2ETests(WebChatE2EFixture fixtu
 
     private async Task<(string User, string Session)> PersonAsync(string name)
     {
-        var (_, created) = await fixture.AccountsAsync("create-user", "--name", name, "--role", "member");
-        var user = WhoWasMade().Match(created).Groups["user"].Value;
-        return (user, (await fixture.AccountsAsync("mint-session", "--user", user)).Output.Trim());
+        return await fixture.PersonAsync(name, "member");
     }
 
-    [GeneratedRegex(@"user (?<user>[0-9a-f]+), household")]
-    private static partial Regex WhoWasMade();
 }

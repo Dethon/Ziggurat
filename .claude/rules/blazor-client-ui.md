@@ -106,4 +106,4 @@ replaced by its own words. A message is whoever wrote it — another member of a
 model a page or a household server talked into echoing something — and the page is same-origin with
 the admin API, so markup in it ran as the reader (pass 18: a member's `<img onerror>` in a shared topic
 ran in the owner's page). Never render message text as a `MarkupString` any other way
-(`ChatMarkdownTests`, `WebChatE2ETests.AMessageCarryingMarkup_IsShownAsText_AndRunsNothing`).
+(`ChatMarkdownTests`, `WebChatConversationE2ETests.AMessageCarryingMarkup_IsShownAsText_AndRunsNothing`).

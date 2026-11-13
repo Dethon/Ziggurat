@@ -7,7 +7,7 @@ namespace Tests.E2E.WebChat;
 // A member granted every topic of the household had another person's private one open when the grant
 // was withdrawn: the list lost it and the hub refused its history, but the conversation stayed on their
 // screen. A withdrawal reaches the open page at once and closes what it may no longer see.
-[Collection(WebChatE2ECollections.People)]
+[Collection(WebChatE2ECollections.Sharing)]
 [Trait("Category", "E2E")]
 public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
 {
@@ -81,11 +81,7 @@ public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
 
     private async Task<(string User, string Session)> PersonAsync(string name, string role)
     {
-        var (_, created) = await fixture.AccountsAsync("create-user", "--name", name, "--role", role);
-        var user = WhoWasMade().Match(created).Groups["user"].Value;
-        return (user, (await fixture.AccountsAsync("mint-session", "--user", user)).Output.Trim());
+        return await fixture.PersonAsync(name, role);
     }
 
-    [GeneratedRegex(@"user (?<user>[0-9a-f]+), household")]
-    private static partial Regex WhoWasMade();
 }

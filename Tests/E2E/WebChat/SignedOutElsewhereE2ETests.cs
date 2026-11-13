@@ -17,9 +17,8 @@ public partial class SignedOutElsewhereE2ETests(WebChatE2EFixture fixture)
         Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
 
         var tag = Guid.NewGuid().ToString("N")[..4];
-        var (_, created) = await fixture.AccountsAsync("create-user", "--name", $"Person {tag}", "--role", "member");
-        var user = WhoWasMade().Match(created).Groups["user"].Value;
-        var phone = await fixture.CreatePageSignedInAsync(await SessionAsync(user));
+        var (user, phoneSession) = await fixture.PersonAsync($"Person {tag}", "member");
+        var phone = await fixture.CreatePageSignedInAsync(phoneSession);
         // The fixture keeps one page of its own at a time, and this test needs two devices at once:
         // the laptop is a context of the test's own on the same browser.
         await using var laptopContext = await phone.Context.Browser!.NewContextAsync(new BrowserNewContextOptions { IgnoreHTTPSErrors = true });
@@ -47,7 +46,4 @@ public partial class SignedOutElsewhereE2ETests(WebChatE2EFixture fixture)
 
     private async Task<string> SessionAsync(string user) =>
         (await fixture.AccountsAsync("mint-session", "--user", user)).Output.Trim();
-
-    [GeneratedRegex(@"user (?<user>[0-9a-f]+), household")]
-    private static partial Regex WhoWasMade();
 }

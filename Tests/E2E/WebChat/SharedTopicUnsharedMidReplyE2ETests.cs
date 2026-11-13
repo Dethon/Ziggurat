@@ -81,11 +81,7 @@ public partial class SharedTopicUnsharedMidReplyE2ETests(WebChatE2EFixture fixtu
 
     private async Task<(string User, string Session)> PersonAsync(string name)
     {
-        var (_, created) = await fixture.AccountsAsync("create-user", "--name", name, "--role", "member");
-        var user = WhoWasMade().Match(created).Groups["user"].Value;
-        return (user, (await fixture.AccountsAsync("mint-session", "--user", user)).Output.Trim());
+        return await fixture.PersonAsync(name, "member");
     }
 
-    [GeneratedRegex(@"user (?<user>[0-9a-f]+), household")]
-    private static partial Regex WhoWasMade();
 }

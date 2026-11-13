@@ -97,7 +97,11 @@ public class WebChatE2EFixture : E2EFixtureBase
 
     public static string NameOf(int userIndex) => WebChatStack.NameOf(userIndex);
 
-    // The accounts service's commands, for a test that needs a person of its own or a link.
+    // A person of the home household a test makes for itself, by name and role (owner or member):
+    // their id and a signed-in session.
+    public Task<(string UserId, string Session)> PersonAsync(string name, string role) => Stack.PersonAsync(name, role);
+
+    // The accounts service's commands, for a test that needs a link or a command as the operator runs it.
     public Task<(int Exit, string Output)> AccountsAsync(params string[] args) => Stack.AccountsAsync(args);
 
     protected override Task BuildImagesAsync(CancellationToken ct) => WebChatStack.EnsureImagesAsync(ct);
@@ -161,10 +165,26 @@ public class WebChatE2EAdminCollection : ICollectionFixture<WebChatE2EFixture>;
 
 // Two or more people of their own each, in a topic of their own: shared topics, a sees-all grant
 // withdrawn, a session ended elsewhere.
-// The twelfth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
-// collection needs a space name and CollectionSlices raised.
 [CollectionDefinition(WebChatE2ECollections.People)]
 public class WebChatE2EPeopleCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// The chat's turns on the real model, out of the Chat collection, which keeps only the cases reading
+// the household's name and agents beside the settings page that changes them.
+[CollectionDefinition(WebChatE2ECollections.Conversation)]
+public class WebChatE2EConversationCollection : ICollectionFixture<WebChatE2EFixture>;
+
+[CollectionDefinition(WebChatE2ECollections.SignIn)]
+public class WebChatE2ESignInCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// The admin pages and the people classes, each split once more by length: their classes make their
+// own owners and people and change only what they made, so neither half waits on the other.
+[CollectionDefinition(WebChatE2ECollections.AdminPages)]
+public class WebChatE2EAdminPagesCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// The sixteenth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
+// collection needs a space name and CollectionSlices raised.
+[CollectionDefinition(WebChatE2ECollections.Sharing)]
+public class WebChatE2ESharingCollection : ICollectionFixture<WebChatE2EFixture>;
 
 public static class WebChatE2ECollections
 {
@@ -180,4 +200,8 @@ public static class WebChatE2ECollections
     public const string Sugary = "WebChatE2E.Sugary";
     public const string Admin = "WebChatE2E.Admin";
     public const string People = "WebChatE2E.People";
+    public const string Conversation = "WebChatE2E.Conversation";
+    public const string SignIn = "WebChatE2E.SignIn";
+    public const string AdminPages = "WebChatE2E.AdminPages";
+    public const string Sharing = "WebChatE2E.Sharing";
 }

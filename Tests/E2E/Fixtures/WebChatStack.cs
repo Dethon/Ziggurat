@@ -4,6 +4,12 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Accounts;
+using Accounts.Configuration;
+using Accounts.People;
+using Accounts.Sessions;
+using Accounts.Settings;
+using Accounts.Store;
 using Agent.App;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -11,12 +17,16 @@ using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Security;
 using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Networks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Tests.Integration.Fixtures;
 
@@ -71,7 +81,7 @@ internal sealed partial class WebChatStack
     // takes one. They must be spaces of the household's configuration, which the stack saves as it
     // starts, or the client opens the household's first space instead.
     private static readonly string[] _spaces =
-        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett", "lima", "mike"];
+        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett", "lima", "mike", "november", "oscar", "papa", "quebec"];
 
     // A space no collection works in, with a name, colour and agent of its own: what a person sees of
     // a space is its configuration's.
@@ -89,7 +99,7 @@ internal sealed partial class WebChatStack
     // full-viewport modal and clicked a button that detached from under it. Raise these when a
     // collection grows past its block rather than letting the counter wrap.
     public const int UsersPerCollection = 24;
-    public const int CollectionSlices = 12;
+    public const int CollectionSlices = 16;
 
     public string WebChatUrl { get; private set; } = "";
 
@@ -188,6 +198,149 @@ internal sealed partial class WebChatStack
     // stack's users up front would cost minutes nobody uses.
     public async Task<string> SessionForAsync(int userIndex) => (await SeededAsync(userIndex)).Session;
 
+    // The stack's people, made before the accounts service starts rather than one command at a time
+    // while the tests wait: the store is built in this process with the service's own stores (the
+    // same migrations, the same home household, a session issued as mint-session issues one) and
+    // copied in. Each collection's first users by index, and a pool of owners and members a test
+    // that needs a person of its own takes from (PersonAsync). Every command made two .NET processes
+    // start in the container per person, which was the E2E run's floor and a fifth of its CPU.
+    private const string SeededStorePath = "/tmp/accounts.db";
+
+    // The .NET images' own non-root user, which the service runs as ($APP_UID), so the copied store
+    // is its own to write.
+    private const uint AppUid = 1654;
+    private const int SeededPerCollection = 12;
+    private const int PooledPerRole = 32;
+    private readonly ConcurrentDictionary<Role, ConcurrentQueue<Seeded>> _pool = new();
+    private Seeded? _probe;
+
+    private async Task<byte[]> SeedAccountsStoreAsync(CancellationToken ct)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "e2e-accounts", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "accounts.db");
+        try
+        {
+            var settings = new AccountsSettings { DatabasePath = path };
+            var clock = new AccountsClock(TimeProvider.System);
+            await using (var services = new ServiceCollection().AddAccountsCore(settings, clock).BuildServiceProvider())
+            {
+                await AccountsDatabase.PrepareAsync(
+                    services.GetRequiredService<IDbContextFactory<AccountsDbContext>>(), clock.Time, ct);
+                var people = services.GetRequiredService<PersonStore>();
+                var sessions = services.GetRequiredService<SessionStore>();
+
+                async Task<Seeded> MakeAsync(string name, Role role)
+                {
+                    var person = await people.CreateAsync(name, role, ct);
+                    var session = await sessions.IssueAsync(person.Id, credentialId: null, device: "mint-session", ct)
+                        ?? throw new InvalidOperationException($"no session for {person.Id}");
+                    return new Seeded(session.Token, new Account(person.TenantId, person.Id));
+                }
+
+                foreach (var index in Enumerable.Range(0, CollectionSlices)
+                             .SelectMany(slice => Enumerable.Range(slice * UsersPerCollection, SeededPerCollection)))
+                {
+                    var seeded = await MakeAsync(NameOf(index), Role.Member);
+                    _sessions[index] = new Lazy<Task<Seeded>>(Task.FromResult(seeded));
+                }
+
+                // The person the stack signs in as to know it is up, end to end.
+                _probe = await MakeAsync("Probe", Role.Member);
+
+                // The home's agents and spaces, saved as set-household-config saves them. Nobody is
+                // listening yet to be told, and every reader starts after this.
+                var config = services.GetRequiredService<HouseholdConfigStore>();
+                var agents = await config.SaveAsync(
+                    _probe.Account.TenantId, HouseholdSections.AgentsSchema, HouseholdSections.AgentsSchema.Write(Agents), ct);
+                var spaces = await config.SaveAsync(
+                    _probe.Account.TenantId, HouseholdSections.SpacesSchema, HouseholdSections.SpacesSchema.Write(Spaces), ct);
+                if (agents is not SectionSave.Saved || spaces is not SectionSave.Saved)
+                {
+                    throw new InvalidOperationException($"the seeded store refused a section: {agents}, {spaces}");
+                }
+
+                foreach (var role in new[] { Role.Owner, Role.Member })
+                {
+                    var queue = _pool.GetOrAdd(role, _ => new ConcurrentQueue<Seeded>());
+                    foreach (var n in Enumerable.Range(0, PooledPerRole))
+                    {
+                        queue.Enqueue(await MakeAsync($"Pooled {role} {n}", role));
+                    }
+                }
+            }
+
+            SqliteConnection.ClearAllPools();
+            return await File.ReadAllBytesAsync(path, ct);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    // A person of the home household a test makes for itself, by the name and role it gives: one of
+    // the pool, renamed through their own account page as they could rename themselves, or — once the
+    // pool is spent — made by the service's commands as an operator would.
+    public async Task<(string UserId, string Session)> PersonAsync(string name, string role)
+    {
+        var wanted = role == "owner" ? Role.Owner : Role.Member;
+        if (_pool.TryGetValue(wanted, out var queue) && queue.TryDequeue(out var pooled))
+        {
+            await RenameAsync(pooled.Session, name);
+            return (pooled.Account.UserId, pooled.Session);
+        }
+
+        var (_, created) = await AccountsAsync("create-user", "--name", name, "--role", role);
+        var user = WhoWasMade().Match(created).Groups["user"].Value;
+        var (_, session) = await AccountsAsync("mint-session", "--user", user);
+        return (user, session.Trim());
+    }
+
+    private async Task RenameAsync(string session, string name)
+    {
+        using var client = new HttpClient(new HttpClientHandler { UseCookies = false, AllowAutoRedirect = false })
+        {
+            BaseAddress = new Uri(WebChatUrl)
+        };
+        var cookies = $"{SessionCookieName}={session}";
+        using var read = new HttpRequestMessage(HttpMethod.Get, "accounts/account");
+        read.Headers.Add("Cookie", cookies);
+        using var page = await client.SendAsync(read);
+        page.EnsureSuccessStatusCode();
+        var antiforgery = page.Headers.TryGetValues("Set-Cookie", out var set)
+            ? string.Join("; ", set.Select(c => c.Split(';')[0]))
+            : "";
+        var field = AntiforgeryField().Match(await page.Content.ReadAsStringAsync());
+        if (!field.Success)
+        {
+            throw new InvalidOperationException("the account page carried no antiforgery field");
+        }
+
+        using var save = new HttpRequestMessage(HttpMethod.Post, "accounts/account/profile")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["displayName"] = name,
+                ["avatarUrl"] = "",
+                [field.Groups["name"].Value] = WebUtility.HtmlDecode(field.Groups["value"].Value)
+            })
+        };
+        save.Headers.Add("Cookie", antiforgery.Length > 0 ? $"{cookies}; {antiforgery}" : cookies);
+        using var saved = await client.SendAsync(save);
+        if (saved.StatusCode != HttpStatusCode.SeeOther)
+        {
+            throw new InvalidOperationException(
+                $"renaming a pooled person answered {(int)saved.StatusCode}: {await saved.Content.ReadAsStringAsync()}");
+        }
+    }
+
+    private const string SessionCookieName = "ziggurat_session";
+
+    [GeneratedRegex("""<input type="hidden" name="(?<name>[^"]+)" value="(?<value>[^"]*)">""")]
+    private static partial Regex AntiforgeryField();
+
     // Starts making a user a collection is about to ask for, so its test finds it made rather than
     // waiting the two commands out. A failure is kept in the memoized task and reaches whichever
     // test asks for that index; nobody asking means nobody needed it.
@@ -206,12 +359,10 @@ internal sealed partial class WebChatStack
     private sealed record Seeded(string Session, Account Account);
 
     private readonly ConcurrentDictionary<int, Lazy<Task<Seeded>>> _sessions = new();
-    // A few commands at once, not one. They write one SQLite file, but so does the running service
-    // beside every one of them, and SQLite's busy retry already settles writers taking turns: running
-    // them strictly one at a time was the E2E run's floor — about two seconds queued per command, two
-    // commands per test, every collection in one line. Not unbounded, because each is a .NET process
-    // starting up beside the browser and the stack.
-    private readonly SemaphoreSlim _seeding = new(8, 8);
+    // One command at a time, as they write one SQLite file. Few are left: the stack's people are
+    // seeded before the service starts, so these are the commands a test is about (a link, a second
+    // session) and the pool's overflow.
+    private readonly SemaphoreSlim _seeding = new(1, 1);
 
     private async Task<Seeded> SeedAsync(string name)
     {
@@ -421,7 +572,16 @@ internal sealed partial class WebChatStack
         // first: the accounts service is told where they are.
         _keyProviders = await FakeKeyProviders.StartAsync(forContainers: true);
 
+        var seededStore = await E2ETrace.TimeAsync("seed:accounts", () => SeedAccountsStoreAsync(ct));
         _accounts = TestContainers.Container(E2EImages.Accounts.ImageName)
+            // The store the stack's people were made in by this process (SeedAccountsStoreAsync), copied
+            // in before the service starts and kept where its user can write it and the journal beside
+            // it: /data is a tmpfs, mounted at start over anything copied there at create. Not copied by
+            // a shell entrypoint, which drops the CALLERS__<host> variables a hyphen makes no shell
+            // name of. The commands run in the container read the same variable.
+            .WithResourceMapping(seededStore, SeededStorePath, AppUid, AppUid,
+                UnixFileModes.UserRead | UnixFileModes.UserWrite | UnixFileModes.GroupRead | UnixFileModes.OtherRead)
+            .WithEnvironment("DATABASEPATH", SeededStorePath)
             .WithNetwork(_network)
             .WithNetworkAliases("accounts")
             .WithExtraHost("host.docker.internal", "host-gateway")
@@ -467,9 +627,6 @@ internal sealed partial class WebChatStack
             E2ETrace.TimeAsync("start:accounts", () => _accounts.StartAsync(ct)),
             whisperPortTask);
         var whisperPort = await whisperPortTask;
-        // Before the agent starts, so its first catalogue for the channels is these and not the
-        // templates a household that saved no agents runs.
-        await E2ETrace.TimeAsync("seed:agents", SaveAgentsAsync);
 
         _mcpChannelSignalR = TestContainers.Container(signalRImageName)
             .WithNetwork(_network)
@@ -639,8 +796,7 @@ internal sealed partial class WebChatStack
 
         // Wait for the full stack to be reachable through Caddy, signed in: the hub's negotiate
         // answering a session proves Caddy -> session check -> mcp-channel-signalr end to end.
-        var probe = await SeedAsync("Probe");
-        await SaveSpacesAsync(probe.Account.TenantId);
+        var probe = _probe!;
         using var httpClient = new HttpClient();
         httpClient.Timeout = TimeSpan.FromSeconds(5);
         var deadline = DateTime.UtcNow.Add(TimeSpan.FromMinutes(2));
@@ -661,7 +817,7 @@ internal sealed partial class WebChatStack
             {
                 // ignore connection errors during startup
             }
-            await Task.Delay(1_000, ct);
+            await Task.Delay(250, ct);
         }
 
         E2ETrace.Write("start:total", stackElapsed.Elapsed.TotalSeconds);
@@ -671,15 +827,8 @@ internal sealed partial class WebChatStack
     }
 
     // The home household's agents, as the household migration seeds the deployment's: the agent's
-    // settings carry none, and a household that saved none runs the two templates.
-    private async Task SaveAgentsAsync()
-    {
-        await _accounts!.CopyAsync(
-            Encoding.UTF8.GetBytes(HouseholdSections.AgentsSchema.Write(Agents).ToJsonString()), "/tmp/agents.json");
-        await AccountsAsync(
-            "set-household-config", "--household", "home", "--section", HouseholdSections.Agents, "--file", "/tmp/agents.json");
-    }
-
+    // settings carry none, and a household that saved none runs the two templates. Saved into the
+    // seeded store, so the agent's first catalogue for the channels is these.
     public static readonly AgentsSection Agents = new()
     {
         DefaultAgent = "test-agent",
@@ -726,26 +875,19 @@ internal sealed partial class WebChatStack
     };
 
     // The household's spaces as its owner would save them: the default space, one per collection,
-    // and the kitchen. Saved before any page has asked the hub for them, so none is kept from before.
-    private async Task SaveSpacesAsync(string household)
+    // and the kitchen. Saved into the seeded store, before any page has asked the hub for them.
+    private static SpacesSection Spaces => new()
     {
-        var section = new SpacesSection
-        {
-            Spaces =
-            [
-                HouseholdSpace.Default,
-                .. _spaces.Select((slug, index) => new HouseholdSpace
-                {
-                    Slug = slug, Name = slug, AccentColor = SpaceConfig.DefaultAccentColor, Order = index + 1
-                }),
-                Kitchen
-            ]
-        };
-        await _accounts!.CopyAsync(
-            Encoding.UTF8.GetBytes(HouseholdSections.SpacesSchema.Write(section).ToJsonString()), "/tmp/spaces.json");
-        await AccountsAsync(
-            "set-household-config", "--household", household, "--section", HouseholdSections.Spaces, "--file", "/tmp/spaces.json");
-    }
+        Spaces =
+        [
+            HouseholdSpace.Default,
+            .. _spaces.Select((slug, index) => new HouseholdSpace
+            {
+                Slug = slug, Name = slug, AccentColor = SpaceConfig.DefaultAccentColor, Order = index + 1
+            }),
+            Kitchen
+        ]
+    };
 
     // whisper-server's own route, answered in process. The channel container reaches it through
     // the host gateway, so nothing about the browser's path to the transcript is faked.

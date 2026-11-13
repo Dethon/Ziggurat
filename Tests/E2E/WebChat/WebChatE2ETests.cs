@@ -11,103 +11,6 @@ namespace Tests.E2E.WebChat;
 [Trait("Category", "E2E")]
 public class WebChatE2ETests(WebChatE2EFixture fixture)
 {
-    // A message is drawn as Markdown, never as markup: whoever wrote it — another member of a shared
-    // topic, or a model talked into echoing a page — would otherwise run a script as the reader, on the
-    // origin the admin API shares (pass 18: Óscar's `<img onerror>` ran in Nuria's page). Live, and
-    // again from the history after a reload.
-    [SkippableFact]
-    public async Task AMessageCarryingMarkup_IsShownAsText_AndRunsNothing()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-        var tag = Guid.NewGuid().ToString("N")[..6];
-        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
-        await GotoWebChatAsync(page, fixture.WebChatUrl);
-        await SelectAgentAsync(page);
-
-        var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync(
-            $"markup {tag} <img src=\"x\" onerror=\"document.body.dataset.xss='ran'\"> [pulsa](javascript:document.body.dataset.xss='ran')");
-        await chatInput.PressAsync("Enter");
-
-        var bubble = page.Locator(".message-content", new PageLocatorOptions { HasText = $"markup {tag} <img" }).First;
-        await bubble.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
-        (await bubble.Locator("a").CountAsync()).ShouldBe(0);
-        (await page.EvaluateAsync<string?>("() => document.body.dataset.xss ?? null")).ShouldBeNull();
-        (await bubble.Locator("img").CountAsync()).ShouldBe(0);
-
-        // The reply is the proof the turn's record was written; reloading before it races the history
-        // read against the agent's own persistence (as the attachment test waits).
-        await DismissApprovalOverlayAsync(page);
-        await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
-            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 90_000 });
-        await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await DismissApprovalOverlayAsync(page);
-        await page.Locator(".topic-item", new PageLocatorOptions { HasText = $"markup {tag}" })
-            .First.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
-        var kept = page.Locator(".message-content", new PageLocatorOptions { HasText = $"markup {tag} <img" }).First;
-        await kept.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-        (await page.EvaluateAsync<string?>("() => document.body.dataset.xss ?? null")).ShouldBeNull();
-        (await kept.Locator("img").CountAsync()).ShouldBe(0);
-    }
-
-    [SkippableFact]
-    public async Task SendMessage_AppearsInChat()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
-        await GotoWebChatAsync(page, fixture.WebChatUrl);
-
-        await SelectAgentAsync(page);
-
-        var chatInput = page.Locator("textarea.chat-input");
-        await chatInput.FillAsync("Hello, this is an E2E test message");
-        await chatInput.PressAsync("Enter");
-
-        // .First, because the agent often quotes the message back and then two bubbles carry the
-        // text — a strict-mode violation, which fails outright instead of waiting. The user's own
-        // bubble is the earlier of the two in document order.
-        var userMessage = page
-            .Locator(".message-content", new PageLocatorOptions { HasText = "Hello, this is an E2E test message" })
-            .First;
-        await userMessage.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
-
-        // Wait for agent response — the assistant message element may appear early (with empty
-        // content during "thinking"), so poll until it has non-empty text. The model sometimes
-        // answers even a greeting with a tool call, and that raises an approval prompt which
-        // holds the reply hostage until it is answered — reject whatever appears between waits,
-        // or no amount of timeout produces text.
-        // The reply comes from a real model over the network, so what bounds this is the provider's
-        // worst case rather than the app's. Three minutes: a queued or slow generation ran past the
-        // old ninety seconds and reported it as an empty bubble, which reads as a broken client
-        // rather than as the wait it was. The loop still returns the moment text appears, so a
-        // normal run pays nothing for the larger cap.
-        var assistantMessage = page.Locator(".chat-message.assistant .message-content");
-        var deadline = DateTime.UtcNow.AddMinutes(3);
-        while (true)
-        {
-            await DismissApprovalOverlayAsync(page);
-            try
-            {
-                await Assertions.Expect(assistantMessage.First)
-                    .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 10_000 });
-                break;
-            }
-            catch (PlaywrightException) when (DateTime.UtcNow < deadline)
-            {
-                // An approval may have arrived mid-wait; loop to reject it and keep waiting.
-            }
-            catch (PlaywrightException ex)
-            {
-                // Past the cap. Say which wait ran out, because "expected not to be empty" on its
-                // own has been read as the client failing to render a reply it did receive.
-                throw new TimeoutException(
-                    "No assistant text after 3 minutes. The reply comes from a real model here, so "
-                    + "this is a slow or failed generation rather than the chat client.", ex);
-            }
-        }
-    }
-
     // DOMContentLoaded rather than NetworkIdle. Every case here goes on to wait for something the
     // app can only show once it has booted and connected — the composer being enabled, a row, the
     // microphone — so waiting for the network to fall quiet first buys nothing and costs its own
@@ -217,7 +120,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     // be satisfied is a cost the run can absorb. Settling is normally under ten seconds.
     private static readonly TimeSpan _rowsSettleCap = TimeSpan.FromSeconds(30);
 
-    private static async Task<string> WaitForRowsToStopMovingCoreAsync(IPage page, string tag)
+    internal static async Task<string> WaitForRowsToStopMovingCoreAsync(IPage page, string tag)
     {
         var deadline = DateTime.UtcNow + _rowsSettleCap;
         var previous = "";
@@ -249,7 +152,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     //
     // This is cleanup, not an assertion: at the deadline it gives up quietly and leaves the
     // caller's own step to report what a stuck overlay broke.
-    private static async Task RejectEveryVisibleApprovalAsync(IPage page, TimeSpan budget)
+    internal static async Task RejectEveryVisibleApprovalAsync(IPage page, TimeSpan budget)
     {
         var overlay = page.Locator(".approval-modal-overlay");
         var rejectBtn = page.Locator(".btn-reject");
@@ -299,7 +202,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
 
     // The id of the request the modal is showing, or null when nothing is on screen — including
     // the case where the prompt goes away while this is asking.
-    private static async Task<string?> CurrentApprovalIdAsync(IPage page)
+    internal static async Task<string?> CurrentApprovalIdAsync(IPage page)
     {
         try
         {
@@ -315,7 +218,7 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     // Answered means this request is off the screen — either nothing is prompting any more, or
     // the next request in the queue has taken its place. Waiting for "no modal" instead would
     // fail whenever another request was already waiting behind this one.
-    private static async Task WaitUntilApprovalAnsweredAsync(IPage page, string approvalId, TimeSpan budget)
+    internal static async Task WaitUntilApprovalAnsweredAsync(IPage page, string approvalId, TimeSpan budget)
     {
         var answered = page.Locator($".approval-modal[data-approval-id='{approvalId}']");
         await Assertions.Expect(answered).ToBeHiddenAsync(
@@ -379,7 +282,6 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
             }
         }
     }
-
 
     // Nobody is picked any more: a signed-in page is its account, named in the header from the
     // accounts service, and the configuration the page reads lists nobody.
@@ -455,120 +357,6 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         await SelectAgentAsync(page);
 
         await Assertions.Expect(page).ToHaveTitleAsync("Herfluffness' Assistants");
-    }
-
-    // The proxy sends a page with no session to sign in, and sign-in brings it back to where it was
-    // going, as the account whose passkey answered. A real ceremony, against Chromium's virtual
-    // authenticator, through the stack's own Caddy and accounts service.
-    [SkippableFact]
-    public async Task ASignedOutBrowser_SignsInAndComesBackAsThemselves()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var name = $"Passkey-{Guid.NewGuid().ToString("N")[..4]}";
-        var (_, created) = await fixture.AccountsAsync("create-user", "--name", name);
-        var userId = Regex.Match(created, "user (?<id>[0-9a-f]+),").Groups["id"].Value;
-        var (_, minted) = await fixture.AccountsAsync("mint-link", "--user", userId);
-        var link = minted.Split('\n').Select(l => l.Trim()).Single(l => l.StartsWith("http", StringComparison.Ordinal));
-
-        var page = await fixture.CreatePageAsync();
-        await AddVirtualAuthenticatorAsync(page);
-
-        // Enrolling lands the browser on the deployment's front page, signed in.
-        await page.GotoAsync(link);
-        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Create a passkey" }).ClickAsync();
-        await page.WaitForURLAsync(fixture.DefaultSpaceUrl);
-
-        // The front page installs the app's service worker, which answers navigations from its
-        // cache: it is what an installed app is, and it must still let sign-in through.
-        await page.WaitForFunctionAsync(
-            "() => !!navigator.serviceWorker.controller", null, new PageWaitForFunctionOptions { Timeout = 60_000 });
-        await page.Context.ClearCookiesAsync();
-
-        await page.GotoAsync(fixture.WebChatUrl);
-        await page.WaitForURLAsync(url => url.Contains("/accounts/sign-in", StringComparison.Ordinal));
-        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Sign in with a passkey" }).ClickAsync();
-        await page.WaitForURLAsync(fixture.WebChatUrl);
-
-        await Assertions.Expect(page.Locator(".signed-in-person"))
-            .ToHaveAttributeAsync("title", name, new LocatorAssertionsToHaveAttributeOptions { Timeout = 60_000 });
-        await Assertions.Expect(page.Locator("textarea.chat-input"))
-            .ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 });
-    }
-
-    // A browser that installed the chat client before sign-in existed holds a worker that answers
-    // every navigation with its own cached app, so the passkey link the upgrade's migration prints
-    // opened there showed the old app's "nothing at this address". That navigation is also what
-    // fetches and activates the new worker, which then sends such a page on to the accounts page it
-    // asked for, rather than leaving the person to guess that a reload would.
-    [SkippableFact]
-    public async Task AnEnrollmentLinkAnOldWorkerAnswered_ReachesEnrollmentOnceTheNewWorkerTakesOver()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var (_, created) = await fixture.AccountsAsync("create-user", "--name", $"Old-{Guid.NewGuid().ToString("N")[..4]}");
-        var userId = Regex.Match(created, "user (?<id>[0-9a-f]+),").Groups["id"].Value;
-        var (_, minted) = await fixture.AccountsAsync("mint-link", "--user", userId);
-        var link = minted.Split('\n').Select(l => l.Trim()).Single(l => l.StartsWith("http", StringComparison.Ordinal));
-
-        // The worker a master deployment shipped, as far as this needs it: every navigation is its app.
-        // Installed on a profile of its own, by a browser that routes its script to it.
-        const string oldWorker = """
-                                 self.addEventListener('install', () => self.skipWaiting());
-                                 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-                                 self.addEventListener('fetch', e => {
-                                   if (e.request.mode === 'navigate')
-                                     e.respondWith(new Response('<html><body>the old app</body></html>', { headers: { 'content-type': 'text/html' } }));
-                                 });
-                                 """;
-        var profile = Directory.CreateTempSubdirectory("old-worker-").FullName;
-        try
-        {
-            await using (var before = await fixture.OpenProfileAsync(profile))
-            {
-                await before.RouteAsync("**/service-worker.js", route => route.FulfillAsync(new RouteFulfillOptions
-                {
-                    Status = 200, ContentType = "application/javascript", Body = oldWorker
-                }));
-                var installing = before.Pages.Count > 0 ? before.Pages[0] : await before.NewPageAsync();
-                await installing.GotoAsync(link);
-                await installing.EvaluateAsync(
-                    "async () => { await navigator.serviceWorker.register('/service-worker.js'); await navigator.serviceWorker.ready; }");
-                await installing.GotoAsync(link);
-                await Assertions.Expect(installing.GetByText("the old app")).ToBeVisibleAsync();
-            }
-
-            // The deploy: the same browser opened again, and the worker's script is the new one.
-            await using var after = await fixture.OpenProfileAsync(profile);
-            var page = after.Pages.Count > 0 ? after.Pages[0] : await after.NewPageAsync();
-            await page.GotoAsync(link, new PageGotoOptions { WaitUntil = WaitUntilState.Commit });
-
-            await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Create a passkey" }))
-                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
-        }
-        finally
-        {
-            Directory.Delete(profile, recursive: true);
-        }
-    }
-
-    // A platform authenticator that keeps discoverable credentials and verifies its user, standing
-    // in for the phone's; it belongs to the page, so enrolling and signing in share one.
-    private static async Task AddVirtualAuthenticatorAsync(IPage page)
-    {
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        await cdp.SendAsync("WebAuthn.enable");
-        await cdp.SendAsync("WebAuthn.addVirtualAuthenticator", new Dictionary<string, object>
-        {
-            ["options"] = new
-            {
-                protocol = "ctap2",
-                transport = "internal",
-                hasResidentKey = true,
-                hasUserVerification = true,
-                isUserVerified = true
-            }
-        });
     }
 
     // Attach, send and cancel are drawn for the same reason the microphone is: a text label beside
@@ -722,166 +510,4 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         (await connectedDot.IsVisibleAsync()).ShouldBeTrue();
     }
 
-    [SkippableFact]
-    public async Task ApprovalModal_ApproveFlow()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
-        await GotoWebChatAsync(page, fixture.WebChatUrl);
-
-        await SelectAgentAsync(page);
-
-        try
-        {
-            var chatInput = page.Locator("textarea.chat-input");
-            var approvalModal = page.Locator(".approval-modal");
-
-            // The model occasionally answers the demand with plain text and no tool call, and
-            // then there is no modal to wait for. Demand again — after the text reply finishes,
-            // because Enter is silently ignored while the topic is still streaming.
-            for (var attempt = 0; ; attempt++)
-            {
-                await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. After the tool is called say 'Done' without caring for its result. this is a test");
-                await chatInput.PressAsync("Enter");
-                try
-                {
-                    await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-                    break;
-                }
-                catch (TimeoutException) when (attempt < 2)
-                {
-                    var streamingCancel = page.Locator("[data-testid=composer-cancel]");
-                    await Assertions.Expect(streamingCancel).ToBeHiddenAsync(
-                        new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
-                }
-            }
-
-            var toolName = page.Locator(".tool-name");
-            (await toolName.TextContentAsync()).ShouldNotBeNullOrEmpty();
-
-            var approved = (await CurrentApprovalIdAsync(page)).ShouldNotBeNull();
-            await page.Locator(".btn-approve").ClickAsync();
-
-            // This request is answered. The screen can still be prompting, because the agent may
-            // already have another request waiting behind this one.
-            await WaitUntilApprovalAnsweredAsync(page, approved, TimeSpan.FromSeconds(10));
-
-            // Wait for streaming to finish — the Cancel button is only visible while streaming.
-            var cancelButton = page.Locator("[data-testid=composer-cancel]");
-            await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 120_000 });
-
-            // Any assistant bubble with rendered text is the answer. Whether the answer shares the
-            // tool call's bubble depends on the message ids the agent's chunks carry, so don't
-            // assume it is the first one. A bubble holding only a tool call still renders a
-            // .message-content div; it can hold whitespace (so `:not(:empty)` matches it) while
-            // collapsing to zero height, which is why the match must also be visible.
-            var assistantMessage = page.Locator(".chat-message.assistant .message-content:not(:empty):visible").First;
-            await Assertions.Expect(assistantMessage)
-                .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
-        }
-        finally
-        {
-            // Resolve any follow-up approval the agent issued so no server-side
-            // pending approval leaks into later tests (see DrainPendingApprovalsAsync).
-            await DrainPendingApprovalsAsync(page);
-        }
-    }
-
-    [SkippableFact]
-    public async Task ApprovalModal_DenyFlow()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
-        await GotoWebChatAsync(page, fixture.WebChatUrl);
-
-        await SelectAgentAsync(page);
-
-        try
-        {
-            var chatInput = page.Locator("textarea.chat-input");
-            await chatInput.FillAsync("IMPORTANT: You MUST call a tool right now. Use your file search/glob tool to find all files with pattern **/*. Do NOT write any text, just call the tool.");
-            await chatInput.PressAsync("Enter");
-
-            var approvalModal = page.Locator(".approval-modal");
-            await approvalModal.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-
-            var rejected = (await CurrentApprovalIdAsync(page)).ShouldNotBeNull();
-            await page.Locator(".btn-reject").ClickAsync();
-
-            await WaitUntilApprovalAnsweredAsync(page, rejected, TimeSpan.FromSeconds(10));
-
-            // Stream should stop — Cancel button disappears (only visible while streaming)
-            var cancelButton = page.Locator("[data-testid=composer-cancel]");
-            await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 30_000 });
-        }
-        finally
-        {
-            // The agent often retries the rejected tool, leaving a fresh server-side
-            // pending approval. Drain it so it can't pollute later tests' pages.
-            await DrainPendingApprovalsAsync(page);
-        }
-    }
-
-    [SkippableFact]
-    public async Task CancelStreaming_StopsResponse()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
-        await GotoWebChatAsync(page, fixture.WebChatUrl);
-
-        await SelectAgentAsync(page);
-
-        try
-        {
-            var chatInput = page.Locator("textarea.chat-input");
-            await chatInput.FillAsync("Write a very long and detailed story about a space adventure. Do not call any tools, just write the story.");
-            await chatInput.PressAsync("Enter");
-
-            // Wait for Cancel button to appear (signals streaming has started)
-            var cancelButton = page.Locator("[data-testid=composer-cancel]");
-            await cancelButton.WaitForAsync(new LocatorWaitForOptions { Timeout = 40_000 });
-
-            // Cancel replaces Send while the reply runs: one button in that spot, always the one
-            // the user can act on.
-            var sendButton = page.Locator("[data-testid=composer-send]");
-            await Assertions.Expect(sendButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 5_000 });
-            // The composer is empty once the message has gone, so the control that comes back when
-            // the stream ends is the microphone rather than Send — one control in that spot, always
-            // the one the person is about to use.
-            var microphone = page.Locator("[data-testid=dictation-mic]");
-
-            // .approval-modal-overlay covers the whole viewport, so a prompt on screen swallows
-            // this click for as long as it is up. It can belong to this turn (the agent asked for
-            // a tool despite the prompt) or to another topic whose approval leaked and is being
-            // re-raised by StreamResumeService — either way the click has to clear it first.
-            try
-            {
-                await cancelButton.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
-            }
-            catch (TimeoutException)
-            {
-                await DismissApprovalOverlayAsync(page);
-
-                // Rejecting a prompt that belonged to this turn ends the stream by itself, which
-                // is the state this test is asking for; only click when there is still a stream.
-                if (await cancelButton.IsVisibleAsync())
-                {
-                    await cancelButton.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
-                }
-            }
-
-            await Assertions.Expect(cancelButton).ToBeHiddenAsync(new LocatorAssertionsToBeHiddenOptions { Timeout = 10_000 });
-            await Assertions.Expect(microphone).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 10_000 });
-        }
-        finally
-        {
-            // Cancelling does not clear a pending approval server-side (ChatHub.CancelTopic leaves
-            // ApprovalService._pendingApprovals alone), so anything this turn raised has to be
-            // answered here or it re-raises on every later test's page.
-            await DrainPendingApprovalsAsync(page);
-        }
-    }
 }

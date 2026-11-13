@@ -186,14 +186,9 @@ public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
 
     private async Task<string> SessionOfAsync(string name, string role)
     {
-        var (_, created) = await fixture.AccountsAsync("create-user", "--name", name, "--role", role);
-        var user = WhoWasMade().Match(created).Groups["user"].Value;
-        var (_, session) = await fixture.AccountsAsync("mint-session", "--user", user);
-        return session.Trim();
+        return (await fixture.PersonAsync(name, role)).Session;
     }
 
-    [GeneratedRegex(@"user (?<user>[0-9a-f]+), household")]
-    private static partial Regex WhoWasMade();
 
     [GeneratedRegex(@"/accounts/enroll/[A-Za-z0-9_-]+$")]
     private static partial Regex Enrollment();

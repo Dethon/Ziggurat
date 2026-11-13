@@ -130,12 +130,7 @@ public partial class HouseholdKeysE2ETests(WebChatE2EFixture fixture)
     // The stack's people are members; an owner is made for the test, as the operator's command makes one.
     private async Task<string> OwnerSessionAsync(string name)
     {
-        var (_, created) = await fixture.AccountsAsync("create-user", "--name", name, "--role", "owner");
-        var user = WhoWasMade().Match(created).Groups["user"].Value;
-        var (_, session) = await fixture.AccountsAsync("mint-session", "--user", user);
-        return session.Trim();
+        return (await fixture.PersonAsync(name, "owner")).Session;
     }
 
-    [GeneratedRegex(@"user (?<user>[0-9a-f]+), household")]
-    private static partial Regex WhoWasMade();
 }
