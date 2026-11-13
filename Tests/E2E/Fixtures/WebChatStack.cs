@@ -682,17 +682,19 @@ internal sealed partial class WebChatStack
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/accounts/sign-in")))
             .Build();
 
-        // Started together because nothing here waits on anything else here: redis, the vault,
-        // the Sugary server and the accounts service are roots of the graph and the whisper stub
-        // runs in this process. Starting them in a line spent each one's wait doing nothing, and
-        // redis alone is the longest of them.
+        // Each container starts as soon as what it needs at start is up, not when a whole stage is:
+        // redis, the vault, the Sugary server, the accounts service, the hub and the webui need
+        // nothing but each other's names, which the network answers whenever they are asked. The
+        // agent reads the home's agents from the accounts service and registers them with the hub
+        // as it starts — a first read that failed would leave the hub with an empty catalogue until
+        // the next — so it follows those two and redis; Caddy's readiness asks sign-in through the
+        // accounts service, so it follows the services it fronts. Stages of whole sets made the stack
+        // the E2E run's first sixteen seconds.
         var whisperPortTask = StartWhisperStubAsync();
-        await Task.WhenAll(
-            E2ETrace.TimeAsync("start:redis", () => _redis.StartAsync(ct)),
-            E2ETrace.TimeAsync("start:vault", () => _mcpVault.StartAsync(ct)),
-            E2ETrace.TimeAsync("start:sugary", () => _mcpSugary.StartAsync(ct)),
-            E2ETrace.TimeAsync("start:accounts", () => _accounts.StartAsync(ct)),
-            whisperPortTask);
+        var redisStarted = E2ETrace.TimeAsync("start:redis", () => _redis.StartAsync(ct));
+        var vaultStarted = E2ETrace.TimeAsync("start:vault", () => _mcpVault.StartAsync(ct));
+        var sugaryStarted = E2ETrace.TimeAsync("start:sugary", () => _mcpSugary.StartAsync(ct));
+        var accountsStarted = E2ETrace.TimeAsync("start:accounts", () => _accounts.StartAsync(ct));
         var whisperPort = await whisperPortTask;
 
         _mcpChannelSignalR = TestContainers.Container(signalRImageName)
@@ -724,7 +726,7 @@ internal sealed partial class WebChatStack
                     .ForPath("/hubs/chat/negotiate")
                     .WithMethod(HttpMethod.Post)))
             .Build();
-        await E2ETrace.TimeAsync("start:signalr", () => _mcpChannelSignalR.StartAsync(ct));
+        var signalRStarted = E2ETrace.TimeAsync("start:signalr", () => _mcpChannelSignalR.StartAsync(ct));
 
         // Inject a minimal appsettings.json so the agent only connects to E2E services.
         // Raise with E2E_AGENT_LOG_LEVEL=Debug when a failing run needs the agent's own account
@@ -787,15 +789,10 @@ internal sealed partial class WebChatStack
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/manifest.webmanifest")))
             .Build();
 
-        // The webui serves files and reaches nothing, so it never had to follow the agent — and the
-        // agent's wait is for a log line the webui cannot affect. Caddy is what needs them both,
-        // and it is next. Starting it beside them saves its own boot and was tried: it also puts
-        // three container starts into the same window as every other fixture's, and the host answers
-        // that by timing one of them out somewhere else in the suite — two runs in four lost the
-        // Jackett and library-server fixtures to it. Three seconds is not worth buying with that.
-        await Task.WhenAll(
-            E2ETrace.TimeAsync("start:agent", () => _agent.StartAsync(ct)),
-            E2ETrace.TimeAsync("start:webui", () => _webui.StartAsync(ct)));
+        // The webui serves files and reaches nothing.
+        var webUiStarted = E2ETrace.TimeAsync("start:webui", () => _webui.StartAsync(ct));
+        await Task.WhenAll(redisStarted, accountsStarted, signalRStarted);
+        var agentStarted = E2ETrace.TimeAsync("start:agent", () => _agent.StartAsync(ct));
 
         // DockerCompose/caddy/Caddyfile's main host, minus TLS: the chat client, its hub and the
         // hub's upload and dictation endpoints ask the accounts service's session check first and
@@ -859,7 +856,9 @@ internal sealed partial class WebChatStack
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(r => r.ForPort(80).ForPath("/accounts/sign-in")))
             .Build();
+        await webUiStarted;
         await E2ETrace.TimeAsync("start:caddy", () => _caddy.StartAsync(ct));
+        await Task.WhenAll(agentStarted, vaultStarted, sugaryStarted);
 
         // Wait for the full stack to be reachable through Caddy, signed in: the hub's negotiate
         // answering a session proves Caddy -> session check -> mcp-channel-signalr end to end.
