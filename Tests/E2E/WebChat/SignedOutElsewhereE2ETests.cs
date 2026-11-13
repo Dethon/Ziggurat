@@ -7,7 +7,7 @@ namespace Tests.E2E.WebChat;
 // A device signed out from another one — a lost phone, say, signed out from the laptop's account
 // page — stops being the person at once, not when it next tries to send: until it was told, its open
 // chat stayed connected, was pushed the person's new private conversations and could open them.
-[Collection(WebChatE2ECollections.People)]
+[Collection(WebChatE2ECollections.SignIn)]
 [Trait("Category", "E2E")]
 public partial class SignedOutElsewhereE2ETests(WebChatE2EFixture fixture)
 {

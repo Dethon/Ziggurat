@@ -196,10 +196,13 @@ public class WebChatE2EMembersCollection : ICollectionFixture<WebChatE2EFixture>
 [CollectionDefinition(WebChatE2ECollections.DictationStrip)]
 public class WebChatE2EDictationStripCollection : ICollectionFixture<WebChatE2EFixture>;
 
-// The nineteenth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
-// collection needs a space name and CollectionSlices raised.
 [CollectionDefinition(WebChatE2ECollections.Page)]
 public class WebChatE2EPageCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// The twentieth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
+// collection needs a space name and CollectionSlices raised.
+[CollectionDefinition(WebChatE2ECollections.Approvals)]
+public class WebChatE2EApprovalsCollection : ICollectionFixture<WebChatE2EFixture>;
 
 public static class WebChatE2ECollections
 {
@@ -222,4 +225,5 @@ public static class WebChatE2ECollections
     public const string Members = "WebChatE2E.Members";
     public const string DictationStrip = "WebChatE2E.DictationStrip";
     public const string Page = "WebChatE2E.Page";
+    public const string Approvals = "WebChatE2E.Approvals";
 }
