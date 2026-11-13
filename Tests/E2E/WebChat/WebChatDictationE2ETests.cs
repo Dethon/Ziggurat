@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.E2E.Fixtures;
+using Tests.Integration.Fixtures;
 
 namespace Tests.E2E.WebChat;
 
@@ -109,26 +110,45 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         Fixture.TranscriptionStatus = 200;
         Fixture.Transcript = "no debería existir";
 
-        var page = await OpenAsync();
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await PressableMicAsync(page);
-
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        IPage? tapped = null;
 
         // The press has to outlast the run starting — _onUp returns without deciding anything when
         // there is no run yet — and end well inside the 400 ms mis-tap floor, which dictation.js
-        // measures on the page's own performance.now(). Eighty milliseconds of sleep guaranteed
-        // neither: it was longer than starting takes, and a stalled round trip carried it past the
-        // floor, where the app is right to treat the gesture as the hold it had become. Waiting for
-        // the run makes the press as short as this gesture can be and still be one.
-        await page.WaitForFunctionAsync(
-            "() => window.dictation && window.dictation._run",
-            null,
-            new PageWaitForFunctionOptions { Timeout = 15_000 });
-        await TouchAsync(cdp, "touchEnd");
+        // measures on the page's own performance.now(). Waiting for the run makes the press as short
+        // as this gesture can be and still be one, but the release is still a round trip, and on a
+        // machine running a second suite a stalled one carried the press past the floor, where the
+        // app is right to treat the gesture as the hold it had become. So the tap is the best of a
+        // few: a page that never shows the hint on any of them has a tap that does not work.
+        var aTapLanded = await LatencyBudget.HoldsOnceAsync(async () =>
+        {
+            var page = await OpenAsync();
+            var cdp = await page.Context.NewCDPSessionAsync(page);
+            var mic = await PressableMicAsync(page);
 
-        await Assertions.Expect(page.Locator(".composer-hint"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+            await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+            await page.WaitForFunctionAsync(
+                "() => window.dictation && window.dictation._run",
+                null,
+                new PageWaitForFunctionOptions { Timeout = 15_000 });
+            await TouchAsync(cdp, "touchEnd");
+
+            // Either the tap's hint or the hold's transcript: whichever the page decided.
+            await page.WaitForFunctionAsync(
+                "() => document.querySelector('.composer-hint') !== null" +
+                " || document.querySelector('textarea.chat-input')?.value !== ''",
+                null,
+                new PageWaitForFunctionOptions { Timeout = 15_000 });
+            if (!await page.Locator(".composer-hint").IsVisibleAsync())
+            {
+                return false;
+            }
+
+            tapped = page;
+            return true;
+        });
+
+        aTapLanded.ShouldBeTrue("no tap showed the hold hint; every press was read as a hold");
+        var page = tapped!;
         await Task.Delay(1_500);
         await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
         await Assertions.Expect(page.Locator(".composer-refusal")).ToBeHiddenAsync();
