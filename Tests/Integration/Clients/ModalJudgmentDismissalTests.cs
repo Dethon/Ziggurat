@@ -41,6 +41,27 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
         "<button class='cmp-primary' onclick=\"document.getElementById('cmp').style.display='none'\">Rechazar todo</button>" +
         "</div><p>Main content</p>";
 
+    // The pick still sliding into place when the judgment comes back: a click waits for its control to
+    // stop moving, and a busy host took that wait past the second it was given, leaving the wall up.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task Navigate_APickStillMovingWhenJudged_IsClickedOnceItSettles()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+        var judge = Choices((ModalJudge.RejectQuestionId, "1", 0.9), (ModalJudge.AcceptQuestionId, ModalJudge.NoneChoice, 0.8));
+        var browser = await BrowserAsync(judge);
+        var url = await ServeAsync(browser,
+            "<style>@keyframes slide { from { transform: translateX(0) } to { transform: translateX(240px) } }</style>" +
+            CookieWall.Replace("class='cmp-primary'", "class='cmp-primary' style='animation: slide 3s linear'"));
+        var sessionId = Guid.NewGuid().ToString();
+
+        var result = await browser.NavigateAsync(new BrowseRequest(sessionId, url) { Caller = JudgmentCaller.None });
+
+        result.DismissedModals.ShouldNotBeNull().ShouldHaveSingleItem().Selector.ShouldBe("judgment(1)");
+        (await browser.EvaluateOnSessionAsync<bool>(sessionId,
+            "() => document.getElementById('cmp').style.display === 'none'")).ShouldBeTrue();
+    }
+
     [Trait("Category", "External")]
     [SkippableFact]
     public async Task Navigate_AWallOnlyAJudgmentCloses_ClicksThePickByIndex()
