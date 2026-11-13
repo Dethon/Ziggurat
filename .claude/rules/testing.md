@@ -90,8 +90,7 @@ for this, and each shape below is one that has already failed here.
   that changes who a household's people are (a role, sees-all, a member disabled) takes its people
   from the stack's second household (`fixture.PersonElsewhereAsync`): such a change has every open
   page of the household renew its connection, which in the home caught other collections mid-way. A
-  page
-  from plain `CreatePageAsync` is signed out and lands on sign-in. The stack is browsed at
+  page from plain `CreatePageAsync` is signed out and lands on sign-in. The stack is browsed at
   `localhost` on a port it takes up front, because the passkeys' relying party cannot be an IP and
   the session cookie is host-only.
 - `fixture.NextUserIndex()` gives a test its own user, which separates it from its siblings in the
