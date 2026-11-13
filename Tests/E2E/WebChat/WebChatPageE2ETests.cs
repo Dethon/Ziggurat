@@ -35,8 +35,10 @@ public class WebChatPageE2ETests(WebChatE2EFixture fixture)
         // (StreamResumeService) can render against the shared E2E server state polluted by sibling
         // tests. Those loop only while a stream is active and are not part of the idle foreground this
         // guard covers; a document-wide query made this assertion flake (intermittently saw 3).
+        // Drawn once the app has booted and connected, which is the boot every first wait here gives
+        // a minute (SelectAgentAsync): ten seconds ran out with a second suite beside this one.
         var emptyState = page.Locator(".empty-state");
-        await emptyState.WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+        await emptyState.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
 
         const string countPerpetualInEmptyState = @"() => {
             const root = document.querySelector('.empty-state');

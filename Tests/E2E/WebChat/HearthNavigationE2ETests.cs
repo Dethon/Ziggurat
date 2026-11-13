@@ -33,7 +33,8 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
         await page.SetViewportSizeAsync(390, 844);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+        // The sheet is drawn once the app has booted: the minute every first wait gives it.
+        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
 
         // Tapping the handle cycles to half/full and reveals the search field.
         await TapHearthHandleAsync(page);
@@ -50,7 +51,8 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
         await page.SetViewportSizeAsync(390, 844);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+        // The sheet is drawn once the app has booted: the minute every first wait gives it.
+        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
 
         // Nothing selected yet, so the top bar carries no conversation block at all.
         await Assertions.Expect(page.Locator(".header .header-conversation")).Not.ToBeAttachedAsync();
@@ -80,7 +82,8 @@ public sealed class HearthNavigationE2ETests(WebChatE2EFixture fixture) : Hearth
         await page.SetViewportSizeAsync(390, 844);
         await page.GotoAsync(fixture.WebChatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
-        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 10_000 });
+        // The sheet is drawn once the app has booted: the minute every first wait gives it.
+        await page.Locator(".hearth-peek").WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
         await WebChatE2ETests.SelectAgentAsync(page);
 
         // A pending approval leaked by a sibling test can be replayed onto this fresh page at any
