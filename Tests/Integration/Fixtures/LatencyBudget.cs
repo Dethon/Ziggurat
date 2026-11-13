@@ -13,7 +13,11 @@ namespace Tests.Integration.Fixtures;
 // that genuinely regressed past the budget is over it on all three.
 internal static class LatencyBudget
 {
-    private const int Attempts = 3;
+    // Five rather than three: with a second suite running beside this one, the fastest of three still
+    // carried enough of the host's noise to eat a hundred of a 200 ms structural margin. The timing
+    // collection runs beside the E2E chains, well off the run's end, so the extra readings cost it
+    // nothing that shows.
+    private const int Attempts = 5;
 
     internal static async Task<long> FastestAsync(Func<Task<long>> attempt)
     {
