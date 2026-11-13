@@ -7,6 +7,10 @@ namespace Tests.E2E.WebChat;
 // A member granted every topic of the household had another person's private one open when the grant
 // was withdrawn: the list lost it and the hub refused its history, but the conversation stayed on their
 // screen. A withdrawal reaches the open page at once and closes what it may no longer see.
+//
+// Its people are the stack's second household's (PersonElsewhereAsync): a grant has every open page of
+// the household renew its connection, which in the home caught other collections mid-way. That
+// household runs the home's agents on a key of its own; its owner goes to the members page directly.
 [Collection(WebChatE2ECollections.Sharing)]
 [Trait("Category", "E2E")]
 public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
@@ -51,15 +55,12 @@ public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
     {
         if (!owner.Url.EndsWith("/admin/members", StringComparison.Ordinal))
         {
-            await WebChatE2ETests.GotoWebChatAsync(owner, fixture.WebChatUrl);
-            await owner.GetByLabel("Household settings").ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
-            await owner.WaitForURLAsync(new Regex("/admin/settings$"));
-            await owner.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = "Members" }).ClickAsync();
+            await owner.GotoAsync(fixture.DefaultSpaceUrl + "admin/members");
             await owner.WaitForURLAsync(new Regex("/admin/members$"));
         }
 
         var row = owner.GetByRole(AriaRole.Article, new PageGetByRoleOptions { Name = name });
-        await row.GetByLabel("Sees all conversations").SetCheckedAsync(seesAll, new LocatorSetCheckedOptions { Timeout = 30_000 });
+        await row.GetByLabel("Sees all conversations").SetCheckedAsync(seesAll, new LocatorSetCheckedOptions { Timeout = 60_000 });
         await row.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Save" }).ClickAsync();
         await Assertions.Expect(owner.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");
     }
@@ -81,7 +82,7 @@ public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
 
     private async Task<(string User, string Session)> PersonAsync(string name, string role)
     {
-        return await fixture.PersonAsync(name, role);
+        return await fixture.PersonElsewhereAsync(name, role);
     }
 
 }

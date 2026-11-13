@@ -101,6 +101,12 @@ public class WebChatE2EFixture : E2EFixtureBase
     // their id and a signed-in session.
     public Task<(string UserId, string Session)> PersonAsync(string name, string role) => Stack.PersonAsync(name, role);
 
+    // A person of the stack's second household, for a test that changes who that household's people
+    // are: the hub has every open page of a household renew its connection on such a change, so it is
+    // made where no other collection has a page open.
+    public Task<(string UserId, string Session)> PersonElsewhereAsync(string name, string role) =>
+        Stack.PersonAsync(name, role, elsewhere: true);
+
     // The accounts service's commands, for a test that needs a link or a command as the operator runs it.
     public Task<(int Exit, string Output)> AccountsAsync(params string[] args) => Stack.AccountsAsync(args);
 
@@ -181,10 +187,13 @@ public class WebChatE2ESignInCollection : ICollectionFixture<WebChatE2EFixture>;
 [CollectionDefinition(WebChatE2ECollections.AdminPages)]
 public class WebChatE2EAdminPagesCollection : ICollectionFixture<WebChatE2EFixture>;
 
-// The sixteenth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
-// collection needs a space name and CollectionSlices raised.
 [CollectionDefinition(WebChatE2ECollections.Sharing)]
 public class WebChatE2ESharingCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// The seventeenth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
+// collection needs a space name and CollectionSlices raised.
+[CollectionDefinition(WebChatE2ECollections.Members)]
+public class WebChatE2EMembersCollection : ICollectionFixture<WebChatE2EFixture>;
 
 public static class WebChatE2ECollections
 {
@@ -204,4 +213,5 @@ public static class WebChatE2ECollections
     public const string SignIn = "WebChatE2E.SignIn";
     public const string AdminPages = "WebChatE2E.AdminPages";
     public const string Sharing = "WebChatE2E.Sharing";
+    public const string Members = "WebChatE2E.Members";
 }

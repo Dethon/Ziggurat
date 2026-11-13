@@ -31,6 +31,14 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         // serialised, so its sum is its length, and these were starting half a minute in behind
         // thousands of unit tests and finishing last.
         "McpWebBrowseAsMeTests",
+        // The classes that wait on a real model: their time is the provider's, and a slow answer
+        // started half a minute in is a slow answer at the end of the run.
+        "ResponseFormatTests",
+        "McpAgent",
+        "SubAgentTests",
+        "ToolApprovalChatClientTests",
+        "ThreadSessionTests",
+        "OpenRouterToolCallingWithReasoningTests",
         "SugaryClipApiTests",
         "EvalWebTests",
         // Home Assistant cold-starts on a freshly seeded /config and does not serve its API until

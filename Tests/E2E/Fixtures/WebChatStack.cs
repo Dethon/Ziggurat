@@ -16,6 +16,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Security;
+using Domain.Security.Sealing;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
@@ -81,7 +82,7 @@ internal sealed partial class WebChatStack
     // takes one. They must be spaces of the household's configuration, which the stack saves as it
     // starts, or the client opens the household's first space instead.
     private static readonly string[] _spaces =
-        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett", "lima", "mike", "november", "oscar", "papa", "quebec"];
+        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo"];
 
     // A space no collection works in, with a name, colour and agent of its own: what a person sees of
     // a space is its configuration's.
@@ -99,7 +100,7 @@ internal sealed partial class WebChatStack
     // full-viewport modal and clicked a button that detached from under it. Raise these when a
     // collection grows past its block rather than letting the counter wrap.
     public const int UsersPerCollection = 24;
-    public const int CollectionSlices = 16;
+    public const int CollectionSlices = 17;
 
     public string WebChatUrl { get; private set; } = "";
 
@@ -211,7 +212,12 @@ internal sealed partial class WebChatStack
     private const uint AppUid = 1654;
     private const int SeededPerCollection = 12;
     private const int PooledPerRole = 32;
-    private readonly ConcurrentDictionary<Role, ConcurrentQueue<Seeded>> _pool = new();
+    private const int PooledElsewhere = 16;
+
+    // The key households' secrets are sealed under, made for this stack: the second household's own
+    // OpenRouter key is sealed with it in the seeded store, and the service opens it with the same.
+    private static readonly string MasterKey = Convert.ToBase64String(SealingKey.Generate().Export());
+    private readonly ConcurrentDictionary<(bool Elsewhere, Role Role), ConcurrentQueue<Seeded>> _pool = new();
     private Seeded? _probe;
 
     private async Task<byte[]> SeedAccountsStoreAsync(CancellationToken ct)
@@ -221,7 +227,11 @@ internal sealed partial class WebChatStack
         var path = Path.Combine(directory, "accounts.db");
         try
         {
-            var settings = new AccountsSettings { DatabasePath = path };
+            var settings = new AccountsSettings
+            {
+                DatabasePath = path,
+                HouseholdConfig = new HouseholdConfigSettings { MasterKey = MasterKey }
+            };
             var clock = new AccountsClock(TimeProvider.System);
             await using (var services = new ServiceCollection().AddAccountsCore(settings, clock).BuildServiceProvider())
             {
@@ -262,10 +272,60 @@ internal sealed partial class WebChatStack
 
                 foreach (var role in new[] { Role.Owner, Role.Member })
                 {
-                    var queue = _pool.GetOrAdd(role, _ => new ConcurrentQueue<Seeded>());
+                    var queue = _pool.GetOrAdd((false, role), _ => new ConcurrentQueue<Seeded>());
                     foreach (var n in Enumerable.Range(0, PooledPerRole))
                     {
                         queue.Enqueue(await MakeAsync($"Pooled {role} {n}", role));
+                    }
+                }
+
+                // A second household, for the tests that change who its people are: a role, sees-all
+                // or a member disabled is announced to the household, and the hub has every open page
+                // of it renew its connection — a dictation or a gesture caught mid-renewal in the home,
+                // where every other collection works, fails for a reason that is no fault of its own.
+                var contexts = services.GetRequiredService<IDbContextFactory<AccountsDbContext>>();
+                var elsewhere = Tokens.NewId();
+                await using (var db = await contexts.CreateDbContextAsync(ct))
+                {
+                    db.Tenants.Add(new Tenant { Id = elsewhere, Name = "Elsewhere", CreatedAt = clock.Time.GetUtcNow() });
+                    await db.SaveChangesAsync(ct);
+                }
+
+                async Task<Seeded> MakeElsewhereAsync(string name, Role role)
+                {
+                    var id = Tokens.NewId();
+                    await using (var db = await contexts.CreateDbContextAsync(ct))
+                    {
+                        db.Users.Add(new User
+                        {
+                            Id = id, TenantId = elsewhere, DisplayName = name, Role = role, CreatedAt = clock.Time.GetUtcNow()
+                        });
+                        await db.SaveChangesAsync(ct);
+                    }
+
+                    var session = await sessions.IssueAsync(id, credentialId: null, device: "mint-session", ct)
+                        ?? throw new InvalidOperationException($"no session for {id}");
+                    return new Seeded(session.Token, new Account(elsewhere, id));
+                }
+
+                // Its agents are the home's, and it pays for its turns with a key of its own (the same
+                // one), since a household that is not the home has no deployment key to fall back on.
+                var elsewhereAgents = await config.SaveAsync(
+                    elsewhere, HouseholdSections.AgentsSchema, HouseholdSections.AgentsSchema.Write(Agents), ct);
+                var elsewhereKeys = await config.SaveAsync(
+                    elsewhere, HouseholdSections.KeysSchema,
+                    HouseholdSections.KeysSchema.Write(new KeysSection { OpenRouter = new OpenRouterKey(GetOpenRouterApiKey()!) }), ct);
+                if (elsewhereAgents is not SectionSave.Saved || elsewhereKeys is not SectionSave.Saved)
+                {
+                    throw new InvalidOperationException($"the seeded store refused a section: {elsewhereAgents}, {elsewhereKeys}");
+                }
+
+                foreach (var role in new[] { Role.Owner, Role.Member })
+                {
+                    var queue = _pool.GetOrAdd((true, role), _ => new ConcurrentQueue<Seeded>());
+                    foreach (var n in Enumerable.Range(0, PooledElsewhere))
+                    {
+                        queue.Enqueue(await MakeElsewhereAsync($"Pooled {role} {n}", role));
                     }
                 }
             }
@@ -283,13 +343,19 @@ internal sealed partial class WebChatStack
     // A person of the home household a test makes for itself, by the name and role it gives: one of
     // the pool, renamed through their own account page as they could rename themselves, or — once the
     // pool is spent — made by the service's commands as an operator would.
-    public async Task<(string UserId, string Session)> PersonAsync(string name, string role)
+    public async Task<(string UserId, string Session)> PersonAsync(string name, string role, bool elsewhere = false)
     {
         var wanted = role == "owner" ? Role.Owner : Role.Member;
-        if (_pool.TryGetValue(wanted, out var queue) && queue.TryDequeue(out var pooled))
+        if (_pool.TryGetValue((elsewhere, wanted), out var queue) && queue.TryDequeue(out var pooled))
         {
             await RenameAsync(pooled.Session, name);
             return (pooled.Account.UserId, pooled.Session);
+        }
+
+        if (elsewhere)
+        {
+            throw new InvalidOperationException(
+                "the second household's pool is spent: raise PooledElsewhere, since the commands make people of the home alone");
         }
 
         var (_, created) = await AccountsAsync("create-user", "--name", name, "--role", role);
@@ -582,6 +648,7 @@ internal sealed partial class WebChatStack
             .WithResourceMapping(seededStore, SeededStorePath, AppUid, AppUid,
                 UnixFileModes.UserRead | UnixFileModes.UserWrite | UnixFileModes.GroupRead | UnixFileModes.OtherRead)
             .WithEnvironment("DATABASEPATH", SeededStorePath)
+            .WithEnvironment("HOUSEHOLDCONFIG__MASTERKEY", MasterKey)
             .WithNetwork(_network)
             .WithNetworkAliases("accounts")
             .WithExtraHost("host.docker.internal", "host-gateway")

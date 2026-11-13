@@ -10,10 +10,13 @@ namespace Tests.E2E.WebChat;
 // and is shown the link once, changes a member's sees-all, disables a member — who is signed out at
 // once — re-enables them and mints them a recovery link that opens their enrollment.
 //
-// Every person here is made for the test (create-user) in the home household: only they are changed,
-// never the signed-in owner or anybody seeded. What a disabled member is to Telegram, voice and the
+// Every person here is made for the test in the stack's second household (PersonElsewhereAsync), not
+// the home: a role, sees-all or a member disabled has every open page of the household renew its
+// connection, which in the home caught other collections' dictations and gestures mid-way. Only they
+// are changed, never anybody seeded. The members page is opened directly; the way in from the chat is
+// HouseholdAdminE2ETests'. What a disabled member is to Telegram, voice and the
 // agent is the admin API's seam (HouseholdMembersAdminTests) and the monitor's (ChatMonitorAssertionTests).
-[Collection(WebChatE2ECollections.Admin)]
+[Collection(WebChatE2ECollections.Members)]
 [Trait("Category", "E2E")]
 public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
 {
@@ -141,11 +144,11 @@ public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
 
     private async Task<IPage> MembersPageAsync(IPage page)
     {
-        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-        await page.GetByLabel("Household settings").ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
-        await page.WaitForURLAsync(new Regex("/admin/settings$"));
-        await page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = "Members" }).ClickAsync();
+        await page.GotoAsync(fixture.DefaultSpaceUrl + "admin/members");
         await page.WaitForURLAsync(new Regex("/admin/members$"));
+        // The area boots the app before it draws its menu.
+        await Assertions.Expect(page.GetByRole(AriaRole.Link, new PageGetByRoleOptions { Name = "Members" }))
+            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
         return page;
     }
 
@@ -186,7 +189,7 @@ public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
 
     private async Task<string> SessionOfAsync(string name, string role)
     {
-        return (await fixture.PersonAsync(name, role)).Session;
+        return (await fixture.PersonElsewhereAsync(name, role)).Session;
     }
 
 
