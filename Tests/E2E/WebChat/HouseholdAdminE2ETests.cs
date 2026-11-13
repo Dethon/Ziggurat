@@ -10,10 +10,11 @@ namespace Tests.E2E.WebChat;
 // same session, saving the household's settings through the admin API and showing what was saved; a
 // member is offered no way in and refused it anyway.
 //
-// Every person this stack signs in is in the home household, which every collection's turns run under,
-// so only the household's name is changed here — it is in no agent's prompt — and put back after, and an
-// agent added for a test is removed by it; the zone and the language are saved as they were. What a zone or a language does to a turn is the admin
-// API's seam (AdminApiTests).
+// Its owners are the stack's second household's (PersonElsewhereAsync), not the home's: an agent added
+// or renamed has every open page of the household fetch its agents again, which in the home caught the
+// other collections' model-menu taps mid-way. Only the household's name is changed here and put back
+// after, and an agent added for a test is removed by it; the zone and the language are saved as they
+// were. What a zone or a language does to a turn is the admin API's seam (AdminApiTests).
 [Collection(WebChatE2ECollections.Chat)]
 [Trait("Category", "E2E")]
 public partial class HouseholdAdminE2ETests(WebChatE2EFixture fixture)
@@ -52,9 +53,9 @@ public partial class HouseholdAdminE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("Saved.");
     }
 
-    // The home's own agents are what every collection's turns run, so this adds one of its own from a
-    // template, names it, restores the name it replaced and removes it, leaving the home's agents as
-    // they were — and removes it through the API should the page not get that far. What a rename does
+    // The household's agents are what its turns run, so this adds one of its own from a template,
+    // names it, restores the name it replaced and removes it, leaving the household's agents as they
+    // were — and removes it through the API should the page not get that far. What a rename does
     // to a turn is the admin API's seam (HouseholdAgentsAdminTests).
     [SkippableFact]
     public async Task AnOwner_AddsAnAgent_RenamesIt_RestoresItsName_AndRemovesIt()
@@ -179,7 +180,7 @@ public partial class HouseholdAdminE2ETests(WebChatE2EFixture fixture)
     // The stack's people are members; an owner is made for the test, as the operator's command makes one.
     private async Task<string> OwnerSessionAsync(string name)
     {
-        return (await fixture.PersonAsync(name, "owner")).Session;
+        return (await fixture.PersonElsewhereAsync(name, "owner")).Session;
     }
 
 }

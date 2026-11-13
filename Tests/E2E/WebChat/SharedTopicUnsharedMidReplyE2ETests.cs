@@ -36,7 +36,9 @@ public partial class SharedTopicUnsharedMidReplyE2ETests(WebChatE2EFixture fixtu
         var carlosRow = carlos.Locator(".topic-item", new PageLocatorOptions { HasText = row });
         await carlosRow.ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
 
-        var question = $"Wine {tag} again: write ten long paragraphs about the history of wine.";
+        // Long enough to still be streaming when the owner's click lands, and no longer: the test waits
+        // for the whole reply at the end, and ten paragraphs on a slow provider held the run two minutes.
+        var question = $"Wine {tag} again: write five long paragraphs about the history of wine.";
         await SendAsync(ana, question);
         await Assertions.Expect(carlos.Locator(".chat-message.streaming-cursor"))
             .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 90_000 });
