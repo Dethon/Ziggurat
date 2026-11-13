@@ -175,15 +175,13 @@ public class DomStabilityWaitTests(QuietBrowserFixture fixture) : IAsyncLifetime
             () => TimeChurningWaitAsync(
             """
             () => {
-                let n = 0;
-                setInterval(() => { document.getElementById('spinner').textContent = 'tick ' + ++n; }, 30);
+                // Longer every tick: the fingerprint is element count and text length, and a counter
+                // stays one length from tick 1 to tick 9, so under load this page read as settled.
+                setInterval(() => { document.getElementById('spinner').textContent += '.'; }, 30);
             }
             """));
 
-        // A share, not a span: beside a second suite both readings stretch, and the fastest cosmetic
-        // wait read 497ms against 856ms, inside a fixed 400ms margin while still settling well short
-        // of the cap. A spinner counted as rendering would make the two the same wait.
-        cosmetic.ShouldBeLessThan(neverSettles * 3 / 4);
+        cosmetic.ShouldBeLessThan(neverSettles - 400);
     }
 
     private async Task<long> TimeChurningWaitAsync(string churn)
