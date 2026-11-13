@@ -79,9 +79,18 @@ for this, and each shape below is one that has already failed here.
   navigates is the cost that capped how far this suite could be split
 - Use `[SkippableFact]` with `Skip.If(...)` to skip when the required stack is unavailable
 - Every chat-client page is behind the stack's session check, so a WebChat test opens its page with
-  `fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), ...)`: the index names an account the
-  stack's accounts service makes on first asking (`create-user`, then `mint-session`, by
-  `docker exec`), and the minted cookie is on the page's context before anything is opened. A page
+  `fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), ...)`: the index names an account with a
+  session, and the cookie is on the page's context before anything is opened. The stack's people are
+  made **before its accounts service starts** (`WebChatStack.SeedAccountsStoreAsync`: the store built
+  in the test process with the service's own stores and copied in) — each collection's first users by
+  index, a probe, and a pool a test that needs a person of its own takes with
+  `fixture.PersonAsync(name, role)` (renamed on their own account page). An accounts command in the
+  container is two .NET processes starting per person; those were the E2E run's floor, so a test
+  runs one (`AccountsAsync`) only when the command is its subject — a link, a second session. A test
+  that changes who a household's people are (a role, sees-all, a member disabled) takes its people
+  from the stack's second household (`fixture.PersonElsewhereAsync`): such a change has every open
+  page of the household renew its connection, which in the home caught other collections mid-way. A
+  page
   from plain `CreatePageAsync` is signed out and lands on sign-in. The stack is browsed at
   `localhost` on a port it takes up front, because the passkeys' relying party cannot be an IP and
   the session cookie is host-only.

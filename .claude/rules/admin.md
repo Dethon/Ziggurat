@@ -358,7 +358,7 @@ A Telegram group is bound from here too: `POST /household/members/telegram-group
   a sees-all and a "Reads everyone's Sugary log" checkbox saved together, Recovery link (not for the operator or the disabled), Disable
   behind a confirmation (not offered for the operator) or Re-enable, and the invite form. A minted link
   is shown in a `New link` region until the next change or a reload, never again. The E2E test makes its
-  own people (`create-user`) and changes only them.
+  own people, in the stack's second household (`PersonElsewhereAsync`), and changes only them.
 
 ## Features and spaces
 
@@ -609,12 +609,15 @@ would never pass (the cookie alone, plain headers, another channel's assertion, 
 Another household and its owner are `SeedHouseholdAsync(name, person)`. The turn side is the agent's
 reader against a real Redis (`HouseholdConfigurationClient` + `HouseholdAgentSource`), as
 `HouseholdConfigurationClientTests` does. Seam 2, `HouseholdAdminE2ETests` (the `Chat` collection): an
-owner is made by `create-user --role owner` and signed in with `CreatePageSignedInAsync(session)`.
-**Every E2E person is in the home household, whose turns every collection runs**: an E2E test changes
-nothing a turn reads (a zone, a language, a feature, an agent, a key) of the home — only its name, put
-back — and leaves turn-visible effects to seam 1. `HouseholdKeysE2ETests` so submits only a key the
-stub rejects, and shows the landing by answering the page's keys read as a keyless household's would
-be answered (`page.RouteAsync`); the E2E stack has no master key, so nothing there can save a key.
+owner is taken from the stack's seeded pool (`fixture.PersonAsync(name, "owner")`) and signed in with
+`CreatePageSignedInAsync(session)`. **E2E people are in the home household, whose turns every collection
+runs**: an E2E test changes nothing a turn reads (a zone, a language, a feature, an agent, a key) of the
+home — only its name, put back — and leaves turn-visible effects to seam 1. The exception is a test that
+changes who a household's people are (`HouseholdMembersE2ETests`, `SeesAllWithdrawnE2ETests`): it works
+in the stack's second household (`PersonElsewhereAsync`; the home's agents, a key of its own), since
+such a change has every open page of the household renew its connection. `HouseholdKeysE2ETests` so
+submits only a key the stub rejects, and shows the landing by answering the page's keys read as a
+keyless household's would be answered (`page.RouteAsync`); nothing there saves a key.
 Seam 1 for keys is `KeysAdminTests` against `FakeKeyProviders`; the turn side of a refused key is
 `MultiAgentFactoryHouseholdTests` (`FakeOpenRouter.Refuse`).
 
