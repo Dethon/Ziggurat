@@ -194,6 +194,12 @@ internal sealed partial class WebChatStack
 
     public static string NameOf(int userIndex) => $"TestUser-{userIndex}";
 
+    private static async Task StartAfterAsync(Task before, string what, IContainer container, CancellationToken ct)
+    {
+        await before;
+        await E2ETrace.TimeAsync(what, () => container.StartAsync(ct));
+    }
+
     // The session cookie's value for a user index, the account behind it made on first asking. Each
     // command is a .NET process started inside the container, about a second, so making all of the
     // stack's users up front would cost minutes nobody uses.
@@ -683,8 +689,9 @@ internal sealed partial class WebChatStack
             .Build();
 
         // Each container starts as soon as what it needs at start is up, not when a whole stage is:
-        // redis, the vault, the Sugary server, the accounts service, the hub and the webui need
-        // nothing but each other's names, which the network answers whenever they are asked. The
+        // redis, the vault, the Sugary server, the accounts service and the webui need nothing but
+        // each other's names, which the network answers whenever they are asked; the hub needs redis
+        // up (it connects as it starts). The
         // agent reads the home's agents from the accounts service and registers them with the hub
         // as it starts — a first read that failed would leave the hub with an empty catalogue until
         // the next — so it follows those two and redis; Caddy's readiness asks sign-in through the
@@ -726,7 +733,8 @@ internal sealed partial class WebChatStack
                     .ForPath("/hubs/chat/negotiate")
                     .WithMethod(HttpMethod.Post)))
             .Build();
-        var signalRStarted = E2ETrace.TimeAsync("start:signalr", () => _mcpChannelSignalR.StartAsync(ct));
+        // The hub connects to redis as it starts and exits if it cannot, so it follows redis.
+        var signalRStarted = StartAfterAsync(redisStarted, "start:signalr", _mcpChannelSignalR, ct);
 
         // Inject a minimal appsettings.json so the agent only connects to E2E services.
         // Raise with E2E_AGENT_LOG_LEVEL=Debug when a failing run needs the agent's own account
