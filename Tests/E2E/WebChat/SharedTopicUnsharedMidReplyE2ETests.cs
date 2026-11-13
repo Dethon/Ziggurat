@@ -47,6 +47,11 @@ public partial class SharedTopicUnsharedMidReplyE2ETests(WebChatE2EFixture fixtu
         await Assertions.Expect(carlosRow).ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 15_000 });
         await Assertions.Expect(Shown(carlos, question)).ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 15_000 });
         await Assertions.Expect(carlos.Locator(".chat-message.assistant")).ToHaveCountAsync(0);
+        // The turn's end is what is still to cross: its owner stops it rather than waiting out the
+        // provider's whole reply, which on a slow day ran past two minutes. A stopped reply ends its
+        // stream as a finished one does, and Carlos's page must hear neither.
+        await ana.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Stop the reply" })
+            .ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
         await IdleAsync(ana);
         await Assertions.Expect(carlos.Locator(".chat-message")).ToHaveCountAsync(0);
     }

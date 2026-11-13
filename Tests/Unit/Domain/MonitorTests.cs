@@ -250,7 +250,21 @@ internal sealed class FakeChannelConnection : IChannelConnection
     public IAsyncEnumerable<ChannelMessage> Messages =>
         StreamFailure is null ? _channel.Reader.ReadAllAsync() : throw StreamFailure;
 
-    public List<SendReplyParams> SentReplies { get; } = [];
+    // Replies arrive from every conversation group at once — a turn streaming while another message
+    // is refused — so the list is written under a lock and read as a copy; a plain List lost one now
+    // and then under a loaded suite.
+    private readonly List<SendReplyParams> _sentReplies = [];
+
+    public IReadOnlyList<SendReplyParams> SentReplies
+    {
+        get
+        {
+            lock (_sentReplies)
+            {
+                return [.. _sentReplies];
+            }
+        }
+    }
 
     public List<(string AgentId, string TopicName, string Sender, string? InitialPrompt, string? ExistingConversationId)> CreatedConversations { get; } = [];
 
@@ -267,7 +281,11 @@ internal sealed class FakeChannelConnection : IChannelConnection
             await ReplyGate();
         }
 
-        SentReplies.Add(reply);
+        lock (_sentReplies)
+        {
+            _sentReplies.Add(reply);
+        }
+
         OnReply?.Invoke(reply);
     }
 
