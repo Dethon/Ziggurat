@@ -19,6 +19,22 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
     // order, which is what xUnit would have done with all of them.
     private static readonly string[] _bootsSomething =
     [
+        // The classes that wait on a real model come first, by name: their time is the provider's
+        // and costs the machine almost nothing, but each is a serial chain of turns, and one offered
+        // its thread late ends the run — McpAgentFileSystemTests started at 77 s and finished at 124.
+        // Prefixes would not do: "McpAgent" matched fourteen classes, most of them quick unit tests,
+        // and pushed these past the threads that start at once.
+        "McpAgentFileSystemTests",
+        "McpAgentTests",
+        "McpAgentMultiFileSystemTests",
+        "McpAgentReasoningTests",
+        "MemoryExtractionResponseFormatTests",
+        "MemoryProfileSynthesisResponseFormatTests",
+        "MemoryConsolidationResponseFormatTests",
+        "SubAgentTests",
+        "ThreadSessionTests",
+        "ToolApprovalChatClientTests",
+        "OpenRouterToolCallingWithReasoningTests",
         "WebChatE2E.",
         // Every Camoufox collection — the shared chain, the timing pair and the isolated lanes —
         // waits on a browser container before its first test, and the class pinning a fingerprint
@@ -32,15 +48,8 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         "SugaryClip",
         "DashboardE2E",
         "DashboardAdminE2E",
-        // Named, ahead of the prefixes below: "Lemonade" and "McpAgent" match thirty-odd classes,
-        // most of them quick unit tests, and with a twenty-second WebChat collection the memory
-        // model classes fell past the threads that start at once — offered one at 53 s, they ended
-        // the run at 101. The Lemonade container's chain goes first for the same reason.
+        // The Lemonade container's chain by name: "Lemonade" matches nineteen classes.
         "LemonadeEntrypointConfigTests",
-        "MemoryExtractionResponseFormatTests",
-        "MemoryProfileSynthesisResponseFormatTests",
-        "MemoryConsolidationResponseFormatTests",
-        "Lemonade",
         // The longest classes that start nothing but their own in-process servers: a class is
         // serialised, so its sum is its length.
         "McpWebBrowseAsMeTests",
@@ -49,13 +58,11 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         // thread behind every unit test and then racing a three-minute readiness cap against a
         // daemon busy starting everything else. It boots something, so it belongs here.
         "HomeAssistantClientTests",
-        // The classes that wait on a real model: their time is the provider's, and a slow answer
-        // started late is a slow answer at the end of the run.
-        "McpAgent",
-        "SubAgentTests",
-        "ToolApprovalChatClientTests",
-        "ThreadSessionTests",
-        "OpenRouterToolCallingWithReasoningTests",
+        // The integration classes that otherwise start last and end the run.
+        "HouseholdMigrationCommandTests",
+        "SugaryPeopleApiTests",
+        "HouseholdChannelServersTests",
+        "Lemonade",
     ];
 
     public IEnumerable<ITestCollection> OrderTestCollections(IEnumerable<ITestCollection> testCollections) =>
