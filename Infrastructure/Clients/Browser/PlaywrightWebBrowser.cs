@@ -605,6 +605,16 @@ public class PlaywrightWebBrowser(
                 ? await GetNearbyHtmlAsync(page, targetSelector)
                 : null;
 
+            // Listening before the gesture, and for the commit alone. A wait begun after the click
+            // races the navigation it is waiting for, and waiting for the load event holds the answer
+            // until the new page's last picture arrives: a form that posted and redirected cost the
+            // whole thirty seconds whenever that event came late or not at all.
+            var navigated = request.WaitForNavigation
+                ? page.WaitForURLAsync(url => url != ctx.UrlBefore,
+                    new() { Timeout = 30000, WaitUntil = WaitUntilState.Commit })
+                : null;
+            _ = navigated?.ContinueWith(static t => t.Exception, TaskContinuationOptions.OnlyOnFaulted);
+
             switch (request.Action)
             {
                 case WebActionType.Click:
@@ -648,17 +658,25 @@ public class PlaywrightWebBrowser(
                         page.Url, false, null, null, $"Unhandled element action: {request.Action}"), null);
             }
 
-            if (request.WaitForNavigation)
+            if (navigated is not null)
             {
                 try
                 {
-                    await page.WaitForURLAsync(url => url != ctx.UrlBefore,
-                        new() { Timeout = 30000 });
+                    await navigated;
                 }
                 catch (TimeoutException)
                 {
                     await page.WaitForLoadStateAsync(LoadState.NetworkIdle,
                         new() { Timeout = 15000 });
+                }
+
+                try
+                {
+                    await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded, new() { Timeout = 15000 });
+                }
+                catch (TimeoutException)
+                {
+                    // A document still parsing after that is read as it stands.
                 }
             }
             else
