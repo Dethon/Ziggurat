@@ -51,18 +51,23 @@ public sealed class TypeSafeJudge : IJudge
         httpClient.BaseAddress = options.BaseAddress;
     }
 
-    // The empty key registers a judge that answers absence, so nothing downstream checks the key.
+    // The host's key may be empty: a judgment for a household that brought its own key is still asked
+    // on it, and one with no key at all answers absence without a call, so nothing downstream checks
+    // the key.
     public static IJudge Create(
         HttpClient httpClient, TypeSafeOptions options, IMetricsPublisher metricsPublisher, ILogger logger) =>
-        options.IsConfigured
-            ? new TypeSafeJudge(httpClient, options, metricsPublisher, logger)
-            : UnconfiguredJudge.Instance;
+        new TypeSafeJudge(httpClient, options, metricsPublisher, logger);
 
     public async Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline)
     {
         if (deadline.IsCancellationRequested)
         {
             return new JudgmentOutcome.Absent(AbsenceReason.Deadline);
+        }
+
+        if (request.Caller.Payer.Key is null && !_options.IsConfigured)
+        {
+            return new JudgmentOutcome.Absent(AbsenceReason.Unconfigured);
         }
 
         // A turn addressed to the local box sends nothing about itself to a hosted judge. Held
@@ -231,12 +236,4 @@ public sealed class TypeSafeJudge : IJudge
         [property: JsonPropertyName("input_tokens")] int InputTokens,
         [property: JsonPropertyName("output_tokens")] int OutputTokens,
         [property: JsonPropertyName("cost")] decimal? Cost);
-
-    private sealed class UnconfiguredJudge : IJudge
-    {
-        public static readonly UnconfiguredJudge Instance = new();
-
-        public Task<JudgmentOutcome> JudgeAsync(JudgmentRequest request, CancellationToken deadline) =>
-            Task.FromResult<JudgmentOutcome>(new JudgmentOutcome.Absent(AbsenceReason.Unconfigured));
-    }
 }

@@ -516,7 +516,8 @@ public class MemoryDreamingServiceTests
     }
 
     // A night's dreaming walks every household and its people: each person is dreamt for on their
-    // household's key — the home's on the deployment's — and counted under it; a household of its own
+    // household's key — the home's own when it saved one, which takes priority over the deployment's —
+    // and counted under it; a household of its own
     // that set no key is asked nothing, and a person the store names who is in no household is left alone.
     [Fact]
     public async Task RunDreamingAsync_EachHouseholdsPeople_AreDreamtForOnItsKeyAndCountedUnderIt()
@@ -538,7 +539,8 @@ public class MemoryDreamingServiceTests
         await _service.RunDreamingAsync(_now, CancellationToken.None);
 
         _consolidator.Verify(c => c.SynthesizeProfileAsync(
-            "fran", It.IsAny<IReadOnlyList<MemoryEntry>>(), new ModelPayer(Home, null), It.IsAny<CancellationToken>()), Times.Once);
+            "fran", It.IsAny<IReadOnlyList<MemoryEntry>>(), new ModelPayer(Home, new ModelKey("homes-own-key")), It.IsAny<CancellationToken>()),
+            Times.Once);
         _consolidator.Verify(c => c.SynthesizeProfileAsync(
             "luis", It.IsAny<IReadOnlyList<MemoryEntry>>(), new ModelPayer(Casa, new ModelKey("casa-key")), It.IsAny<CancellationToken>()),
             Times.Once);
@@ -576,7 +578,8 @@ public class MemoryDreamingServiceTests
         await _service.RunDreamingAsync(_now, CancellationToken.None);
 
         _consolidator.Verify(c => c.SynthesizeProfileAsync(
-            "fran", It.IsAny<IReadOnlyList<MemoryEntry>>(), new ModelPayer(Home, null), It.IsAny<CancellationToken>()), Times.Once);
+            "fran", It.IsAny<IReadOnlyList<MemoryEntry>>(), new ModelPayer(Home, null), It.IsAny<CancellationToken>()),
+            Times.Once);
         foreach (var left in new[] { "laura", "luis" })
         {
             _consolidator.Verify(c => c.SynthesizeProfileAsync(

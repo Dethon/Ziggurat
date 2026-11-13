@@ -247,8 +247,29 @@ public sealed class KeysAdminTests : IAsyncLifetime
         home.PaysWithDeploymentKey.ShouldBeTrue();
         home.OpenRouter.ShouldBeNull();
         home.NeedsOpenRouterKey.ShouldBeFalse();
+        home.IsHome.ShouldBeTrue();
         casa.PaysWithDeploymentKey.ShouldBeFalse();
+        casa.IsHome.ShouldBeFalse();
         casa.NeedsOpenRouterKey.ShouldBeTrue();
+    }
+
+    // A key saved for the home takes priority over the deployment's: its turns run on it, and the page
+    // says so rather than that the deployment's is used whatever is set.
+    [Fact]
+    public async Task TheHomeWithAKeyOfItsOwn_NoLongerPaysWithTheDeploymentsKey()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var owner = server.Admin(await server.MintSessionAsync(fran.UserId));
+        _providers.Accept(WorkingKey);
+
+        (await owner.PutAsync(AdminProtocol.OpenRouterKey, new OpenRouterKey(WorkingKey))).EnsureSuccessStatusCode();
+
+        var home = (await (await owner.GetAsync(AdminProtocol.Keys)).Content.ReadFromJsonAsync<HouseholdKeys>())!;
+        home.PaysWithDeploymentKey.ShouldBeFalse();
+        home.OpenRouter.ShouldNotBeNull().State.ShouldBe(KeyState.Working);
+        home.NeedsOpenRouterKey.ShouldBeFalse();
+        home.IsHome.ShouldBeTrue();
     }
 
     [Fact]

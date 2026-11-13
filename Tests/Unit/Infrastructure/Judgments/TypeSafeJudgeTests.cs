@@ -382,6 +382,23 @@ public class TypeSafeJudgeTests
         handler.Requests.ShouldBeEmpty();
     }
 
+    // A host with no key of its own still asks for a household that brought one: the agent's .env may
+    // hold no OpenRouter key once the home's is saved on its keys page (user, 2026-11-13).
+    [Fact]
+    public async Task Create_AnEmptyKey_StillAsksForAHouseholdOnItsOwnKey()
+    {
+        var handler = new ScriptedHandler(_ => Ok(Answered));
+        var judge = TypeSafeJudge.Create(
+            new HttpClient(handler), _options with { ApiKey = "" }, new RecordingMetricsPublisher(), new RecordingLogger());
+
+        var outcome = await judge.JudgeAsync(
+            AChoiceAndTwoNouls(new JudgmentCaller("m", "alice") { Payer = new ModelPayer("home", new ModelKey("homes-key")) }),
+            CancellationToken.None);
+
+        outcome.ShouldBeOfType<JudgmentOutcome.Answered>();
+        handler.Requests.ShouldHaveSingleItem().Authorization.ShouldBe("Bearer homes-key");
+    }
+
     // The one rule every use of Jev inherits by asking through this client: a turn addressed to
     // the local box sends nothing about itself to a hosted judge. Held here, where the request
     // would leave, and fed by a field no request can be built without — so a use written tomorrow

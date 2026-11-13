@@ -168,7 +168,7 @@ public sealed class KeysAdmin(
 
         var known = await checks.ForAsync(householdId, ct);
         return new HouseholdKeys(
-            household.IsHome,
+            household.IsHome && keys.OpenRouter is null,
             Status(KeySlot.OpenRouter, keys, known),
             Status(KeySlot.Idealista, keys, known),
             [
@@ -176,6 +176,7 @@ public sealed class KeysAdmin(
                     .Select(agent => new TelegramBotStatus(agent, Status(KeySlot.TelegramBot(agent), keys, known)!))
             ])
         {
+            IsHome = household.IsHome,
             Lemonade = keys.Lemonade switch
             {
                 { ThroughKit: true } => new LemonadeBoxStatus(null, null)

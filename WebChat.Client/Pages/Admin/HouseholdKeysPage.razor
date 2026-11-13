@@ -34,7 +34,7 @@
             <h2 id="admin-key-openrouter">OpenRouter</h2>
             @if (keys.PaysWithDeploymentKey)
             {
-                <p class="admin-field-hint">This household's agents run on the deployment's own key, whatever is set here.</p>
+                <p class="admin-field-hint">Until a key is set here, this household's agents run on the deployment's own key.</p>
             }
             else if (keys.NeedsOpenRouterKey)
             {
@@ -81,7 +81,7 @@
             <h2 id="admin-key-lemonade">Lemonade box</h2>
             <p class="admin-field-hint">
                 A Lemonade server of the household's own: the models on it are offered to the household's
-                people in the chat's model menu while it answers, and run on it. @(keys.PaysWithDeploymentKey
+                people in the chat's model menu while it answers, and run on it. @(keys.IsHome
                     ? "Left empty, the deployment's own box is used."
                     : "At an address, it must be reachable at a public https address.")
             </p>

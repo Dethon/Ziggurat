@@ -133,8 +133,9 @@ public sealed record AdminChangeEntry(
     string Summary,
     DateTimeOffset At);
 // What the household's keys are, never what they say: each saved key's state, when it was last
-// checked and its last few characters. The home household's agents run on the deployment's key
-// whatever its own section holds, so only another household needs an OpenRouter key of its own.
+// checked and its last few characters. A key saved for the home takes priority over the deployment's;
+// with none its agents run on the deployment's key (PaysWithDeploymentKey), so only another household
+// needs an OpenRouter key of its own.
 [PublicAPI]
 public sealed record HouseholdKeys(
     bool PaysWithDeploymentKey,
@@ -147,6 +148,9 @@ public sealed record HouseholdKeys(
 
     // The household's own Lemonade box: at its address with its key's state, or through the tenant kit.
     public LemonadeBoxStatus? Lemonade { get; init; }
+
+    // The home: with no box of its own it runs on the deployment's, and its own may be on its network.
+    public bool IsHome { get; init; }
 }
 
 // A box at an address: its address as saved and its key's state. A box through the tenant kit: neither,

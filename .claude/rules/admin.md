@@ -209,10 +209,13 @@ provider was asked** (`Accounts/Keys/KeyProbes.cs`):
   fingerprint is not the stored check's (the operator's command replaced it, asking nobody) reads
   **unchecked** with no check time.
 - **Never the key**: `HouseholdKeys { paysWithDeploymentKey, openRouter, idealista, telegramBots,
-  needsOpenRouterKey }`, each a `KeyStatus { state, lastCharacters, checkedAt, reason }` —
+  needsOpenRouterKey, isHome }`, each a `KeyStatus { state, lastCharacters, checkedAt, reason }` —
   `AdminProtocol.KeyCharactersShown` (4) last characters, none for a key under `ShortestKeyShown` (12),
   Idealista's from its API key alone, never its secret. `needsOpenRouterKey` is an owner's household
-  that is not the home and has no OpenRouter key: the home's agents pay with the deployment's key.
+  that is not the home and has no OpenRouter key. `paysWithDeploymentKey` is the home with no key of its
+  own: one saved for it takes priority (`HouseholdAgents.Payer`), and the page says the deployment's runs
+  only until one is set. `isHome` picks the Lemonade slot's wording (the home with no box runs on the
+  deployment's, and its own may be on its network).
 - **A key failing in a turn**: `RefusedKeyReportingChatClient` wraps the OpenRouter client of a turn
   sent on a household's own key (`MultiAgentFactory.CreateChatClient` with a key and its household; never
   the deployment's key, never the Lemonade box) and on a `ClientResultException` 401 — not a 402, which

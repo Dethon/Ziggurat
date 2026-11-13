@@ -66,6 +66,7 @@ public partial class HouseholdKeysE2ETests(WebChatE2EFixture fixture)
             var answered = await route.FetchAsync();
             var keys = JsonNode.Parse(await answered.TextAsync())!.AsObject();
             keys["paysWithDeploymentKey"] = false;
+            keys["isHome"] = false;
             keys["openRouter"] = null;
             keys["needsOpenRouterKey"] = true;
             await route.FulfillAsync(new RouteFulfillOptions { Response = answered, Body = keys.ToJsonString() });

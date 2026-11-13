@@ -62,14 +62,15 @@ public sealed record HouseholdAgents
     // The operator suspended the household: none of its turns or fires is run until it is resumed.
     public bool Suspended => Configuration?.Suspended == true;
 
-    // Who pays for its model calls: the home household's, like those of agents no household's
-    // configuration gave, go out on the deployment's own key, and any other household's on its own.
-    // Null for a household of its own that set none: it pays for nothing, so its turns are refused —
-    // its agents are still listed, since naming them costs nothing.
+    // Who pays for its model calls: a household with a key of its own on it — the home included, whose
+    // saved key takes priority over the deployment's (user, 2026-11-13) — and the home with none, like
+    // agents no household's configuration gave, on the deployment's own key. Null for any other
+    // household that set none: it pays for nothing, so its turns are refused — its agents are still
+    // listed, since naming them costs nothing.
     public ModelPayer? Payer => Configuration switch
     {
-        null or { IsHome: true } => new ModelPayer(HouseholdId, null),
         { OpenRouterApiKey: { Length: > 0 } key } => new ModelPayer(HouseholdId, new ModelKey(key)),
+        null or { IsHome: true } => new ModelPayer(HouseholdId, null),
         _ => null
     };
 

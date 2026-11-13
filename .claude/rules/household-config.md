@@ -237,9 +237,11 @@ The agent builds a turn's agents from the turn's household's view (`HouseholdAge
 Every model call made for a household goes out on its own OpenRouter key and is counted under it
 (`ModelPayer(TenantId, Key)`, `Domain/DTOs`; a null key is the host's own, the deployment's):
 
-- **`HouseholdAgents.Payer`** is the one rule: the home household — and agents no household's
-  configuration gave (`HouseholdAgents.Fixed`) — pays with the deployment's key whatever its keys
-  section holds; any other household with its own `OpenRouterApiKey`; one with none is null, and
+- **`HouseholdAgents.Payer`** is the one rule: a household with its own `OpenRouterApiKey` pays with
+  it — **the home too: a key saved for it takes priority over the deployment's** (user, 2026-11-13), so
+  the deployment's `.env` may hold none — and the home with none, like agents no household's
+  configuration gave (`HouseholdAgents.Fixed`), pays with the deployment's key; any other household
+  with none is null, and
   `MultiAgentFactory.CreateAsync` throws `HouseholdWithoutKeyException` before anything is built. The
   conversation group answers that turn as a refused one ends (`ConversationGroup.WithoutKeyAnswer`,
   an `Error` then `StreamComplete`; a fire, nobody waiting, only the errors feed's
@@ -261,7 +263,9 @@ Every model call made for a household goes out on its own OpenRouter key and is 
   household's key, its events and the merge's embeddings counted under it. A household that cannot
   pay or be read is not dreamt for that night, nor one suspended, nor a member its view lists as
   disabled; a user id in no household is left alone (one warning).
-- **Housekeeping stays the deployment's**: the keep-alive and model capabilities.
+- **Housekeeping stays the deployment's**: the keep-alive and model capabilities. With no deployment
+  key the keep-alive idles, and the agent's Jev still asks for every payer that brought a key
+  (`TypeSafeJudge`: a judgment with neither key is `Unconfigured`, no call).
 - **A shared server's Jev** (the voice approval reader, the web search modal judge) holds no
   household's key, so `JudgmentCaller.For(context)` names the call's household for the figures and
   asks on the server's own key.

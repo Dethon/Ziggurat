@@ -426,17 +426,30 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         _model.Requests.ShouldHaveSingleItem().Authorization.ShouldBe($"Bearer {HouseholdKey}");
     }
 
-    // The home's calls are the deployment's, even where its keys section holds one of its own.
-    [Theory]
-    [InlineData(null)]
-    [InlineData("homes-own-key")]
-    public async Task TheHomesTurn_IsSentWithTheDeploymentsKey(string? homesKey)
+    // The home with no key of its own is paid with the deployment's.
+    [Fact]
+    public async Task TheHomesTurn_WithNoKeyOfItsOwn_IsSentWithTheDeploymentsKey()
     {
-        _households.Add(Home, isHome: true, Settings(), Jonas(), key: homesKey);
+        _households.Add(Home, isHome: true, Settings(), Jonas(), key: null);
 
         await TurnAsync("jonas", Home);
 
         _model.Requests.ShouldHaveSingleItem().Authorization.ShouldBe("Bearer deployment-key");
+    }
+
+    // A key saved on the home's keys page takes priority over the deployment's (user, 2026-11-13), so
+    // the deployment's .env may hold none at all.
+    [Theory]
+    [InlineData("deployment-key")]
+    [InlineData("")]
+    public async Task TheHomesTurn_WithAKeyOfItsOwn_IsSentWithItsOwnKey(string deploymentKey)
+    {
+        _households.Add(Home, isHome: true, Settings(), Jonas(), key: "homes-own-key");
+        _deploymentKey = deploymentKey;
+
+        await TurnAsync("jonas", Home);
+
+        _model.Requests.ShouldHaveSingleItem().Authorization.ShouldBe("Bearer homes-own-key");
     }
 
     [Fact]
@@ -460,7 +473,7 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
         _model.Requests.ShouldBeEmpty();
     }
 
-    // The home is paid with the deployment's key. A deployment whose .env left it empty refuses the turn
+    // The home with no key of its own is paid with the deployment's. A deployment whose .env left it empty refuses the turn
     // as a household without a key is refused, saying so; building it threw out of the turn's setup and
     // the person was answered nothing at all.
     [Fact]
@@ -554,7 +567,7 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
     [Fact]
     public async Task TheDeploymentsKeyRefused_FailsAsTheProviderSaidIt()
     {
-        _households.Add(Home, isHome: true, Settings(), Jonas(), key: HouseholdKey);
+        _households.Add(Home, isHome: true, Settings(), Jonas(), key: null);
         _model.Refuse(HttpStatusCode.Unauthorized);
 
         var failure = await Should.ThrowAsync<Exception>(() => TurnAsync("jonas", Home));
@@ -568,7 +581,7 @@ public sealed class MultiAgentFactoryHouseholdTests : IAsyncLifetime
     [InlineData(false, HttpStatusCode.PaymentRequired)]
     public async Task ARefusalThatIsNotAHouseholdsKeyRefused_IsNotReported(bool home, HttpStatusCode status)
     {
-        _households.Add(home ? Home : Household, isHome: home, Settings(), Jonas(), key: HouseholdKey);
+        _households.Add(home ? Home : Household, isHome: home, Settings(), Jonas(), key: home ? null : HouseholdKey);
         _model.Refuse(status);
 
         await Should.ThrowAsync<Exception>(() => TurnAsync("jonas", home ? Home : Household));
