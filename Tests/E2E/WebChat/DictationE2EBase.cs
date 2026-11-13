@@ -112,14 +112,16 @@ public abstract class DictationE2EBase
         return page;
     }
 
-    // One held dictation, start to release, for cases that care only about how it ended.
+    // One held dictation, start to release, for cases that care only about how it ended. Held until
+    // the recorder holds that long of audio: timed from the strip, a loaded machine let go before
+    // the sound arrived and the case read an empty composer as whatever it was asserting.
     protected static async Task DictateAsync(ICDPSession cdp, IPage page, int holdMs)
     {
         var mic = await PressableMicAsync(page);
         await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
         await WithTraceAsync(page, () => Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 }));
-        await Task.Delay(holdMs);
+        await HoldUntilRecordedAsync(page, holdMs * FakeMicrophoneAudio.TranscriptionRate / 1_000, holdMs);
         await TouchAsync(cdp, "touchEnd");
     }
 

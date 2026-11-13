@@ -289,8 +289,8 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         await DictateAsync(cdp, page, HoldMs);
 
         // Words arriving proves the processed path carried a real recording end to end.
-        await Assertions.Expect(page.Locator("textarea.chat-input"))
-            .ToHaveValueAsync("una sola ruta", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+        await WithTraceAsync(page, () => Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToHaveValueAsync("una sola ruta", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 }));
 
         (await page.EvaluateAsync<int>("() => window.__opens.length")).ShouldBe(1);
         (await page.EvaluateAsync<bool>(

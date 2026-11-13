@@ -42,8 +42,14 @@ public static class FakeMicrophoneAudio
             return (short)(value * short.MaxValue);
         }).ToArray();
 
+        // Every test process writes this one path, and a second suite run beside the first rewrote
+        // it while the first's Chromium opened it: a truncated file is no microphone at all
+        // ("Requested device not found"), and every dictation test of both runs failed together.
+        // The bytes are the same each time, so a whole file renamed into place is safe to share.
         var path = Path.Combine(Path.GetTempPath(), "ziggurat-fake-microphone.wav");
-        File.WriteAllBytes(path, Wav(samples, CaptureRate));
+        var staging = $"{path}.{Environment.ProcessId}.tmp";
+        File.WriteAllBytes(staging, Wav(samples, CaptureRate));
+        File.Move(staging, path, overwrite: true);
         return path;
     }
 
