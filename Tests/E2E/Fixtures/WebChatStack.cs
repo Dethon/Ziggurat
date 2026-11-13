@@ -82,7 +82,7 @@ internal sealed partial class WebChatStack
     // takes one. They must be spaces of the household's configuration, which the stack saves as it
     // starts, or the client opens the household's first space instead.
     private static readonly string[] _spaces =
-        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey"];
+        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett", "lima", "mike", "november", "oscar", "papa", "quebec", "romeo", "sierra", "tango", "uniform", "victor", "whiskey", "xray", "yankee", "zulu", "omega"];
 
     // A space no collection works in, with a name, colour and agent of its own: what a person sees of
     // a space is its configuration's.
@@ -100,7 +100,7 @@ internal sealed partial class WebChatStack
     // full-viewport modal and clicked a button that detached from under it. Raise these when a
     // collection grows past its block rather than letting the counter wrap.
     public const int UsersPerCollection = 24;
-    public const int CollectionSlices = 22;
+    public const int CollectionSlices = 26;
 
     public string WebChatUrl { get; private set; } = "";
 
