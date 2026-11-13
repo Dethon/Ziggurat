@@ -13,7 +13,8 @@
     <h1 id="admin-agents-heading">Agents</h1>
     <p class="admin-lede">
         Each agent's name and the instructions it follows on top of its own. Everything else about an agent
-        — its model, its tools — is the template's it was made from.
+        — its model, its tools, its prompt sections — is the template's it was made from, or what was set up
+        for this household, and is shown read only under its full definition.
     </p>
 
     @if (_state.Notice is { } notice)
@@ -60,6 +61,18 @@
                         <button type="submit" class="admin-save" disabled="@_state.Saving">@(_state.Saving ? "Saving" : "Save")</button>
                     </div>
                 </form>
+
+                @if (agent.Definition is { } definition)
+                {
+                    <details class="admin-agent-definition">
+                        <summary>Full definition</summary>
+                        <p class="admin-field-hint">
+                            Read only: @(agent.Template is { } from ? $"the {from} template's" : "set up for this household"),
+                            with the name and instructions above.
+                        </p>
+                        <pre>@AgentDefinitionText.Of(definition)</pre>
+                    </details>
+                }
 
                 @if (_confirming == agent.Id)
                 {

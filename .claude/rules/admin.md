@@ -237,7 +237,10 @@ provider was asked** (`Accounts/Keys/KeyProbes.cs`):
 `HouseholdAgentsAdmin` over the agents section, and `AgentVersions` beside it (`Domain/DTOs/Admin/AdminAgents.cs`):
 `GET /household/agents` (`AdminAgents`: the default, each agent as `AdminAgent` — id, name, custom
 instructions, the template it was made from or none for a seeded definition, description and model shown,
-never edited — the shipped templates, and the instructions limit); `POST /household/agents`
+never edited, and its whole `definition` (`HouseholdAgents.DefinitionOf`: a seeded one as seeded, a template's
+entry as its template under the entry's id, name and instructions, before the deployment's servers are
+weighed), which the page shows read only as indented JSON (`AgentDefinitionText`, never a bot token; user,
+2026-11-13) — the shipped templates, and the instructions limit); `POST /household/agents`
 (`AgentAddition { template, name }`); `PUT`/`DELETE /household/agents/{agentId}` (`AgentEdit { name,
 customInstructions }`); `GET /household/agents/{agentId}/versions` (`AdminAgentVersion`, newest first) and
 `POST .../versions/{versionId}/restore`; `PUT /household/voice-agent` (`VoiceAgentChoice { agentId }`, null for

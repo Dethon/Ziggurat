@@ -28,6 +28,11 @@ public sealed record AdminAgent(
     bool MayAnswerAloud = true)
 {
     public const int NameLength = 100;
+
+    // Everything the agent is built from, shown and never edited: a seeded definition as seeded, a
+    // template's entry as its template under the entry's id, name and instructions. Null for an entry
+    // naming a template this build does not ship.
+    public AgentDefinition? Definition { get; init; }
 }
 
 [PublicAPI]

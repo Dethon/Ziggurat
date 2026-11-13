@@ -3417,6 +3417,28 @@ select:focus:not(:focus-visible) {
     min-width: 0;
 }
 
+.admin-agent-definition {
+    margin-top: 0.75rem;
+}
+
+.admin-agent-definition summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+}
+
+.admin-agent-definition pre {
+    margin: 0.5rem 0 0;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    font-size: 0.8125rem;
+    max-height: 24rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .admin-version-instructions {
     margin: 0.25rem 0 0;
     color: var(--text-secondary);

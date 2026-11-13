@@ -279,7 +279,9 @@ public static class HouseholdAgentsAdmin
 
     // An entry as an owner sees it, whichever kind: a seeded definition carries its own name and
     // instructions; a template's entry carries them beside the template, whose words and model are its.
-    private static AdminAgent Shown(HouseholdAgent entry) => entry switch
+    private static AdminAgent Shown(HouseholdAgent entry) => Listed(entry) with { Definition = HouseholdAgents.DefinitionOf(entry) };
+
+    private static AdminAgent Listed(HouseholdAgent entry) => entry switch
     {
         { Definition: { } definition } => new AdminAgent(
             entry.Id, definition.Name, definition.CustomInstructions, null, definition.Description, definition.Model,

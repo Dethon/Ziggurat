@@ -212,6 +212,23 @@ public sealed record HouseholdAgents
     // compose hosts a deployment runs them at, which one that runs no such server does not answer at.
     // A definition entry is its definition, which carries its own and is this deployment's.
     private static AgentDefinition? Definition(HouseholdAgent entry, SharedServers shared) =>
+        (entry.Definition, DefinitionOf(entry)) switch
+        {
+            (null, { } templated) => templated with
+            {
+                McpServerEndpoints =
+                [
+                    .. templated.McpServerEndpoints.Where(endpoint =>
+                        TunnelCredentialProtocol.IsServerName(endpoint) || SharedServers.Names(shared.All, endpoint))
+                ]
+            },
+            (_, var definition) => definition
+        };
+
+    // An entry's definition before any deployment's servers are weighed: a seeded one as seeded, a
+    // template's under the entry's id, name and instructions; null for a template this build does not
+    // ship. What an owner is shown of an agent (the admin area's agents page).
+    public static AgentDefinition? DefinitionOf(HouseholdAgent entry) =>
         entry switch
         {
             { Definition: { } definition } => definition with { Id = entry.Id },
@@ -220,12 +237,7 @@ public sealed record HouseholdAgents
                 {
                     Id = entry.Id,
                     Name = entry.Name ?? shipped.Name,
-                    CustomInstructions = entry.CustomInstructions,
-                    McpServerEndpoints =
-                    [
-                        .. shipped.McpServerEndpoints.Where(endpoint =>
-                            TunnelCredentialProtocol.IsServerName(endpoint) || SharedServers.Names(shared.All, endpoint))
-                    ]
+                    CustomInstructions = entry.CustomInstructions
                 }
                 : null,
             _ => null

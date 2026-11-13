@@ -402,6 +402,48 @@ public sealed class HouseholdAgentsAdminTests(RedisFixture redis) : IClassFixtur
         (await SendAsync(admin, HttpMethod.Delete, AdminProtocol.Agent("nobody"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
+    // An owner reads every agent's whole definition, though only its name and instructions are theirs
+    // to edit (user, 2026-11-13): a seeded one as it was seeded, a template's entry as its template under
+    // the entry's id, name and instructions.
+    [Fact]
+    public async Task EachAgent_IsAnsweredWithItsWholeDefinition()
+    {
+        await using var server = await StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var nabu = new AgentDefinition
+        {
+            Id = "nabu", Name = "Nabu", Model = "z-ai/glm-5.3", McpServerEndpoints = ["vault", "http://mcp-timers:8080/mcp"],
+            PromptSections = ["voice"], EnabledFeatures = ["memory"], ReasoningEffort = "low", Language = "es"
+        };
+        await SetAsync(server, fran.TenantId, HouseholdSections.Agents,
+            HouseholdSections.AgentsSchema.Write(new AgentsSection
+            {
+                DefaultAgent = "nabu",
+                Agents =
+                [
+                    new HouseholdAgent { Id = "nabu", Definition = nabu },
+                    new HouseholdAgent { Id = "chef", Template = AgentTemplates.Jonas, Name = "Chef", CustomInstructions = "Recipes." }
+                ]
+            }).ToJsonString());
+
+        var agents = (await AgentsAsync(server.Admin(await server.MintSessionAsync(fran.UserId)))).Agents;
+
+        agents.Single(a => a.Id == "nabu").Definition.ShouldNotBeNull().ShouldSatisfyAllConditions(
+            d => d.Model.ShouldBe(nabu.Model),
+            d => d.McpServerEndpoints.ShouldBe(nabu.McpServerEndpoints),
+            d => d.PromptSections.ShouldBe(nabu.PromptSections),
+            d => d.EnabledFeatures.ShouldBe(nabu.EnabledFeatures),
+            d => d.ReasoningEffort.ShouldBe("low"),
+            d => d.Language.ShouldBe("es"));
+        var template = AgentTemplates.Named(AgentTemplates.Jonas)!;
+        agents.Single(a => a.Id == "chef").Definition.ShouldNotBeNull().ShouldSatisfyAllConditions(
+            d => d.Id.ShouldBe("chef"),
+            d => d.Name.ShouldBe("Chef"),
+            d => d.CustomInstructions.ShouldBe("Recipes."),
+            d => d.Model.ShouldBe(template.Model),
+            d => d.McpServerEndpoints.ShouldBe(template.McpServerEndpoints));
+    }
+
     // A seeded definition — the home's own agents — carries its name and instructions in itself, so
     // that is where an owner's edit goes; its model, servers and sections stay as seeded, whatever
     // else the edit carries.
