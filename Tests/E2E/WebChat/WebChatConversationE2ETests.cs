@@ -106,9 +106,9 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
         // until it is answered; the wait answers it as it comes, as SendMessage_AppearsInChat's does.
         await WaitForAssistantTextAsync(page);
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await DismissApprovalOverlayAsync(page);
-        await page.Locator(".topic-item", new PageLocatorOptions { HasText = $"markup {tag}" })
-            .First.ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
+        var row = page.Locator(".topic-item", new PageLocatorOptions { HasText = $"markup {tag}" }).First;
+        await row.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        await ClickThroughApprovalsAsync(page, row);
         var kept = page.Locator(".message-content", new PageLocatorOptions { HasText = $"markup {tag} <img" }).First;
         await kept.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
         (await page.EvaluateAsync<string?>("() => document.body.dataset.xss ?? null")).ShouldBeNull();

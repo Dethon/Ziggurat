@@ -127,6 +127,12 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             ServiceWorkers = withoutServiceWorker ? ServiceWorkerPolicy.Block : ServiceWorkerPolicy.Allow
         });
         _mine.Add(context);
+
+        // A Blazor app's first load is several megabytes of WebAssembly, and on a machine running a
+        // second suite beside this one a whole stack's pages booting at once took a network-idle
+        // navigation past Playwright's thirty seconds. A page that never loads still fails, later.
+        context.SetDefaultNavigationTimeout(60_000);
+
         // The fake UI already answers the prompt; granting as well covers the permissions API,
         // which the page may consult before ever calling getUserMedia.
         await context.GrantPermissionsAsync(["microphone"]);

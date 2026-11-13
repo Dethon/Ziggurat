@@ -80,9 +80,13 @@ public class HomeStateMoveTests(HomeStateRedisFixture redis) : IClassFixture<Hom
         exit.ShouldBe(0, output);
         (await RememberedAsync(redis.Kit, "user-fran")).ShouldBe(Remembered(_franRemembers));
         (await new RedisDownloadRoutingStore(redis.Kit).ListAsync()).Select(r => r.DownloadId).ShouldBe([42]);
+        // Against the deployment's copy, read back to back: Redis expires by the wall clock, and the
+        // VM the containers run in steps it backwards, so a reading against the ten minutes it was
+        // minted with came back at 10:01.
         var ttl = await redis.Kit.GetDatabase().KeyTimeToLiveAsync($"websearch:link:{link}");
+        var deploymentTtl = await redis.Deployment.GetDatabase().KeyTimeToLiveAsync($"websearch:link:{link}");
         ttl.ShouldNotBeNull("a one-time link keeps its expiry");
-        ttl.Value.ShouldBeLessThanOrEqualTo(TimeSpan.FromMinutes(10));
+        (ttl.Value - deploymentTtl!.Value).Duration().ShouldBeLessThan(TimeSpan.FromSeconds(1));
         (await new OneTimeLinks(redis.Kit).ClaimAsync(link, "handoff")).ShouldBe(new OneTimeLinks.Ticket("handoff", "h-1"));
         output.ShouldContain("remembered logins: 1 copied");
         output.ShouldContain("one-time links: 1 copied");

@@ -180,7 +180,10 @@ public class DomStabilityWaitTests(QuietBrowserFixture fixture) : IAsyncLifetime
             }
             """));
 
-        cosmetic.ShouldBeLessThan(neverSettles - 400);
+        // A share, not a span: beside a second suite both readings stretch, and the fastest cosmetic
+        // wait read 497ms against 856ms, inside a fixed 400ms margin while still settling well short
+        // of the cap. A spinner counted as rendering would make the two the same wait.
+        cosmetic.ShouldBeLessThan(neverSettles * 3 / 4);
     }
 
     private async Task<long> TimeChurningWaitAsync(string churn)
