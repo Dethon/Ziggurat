@@ -387,12 +387,16 @@ public class ChatMonitorAssertionTests
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 30, 12, 0, 0, TimeSpan.Zero));
         var keys = new CountingKeys(TestAssertions.Keys);
         var lifetime = TimeSpan.FromMinutes(10);
+        // The verifier reads the time once per assertion, after its key and signature; counting those
+        // reads says the second turn was dated before the clock moves. Counting key lookups did not:
+        // a lookup is counted as it starts, and a loaded machine moved the clock in between.
+        var verifierClock = new ReadCountingClock(clock);
         var run = new Run(
-            verifier: new AssertionVerifier(keys, clock),
+            verifier: new AssertionVerifier(keys, verifierClock),
             turnGate: async _ =>
             {
                 // The first turn holds until the second has been checked, then runs past its expiry.
-                await Eventually.Until(() => keys.Lookups >= 2, "the queued turn to be checked as it arrived");
+                await Eventually.Until(() => verifierClock.Reads >= 2, "the queued turn to be checked as it arrived");
                 clock.Advance(TimeSpan.FromMinutes(15));
             });
         run.Channel.WriteMessage(Message(content: "first") with
@@ -526,6 +530,20 @@ public class ChatMonitorAssertionTests
     }
 
     // The accounts test key, counting how often a verifier looks a key up: once per assertion it checks.
+    private sealed class ReadCountingClock(TimeProvider inner) : TimeProvider
+    {
+        private int _reads;
+
+        public int Reads => Volatile.Read(ref _reads);
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            var now = inner.GetUtcNow();
+            Interlocked.Increment(ref _reads);
+            return now;
+        }
+    }
+
     private sealed class CountingKeys(IVerificationKeys inner) : IVerificationKeys
     {
         private int _lookups;

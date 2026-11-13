@@ -156,6 +156,9 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
     {
         var overlay = page.Locator(".approval-modal-overlay");
         var rejectBtn = page.Locator(".btn-reject");
+        // Somebody else's question, shown to a page that sees all the household's topics: the card
+        // offers no answer, only Close, which clears this page and answers nothing.
+        var closeBtn = page.Locator(".btn-close-approval");
 
         var deadline = DateTime.UtcNow + budget;
         while (DateTime.UtcNow < deadline && await overlay.IsVisibleAsync())
@@ -166,6 +169,20 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
                 // Nothing is on screen any more — the prompt went away while this was asking, which
                 // is the goal rather than a state to keep working at.
                 return;
+            }
+
+            if (!await rejectBtn.IsVisibleAsync() && await closeBtn.IsVisibleAsync())
+            {
+                try
+                {
+                    await closeBtn.ClickAsync(new LocatorClickOptions { Timeout = 5_000 });
+                }
+                catch (Exception ex) when (ex is TimeoutException or PlaywrightException)
+                {
+                    // Replaced or cleared from under the click; read what is showing now.
+                }
+
+                continue;
             }
 
             if (!await rejectBtn.IsVisibleAsync())
