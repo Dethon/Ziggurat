@@ -12,7 +12,7 @@ namespace Tests.E2E.WebChat;
 // The server is the test's own, named with its tag in the home household: no agent definition names
 // it, so no turn is touched. A server connecting with the credential shown, and a revocation closing
 // its tunnel, are the admin API's seam against the real relay (HouseholdServersAdminTests).
-[Collection(WebChatE2ECollections.Servers)]
+[Collection(WebChatE2ECollections.Admin)]
 [Trait("Category", "E2E")]
 public partial class HouseholdServersE2ETests(WebChatE2EFixture fixture)
 {

@@ -205,22 +205,10 @@ public class WebChatE2EApprovalsCollection : ICollectionFixture<WebChatE2EFixtur
 [CollectionDefinition(WebChatE2ECollections.ListScroll)]
 public class WebChatE2EListScrollCollection : ICollectionFixture<WebChatE2EFixture>;
 
+// The twenty-second, which fills the slices the stack has (WebChatCollectionSliceTests): a further
+// collection needs a space name and CollectionSlices raised.
 [CollectionDefinition(WebChatE2ECollections.DictationLong)]
 public class WebChatE2EDictationLongCollection : ICollectionFixture<WebChatE2EFixture>;
-
-[CollectionDefinition(WebChatE2ECollections.Usage)]
-public class WebChatE2EUsageCollection : ICollectionFixture<WebChatE2EFixture>;
-
-[CollectionDefinition(WebChatE2ECollections.Servers)]
-public class WebChatE2EServersCollection : ICollectionFixture<WebChatE2EFixture>;
-
-[CollectionDefinition(WebChatE2ECollections.MembersConcurrent)]
-public class WebChatE2EMembersConcurrentCollection : ICollectionFixture<WebChatE2EFixture>;
-
-// The twenty-sixth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
-// collection needs a space name and CollectionSlices raised.
-[CollectionDefinition(WebChatE2ECollections.TopicScroll)]
-public class WebChatE2ETopicScrollCollection : ICollectionFixture<WebChatE2EFixture>;
 
 public static class WebChatE2ECollections
 {
@@ -246,8 +234,4 @@ public static class WebChatE2ECollections
     public const string Approvals = "WebChatE2E.Approvals";
     public const string ListScroll = "WebChatE2E.ListScroll";
     public const string DictationLong = "WebChatE2E.DictationLong";
-    public const string Usage = "WebChatE2E.Usage";
-    public const string Servers = "WebChatE2E.Servers";
-    public const string MembersConcurrent = "WebChatE2E.MembersConcurrent";
-    public const string TopicScroll = "WebChatE2E.TopicScroll";
 }

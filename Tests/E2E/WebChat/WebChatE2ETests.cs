@@ -7,7 +7,7 @@ using Tests.E2E.Fixtures;
 
 namespace Tests.E2E.WebChat;
 
-[Collection(WebChatE2ECollections.People)]
+[Collection(WebChatE2ECollections.Chat)]
 [Trait("Category", "E2E")]
 public class WebChatE2ETests(WebChatE2EFixture fixture)
 {
