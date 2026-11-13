@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
@@ -75,15 +76,70 @@ public sealed partial class AccountsServer : IAsyncDisposable
             AgentKeysUrl = TestJwks.AgentUrl
         };
         settings = configure?.Invoke(settings) ?? settings;
-        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 29, 9, 0, 0, TimeSpan.Zero));
+        var clock = new FakeTimeProvider(StartedAt);
+        await FromTemplateAsync(settings.DatabasePath);
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseKestrel(options => options.Listen(IPAddress.Loopback, port));
         builder.Services.AddAccounts(settings, new AccountsClock(clock));
+        // The model diff EF makes on every migration is asked once, by MigrationsMatchTheModelTests;
+        // a store copied from the template has nothing left to migrate.
+        builder.Services.ConfigureDbContext<AccountsDbContext>(options =>
+            options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
         var app = builder.Build();
         app.MapAccounts();
         await app.StartAsync();
         return new AccountsServer(app, settings, clock, port, directory, ownsDirectory);
+    }
+
+    private static readonly DateTimeOffset StartedAt = new(2026, 10, 29, 9, 0, 0, TimeSpan.Zero);
+
+    // A store migrated and seeded once per run, as the service prepares one at its first start, copied
+    // for each server whose file does not exist yet: migrating a fresh SQLite file per test was the
+    // suite's largest CPU cost. Each copy's home household gets an id of its own, because tests share
+    // Redis, whose announcements and pub/sub name households by id and ignore the leased database.
+    private static readonly Lazy<Task<byte[]>> _template = new(MigrateTemplateAsync);
+
+    private static async Task FromTemplateAsync(string databasePath)
+    {
+        if (File.Exists(databasePath))
+        {
+            return;
+        }
+
+        await File.WriteAllBytesAsync(databasePath, await _template.Value);
+        await using var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False");
+        await connection.OpenAsync();
+        await using var rekey = connection.CreateCommand();
+        rekey.CommandText = """UPDATE "Tenants" SET "Id" = $id WHERE "IsHome" = 1""";
+        rekey.Parameters.AddWithValue("$id", Tokens.NewId());
+        (await rekey.ExecuteNonQueryAsync()).ShouldBe(1, "the template holds the home household");
+    }
+
+    private static async Task<byte[]> MigrateTemplateAsync()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "accounts-tests", "template-" + Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "accounts.db");
+        try
+        {
+            var clock = new AccountsClock(new FakeTimeProvider(StartedAt));
+            await using (var services = new ServiceCollection()
+                             .AddAccountsCore(new AccountsSettings { DatabasePath = path }, clock)
+                             .BuildServiceProvider())
+            {
+                await AccountsDatabase.PrepareAsync(
+                    services.GetRequiredService<IDbContextFactory<AccountsDbContext>>(), clock.Time, CancellationToken.None);
+            }
+
+            SqliteConnection.ClearAllPools();
+            return await File.ReadAllBytesAsync(path);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            System.IO.Directory.Delete(directory, recursive: true);
+        }
     }
 
     public T Service<T>() where T : notnull => _app.Services.GetRequiredService<T>();

@@ -12,6 +12,7 @@ using McpServerSugary.Modules;
 using McpServerSugary.Store;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using ModelContextProtocol.Client;
@@ -95,6 +96,7 @@ public sealed class SugaryServer : IAsyncDisposable
             Uploads = new UploadSettings { StoragePath = Path.Combine(directory, "uploads") }
         };
         settings = configure?.Invoke(settings) ?? settings;
+        await FromTemplateAsync(settings);
 
         // The agents every household runs, as the accounts service would list them on a person's
         // assertion: what a photo sent to the sugary agent is checked against. Empty until a test
@@ -124,11 +126,57 @@ public sealed class SugaryServer : IAsyncDisposable
                     collection.AddSingleton(sp => ActivatorUtilities.CreateInstance<OpenEstimates>(sp, estimateClock));
                 }
 
+                // The model diff EF makes on every migration is asked once, by
+                // MigrationsMatchTheModelTests; a store copied from the template has nothing to migrate.
+                collection.ConfigureDbContext<SugaryDbContext>(options =>
+                    options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
+
                 // A test's own stand-ins, registered last so they win.
                 services?.Invoke(collection);
             },
             map: app => app.MapSugaryApp(), webRoot: webRoot);
         return new SugaryServer(server, settings, directory) { HouseholdAgents = householdAgents };
+    }
+
+    // A store migrated once per run, copied for each server whose file does not exist yet — a test
+    // that builds a log from before a migration has made its own file first, and is left it. Migrating
+    // a fresh SQLite file per test was most of what a server cost to start.
+    private static readonly Lazy<Task<byte[]>> _template = new(MigrateTemplateAsync);
+
+    private static async Task FromTemplateAsync(SugarySettings settings)
+    {
+        if (File.Exists(settings.DatabasePath))
+        {
+            return;
+        }
+
+        System.IO.Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(settings.DatabasePath))!);
+        await File.WriteAllBytesAsync(settings.DatabasePath, await _template.Value);
+    }
+
+    private static async Task<byte[]> MigrateTemplateAsync()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "sugary-tests", "template-" + Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "sugary.db");
+        try
+        {
+            await using (var services = new ServiceCollection()
+                             .AddDbContextFactory<SugaryDbContext>(options => options.UseSqlite($"Data Source={path}"))
+                             .BuildServiceProvider())
+            {
+                await SugaryDatabase.MigrateAsync(
+                    services.GetRequiredService<IDbContextFactory<SugaryDbContext>>(), CancellationToken.None);
+            }
+
+            SqliteConnection.ClearAllPools();
+            return await File.ReadAllBytesAsync(path);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            System.IO.Directory.Delete(directory, recursive: true);
+        }
     }
 
     // A request that did not come through the proxy: it carries nobody's headers.
