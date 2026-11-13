@@ -32,6 +32,24 @@ public class BraveSearchClientTests : IAsyncLifetime
 
     private bool HasApiKey => !string.IsNullOrEmpty(_apiKey);
 
+    // The key's plan answers a second request within its window with 429, and two suites running at
+    // once share it: that is the API saying "later", not the client failing, so a refused request is
+    // asked again after the window rather than read as a defect.
+    private static async Task<WebSearchResult> SearchWithinTheRateLimitAsync(BraveSearchClient client, WebSearchQuery query)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await client.SearchAsync(query);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests && attempt < 6)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1.5 * attempt));
+            }
+        }
+    }
+
     [SkippableFact]
     public async Task SearchAsync_WithRealApi_ReturnsResults()
     {
@@ -42,7 +60,7 @@ public class BraveSearchClientTests : IAsyncLifetime
 
         // Act
         var query = new WebSearchQuery("Dune movie 2024", MaxResults: 5);
-        var result = await client.SearchAsync(query);
+        var result = await SearchWithinTheRateLimitAsync(client, query);
 
         // Assert
         result.ShouldNotBeNull();
@@ -63,7 +81,7 @@ public class BraveSearchClientTests : IAsyncLifetime
 
         // Act
         var query = new WebSearchQuery("Oppenheimer", MaxResults: 5, Site: "imdb.com");
-        var result = await client.SearchAsync(query);
+        var result = await SearchWithinTheRateLimitAsync(client, query);
 
         // Assert
         result.ShouldNotBeNull();
@@ -84,7 +102,7 @@ public class BraveSearchClientTests : IAsyncLifetime
             "technology news",
             MaxResults: 5,
             DateRange: DateRange.Week);
-        var result = await client.SearchAsync(query);
+        var result = await SearchWithinTheRateLimitAsync(client, query);
 
         // Assert
         result.ShouldNotBeNull();

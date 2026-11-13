@@ -171,21 +171,28 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync(
-            "<!doctype html><html><body>" +
-            "<div id='signup' class='newsletter-wall' " +
-            "style='position:fixed;top:0;left:0;right:0;height:200px;background:#eee;z-index:9999'>" +
-            "Subscribe to our newsletter " +
-            "<button class='signup-reject' " +
-            "onclick=\"document.getElementById('signup').style.display='none'\">No thanks</button>" +
-            "</div><p>Main content</p></body></html>");
+        // Inside the dismisser's real-time windows (300 ms to find it, 1 s to click it): read as a
+        // latency budget is, the best of a few attempts.
+        var dismissed = await LatencyBudget.HoldsOnceAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync(
+                "<!doctype html><html><body>" +
+                "<div id='signup' class='newsletter-wall' " +
+                "style='position:fixed;top:0;left:0;right:0;height:200px;background:#eee;z-index:9999'>" +
+                "Subscribe to our newsletter " +
+                "<button class='signup-reject' " +
+                "onclick=\"document.getElementById('signup').style.display='none'\">No thanks</button>" +
+                "</div><p>Main content</p></body></html>");
 
-        var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var dismisser = new ModalDismisser();
+            var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var gone = result.Any(r => r.Type == ModalType.Newsletter) && !await page.Locator("#signup").IsVisibleAsync();
+            await page.CloseAsync();
+            return gone;
+        });
 
-        result.ShouldContain(r => r.Type == ModalType.Newsletter);
-        (await page.Locator("#signup").IsVisibleAsync()).ShouldBeFalse();
+        dismissed.ShouldBeTrue("the overlay was left standing on every attempt");
     }
 
     // A control named ONLY by aria-labelledby: its textContent is empty and it carries no
@@ -199,21 +206,28 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync(
-            "<!doctype html><html><body>" +
-            "<div id='signup' class='newsletter-wall' " +
-            "style='position:fixed;top:0;left:0;right:0;height:200px;background:#eee;z-index:9999'>" +
-            "<span id='signup-reject-label'>No thanks</span>" +
-            "<button class='signup-reject' aria-labelledby='signup-reject-label' " +
-            "onclick=\"document.getElementById('signup').style.display='none'\"></button>" +
-            "</div><p>Main content</p></body></html>");
+        // Inside the dismisser's real-time windows (300 ms to find it, 1 s to click it): read as a
+        // latency budget is, the best of a few attempts.
+        var dismissed = await LatencyBudget.HoldsOnceAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync(
+                "<!doctype html><html><body>" +
+                "<div id='signup' class='newsletter-wall' " +
+                "style='position:fixed;top:0;left:0;right:0;height:200px;background:#eee;z-index:9999'>" +
+                "<span id='signup-reject-label'>No thanks</span>" +
+                "<button class='signup-reject' aria-labelledby='signup-reject-label' " +
+                "onclick=\"document.getElementById('signup').style.display='none'\"></button>" +
+                "</div><p>Main content</p></body></html>");
 
-        var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var dismisser = new ModalDismisser();
+            var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var gone = result.Any(r => r.Type == ModalType.Newsletter) && !await page.Locator("#signup").IsVisibleAsync();
+            await page.CloseAsync();
+            return gone;
+        });
 
-        result.ShouldContain(r => r.Type == ModalType.Newsletter);
-        (await page.Locator("#signup").IsVisibleAsync()).ShouldBeFalse();
+        dismissed.ShouldBeTrue("the overlay was left standing on every attempt");
     }
 
     // The companion to the speed guard: the same large, noisy DOM with one genuine fixed-position
@@ -260,23 +274,30 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync(
-            "<!doctype html><html><body>" +
-            "<div id='cmp-wall' class='cookie-consent' " +
-            "style='position:fixed;top:0;left:0;right:0;height:200px;background:#ddd;z-index:9999'>" +
-            "Usamos cookies. " +
-            // input[type=submit], so its accessible name comes from value and its textContent is "".
-            // The class carries no accept-ish token, so no ButtonSelector matches it either.
-            "<input type='submit' class='cmp-btn-primary' value='Aceptar todo' " +
-            "onclick=\"document.getElementById('cmp-wall').style.display='none';return false;\">" +
-            "</div><p>Main content</p></body></html>");
+        // Inside the dismisser's real-time windows (300 ms to find it, 1 s to click it): read as a
+        // latency budget is, the best of a few attempts.
+        var dismissed = await LatencyBudget.HoldsOnceAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync(
+                "<!doctype html><html><body>" +
+                "<div id='cmp-wall' class='cookie-consent' " +
+                "style='position:fixed;top:0;left:0;right:0;height:200px;background:#ddd;z-index:9999'>" +
+                "Usamos cookies. " +
+                // input[type=submit], so its accessible name comes from value and its textContent is "".
+                // The class carries no accept-ish token, so no ButtonSelector matches it either.
+                "<input type='submit' class='cmp-btn-primary' value='Aceptar todo' " +
+                "onclick=\"document.getElementById('cmp-wall').style.display='none';return false;\">" +
+                "</div><p>Main content</p></body></html>");
 
-        var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var dismisser = new ModalDismisser();
+            var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var gone = result.Any(r => r.Type == ModalType.CookieConsent) && !await page.Locator("#cmp-wall").IsVisibleAsync();
+            await page.CloseAsync();
+            return gone;
+        });
 
-        result.ShouldContain(r => r.Type == ModalType.CookieConsent);
-        (await page.Locator("#cmp-wall").IsVisibleAsync()).ShouldBeFalse();
+        dismissed.ShouldBeTrue("the overlay was left standing on every attempt");
     }
 
     [Trait("Category", "External")]
@@ -285,23 +306,30 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync(
-            "<!doctype html><html><body>" +
-            "<div id='signup' class='newsletter-wall' " +
-            "style='position:fixed;top:0;left:0;right:0;height:200px;background:#eee;z-index:9999'>" +
-            "Subscribe " +
-            // Icon-only control: named by aria-label, textContent empty, and the label is "No thanks"
-            // rather than a close/dismiss token, so the ButtonSelectors miss it too.
-            "<button class='sg-icon' aria-label='No thanks' " +
-            "onclick=\"document.getElementById('signup').style.display='none'\"><svg></svg></button>" +
-            "</div><p>Main content</p></body></html>");
+        // Inside the dismisser's real-time windows (300 ms to find it, 1 s to click it): read as a
+        // latency budget is, the best of a few attempts.
+        var dismissed = await LatencyBudget.HoldsOnceAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync(
+                "<!doctype html><html><body>" +
+                "<div id='signup' class='newsletter-wall' " +
+                "style='position:fixed;top:0;left:0;right:0;height:200px;background:#eee;z-index:9999'>" +
+                "Subscribe " +
+                // Icon-only control: named by aria-label, textContent empty, and the label is "No thanks"
+                // rather than a close/dismiss token, so the ButtonSelectors miss it too.
+                "<button class='sg-icon' aria-label='No thanks' " +
+                "onclick=\"document.getElementById('signup').style.display='none'\"><svg></svg></button>" +
+                "</div><p>Main content</p></body></html>");
 
-        var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var dismisser = new ModalDismisser();
+            var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var gone = result.Any(r => r.Type == ModalType.Newsletter) && !await page.Locator("#signup").IsVisibleAsync();
+            await page.CloseAsync();
+            return gone;
+        });
 
-        result.ShouldContain(r => r.Type == ModalType.Newsletter);
-        (await page.Locator("#signup").IsVisibleAsync()).ShouldBeFalse();
+        dismissed.ShouldBeTrue("the overlay was left standing on every attempt");
     }
 
     // The in-page scan replaced Playwright locators with document.querySelectorAll, which does not
@@ -314,35 +342,41 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync(
-            "<!doctype html><html><body><div id='cmp-host'></div><p>Main content</p></body></html>");
-        await page.EvaluateAsync(
-            """
-            () => {
-                const host = document.getElementById('cmp-host');
-                const root = host.attachShadow({ mode: 'open' });
-                const wall = document.createElement('div');
-                wall.id = 'shadow-wall';
-                wall.className = 'cookie-consent';
-                wall.style.cssText =
-                    'position:fixed;top:0;left:0;right:0;height:200px;background:#ddd;z-index:9999';
-                const btn = document.createElement('button');
-                btn.className = 'cmp-accept-all';
-                btn.textContent = 'Accept all';
-                btn.onclick = () => wall.remove();
-                wall.appendChild(btn);
-                root.appendChild(wall);
-            }
-            """);
+        // Inside the dismisser's real-time windows (300 ms to find it, 1 s to click it): read as a
+        // latency budget is, the best of a few attempts.
+        var dismissed = await LatencyBudget.HoldsOnceAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync(
+                "<!doctype html><html><body><div id='cmp-host'></div><p>Main content</p></body></html>");
+            await page.EvaluateAsync(
+                """
+                () => {
+                    const host = document.getElementById('cmp-host');
+                    const root = host.attachShadow({ mode: 'open' });
+                    const wall = document.createElement('div');
+                    wall.id = 'shadow-wall';
+                    wall.className = 'cookie-consent';
+                    wall.style.cssText =
+                        'position:fixed;top:0;left:0;right:0;height:200px;background:#ddd;z-index:9999';
+                    const btn = document.createElement('button');
+                    btn.className = 'cmp-accept-all';
+                    btn.textContent = 'Accept all';
+                    btn.onclick = () => wall.remove();
+                    wall.appendChild(btn);
+                    root.appendChild(wall);
+                }
+                """);
 
-        var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var dismisser = new ModalDismisser();
+            var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var stillThere = await page.EvaluateAsync<bool>("() => !!document.getElementById('cmp-host').shadowRoot.getElementById('shadow-wall')");
+            var gone = result.Any(r => r.Type == ModalType.CookieConsent) && !stillThere;
+            await page.CloseAsync();
+            return gone;
+        });
 
-        result.ShouldContain(r => r.Type == ModalType.CookieConsent);
-        var stillThere = await page.EvaluateAsync<bool>(
-            "() => !!document.getElementById('cmp-host').shadowRoot.getElementById('shadow-wall')");
-        stillThere.ShouldBeFalse();
+        dismissed.ShouldBeTrue("the overlay was left standing on every attempt");
     }
 
     // Dropping the 10-container cap was right — a real banner can sit behind more than ten

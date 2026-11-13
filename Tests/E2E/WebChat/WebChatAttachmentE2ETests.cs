@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.E2E.Fixtures;
@@ -62,10 +63,15 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         await attachment.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // The reply is the proof the turn reached the agent and its record was written; reloading
-        // before it races the history read against the agent's own persistence. Waited as
-        // SendMessage_AppearsInChat waits: up to the provider's worst case (three minutes), returning
-        // the moment text appears — ninety seconds ran out once with two suites sharing the provider.
-        await WebChatConversationE2ETests.WaitForAssistantTextAsync(page);
+        // before it races the history read against the agent's own persistence. Read off the
+        // conversation's row, whose preview is its last message's words — the question until the
+        // reply is kept, then the reply — rather than off the streamed bubble: what this case is
+        // about is the record the reload reads, and drawing a reply as it streams is
+        // SendMessage_AppearsInChat's. Up to the provider's worst case, returning when it lands.
+        var row = page.Locator(".topic-item", new PageLocatorOptions { HasText = $"What is in this picture? {tag}" }).First;
+        await Assertions.Expect(row.Locator(".topic-preview"))
+            .ToHaveTextAsync(new Regex(@"^(?![\s\S]*What is in this picture)[\s\S]*\S"),
+                new LocatorAssertionsToHaveTextOptions { Timeout = 180_000 });
 
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
