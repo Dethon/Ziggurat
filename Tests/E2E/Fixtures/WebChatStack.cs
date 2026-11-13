@@ -228,7 +228,11 @@ internal sealed partial class WebChatStack
 
     private async Task<byte[]> SeedAccountsStoreAsync(CancellationToken ct)
     {
-        var directory = Path.Combine(Path.GetTempPath(), "e2e-accounts", Guid.NewGuid().ToString("N"));
+        // In memory where the host has it: some seven hundred commits, each an fsync on a disk, made
+        // this two seconds at the head of the stack's start. The file is read whole and copied into
+        // the container, so nothing needs it to survive.
+        var root = Directory.Exists("/dev/shm") ? "/dev/shm" : Path.GetTempPath();
+        var directory = Path.Combine(root, "e2e-accounts", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "accounts.db");
         try
@@ -629,6 +633,60 @@ internal sealed partial class WebChatStack
                     .ForStatusCode(HttpStatusCode.Unauthorized)))
             .Build();
 
+        // Started before the accounts store is seeded: none of them reads it, and the seed is two
+        // seconds of this process's work they would otherwise wait behind.
+        var redisStarted = E2ETrace.TimeAsync("start:redis", () => _redis.StartAsync(ct));
+        var vaultStarted = E2ETrace.TimeAsync("start:vault", () => _mcpVault.StartAsync(ct));
+        var sugaryStarted = E2ETrace.TimeAsync("start:sugary", () => _mcpSugary.StartAsync(ct));
+
+        _webui = TestContainers.Container(webuiImageName)
+            .WithNetwork(_network)
+            .WithNetworkAliases("webui")
+            .WithPortBinding(8080, true)
+            // Empty string: browser falls back to relative /hubs/chat, which Caddy routes to mcp-channel-signalr
+            .WithEnvironment("AGENTURL", "")
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/manifest.webmanifest")))
+            .Build();
+
+        // The webui serves files and reaches nothing.
+        var webUiStarted = E2ETrace.TimeAsync("start:webui", () => _webui.StartAsync(ct));
+
+        var whisperPortTask = StartWhisperStubAsync();
+        var whisperPort = await whisperPortTask;
+
+        _mcpChannelSignalR = TestContainers.Container(signalRImageName)
+            .WithNetwork(_network)
+            .WithNetworkAliases("mcp-channel-signalr")
+            .WithPortBinding(8080, true)
+            .WithEnvironment("REDISCONNECTIONSTRING", "redis:6379")
+            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-channel-signalr"))
+            .WithEnvironment("MCP__AUDIENCE", "mcp-channel-signalr")
+            .WithEnvironment("MCP__AGENTKEYSURL", AgentKeysUrl)
+            // Dictation reaches whisper through the shared transcription client, so pointing its
+            // base URL at the test's own listener is the whole of the substitution.
+            .WithExtraHost("host.docker.internal", "host-gateway")
+            .WithEnvironment(
+                "DICTATION__TRANSCRIPTION__BASEURL", $"http://host.docker.internal:{whisperPort}/v1")
+            .WithEnvironment("DICTATION__MAXLENGTH", RecordingCap.ToString())
+            // One row a page, so a suite that can afford two conversations still exercises the
+            // second fetch. The production default is thirty and lives in appsettings.
+            .WithEnvironment("RETENTION__PAGESIZE", "1")
+            .WithEnvironment("AGENTS__0__ID", "test-agent")
+            .WithEnvironment("AGENTS__0__NAME", "Test Agent")
+            .WithEnvironment("AGENTS__1__ID", "vision-agent")
+            .WithEnvironment("AGENTS__1__NAME", "Vision Agent")
+            // POST negotiate succeeds only after Kestrel has fully bound routes; TCP-only
+            // checks return before the app is actually serving requests.
+            .WithWaitStrategy(Wait.ForUnixContainer()
+                .UntilHttpRequestIsSucceeded(r => r
+                    .ForPort(8080)
+                    .ForPath("/hubs/chat/negotiate")
+                    .WithMethod(HttpMethod.Post)))
+            .Build();
+        // The hub connects to redis as it starts and exits if it cannot, so it follows redis.
+        var signalRStarted = StartAfterAsync(redisStarted, "start:signalr", _mcpChannelSignalR, ct);
+
         // The browser reaches everything through Caddy at localhost on a port taken here rather than
         // one Docker picks, because the accounts service has to be told where it is served before
         // Caddy exists: a passkey belongs to its relying party, which cannot be an IP address, and
@@ -697,44 +755,7 @@ internal sealed partial class WebChatStack
         // the next — so it follows those two and redis; Caddy's readiness asks sign-in through the
         // accounts service, so it follows the services it fronts. Stages of whole sets made the stack
         // the E2E run's first sixteen seconds.
-        var whisperPortTask = StartWhisperStubAsync();
-        var redisStarted = E2ETrace.TimeAsync("start:redis", () => _redis.StartAsync(ct));
-        var vaultStarted = E2ETrace.TimeAsync("start:vault", () => _mcpVault.StartAsync(ct));
-        var sugaryStarted = E2ETrace.TimeAsync("start:sugary", () => _mcpSugary.StartAsync(ct));
         var accountsStarted = E2ETrace.TimeAsync("start:accounts", () => _accounts.StartAsync(ct));
-        var whisperPort = await whisperPortTask;
-
-        _mcpChannelSignalR = TestContainers.Container(signalRImageName)
-            .WithNetwork(_network)
-            .WithNetworkAliases("mcp-channel-signalr")
-            .WithPortBinding(8080, true)
-            .WithEnvironment("REDISCONNECTIONSTRING", "redis:6379")
-            .WithEnvironment("MCP__SHAREDSECRET", McpTestSecret.For("mcp-channel-signalr"))
-            .WithEnvironment("MCP__AUDIENCE", "mcp-channel-signalr")
-            .WithEnvironment("MCP__AGENTKEYSURL", AgentKeysUrl)
-            // Dictation reaches whisper through the shared transcription client, so pointing its
-            // base URL at the test's own listener is the whole of the substitution.
-            .WithExtraHost("host.docker.internal", "host-gateway")
-            .WithEnvironment(
-                "DICTATION__TRANSCRIPTION__BASEURL", $"http://host.docker.internal:{whisperPort}/v1")
-            .WithEnvironment("DICTATION__MAXLENGTH", RecordingCap.ToString())
-            // One row a page, so a suite that can afford two conversations still exercises the
-            // second fetch. The production default is thirty and lives in appsettings.
-            .WithEnvironment("RETENTION__PAGESIZE", "1")
-            .WithEnvironment("AGENTS__0__ID", "test-agent")
-            .WithEnvironment("AGENTS__0__NAME", "Test Agent")
-            .WithEnvironment("AGENTS__1__ID", "vision-agent")
-            .WithEnvironment("AGENTS__1__NAME", "Vision Agent")
-            // POST negotiate succeeds only after Kestrel has fully bound routes; TCP-only
-            // checks return before the app is actually serving requests.
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(r => r
-                    .ForPort(8080)
-                    .ForPath("/hubs/chat/negotiate")
-                    .WithMethod(HttpMethod.Post)))
-            .Build();
-        // The hub connects to redis as it starts and exits if it cannot, so it follows redis.
-        var signalRStarted = StartAfterAsync(redisStarted, "start:signalr", _mcpChannelSignalR, ct);
 
         // Inject a minimal appsettings.json so the agent only connects to E2E services.
         // Raise with E2E_AGENT_LOG_LEVEL=Debug when a failing run needs the agent's own account
@@ -787,18 +808,6 @@ internal sealed partial class WebChatStack
                 .UntilMessageIsLogged("Application started"))
             .Build();
 
-        _webui = TestContainers.Container(webuiImageName)
-            .WithNetwork(_network)
-            .WithNetworkAliases("webui")
-            .WithPortBinding(8080, true)
-            // Empty string: browser falls back to relative /hubs/chat, which Caddy routes to mcp-channel-signalr
-            .WithEnvironment("AGENTURL", "")
-            .WithWaitStrategy(Wait.ForUnixContainer()
-                .UntilHttpRequestIsSucceeded(r => r.ForPort(8080).ForPath("/manifest.webmanifest")))
-            .Build();
-
-        // The webui serves files and reaches nothing.
-        var webUiStarted = E2ETrace.TimeAsync("start:webui", () => _webui.StartAsync(ct));
         await Task.WhenAll(redisStarted, accountsStarted, signalRStarted);
         var agentStarted = E2ETrace.TimeAsync("start:agent", () => _agent.StartAsync(ct));
 
