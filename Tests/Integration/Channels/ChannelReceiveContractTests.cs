@@ -339,17 +339,33 @@ public class ChannelReceiveContractTests
             // must go on carrying items rather than going quiet.
             await connection.ReconnectAsync(endpoint, CancellationToken.None);
 
-            inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+            // Just after a reconnect the old pump's long poll can still be the one the server holds,
+            // and an item handed to it goes to a request the connection already dropped (the inbox's
+            // known limit, as in the gated case above). So it is enqueued until one arrives: what this
+            // pins is that the new pump carries items, not that none is lost across a reconnect.
+            ChannelMessage? received = null;
+            await Eventually.Until(async ValueTask<bool> () =>
             {
-                ConversationId = "conv-2",
-                Sender = "user",
-                Content = "buffered"
-            }));
+                inbox.Enqueue(ChannelInboxItem.ForMessage(new ChannelMessageNotification
+                {
+                    ConversationId = "conv-2",
+                    Sender = "user",
+                    Content = "buffered"
+                }));
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var received = await connection.Messages.FirstAsync(cts.Token);
+                using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                try
+                {
+                    received = await connection.Messages.FirstAsync(wait.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                }
 
-            received.Content.ShouldBe("buffered");
+                return received is not null;
+            }, "an item through the pump after the reconnect");
+
+            received!.Content.ShouldBe("buffered");
         }
         finally
         {

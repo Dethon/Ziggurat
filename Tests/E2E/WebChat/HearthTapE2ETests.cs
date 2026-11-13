@@ -45,7 +45,30 @@ public sealed class HearthTapE2ETests(WebChatE2EFixture fixture) : HearthE2EBase
         await Assertions.Expect(page.Locator(".hearth-search-input")).ToBeVisibleAsync();
         await page.WaitForTimeoutAsync(800);
 
+        // The trigger is drawn only while the selected agent's catalogue entry offers models, and
+        // under the full suite's load it was missing for ten seconds now and then — the page between
+        // states this test is not about. It is a precondition, so it gets the time a busy machine
+        // takes, and a miss says what the page was showing.
         var trigger = page.Locator(".hearth .agent-config-trigger:visible").First;
+        try
+        {
+            await Assertions.Expect(trigger).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        }
+        catch (PlaywrightException)
+        {
+            var state = await page.EvaluateAsync<string>(
+                """
+                () => JSON.stringify({
+                    status: document.querySelector('.connection-status, .hearth-status')?.textContent?.trim() ?? null,
+                    agents: [...document.querySelectorAll('.agent-seg-name')].map(e => e.textContent.trim()),
+                    hearth: document.querySelector('.hearth')?.className ?? null,
+                    triggers: document.querySelectorAll('.agent-config-trigger').length,
+                    overlay: document.querySelectorAll('.approval-modal-overlay').length
+                })
+                """);
+            throw new TimeoutException($"No model menu trigger after 30 s; the page showed {state}");
+        }
+
         await trigger.ClickAsync(new LocatorClickOptions { Timeout = 10_000 });
         var menu = page.Locator(".agent-config-menu:visible");
         await Assertions.Expect(menu).ToBeVisibleAsync();
