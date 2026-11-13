@@ -61,7 +61,9 @@ public class AccountPageTests
         var page = await server.SignedIn(session).PageAsync(Account);
 
         page.ShouldContain("Signed in 02/11/2026 19:08");
-        page.ShouldNotContain("UTC");
+        // The device's own line, not the whole page: the page carries a random antiforgery token, and
+        // "utc" read case-insensitively turns up in one now and then.
+        System.Text.RegularExpressions.Regex.Match(page, "Signed in [^<]*").Value.ShouldNotContain("UTC");
     }
 
     // The chat client opens this page by navigating away from itself, and an installed app has no

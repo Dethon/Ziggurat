@@ -38,7 +38,8 @@ public class HouseholdListE2ETests(DashboardAdminE2EFixture fixture)
         await Assertions.Expect(Row(page, "Home")).ToContainTextAsync("Fran");
 
         await page.ReloadAsync();
-        await Assertions.Expect(Row(page, "Casa Pérez")).ToBeVisibleAsync();
+        // A reload boots the WASM app again before the list is asked for, as the first open does.
+        await Assertions.Expect(Row(page, "Casa Pérez")).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
         (await page.GetByLabel(LinkField).CountAsync()).ShouldBe(0, "a link is shown once");
     }
 

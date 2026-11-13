@@ -173,6 +173,16 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         var detentAfterGesture = settle.SheetClass;
 
         var aim = await AimAtAnUnselectedRowAsync(page, tag);
+        // The overlay cleared before the drag can come back during it — this test's own topics are
+        // turns on a real model, which may answer one with a tool call — and then it is what every
+        // row hit-tests to. That is a leaked overlay, not the sheet swallowing a tap: clear it and aim
+        // again, as the drag's own guard above does.
+        if (aim.Name.Length == 0 && await page.Locator(".approval-modal-overlay").CountAsync() > 0)
+        {
+            await WebChatE2ETests.DismissApprovalOverlayAsync(page);
+            aim = await AimAtAnUnselectedRowAsync(page, tag);
+        }
+
         var msSinceRelease = (DateTime.UtcNow - releasedAt).TotalMilliseconds;
 
         var selected = "<never tapped: no reachable unselected row>";
