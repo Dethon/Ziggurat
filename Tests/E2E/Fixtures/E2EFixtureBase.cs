@@ -65,6 +65,13 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     {
         var headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false";
 
+        // What an expectation that names no timeout waits for: an admin page's answer to a save
+        // crosses the app, the proxy, the session check and the accounts service, and two suites
+        // running at once took that past Playwright's five seconds. An expectation returns as soon as
+        // it holds, so the larger cap costs a passing test nothing; every wait that relies on timing
+        // out quickly names its own.
+        Assertions.SetDefaultExpectTimeout(20_000);
+
         _sharedPlaywright = await Playwright.CreateAsync();
         return await _sharedPlaywright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {

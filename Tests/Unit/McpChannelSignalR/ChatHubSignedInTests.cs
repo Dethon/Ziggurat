@@ -145,7 +145,7 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
     {
         var connection = await ConnectAsync(Forwarded(Fran, assertion), out var closed);
 
-        var reason = await closed.WaitAsync(TimeSpan.FromSeconds(30));
+        var reason = await closed.WaitAsync(TimeSpan.FromSeconds(10));
 
         reason.ShouldNotBeNull().Message.ShouldContain("not signed in");
         await Should.ThrowAsync<Exception>(
@@ -270,14 +270,17 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
         _store.Setup(s => s.GetHistoryAsync("jack", 7, 42)).ReturnsAsync([]);
         var phone = await ConnectAsync(SignedInOn(Phone), out var phoneClosed);
         var laptop = await ConnectAsync(SignedInOn(Laptop), out var laptopClosed);
+        // A client's start returns at the handshake, while the hub may still be settling who the
+        // connection is — which is where it is held by its session. A call is answered only after
+        // that, so one on each says both are held before their sessions are ended.
+        await phone.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", "jack", 7L, 42L);
+        await laptop.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", "jack", 7L, 42L);
         _accounts.Revoked.Add(Phone);
 
         await _app.Services.GetRequiredService<SessionConnections>()
             .CloseEndedAsync(new SessionsEnded(Home, Fran), CancellationToken.None);
 
-        // The close crosses a real socket to the client; the wait ends when it lands, and only a hang
-        // spends the cap, which a fully loaded suite reached at ten seconds.
-        (await phoneClosed.WaitAsync(TimeSpan.FromSeconds(30))).ShouldBeNull();
+        (await phoneClosed.WaitAsync(TimeSpan.FromSeconds(10))).ShouldBeNull();
         await Should.ThrowAsync<Exception>(
             () => phone.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", "jack", 7L, 42L));
         (await laptop.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", "jack", 7L, 42L)).ShouldBeEmpty();
@@ -290,6 +293,8 @@ public sealed class ChatHubSignedInTests : IAsyncLifetime
     {
         _store.Setup(s => s.GetHistoryAsync("jack", 7, 42)).ReturnsAsync([]);
         var phone = await ConnectAsync(SignedInOn(Phone), out var phoneClosed);
+        // Held by its session first (see above), or nothing is there to leave open.
+        await phone.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", "jack", 7L, 42L);
         _accounts.Fails = true;
 
         await _app.Services.GetRequiredService<SessionConnections>()
