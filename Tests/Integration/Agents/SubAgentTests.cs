@@ -90,23 +90,30 @@ public class SubAgentTests(RedisFixture redisFixture)
             toolFeature.GetTools(featureConfig).ToList(),
             []);
 
-        var responses = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => agent
-            .RunStreamingAsync(
-                "Use the run_subagent tool with echo-agent to echo: 'Hello from subagent'.",
-                cancellationToken: ct)
-            .ToUpdateAiResponsePairs()
-            .Where(x => x.Item2 is not null)
-            .Select(x => x.Item2!)
-            .ToListAsync(ct)
-            .AsTask());
+        static string Combined(IEnumerable<AiResponse> rs) =>
+            string.Join(" ", rs.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
+
+        // A real model now and then calls a tool nobody offered it ("start_loop") and reports the
+        // error instead; that is the provider's turn, not the subagent path, so it is asked again.
+        var responses = await LlmAttempt.UntilAsync(
+            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => agent
+                .RunStreamingAsync(
+                    "Use the run_subagent tool with echo-agent to echo: 'Hello from subagent'.",
+                    cancellationToken: ct)
+                .ToUpdateAiResponsePairs()
+                .Where(x => x.Item2 is not null)
+                .Select(x => x.Item2!)
+                .ToListAsync(ct)
+                .AsTask()),
+            rs => rs.Any(r => r.ToolCalls.Contains("run_subagent"))
+                  && Combined(rs).Contains("Hello from subagent", StringComparison.OrdinalIgnoreCase));
 
         responses.ShouldNotBeEmpty();
 
         responses.ShouldContain(r => r.ToolCalls.Contains("run_subagent"),
             "The parent agent should have invoked the run_subagent tool");
 
-        var combined = string.Join(" ", responses.Select(r => r.Content).Where(c => !string.IsNullOrEmpty(c)));
-        combined.ShouldContain("Hello from subagent", Case.Insensitive);
+        Combined(responses).ShouldContain("Hello from subagent", Case.Insensitive);
     }
 
     [SkippableFact]

@@ -556,8 +556,10 @@ public class MemoryRecallHookTests
 
         await EnrichAndExtractAsync(message, User1, null, null, session, CancellationToken.None);
 
-        // Fire-and-forget, give it a moment
-        await Task.Delay(50);
+        // Fire-and-forget: wait for the call, not for a while.
+        await Eventually.Until(
+            () => _store.Invocations.Any(i => i.Method.Name == nameof(IMemoryStore.UpdateAccessAsync)),
+            "the recalled memory's access was recorded");
 
         _store.Verify(s => s.UpdateAccessAsync("user1", "mem_1", It.IsAny<CancellationToken>()), Times.Once);
     }
