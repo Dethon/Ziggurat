@@ -7,7 +7,7 @@ namespace Tests.E2E.WebChat;
 // A member granted every topic of the household had another person's private one open when the grant
 // was withdrawn: the list lost it and the hub refused its history, but the conversation stayed on their
 // screen. A withdrawal reaches the open page at once and closes what it may no longer see.
-[Collection(WebChatE2ECollections.Chat)]
+[Collection(WebChatE2ECollections.People)]
 [Trait("Category", "E2E")]
 public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
 {

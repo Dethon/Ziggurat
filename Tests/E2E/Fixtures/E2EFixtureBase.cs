@@ -90,7 +90,10 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     // how a tap bug can reproduce on a phone and pass here.
     // withoutServiceWorker: for a test that answers the page's own requests (page.RouteAsync), which
     // a service worker would answer first, out of the route's sight.
-    public async Task<IPage> CreatePageAsync(bool hasTouch = false, bool isMobile = false, bool withoutServiceWorker = false)
+    public Task<IPage> CreatePageAsync(bool hasTouch = false, bool isMobile = false, bool withoutServiceWorker = false) =>
+        E2ETrace.TimeAsync("page:create", () => CreatePageCoreAsync(hasTouch, isMobile, withoutServiceWorker));
+
+    private async Task<IPage> CreatePageCoreAsync(bool hasTouch, bool isMobile, bool withoutServiceWorker)
     {
         if (_browser is null)
         {

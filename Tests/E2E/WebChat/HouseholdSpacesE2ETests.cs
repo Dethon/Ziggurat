@@ -17,7 +17,7 @@ namespace Tests.E2E.WebChat;
 // so the features page is opened and never saved here; what a toggle does to a turn is the admin API's
 // seam (HouseholdFeaturesAdminTests), and where a removed space's topics are listed is the hub's
 // (ChatHubSpacesTests).
-[Collection(WebChatE2ECollections.Chat)]
+[Collection(WebChatE2ECollections.Admin)]
 [Trait("Category", "E2E")]
 public partial class HouseholdSpacesE2ETests(WebChatE2EFixture fixture)
 {

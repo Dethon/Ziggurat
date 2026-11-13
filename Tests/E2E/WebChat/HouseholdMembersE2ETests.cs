@@ -13,7 +13,7 @@ namespace Tests.E2E.WebChat;
 // Every person here is made for the test (create-user) in the home household: only they are changed,
 // never the signed-in owner or anybody seeded. What a disabled member is to Telegram, voice and the
 // agent is the admin API's seam (HouseholdMembersAdminTests) and the monitor's (ChatMonitorAssertionTests).
-[Collection(WebChatE2ECollections.Chat)]
+[Collection(WebChatE2ECollections.Admin)]
 [Trait("Category", "E2E")]
 public partial class HouseholdMembersE2ETests(WebChatE2EFixture fixture)
 {

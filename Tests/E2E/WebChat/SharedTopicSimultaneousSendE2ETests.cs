@@ -9,7 +9,7 @@ namespace Tests.E2E.WebChat;
 // neither drew the other person's message: the resume drew only the stream's one current prompt and
 // a send's wire dropped people's messages. Ana saw the reply to Carlos's message, never the message,
 // until a reload. Several rounds, both orders, since which page wins is the race.
-[Collection(WebChatE2ECollections.Chat)]
+[Collection(WebChatE2ECollections.People)]
 [Trait("Category", "E2E")]
 public partial class SharedTopicSimultaneousSendE2ETests(WebChatE2EFixture fixture)
 {

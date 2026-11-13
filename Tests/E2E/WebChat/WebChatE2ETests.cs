@@ -134,7 +134,8 @@ public class WebChatE2ETests(WebChatE2EFixture fixture)
         // the connect used to be given apiece.
         try
         {
-            await Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 });
+            await E2ETrace.TimeAsync("page:composer-enabled", () =>
+                Assertions.Expect(chatInput).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 }));
         }
         catch (TimeoutException)
         {

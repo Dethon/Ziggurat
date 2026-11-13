@@ -15,7 +15,7 @@ namespace Tests.E2E.WebChat;
 // What a saved key, an unchecked one and a key failing in a turn do is the admin API's seam
 // (KeysAdminTests). The home's agents run on the deployment's key, so its owners never land on the
 // page; an owner whose household has none is shown here by the answer such a household's keys get.
-[Collection(WebChatE2ECollections.Chat)]
+[Collection(WebChatE2ECollections.Admin)]
 [Trait("Category", "E2E")]
 public partial class HouseholdKeysE2ETests(WebChatE2EFixture fixture)
 {

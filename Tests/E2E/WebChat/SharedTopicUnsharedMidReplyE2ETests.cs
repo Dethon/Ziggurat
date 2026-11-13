@@ -7,7 +7,7 @@ namespace Tests.E2E.WebChat;
 // Ana made a topic private while its reply streamed on Carlos's page: his page tried to drop it by
 // asking the hub to stop Ana's reply, was refused, kept the row, and the hub kept sending him the reply
 // as it was written. Once private, the topic and its reply leave his page at once and stay gone.
-[Collection(WebChatE2ECollections.Chat)]
+[Collection(WebChatE2ECollections.People)]
 [Trait("Category", "E2E")]
 public partial class SharedTopicUnsharedMidReplyE2ETests(WebChatE2EFixture fixture)
 {

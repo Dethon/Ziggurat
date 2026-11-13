@@ -56,8 +56,16 @@ public class WebChatE2EFixture : E2EFixtureBase
     private int _userBlock;
     private string _space = "";
 
-    public int NextUserIndex() =>
-        _userBlock + (int)((uint)Interlocked.Increment(ref _userIndex) % WebChatStack.UsersPerCollection);
+    // Asking for one makes the next one in the background, so a collection's tests find their user
+    // already made.
+    public int NextUserIndex()
+    {
+        var next = Interlocked.Increment(ref _userIndex);
+        Stack.Prefetch(IndexAt(next + 1));
+        return IndexAt(next);
+    }
+
+    private int IndexAt(int position) => _userBlock + (int)((uint)position % WebChatStack.UsersPerCollection);
 
     // Every page of the chat client is behind the session check, so a test's page carries its
     // user's session before it opens anything: the account for that index, made on first asking,
@@ -98,6 +106,7 @@ public class WebChatE2EFixture : E2EFixtureBase
     {
         _stack = await WebChatStack.AcquireAsync(ct);
         (_userBlock, _space) = _stack.ReserveSlice();
+        _stack.Prefetch(IndexAt(0));
     }
 
     protected override Task StopContainersAsync() => WebChatStack.ReleaseAsync();
@@ -141,10 +150,21 @@ public class WebChatE2ETopicsCollection : ICollectionFixture<WebChatE2EFixture>;
 [CollectionDefinition(WebChatE2ECollections.Attachments)]
 public class WebChatE2EAttachmentsCollection : ICollectionFixture<WebChatE2EFixture>;
 
-// The tenth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
-// collection needs a space name and CollectionSlices raised.
 [CollectionDefinition(WebChatE2ECollections.Sugary)]
 public class WebChatE2ESugaryCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// The household's admin pages but its settings: each class makes its own owner and changes only what
+// it made, so they never needed the chat classes' line — only the settings page, which renames the
+// household a chat case reads, stays in Chat.
+[CollectionDefinition(WebChatE2ECollections.Admin)]
+public class WebChatE2EAdminCollection : ICollectionFixture<WebChatE2EFixture>;
+
+// Two or more people of their own each, in a topic of their own: shared topics, a sees-all grant
+// withdrawn, a session ended elsewhere.
+// The twelfth, which fills the slices the stack has (WebChatCollectionSliceTests): a further
+// collection needs a space name and CollectionSlices raised.
+[CollectionDefinition(WebChatE2ECollections.People)]
+public class WebChatE2EPeopleCollection : ICollectionFixture<WebChatE2EFixture>;
 
 public static class WebChatE2ECollections
 {
@@ -158,4 +178,6 @@ public static class WebChatE2ECollections
     public const string Attachments = "WebChatE2E.Attachments";
     public const string DictationMicrophone = "WebChatE2E.DictationMicrophone";
     public const string Sugary = "WebChatE2E.Sugary";
+    public const string Admin = "WebChatE2E.Admin";
+    public const string People = "WebChatE2E.People";
 }

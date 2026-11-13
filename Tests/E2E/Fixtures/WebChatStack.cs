@@ -71,7 +71,7 @@ internal sealed partial class WebChatStack
     // takes one. They must be spaces of the household's configuration, which the stack saves as it
     // starts, or the client opens the household's first space instead.
     private static readonly string[] _spaces =
-        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett"];
+        ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliett", "lima", "mike"];
 
     // A space no collection works in, with a name, colour and agent of its own: what a person sees of
     // a space is its configuration's.
@@ -89,7 +89,7 @@ internal sealed partial class WebChatStack
     // full-viewport modal and clicked a button that detached from under it. Raise these when a
     // collection grows past its block rather than letting the counter wrap.
     public const int UsersPerCollection = 24;
-    public const int CollectionSlices = 10;
+    public const int CollectionSlices = 12;
 
     public string WebChatUrl { get; private set; } = "";
 
@@ -185,9 +185,16 @@ internal sealed partial class WebChatStack
 
     // The session cookie's value for a user index, the account behind it made on first asking. Each
     // command is a .NET process started inside the container, about a second, so making all of the
-    // stack's users up front would cost minutes nobody uses; and they run one at a time, since every
-    // command writes the one SQLite file.
+    // stack's users up front would cost minutes nobody uses.
     public async Task<string> SessionForAsync(int userIndex) => (await SeededAsync(userIndex)).Session;
+
+    // Starts making a user a collection is about to ask for, so its test finds it made rather than
+    // waiting the two commands out. A failure is kept in the memoized task and reaches whichever
+    // test asks for that index; nobody asking means nobody needed it.
+    public void Prefetch(int userIndex) =>
+        _ = SeededAsync(userIndex).ContinueWith(
+            t => _ = t.Exception, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
 
     // The account behind a user index, as the session check names it in its headers: what a test
     // that reaches an app past the proxy presents to act as that person.
@@ -199,7 +206,12 @@ internal sealed partial class WebChatStack
     private sealed record Seeded(string Session, Account Account);
 
     private readonly ConcurrentDictionary<int, Lazy<Task<Seeded>>> _sessions = new();
-    private readonly SemaphoreSlim _seeding = new(1, 1);
+    // A few commands at once, not one. They write one SQLite file, but so does the running service
+    // beside every one of them, and SQLite's busy retry already settles writers taking turns: running
+    // them strictly one at a time was the E2E run's floor — about two seconds queued per command, two
+    // commands per test, every collection in one line. Not unbounded, because each is a .NET process
+    // starting up beside the browser and the stack.
+    private readonly SemaphoreSlim _seeding = new(8, 8);
 
     private async Task<Seeded> SeedAsync(string name)
     {
@@ -214,10 +226,12 @@ internal sealed partial class WebChatStack
     // Accounts.dll <verb>. A command that fails fails the test that asked, with what it printed.
     public async Task<(int Exit, string Output)> AccountsAsync(params string[] args)
     {
+        var queued = Stopwatch.StartNew();
         await _seeding.WaitAsync();
+        E2ETrace.Write("accounts:queued", queued.Elapsed.TotalSeconds, args[0]);
         try
         {
-            var result = await _accounts!.ExecAsync(["dotnet", "Accounts.dll", .. args]);
+            var result = await E2ETrace.TimeAsync($"accounts:{args[0]}", () => _accounts!.ExecAsync(["dotnet", "Accounts.dll", .. args]));
             if (result.ExitCode != 0)
             {
                 throw new InvalidOperationException(

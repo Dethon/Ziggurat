@@ -13,7 +13,7 @@ namespace Tests.E2E.WebChat;
 // read; a month's figures are shown by answering the page's usage read as the admin API answers it.
 // That an owner reads their own household's usage and never another's is the admin API's seam
 // (HouseholdUsageAdminTests), against the Observability host's own gate and roll-ups.
-[Collection(WebChatE2ECollections.Chat)]
+[Collection(WebChatE2ECollections.Admin)]
 [Trait("Category", "E2E")]
 public partial class HouseholdUsageE2ETests(WebChatE2EFixture fixture)
 {
