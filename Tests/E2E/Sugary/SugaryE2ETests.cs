@@ -121,6 +121,7 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
         // up, and the server answers "not connected" at once until it has — no turn is sent and
         // nothing is spent — so that answer alone is asked again, for a bounded while.
         var connectDeadline = DateTime.UtcNow.AddMinutes(1);
+        var emptyAnswers = 0;
         while (true)
         {
             HttpResponseMessage response;
@@ -149,6 +150,15 @@ public class SugaryE2ETests(WebChatE2EFixture fixture)
                 && DateTime.UtcNow < connectDeadline)
             {
                 await Task.Delay(TimeSpan.FromSeconds(2));
+                continue;
+            }
+
+            // A provider that answered with nothing at all is the provider's turn, not the path
+            // under test (seen beside a second suite), so that alone is asked again — twice at most.
+            if (response.StatusCode == HttpStatusCode.BadGateway
+                && body.Contains("The model returned no answer", StringComparison.Ordinal)
+                && emptyAnswers++ < 2)
+            {
                 continue;
             }
 

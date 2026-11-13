@@ -128,9 +128,11 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
                 new PageWaitForFunctionOptions { Timeout = 15_000 });
             await TouchAsync(cdp, "touchEnd");
 
-            // Either the tap's hint or the hold's transcript: whichever the page decided.
+            // Either the tap's hint or the hold's ending — a transcript, or a refusal when the hold
+            // was too short to have heard anything: whichever the page decided.
             await page.WaitForFunctionAsync(
                 "() => document.querySelector('.composer-hint') !== null" +
+                " || document.querySelector('.composer-refusal') !== null" +
                 " || document.querySelector('textarea.chat-input')?.value !== ''",
                 null,
                 new PageWaitForFunctionOptions { Timeout = 15_000 });

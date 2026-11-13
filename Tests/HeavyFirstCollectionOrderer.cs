@@ -32,6 +32,14 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         "SugaryClip",
         "DashboardE2E",
         "DashboardAdminE2E",
+        // Named, ahead of the prefixes below: "Lemonade" and "McpAgent" match thirty-odd classes,
+        // most of them quick unit tests, and with a twenty-second WebChat collection the memory
+        // model classes fell past the threads that start at once — offered one at 53 s, they ended
+        // the run at 101. The Lemonade container's chain goes first for the same reason.
+        "LemonadeEntrypointConfigTests",
+        "MemoryExtractionResponseFormatTests",
+        "MemoryProfileSynthesisResponseFormatTests",
+        "MemoryConsolidationResponseFormatTests",
         "Lemonade",
         // The longest classes that start nothing but their own in-process servers: a class is
         // serialised, so its sum is its length.
@@ -43,7 +51,6 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         "HomeAssistantClientTests",
         // The classes that wait on a real model: their time is the provider's, and a slow answer
         // started late is a slow answer at the end of the run.
-        "ResponseFormatTests",
         "McpAgent",
         "SubAgentTests",
         "ToolApprovalChatClientTests",
