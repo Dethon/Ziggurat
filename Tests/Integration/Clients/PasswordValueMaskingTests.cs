@@ -7,7 +7,7 @@ namespace Tests.Integration.Clients;
 
 // What is typed into a password field never comes back out of a browse tool: not in a snapshot,
 // not in the diff an action answers with — whoever typed it, the model, the person or the page.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsD)]
 public class PasswordValueMaskingTests(IsolatedSessionBrowserFixture fixture)
 {
     private const string Secret = "hunter2-correct-horse";

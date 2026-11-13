@@ -9,7 +9,7 @@ namespace Tests.Integration.Clients;
 
 // A person's browser context against real Camoufox: their cookies stay theirs. Each case names
 // people of its own, so it shares no context with any other case on the backend.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsB)]
 public class PersonContextBrowseTests(IsolatedSessionBrowserFixture fixture)
 {
     private const string Site = "https://person-site.test";

@@ -10,13 +10,21 @@ namespace Tests.Integration.Fixtures;
 public class PlaywrightWebBrowserFixture : IAsyncLifetime
 {
     private CamoufoxBackend? _backend;
+    private PlaywrightWebBrowser? _ownClient;
 
     protected virtual string Pool => CamoufoxBackend.SharedPool;
+
+    // Whether this fixture drives the pool's server through a client of its own rather than the
+    // backend's. The client is not safe to share between collections running at once: a context's
+    // route table is a plain list, and two classes registering routes on the one context together
+    // threw out of Playwright's own bookkeeping. A second connection to the same server is a second
+    // set of contexts and costs no container.
+    protected virtual bool OwnsAClient => false;
 
     private CamoufoxBackend Backend =>
         _backend ?? throw new InvalidOperationException("Backend not acquired. Call InitializeAsync first.");
 
-    public PlaywrightWebBrowser Browser => Backend.Browser;
+    public PlaywrightWebBrowser Browser => _ownClient ?? Backend.Browser;
     public bool IsAvailable => true;
     public string? InitializationError => null;
 
@@ -25,9 +33,24 @@ public class PlaywrightWebBrowserFixture : IAsyncLifetime
     // same backend without standing up their own container.
     public string? WsEndpoint => _backend?.WsEndpoint;
 
-    public async Task InitializeAsync() => _backend = await CamoufoxBackend.AcquireAsync(Pool);
+    public async Task InitializeAsync()
+    {
+        _backend = await CamoufoxBackend.AcquireAsync(Pool);
+        if (OwnsAClient)
+        {
+            _ownClient = new PlaywrightWebBrowser(wsEndpoint: _backend.WsEndpoint);
+        }
+    }
 
-    public Task DisposeAsync() => CamoufoxBackend.ReleaseAsync(Pool);
+    public async Task DisposeAsync()
+    {
+        if (_ownClient is not null)
+        {
+            await _ownClient.DisposeAsync();
+        }
+
+        await CamoufoxBackend.ReleaseAsync(Pool);
+    }
 
     // Clears cookies on the one page context every fixture.Browser session shares, which is why
     // the classes that call it stay serialised together in SharedBrowser — and why calling it is
@@ -88,6 +111,9 @@ public sealed class QuietBrowserFixture : PlaywrightWebBrowserFixture
 public sealed class IsolatedSessionBrowserFixture : PlaywrightWebBrowserFixture
 {
     protected override string Pool => CamoufoxBackend.IsolatedPool;
+
+    // Several lanes drive this backend at once (see the collections below), each through its own.
+    protected override bool OwnsAClient => true;
 }
 
 // Three collections, so the browser-integration classes run at once rather than as a single serial
@@ -106,12 +132,32 @@ public class PlaywrightWebBrowserIntegrationCollection : ICollectionFixture<Play
 [CollectionDefinition(PlaywrightCollections.Timing)]
 public class PlaywrightTimingCollection : ICollectionFixture<QuietBrowserFixture>;
 
-[CollectionDefinition(PlaywrightCollections.IsolatedSessions)]
-public class PlaywrightIsolatedSessionsCollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
+// The isolated classes are four collections over the one isolated backend rather than one: they
+// observe nothing of each other, so a single collection only serialised them, and its chain of
+// about a hundred seconds was the non-E2E suite's tail once everything else got cheaper. The
+// backend is refcounted by pool, so four lanes still start one Camoufox. Classes are spread by
+// their measured length (see PlaywrightCollections.IsolatedSessionLanes).
+[CollectionDefinition(PlaywrightCollections.IsolatedSessionsA)]
+public class PlaywrightIsolatedSessionsACollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
+
+[CollectionDefinition(PlaywrightCollections.IsolatedSessionsB)]
+public class PlaywrightIsolatedSessionsBCollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
+
+[CollectionDefinition(PlaywrightCollections.IsolatedSessionsC)]
+public class PlaywrightIsolatedSessionsCCollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
+
+[CollectionDefinition(PlaywrightCollections.IsolatedSessionsD)]
+public class PlaywrightIsolatedSessionsDCollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
 
 public static class PlaywrightCollections
 {
     public const string SharedBrowser = "PlaywrightWebBrowserIntegration";
     public const string Timing = "Playwright.Timing";
-    public const string IsolatedSessions = "Playwright.IsolatedSessions";
+    public const string IsolatedSessionsA = "Playwright.IsolatedSessions.A";
+    public const string IsolatedSessionsB = "Playwright.IsolatedSessions.B";
+    public const string IsolatedSessionsC = "Playwright.IsolatedSessions.C";
+    public const string IsolatedSessionsD = "Playwright.IsolatedSessions.D";
+
+    public static readonly IReadOnlyList<string> IsolatedSessionLanes =
+        [IsolatedSessionsA, IsolatedSessionsB, IsolatedSessionsC, IsolatedSessionsD];
 }

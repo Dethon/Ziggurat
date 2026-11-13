@@ -14,7 +14,7 @@ namespace Tests.Integration.Clients;
 
 // Remembered logins against real Camoufox. A second browser over the same Camoufox is a reconnect:
 // it holds none of the first one's contexts, so whatever it is logged into came from the store.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsA)]
 public class RememberedLoginsBrowserTests(IsolatedSessionBrowserFixture fixture, RedisFixture redis)
     : IClassFixture<RedisFixture>
 {

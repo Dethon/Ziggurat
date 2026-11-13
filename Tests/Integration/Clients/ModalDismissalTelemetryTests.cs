@@ -14,7 +14,7 @@ namespace Tests.Integration.Clients;
 // here is the test's own — it carries the recording publisher — connected to the collection's
 // Camoufox, and every page is route-fulfilled so no third party stands between the test and the
 // wall it is measuring.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsD)]
 public class ModalDismissalTelemetryTests(IsolatedSessionBrowserFixture fixture) : IAsyncLifetime
 {
     private readonly RecordingMetricsPublisher _published = new();

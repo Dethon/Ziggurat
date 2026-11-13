@@ -9,7 +9,7 @@ namespace Tests.Integration.Clients;
 // The honestly browser-dependent claims of the tab pool: real pages side by side, each holding its
 // own DOM while the other is browsed. Everything here observes the pool the way the model would —
 // through walls and results — never by reaching past the browser contract.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsB)]
 public class BrowseTabsTests(IsolatedSessionBrowserFixture fixture)
 {
     [Trait("Category", "External")]

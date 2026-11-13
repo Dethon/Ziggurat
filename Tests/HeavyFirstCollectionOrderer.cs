@@ -22,7 +22,17 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
         "WebChatE2E.",
         "Lemonade",
         "DashboardE2E",
-        "PlaywrightWebBrowserIntegration",
+        // Every Camoufox collection — the shared chain, the timing pair and the isolated lanes —
+        // waits on a browser container before its first test, and the class pinning a fingerprint
+        // launches two of its own.
+        "Playwright",
+        "CamoufoxFingerprintPinTests",
+        // The longest classes that start nothing but their own in-process servers: a class is
+        // serialised, so its sum is its length, and these were starting half a minute in behind
+        // thousands of unit tests and finishing last.
+        "McpWebBrowseAsMeTests",
+        "SugaryClipApiTests",
+        "EvalWebTests",
         // Home Assistant cold-starts on a freshly seeded /config and does not serve its API until
         // the integration loader has run — seconds on an idle machine, but it was being offered a
         // thread behind every unit test and then racing a three-minute readiness cap against a

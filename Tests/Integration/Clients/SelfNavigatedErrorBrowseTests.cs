@@ -12,7 +12,7 @@ namespace Tests.Integration.Clients;
 // been blocked by network security" and every later one read the thread. The browser sees only
 // the shape, so the test builds the shape: the page the browse asked for, then the page's own
 // script landing it on an error the server answers once.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsC)]
 public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture)
 {
     // The script sends the page on, and the blocker after it holds the parse until the page's follow-up

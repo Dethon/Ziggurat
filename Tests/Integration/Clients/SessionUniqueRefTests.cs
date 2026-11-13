@@ -9,7 +9,7 @@ namespace Tests.Integration.Clients;
 
 // The browser-dependent half of session-unique numbering: a real page restamped by a real second
 // pass hands out numbers above everything the first pass issued, in both namespaces.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsC)]
 public partial class SessionUniqueRefTests(IsolatedSessionBrowserFixture fixture)
 {
     [Trait("Category", "External")]

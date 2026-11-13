@@ -19,7 +19,7 @@ namespace Tests.Integration.Clients;
 // The whole handoff against real Camoufox, driven the way a person's browser drives it: the link,
 // the claim, frames over the socket, clicks and typing back, Done — and then the agent's own
 // `asMe` browse of the site is logged in.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsD)]
 public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, RedisFixture redis)
     : IClassFixture<RedisFixture>
 {

@@ -15,7 +15,7 @@ namespace Tests.Integration.Clients;
 // selector and no word list closes is closed by what its buttons say, by index into the list the
 // names were read from, and the browse envelope names the click as `judgment(<index>)`. The
 // browser is the test's own so it can carry the judge and the recording publisher.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsD)]
 public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) : IAsyncLifetime
 {
     private readonly RecordingMetricsPublisher _published = new();
