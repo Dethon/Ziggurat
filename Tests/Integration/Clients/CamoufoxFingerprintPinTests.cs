@@ -37,19 +37,26 @@ public class CamoufoxFingerprintPinTests
         }
         """;
 
-    private static async Task<bool> ImageExistsAsync()
+    private static async Task<string?> ImageIdAsync()
     {
         try
         {
             using var client = new DockerClientBuilder().Build();
-            await client.Images.InspectImageAsync(Image);
-            return true;
+            return (await client.Images.InspectImageAsync(Image)).ID;
         }
         catch
         {
-            return false;
+            return null;
         }
     }
+
+    // What this pins lives in the image alone — fingerprint.js and server.js, and what they keep on
+    // the volume — so a pass holds for the image it ran against. Three browser launches made it the
+    // run's longest single test (~58 s) and a real share of its CPU, on every run, against an image
+    // that had not changed; it runs again whenever the image does (a rebuild is a new id). Delete
+    // the stamp to run it anyway.
+    private static string PassedStamp(string imageId) =>
+        Path.Combine(Path.GetTempPath(), $"ziggurat-camoufox-pin-{imageId.Replace("sha256:", "")[..16]}.passed");
 
     private static async Task<string> LaunchAndReadDeviceAsync(string volume)
     {
@@ -107,7 +114,10 @@ public class CamoufoxFingerprintPinTests
     [SkippableFact]
     public async Task TwoLaunchesOverOneVolume_PresentTheSameDevice_AndAFreshVolumeDrawsAnother()
     {
-        Skip.IfNot(await ImageExistsAsync(), $"{Image} is not built.");
+        var imageId = await ImageIdAsync();
+        Skip.If(imageId is null, $"{Image} is not built.");
+        var stamp = PassedStamp(imageId!);
+        Skip.If(File.Exists(stamp), $"Passed against this {Image} already ({stamp}).");
 
         var volume = $"camoufox-fingerprint-{Guid.NewGuid():N}";
         var other = $"camoufox-fingerprint-{Guid.NewGuid():N}";
@@ -125,6 +135,7 @@ public class CamoufoxFingerprintPinTests
             // Windows profile came out the same from two fresh volumes — while the saved fingerprint
             // holds every seed the draw made.
             (await SavedFingerprintAsync(other)).ShouldNotBe(await SavedFingerprintAsync(volume));
+            await File.WriteAllTextAsync(stamp, DateTimeOffset.UtcNow.ToString("O"));
         }
         finally
         {
