@@ -312,6 +312,7 @@ public class BrowserSessionManager : IAsyncDisposable
             }
 
             CommitTail(session, tab, ctx, supersedeAlways: false);
+            KeepLatePopupCurrent(session, tab);
             return new TabOutcome<T>.Ran(result);
         }
         finally
@@ -550,6 +551,10 @@ public class BrowserSessionManager : IAsyncDisposable
             // it and claim its URL and snapshot as its own answer.
             opener?.OfferPopup(tab);
 
+            // Touched again once it is on offer: an action on the opener that finished its tail
+            // between Admit and the offer took "current" back, and saw nothing pending to return.
+            Touch(session, tab);
+
             return tab;
         }
         finally
@@ -614,6 +619,18 @@ public class BrowserSessionManager : IAsyncDisposable
         }
 
         return tab.TakePopup();
+    }
+
+    // A popup the act opened but the browser reported only after the grace was adopted (and made
+    // current) while the acting tab answered; the acting tab's tail then touched the opener. The
+    // popup is what the click produced, so it stays current. Only one offered during this action
+    // can be pending here: the action took any leftover before it acted.
+    private void KeepLatePopupCurrent(BrowserSession session, BrowserTab opener)
+    {
+        if (opener.PeekPopup() is { Page.IsClosed: false } popup && session.Tabs.Contains(popup))
+        {
+            Touch(session, popup);
+        }
     }
 
     internal static string SafeUrl(IPage page)
@@ -1058,6 +1075,14 @@ internal class BrowserTab(IPage page, string requestedUrl, IBrowserContext conte
         {
             _pendingPopup = popup;
             _popupOffered.TrySetResult();
+        }
+    }
+
+    internal BrowserTab? PeekPopup()
+    {
+        lock (_popupGate)
+        {
+            return _pendingPopup;
         }
     }
 

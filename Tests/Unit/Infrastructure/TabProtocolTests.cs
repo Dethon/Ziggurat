@@ -650,6 +650,34 @@ public class TabProtocolTests
     }
 
     [Fact]
+    public async Task APopupAdoptedWhileTheActingTabAnswers_StaysTheCurrentTab()
+    {
+        // A loaded browser reports a click's popup after the grace: the action answers from the
+        // acting tab, and its tail must not take "current" back from the popup it opened.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+        var popup = FakePage.Create("https://popup.test/window");
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+
+        await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            ActThat(),
+            answer: _ =>
+            {
+                pages[0].RaisePopup(popup);
+                return Task.FromResult("from the acting tab");
+            },
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
+
+        var current = await manager.OnCurrentTabAsync(
+            "s1", StampPolicy.None, cx => Task.FromResult(cx.Page));
+        current.ShouldBe(new TabOutcome<IPage>.Ran(popup.Mock.Object));
+    }
+
+    [Fact]
     public async Task AStalePendingPopupFromAnEarlierCall_DoesNotDivertTheAction()
     {
         var (ctx, pages) = TabPoolFakes.CreateContext();
