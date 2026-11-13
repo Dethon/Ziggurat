@@ -43,13 +43,17 @@
                 </p>
             }
             <KeyStatusView Status="keys.OpenRouter" />
+            @if (keys.OpenRouter is not null)
+            {
+                <CheckAgainButton Label="@CheckLabel(KeyForm.OpenRouter, null)" Disabled="@Busy" OnCheck="() => Check(KeyForm.OpenRouter)" />
+            }
             <label class="admin-field">
                 <span class="admin-field-label">@(keys.OpenRouter is null ? "API key" : "Replace the API key")</span>
                 <input name="openRouterKey" type="password" @bind="_openRouterKey" @bind:event="oninput"
                        placeholder="sk-or-v1-…" spellcheck="false" autocomplete="off" required />
             </label>
             <div class="admin-actions">
-                <button type="submit" class="admin-save" disabled="@(_state.Saving is not null)">
+                <button type="submit" class="admin-save" disabled="@Busy">
                     @(_state.Saving == KeyForm.OpenRouter ? "Checking" : "Save")
                 </button>
             </div>
@@ -59,6 +63,10 @@
         <form class="admin-form admin-key" aria-labelledby="admin-key-idealista" @onsubmit="SaveIdealista">
             <h2 id="admin-key-idealista">Idealista</h2>
             <KeyStatusView Status="keys.Idealista" />
+            @if (keys.Idealista is not null)
+            {
+                <CheckAgainButton Label="@CheckLabel(KeyForm.Idealista, null)" Disabled="@Busy" OnCheck="() => Check(KeyForm.Idealista)" />
+            }
             <label class="admin-field">
                 <span class="admin-field-label">API key</span>
                 <input name="idealistaKey" type="password" @bind="_idealistaKey" @bind:event="oninput"
@@ -70,7 +78,7 @@
                        spellcheck="false" autocomplete="off" required />
             </label>
             <div class="admin-actions">
-                <button type="submit" class="admin-save" disabled="@(_state.Saving is not null)">
+                <button type="submit" class="admin-save" disabled="@Busy">
                     @(_state.Saving == KeyForm.Idealista ? "Checking" : "Save")
                 </button>
             </div>
@@ -93,6 +101,7 @@
             {
                 <p class="admin-key-address">@box.ApiUrl</p>
                 <KeyStatusView Status="box.Status" />
+                <CheckAgainButton Label="@CheckLabel(KeyForm.Lemonade, null)" Disabled="@Busy" OnCheck="() => Check(KeyForm.Lemonade)" />
             }
             <fieldset class="admin-field admin-choice">
                 <legend class="admin-field-label">Reached</legend>
@@ -132,12 +141,12 @@
                 </label>
             }
             <div class="admin-actions">
-                <button type="submit" class="admin-save" disabled="@(_state.Saving is not null)">
+                <button type="submit" class="admin-save" disabled="@Busy">
                     @(_state.Saving == KeyForm.Lemonade ? (_lemonadeThroughKit ? "Saving" : "Checking") : "Save")
                 </button>
                 @if (keys.Lemonade is not null)
                 {
-                    <button type="button" class="admin-secondary" disabled="@(_state.Saving is not null)"
+                    <button type="button" class="admin-secondary" disabled="@Busy"
                             @onclick="RemoveLemonade">Remove</button>
                 }
             </div>
@@ -152,7 +161,11 @@
                 <ul class="admin-key-bots">
                     @foreach (var bot in keys.TelegramBots)
                     {
-                        <li><span class="admin-key-agent">@bot.AgentId</span> <KeyStatusView Status="bot.Key" /></li>
+                        <li>
+                            <span class="admin-key-agent">@bot.AgentId</span> <KeyStatusView Status="bot.Key" />
+                            <CheckAgainButton Label="@CheckLabel(KeyForm.Telegram, bot.AgentId)" Disabled="@Busy"
+                                              OnCheck="() => Check(KeyForm.Telegram, bot.AgentId)" />
+                        </li>
                     }
                 </ul>
             }
@@ -168,7 +181,7 @@
                 <span class="admin-field-hint">As BotFather gives it.</span>
             </label>
             <div class="admin-actions">
-                <button type="submit" class="admin-save" disabled="@(_state.Saving is not null)">
+                <button type="submit" class="admin-save" disabled="@Busy">
                     @(_state.Saving == KeyForm.Telegram ? "Checking" : "Save")
                 </button>
             </div>
@@ -235,6 +248,14 @@
     };
 
     private void RemoveLemonade() => Dispatcher.Dispatch(new RemoveLemonadeBox());
+
+    // One save or check at a time: the owners' changes to a household run one at a time anyway.
+    private bool Busy => _state.Saving is not null || _state.Checking is not null;
+
+    private string CheckLabel(KeyForm form, string? agentId) =>
+        _state.Checking == new KeyCheck(form, agentId) ? "Checking" : "Check again";
+
+    private void Check(KeyForm form, string? agentId = null) => Dispatcher.Dispatch(new CheckHouseholdKey(form, agentId));
 
     private void SaveTelegram() =>
         Dispatcher.Dispatch(new SaveTelegramBot(_telegramAgent.Trim(), new TelegramBotKey(_telegramToken.Trim())));

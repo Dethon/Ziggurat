@@ -85,4 +85,18 @@ public class AdminServiceEditTests
         remove.Request!.Method.ShouldBe(HttpMethod.Delete);
         remove.Request.RequestUri!.AbsolutePath.ShouldBe(AdminProtocol.LemonadeBox);
     }
+
+    // A key is checked again from what is stored: the page posts to the key's check route and sends no key.
+    [Fact]
+    public async Task CheckingAKey_PostsToItsCheckRoute_WithNoBody()
+    {
+        var handler = new Recording(HttpStatusCode.OK, """{"value":{"paysWithDeploymentKey":false,"telegramBots":[]}}""");
+
+        var answer = await Service(handler).CheckKeyAsync(AdminProtocol.TelegramBotCheck("jonas"));
+
+        answer.ShouldBeOfType<AdminAnswer<HouseholdKeys>.Answered>();
+        handler.Request!.Method.ShouldBe(HttpMethod.Post);
+        handler.Request.RequestUri!.AbsolutePath.ShouldBe("/accounts/admin/household/keys/telegram/jonas/check");
+        handler.Sent.ShouldBeNull();
+    }
 }

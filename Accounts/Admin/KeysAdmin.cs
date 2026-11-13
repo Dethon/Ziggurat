@@ -66,6 +66,71 @@ public sealed class KeysAdmin(
         household.MapPut(AdminApi.Under(AdminProtocol.Household, AdminProtocol.TelegramBotRoute),
             (string agentId, AdminCaller caller, TelegramBotKey? key, HttpContext http, KeysAdmin keys, AdminLog log,
                 CancellationToken ct) => keys.SaveBotAsync(agentId, key, new Saving(caller, http, log), ct));
+
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.OpenRouterKeyCheck),
+            (AdminCaller caller, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
+                keys.CheckOpenRouterAsync(new Saving(caller, http, log), ct));
+
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.IdealistaKeysCheck),
+            (AdminCaller caller, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
+                keys.CheckIdealistaAsync(new Saving(caller, http, log), ct));
+
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.LemonadeBoxCheck),
+            (AdminCaller caller, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
+                keys.CheckLemonadeAsync(new Saving(caller, http, log), ct));
+
+        household.MapPost(AdminApi.Under(AdminProtocol.Household, AdminProtocol.TelegramBotCheckRoute),
+            (string agentId, AdminCaller caller, HttpContext http, KeysAdmin keys, AdminLog log, CancellationToken ct) =>
+                keys.CheckBotAsync(agentId, new Saving(caller, http, log), ct));
+    }
+
+    private Task<IResult> CheckOpenRouterAsync(Saving saving, CancellationToken ct) => CheckAsync(KeySlot.OpenRouter, openRouter, saving, ct);
+
+    private Task<IResult> CheckIdealistaAsync(Saving saving, CancellationToken ct) => CheckAsync(KeySlot.Idealista, idealista, saving, ct);
+
+    private Task<IResult> CheckLemonadeAsync(Saving saving, CancellationToken ct) => CheckAsync(KeySlot.Lemonade, lemonade, saving, ct);
+
+    private Task<IResult> CheckBotAsync(string agentId, Saving saving, CancellationToken ct) =>
+        CheckAsync(KeySlot.TelegramBot(agentId), telegram, saving, ct);
+
+    // A saved key put to its provider again, from the stored key alone: nothing is saved, the key keeps
+    // its place whatever the provider says, and the state the check found is recorded as a save's is —
+    // working, rejected with the provider's why (the owner decides what replaces it), or unchecked with
+    // the reason it could not be asked. Recorded as a change, since what the page shows changed.
+    private async Task<IResult> CheckAsync<TKey>(KeySlot<TKey> slot, IKeyProbe<TKey> probe, Saving saving, CancellationToken ct)
+        where TKey : class
+    {
+        var caller = saving.Caller;
+        try
+        {
+            if (await store.ReadAsync(caller.HouseholdId, HouseholdSections.KeysSchema, ct) is not { } keys
+                || slot.Read(keys) is not { } key)
+            {
+                return Results.NotFound(new AdminRefusal($"No {slot.Label} is saved to check.", []));
+            }
+
+            if (key is LemonadeBox { ThroughKit: true })
+            {
+                return Results.BadRequest(new AdminRefusal(
+                    "The Lemonade box is reached through the tenant kit, which has no address to ask: its tunnel's state shows whether it is there.", []));
+            }
+
+            var (state, why, warning) = await probe.ProbeAsync(key, ct) switch
+            {
+                KeyProbeOutcome.Rejected rejected => (KeyState.Rejected, rejected.Why,
+                    $"{probe.Provider} refused it: {rejected.Why}. It is still saved until you replace it."),
+                KeyProbeOutcome.Unreachable unreachable => (KeyState.Unchecked, unreachable.Why,
+                    $"{probe.Provider} could not be asked whether it works just now ({unreachable.Why}): it shows as unchecked."),
+                _ => (KeyState.Working, (string?)null, (string?)null)
+            };
+            await checks.RecordAsync(caller.HouseholdId, slot.Name, slot.Material(key), state, why, ct);
+            await saving.Log.RecordAsync(saving.Http, caller, $"Checked the {slot.Label}", ct);
+            return Results.Ok(new AdminSaved<HouseholdKeys>((await ViewAsync(caller.HouseholdId, ct))!, warning));
+        }
+        catch (HouseholdSecretsUnavailableException)
+        {
+            return SecretsUnavailable();
+        }
     }
 
     private Task<IResult> SaveOpenRouterAsync(OpenRouterKey? key, Saving saving, CancellationToken ct) =>

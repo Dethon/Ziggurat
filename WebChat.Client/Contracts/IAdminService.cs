@@ -24,6 +24,9 @@ public interface IAdminService
     Task<AdminAnswer<HouseholdKeys>> RemoveLemonadeBoxAsync();
 
     Task<AdminAnswer<HouseholdKeys>> SaveTelegramBotAsync(string agentId, TelegramBotKey bot);
+
+    // A saved key put to its provider again from what is stored, at its check route (AdminProtocol.*Check).
+    Task<AdminAnswer<HouseholdKeys>> CheckKeyAsync(string checkPath);
     Task<AdminAnswer<AdminAgents>> GetAgentsAsync();
 
     Task<AdminAnswer<AdminAgents>> SaveAgentAsync(string agentId, AgentEdit edit);

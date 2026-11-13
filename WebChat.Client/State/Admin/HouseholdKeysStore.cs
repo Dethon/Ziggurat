@@ -28,6 +28,14 @@ public record RemoveLemonadeBox : IAction;
 
 public record HouseholdKeysSaved(KeyForm Form, HouseholdKeys Keys, string? Warning) : IAction;
 
+// Which saved key is being put to its provider again: a form's, and for a bot the agent it answers as.
+public sealed record KeyCheck(KeyForm Form, string? AgentId);
+
+public record CheckHouseholdKey(KeyForm Form, string? AgentId) : IAction;
+
+// What a check found, said beside its form; nothing typed into the form is touched, since nothing was saved.
+public record HouseholdKeyChecked(KeyForm Form, HouseholdKeys Keys, string? Warning) : IAction;
+
 // A load or a save the admin API did not answer with the keys: refused (a key its provider rejected
 // among them), not allowed, unreachable. A load's is said on no form.
 public record HouseholdKeysNotSaved(KeyForm? Form, AdminNotice Notice) : IAction;
@@ -39,6 +47,8 @@ public sealed record HouseholdKeysState
     public HouseholdKeys? Keys { get; init; }
 
     public KeyForm? Saving { get; init; }
+
+    public KeyCheck? Checking { get; init; }
 
     // The outcome of the last load or save, and the form it was about (none: the load's).
     public AdminNotice? Notice { get; init; }
@@ -88,7 +98,17 @@ public sealed class HouseholdKeysStore : IDisposable
                 ? new AdminNotice(AdminNoticeKind.Warning, warning)
                 : new AdminNotice(AdminNoticeKind.Saved, "Saved.")
         },
-        HouseholdKeysNotSaved a => state with { Saving = null, Notice = a.Notice, NoticeFor = a.Form },
+        CheckHouseholdKey a => state with { Checking = new KeyCheck(a.Form, a.AgentId), Notice = null, NoticeFor = null },
+        HouseholdKeyChecked a => state with
+        {
+            Keys = a.Keys,
+            Checking = null,
+            NoticeFor = a.Form,
+            Notice = a.Warning is { } warning
+                ? new AdminNotice(AdminNoticeKind.Warning, warning)
+                : new AdminNotice(AdminNoticeKind.Saved, "Checked: it works.")
+        },
+        HouseholdKeysNotSaved a => state with { Saving = null, Checking = null, Notice = a.Notice, NoticeFor = a.Form },
         _ => state
     };
 

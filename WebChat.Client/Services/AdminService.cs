@@ -44,6 +44,9 @@ public sealed class AdminService(HttpClient httpClient) : IAdminService
     public Task<AdminAnswer<HouseholdKeys>> SaveTelegramBotAsync(string agentId, TelegramBotKey bot) =>
         SaveKeysAsync(AdminProtocol.TelegramBot(agentId), bot);
 
+    public Task<AdminAnswer<HouseholdKeys>> CheckKeyAsync(string checkPath) =>
+        SendAsync(new HttpRequestMessage(HttpMethod.Post, checkPath), SavedAsync<HouseholdKeys>);
+
     private Task<AdminAnswer<HouseholdKeys>> SaveKeysAsync<TKey>(string path, TKey key) =>
         SendAsync(new HttpRequestMessage(HttpMethod.Put, path) { Content = JsonContent.Create(key) }, SavedAsync<HouseholdKeys>);
 

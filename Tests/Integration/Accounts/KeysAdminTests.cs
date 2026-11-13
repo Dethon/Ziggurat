@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json.Nodes;
 using Accounts.Settings;
 using Accounts.Store;
 using Domain.Contracts;
@@ -209,6 +210,102 @@ public sealed class KeysAdminTests : IAsyncLifetime
         var keys = await KeysSectionAsync(server, household);
         keys.OpenRouter.ShouldBe(new OpenRouterKey(WorkingKey));
         keys.Idealista.ShouldBe(pair);
+    }
+
+    // A key saved without asking its provider — by the operator's command, by the household migration —
+    // is checked again from the keys page: the stored key is put to its provider, never sent by the page
+    // nor answered back, and its state recorded as a save's would be (user, 2026-11-13).
+    [Fact]
+    public async Task AKeySavedUnchecked_IsCheckedAgain_WithoutBeingSent()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        var pair = new IdealistaKeys("idealista-api-key-0123456789-apik", "idealista-secret-9876543210-secr");
+        const string token = "123456789:AAH-bot-token-0123456789abcdefghij";
+        await server.RunAsync(server.Settings,
+            new JsonObject
+            {
+                ["openRouter"] = new JsonObject { ["apiKey"] = WorkingKey },
+                ["idealista"] = new JsonObject { ["apiKey"] = pair.ApiKey, ["secret"] = pair.Secret },
+                ["telegramBots"] = new JsonObject { ["jonas"] = new JsonObject { ["token"] = token } }
+            }.ToJsonString(),
+            "set-household-config", "--household", household, "--section", HouseholdSections.Keys, "--file", "-");
+        _providers.Accept(WorkingKey);
+        _providers.Accept(pair.ApiKey);
+        _providers.Accept(token);
+
+        HttpResponseMessage[] checkedAgain =
+        [
+            await admin.PostAsync(AdminProtocol.OpenRouterKeyCheck),
+            await admin.PostAsync(AdminProtocol.IdealistaKeysCheck),
+            await admin.PostAsync(AdminProtocol.TelegramBotCheck("jonas"))
+        ];
+
+        foreach (var answer in checkedAgain)
+        {
+            answer.StatusCode.ShouldBe(HttpStatusCode.OK);
+            var text = await answer.Content.ReadAsStringAsync();
+            text.ShouldNotContain(WorkingKey);
+            text.ShouldNotContain(pair.Secret);
+            text.ShouldNotContain(token);
+        }
+
+        var keys = (await checkedAgain[^1].Content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!.Value;
+        var now = server.Clock.GetUtcNow();
+        keys.OpenRouter.ShouldBe(new KeyStatus(KeyState.Working, "work", now));
+        keys.Idealista.ShouldBe(new KeyStatus(KeyState.Working, "apik", now));
+        keys.TelegramBots.ShouldHaveSingleItem().Key.ShouldBe(new KeyStatus(KeyState.Working, "ghij", now));
+        (await KeysSectionAsync(server, household)).OpenRouter.ShouldBe(new OpenRouterKey(WorkingKey));
+        (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(
+            ["Checked the Telegram bot for jonas", "Checked the Idealista keys", "Checked the OpenRouter key"]);
+    }
+
+    // A check its provider refuses keeps the key — it was saved, and the owner decides what replaces
+    // it — marked rejected with the provider's why; one the provider could not be asked about stays
+    // unchecked with the reason. Either says so as a warning.
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, KeyState.Rejected)]
+    [InlineData(HttpStatusCode.ServiceUnavailable, KeyState.Unchecked)]
+    public async Task ACheckThatDoesNotFindTheKeyWorking_KeepsIt_AndSaysWhy(HttpStatusCode answer, KeyState state)
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+        _providers.Accept(WorkingKey);
+        await admin.PutAsync(AdminProtocol.OpenRouterKey, new OpenRouterKey(WorkingKey));
+        _providers.Answer(WorkingKey, answer);
+
+        var checkedAgain = await admin.PostAsync(AdminProtocol.OpenRouterKeyCheck);
+
+        checkedAgain.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var answered = (await checkedAgain.Content.ReadFromJsonAsync<AdminSaved<HouseholdKeys>>())!;
+        answered.Value.OpenRouter.ShouldNotBeNull().ShouldSatisfyAllConditions(
+            k => k.State.ShouldBe(state),
+            k => k.Reason.ShouldNotBeNull());
+        answered.Warning.ShouldNotBeNull().ShouldContain(answered.Value.OpenRouter!.Reason!);
+        (await KeysSectionAsync(server, household)).OpenRouter.ShouldBe(new OpenRouterKey(WorkingKey));
+    }
+
+    // Nothing saved is nothing to check; a box through the tenant kit has no address to ask, and is shown
+    // by its tunnel's state instead.
+    [Fact]
+    public async Task CheckingAKeyNotSaved_OrABoxThroughTheKit_IsRefused()
+    {
+        await using var server = await StartAsync();
+        var (_, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var admin = server.Admin(await server.MintSessionAsync(ana));
+
+        (await admin.PostAsync(AdminProtocol.OpenRouterKeyCheck)).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await admin.PostAsync(AdminProtocol.TelegramBotCheck("jonas"))).StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await admin.PutAsync(AdminProtocol.LemonadeBox, LemonadeBox.Kit)).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var kit = await admin.PostAsync(AdminProtocol.LemonadeBoxCheck);
+
+        kit.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await kit.Content.ReadFromJsonAsync<AdminRefusal>())!.Message.ShouldContain("tenant kit");
+        _providers.Asked.ShouldBeEmpty();
+        (await ChangesAsync(admin)).Select(c => c.Summary).ShouldBe(["Set the Lemonade box, through the tenant kit"]);
     }
 
     // The operator's command asks no provider, so a key it saved over a checked one is not that one's.

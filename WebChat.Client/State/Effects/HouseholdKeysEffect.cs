@@ -35,7 +35,8 @@ public sealed class HouseholdKeysEffect : IDisposable
                 SaveAsync(KeyForm.Lemonade, _admin.RemoveLemonadeBoxAsync()).LogFaults(logger, nameof(RemoveLemonadeBox))),
             dispatcher.RegisterHandler<SaveTelegramBot>(action =>
                 SaveAsync(KeyForm.Telegram, _admin.SaveTelegramBotAsync(action.AgentId, action.Bot))
-                    .LogFaults(logger, nameof(SaveTelegramBot)))
+                    .LogFaults(logger, nameof(SaveTelegramBot))),
+            dispatcher.RegisterHandler<CheckHouseholdKey>(action => CheckAsync(action).LogFaults(logger, nameof(CheckHouseholdKey)))
         ];
     }
 
@@ -44,6 +45,15 @@ public sealed class HouseholdKeysEffect : IDisposable
 
     private async Task SaveAsync(KeyForm form, Task<AdminAnswer<HouseholdKeys>> saving) =>
         Settle(form, await saving, answered => new HouseholdKeysSaved(form, answered.Value, answered.Warning));
+
+    private async Task CheckAsync(CheckHouseholdKey action) =>
+        Settle(action.Form, await _admin.CheckKeyAsync(action.Form switch
+        {
+            KeyForm.OpenRouter => AdminProtocol.OpenRouterKeyCheck,
+            KeyForm.Idealista => AdminProtocol.IdealistaKeysCheck,
+            KeyForm.Lemonade => AdminProtocol.LemonadeBoxCheck,
+            _ => AdminProtocol.TelegramBotCheck(action.AgentId ?? "")
+        }), answered => new HouseholdKeyChecked(action.Form, answered.Value, answered.Warning));
 
     private void Settle(
         KeyForm? form, AdminAnswer<HouseholdKeys> answer, Func<AdminAnswer<HouseholdKeys>.Answered, IAction> outcome) =>

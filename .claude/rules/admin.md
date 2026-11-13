@@ -200,6 +200,14 @@ provider was asked** (`Accounts/Keys/KeyProbes.cs`):
   A stack with no master key answers a read or a save **503** `AdminRefusal` with
   `KeysAdmin.SecretsUnavailableMessage` — the deployment's to fix, not the request's — never a 500 and
   never a 400; the chat client shows the refusal's message (`AdminAnswer.Unreachable(message)`).
+- **Check again** (user, 2026-11-13): `POST .../openrouter/check`, `.../idealista/check`, `.../lemonade/check` and
+  `.../telegram/{agentId}/check` (`AdminProtocol.*Check`) put the **stored** key to its provider — the page sends
+  none and is answered none — and record what it found as a save's check is recorded: working, rejected with the
+  provider's why (the key stays saved; a warning says so) or unchecked with the reason it could not be asked
+  (a warning). Nothing is saved or announced; the change log says "Checked the <label>". No key saved is 404,
+  a box through the tenant kit 400 (no address to ask). It is how a key the household migration or the operator's
+  command saved, which no provider was asked about, comes to show as working. The page draws a Check again
+  button beside every saved key's status (`CheckAgainButton`), one save or check at a time (`HouseholdKeysState.Checking`).
 - **State lives beside the section, not in it**: `HouseholdKeyChecks` (table `HouseholdKeyChecks`, one
   row per household and key name — `openRouter`, `idealista`, `telegramBots/<agent>`): state, when
   checked (`AccountsClock`), a reason, and the key's **fingerprint** (`Tokens.Hash` of the key, Idealista's

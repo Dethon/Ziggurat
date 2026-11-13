@@ -29,6 +29,16 @@ public static class AdminProtocol
 
     public static string TelegramBot(string agentId) => $"{TelegramBots}/{Uri.EscapeDataString(agentId)}";
 
+    // A saved key put to its provider again, from what is stored: the page sends no key and is answered
+    // none (the keys page's Check again).
+    public const string CheckSuffix = "/check";
+    public const string OpenRouterKeyCheck = OpenRouterKey + CheckSuffix;
+    public const string IdealistaKeysCheck = IdealistaKeys + CheckSuffix;
+    public const string LemonadeBoxCheck = LemonadeBox + CheckSuffix;
+    public const string TelegramBotCheckRoute = TelegramBotRoute + CheckSuffix;
+
+    public static string TelegramBotCheck(string agentId) => TelegramBot(agentId) + CheckSuffix;
+
     // How many of a saved key's last characters an answer shows, so the owner can tell which key is
     // saved without it being shown; a key too short to spare them shows none.
     public const int KeyCharactersShown = 4;

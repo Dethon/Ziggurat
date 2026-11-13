@@ -3538,6 +3538,12 @@ select:focus:not(:focus-visible) {
     font-family: monospace;
 }
 
+.admin-key-check {
+    align-self: flex-start;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+}
+
 .admin-member {
     margin-top: 1.5rem;
     padding: 1.25rem;
