@@ -678,6 +678,30 @@ public class TabProtocolTests
     }
 
     [Fact]
+    public async Task APopupAdoptedWhileRefLessCallsQueueOnTheOpener_IsWhereTheyRun_AndStaysCurrent()
+    {
+        // A ref-less call reads "current" before it waits for that tab's lock. The popup adopted
+        // while it waits is current by the time it runs, and the call that held the lock must not
+        // hand current back to the opener as it finishes.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+        var popup = FakePage.Create("https://popup.test/window");
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        var (release, holder) = await HoldCurrentTabAsync(manager, "s1");
+        var queued = manager.OnCurrentTabAsync("s1", StampPolicy.None, cx => Task.FromResult(cx.Page));
+        await Eventually.Settle();
+
+        pages[0].RaisePopup(popup);
+        release.SetResult();
+        await holder;
+
+        (await queued).ShouldBe(new TabOutcome<IPage>.Ran(popup.Mock.Object));
+        (await manager.OnCurrentTabAsync("s1", StampPolicy.None, cx => Task.FromResult(cx.Page)))
+            .ShouldBe(new TabOutcome<IPage>.Ran(popup.Mock.Object));
+    }
+
+    [Fact]
     public async Task AStalePendingPopupFromAnEarlierCall_DoesNotDivertTheAction()
     {
         var (ctx, pages) = TabPoolFakes.CreateContext();

@@ -148,18 +148,30 @@ public class BrowserSessionManager : IAsyncDisposable
         CancellationToken ct = default)
     {
         var session = _sessions.GetValueOrDefault(sessionId);
-        if (session?.CurrentTab is not { } tab)
+        while (true)
         {
-            return new TabOutcome<T>.NoSession();
-        }
+            if (session?.CurrentTab is not { } tab)
+            {
+                return new TabOutcome<T>.NoSession();
+            }
 
-        using var tabLock = await LockTabAsync(tab, ct);
-        if (tab.Page.IsClosed)
-        {
-            return new TabOutcome<T>.Closed(tab.RequestedUrl);
-        }
+            using var tabLock = await LockTabAsync(tab, ct);
 
-        return await RunOnLockedTabAsync(session, tab, stamping, supersedeAlways: false, work, ct);
+            // Current moved while this call queued — a popup adopted meanwhile, most often. The
+            // call is addressed to whatever is current, and touching the tab it read first would
+            // take current back from the one that replaced it.
+            if (!ReferenceEquals(session.CurrentTab, tab))
+            {
+                continue;
+            }
+
+            if (tab.Page.IsClosed)
+            {
+                return new TabOutcome<T>.Closed(tab.RequestedUrl);
+            }
+
+            return await RunOnLockedTabAsync(session, tab, stamping, supersedeAlways: false, work, ct);
+        }
     }
 
     // The composed-snapshot exception: addressed to the tab holding that URL, refusing when the
@@ -271,8 +283,8 @@ public class BrowserSessionManager : IAsyncDisposable
             return lateWall;
         }
 
-        Touch(session!, tab);
-        var ctx = new TabWorkContext(this, session!, tab, stamping, SafeUrl(tab.Page), ct);
+        var startedAt = Touch(session!, tab);
+        var ctx = new TabWorkContext(this, session!, tab, stamping, SafeUrl(tab.Page), startedAt, ct);
         try
         {
             T? result;
@@ -312,7 +324,6 @@ public class BrowserSessionManager : IAsyncDisposable
             }
 
             CommitTail(session, tab, ctx, supersedeAlways: false);
-            KeepLatePopupCurrent(session, tab);
             return new TabOutcome<T>.Ran(result);
         }
         finally
@@ -334,7 +345,8 @@ public class BrowserSessionManager : IAsyncDisposable
             return null;
         }
 
-        var ctx = new TabWorkContext(this, session, popupTab, popup.Stamping, SafeUrl(popupTab.Page), ct);
+        var ctx = new TabWorkContext(
+            this, session, popupTab, popup.Stamping, SafeUrl(popupTab.Page), popupTab.LastTouch, ct);
         try
         {
             T result;
@@ -408,8 +420,8 @@ public class BrowserSessionManager : IAsyncDisposable
         Func<TabWorkContext, Task<T>> work,
         CancellationToken ct)
     {
-        Touch(session, tab);
-        var ctx = new TabWorkContext(this, session, tab, stamping, SafeUrl(tab.Page), ct);
+        var startedAt = Touch(session, tab);
+        var ctx = new TabWorkContext(this, session, tab, stamping, SafeUrl(tab.Page), startedAt, ct);
         try
         {
             T result;
@@ -453,7 +465,7 @@ public class BrowserSessionManager : IAsyncDisposable
             session.SupersedeRangesOf(tab);
         }
 
-        NoteFinalUrl(session.SessionId, tab, finalUrl);
+        NoteFinalUrl(session, tab, finalUrl, ctx.StartedAt);
         ctx.CommitLease();
     }
 
@@ -544,16 +556,13 @@ public class BrowserSessionManager : IAsyncDisposable
             evicted = session.EvictLruIfAtCap(_tabCap);
             // The opener's context, never a default: the browser opened the popup in the opener's
             // cookies, and a tab misfiled under another context would be reused by its browses.
-            var tab = Admit(session, sessionId, popup, SafeUrl(popup), opener?.Context ?? popup.Context);
+            var tab = Admit(
+                session, sessionId, popup, SafeUrl(popup), opener?.Context ?? popup.Context, adopted: true);
 
             // Pending on the tab whose click spawned it, so the popup answers that click's action
             // and no other — a session-global handoff let a parallel action on another tab swallow
             // it and claim its URL and snapshot as its own answer.
             opener?.OfferPopup(tab);
-
-            // Touched again once it is on offer: an action on the opener that finished its tail
-            // between Admit and the offer took "current" back, and saw nothing pending to return.
-            Touch(session, tab);
 
             return tab;
         }
@@ -579,12 +588,14 @@ public class BrowserSessionManager : IAsyncDisposable
     }
 
     private BrowserTab Admit(
-        BrowserSession session, string sessionId, IPage page, string url, IBrowserContext context)
+        BrowserSession session, string sessionId, IPage page, string url, IBrowserContext context,
+        bool adopted = false)
     {
         var tab = new BrowserTab(page, url, context);
         HandlePageEvents(sessionId, tab);
         session.AddTab(tab);
-        Touch(session, tab);
+        session.TouchCurrent(tab, adopted);
+        session.LastAccessedAt = _timeProvider.GetUtcNow();
         return tab;
     }
 
@@ -621,18 +632,6 @@ public class BrowserSessionManager : IAsyncDisposable
         return tab.TakePopup();
     }
 
-    // A popup the act opened but the browser reported only after the grace was adopted (and made
-    // current) while the acting tab answered; the acting tab's tail then touched the opener. The
-    // popup is what the click produced, so it stays current. Only one offered during this action
-    // can be pending here: the action took any leftover before it acted.
-    private void KeepLatePopupCurrent(BrowserSession session, BrowserTab opener)
-    {
-        if (opener.PeekPopup() is { Page.IsClosed: false } popup && session.Tabs.Contains(popup))
-        {
-            Touch(session, popup);
-        }
-    }
-
     internal static string SafeUrl(IPage page)
     {
         try
@@ -647,24 +646,17 @@ public class BrowserSessionManager : IAsyncDisposable
 
     // Touch is any tool call routed to a tab, view_image included: it refreshes the tab's place in
     // the LRU order, makes it the session's current tab, and resets the session's one idle clock.
-    private void TouchTab(string sessionId, BrowserTab tab)
+    // Answers the touch's place in the order, which a call's tail is measured against.
+    private long Touch(BrowserSession session, BrowserTab tab)
     {
-        if (_sessions.TryGetValue(sessionId, out var session))
-        {
-            Touch(session, tab);
-        }
-    }
-
-    private void Touch(BrowserSession session, BrowserTab tab)
-    {
-        tab.LastTouch = session.NextTouch();
-        session.CurrentTab = tab;
+        var touch = session.TouchCurrent(tab);
         session.LastAccessedAt = _timeProvider.GetUtcNow();
+        return touch;
     }
 
     // Where the tab actually landed, recorded beside the address it was asked for — redirects
     // split the two, and reuse matches either.
-    private void NoteFinalUrl(string sessionId, BrowserTab tab, string url)
+    private void NoteFinalUrl(BrowserSession session, BrowserTab tab, string url, long startedAt)
     {
         // A popup adopted before its navigation committed is known only as about:blank; once it
         // lands somewhere real, that address is the one its walls can name — "Browse about:blank
@@ -675,7 +667,11 @@ public class BrowserSessionManager : IAsyncDisposable
         }
 
         tab.FinalUrl = url;
-        TouchTab(sessionId, tab);
+        if (_sessions.ContainsKey(session.SessionId))
+        {
+            session.TouchAfterWork(tab, startedAt);
+            session.LastAccessedAt = _timeProvider.GetUtcNow();
+        }
     }
 
     // One tab, one operation at a time: navigation, action, snapshot and image fetch all take this,
@@ -951,6 +947,7 @@ public sealed class TabWorkContext
         BrowserTab tab,
         StampPolicy stamping,
         string urlBefore,
+        long startedAt,
         CancellationToken ct)
     {
         _manager = manager;
@@ -958,8 +955,12 @@ public sealed class TabWorkContext
         _tab = tab;
         _stamping = stamping;
         UrlBefore = urlBefore;
+        StartedAt = startedAt;
         _ct = ct;
     }
+
+    // The touch the call began with; a popup adopted after it keeps current through the tail.
+    internal long StartedAt { get; }
 
     // The raw Playwright page. Convention, not the type system, keeps it from escaping the lock.
     public IPage Page => _tab.Page;
@@ -1050,6 +1051,9 @@ internal class BrowserTab(IPage page, string requestedUrl, IBrowserContext conte
     // Its place in the session's touch order; the highest is the most recently touched.
     public long LastTouch { get; internal set; }
 
+    // For a page the site opened, its place in the touch order when it was adopted.
+    public long? AdoptedAt { get; internal set; }
+
     private readonly Lock _popupGate = new();
     private TaskCompletionSource _popupOffered = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -1075,14 +1079,6 @@ internal class BrowserTab(IPage page, string requestedUrl, IBrowserContext conte
         {
             _pendingPopup = popup;
             _popupOffered.TrySetResult();
-        }
-    }
-
-    internal BrowserTab? PeekPopup()
-    {
-        lock (_popupGate)
-        {
-            return _pendingPopup;
         }
     }
 
@@ -1166,7 +1162,42 @@ public class BrowserSession(string sessionId, DateTimeOffset createdAt)
     // so the pool evicted the tab the model had just used and kept the one it abandoned.
     private long _touchSequence;
 
-    internal long NextTouch() => Interlocked.Increment(ref _touchSequence);
+    private readonly Lock _touchGate = new();
+
+    internal long TouchCurrent(BrowserTab tab, bool adopted = false)
+    {
+        lock (_touchGate)
+        {
+            tab.LastTouch = ++_touchSequence;
+            if (adopted)
+            {
+                tab.AdoptedAt = tab.LastTouch;
+            }
+
+            CurrentTab = tab;
+            return tab.LastTouch;
+        }
+    }
+
+    // A call's closing touch. The browser reports a popup whenever it is ready, which can be
+    // while a call on another tab is still working — the click that opened it answering after the
+    // grace, or a ref-less read that queued on the opener. The popup is what the site just did, so
+    // that call's tail refreshes its own tab's LRU place without taking current back.
+    internal void TouchAfterWork(BrowserTab tab, long startedAt)
+    {
+        lock (_touchGate)
+        {
+            tab.LastTouch = ++_touchSequence;
+            if (CurrentTab is { AdoptedAt: { } adopted } popup
+                && !ReferenceEquals(popup, tab)
+                && adopted > startedAt)
+            {
+                return;
+            }
+
+            CurrentTab = tab;
+        }
+    }
 
     // Serializes this session's pool mutation — create, reuse, evict, adopt — and nothing else's.
     internal SemaphoreSlim PoolGate { get; } = new(1, 1);
