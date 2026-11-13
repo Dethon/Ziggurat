@@ -678,6 +678,10 @@ public class PlaywrightWebBrowser(
                 {
                     // A document still parsing after that is read as it stands.
                 }
+
+                // What a browse waits for once its document is there: a confirmation its own script
+                // draws is read when it has stopped changing, not at the first parse.
+                await WaitForDomStabilityAsync(page, ct);
             }
             else
             {
