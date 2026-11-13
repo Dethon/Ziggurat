@@ -15,9 +15,9 @@ public class DashboardOverviewE2ETests(DashboardE2EFixture fixture)
         await page.GotoAsync(fixture.DashboardUrl, new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         // Network idle is the WebAssembly loaded, not the overview drawn: under load the first
-        // render lands after it.
+        // render lands after it, beside a second suite past the default twenty seconds.
         var kpiCards = page.Locator(".kpi-card");
-        await Assertions.Expect(kpiCards).ToHaveCountAsync(7);
+        await Assertions.Expect(kpiCards).ToHaveCountAsync(7, new LocatorAssertionsToHaveCountOptions { Timeout = 60_000 });
 
         var labels = await kpiCards.Locator(".kpi-label").AllTextContentsAsync();
         labels.ShouldContain("Input Tokens");

@@ -71,7 +71,11 @@ public class DomStabilityWaitTests(QuietBrowserFixture fixture) : IAsyncLifetime
                 page => PlaywrightWebBrowser.WaitForDomStabilityAsync(
                     page, CancellationToken.None, stableCountRequired: 3, intervalsMs: [200, 200, 200, 200, 200, 200])));
 
-        current.ShouldBeLessThan(old - 100);
+        // The old schedule costs 200ms more sleep and one more reading than the new one whatever the
+        // load, so half of that is the margin: beside a second suite the fastest pair read 576 against
+        // 660, inside a 100ms margin while still clearly faster. Code back on the old floor reads the
+        // two the same.
+        current.ShouldBeLessThan(old - 50);
     }
 
     private async Task<long> TimeSettledWaitAsync(Func<IPage, Task> wait)

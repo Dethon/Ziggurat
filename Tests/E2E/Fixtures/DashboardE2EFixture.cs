@@ -100,20 +100,12 @@ public class DashboardE2EFixture : E2EFixtureBase
 
     protected override async Task StopContainersAsync()
     {
-        if (_accountsKeys is not null)
-        {
-            await _accountsKeys.DisposeAsync();
-        }
-
-        if (_observability is not null)
-        {
-            await _observability.DisposeAsync();
-        }
-
-        if (_redis is not null)
-        {
-            await _redis.DisposeAsync();
-        }
+        // Together: each stop is a second of its own, and the last collection to finish pays them
+        // after its last test, as the run's tail.
+        await Task.WhenAll(
+            _accountsKeys?.DisposeAsync().AsTask() ?? Task.CompletedTask,
+            _observability?.DisposeAsync().AsTask() ?? Task.CompletedTask,
+            _redis?.DisposeAsync().AsTask() ?? Task.CompletedTask);
 
         if (_network is not null)
         {

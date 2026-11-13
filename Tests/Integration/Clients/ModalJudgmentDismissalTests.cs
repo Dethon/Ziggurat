@@ -178,7 +178,10 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
     }
 
     private async Task<PlaywrightWebBrowser> BrowserAsync(IJudge judge) =>
-        await BrowserAsync(new ModalJudge(judge, new ModalJudgmentSettings(), TimeProvider.System));
+        // A deadline these cases never test (ModalJudge's own tests do): the judge here answers at
+        // once, but beside a second suite the production second ran out before the pick came back
+        // and the wall was left standing.
+        await BrowserAsync(new ModalJudge(judge, new ModalJudgmentSettings { DeadlineMs = 15_000 }, TimeProvider.System));
 
     private async Task<PlaywrightWebBrowser> BrowserAsync(ModalJudge modalJudge)
     {

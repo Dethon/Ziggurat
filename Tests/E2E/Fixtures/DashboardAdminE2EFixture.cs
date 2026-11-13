@@ -275,15 +275,12 @@ public partial class DashboardAdminE2EFixture : E2EFixtureBase
 
     protected override async Task StopContainersAsync()
     {
-        foreach (var container in new[] { _caddy, _observability, _accounts, _redis }.OfType<IContainer>())
-        {
-            await container.DisposeAsync();
-        }
-
-        if (_agent is not null)
-        {
-            await _agent.DisposeAsync();
-        }
+        // Together: each stop is a second of its own, and the last collection to finish pays them
+        // after its last test, as the run's tail.
+        await Task.WhenAll(
+            new[] { _caddy, _observability, _accounts, _redis }.OfType<IContainer>()
+                .Select(container => container.DisposeAsync().AsTask())
+                .Append(_agent?.DisposeAsync().AsTask() ?? Task.CompletedTask));
 
         if (_network is not null)
         {

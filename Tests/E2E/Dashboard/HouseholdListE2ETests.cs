@@ -121,8 +121,9 @@ public class HouseholdListE2ETests(DashboardAdminE2EFixture fixture)
     private async Task OpenAsync(IPage page)
     {
         await page.GotoAsync($"{fixture.DashboardUrl}households");
-        // The list is drawn once the WASM app has booted and asked the admin API.
-        await Assertions.Expect(Row(page, "Home")).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        // The list is drawn once the WASM app has booted and asked the admin API; beside a second
+        // suite that first boot took past thirty seconds, so it gets the navigation's sixty.
+        await Assertions.Expect(Row(page, "Home")).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
     }
 
     private static async Task<string> WaitForLinkAsync(IPage page)
