@@ -86,7 +86,14 @@ public abstract class E2EFixtureBase : IAsyncLifetime
                 "--use-fake-device-for-media-stream",
                 $"--use-file-for-fake-audio-capture={FakeMicrophoneAudio.WriteToTempFile()}",
                 "--use-fake-ui-for-media-stream",
-                "--autoplay-policy=no-user-gesture-required"
+                "--autoplay-policy=no-user-gesture-required",
+                // Nothing here listens to what a page plays, and an AudioContext is clocked by its
+                // output device: on WSL, ALSA's default is the pulse plugin and that is WSLg's one
+                // PulseServer for the whole host. When it stalled, every recording in every test
+                // browser froze at once — samples stuck, the context still "running", both suites
+                // of a double run losing every dictation case from the same second. A fake output
+                // stream is clocked by Chromium's own timer instead.
+                "--disable-audio-output"
             ]
         });
     }
