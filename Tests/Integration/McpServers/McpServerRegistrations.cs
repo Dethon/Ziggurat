@@ -71,9 +71,12 @@ public static class McpServerRegistrations
     // ConfigureChannel eagerly calls ConnectionMultiplexer.Connect. abortConnect=false makes that
     // hand back a disconnected multiplexer instead of throwing, so the registration theory runs
     // without a Redis container; port 1 is refused instantly and the short timeouts keep the
-    // background reconnect loop from lingering.
+    // background reconnect loop from lingering. The command timeouts matter as much: a command
+    // sent to a multiplexer that never connects waits in its backlog for the full timeout, and the
+    // heartbeat every metrics-publishing host sends at start is one — the buffered publisher's
+    // disposal then waited out the default five seconds on every host a test stopped.
     public const string UnreachableRedis =
-        "127.0.0.1:1,abortConnect=false,connectTimeout=100,connectRetry=1";
+        "127.0.0.1:1,abortConnect=false,connectTimeout=100,connectRetry=1,syncTimeout=100,asyncTimeout=100";
 
     // The declared delivery policy is part of the row, so this table is the single place where
     // "this is a channel server, and this is the policy it chose" is verified against the real

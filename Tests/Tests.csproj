@@ -8,6 +8,9 @@
     <LangVersion>14</LangVersion>
     <NoWarn>$(NoWarn);OPENAI001</NoWarn>
     <UserSecretsId>bae64127-c00e-4499-8325-0fb6b452133c</UserSecretsId>
+    <!-- The test host runs dozens of in-process servers at once; workstation GC's one collector
+         thread stopped every one of them for each other's garbage. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>
