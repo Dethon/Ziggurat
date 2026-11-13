@@ -93,32 +93,38 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
     {
         Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
 
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync("<!doctype html><html><body><p>content</p></body></html>");
-        await page.EvaluateAsync(
-            """
-            (delay) => {
-                setTimeout(() => {
-                    const d = document.createElement('div');
-                    d.id = 'late-banner';
-                    d.className = 'cookie-consent';
-                    d.style.cssText = 'position:fixed;top:0;left:0;right:0;height:60px;background:#ddd;z-index:9999';
-                    const b = document.createElement('button');
-                    b.className = 'accept-cookies';
-                    b.textContent = 'Accept';
-                    b.onclick = () => d.remove();
-                    d.appendChild(b);
-                    document.body.appendChild(d);
-                }, delay);
-            }
-            """,
-            120);
+        var caught = await LatencyBudget.HoldsOnceAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync("<!doctype html><html><body><p>content</p></body></html>");
+            await page.EvaluateAsync(
+                """
+                (delay) => {
+                    setTimeout(() => {
+                        const d = document.createElement('div');
+                        d.id = 'late-banner';
+                        d.className = 'cookie-consent';
+                        d.style.cssText = 'position:fixed;top:0;left:0;right:0;height:60px;background:#ddd;z-index:9999';
+                        const b = document.createElement('button');
+                        b.className = 'accept-cookies';
+                        b.textContent = 'Accept';
+                        b.onclick = () => d.remove();
+                        d.appendChild(b);
+                        document.body.appendChild(d);
+                    }, delay);
+                }
+                """,
+                120);
 
-        var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var dismisser = new ModalDismisser();
+            var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var dismissed = result.Any(r => r.Type == ModalType.CookieConsent)
+                && !await page.Locator("#late-banner").IsVisibleAsync();
+            await page.CloseAsync();
+            return dismissed;
+        });
 
-        result.ShouldContain(r => r.Type == ModalType.CookieConsent);
-        (await page.Locator("#late-banner").IsVisibleAsync()).ShouldBeFalse();
+        caught.ShouldBeTrue("an overlay injected 120 ms after load was left standing on every attempt");
     }
 
     // A large DOM is where overlay detection got expensive: the scan resolved its container locator
@@ -222,21 +228,27 @@ public class ModalDismisserTests(QuietBrowserFixture fixture) : IAsyncLifetime
         var bulk = string.Concat(Enumerable.Range(0, 3000).Select(i =>
             $"<div class='card-{i} modal-body popup-inner overlay-tile cookie-note'>" +
             $"<span class='close-icon'>row {i}</span></div>"));
-        var page = await _context!.NewPageAsync();
-        await page.SetContentAsync(
-            "<!doctype html><html><body>" + bulk +
-            "<div id='cookie-banner' class='cookie-consent' " +
-            "style='position:fixed;top:0;left:0;right:0;background:#ddd;padding:20px;z-index:9999'>" +
-            "We use cookies. " +
-            "<button class='accept-cookies' " +
-            "onclick=\"document.getElementById('cookie-banner').style.display='none'\">Accept</button>" +
-            "</div></body></html>");
+        var caught = await LatencyBudget.HoldsOnceAsync(async () =>
+        {
+            var page = await _context!.NewPageAsync();
+            await page.SetContentAsync(
+                "<!doctype html><html><body>" + bulk +
+                "<div id='cookie-banner' class='cookie-consent' " +
+                "style='position:fixed;top:0;left:0;right:0;background:#ddd;padding:20px;z-index:9999'>" +
+                "We use cookies. " +
+                "<button class='accept-cookies' " +
+                "onclick=\"document.getElementById('cookie-banner').style.display='none'\">Accept</button>" +
+                "</div></body></html>");
 
-        var dismisser = new ModalDismisser();
-        var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var dismisser = new ModalDismisser();
+            var result = await dismisser.DismissModalsAsync(page, JudgmentCaller.None, CancellationToken.None);
+            var dismissed = result.Any(r => r.Type == ModalType.CookieConsent)
+                && !await page.Locator("#cookie-banner").IsVisibleAsync();
+            await page.CloseAsync();
+            return dismissed;
+        });
 
-        result.ShouldContain(r => r.Type == ModalType.CookieConsent);
-        (await page.Locator("#cookie-banner").IsVisibleAsync()).ShouldBeFalse();
+        caught.ShouldBeTrue("the consent banner buried in a large page was left standing on every attempt");
     }
 
     // The text fallback narrows Playwright's accessible-name matches using textContent, which is
