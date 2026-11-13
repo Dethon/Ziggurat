@@ -102,9 +102,9 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
 
         // The reply is the proof the turn's record was written; reloading before it races the history
         // read against the agent's own persistence (as the attachment test waits).
-        await DismissApprovalOverlayAsync(page);
-        await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
-            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 90_000 });
+        // A message this odd is sometimes answered with a tool call, whose approval holds the reply
+        // until it is answered; the wait answers it as it comes, as SendMessage_AppearsInChat's does.
+        await WaitForAssistantTextAsync(page);
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await DismissApprovalOverlayAsync(page);
         await page.Locator(".topic-item", new PageLocatorOptions { HasText = $"markup {tag}" })
@@ -147,6 +147,15 @@ public class WebChatConversationE2ETests(WebChatE2EFixture fixture)
         // old ninety seconds and reported it as an empty bubble, which reads as a broken client
         // rather than as the wait it was. The loop still returns the moment text appears, so a
         // normal run pays nothing for the larger cap.
+        await WaitForAssistantTextAsync(page);
+    }
+
+    // The reply comes from a real model over the network, so what bounds this is the provider's
+    // worst case rather than the app's. The model sometimes answers with a tool call, which raises an
+    // approval prompt that holds the reply hostage until it is answered — rejected between waits, or
+    // no amount of timeout produces text. Returns the moment text appears.
+    internal static async Task WaitForAssistantTextAsync(IPage page)
+    {
         var assistantMessage = page.Locator(".chat-message.assistant .message-content");
         var deadline = DateTime.UtcNow.AddMinutes(3);
         while (true)
