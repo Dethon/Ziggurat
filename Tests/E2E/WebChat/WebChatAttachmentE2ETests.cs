@@ -62,11 +62,10 @@ public class WebChatAttachmentE2ETests(WebChatE2EFixture fixture)
         await attachment.First.WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
 
         // The reply is the proof the turn reached the agent and its record was written; reloading
-        // before it races the history read against the agent's own persistence. 90s for the same
-        // reason as SendMessage_AppearsInChat: reasoning plus shared provider slots can hold the
-        // first text token past half a minute.
-        await Assertions.Expect(page.Locator(".chat-message.assistant .message-content").First)
-            .Not.ToBeEmptyAsync(new LocatorAssertionsToBeEmptyOptions { Timeout = 90_000 });
+        // before it races the history read against the agent's own persistence. Waited as
+        // SendMessage_AppearsInChat waits: up to the provider's worst case (three minutes), returning
+        // the moment text appears — ninety seconds ran out once with two suites sharing the provider.
+        await WebChatConversationE2ETests.WaitForAssistantTextAsync(page);
 
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
 

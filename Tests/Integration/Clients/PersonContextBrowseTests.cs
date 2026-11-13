@@ -97,11 +97,21 @@ public class PersonContextBrowseTests(IsolatedSessionBrowserFixture fixture)
             // answers from it only if that lands inside its grace, which is the tab protocol's to
             // pin on a fake clock (TabProtocolTests); a loaded machine reports it later, so this
             // waits for the adoption rather than asserting on the click's own answer.
-            await Eventually.Until(
-                async () => (await fixture.Browser.EvaluateOnSessionAsync<string>(sessionId, "() => location.href"))
-                    .Contains("/whoami"),
-                "the popup adopted as the session's current tab",
-                TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(100));
+            try
+            {
+                await Eventually.Until(
+                    async () => (await fixture.Browser.EvaluateOnSessionAsync<string>(sessionId, "() => location.href"))
+                        .Contains("/whoami"),
+                    "the popup adopted as the session's current tab",
+                    TimeSpan.FromSeconds(60), TimeSpan.FromMilliseconds(100));
+            }
+            catch (Exception ex) when (ex is ShouldAssertException or TimeoutException)
+            {
+                // Seen only with two full suites at once: say what the pool held, so the next sighting
+                // tells a popup never adopted from one adopted and then not current.
+                throw new ShouldAssertException(
+                    $"No popup became the current tab; the session held: {fixture.Browser.DescribeTabs(sessionId)}", ex);
+            }
             var popupText = await fixture.Browser.EvaluateOnSessionAsync<string>(
                 sessionId, "() => document.body.innerText");
             popupText.ShouldContain("session=signed-in");

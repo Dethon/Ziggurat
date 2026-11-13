@@ -922,6 +922,14 @@ public class PlaywrightWebBrowser(
             : throw new InvalidOperationException($"Session '{sessionId}' not found");
     }
 
+    // What a session's pool holds, for a test that waited on a tab change and has to say why it never
+    // came: each tab's address, whether it is current, whether it closed. Reads; changes nothing.
+    internal string DescribeTabs(string sessionId) =>
+        _sessions.Get(sessionId) is not { } session
+            ? "no such session"
+            : string.Join("; ", session.Tabs.Select(tab =>
+                $"{(tab.Page.IsClosed ? "closed" : BrowserSessionManager.SafeUrl(tab.Page))}{(ReferenceEquals(tab, session.CurrentTab) ? " (current)" : "")}"));
+
     // The context-level arranging half: answers an address before any page asks for it, so a
     // hermetic test can navigate to a route-fulfilled page instead of borrowing a live third
     // party as its anchor. Routes die with the context on reconnect; register before navigating.
