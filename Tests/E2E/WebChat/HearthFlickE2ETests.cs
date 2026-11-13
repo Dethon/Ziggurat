@@ -63,7 +63,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         string SelectedAfterTap,
         string Report);
 
-    private async Task<Run> RunGestureThenTapAsync(bool fast)
+    private async Task<Run> RunGestureThenTapAsync(bool fast, int attempt = 1)
     {
         // isMobile is not a synonym for hasTouch: it turns on Chromium's mobile emulation
         // (390x844, DSF 3, hasTouch) and with it the tap heuristics a phone is judged by.
@@ -111,8 +111,20 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         var frameMs = fast ? 16.0 : 34.0;
 
         var swipeStartedAt = DateTime.UtcNow;
+        var monotonic = System.Diagnostics.Stopwatch.StartNew();
         await DragAsync(cdp, x, y, y - travel, steps, gapMs, frameMs);
         var releasedAt = DateTime.UtcNow;
+
+        // CDP takes each frame's time as wall-clock seconds, and Chromium turns it into the event's
+        // timeStamp by the wall clock's offset from its own monotonic one as the frame arrives. The
+        // VM's wall clock steps now and then — once by 1.8 s backwards mid-flick — and the frames
+        // after the step land that far apart: the app read -0.017 px/ms off a flick stamped at
+        // -2.3. Such a gesture measured the clock, not the sheet, so it is made again on a fresh page.
+        var clockStepped = Math.Abs((releasedAt - swipeStartedAt).TotalMilliseconds - monotonic.ElapsedMilliseconds) > 100;
+        if (clockStepped && attempt < 3)
+        {
+            return await RunGestureThenTapAsync(fast, attempt + 1);
+        }
 
         // Read the app's own velocity the instant the drag released — do not hope, assert.
         var vy = await page.EvaluateAsync<double>("() => window.hearthSheet._vy");

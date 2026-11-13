@@ -50,8 +50,10 @@ public partial class SharedTopicUnsharedMidReplyE2ETests(WebChatE2EFixture fixtu
         // The turn's end is what is still to cross: its owner stops it rather than waiting out the
         // provider's whole reply, which on a slow day ran past two minutes. A stopped reply ends its
         // stream as a finished one does, and Carlos's page must hear neither.
+        // Dispatched rather than clicked: the control is drawn again as the reply streams, and beside a
+        // second suite it never held still for the two frames a click waits for, for thirty seconds.
         await ana.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Stop the reply" })
-            .ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
+            .DispatchEventAsync("click", null, new LocatorDispatchEventOptions { Timeout = 30_000 });
         await IdleAsync(ana);
         await Assertions.Expect(carlos.Locator(".chat-message")).ToHaveCountAsync(0);
     }
