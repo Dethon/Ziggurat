@@ -75,10 +75,22 @@ internal sealed class FakeHandoffBrowser : IHandoffBrowser, IPersonContexts
         return Task.CompletedTask;
     }
 
+    // The picture the next view is sent: a real JPEG where a browser draws it, else three bytes.
+    public byte[] Frame { get; set; } = [0xFF, 0xD8, 0xFF];
+
+    // Where the page's text fields are, as the next view is told.
+    public IReadOnlyList<HandoffField>? Fields { get; set; }
+
     public async Task<IAsyncDisposable> StreamHandoffAsync(
-        string handoffId, Func<HandoffFrame, Task> onFrame, CancellationToken ct = default)
+        string handoffId, Func<HandoffFrame, Task> onFrame, Func<IReadOnlyList<HandoffField>, Task>? onFields = null,
+        CancellationToken ct = default)
     {
-        await onFrame(new HandoffFrame([0xFF, 0xD8, 0xFF], 1920, 1080));
+        await onFrame(new HandoffFrame(Frame, 1920, 1080));
+        if (Fields is { } fields && onFields is not null)
+        {
+            await onFields(fields);
+        }
+
         return new Nothing();
     }
 

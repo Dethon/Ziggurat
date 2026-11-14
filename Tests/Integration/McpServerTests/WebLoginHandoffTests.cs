@@ -312,6 +312,109 @@ public class WebLoginHandoffTests(RedisFixture redis) : IClassFixture<RedisFixtu
         _browser.Inputs.ShouldBe([new HandoffInput.Text("fran@example.test"), new HandoffInput.MouseDown(0.5, 0.25)]);
     }
 
+    // A phone shows the site at its own size only if the site is drawn at that size: the view says how
+    // big it is, and the tab is sized to it rather than shrinking a desktop page into a strip.
+    [Fact]
+    public async Task TheLiveView_ForwardsTheViewersSize()
+    {
+        var socket = await OpenLiveViewAsync();
+
+        await socket.SendAsync(Encoding.UTF8.GetBytes("""{"type":"resize","width":390,"height":700}"""),
+            WebSocketMessageType.Text, true, CancellationToken.None);
+
+        await Eventually.Until(() => _browser.Inputs.Count == 1, "the size to reach the tab");
+        _browser.Inputs.ShouldBe([new HandoffInput.Resize(390, 700)]);
+    }
+
+    // Where the site's text fields are, so a tap on one brings up the phone's keyboard of the right kind
+    // at once — only where and what kind, never what they hold.
+    [Fact]
+    public async Task TheLiveView_SaysWhereTheSitesFieldsAre()
+    {
+        _browser.Fields = [new HandoffField(0.1, 0.2, 0.8, 0.05, "email", Focused: false)];
+        var socket = await OpenLiveViewAsync();
+
+        var text = await NextTextMessageAsync(socket);
+
+        var message = System.Text.Json.Nodes.JsonNode.Parse(text)!;
+        message["type"]!.GetValue<string>().ShouldBe("fields");
+        var field = message["fields"]![0]!;
+        (field["x"]!.GetValue<double>(), field["y"]!.GetValue<double>(), field["kind"]!.GetValue<string>())
+            .ShouldBe((0.1, 0.2, "email"));
+        text.ShouldNotContain("value", Case.Insensitive);
+    }
+
+    // A phone that went to its authenticator app for a code drops the view's socket; the page asks whether
+    // the login is still open before saying it ended, and connects again if it is.
+    [Fact]
+    public async Task TheHandoffsState_SaysWhetherItIsStillOpen_ToTheClaimingBrowserAlone()
+    {
+        var path = PathOf(await StartHandoffAsync());
+        var (claimer, _) = NewBrowserSession();
+        var (other, _) = NewBrowserSession();
+        (await claimer.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
+
+        (await other.GetAsync($"{HouseholdPages}/handoff/state")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await claimer.GetStringAsync($"{HouseholdPages}/handoff/state")).ShouldContain("\"open\":true");
+
+        await _browser.CloseHandoffAsync(_browser.OpenedTabs.Single().Id);
+
+        (await claimer.GetStringAsync($"{HouseholdPages}/handoff/state")).ShouldContain("\"open\":false");
+    }
+
+    // An installed chat app has no Back button, so the page offers the way back to the chat when the
+    // login was asked there (a voice login's link is put in the chat), and only says so for Telegram.
+    [Theory]
+    [InlineData("signalr", "chat")]
+    [InlineData("voice", "chat")]
+    [InlineData("telegram", "telegram")]
+    public async Task TheClaim_SaysWhereTheLoginWasAskedFrom(string channel, string from)
+    {
+        var context = channel switch
+        {
+            "signalr" => FromChatClient(Fran),
+            "voice" => FromVoice(Fran),
+            _ => FromTelegram(Fran)
+        };
+        var envelope = Envelope(await _server.CallAsync("web_login", Login(), context));
+        var link = channel == "voice"
+            ? (await DrainAsync()).Select(m => System.Text.RegularExpressions.Regex.Match(m.FireReport ?? "", @"https?://\S+/handoff/[\w-]+").Value)
+                .Single(l => l.Length > 0)
+            : envelope["link"]!.GetValue<string>();
+        var (client, _) = NewBrowserSession();
+
+        var claim = await client.PostAsync($"{PathOf(link)}/claim", null);
+
+        claim.EnsureSuccessStatusCode();
+        System.Text.Json.Nodes.JsonNode.Parse(await claim.Content.ReadAsStringAsync())!["from"]!.GetValue<string>().ShouldBe(from);
+    }
+
+    private async Task<ClientWebSocket> OpenLiveViewAsync()
+    {
+        var path = PathOf(await StartHandoffAsync());
+        var (claimer, cookies) = NewBrowserSession();
+        (await claimer.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
+        var socket = new ClientWebSocket();
+        socket.Options.Cookies = cookies;
+        await socket.ConnectAsync(new Uri($"{_server.PagesAddress.Replace("http", "ws")}{HouseholdPages}/handoff/live"),
+            CancellationToken.None);
+        return socket;
+    }
+
+    private static async Task<string> NextTextMessageAsync(ClientWebSocket socket)
+    {
+        var buffer = new byte[16 * 1024];
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (true)
+        {
+            var received = await socket.ReceiveAsync(buffer, timeout.Token);
+            if (received.MessageType == WebSocketMessageType.Text)
+            {
+                return Encoding.UTF8.GetString(buffer, 0, received.Count);
+            }
+        }
+    }
+
     private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
 
     private async Task<IReadOnlyList<ChannelMessageNotification>> DrainAsync() =>

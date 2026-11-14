@@ -16,9 +16,12 @@ public interface IHandoffBrowser
     Task CloseHandoffAsync(string handoffId);
 
     // Frames of the page on top of the handoff (the tab, or the newest popup it opened) until the
-    // returned handle is disposed.
+    // returned handle is disposed, and where its text fields are whenever that changes. One view at a
+    // time: a newer stream of the same handoff ends the older, so a phone that reconnects is never
+    // frozen by the socket it left behind.
     Task<IAsyncDisposable> StreamHandoffAsync(
-        string handoffId, Func<HandoffFrame, Task> onFrame, CancellationToken ct = default);
+        string handoffId, Func<HandoffFrame, Task> onFrame, Func<IReadOnlyList<HandoffField>, Task>? onFields = null,
+        CancellationToken ct = default);
 
     // The person's input, dispatched to the page on top.
     Task SendHandoffInputAsync(string handoffId, HandoffInput input, CancellationToken ct = default);
@@ -28,6 +31,10 @@ public interface IHandoffBrowser
 }
 
 public record HandoffFrame(byte[] Jpeg, int ViewportWidth, int ViewportHeight);
+
+// A text field of the page on top, as fractions of the frame, and the kind of keyboard it wants
+// (text, email, tel, number, url, password, one-time-code). Where it is and what kind — never what it holds.
+public record HandoffField(double X, double Y, double Width, double Height, string Kind, bool Focused);
 
 // Positions are fractions of the frame (0..1), so the view needs no idea of the page's size.
 public abstract record HandoffInput
@@ -47,4 +54,8 @@ public abstract record HandoffInput
 
     // Text as a phone keyboard or a paste delivers it, inserted whole.
     public sealed record Text(string Value) : HandoffInput;
+
+    // The size the view shows the page at, in CSS pixels: the tab is drawn at that size, so a phone
+    // sees the site's own phone layout rather than a desktop page shrunk to a strip.
+    public sealed record Resize(int Width, int Height) : HandoffInput;
 }

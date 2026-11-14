@@ -72,8 +72,9 @@ public class PlaywrightWebBrowser(
     public Task CloseHandoffAsync(string handoffId) => HandoffTabs.CloseAsync(handoffId);
 
     public Task<IAsyncDisposable> StreamHandoffAsync(
-        string handoffId, Func<HandoffFrame, Task> onFrame, CancellationToken ct = default) =>
-        HandoffTabs.StreamAsync(handoffId, onFrame, ct);
+        string handoffId, Func<HandoffFrame, Task> onFrame, Func<IReadOnlyList<HandoffField>, Task>? onFields = null,
+        CancellationToken ct = default) =>
+        HandoffTabs.StreamAsync(handoffId, onFrame, onFields, ct);
 
     public Task SendHandoffInputAsync(string handoffId, HandoffInput input, CancellationToken ct = default) =>
         HandoffTabs.SendInputAsync(handoffId, input, ct);

@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text.Json;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Tunnel;
 using Infrastructure.Clients.Browser;
 using Microsoft.AspNetCore.Builder;
@@ -37,8 +38,11 @@ public static class HandoffEndpoints
     {
         var app = endpoints.MapGroup($"{BrowsePagePath.Root}/{{household}}");
 
-        app.MapGet("/handoff/{token}", async (string household, string token, LoginHandoffs handoffs) =>
+        // The link's page, and the same page again for the browser that claimed it — reloaded, or brought
+        // back after the phone let it go — while its login is open; a spent link to anyone else.
+        app.MapGet("/handoff/{token}", async (string household, string token, HttpContext http, LoginHandoffs handoffs) =>
             await handoffs.IsLinkLiveAsync(token)
+            || (handoffs.ByViewKey(http.Request.Cookies[ViewCookie]) is { } claimed && claimed.Token == token && handoffs.IsOpen(claimed))
                 ? Results.Content(HandoffPage.Viewer(BrowsePagePath.For(household), token, handoffs.LinkMinutes), "text/html")
                 : Gone(handoffs.LinkMinutes));
 
@@ -50,7 +54,29 @@ public static class HandoffEndpoints
             }
 
             http.Response.Cookies.Append(ViewCookie, viewKey, ViewCookieOptions(http, household));
-            return Results.Json(new { site = new Uri(handoff.Url).Host, canRemember = handoffs.CanRemember });
+            return Results.Json(new
+            {
+                site = new Uri(handoff.Url).Host,
+                canRemember = handoffs.CanRemember,
+                from = AskedFrom(handoff.Context)
+            });
+        });
+
+        // Whether the claimed login is still open: a phone that left for its authenticator app comes
+        // back to a dropped socket, and connects again rather than calling the login ended; a page
+        // opened again takes up the login its browser claimed, its link being spent.
+        app.MapGet("/handoff/state", (HttpContext http, LoginHandoffs handoffs) =>
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            return handoffs.ByViewKey(http.Request.Cookies[ViewCookie]) is { } handoff
+                ? Results.Json(new
+                {
+                    open = handoffs.IsOpen(handoff),
+                    site = new Uri(handoff.Url).Host,
+                    canRemember = handoffs.CanRemember,
+                    from = AskedFrom(handoff.Context)
+                })
+                : Results.Unauthorized();
         });
 
         app.MapGet("/logins/{token}", async (string household, string token, LoginsPages pages) =>
@@ -159,6 +185,17 @@ public static class HandoffEndpoints
         }
     }
 
+    // Where the person goes back to once the login is done, as the page words it: the chat (a voice
+    // login's link is put there too), Telegram, or nowhere the page knows. The page navigates only to
+    // the chat's own front, so a server saying something else here leads nowhere new.
+    private static string AskedFrom(ConversationContext context) =>
+        context.Origin.ChannelId switch
+        {
+            ChannelIds.SignalR or ChannelIds.Voice => "chat",
+            ChannelIds.Telegram => "telegram",
+            _ => "elsewhere"
+        };
+
     private static IResult Gone(int minutes) =>
         Results.Content(HandoffPage.Gone(minutes), "text/html", statusCode: StatusCodes.Status410Gone);
 
@@ -193,6 +230,41 @@ public static class HandoffEndpoints
             finally
             {
                 sending.Release();
+            }
+        }, async fields =>
+        {
+            // Rare and small, so never dropped: it waits for the frame in flight.
+            var json = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                type = "fields",
+                fields = fields.Select(f => new
+                {
+                    x = f.X,
+                    y = f.Y,
+                    width = f.Width,
+                    height = f.Height,
+                    kind = f.Kind,
+                    focused = f.Focused
+                })
+            });
+            try
+            {
+                await sending.WaitAsync(cts.Token);
+                try
+                {
+                    if (socket.State == WebSocketState.Open)
+                    {
+                        await socket.SendAsync(json, WebSocketMessageType.Text, true, cts.Token);
+                    }
+                }
+                finally
+                {
+                    sending.Release();
+                }
+            }
+            catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
+            {
+                // The view went away; the receive loop ends the session.
             }
         }, cts.Token);
 
@@ -274,7 +346,7 @@ public static class HandoffEndpoints
 
 // The view's input messages: {"type":"mousedown","x":0.4,"y":0.2,"button":"left"}, "mouseup",
 // "mousemove", {"type":"wheel","dx":0,"dy":120}, {"type":"keydown","key":"Enter"}, "keyup",
-// {"type":"text","value":"abc"}. Anything else is ignored.
+// {"type":"text","value":"abc"}, {"type":"resize","width":390,"height":700}. Anything else is ignored.
 public static class HandoffInputMessage
 {
     public static HandoffInput? Parse(byte[] json)
@@ -295,6 +367,7 @@ public static class HandoffInputMessage
                 "keydown" when Text("key") is { Length: > 0 } key => new HandoffInput.KeyDown(key),
                 "keyup" when Text("key") is { Length: > 0 } key => new HandoffInput.KeyUp(key),
                 "text" when Text("value") is { } value => new HandoffInput.Text(value),
+                "resize" => new HandoffInput.Resize((int)Number("width"), (int)Number("height")),
                 _ => null
             };
         }

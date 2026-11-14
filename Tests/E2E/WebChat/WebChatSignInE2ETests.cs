@@ -133,6 +133,43 @@ public class WebChatSignInE2ETests(WebChatE2EFixture fixture)
             .ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 });
     }
 
+    // A link in a message to a page another service serves on this host — the agent's login link, the
+    // logins page — is opened as that page by a full load, never routed inside the app, which in an
+    // installed app (no address bar) would leave the person on the chat with the login never opened.
+    // The stack routes no /browse, so the page that loads is the app's shell again: what tells a load
+    // from the app's own routing is that the window was replaced.
+    [SkippableFact]
+    public async Task ALinkToAnotherServicesPage_OpensThatPage_NotTheAppsNotFound()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 });
+        // As ChatMarkdown draws a message's link: a plain anchor, no target.
+        await page.EvaluateAsync(
+            """
+            () => {
+              const link = document.createElement('a');
+              link.href = '/browse/0123456789abcdef0123456789abcdef/handoff/a-spent-link';
+              link.textContent = 'a link in a message';
+              link.id = 'message-link';
+              document.querySelector('.messages-area, main, body').append(link);
+            }
+            """);
+
+        await page.EvaluateAsync("() => { window.beforeTheLink = true; }");
+
+        await page.Locator("#message-link").ClickAsync();
+
+        // The page itself was loaded: the app's own window, routing the path as one of its own, would
+        // still carry what was set on it.
+        await page.WaitForURLAsync(url => url.Contains("/browse/", StringComparison.Ordinal));
+        await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+        (await page.EvaluateAsync<bool>("() => window.beforeTheLink === true")).ShouldBeFalse();
+    }
+
     // A platform authenticator that keeps discoverable credentials and verifies its user, standing
     // in for the phone's; it belongs to the page, so enrolling and signing in share one.
     private static async Task AddVirtualAuthenticatorAsync(IPage page)

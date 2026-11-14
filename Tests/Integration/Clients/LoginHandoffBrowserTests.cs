@@ -183,6 +183,135 @@ public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, Red
         }
     }
 
+    // A phone's view asks for its own size, and the tab is drawn at it: the site's phone layout at a
+    // readable scale, not a desktop page shrunk to a strip — and the view is told where its fields are,
+    // so a tap on one brings up the right keyboard.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task AViewsSize_IsTheSizeTheTabIsDrawnAt_AndItsFieldsAreTold()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", ServeAsync, person);
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/login");
+        try
+        {
+            HandoffFrame? last = null;
+            IReadOnlyList<HandoffField>? fields = null;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff,
+                frame => { Volatile.Write(ref last, frame); return Task.CompletedTask; },
+                told => { Volatile.Write(ref fields, told); return Task.CompletedTask; });
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Resize(390, 700));
+
+            await Eventually.Until(() => Volatile.Read(ref last) is { ViewportWidth: 390, ViewportHeight: 700 },
+                $"a frame drawn at the view's size (last: {Volatile.Read(ref last)?.ViewportWidth}x{Volatile.Read(ref last)?.ViewportHeight})");
+            await Eventually.Until(() => Volatile.Read(ref fields) is { Count: 2 },
+                $"the login form's two fields (told: {Volatile.Read(ref fields)?.Count})");
+            Volatile.Read(ref fields)!.Select(f => f.Kind).ShouldBe(["text", "password"]);
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
+    // Camoufox's screencast draws a page as if it were never scrolled while clicks land where it is: a
+    // login form below the fold was out of sight for good, and once the site scrolled a field into view
+    // every tap landed somewhere else than the picture showed. A scrolled page is shown where it is.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task AScrolledPage_IsShownWhereItIsScrolledTo()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = "<!DOCTYPE html><html><body style='margin:0'><div style='height:2000px;background:#f00'></div><div style='height:2000px;background:#00f'></div></body></html>"
+        }), person);
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/tall");
+        try
+        {
+            HandoffFrame? last = null;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff,
+                frame => { Volatile.Write(ref last, frame); return Task.CompletedTask; });
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Resize(390, 700));
+            await Eventually.Until(() => Volatile.Read(ref last) is { ViewportWidth: 390 }, "a frame at the view's size");
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseMove(0.5, 0.5));
+            foreach (var _ in Enumerable.Range(0, 12))
+            {
+                await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Wheel(0, 400));
+            }
+
+            using var playwright = await Playwright.CreateAsync();
+            await using var chromium = await playwright.Chromium.LaunchAsync();
+            var decoder = await chromium.NewPageAsync();
+            await Eventually.Until(async () => await CentreIsBlueAsync(decoder, Volatile.Read(ref last)!.Jpeg),
+                "a frame of the blue half the page was scrolled to");
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
+    private static async ValueTask<bool> CentreIsBlueAsync(IPage decoder, byte[] jpeg) =>
+        await decoder.EvaluateAsync<bool>(
+            """
+            async data => {
+              const image = new Image();
+              image.src = 'data:image/jpeg;base64,' + data;
+              await image.decode();
+              const canvas = document.createElement('canvas');
+              canvas.width = image.width; canvas.height = image.height;
+              const context = canvas.getContext('2d');
+              context.drawImage(image, 0, 0);
+              const [r, , b] = context.getImageData(image.width / 2, image.height / 2, 1, 1).data;
+              return b > 200 && r < 60;
+            }
+            """, Convert.ToBase64String(jpeg));
+
+    // A phone that comes back from its authenticator app opens a second view before the first one's
+    // socket is noticed gone; the first one's ending must not stop the second's frames.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task ANewerView_KeepsItsFrames_WhenTheOlderOneEnds()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", ServeAsync, person);
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/login");
+        try
+        {
+            var older = await fixture.Browser.StreamHandoffAsync(handoff, _ => Task.CompletedTask);
+            var frames = 0;
+            await using var newer = await fixture.Browser.StreamHandoffAsync(handoff, _ =>
+            {
+                Interlocked.Increment(ref frames);
+                return Task.CompletedTask;
+            });
+            await older.DisposeAsync();
+            await Eventually.Until(() => Volatile.Read(ref frames) > 0, "a frame of the newer view");
+            var before = Volatile.Read(ref frames);
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseDown(0.5, 0.05));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseUp(0.5, 0.05));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Text("fran"));
+
+            await Eventually.Until(() => Volatile.Read(ref frames) > before,
+                $"a frame after the typing, with the older view gone (frames: {before} before it)");
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
     // A sign-in window the login page opens is what the view shows and types into, and the
     // handoff knows the hosts it passed through.
     [Trait("Category", "External")]
