@@ -16,6 +16,8 @@ public sealed class HouseholdSpacesAccounts : IHouseholdConfiguration
 
     public Dictionary<string, AgentsSection> SavedAgents { get; } = [];
 
+    public Dictionary<string, HouseholdMemberNames> SavedPeople { get; } = [];
+
     public async Task<SpacesSection> SpacesAsync(string householdId, HouseholdProof proof, CancellationToken ct)
     {
         await RequireProvenAsync(householdId, proof, ct);
@@ -26,6 +28,12 @@ public sealed class HouseholdSpacesAccounts : IHouseholdConfiguration
     {
         await RequireProvenAsync(householdId, proof, ct);
         return HouseholdAgents.Names(SavedAgents.GetValueOrDefault(householdId) ?? new AgentsSection());
+    }
+
+    public async Task<HouseholdMemberNames> MemberNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct)
+    {
+        await RequireProvenAsync(householdId, proof, ct);
+        return SavedPeople.GetValueOrDefault(householdId) ?? new HouseholdMemberNames([]);
     }
 
     private static async Task RequireProvenAsync(string householdId, HouseholdProof proof, CancellationToken ct)
@@ -39,19 +47,19 @@ public sealed class HouseholdSpacesAccounts : IHouseholdConfiguration
     }
 
     public Task<AgentHouseholdConfig> ForAgentAsync(string householdId, CancellationToken ct) =>
-        throw new NotSupportedException("the hub reads the spaces and agent-names views alone");
+        throw new NotSupportedException("the hub reads the spaces, agent-names and member-names views alone");
 
     public Task<HouseholdSettings> SettingsAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
-        throw new NotSupportedException("the hub reads the spaces and agent-names views alone");
+        throw new NotSupportedException("the hub reads the spaces, agent-names and member-names views alone");
 
     public Task<IdealistaKeys?> IdealistaKeysAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
-        throw new NotSupportedException("the hub reads the spaces and agent-names views alone");
+        throw new NotSupportedException("the hub reads the spaces, agent-names and member-names views alone");
 
     public Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct) =>
-        throw new NotSupportedException("the hub reads the spaces and agent-names views alone");
+        throw new NotSupportedException("the hub reads the spaces, agent-names and member-names views alone");
 
     public Task<IReadOnlyList<HouseholdMembers>> PeopleAsync(CancellationToken ct) =>
-        throw new NotSupportedException("the hub reads the spaces and agent-names views alone");
+        throw new NotSupportedException("the hub reads the spaces, agent-names and member-names views alone");
 
     private static HouseholdConfigRefusedException Refused(string detail) =>
         new(new HouseholdConfigRefused(HouseholdConfigRefusal.Unproven, detail));

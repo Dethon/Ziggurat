@@ -79,6 +79,24 @@ public static class HouseholdConfiguration
                 ])), ct);
         });
 
+        // The chat hub's: the household's people by name, for the topic list's person filter. A person,
+        // not a section, as Sugary's is; a disabled member stays named, since their topics are kept.
+        routes.MapPost(Path + HouseholdConfigProtocol.MemberNamesView, async (
+            HttpContext http, HouseholdConfigQuery query, HouseholdProofs proofs, HouseholdConfigStore store, MemberStore members,
+            ILogger<HouseholdConfigStore> logger, CancellationToken ct) =>
+        {
+            var callers = InternalCallers.Reading(http, HouseholdConfigProtocol.MemberNamesView);
+            if (callers.Count == 0)
+            {
+                return InternalCallers.NotYours;
+            }
+
+            return await AnswerAsync(await proofs.SharedAsync(query, callers, ct), store, logger, async household =>
+                new HouseholdConfigAnswer<HouseholdMemberNames>(household.Id, new HouseholdMemberNames([
+                    .. (await members.ListAsync(household.Id, ct)).Select(m => new HouseholdMemberName(m.Id, m.DisplayName))
+                ])), ct);
+        });
+
         // OpenRouter refused a household's own key in a turn: marked rejected and asked about again
         // (KeysAdmin), so its owner sees it on the keys page. The agent names the household as for its
         // own view; nothing of the key travels.

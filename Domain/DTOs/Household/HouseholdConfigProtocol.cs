@@ -42,6 +42,10 @@ public static class HouseholdConfigProtocol
     // reader keeps a view per household.
     public const string SugaryPeopleView = "sugary-people";
 
+    // The chat hub's, on its connection's assertion: the household's people by name, for whoever sees
+    // every topic to pick whose they list.
+    public const string MemberNamesView = "member-names";
+
     // The agent's, for work no call is behind (dreaming): every household and the people in it, each
     // then read on its own view for its key. Asked naming no household.
     public const string PeopleView = "people";
@@ -168,6 +172,14 @@ public sealed record HouseholdSugaryPeople(IReadOnlyList<SugaryPerson> People);
 
 [PublicAPI]
 public sealed record SugaryPerson(string UserId, string DisplayName, bool ReadsEveryLog);
+
+// The chat hub's view of a household's people: everyone, disabled members too — their topics are still
+// kept — in the order they joined, under the name they go by now.
+[PublicAPI]
+public sealed record HouseholdMemberNames(IReadOnlyList<HouseholdMemberName> People);
+
+[PublicAPI]
+public sealed record HouseholdMemberName(string UserId, string DisplayName);
 
 // The agent's view across households: each household, and the user ids of its people (none for a
 // household nobody has joined yet).

@@ -34,6 +34,11 @@ public interface IHouseholdConfiguration
     Task<HouseholdSugaryPeople> SugaryPeopleAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
         Task.FromResult(new HouseholdSugaryPeople([]));
 
+    // The household's people by name: the chat hub's, for the topic list's person filter. A reader that
+    // is not the hub's names nobody.
+    Task<HouseholdMemberNames> MemberNamesAsync(string householdId, HouseholdProof proof, CancellationToken ct) =>
+        Task.FromResult(new HouseholdMemberNames([]));
+
     // Every household's bots: the Telegram server polls them from startup, before any call.
     Task<IReadOnlyList<HouseholdTelegramBot>> TelegramBotsAsync(CancellationToken ct);
 

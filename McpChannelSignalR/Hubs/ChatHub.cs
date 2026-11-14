@@ -57,6 +57,8 @@ public sealed class ChatHub(
 
     private const string UnvouchedAgentsError = "This household's agents could not be read right now.";
 
+    private const string UnvouchedPeopleError = "This household's people could not be read right now.";
+
     // Where the connection keeps the person the proxy's session check named as it arrived, which is
     // also what says it may call anything (SignedInConnectionFilter).
     internal const string AccountItem = "Account";
@@ -718,15 +720,23 @@ public sealed class ChatHub(
     // One page, most recently written first, plus where the next one starts. The page size is
     // the server's to decide unless a caller has a reason of its own, so a client that wants
     // the ordinary sidebar asks for nothing and gets what the retention policy says.
-    public async Task<TopicPage> GetTopicPage(
+    public Task<TopicPage> GetTopicPage(
         string agentId,
         string spaceSlug = SpaceConfig.DefaultSlug,
         string? cursor = null,
         int? pageSize = null,
-        bool archived = false)
+        bool archived = false) =>
+        GetTopicPageFiltered(agentId, spaceSlug, cursor, pageSize, archived, TopicFilter.Everyone);
+
+    // The same page narrowed to the list the person chose (TopicViewer.Lists): a filter only ever
+    // narrows what the connection's viewer sees, so it needs no check of its own. A method of its own
+    // rather than a parameter on the one above, because a hub binds every argument and an installed app
+    // from before the filter still calls that one with five.
+    public async Task<TopicPage> GetTopicPageFiltered(
+        string agentId, string spaceSlug, string? cursor, int? pageSize, bool archived, TopicFilter? filter)
     {
         return WithLiveStreams(await threadStore.GetTopicPageAsync(
-            agentId, spaceSlug, Viewer, cursor, pageSize ?? retention.PageSize, archived, ListedWith(spaceSlug)));
+            agentId, spaceSlug, Viewer, cursor, pageSize ?? retention.PageSize, archived, ListedWith(spaceSlug), filter));
     }
 
     // Answered here rather than asked per topic: which replies are in flight is this process's
@@ -806,15 +816,34 @@ public sealed class ChatHub(
 
     // On the server, so it covers conversations this client never loaded — which is every
     // conversation past the first page, and the whole archive.
-    public async Task<TopicPage> SearchTopics(
+    public Task<TopicPage> SearchTopics(
         string agentId,
         string query,
         string spaceSlug = SpaceConfig.DefaultSlug,
         string? cursor = null,
-        int? pageSize = null)
+        int? pageSize = null) =>
+        SearchTopicsFiltered(agentId, query, spaceSlug, cursor, pageSize, TopicFilter.Everyone);
+
+    public async Task<TopicPage> SearchTopicsFiltered(
+        string agentId, string query, string spaceSlug, string? cursor, int? pageSize, TopicFilter? filter)
     {
         return WithLiveStreams(await threadStore.SearchTopicsAsync(
-            agentId, spaceSlug, Viewer, query, cursor, pageSize ?? retention.PageSize, ListedWith(spaceSlug)));
+            agentId, spaceSlug, Viewer, query, cursor, pageSize ?? retention.PageSize, ListedWith(spaceSlug), filter));
+    }
+
+    // Whose topics someone who sees all may narrow their list to: the household's other people, by the
+    // name they go by now. Anyone else sees nobody's private topics, so has nobody to pick and is named
+    // nobody rather than refused.
+    public async Task<IReadOnlyList<HouseholdMemberName>> GetHouseholdPeople()
+    {
+        if (!Viewer.SeesAll)
+        {
+            return [];
+        }
+
+        var people = await HouseholdViewAsync(
+            households.MemberNamesAsync, "people", UnvouchedPeopleError, Context.ConnectionAborted);
+        return [.. people.People.Where(p => p.UserId != SignedIn.UserId)];
     }
 
     // Read state is the store's to work out: the count it would be compared against is one round

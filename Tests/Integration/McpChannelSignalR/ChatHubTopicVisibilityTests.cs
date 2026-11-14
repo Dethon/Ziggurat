@@ -83,7 +83,14 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
             .AddSingleton<ISessionAccounts>(new NamedAccounts())
             .AddSingleton<IHouseholdConfiguration>(new HouseholdSpacesAccounts
             {
-                Saved = { [Home] = new SpacesSection { Spaces = [HouseholdSpace.Default, HouseholdSpace.Default with { Slug = "garden", Name = "Garden" }] } }
+                Saved = { [Home] = new SpacesSection { Spaces = [HouseholdSpace.Default, HouseholdSpace.Default with { Slug = "garden", Name = "Garden" }] } },
+                SavedPeople =
+                {
+                    [Home] = new HouseholdMemberNames([
+                        new HouseholdMemberName(Fran, "Fran"), new HouseholdMemberName(Laura, "Laura"),
+                        new HouseholdMemberName(Olga, "Olga")
+                    ])
+                }
             })
             .AddSingleton(catalog.Object)
             .AddSingleton<IThreadStateStore>(_store)
@@ -677,6 +684,57 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
         var lauras = (await laura.InvokeAsync<TopicPage>("GetTopicPage", _agent, "default", null, 50, false))
             .Topics.Single(t => t.TopicId == topic.TopicId);
         (lauras.MessageCount - lauras.ReadPosition).ShouldBe(0);
+    }
+
+    // Someone who sees all reads their own list unless they ask for more: "mine" is what they would see
+    // without the grant, one person's is that person's alone, and a page from a client from before the
+    // filter still lists everything.
+    [Fact]
+    public async Task SomeoneWhoSeesAll_ListsTheTopicsTheirFilterAdmits()
+    {
+        var fran = await ConnectAsync(Fran);
+        var laura = await ConnectAsync(Laura);
+        var olga = await ConnectAsync(Olga, "sees-all");
+        var frans = await StartTopicAsync(fran, "Fran's plum jam");
+        var lauras = await StartTopicAsync(laura, "Laura's pear tart");
+        var olgas = await StartTopicAsync(olga, "Olga's fig roll");
+
+        async Task<IEnumerable<string>> Listed(TopicFilter filter) =>
+            (await olga.InvokeAsync<TopicPage>("GetTopicPageFiltered", _agent, "default", null, 50, false, filter))
+            .Topics.Select(t => t.TopicId).Where(id => id == frans.TopicId || id == lauras.TopicId || id == olgas.TopicId);
+
+        (await Listed(TopicFilter.Mine)).ShouldBe([olgas.TopicId]);
+        (await Listed(TopicFilter.Of(Fran))).ShouldBe([frans.TopicId]);
+        (await Listed(TopicFilter.Everyone)).ShouldBe([olgas.TopicId, lauras.TopicId, frans.TopicId]);
+        (await olga.InvokeAsync<TopicPage>("GetTopicPage", _agent, "default", null, 50, false))
+            .Topics.Select(t => t.TopicId).ShouldContain(frans.TopicId);
+    }
+
+    [Fact]
+    public async Task ASearch_FindsWhatTheFilterAdmits()
+    {
+        var fran = await ConnectAsync(Fran);
+        var olga = await ConnectAsync(Olga, "sees-all");
+        await StartTopicAsync(fran, "Quince paste, Fran's");
+        var olgas = await StartTopicAsync(olga, "Quince paste, Olga's");
+
+        var found = await olga.InvokeAsync<TopicPage>(
+            "SearchTopicsFiltered", _agent, "quince", "default", null, 50, TopicFilter.Mine);
+
+        found.Topics.Select(t => t.TopicId).ShouldBe([olgas.TopicId]);
+    }
+
+    // Whose topics someone who sees all may pick among: the household's other people. Anyone else is
+    // named nobody — they see nobody's private topics to sort.
+    [Fact]
+    public async Task TheHouseholdsPeople_AreNamedToWhoeverSeesAllAlone()
+    {
+        var olga = await ConnectAsync(Olga, "sees-all");
+        var laura = await ConnectAsync(Laura);
+
+        (await olga.InvokeAsync<IReadOnlyList<HouseholdMemberName>>("GetHouseholdPeople"))
+            .ShouldBe([new HouseholdMemberName(Fran, "Fran"), new HouseholdMemberName(Laura, "Laura")]);
+        (await laura.InvokeAsync<IReadOnlyList<HouseholdMemberName>>("GetHouseholdPeople")).ShouldBeEmpty();
     }
 
     // Sharing is news for the whole space: whoever could not see the topic now can, and unsharing

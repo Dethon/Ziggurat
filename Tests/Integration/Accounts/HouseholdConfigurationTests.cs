@@ -490,6 +490,29 @@ public class HouseholdConfigurationTests(RedisFixture redis) : IClassFixture<Red
         (await RefusalAsync(telegrams, HttpStatusCode.NotFound)).Reason.ShouldBe(HouseholdConfigRefusal.Unproven);
     }
 
+    // The chat hub names a household's people for the topic list's person filter, on its connection's
+    // assertion: everyone, in the order they joined — a disabled member's topics are still listed, so
+    // they are too — and never anyone of another household.
+    [Fact]
+    public async Task TheChatHub_ReadsTheNamesOfTheHouseholdsPeople()
+    {
+        await using var server = await StartAsync();
+        var (household, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var bea = await server.SeedPersonAsync(household, "Bea");
+        await server.SeedHouseholdAsync("Lejos", "Stranger");
+        await server.Service<MemberStore>().DisableAsync(household, bea, CancellationToken.None);
+        var assertions = server.Service<Assertions>();
+
+        var people = await AskAsync<HouseholdConfigAnswer<HouseholdMemberNames>>(server, SignalR,
+            HouseholdConfigProtocol.MemberNamesView, new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "signalr")));
+        var sugarys = await PostAsync(server, Sugary, HouseholdConfigProtocol.MemberNamesView,
+            new HouseholdConfigQuery(Assertion: assertions.OfGuest(household, "sugary")));
+
+        people.HouseholdId.ShouldBe(household);
+        people.Section.People.ShouldBe([new HouseholdMemberName(ana, "Ana"), new HouseholdMemberName(bea, "Bea")]);
+        sugarys.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+    }
+
     // The shared Telegram bot lists and switches among a household's agents for a chat, so it reads
     // their ids and names — and nothing else of their definitions — on the assertion of the person
     // asking. A household that saved no agents lists the two templates it runs.
