@@ -786,6 +786,36 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         page.Topics.Select(t => t.TopicId).ShouldBe(["t-laura"]);
     }
 
+    // Someone who sees all reads their own list by default: a page of "mine" passes over every other
+    // person's private topic and still fills, and one person's page holds theirs alone.
+    [Fact]
+    public async Task GetTopicPageAsync_Filtered_ListsWhatTheFilterAdmitsAndStillFillsThePage()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 4, 5, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        TopicMetadata[] oldestFirst =
+        [
+            Owned("t-f-mine", 821, "mine", Fran, "agent-filtered"),
+            Owned("t-f-shared", 822, "laura shared", Laura, "agent-filtered") with { Shared = true },
+            Owned("t-f-laura-1", 823, "laura private 1", Laura, "agent-filtered"),
+            Owned("t-f-laura-2", 824, "laura private 2", Laura, "agent-filtered"),
+            Owned("t-f-laura-3", 825, "laura private 3", Laura, "agent-filtered")
+        ];
+        foreach (var topic in oldestFirst)
+        {
+            await store.SaveTopicAsync(topic with { CreatedAt = clock.GetUtcNow(), LastMessageAt = null });
+            clock.Advance(TimeSpan.FromMinutes(1));
+        }
+
+        var seesAll = AsFran with { SeesAll = true };
+        var mine = await store.GetTopicPageAsync("agent-filtered", "default", seesAll, null, 2, filter: TopicFilter.Mine);
+        var lauras = await store.GetTopicPageAsync(
+            "agent-filtered", "default", seesAll, null, 10, filter: TopicFilter.Of(Laura.UserId));
+
+        mine.Topics.Select(t => t.TopicId).ShouldBe(["t-f-shared", "t-f-mine"]);
+        lauras.Topics.Select(t => t.TopicId).ShouldBe(["t-f-laura-3", "t-f-laura-2", "t-f-laura-1", "t-f-shared"]);
+    }
+
     // Two conversations written the same millisecond share a score. A cursor of the score alone
     // with an exclusive stop would lose whichever tied row a page break split off — permanently,
     // because paging only ever fetches backwards.

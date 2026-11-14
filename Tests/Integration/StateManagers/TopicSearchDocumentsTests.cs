@@ -144,6 +144,23 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         third.Topics.ShouldBeEmpty();
     }
 
+    // A search reads the list the person chose: "mine" finds none of another person's private topics
+    // even for someone who sees all.
+    [Fact]
+    public async Task SearchTopicsAsync_Filtered_FindsWhatTheFilterAdmits()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(Topic("t-plum-mine", 795, "Plum jam, mine") with { OwnerId = "fran", TenantId = "home" });
+        await store.SaveTopicAsync(Topic("t-plum-laura", 796, "Plum jam, Laura's") with { OwnerId = "laura", TenantId = "home" });
+
+        var seesAll = _asFran with { SeesAll = true };
+        var mine = await store.SearchTopicsAsync(_agentId, "default", seesAll, "plum", null, 10, filter: TopicFilter.Mine);
+        var everyone = await store.SearchTopicsAsync(_agentId, "default", seesAll, "plum", null, 10);
+
+        mine.Topics.Select(t => t.TopicId).ShouldBe(["t-plum-mine"]);
+        everyone.Topics.Select(t => t.TopicId).ShouldBe(["t-plum-mine", "t-plum-laura"], ignoreOrder: true);
+    }
+
     [Fact]
     public async Task SearchTopicsAsync_AnotherSpacesConversation_IsNotFound()
     {

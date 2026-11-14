@@ -17,6 +17,11 @@ public sealed record TopicViewer(string UserId, string TenantId, bool SeesAll = 
 
     public bool Owns(TopicMetadata topic) => topic.OwnerId == UserId;
 
+    // What a list shows: what they see, narrowed by the filter they chose. No filter is everything
+    // they see, which is what a client from before filters asks for.
+    public bool Lists(TopicMetadata topic, TopicFilter? filter) =>
+        Sees(topic) && (filter ?? TopicFilter.Everyone).Admits(topic, this);
+
     // Writing in a topic — continuing it, stopping its reply, attaching to it — is for whoever it is
     // shared with. Seeing every topic is reading them, never deciding in them: a private topic is its
     // owner's alone to change, whoever else may read it. Marking one read is not writing in it: how

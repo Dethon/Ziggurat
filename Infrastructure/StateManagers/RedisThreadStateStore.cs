@@ -274,13 +274,13 @@ public sealed class RedisThreadStateStore(
 
     public async Task<TopicPage> GetTopicPageAsync(
         string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false,
-        IReadOnlyList<string>? alsoSpaces = null)
+        IReadOnlyList<string>? alsoSpaces = null, TopicFilter? filter = null)
     {
         IReadOnlyList<string> slugs = [spaceSlug, .. alsoSpaces ?? []];
         await Task.WhenAll(slugs.Select(slug => TrimPurgedAsync(viewer.TenantId, agentId, slug)));
 
         return await FillPageAsync(
-            viewer, cursor, pageSize,
+            viewer, filter, cursor, pageSize,
             from => ReadIndexRangesAsync(viewer.TenantId, agentId, slugs, from, pageSize, archived),
             member => ReadIndexedTopicAsync(viewer.TenantId, agentId, member.Element.ToString()),
             Cursor);
@@ -316,6 +316,7 @@ public sealed class RedisThreadStateStore(
     // page starts right below the last row shown and passes over nothing twice.
     private static async Task<TopicPage> FillPageAsync<TEntry>(
         TopicViewer viewer,
+        TopicFilter? filter,
         string? cursor,
         int pageSize,
         Func<string?, Task<IReadOnlyList<TEntry>>> readRun,
@@ -330,7 +331,7 @@ public sealed class RedisThreadStateStore(
             var resolved = await Task.WhenAll(run.Select(resolve));
             foreach (var (entry, topic) in run.Zip(resolved))
             {
-                if (topic is not null && viewer.Sees(topic))
+                if (topic is not null && viewer.Lists(topic, filter))
                 {
                     shown.Add(topic.ReadFor(viewer.UserId));
                 }
@@ -489,9 +490,9 @@ public sealed class RedisThreadStateStore(
     // business in it.
     public Task<TopicPage> SearchTopicsAsync(
         string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize,
-        IReadOnlyList<string>? alsoSpaces = null) =>
+        IReadOnlyList<string>? alsoSpaces = null, TopicFilter? filter = null) =>
         FillPageAsync(
-            viewer, cursor, pageSize,
+            viewer, filter, cursor, pageSize,
             from => _searchDocuments.SearchAsync(viewer.TenantId, agentId, [spaceSlug, .. alsoSpaces ?? []], query, from, pageSize),
             hit => ReadTopicAsync(TopicKey(viewer.TenantId, agentId, hit.ChatId, hit.TopicId)),
             TopicSearchDocuments.CursorFor);

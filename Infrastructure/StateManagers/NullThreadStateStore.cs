@@ -32,12 +32,12 @@ public sealed class NullThreadStateStore : IThreadStateStore
 
     public Task<TopicPage> GetTopicPageAsync(
         string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false,
-        IReadOnlyList<string>? alsoSpaces = null)
+        IReadOnlyList<string>? alsoSpaces = null, TopicFilter? filter = null)
         => Task.FromResult(new TopicPage([], null));
 
     public Task<TopicPage> SearchTopicsAsync(
         string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize,
-        IReadOnlyList<string>? alsoSpaces = null)
+        IReadOnlyList<string>? alsoSpaces = null, TopicFilter? filter = null)
         => Task.FromResult(new TopicPage([], null));
 
     public Task<IReadOnlyList<string>> SpacesHoldingTopicsAsync(string tenantId) => Task.FromResult<IReadOnlyList<string>>([]);

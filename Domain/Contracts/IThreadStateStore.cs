@@ -32,17 +32,18 @@ public interface IThreadStateStore
     // A page holds only what the viewer may know exists, and is filled from below whatever it
     // passed over, so another person's private topics never cut a page short or end the list.
     // alsoSpaces are other slugs listed beside the space's own as one list by last write: the default
-    // space's page carries the topics of spaces its household removed (SpaceListing).
+    // space's page carries the topics of spaces its household removed (SpaceListing). A filter narrows
+    // the page to the list the viewer chose (TopicViewer.Lists), filling from below just the same.
     Task<TopicPage> GetTopicPageAsync(
         string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false,
-        IReadOnlyList<string>? alsoSpaces = null);
+        IReadOnlyList<string>? alsoSpaces = null, TopicFilter? filter = null);
 
     // By what a conversation is called and by what was said in it, over both ranges at once —
     // search is the way into the archive, so a cutoff has no business in it. Paged like any
     // other list of topics, and seen through the same viewer.
     Task<TopicPage> SearchTopicsAsync(
         string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize,
-        IReadOnlyList<string>? alsoSpaces = null);
+        IReadOnlyList<string>? alsoSpaces = null, TopicFilter? filter = null);
 
     // Every slug the household's topics are kept under, whichever agent's — the spaces it has and
     // those it removed that still hold topics.
