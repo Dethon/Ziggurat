@@ -17,9 +17,10 @@ public sealed record TopicViewer(string UserId, string TenantId, bool SeesAll = 
 
     public bool Owns(TopicMetadata topic) => topic.OwnerId == UserId;
 
-    // Writing in a topic — continuing it, stopping its reply, attaching to it, marking it read — is
-    // for whoever it is shared with. Seeing every topic is reading them, never deciding in them: a
-    // private topic is its owner's alone to change, whoever else may read it.
+    // Writing in a topic — continuing it, stopping its reply, attaching to it — is for whoever it is
+    // shared with. Seeing every topic is reading them, never deciding in them: a private topic is its
+    // owner's alone to change, whoever else may read it. Marking one read is not writing in it: how
+    // far it was read is each reader's own (TopicMetadata.ReadBy), so whoever sees it may.
     public bool MayContinue(TopicMetadata topic) =>
         Owns(topic) || Sees(topic) && (topic.OwnerId is null || topic.Shared);
 

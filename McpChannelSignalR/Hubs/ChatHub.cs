@@ -819,20 +819,19 @@ public sealed class ChatHub(
 
     // Read state is the store's to work out: the count it would be compared against is one round
     // trip newer than anything the browser holds.
-    // How far a topic was read is its own people's: someone who sees every topic reading another
-    // person's private one leaves it as unread as its owner left it.
+    // How far a topic was read is each person's own (ReadBy), so whoever sees a topic marks it read
+    // for themselves, someone who sees every topic reading another person's private one included:
+    // its owner's position is left as they left it. Gated on continuing, as it once was, the reader's
+    // was never kept and their badge on every other person's topic never cleared.
     public async Task MarkTopicRead(string agentId, long chatId, string topicId)
     {
         var stored = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId);
         RequireSees(stored);
-        if (stored is null || Viewer.MayContinue(stored))
-        {
-            await threadStore.MarkTopicReadAsync(SignedIn.TenantId, agentId, chatId, topicId, SignedIn.UserId);
-        }
+        await threadStore.MarkTopicReadAsync(SignedIn.TenantId, agentId, chatId, topicId, SignedIn.UserId);
 
         // Told to whoever may have it on screen, as a rename is: read on the phone, the desktop kept
         // its unread badge until a reload. Each page reads its own person's position off it (ReadFor).
-        if (stored is not null && Viewer.MayContinue(stored)
+        if (stored is not null
             && await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId) is { } read)
         {
             var heardIn = HeardIn(read.SpaceSlug);

@@ -415,8 +415,11 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
     public static TheoryData<string> ChangesByName =>
         ["SaveTopic", "DeleteTopic", "SetTopicShared", "CancelTopic", "SendMessage", "EnqueueMessage", "CreateUploadTicket"];
 
+    // How far a topic was read is each person's: someone who sees all reads another person's private
+    // topic for themselves — their badge clears, its owner's stays. Before, their read was never kept
+    // and the badge on every other person's topic stayed for good.
     [Fact]
-    public async Task SomeoneWhoSeesAll_ReadingAnotherPersonsTopic_LeavesItUnreadForItsOwner()
+    public async Task SomeoneWhoSeesAll_ReadingAnotherPersonsTopic_ReadsItForThemselvesAlone()
     {
         var fran = await ConnectAsync(Fran);
         var olga = await ConnectAsync(Olga, "sees-all");
@@ -427,8 +430,12 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
 
         await olga.InvokeAsync("MarkTopicRead", topic.AgentId, topic.ChatId, topic.TopicId);
 
-        var stored = (await _store.GetTopicAsync(Home, _agent, topic.ChatId, topic.TopicId)).ShouldNotBeNull();
-        (stored.MessageCount, stored.ReadPosition).ShouldBe((1L, 0L));
+        var olgas = (await olga.InvokeAsync<TopicPage>("GetTopicPage", _agent, "default", null, 50, false))
+            .Topics.Single(t => t.TopicId == topic.TopicId);
+        (olgas.MessageCount - olgas.ReadPosition).ShouldBe(0);
+        var frans = (await fran.InvokeAsync<TopicPage>("GetTopicPage", _agent, "default", null, 50, false))
+            .Topics.Single(t => t.TopicId == topic.TopicId);
+        (frans.MessageCount - frans.ReadPosition).ShouldBe(1);
     }
 
     // Reading is never deciding: the prompt is shown to whoever sees the topic, and only the person
@@ -629,19 +636,21 @@ public sealed class ChatHubTopicVisibilityTests(TopicSearchFixture redis)
 
     // A topic read on one of its person's devices is read on the other: Ana read it on her phone and
     // her desktop kept its unread badge until a reload. Its being read is told to whoever may have it
-    // on screen, as a rename is; someone who sees all reads it without marking it, and tells nobody.
+    // on screen, as a rename is — someone who sees all reading another person's included, so their
+    // other device clears too.
     [Fact]
     public async Task ATopicReadOnOneDevice_IsToldToTheOthers()
     {
         var phone = await ConnectAsync(Fran);
         var desktop = await ConnectAsync(Fran);
-        var olga = await ConnectAsync(Olga, "sees-all");
+        var olgasPhone = await ConnectAsync(Olga, "sees-all");
+        var olgasDesktop = await ConnectAsync(Olga, "sees-all");
         var topic = await StartTopicAsync(phone, "Fran's plum jam");
-        var heard = Listen(("desktop", desktop), ("olga", olga));
+        var heard = Listen(("desktop", desktop), ("olga's desktop", olgasDesktop));
 
-        await olga.InvokeAsync("MarkTopicRead", topic.AgentId, topic.ChatId, topic.TopicId);
-        await Eventually.Settle();
-        heard.About(topic.TopicId).ShouldBeEmpty("reading as someone who sees all marks nothing");
+        await olgasPhone.InvokeAsync("MarkTopicRead", topic.AgentId, topic.ChatId, topic.TopicId);
+        await Eventually.Until(
+            () => heard.About(topic.TopicId).Any(h => h.Who == "olga's desktop"), "olga's desktop to hear she read it");
 
         await phone.InvokeAsync("MarkTopicRead", topic.AgentId, topic.ChatId, topic.TopicId);
         await Eventually.Until(() => heard.About(topic.TopicId).Any(h => h.Who == "desktop"), "the desktop to hear it was read");
