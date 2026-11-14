@@ -21,6 +21,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly IStreamResumeService _streamResumeService;
     private readonly IPushSubscriptionService _pushNotificationService;
     private readonly SpaceStore _spaceStore;
+    private readonly TopicsStore _topicsStore;
     private readonly ILogger<InitializationEffect> _logger;
     private readonly IDisposable _initializeRegistration;
     private readonly IDisposable _setAgentsRegistration;
@@ -42,9 +43,11 @@ public sealed class InitializationEffect : IDisposable
         IStreamResumeService streamResumeService,
         IPushSubscriptionService pushNotificationService,
         SpaceStore spaceStore,
+        TopicsStore topicsStore,
         ILogger<InitializationEffect> logger,
         TimeProvider timeProvider)
     {
+        _topicsStore = topicsStore;
         _timeProvider = timeProvider;
         _dispatcher = dispatcher;
         _connectionStore = connectionStore;
@@ -231,8 +234,12 @@ public sealed class InitializationEffect : IDisposable
         var agentToSelect = await SpaceAgent.ChooseAsync(_localStorage, agents, _spaceStore.State);
         _dispatcher.Dispatch(new SelectAgent(agentToSelect.Id, Picked: false));
 
-        var firstPage = await _topicService.GetTopicPageAsync(agentToSelect.Id, _spaceStore.State.CurrentSlug);
-        if (!firstPage.IsLive)
+        // Asked under the list's filter, and dropped if the filter changed under the round trip: the
+        // filter's own first page (TopicPagingEffect) is then the list.
+        var filter = _topicsStore.State.Filter;
+        var firstPage = await _topicService.GetTopicPageAsync(
+            agentToSelect.Id, _spaceStore.State.CurrentSlug, filter: filter);
+        if (!firstPage.IsLive || _topicsStore.State.Filter != filter)
         {
             return;
         }

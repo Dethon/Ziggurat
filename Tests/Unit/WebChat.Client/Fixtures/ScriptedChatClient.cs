@@ -177,7 +177,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
     // one call fails inside an unrelated one. These are the empty-but-live answers.
     private static void ApplyDefaultAnswers(FakeHubConnection connection)
     {
-        connection.Answer("GetTopicPage", new TopicPage([], null));
+        connection.Answer("GetTopicPageFiltered", new TopicPage([], null));
         connection.Answer("GetHistory", (IReadOnlyList<ChatHistoryMessage>)[]);
         connection.Answer("GetAgents", (IReadOnlyList<AgentCatalogEntry>)[]);
         // A household that saved no spaces has the one default space, and a test's hearth beside it.

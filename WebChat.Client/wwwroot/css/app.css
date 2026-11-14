@@ -2753,6 +2753,14 @@ select:focus:not(:focus-visible) {
     color: var(--text-secondary); font-size: 0.9rem; cursor: pointer;
 }
 .hearth-archive-toggle.on { background: var(--accent); border-color: var(--accent); color: var(--user-text); }
+/* Whose conversations, for whoever sees the household's every one: a list of its own, beside the
+   search for the same reason the archive toggle is. */
+.hearth-filter { padding: 0 0.75rem 0.5rem; }
+.hearth-filter-select {
+    width: 100%; padding: 0.4rem 0.75rem; border-radius: 10px;
+    background: var(--bg-tertiary); border: 1px solid var(--border-color);
+    color: var(--text-primary); font-family: inherit; font-size: 0.85rem;
+}
 .hearth-rows { flex: 1; overflow-y: auto; padding: 0 0.625rem 0.75rem; scroll-snap-type: y proximity;
     /* Contain overscroll so a downward pull at the top of the list doesn't chain into the
        browser's pull-to-refresh. The rest of the sheet is touch-action:none; the chat area

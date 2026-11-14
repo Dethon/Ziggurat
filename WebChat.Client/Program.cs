@@ -64,6 +64,7 @@ _ = app.Services.GetRequiredService<TopicSelectionEffect>();
 _ = app.Services.GetRequiredService<OpenTopicEffect>();
 _ = app.Services.GetRequiredService<TopicDeleteEffect>();
 _ = app.Services.GetRequiredService<TopicPagingEffect>();
+_ = app.Services.GetRequiredService<TopicFilterEffect>();
 _ = app.Services.GetRequiredService<InitializationEffect>();
 _ = app.Services.GetRequiredService<OfferedApprovalsEffect>();
 _ = app.Services.GetRequiredService<RingingAlertsEffect>();

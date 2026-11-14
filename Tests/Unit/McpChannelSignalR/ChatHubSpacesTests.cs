@@ -163,10 +163,10 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
         var attic = Topic("t-attic", "attic");
         HoldingTopics("default", "kitchen", "attic");
         _store.Setup(s => s.GetTopicPageAsync(
-                "jonas", "default", It.IsAny<TopicViewer>(), null, It.IsAny<int>(), false, Only("attic")))
+                "jonas", "default", It.IsAny<TopicViewer>(), null, It.IsAny<int>(), false, Only("attic"), It.IsAny<TopicFilter?>()))
             .ReturnsAsync(new TopicPage([attic], null));
         _store.Setup(s => s.SearchTopicsAsync(
-                "jonas", "default", It.IsAny<TopicViewer>(), "jam", null, It.IsAny<int>(), Only("attic")))
+                "jonas", "default", It.IsAny<TopicViewer>(), "jam", null, It.IsAny<int>(), Only("attic"), It.IsAny<TopicFilter?>()))
             .ReturnsAsync(new TopicPage([attic], null));
         var connection = await ConnectAsync();
 
@@ -186,7 +186,7 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
         HoldingTopics("default", "kitchen", "attic");
         _store.Setup(s => s.GetTopicPageAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TopicViewer>(), It.IsAny<string?>(), It.IsAny<int>(),
-                It.IsAny<bool>(), It.IsAny<IReadOnlyList<string>?>()))
+                It.IsAny<bool>(), It.IsAny<IReadOnlyList<string>?>(), It.IsAny<TopicFilter?>()))
             .ReturnsAsync(new TopicPage([], null));
         var connection = await ConnectAsync();
 
@@ -195,7 +195,7 @@ public sealed class ChatHubSpacesTests : IAsyncLifetime
 
         _store.Verify(s => s.GetTopicPageAsync(
             "jonas", "kitchen", It.IsAny<TopicViewer>(), null, It.IsAny<int>(), false,
-            It.Is<IReadOnlyList<string>?>(also => also == null || also.Count == 0)), Times.Once);
+            It.Is<IReadOnlyList<string>?>(also => also == null || also.Count == 0), It.IsAny<TopicFilter?>()), Times.Once);
     }
 
     // Nobody can join a removed space, so a change to one of its topics is told to the default space

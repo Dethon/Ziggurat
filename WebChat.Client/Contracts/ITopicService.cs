@@ -7,11 +7,13 @@ public interface ITopicService
 {
     // One page, most recently written first. There is no call that returns every topic: the list
     // is read one way only, so a new caller cannot reintroduce a fetch that grows every week.
+    // The filter narrows the page to the list the person chose; none is everything they see.
     Task<HubResult<TopicPage>> GetTopicPageAsync(
         string agentId,
         string spaceSlug = SpaceConfig.DefaultSlug,
         string? cursor = null,
-        bool archived = false);
+        bool archived = false,
+        TopicFilter? filter = null);
     Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false);
 
     // The owner's alone to ask: the server refuses anyone else, whatever the client shows.
@@ -23,7 +25,11 @@ public interface ITopicService
         string agentId,
         string query,
         string spaceSlug = SpaceConfig.DefaultSlug,
-        string? cursor = null);
+        string? cursor = null,
+        TopicFilter? filter = null);
+
+    // Whose topics someone who sees all may narrow their list to; nobody for anyone else.
+    Task<HubResult<IReadOnlyList<HouseholdMemberName>>> GetHouseholdPeopleAsync();
 
     // The server decides what "read" means here, because it is the only side that knows how many
     // messages the topic holds right now.

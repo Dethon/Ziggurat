@@ -144,6 +144,35 @@ public sealed class HubEventDispatcherTests : IDisposable
         _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<UpdateTopic>()), Times.Once);
     }
 
+    // A list narrowed to "mine" takes in no other person's private topic on news of it, and lets one
+    // go that the news says it no longer lists: the badge counts only what the list shows.
+    [Fact]
+    public void HandleTopicChanged_ATopicTheFilterLeavesOut_IsNotListed()
+    {
+        _realDispatcher.Dispatch(new SignedIn(new SignedInPerson("olga", "Olga", null, "home", ["member", "sees-all"])));
+        _realDispatcher.Dispatch(new FilterTopics(TopicFilter.Mine));
+        var frans = CreateTopicMetadata() with { OwnerId = "fran", TenantId = "home" };
+
+        _sut.HandleTopicChanged(new TopicChangedNotification(TopicChangeType.Created, "topic-1", frans));
+        _sut.HandleTopicChanged(new TopicChangedNotification(TopicChangeType.Updated, "topic-1", frans));
+
+        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<AddTopic>()), Times.Never);
+        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<UpdateTopic>()), Times.Never);
+        _mockDispatcher.Verify(d => d.Dispatch(It.Is<RemoveTopic>(a => a.TopicId == "topic-1")), Times.Once);
+    }
+
+    [Fact]
+    public void HandleTopicChanged_ATopicTheFilterAdmits_IsListed()
+    {
+        _realDispatcher.Dispatch(new SignedIn(new SignedInPerson("olga", "Olga", null, "home", ["member", "sees-all"])));
+        _realDispatcher.Dispatch(new FilterTopics(TopicFilter.Of("fran")));
+        var frans = CreateTopicMetadata() with { OwnerId = "fran", TenantId = "home" };
+
+        _sut.HandleTopicChanged(new TopicChangedNotification(TopicChangeType.Created, "topic-1", frans));
+
+        _mockDispatcher.Verify(d => d.Dispatch(It.Is<AddTopic>(a => a.Topic.TopicId == "topic-1")), Times.Once);
+    }
+
     [Fact]
     public void HandleTopicChanged_Deleted_DispatchesRemoveTopic()
     {

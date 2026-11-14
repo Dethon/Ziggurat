@@ -65,6 +65,7 @@ public sealed class InitializationEffectTests : IDisposable
             _streamResumeService,
             _pushService,
             _spaceStore,
+            _topicsStore,
             _logger,
             _time);
     }

@@ -40,7 +40,16 @@ public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
         var page = await readerContext.NewPageAsync();
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
         await WebChatE2ETests.SelectAgentAsync(page);
+
+        // Someone who sees all reads their own list until they ask for another person's.
+        var whose = page.GetByLabel("Whose conversations");
+        await Assertions.Expect(whose).ToHaveValueAsync("mine", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
         var row = page.Locator(".topic-item", new PageLocatorOptions { HasText = $"Private {tag}" });
+        await Assertions.Expect(row).ToHaveCountAsync(0);
+        await Assertions.Expect(whose.Locator("option", new LocatorLocatorOptions { HasText = $"Writer {tag}'s" }))
+            .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+        await whose.SelectOptionAsync(new SelectOptionValue { Label = $"Writer {tag}'s" });
+
         await row.ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
         var shown = page.Locator(".chat-message", new PageLocatorOptions { HasText = words });
         await Assertions.Expect(shown).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });

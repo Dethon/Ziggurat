@@ -1,6 +1,7 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.State.Effects;
 
@@ -22,6 +23,9 @@ public sealed class AccessChangedEffect : IDisposable
     private static async Task RenewAsync(Dispatcher dispatcher, IChatLiveConnection connection)
     {
         await connection.RenewAsync();
+
+        // Who they are now as well: whether they see all decides whose topics the list offers.
+        dispatcher.Dispatch(new LoadSignedIn());
         dispatcher.Dispatch(new ReloadTopics());
     }
 

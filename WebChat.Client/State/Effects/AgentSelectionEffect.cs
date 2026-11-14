@@ -110,11 +110,13 @@ public sealed class AgentSelectionEffect : IDisposable
         }
 
         var spaceSlug = _spaceStore.State.CurrentSlug;
-        var firstPage = await _topicService.GetTopicPageAsync(agentId, spaceSlug);
+        var filter = _topicsStore.State.Filter;
+        var firstPage = await _topicService.GetTopicPageAsync(agentId, spaceSlug, filter: filter);
 
         // Not live is not an empty list. Storing it as one is what empties the sidebar when a
-        // resuming phone switches agents mid-rebuild; the epoch reloads it a moment later.
-        if (!firstPage.IsLive)
+        // resuming phone switches agents mid-rebuild; the epoch reloads it a moment later. A page
+        // asked under a filter the person has since changed is another list's.
+        if (!firstPage.IsLive || _topicsStore.State.Filter != filter)
         {
             return;
         }

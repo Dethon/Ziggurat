@@ -4,6 +4,7 @@
 @using WebChat.Client.State.AgentActivity
 @using WebChat.Client.State.UserIdentity
 @using Microsoft.JSInterop
+@using Domain.DTOs.Household
 @inject TopicsStore TopicsStore
 @inject StreamingStore StreamingStore
 @inject MessagesStore MessagesStore
@@ -50,6 +51,24 @@
             </button>
             <AgentConfigMenu />
         </div>
+
+        @if (_seesAll)
+        {
+            @* Whose conversations: someone who sees every topic of the household reads their own
+               unless they ask for more. The server pages by it, so a filter here is a list of its
+               own rather than rows hidden from the one held. *@
+            <div class="hearth-filter">
+                <select class="hearth-filter-select" aria-label="Whose conversations"
+                        value="@TopicFilterChoice.Format(_filter)" @onchange="OnFilterChanged">
+                    <option value="mine">Mine</option>
+                    <option value="everyone">Everyone's</option>
+                    @foreach (var person in _people)
+                    {
+                        <option value="@TopicFilterChoice.Of(person.UserId)">@($"{person.DisplayName}'s")</option>
+                    }
+                </select>
+            </div>
+        }
 
         <div class="hearth-rows">
             @{
@@ -139,6 +158,9 @@
     private IReadOnlyDictionary<string, int> _unreadCounts = new Dictionary<string, int>();
     private IReadOnlySet<string> _activeAgentIds = new HashSet<string>();
     private string? _signedInUserId;
+    private bool _seesAll;
+    private TopicFilter _filter = TopicFilter.Everyone;
+    private IReadOnlyList<HouseholdMemberName> _people = [];
 
     private string? _deleteConfirmTopicId;
     private bool _showingArchived;
@@ -164,6 +186,9 @@
         Subscribe(TopicsStore.StateObservable, TopicListSelectors.EmptyLabel, label => _emptyLabel = label);
         Subscribe(StreamingStore.StateObservable, s => s.StreamingTopics, ids => _streamingTopics = ids);
         Subscribe(UserIdentityStore.StateObservable, s => s.SignedIn?.UserId, id => _signedInUserId = id);
+        Subscribe(UserIdentityStore.StateObservable, s => s.SignedIn?.Viewer?.SeesAll == true, on => _seesAll = on);
+        Subscribe(TopicsStore.StateObservable, s => s.Filter, f => _filter = f);
+        Subscribe(TopicsStore.StateObservable, s => s.People, p => _people = p);
         Subscribe(TopicsStore.StateObservable, UnreadSelectors.ComputeUnreadCounts, c => _unreadCounts = c);
         Subscribe(AgentActivityStore.StateObservable,
             s => AgentActivitySelectors.GetAgentsWithActivity(s, StreamingStore.State),
@@ -222,6 +247,9 @@
             _ => Detent.Peek
         };
     }
+
+    private void OnFilterChanged(ChangeEventArgs e) =>
+        Dispatcher.Dispatch(new ChooseTopicFilter(TopicFilterChoice.Parse(e.Value?.ToString())));
 
     private int GetUnreadCount(string topicId) => _unreadCounts.GetValueOrDefault(topicId);
     private bool IsTopicStreaming(string topicId) => _streamingTopics.Contains(topicId);

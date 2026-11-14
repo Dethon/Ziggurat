@@ -20,6 +20,7 @@ public sealed class TopicPagingEffect : IDisposable
     private readonly ILogger<TopicPagingEffect> _logger;
     private readonly IDisposable _loadMoreRegistration;
     private readonly IDisposable _showArchivedRegistration;
+    private readonly IDisposable _filterRegistration;
     private readonly IDisposable _searchRegistration;
     private readonly IDisposable _refreshRegistration;
     private ITimer? _searchDebounce;
@@ -56,6 +57,8 @@ public sealed class TopicPagingEffect : IDisposable
             _ => LoadNextPageAsync().LogFaults(_logger, nameof(LoadMoreTopics)));
         _showArchivedRegistration = dispatcher.RegisterHandler<ShowArchivedTopics>(
             _ => LoadFirstPageAsync().LogFaults(_logger, nameof(ShowArchivedTopics)));
+        _filterRegistration = dispatcher.RegisterHandler<FilterTopics>(
+            _ => LoadFirstPageAsync().LogFaults(_logger, nameof(FilterTopics)));
         // A search is a hub call now, so one is not made on every keystroke: the pause is what
         // turns a typed word into one search rather than one per letter. The store already holds
         // the latest query, so the fetch that finally runs asks for what was last typed.
@@ -197,6 +200,7 @@ public sealed class TopicPagingEffect : IDisposable
     {
         _loadMoreRegistration.Dispose();
         _showArchivedRegistration.Dispose();
+        _filterRegistration.Dispose();
         _searchRegistration.Dispose();
         _refreshRegistration.Dispose();
         _removedRegistration.Dispose();

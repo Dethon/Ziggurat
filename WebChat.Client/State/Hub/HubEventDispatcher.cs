@@ -52,9 +52,12 @@ public sealed class HubEventDispatcher(
     // page counts its own person's.
     private TopicMetadata AsRead(TopicMetadata topic) => topic.ReadFor(identityStore.State.SignedIn?.UserId);
 
-    // Until the accounts service has answered, the server's own audience is the only rule.
+    // Until the accounts service has answered, the server's own audience is the only rule. After, the
+    // list's own: what the person sees, narrowed by whose topics they chose to list — news of another
+    // person's private topic reaches whoever sees all, and would otherwise put it back in a list of
+    // their own and on its badge.
     private bool MaySee(TopicMetadata topic) =>
-        identityStore.State.SignedIn?.Viewer is not { } viewer || viewer.Sees(topic);
+        identityStore.State.SignedIn?.Viewer is not { } viewer || viewer.Lists(topic, topicsStore.State.Filter);
 
     // Reporting the push is all this type does. Deciding whether to resume the stream or just
     // mark it started belongs to StreamResumeEffect — resuming is a hub call, and a dispatcher

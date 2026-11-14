@@ -1,4 +1,6 @@
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
+using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.State.Topics;
@@ -19,6 +21,15 @@ public record TopicsPageAppended(IReadOnlyList<StoredTopic> Topics, string? Next
 // Archived is where a topic sits in the index, so this changes which range is read and nothing
 // about any topic.
 public record ShowArchivedTopics(bool Archived) : IAction;
+
+// The list read again from the top under this filter: a different list, as the archive is, not a
+// filter over the rows held. The person's pick is ChooseTopicFilter, which is also remembered.
+public record FilterTopics(TopicFilter Filter) : IAction;
+
+// The person picked whose topics to list (TopicFilterEffect remembers it and lists them).
+public record ChooseTopicFilter(TopicFilter Filter) : IAction;
+
+public record HouseholdPeopleLoaded(IReadOnlyList<HouseholdMemberName> People) : IAction;
 
 // The command: ask the server for conversations matching this. An empty query is the ordinary
 // list again — searching is a different range to read, not a filter over the rows already held,
@@ -132,6 +143,15 @@ public sealed class TopicsStore : IDisposable
             Paging = TopicPaging.Empty,
             IsLoading = true
         },
+
+        FilterTopics a => state with
+        {
+            Filter = a.Filter,
+            Paging = TopicPaging.Empty,
+            IsLoading = true
+        },
+
+        HouseholdPeopleLoaded a => state with { People = a.People },
 
         SearchTopics a => state with
         {

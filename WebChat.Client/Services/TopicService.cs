@@ -10,10 +10,12 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
         string agentId,
         string spaceSlug = SpaceConfig.DefaultSlug,
         string? cursor = null,
-        bool archived = false) =>
+        bool archived = false,
+        TopicFilter? filter = null) =>
         // The page size is the server's to decide, so it is asked for as nothing rather than
         // guessed at here.
-        liveConnection.InvokeAsync<TopicPage>("GetTopicPage", agentId, spaceSlug, cursor, null, archived);
+        liveConnection.InvokeAsync<TopicPage>(
+            "GetTopicPageFiltered", agentId, spaceSlug, cursor, null, archived, filter ?? TopicFilter.Everyone);
 
     public Task<HubResult<Nothing>> SaveTopicAsync(TopicMetadata topic, bool isNew = false) =>
         liveConnection.InvokeAsync("SaveTopic", topic, isNew);
@@ -25,8 +27,13 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
         string agentId,
         string query,
         string spaceSlug = SpaceConfig.DefaultSlug,
-        string? cursor = null) =>
-        liveConnection.InvokeAsync<TopicPage>("SearchTopics", agentId, query, spaceSlug, cursor, null);
+        string? cursor = null,
+        TopicFilter? filter = null) =>
+        liveConnection.InvokeAsync<TopicPage>(
+            "SearchTopicsFiltered", agentId, query, spaceSlug, cursor, null, filter ?? TopicFilter.Everyone);
+
+    public Task<HubResult<IReadOnlyList<HouseholdMemberName>>> GetHouseholdPeopleAsync() =>
+        liveConnection.InvokeAsync<IReadOnlyList<HouseholdMemberName>>("GetHouseholdPeople");
 
     public Task<HubResult<Nothing>> MarkTopicReadAsync(string agentId, long chatId, string topicId) =>
         liveConnection.InvokeAsync("MarkTopicRead", agentId, chatId, topicId);

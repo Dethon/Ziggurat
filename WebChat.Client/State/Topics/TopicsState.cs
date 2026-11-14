@@ -1,4 +1,6 @@
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
+using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.State.Topics;
@@ -23,6 +25,13 @@ public sealed record TopicsState
     // What the list is currently a search for, or empty for the ordinary list. Held here rather
     // than in the sidebar because it decides which call every page fetch makes.
     public string SearchQuery { get; init; } = "";
+
+    // Whose topics the list shows (TopicViewer.Lists): everything the person sees until the filter is
+    // settled for them (TopicFilterEffect) — their own by default for someone who sees all.
+    public TopicFilter Filter { get; init; } = TopicFilter.Everyone;
+
+    // Whose topics someone who sees all may narrow the list to; nobody for anyone else.
+    public IReadOnlyList<HouseholdMemberName> People { get; init; } = [];
 
     // The agent this page was on when the household removed it, named until the person picks another
     // or opens a conversation: its conversations went with it, and what they write now goes elsewhere.
