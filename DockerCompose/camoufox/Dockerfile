@@ -40,7 +40,27 @@ RUN node patch-playwright.js
 COPY patch-viewport.js .
 RUN node patch-viewport.js
 
-COPY server.js .
+# The .NET client never acks a screencast frame, and 1.63's server waits for that ack before the
+# next one, so a login handoff's live view froze on its first frame (see patch-screencast-ack.js).
+COPY patch-screencast-ack.js .
+RUN node patch-screencast-ack.js
+
+# The device is pinned (see fingerprint.js): a package that no longer accepts a saved
+# fingerprint, or presents it differently from one launch to the next, fails the build here.
+COPY check-fingerprint.js fingerprint-fixture.json.gz ./
+RUN node check-fingerprint.js
+
+# Node as PID 1 reaps nothing, so a browser process that exited unwaited stayed a zombie - a test
+# under a busy suite could not remove its container over one Docker could not kill. tini is PID 1
+# instead: it reaps, and hands the stop signal on to node.
+RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+COPY fingerprint.js server.js ./
+
+# Where the fingerprint lives; the compose service mounts its named volume here. No VOLUME line:
+# that would hand every ad-hoc container (a test fixture, a docker run) an anonymous volume.
+RUN mkdir -p /data
 
 EXPOSE 9377
 

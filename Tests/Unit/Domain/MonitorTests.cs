@@ -6,11 +6,13 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
 using Domain.Monitor;
 using Domain.Prompts;
+using Domain.Security;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -44,6 +46,15 @@ internal sealed class FakeAiAgent : DisposableAgent
         => FileSystemRegistry;
 
     public IReadOnlyList<PromptSkill> Skills { get; set; } = [];
+
+    public ModelPayer PaidBy { get; set; } = ModelPayer.Deployment;
+
+    // Whether the household no longer defines this agent as it was built.
+    public bool Stale { get; set; }
+
+    public override ValueTask<bool> IsStaleAsync(CancellationToken ct) => ValueTask.FromResult(Stale);
+
+    public override ModelPayer Payer => PaidBy;
 
     // Only once warmed up, as the real agent's are: the session that carries the skills is built
     // by the warmup, and a caller asking before it has run gets nothing.
@@ -188,12 +199,21 @@ internal sealed class FakeAiAgent : DisposableAgent
 
 internal sealed class FakeAgentFactory(DisposableAgent agent) : IAgentFactory
 {
-    public List<(AgentKey Key, string? AgentId, IToolApprovalHandler ApprovalHandler)> Created { get; } = [];
+    public List<(AgentKey Key, string? AgentId, IToolApprovalHandler ApprovalHandler, string UserId, Account? Account, string? TenantId)> Created { get; } = [];
 
-    public DisposableAgent Create(AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler)
+    // The channel each agent was built for, in the order built.
+    public List<string?> Channels { get; } = [];
+
+    // What building the agent throws instead, as the real factory does for a household that cannot pay.
+    public Exception? Refusal { get; set; }
+
+    public Task<DisposableAgent> CreateAsync(
+        AgentKey agentKey, string userId, string? agentId, IToolApprovalHandler approvalHandler, Account? account = null,
+        string? tenantId = null, CancellationToken ct = default, string? channelId = null)
     {
-        Created.Add((agentKey, agentId, approvalHandler));
-        return agent;
+        Created.Add((agentKey, agentId, approvalHandler, userId, account, tenantId));
+        Channels.Add(channelId);
+        return Refusal is null ? Task.FromResult(agent) : Task.FromException<DisposableAgent>(Refusal);
     }
 
     public DisposableAgent CreateSubAgent(
@@ -207,9 +227,13 @@ internal sealed class FakeChannelConnection : IChannelConnection
 
     public string ChannelId { get; init; } = "test-channel";
 
+    public ChannelHousehold Household { get; init; } = ChannelHousehold.Every;
+
     public bool AttachOnly { get; init; }
 
     public bool HostsReviewCopies { get; init; }
+
+    public bool IsConnected { get; init; } = true;
 
     public string? ConversationIdToReturn { get; init; }
 
@@ -226,9 +250,27 @@ internal sealed class FakeChannelConnection : IChannelConnection
     public IAsyncEnumerable<ChannelMessage> Messages =>
         StreamFailure is null ? _channel.Reader.ReadAllAsync() : throw StreamFailure;
 
-    public List<SendReplyParams> SentReplies { get; } = [];
+    // Replies arrive from every conversation group at once — a turn streaming while another message
+    // is refused — so the list is written under a lock and read as a copy; a plain List lost one now
+    // and then under a loaded suite.
+    private readonly List<SendReplyParams> _sentReplies = [];
+
+    public IReadOnlyList<SendReplyParams> SentReplies
+    {
+        get
+        {
+            lock (_sentReplies)
+            {
+                return [.. _sentReplies];
+            }
+        }
+    }
 
     public List<(string AgentId, string TopicName, string Sender, string? InitialPrompt, string? ExistingConversationId)> CreatedConversations { get; } = [];
+
+    public List<Principal?> CreatedFor { get; } = [];
+
+    public List<bool> CreatedAsGroup { get; } = [];
 
     public List<(string ConversationId, IReadOnlyList<ToolApprovalRequest> Requests)> NotifyAutoApprovedCalls { get; } = [];
 
@@ -239,12 +281,36 @@ internal sealed class FakeChannelConnection : IChannelConnection
             await ReplyGate();
         }
 
-        SentReplies.Add(reply);
+        lock (_sentReplies)
+        {
+            _sentReplies.Add(reply);
+        }
+
         OnReply?.Invoke(reply);
     }
 
-    public Task<ToolApprovalResult> RequestApprovalAsync(string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct)
-        => Task.FromResult(new ToolApprovalResult());
+    public List<ApprovalAsk> AskedApprovals { get; } = [];
+
+    public Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct)
+    {
+        AskedApprovals.Add(ask);
+        return Task.FromResult<ToolApprovalResult?>(ToolApprovalResult.Approved);
+    }
+
+    public List<ApprovalAsk> OfferedApprovals { get; } = [];
+
+    public Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct)
+    {
+        lock (OfferedApprovals)
+        {
+            OfferedApprovals.Add(ask);
+        }
+
+        return Task.FromResult<ToolApprovalResult?>(null);
+    }
+
+    public Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct) =>
+        Task.CompletedTask;
 
     public Dictionary<string, byte[]> Attachments { get; } = [];
 
@@ -302,13 +368,33 @@ internal sealed class FakeChannelConnection : IChannelConnection
         return Task.CompletedTask;
     }
 
-    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, string? address, string? existingConversationId, CancellationToken ct)
+    public Task<string?> CreateConversationAsync(string agentId, string topicName, string sender, string? initialPrompt, string? address, string? existingConversationId, Principal? principal, bool group, CancellationToken ct)
     {
         CreatedConversations.Add((agentId, topicName, sender, initialPrompt, existingConversationId));
+        CreatedFor.Add(principal);
+        CreatedAsGroup.Add(group);
         return Task.FromResult(ConversationIdToReturn);
     }
 
-    public void WriteMessage(ChannelMessage message) => _channel.Writer.TryWrite(message);
+    // As a channel server sends a person's message: with the accounts service's assertion of whoever
+    // it carries — the principal's account, or the household's guest for a message naming none —
+    // signed with the accounts test key for this channel, so the agent's check at the turn's arrival
+    // admits it as it would a real one. A message that already carries one keeps it, and a fire,
+    // which nobody's assertion stands behind, carries none.
+    public void WriteMessage(ChannelMessage message) => _channel.Writer.TryWrite(AsSent(message));
+
+    // A person's message with no assertion at all: what a misbehaving channel server would send.
+    public void WriteUnsigned(ChannelMessage message) => _channel.Writer.TryWrite(message);
+
+    public ChannelMessage AsSent(ChannelMessage message) =>
+        message.Origin is not null || message.Assertion is not null
+            ? message
+            : message with
+            {
+                Assertion = message.Principal?.Account is { } account
+                    ? TestAssertions.Of(account, ChannelId)
+                    : TestAssertions.OfGuest(MonitorTestMocks.GuestHousehold, ChannelId)
+            };
 
     public void Complete() => _channel.Writer.TryComplete();
 
@@ -316,8 +402,26 @@ internal sealed class FakeChannelConnection : IChannelConnection
     // the monitor's side, and the only way to fault a real ChatMonitor from outside it.
 }
 
+// The household's word on who the agent may act for, as its agent view would say it: the accounts
+// listed are disabled, everyone else is in good standing, and a standing that cannot be read throws.
+internal sealed class FakeAccountStanding(params Account[] disabled) : IAccountStanding
+{
+    public bool Unreadable { get; init; }
+
+    public Task<AccountStanding> StandingAsync(Account account, CancellationToken ct) =>
+        Unreadable
+            ? throw new HttpRequestException("the accounts service could not be reached")
+            : Task.FromResult(disabled.Contains(account) ? AccountStanding.Disabled : AccountStanding.Active);
+}
+
 internal static class MonitorTestMocks
 {
+    // The household a guest's assertion names when a test's message names no account.
+    public const string GuestHousehold = "home";
+
+    // The agent's check on a person's turn, over the accounts test key every fake channel signs with.
+    public static AssertionVerifier Assertions { get; } = TestAssertions.Verifier();
+
     public static ChannelMessage CreateChannelMessage(
         string conversationId = "conv-1",
         string content = "Hello",
@@ -360,6 +464,38 @@ internal static class MonitorTestMocks
     {
         return new ChatThreadResolver();
     }
+
+    // The households' agents as the agent reads them, the one named suspended from its asking number
+    // `from` on (counted from 1) — so a household can be suspended between two of its messages — and
+    // every other household running.
+    public static IAgentDefinitionProvider Households(string suspended, int from = 1, FeaturesSection? features = null)
+    {
+        var asked = 0;
+        var provider = new Mock<IAgentDefinitionProvider>();
+        provider
+            .Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string? household, CancellationToken _) => new HouseholdAgents
+            {
+                HouseholdId = household,
+                Agents = [],
+                Configuration = new AgentHouseholdConfig(
+                    household ?? "home", household is null, new HouseholdSettings { Name = "Casa", TimeZone = "UTC" },
+                    new AgentsSection(), features ?? new FeaturesSection(),
+                    new SpacesSection(), null,
+                    Suspended: household == suspended && Interlocked.Increment(ref asked) >= from)
+            });
+        return provider.Object;
+    }
+
+    // The households' agents as the agent reads them while the accounts service cannot answer.
+    public static IAgentDefinitionProvider UnreadableHouseholds()
+    {
+        var provider = new Mock<IAgentDefinitionProvider>();
+        provider
+            .Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("the accounts service is down"));
+        return provider.Object;
+    }
 }
 
 public class ChatMonitorTests
@@ -387,7 +523,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -414,7 +551,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -467,7 +605,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = monitor.Monitor(cts.Token);
@@ -514,7 +653,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -542,7 +682,8 @@ public class ChatMonitorTests
             threadResolver,
             metricsPublisher.Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         // Act
         await monitor.Monitor(CancellationToken.None);
@@ -576,7 +717,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -610,7 +752,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -644,7 +787,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -679,7 +823,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -720,7 +865,8 @@ public class ChatMonitorTests
             new ChatThreadResolver(stateStore.Object),
             new Mock<IMetricsPublisher>().Object,
             null,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -746,13 +892,14 @@ public class ChatMonitorTests
         var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
         var recallHook = new Mock<IMemoryRecallHook>();
         recallHook
-            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(),
+            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<Account?>(), It.IsAny<string?>(),
                 It.IsAny<string?>(), It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
-            .Returns(async (ChatMessage _, string _, string? _, string? _, AgentSession _, CancellationToken ct) =>
+            .Returns(async (ChatMessage _, Account? _, string? _, string? _, AgentSession _, CancellationToken ct) =>
             {
                 channel.WriteMessage(MonitorTestMocks.CreateChannelMessage(content: "/cancel"));
                 channel.Complete();
                 await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return (MemoryExtraction?)null;
             });
         var logger = new Mock<ILogger<ChatMonitor>>();
 
@@ -762,7 +909,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             recallHook.Object,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         channel.WriteMessage(MonitorTestMocks.CreateChannelMessage());
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
@@ -784,7 +932,7 @@ public class ChatMonitorTests
         var fakeAgent = new FakeAiAgent { WarmupExceptionToThrow = new HttpRequestException("MCP connect failed") };
         var recallHook = new Mock<IMemoryRecallHook>();
         recallHook
-            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<string>(), It.IsAny<string?>(),
+            .Setup(h => h.EnrichAsync(It.IsAny<ChatMessage>(), It.IsAny<Account?>(), It.IsAny<string?>(),
                 It.IsAny<string?>(), It.IsAny<AgentSession>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("recall down"));
         var channel = MonitorTestMocks.CreateChannel(messages: MonitorTestMocks.CreateChannelMessage());
@@ -796,7 +944,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             recallHook.Object,
-            logger.Object);
+            logger.Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(5));
 
@@ -852,7 +1001,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -897,7 +1047,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -929,7 +1080,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             metrics.Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -957,7 +1109,8 @@ public class ChatMonitorTests
             MonitorTestMocks.CreateThreadResolver(),
             metrics.Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -1001,7 +1154,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -1028,7 +1182,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -1063,7 +1218,8 @@ public class ChatMonitorTests
             threadResolver,
             new Mock<IMetricsPublisher>().Object,
             null,
-            Mock.Of<ILogger<ChatMonitor>>());
+            Mock.Of<ILogger<ChatMonitor>>(),
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 

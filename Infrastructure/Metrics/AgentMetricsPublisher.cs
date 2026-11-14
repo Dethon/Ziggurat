@@ -3,8 +3,13 @@ using Domain.DTOs.Metrics;
 
 namespace Infrastructure.Metrics;
 
-public sealed class AgentMetricsPublisher(IMetricsPublisher inner, string agentId) : IMetricsPublisher
+// An agent is built for one household (AgentSpec.TenantId), so everything it publishes is that
+// household's; a worker is built for its parent's. An event that already names one keeps it, as
+// HouseholdMetricsPublisher does. Keyed by the agent's id, which an owner's rename leaves alone, with
+// the name it goes by beside it for the figures to be shown under.
+public sealed class AgentMetricsPublisher(IMetricsPublisher inner, string agentId, string agentName, string? tenantId = null)
+    : IMetricsPublisher
 {
     public void Publish(MetricEvent metricEvent) =>
-        inner.Publish(metricEvent with { AgentId = agentId });
+        inner.Publish(metricEvent with { AgentId = agentId, AgentName = agentName, TenantId = metricEvent.TenantId ?? tenantId });
 }

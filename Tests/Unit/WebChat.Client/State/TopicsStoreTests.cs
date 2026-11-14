@@ -187,6 +187,36 @@ public class TopicsStoreTests : IDisposable
         _store.State.SelectedTopicId.ShouldBeNull();
     }
 
+    // Marta's open Chef conversation closed under her when an owner removed Chef, and her next message
+    // went to Jonas with nothing said: the page names the agent that went until she picks another.
+    [Fact]
+    public void SetAgents_WhenSelectedAgentRemoved_NamesItUntilAnotherIsPicked()
+    {
+        _dispatcher.Dispatch(new SetAgents([new("a", "Jonas", null), new("b", "Chef", null)]));
+        _dispatcher.Dispatch(new SelectAgent("b"));
+
+        _dispatcher.Dispatch(new SetAgents([new("a", "Jonas", null)]));
+        _store.State.RemovedAgentName.ShouldBe("Chef");
+
+        _dispatcher.Dispatch(new SetAgents([new("a", "Jonas", null)]));
+        _store.State.RemovedAgentName.ShouldBe("Chef", "a later catalogue removes nothing more");
+
+        _dispatcher.Dispatch(new SelectAgent("a"));
+        _store.State.RemovedAgentName.ShouldBeNull();
+    }
+
+    [Fact]
+    public void SetAgents_WhenSelectedAgentRemoved_IsForgottenOnceAConversationOpens()
+    {
+        _dispatcher.Dispatch(new SetAgents([new("a", "Jonas", null), new("b", "Chef", null)]));
+        _dispatcher.Dispatch(new SelectAgent("b"));
+        _dispatcher.Dispatch(new SetAgents([new("a", "Jonas", null)]));
+
+        _dispatcher.Dispatch(new SelectTopic("topic-a"));
+
+        _store.State.RemovedAgentName.ShouldBeNull();
+    }
+
     [Fact]
     public void SetAgents_WhenSelectedAgentStillPresent_KeepsSelectedTopic()
     {
@@ -311,6 +341,24 @@ public class TopicsStoreTests : IDisposable
 
         // Assert
         metadata.SpaceSlug.ShouldBe("my-space");
+    }
+
+    // A conversation started by attaching a file is named after the file until its opening message
+    // names it, which the row's marker says. News of the topic from the hub (its having been read,
+    // which is told at once now) carries no marker, and replacing the row with it left the
+    // conversation named after the file for good.
+    [Fact]
+    public void UpdateTopic_UnderTheSameName_KeepsTheMarkThatTheNameIsTheFiles()
+    {
+        var started = CreateTopic("topic-1", "photo.png");
+        started.NameFromFile = true;
+        _dispatcher.Dispatch(new AddTopic(started));
+
+        _dispatcher.Dispatch(new UpdateTopic(StoredTopic.FromMetadata(started.ToMetadata() with { ReadPosition = 0 })));
+        _store.State.Topics.Single().NameFromFile.ShouldBeTrue();
+
+        _dispatcher.Dispatch(new UpdateTopic(StoredTopic.FromMetadata(started.ToMetadata() with { Name = "Renamed elsewhere" })));
+        _store.State.Topics.Single().NameFromFile.ShouldBeFalse();
     }
 
     private static StoredTopic CreateTopic(

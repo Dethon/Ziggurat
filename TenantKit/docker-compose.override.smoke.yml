@@ -1,0 +1,235 @@
+# The tenant kit beside a smoke stack on this same machine (scripts/smoke-stack.sh), run as project
+# tenant-kit-smoke so a real kit here is never touched. Its servers tunnel to the smoke stack's relay
+# as they would to the deployment's: by the deployment's main host, which here is this machine's own
+# Caddy (host-gateway, where its 443 is published), trusting Caddy's local CA, whose root the script
+# copies out beside the smoke state before the kit starts. Every piece of the kit's state starts empty
+# under the smoke stack's ./volumes/smoke, which the script's down removes. The script starts web
+# search with its browser, the vault, the library, the sandbox and the printer, the kit's Redis, and a
+# machine running an outpost (smoke-machine):
+# never Home Assistant's server, Home Assistant or Music Assistant, which reach the home and the LAN,
+# nor qBittorrent and Jackett. Voice starts only for `scripts/smoke-stack.sh voice` (profile voice),
+# talking to a test satellite (TenantKit/smoke/satellite.py) and never to the home's, which the
+# voice image does not ship and no satellites.env names here. A second household's voice and
+# satellite start only for `scripts/smoke-stack.sh household-voice` (profile household-voice), the
+# same way. The printer prints to a stand-in on the kit's own
+# network (smoke-printer: CUPS's ippeveprinter, which takes a job and keeps it as a file), never to the
+# site's printer.
+x-hub-here: &hub-here
+  extra_hosts:
+    - "${DEPLOYMENT_HOST}:host-gateway"
+
+x-hub-ca: &hub-ca ../DockerCompose/volumes/smoke/kit/hub-ca.crt:/smoke/hub-ca.crt:ro
+
+x-hub-ca-env: &hub-ca-env
+  MCP__TUNNEL__HUBCERTIFICATEAUTHORITY: /smoke/hub-ca.crt
+
+services:
+  redis:
+    volumes: ["../DockerCompose/volumes/smoke/kit/redis:/data"]
+
+  mcp-websearch:
+    <<: *hub-here
+    volumes: [*hub-ca]
+    environment: *hub-ca-env
+
+  mcp-vault:
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/vault:/vault"
+    environment: *hub-ca-env
+
+  mcp-library:
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/media:/media"
+    environment: *hub-ca-env
+
+  mcp-sandbox:
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/sandbox:/home/sandbox_user"
+    environment: *hub-ca-env
+
+  mcp-printer:
+    <<: *hub-here
+    volumes: [*hub-ca]
+    environment:
+      <<: *hub-ca-env
+      PRINTERURI: ipp://smoke-printer.local:8631/ipp/print
+      # The stand-in cannot type an octet-stream text job as a real printer does, so the smoke kit
+      # names its documents text; it prints text alone.
+      DOCUMENTFORMAT: text/plain
+
+  # Somebody's own machine at the home, running the outpost as a person would: the binary the script
+  # published from this checkout (as scripts/run-outpost.sh does), copied in and started with its
+  # flags, the credential minted for outpost-smoke-machine in its environment. The outpost has no image
+  # and no service of its own (.claude/rules/outpost.md): this is a bare machine to run it on. Its
+  # tunnel opens to this machine's Caddy by the deployment's main host, pinned here like every kit
+  # server's, so it never reaches the deployment's own host — which is what that name resolves to on a
+  # machine run from the host's resolver. It publishes /machine alone, jailed.
+  smoke-machine:
+    image: mcr.microsoft.com/dotnet/runtime-deps:10.0
+    user: ${PUID:-1654}:${PGID:-1654}
+    <<: *hub-here
+    command: ["/outpost/McpServerOutpost", "--name", "smoke-machine", "--dir", "/machine", "--jailed",
+              "--hub", "https://${DEPLOYMENT_HOST}"]
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/outpost:/outpost:ro"
+      - "../DockerCompose/volumes/smoke/kit/machine:/machine"
+    environment:
+      <<: *hub-ca-env
+      CREDENTIAL: ${TUNNEL_CREDENTIAL_OUTPOST:-}
+    networks: [kit]
+
+  # A second household's own vault, beside the home's: the smoke test that onboards a household mints
+  # its vault credential through the admin API and starts this with it (`scripts/smoke-stack.sh
+  # household-vault`, the credential in SMOKE_HOUSEHOLD_VAULT_CREDENTIAL), so the household's agent
+  # reads its own notes through its own tunnel, under the same server name as the home's. Its folder
+  # is its own; `down` removes it with the rest.
+  mcp-vault-household:
+    profiles: [household]
+    image: mcp-vault:latest
+    user: ${PUID:-1654}:${PGID:-1654}
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/household-vault:/vault"
+    environment:
+      <<: *hub-ca-env
+      TZ: Europe/Madrid
+      MCP__TUNNEL__HUB: wss://${DEPLOYMENT_HOST}/tunnel
+      MCP__TUNNEL__SERVERNAME: vault
+      MCP__TUNNEL__CREDENTIAL: ${SMOKE_HOUSEHOLD_VAULT_CREDENTIAL:-}
+    networks: [kit]
+
+  # A household's Lemonade box behind its router: the kit's forwarder, started by the smoke test that
+  # sets one up (`scripts/smoke-stack.sh household-lemonade`, the credential in
+  # SMOKE_HOUSEHOLD_LEMONADE_CREDENTIAL), in front of a stand-in box that offers one model and answers
+  # nothing else, so no turn is run on it and nothing reaches a real box.
+  lemonade-forwarder:
+    profiles: [household-lemonade]
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+    environment:
+      <<: *hub-ca-env
+      BOX__URL: http://smoke-lemonade-box:8080/api/v1
+      BOX__APIKEY: ""
+      MCP__TUNNEL__HUB: wss://${DEPLOYMENT_HOST}/tunnel
+      MCP__TUNNEL__CREDENTIAL: ${SMOKE_HOUSEHOLD_LEMONADE_CREDENTIAL:-}
+
+  smoke-lemonade-box:
+    profiles: [household-lemonade]
+    image: caddy:2.11.7-alpine
+    command: ["caddy", "respond", "--listen", ":8080", "--body",
+              '{"data":[{"id":"smoke-kit-box","labels":["chat","tool-calling"],"downloaded":true}]}']
+    networks: [kit]
+
+  # A printer that prints nothing: it answers IPP as a printer does and keeps each job under /jobs.
+  # It refuses a request whose Host is not its own name, which beside its DNS-SD daemon is
+  # <hostname>.local, so it is reached by that alias.
+  # ippeveprinter will not start without a DNS-SD daemon even told to advertise nothing (-r off), so
+  # one runs beside it, on the kit's bridge network alone.
+  smoke-printer:
+    hostname: smoke-printer
+    build:
+      dockerfile_inline: |
+        FROM debian:bookworm-slim
+        RUN apt-get update && apt-get install -y --no-install-recommends cups-ipp-utils avahi-daemon dbus \
+            && rm -rf /var/lib/apt/lists/* && mkdir -p /jobs /run/dbus
+    entrypoint: ["sh", "-c", "dbus-daemon --system && avahi-daemon -D --no-chroot && sleep 1 && exec ippeveprinter -p 8631 -r off -k -d /jobs -f text/plain,image/jpeg,image/pwg-raster,image/urf,application/vnd.hp-pcl,application/octet-stream 'Smoke Printer'"]
+    networks:
+      kit:
+        aliases: [smoke-printer.local]
+
+  # The smoke stack never runs Home Assistant, and the kit's server for it waits on voice, which runs
+  # only under the voice profile: held back by a profile of its own, or compose refuses the whole kit.
+  mcp-homeassistant:
+    profiles: [home]
+
+  mcp-channel-voice:
+    profiles: [voice]
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/voices:/voices"
+      - "../DockerCompose/volumes/smoke/kit/tse-audit:/tse-audit"
+    environment:
+      <<: *hub-ca-env
+      # The smoke stack's Lemonade transcribes on the CPU, where three seconds of speech take most of a
+      # minute on a busy machine: the deployment's one-minute bound, sized for its GPU, would have the
+      # check fail for the machine being busy. Three minutes still answers inside the satellite's wait.
+      Stt__OpenAi__RequestTimeout: "00:03:00"
+      Satellites__smoke-satellite__Address: tcp://test-satellite:10800
+      Satellites__smoke-satellite__Identity: household
+      Satellites__smoke-satellite__Room: Smoke room
+      Satellites__smoke-satellite__WakeWord: ok_nabu
+
+  # A satellite that speaks the questions in its folder and records what the hub answers.
+  test-satellite:
+    profiles: [voice]
+    image: python:3.12-alpine
+    command: ["python", "-u", "/satellite/satellite.py"]
+    environment:
+      LINGER: "${SATELLITE_LINGER:-100}"
+    volumes:
+      - "./smoke:/satellite:ro"
+      - "../DockerCompose/volumes/smoke/kit/satellite:/voice"
+    networks: [kit]
+
+  # A second household's own voice, beside the home's: the smoke tests that onboard a household with
+  # voice mint its credential through the admin API and start this with it (`scripts/smoke-stack.sh
+  # household-voice`, the credential in SMOKE_HOUSEHOLD_VOICE_CREDENTIAL), under the same server name
+  # as the home's, talking to a test satellite of its own. Defined here whole, since it is no service of
+  # the kit's: the kit's voice service's environment and its folders its own.
+  mcp-channel-voice-household:
+    profiles: [household-voice]
+    image: mcp-channel-voice:latest
+    user: ${PUID:-1654}:${PGID:-1654}
+    <<: *hub-here
+    volumes:
+      - *hub-ca
+      - "../DockerCompose/volumes/smoke/kit/household-voices:/voices"
+      - "../DockerCompose/volumes/smoke/kit/household-tse-audit:/tse-audit"
+    environment:
+      <<: *hub-ca-env
+      TZ: Europe/Madrid
+      MCP__TUNNEL__HUB: wss://${DEPLOYMENT_HOST}/tunnel
+      MCP__TUNNEL__SERVERNAME: voice
+      MCP__TUNNEL__CREDENTIAL: ${SMOKE_HOUSEHOLD_VOICE_CREDENTIAL:-}
+      MCP__TUNNEL__BACKCALLS__accounts: "7802"
+      MCP__TUNNEL__BACKCALLS__topics: "7803"
+      MCP__TUNNEL__BACKCALLS__lemonade: "7804"
+      MCP__TUNNEL__BACKCALLS__metrics: "7801"
+      ACCOUNTS__BASEURL: http://127.0.0.1:7802
+      AGENT__BASEURL: http://127.0.0.1:7803
+      Stt__OpenAi__BaseUrl: http://127.0.0.1:7804/v1
+      Tts__OpenAi__BaseUrl: http://127.0.0.1:7804/v1
+      METRICS__URL: http://127.0.0.1:7801/events
+      Stt__OpenAi__Model: ${STT_MODEL:-Whisper-Large-v3-Turbo}
+      # As the home's above: the CPU's transcription, not the GPU's.
+      Stt__OpenAi__RequestTimeout: "00:03:00"
+      Announce__Token: ${Announce__Token:-}
+      Announce__Escalation__WebhookUrl: ""
+      Tse__Mode: "Off"
+      Satellites__smoke-household-satellite__Address: tcp://test-satellite-household:10800
+      Satellites__smoke-household-satellite__Identity: Smoke household satellite
+      Satellites__smoke-household-satellite__Room: Smoke household room
+      Satellites__smoke-household-satellite__WakeWord: ok_nabu
+    networks: [kit]
+
+  # The household's satellite, as the home's test satellite is, in a folder of its own.
+  test-satellite-household:
+    profiles: [household-voice]
+    image: python:3.12-alpine
+    command: ["python", "-u", "/satellite/satellite.py"]
+    environment:
+      LINGER: "${SATELLITE_LINGER:-100}"
+    volumes:
+      - "./smoke:/satellite:ro"
+      - "../DockerCompose/volumes/smoke/kit/household-satellite:/voice"
+    networks: [kit]

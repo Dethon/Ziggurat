@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
 import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
+import { openedExercise, overRecord, useShown } from "../stale";
 import { duration, endFrom, endsLater, EXERCISE_ICON, MAX_MINUTES, MAX_NAME, MAX_NOTE, readMinutes, sessionMinutes } from "../exercise";
 import { toLocalInput } from "../format";
 import { useSettings } from "../settings";
@@ -68,6 +69,18 @@ export function ExerciseSheet({
     endedAt: typeof read === "number" && startedAt !== null ? endFrom(startedAt, read) : read,
     note: note.trim() || null,
   });
+  // What it would be saved as, given a start: the values the sheet shows.
+  const recorded: SaveExercise | null =
+    startedAt === null
+      ? null
+      : {
+          kind,
+          name: kind === "other" ? name.trim() : null,
+          startedAt,
+          endedAt: typeof read === "number" ? endFrom(startedAt, read) : null,
+          note: note.trim() || null,
+        };
+  const shown = useShown(recorded);
   const ready =
     named &&
     !busy &&
@@ -82,15 +95,11 @@ export function ExerciseSheet({
     setError(null);
     const values: SaveExercise = starting
       ? { kind: "other", name: name.trim(), startedAt: new Date().toISOString(), endedAt: null, note: null }
-      : {
-          kind,
-          name: kind === "other" ? name.trim() : null,
-          startedAt: startedAt!,
-          endedAt: typeof read === "number" ? endFrom(startedAt!, read) : null,
-          note: note.trim() || null,
-        };
+      : recorded!;
     try {
-      const saved = await (session ? api.updateExercise(session.id, values) : api.createExercise(values));
+      const saved = await (session
+        ? api.updateExercise(session.id, shown ? overRecord(openedExercise(session), shown, values) : values, openedExercise(session))
+        : api.createExercise(values));
       onSaved(saved, starting ? "started" : "saved");
     } catch (failure) {
       setError(errorMessage(failure, t, "save"));

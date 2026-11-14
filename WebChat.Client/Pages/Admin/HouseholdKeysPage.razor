@@ -1,0 +1,262 @@
+@page "/admin/keys"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.Admin
+@using Domain.DTOs.Household
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdKeysStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household keys</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-keys-heading">
+    <h1 id="admin-keys-heading">Keys</h1>
+    <p class="admin-lede">
+        The keys the household's agents use. Each key is checked with its provider before it is saved, and is
+        never shown again: only whether it works and its last few characters.
+    </p>
+
+    @if (_state.Keys is not { } keys)
+    {
+        @if (_state.Notice is { } notice)
+        {
+            <AdminNoticeView Notice="notice" />
+        }
+        else
+        {
+            <p class="admin-status">Loading the household's keys</p>
+        }
+    }
+    else
+    {
+        <form class="admin-form admin-key" aria-labelledby="admin-key-openrouter" @onsubmit="SaveOpenRouter">
+            <h2 id="admin-key-openrouter">OpenRouter</h2>
+            @if (keys.PaysWithDeploymentKey)
+            {
+                <p class="admin-field-hint">Until a key is set here, this household's agents run on the deployment's own key.</p>
+            }
+            else if (keys.NeedsOpenRouterKey)
+            {
+                <p class="admin-key-needed" role="note">
+                    The household's agents answer nobody until it has an OpenRouter key. Paste one from openrouter.ai to start.
+                </p>
+            }
+            <KeyStatusView Status="keys.OpenRouter" />
+            @if (keys.OpenRouter is not null)
+            {
+                <CheckAgainButton Label="@CheckLabel(KeyForm.OpenRouter, null)" Disabled="@Busy" OnCheck="() => Check(KeyForm.OpenRouter)" />
+            }
+            <label class="admin-field">
+                <span class="admin-field-label">@(keys.OpenRouter is null ? "API key" : "Replace the API key")</span>
+                <input name="openRouterKey" type="password" @bind="_openRouterKey" @bind:event="oninput"
+                       placeholder="sk-or-v1-…" spellcheck="false" autocomplete="off" required />
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@Busy">
+                    @(_state.Saving == KeyForm.OpenRouter ? "Checking" : "Save")
+                </button>
+            </div>
+            <KeyFormNotice Form="KeyForm.OpenRouter" State="_state" />
+        </form>
+
+        <form class="admin-form admin-key" aria-labelledby="admin-key-idealista" @onsubmit="SaveIdealista">
+            <h2 id="admin-key-idealista">Idealista</h2>
+            <KeyStatusView Status="keys.Idealista" />
+            @if (keys.Idealista is not null)
+            {
+                <CheckAgainButton Label="@CheckLabel(KeyForm.Idealista, null)" Disabled="@Busy" OnCheck="() => Check(KeyForm.Idealista)" />
+            }
+            <label class="admin-field">
+                <span class="admin-field-label">API key</span>
+                <input name="idealistaKey" type="password" @bind="_idealistaKey" @bind:event="oninput"
+                       spellcheck="false" autocomplete="off" required />
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Secret</span>
+                <input name="idealistaSecret" type="password" @bind="_idealistaSecret" @bind:event="oninput"
+                       spellcheck="false" autocomplete="off" required />
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@Busy">
+                    @(_state.Saving == KeyForm.Idealista ? "Checking" : "Save")
+                </button>
+            </div>
+            <KeyFormNotice Form="KeyForm.Idealista" State="_state" />
+        </form>
+
+        <form class="admin-form admin-key" aria-labelledby="admin-key-lemonade" @onsubmit="SaveLemonade">
+            <h2 id="admin-key-lemonade">Lemonade box</h2>
+            <p class="admin-field-hint">
+                A Lemonade server of the household's own: the models on it are offered to the household's
+                people in the chat's model menu while it answers, and run on it. @(keys.IsHome
+                    ? "Left empty, the deployment's own box is used."
+                    : "At an address, it must be reachable at a public https address.")
+            </p>
+            @if (keys.Lemonade is { ThroughKit: true } kit)
+            {
+                <p class="admin-key-kit">Through the tenant kit: @ConnectionText(kit.Connection)</p>
+            }
+            else if (keys.Lemonade is { } box)
+            {
+                <p class="admin-key-address">@box.ApiUrl</p>
+                <KeyStatusView Status="box.Status" />
+                <CheckAgainButton Label="@CheckLabel(KeyForm.Lemonade, null)" Disabled="@Busy" OnCheck="() => Check(KeyForm.Lemonade)" />
+            }
+            <fieldset class="admin-field admin-choice">
+                <legend class="admin-field-label">Reached</legend>
+                <label>
+                    <input type="radio" name="lemonadeReach" checked="@(!_lemonadeThroughKit)"
+                           @onchange="() => _lemonadeThroughKit = false" />
+                    At an address
+                </label>
+                <label>
+                    <input type="radio" name="lemonadeReach" checked="@_lemonadeThroughKit"
+                           @onchange="() => _lemonadeThroughKit = true" />
+                    Through the tenant kit
+                </label>
+            </fieldset>
+            @if (_lemonadeThroughKit)
+            {
+                <p class="admin-field-hint">
+                    For a box behind the household's router: nothing about it leaves the house. Add a server named
+                    lemonade on the Servers page, put its credential, the box's address on your network and its
+                    key, if it checks one, in the kit's .env (TUNNEL_CREDENTIAL_LEMONADE, LEMONADE_URL,
+                    LEMONADE_API_KEY), and start the kit with --profile lemonade.
+                </p>
+            }
+            else
+            {
+                <label class="admin-field">
+                    <span class="admin-field-label">Address</span>
+                    <input name="lemonadeUrl" type="url" @bind="_lemonadeUrl" @bind:event="oninput"
+                           placeholder="https://lemonade.example.org/api/v1" spellcheck="false" autocomplete="off" required />
+                    <span class="admin-field-hint">Its API's base, ending in /api/v1.</span>
+                </label>
+                <label class="admin-field">
+                    <span class="admin-field-label">API key</span>
+                    <input name="lemonadeKey" type="password" @bind="_lemonadeKey" @bind:event="oninput"
+                           spellcheck="false" autocomplete="off" />
+                    <span class="admin-field-hint">Only if the box checks one.</span>
+                </label>
+            }
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@Busy">
+                    @(_state.Saving == KeyForm.Lemonade ? (_lemonadeThroughKit ? "Saving" : "Checking") : "Save")
+                </button>
+                @if (keys.Lemonade is not null)
+                {
+                    <button type="button" class="admin-secondary" disabled="@Busy"
+                            @onclick="RemoveLemonade">Remove</button>
+                }
+            </div>
+            <KeyFormNotice Form="KeyForm.Lemonade" State="_state" />
+        </form>
+
+        <form class="admin-form admin-key" aria-labelledby="admin-key-telegram" @onsubmit="SaveTelegram">
+            <h2 id="admin-key-telegram">Telegram bots</h2>
+            <p class="admin-field-hint">A bot of the household's own answers as one of its agents, named by the agent's id.</p>
+            @if (keys.TelegramBots.Count > 0)
+            {
+                <ul class="admin-key-bots">
+                    @foreach (var bot in keys.TelegramBots)
+                    {
+                        <li>
+                            <span class="admin-key-agent">@bot.AgentId</span> <KeyStatusView Status="bot.Key" />
+                            <CheckAgainButton Label="@CheckLabel(KeyForm.Telegram, bot.AgentId)" Disabled="@Busy"
+                                              OnCheck="() => Check(KeyForm.Telegram, bot.AgentId)" />
+                        </li>
+                    }
+                </ul>
+            }
+            <label class="admin-field">
+                <span class="admin-field-label">Agent</span>
+                <input name="telegramAgent" @bind="_telegramAgent" @bind:event="oninput" placeholder="jonas"
+                       spellcheck="false" autocomplete="off" required />
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Bot token</span>
+                <input name="telegramToken" type="password" @bind="_telegramToken" @bind:event="oninput"
+                       placeholder="123456789:AA…" spellcheck="false" autocomplete="off" required />
+                <span class="admin-field-hint">As BotFather gives it.</span>
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@Busy">
+                    @(_state.Saving == KeyForm.Telegram ? "Checking" : "Save")
+                </button>
+            </div>
+            <KeyFormNotice Form="KeyForm.Telegram" State="_state" />
+        </form>
+    }
+</section>
+
+@code {
+    private HouseholdKeysState _state = HouseholdKeysState.Initial;
+    private string _openRouterKey = "";
+    private string _idealistaKey = "";
+    private string _idealistaSecret = "";
+    private string _telegramAgent = "";
+    private string _telegramToken = "";
+    private string _lemonadeUrl = "";
+    private string _lemonadeKey = "";
+    private bool _lemonadeThroughKit;
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The slot opens on the way the box is saved, and follows a save or a removal of it.
+        Subscribe(Store.StateObservable, state => state.Keys?.Lemonade?.ThroughKit ?? false,
+            throughKit => _lemonadeThroughKit = throughKit);
+        // A key typed is the owner's until it is saved, and gone from the page once it is: it is never
+        // shown again, so nothing here keeps it.
+        Subscribe(Store.StateObservable, state => state.SavedCount, _ =>
+        {
+            switch (Store.State.NoticeFor)
+            {
+                case KeyForm.OpenRouter:
+                    _openRouterKey = "";
+                    break;
+                case KeyForm.Idealista:
+                    (_idealistaKey, _idealistaSecret) = ("", "");
+                    break;
+                case KeyForm.Telegram:
+                    (_telegramAgent, _telegramToken) = ("", "");
+                    break;
+                case KeyForm.Lemonade:
+                    (_lemonadeUrl, _lemonadeKey) = ("", "");
+                    break;
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdKeys());
+    }
+
+    private void SaveOpenRouter() => Dispatcher.Dispatch(new SaveOpenRouterKey(new OpenRouterKey(_openRouterKey.Trim())));
+
+    private void SaveIdealista() =>
+        Dispatcher.Dispatch(new SaveIdealistaKeys(new IdealistaKeys(_idealistaKey.Trim(), _idealistaSecret.Trim())));
+
+    private void SaveLemonade() =>
+        Dispatcher.Dispatch(new SaveLemonadeBox(_lemonadeThroughKit
+            ? LemonadeBox.Kit
+            : new LemonadeBox(_lemonadeUrl.Trim(), string.IsNullOrWhiteSpace(_lemonadeKey) ? null : _lemonadeKey.Trim())));
+
+    private static string ConnectionText(ServerConnection? connection) => connection switch
+    {
+        ServerConnection.Connected => "connected",
+        ServerConnection.Offline => "not connected — is the kit's forwarder running?",
+        _ => "the deployment could not say whether it is connected just now"
+    };
+
+    private void RemoveLemonade() => Dispatcher.Dispatch(new RemoveLemonadeBox());
+
+    // One save or check at a time: the owners' changes to a household run one at a time anyway.
+    private bool Busy => _state.Saving is not null || _state.Checking is not null;
+
+    private string CheckLabel(KeyForm form, string? agentId) =>
+        _state.Checking == new KeyCheck(form, agentId) ? "Checking" : "Check again";
+
+    private void Check(KeyForm form, string? agentId = null) => Dispatcher.Dispatch(new CheckHouseholdKey(form, agentId));
+
+    private void SaveTelegram() =>
+        Dispatcher.Dispatch(new SaveTelegramBot(_telegramAgent.Trim(), new TelegramBotKey(_telegramToken.Trim())));
+}

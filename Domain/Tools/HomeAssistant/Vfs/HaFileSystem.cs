@@ -33,9 +33,11 @@ public sealed partial class HaFileSystem(
     private HomeAssistantSetupSummary? _setupIndex;
 
     // Who is writing, for the one record on this mount that remembers its author: a watch runs its
-    // prompts as the agent that created it. The server's one instance has no caller, and the
-    // registrar asks for a view per call.
+    // prompts as the agent that created it, and acts for the person whose write carried the
+    // delegation it keeps — or for nobody, when the write that last set it carried none. The
+    // server's one instance has no caller, and the registrar asks for a view per call.
     private ConversationContext? _caller = caller;
+    private string? _delegation;
 
     // A shallow copy with the caller swapped, never a second construction: a copy carries every
     // dependency this mount was built with — the ones that exist and the ones added later — so
@@ -47,6 +49,7 @@ public sealed partial class HaFileSystem(
     {
         var view = (HaFileSystem)MemberwiseClone();
         view._caller = caller.Conversation;
+        view._delegation = caller.Delegation;
         return view;
     }
 

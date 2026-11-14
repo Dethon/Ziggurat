@@ -17,7 +17,39 @@
            per host, and what puts it in each container image without a Dockerfile knowing. -->
       <Content Include="retention.json" CopyToOutputDirectory="PreserveNewest" />
       <Content Include="delivery.json" CopyToOutputDirectory="PreserveNewest" />
+      <Content Include="token-verification.json" CopyToOutputDirectory="PreserveNewest" />
+      <Content Include="tunnel.json" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
+
+    <ItemGroup>
+      <!-- publicsuffix.org's list, ICANN and private sections, read by RegistrableDomain. Embedded
+           rather than shipped beside the binaries: it is data the code cannot run without, not a
+           policy a host may override. -->
+      <EmbeddedResource Include="Tools/Web/public_suffix_list.dat" LogicalName="Domain.Tools.Web.public_suffix_list.dat" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <!-- The prompt documents: every section's and every skill's header and words
+           (PromptDocuments). Embedded for the suffix list's reason - the code's own words, not a
+           policy a host may override. The repository's .dockerignore drops **/*.md, so it
+           re-includes these by name; the target below turns a context that lost either folder
+           into a failed build rather than a container without its prompt or its skills. -->
+      <EmbeddedResource Include="Prompts/Sections/*.md" LogicalName="Domain.Prompts.Sections.%(Filename)%(Extension)" />
+      <EmbeddedResource Include="Prompts/Skills/*.md" LogicalName="Domain.Prompts.Skills.%(Filename)%(Extension)" />
+      <!-- The agent templates a new household's agents start from (AgentTemplates), beside them. -->
+      <EmbeddedResource Include="Prompts/Agents/*.md" LogicalName="Domain.Prompts.Agents.%(Filename)%(Extension)" />
+    </ItemGroup>
+
+    <Target Name="RequirePromptDocuments" BeforeTargets="BeforeBuild">
+      <ItemGroup>
+        <_SectionDocument Include="@(EmbeddedResource)" Condition="'%(Extension)' == '.md' And $([System.String]::Copy('%(LogicalName)').StartsWith('Domain.Prompts.Sections.'))" />
+        <_SkillDocument Include="@(EmbeddedResource)" Condition="'%(Extension)' == '.md' And $([System.String]::Copy('%(LogicalName)').StartsWith('Domain.Prompts.Skills.'))" />
+      </ItemGroup>
+      <Error Condition="'@(_SectionDocument)' == ''"
+             Text="No prompt document was found under Domain/Prompts/Sections. A build context that drops *.md (see .dockerignore) leaves every section without its words." />
+      <Error Condition="'@(_SkillDocument)' == ''"
+             Text="No prompt document was found under Domain/Prompts/Skills. A build context that drops *.md (see .dockerignore) leaves every server without its skills." />
+    </Target>
 
     <ItemGroup>
       <PackageReference Include="FluentResults" Version="4.0.0" />

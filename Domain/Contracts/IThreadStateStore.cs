@@ -4,6 +4,11 @@ using Microsoft.Extensions.AI;
 
 namespace Domain.Contracts;
 
+// Topics are kept under their household: a page and a search are of the viewer's household, and a
+// read, a mark or a delete by id names the household, so the store never answers one household with
+// another's topic. A conversation's own history and the topic it leads to are reached by the
+// conversation, whose id is the same whichever household holds it; what that topic says about whose it
+// is (TopicViewer) is the caller's to apply.
 public interface IThreadStateStore
 {
     Task DeleteAsync(AgentKey key);
@@ -12,6 +17,10 @@ public interface IThreadStateStore
     Task<ChatMessage[]?> GetTailMessagesAsync(string key, int maxCount);
     Task SetMessagesAsync(string key, ChatMessage[] messages);
     Task AppendMessagesAsync(string key, IReadOnlyList<ChatMessage> messages);
+
+    // The last count messages taken off the conversation, and off its topic's count: a failed turn
+    // that a retry of it replaces.
+    Task DropTailAsync(string key, int count);
     Task<bool> ExistsAsync(string key, CancellationToken ct = default);
 
     // One page of the ordinary list, most recently written first. There is no call that returns
@@ -20,24 +29,34 @@ public interface IThreadStateStore
     // ended, so reaching an old conversation costs what reaching a recent one costs.
     // Archived reads the same index below the archive cutoff. Nothing marks a topic archived and
     // nothing unmarks it — see ADR 0024.
+    // A page holds only what the viewer may know exists, and is filled from below whatever it
+    // passed over, so another person's private topics never cut a page short or end the list.
+    // alsoSpaces are other slugs listed beside the space's own as one list by last write: the default
+    // space's page carries the topics of spaces its household removed (SpaceListing).
     Task<TopicPage> GetTopicPageAsync(
-        string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false);
+        string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false,
+        IReadOnlyList<string>? alsoSpaces = null);
 
     // By what a conversation is called and by what was said in it, over both ranges at once —
     // search is the way into the archive, so a cutoff has no business in it. Paged like any
-    // other list of topics.
+    // other list of topics, and seen through the same viewer.
     Task<TopicPage> SearchTopicsAsync(
-        string agentId, string spaceSlug, string query, string? cursor, int pageSize);
+        string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize,
+        IReadOnlyList<string>? alsoSpaces = null);
+
+    // Every slug the household's topics are kept under, whichever agent's — the spaces it has and
+    // those it removed that still hold topics.
+    Task<IReadOnlyList<string>> SpacesHoldingTopicsAsync(string tenantId);
 
     // keepTtl is for writes that are not the conversation's own: a rename must not push the purge
     // horizon back, or search returns a topic whose transcript expired months before its record.
     Task SaveTopicAsync(TopicMetadata topic, bool keepTtl = false);
-    Task DeleteTopicAsync(string agentId, long chatId, string topicId);
+    Task DeleteTopicAsync(string tenantId, string agentId, long chatId, string topicId);
 
     // Moves the topic's read position up to what it currently holds. Asked of the store rather
     // than told by a caller, so a message that landed while the reader was reading is not
     // counted unread.
-    Task MarkTopicReadAsync(string agentId, long chatId, string topicId);
+    Task MarkTopicReadAsync(string tenantId, string agentId, long chatId, string topicId, string userId);
 
     // The conversation as a reader sees it, which is the same history the agent restores read
     // through a projection. It lives here rather than beside the chat hub so there is one
@@ -49,5 +68,5 @@ public interface IThreadStateStore
 
     // The stored topic a caller already names. A writer holding a client's copy reads this first,
     // so counters the store learned while the browser wasn't looking are never written back stale.
-    Task<TopicMetadata?> GetTopicAsync(string agentId, long chatId, string topicId);
+    Task<TopicMetadata?> GetTopicAsync(string tenantId, string agentId, long chatId, string topicId);
 }

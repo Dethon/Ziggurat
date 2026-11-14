@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Domain.Contracts;
+using Microsoft.Extensions.AI;
 
 namespace Domain.Tools.FileSystem;
 
@@ -32,9 +33,10 @@ public class VfsQueryTool(IVirtualFileSystemRegistry registry)
         string sql,
         [Description("Most rows to return (default 100, at most 1000)")]
         int maxRows = DefaultMaxRows,
+        AIFunctionArguments? arguments = null,
         CancellationToken cancellationToken = default)
     {
-        if (!registry.Resolve(path).TryGetValue(out var resolution, out var unresolved))
+        if (!registry.Resolve(path, arguments).TryGetValue(out var resolution, out var unresolved))
         {
             return unresolved.ToNode();
         }

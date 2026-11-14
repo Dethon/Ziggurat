@@ -181,12 +181,9 @@ public sealed class SendMessageEffect : IDisposable
         _topicStreams.FinalizeCurrent(topic.TopicId);
 
         // Submit user message through pipeline (handles correlation tracking and AddMessage dispatch)
-        var identityState = _userIdentityStore.State;
-        var currentUser = identityState.AvailableUsers
-            .FirstOrDefault(u => u.Id == identityState.SelectedUserId);
-
         var correlationId = _pipeline.SubmitUserMessage(
-            topic.TopicId, action.Message, currentUser?.Id, attached.Count == 0 ? null : attached);
+            topic.TopicId, action.Message, _userIdentityStore.State.SignedIn?.UserId,
+            attached.Count == 0 ? null : attached);
 
         // Delegate to streaming service (handles stream reuse internally). Awaited so a fault
         // opening the send lands in the catch above; the call returns once the stream is open,
@@ -232,6 +229,13 @@ public sealed class SendMessageEffect : IDisposable
         var lastUserMessage = messages.LastOrDefault(m => m.Role == "user");
         if (lastUserMessage is not null)
         {
+            // The failed message is sent again in its own place, as the agent's conversation keeps it
+            // once (a retry replaces the failed turn there), so it is taken back before it is resent.
+            if (ReferenceEquals(messages[^1], lastUserMessage))
+            {
+                _dispatcher.Dispatch(new RemoveLastMessage(action.TopicId));
+            }
+
             // With its files. A message can now be nothing but attachments, so re-sending the
             // text alone would ask the model about a picture it was never given.
             _dispatcher.Dispatch(new SendMessage(

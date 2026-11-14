@@ -70,7 +70,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
                 [new ChatMessage(ChatRole.User,
                     "I'm a senior Python developer at Google. I prefer dark mode and use Vim keybindings. " +
                     "I'm currently learning Rust and working on a distributed cache project.")],
-                "test_user", ct)),
+                "test_user", null, ModelPayer.Deployment, ct)),
             candidates => candidates.Count > 0);
 
         result.ShouldNotBeEmpty(LlmAttempt.Explain(
@@ -87,6 +87,49 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
         }
     }
 
+    // A person asking for a remembered fact to be forgotten wants it gone. The agent's forget tool
+    // removed it, and the extractor then stored "The user's daughter is not called Lucía; the
+    // earlier information was wrong" from the same message - keeping the very name they asked to be
+    // forgotten. On the shipped extraction model.
+    [SkippableFact]
+    public async Task ExtractAsync_ARequestToForget_ReturnsNoCandidates()
+    {
+        var (apiUrl, apiKey, _) = GetConfig();
+        var (extractor, _) = CreateExtractor(apiUrl, apiKey, "openai/gpt-6-luna");
+
+        var result = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => extractor.ExtractAsync(
+            [
+                new ChatMessage(ChatRole.User, "Por cierto, soy alérgico a los cacahuetes y mi hija se llama Lucía."),
+                new ChatMessage(ChatRole.Assistant, "Anotado: nada de cacahuetes para ti, y Lucía es tu hija."),
+                new ChatMessage(ChatRole.User, "Olvida lo de que mi hija se llama Lucía, no es cierto.")
+            ],
+            "test_user", null, ModelPayer.Deployment, ct));
+
+        result.ShouldBeEmpty(string.Join("; ", result.Select(c => c.Content)));
+    }
+
+    // The other side of the forget rule: a correction that says what is right is still a memory,
+    // and it is the right value that is kept.
+    [SkippableFact]
+    public async Task ExtractAsync_ACorrectionThatSaysWhatIsRight_KeepsTheRightValue()
+    {
+        var (apiUrl, apiKey, _) = GetConfig();
+        var (extractor, warnings) = CreateExtractor(apiUrl, apiKey, "openai/gpt-6-luna");
+
+        var result = await LlmAttempt.UntilAsync(
+            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => extractor.ExtractAsync(
+                [
+                    new ChatMessage(ChatRole.User, "Por cierto, mi hija se llama Lucía."),
+                    new ChatMessage(ChatRole.Assistant, "Anotado: tu hija se llama Lucía."),
+                    new ChatMessage(ChatRole.User, "Me equivoqué al escribir: mi hija se llama Ana.")
+                ],
+                "test_user", null, ModelPayer.Deployment, ct)),
+            candidates => candidates.Count > 0);
+
+        result.ShouldContain(c => c.Content.Contains("Ana"), LlmAttempt.Explain(
+            string.Join("; ", result.Select(c => c.Content)), warnings));
+    }
+
     [SkippableFact]
     public async Task ExtractAsync_WithTrivialMessage_ReturnsEmptyOrFewCandidates()
     {
@@ -95,7 +138,7 @@ public class MemoryExtractionResponseFormatTests : IAsyncLifetime
 
         var result = await LlmAttempt.WithinAsync(LlmAttempt.Budget, ct => extractor.ExtractAsync(
             [new ChatMessage(ChatRole.User, "Hello, how are you?")],
-            "test_user", ct));
+            "test_user", null, ModelPayer.Deployment, ct));
 
         result.Count.ShouldBeLessThanOrEqualTo(1);
     }
@@ -170,7 +213,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         // "Count > 0", was accepted as usable, and then failed the source-id assertion outright
         // without ever retrying. A model that names no memory has not made a merge decision.
         var result = await LlmAttempt.UntilAsync(
-            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct => (await consolidator.ConsolidateAsync(memories, ct)).Decisions),
+            () => LlmAttempt.WithinAsync(LlmAttempt.Budget, async ct => (await consolidator.ConsolidateAsync(memories, ModelPayer.Deployment, ct)).Decisions),
             decisions => decisions.Count > 0
                          && decisions.All(d => d.SourceIds is { Count: > 0 }
                                                && d.SourceIds.All(id => memories.Any(m =>
@@ -215,7 +258,7 @@ public class MemoryConsolidationResponseFormatTests : IAsyncLifetime
         };
 
         var result = await LlmAttempt.WithinAsync(
-            LlmAttempt.Budget, async ct => (await consolidator.ConsolidateAsync(memories, ct)).Decisions);
+            LlmAttempt.Budget, async ct => (await consolidator.ConsolidateAsync(memories, ModelPayer.Deployment, ct)).Decisions);
 
         result.ShouldAllBe(d => d.Action != MergeAction.Merge,
             "Distinct, unrelated memories should not be merged");
@@ -291,7 +334,7 @@ public class MemoryProfileSynthesisResponseFormatTests : IAsyncLifetime
 
         var result = await LlmAttempt.UntilAsync(
             () => LlmAttempt.WithinAsync(
-                LlmAttempt.Budget, ct => consolidator.SynthesizeProfileAsync("test_user", memories, ct)),
+                LlmAttempt.Budget, ct => consolidator.SynthesizeProfileAsync("test_user", memories, ModelPayer.Deployment, ct)),
             // The preference is asked of the retry too: about one answer in three files "prefers
             // concise, direct answers" under avoidances and appreciated alone, leaving it empty.
             profile => !string.IsNullOrWhiteSpace(profile.Summary)

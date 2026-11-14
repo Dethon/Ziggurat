@@ -87,7 +87,14 @@ public sealed class QuietBrowserFixture : PlaywrightWebBrowserFixture
 // last twenty seconds went.
 public sealed class IsolatedSessionBrowserFixture : PlaywrightWebBrowserFixture
 {
-    protected override string Pool => CamoufoxBackend.IsolatedPool;
+    private static int _lanes;
+
+    // A backend per lane (each collection below holds its own instance of this fixture): four lanes
+    // browsing one Camoufox at once lost a popup now and then under the full suite's load, which the
+    // one chain they replaced never did, and a container per lane starts in parallel at the same
+    // moment the one did.
+    protected override string Pool { get; } =
+        $"{CamoufoxBackend.IsolatedPool}-{Interlocked.Increment(ref _lanes)}";
 }
 
 // Three collections, so the browser-integration classes run at once rather than as a single serial
@@ -106,12 +113,31 @@ public class PlaywrightWebBrowserIntegrationCollection : ICollectionFixture<Play
 [CollectionDefinition(PlaywrightCollections.Timing)]
 public class PlaywrightTimingCollection : ICollectionFixture<QuietBrowserFixture>;
 
-[CollectionDefinition(PlaywrightCollections.IsolatedSessions)]
-public class PlaywrightIsolatedSessionsCollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
+// The isolated classes are four collections rather than one, each on a backend of its own: they
+// observe nothing of each other, so a single collection only serialised them, and its chain of
+// about a hundred seconds was the non-E2E suite's tail once everything else got cheaper. Classes
+// are spread by their measured length (see PlaywrightCollections.IsolatedSessionLanes).
+[CollectionDefinition(PlaywrightCollections.IsolatedSessionsA)]
+public class PlaywrightIsolatedSessionsACollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
+
+[CollectionDefinition(PlaywrightCollections.IsolatedSessionsB)]
+public class PlaywrightIsolatedSessionsBCollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
+
+[CollectionDefinition(PlaywrightCollections.IsolatedSessionsC)]
+public class PlaywrightIsolatedSessionsCCollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
+
+[CollectionDefinition(PlaywrightCollections.IsolatedSessionsD)]
+public class PlaywrightIsolatedSessionsDCollection : ICollectionFixture<IsolatedSessionBrowserFixture>;
 
 public static class PlaywrightCollections
 {
     public const string SharedBrowser = "PlaywrightWebBrowserIntegration";
     public const string Timing = "Playwright.Timing";
-    public const string IsolatedSessions = "Playwright.IsolatedSessions";
+    public const string IsolatedSessionsA = "Playwright.IsolatedSessions.A";
+    public const string IsolatedSessionsB = "Playwright.IsolatedSessions.B";
+    public const string IsolatedSessionsC = "Playwright.IsolatedSessions.C";
+    public const string IsolatedSessionsD = "Playwright.IsolatedSessions.D";
+
+    public static readonly IReadOnlyList<string> IsolatedSessionLanes =
+        [IsolatedSessionsA, IsolatedSessionsB, IsolatedSessionsC, IsolatedSessionsD];
 }

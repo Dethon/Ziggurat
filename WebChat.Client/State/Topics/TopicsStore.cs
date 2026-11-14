@@ -41,6 +41,9 @@ public record UpdateTopic(StoredTopic Topic) : IAction;
 // for the same reason a deleted row stays until the delete was made.
 public record RenameTopic(string TopicId, string Name) : IAction;
 
+// The command: share a topic with the household, or stop. The row says so once the server took it.
+public record ShareTopic(string TopicId, bool Shared) : IAction;
+
 // The command: ask for a delete. The row itself only leaves on TopicRemoved, once the
 // server confirmed — so a delete that could not be made never touches the sidebar.
 public record RemoveTopic(string TopicId, string? AgentId = null, long? ChatId = null, long? ThreadId = null) : IAction;
@@ -49,7 +52,19 @@ public record TopicRemoved(string TopicId) : IAction;
 
 public record SetAgents(IReadOnlyList<AgentCatalogEntry> Agents) : IAction;
 
-public record SelectAgent(string AgentId) : IAction;
+// The hub said agents may have changed; what they are is asked of it again (InitializationEffect).
+public record AgentsUpdated : IAction;
+
+// Picked is false when the client chose for the person (a space opening on its own agent), which is
+// then not remembered as their pick.
+public record SelectAgent(string AgentId, bool Picked = true) : IAction;
+
+// The selected agent's list asked for again: what this person may see of the household's changed.
+public record ReloadTopics : IAction;
+
+// The hub said the household's people changed (OnAccessChanged): the connection is renewed, then the
+// list reloaded (AccessChangedEffect).
+public record AccessChanged : IAction;
 
 public record TopicsError(string Message) : IAction;
 
@@ -102,6 +117,7 @@ public sealed class TopicsStore : IDisposable
         SelectTopic a => state with
         {
             SelectedTopicId = a.TopicId,
+            RemovedAgentName = a.TopicId is null ? state.RemovedAgentName : null,
             SelectedTopic = a.TopicId is null
                 ? null
                 : state.Topics.FirstOrDefault(t => t.TopicId == a.TopicId)
@@ -130,9 +146,12 @@ public sealed class TopicsStore : IDisposable
             Error = null
         },
 
+        // A row's mark that its name is still the file's is the client's alone, so news of the topic
+        // under the same name keeps it: the hub telling every page a topic was read replaced the row
+        // and left a conversation started by a file named after the file for good.
         UpdateTopic a => state with
         {
-            Paging = state.Paging.Upsert(a.Topic),
+            Paging = state.Paging.Upsert(KeepingNameFromFile(state, a.Topic)),
             Error = null
         },
 
@@ -153,6 +172,7 @@ public sealed class TopicsStore : IDisposable
             state with
             {
                 Agents = a.Agents,
+                RemovedAgentName = state.Agents.FirstOrDefault(ag => ag.Id == state.SelectedAgentId)?.Name,
                 SelectedAgentId = a.Agents.FirstOrDefault()?.Id,
                 SelectedTopicId = null,
                 SelectedTopic = null,
@@ -173,6 +193,7 @@ public sealed class TopicsStore : IDisposable
         SelectAgent a => state with
         {
             SelectedAgentId = a.AgentId,
+            RemovedAgentName = a.Picked ? null : state.RemovedAgentName,
             SelectedTopicId = null,
             SelectedTopic = null,
             SearchQuery = "",
@@ -193,4 +214,18 @@ public sealed class TopicsStore : IDisposable
 
         _ => state
     };
+
+    private static StoredTopic KeepingNameFromFile(TopicsState state, StoredTopic topic)
+    {
+        if (topic.NameFromFile
+            || state.Topics.FirstOrDefault(t => t.TopicId == topic.TopicId) is not { NameFromFile: true } held
+            || held.Name != topic.Name)
+        {
+            return topic;
+        }
+
+        var kept = StoredTopic.FromMetadata(topic.ToMetadata());
+        kept.NameFromFile = true;
+        return kept;
+    }
 }

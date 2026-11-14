@@ -1,7 +1,9 @@
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
@@ -29,6 +31,12 @@ public sealed class ChatHubTopicTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), $"attachments-{Guid.NewGuid():N}");
     private readonly ChatHub _hub;
 
+    // The kitchen is a space of the caller's household, so joining it is joining it.
+    private readonly HouseholdSpacesAccounts _households = new()
+    {
+        Saved = { ["home"] = new SpacesSection { Spaces = [HouseholdSpace.Default, HouseholdSpace.Default with { Slug = "kitchen", Name = "Kitchen" }] } }
+    };
+
     public ChatHubTopicTests()
     {
         var attachmentSettings = new AttachmentSettings { StoragePath = _root };
@@ -41,13 +49,17 @@ public sealed class ChatHubTopicTests : IDisposable
 
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
         var approvals = new ApprovalService(
             _streamService,
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IHubNotificationSender>().Object,
+            new Mock<IPushNotificationService>().Object,
+            new AccountConnections(),
             NullLogger<ApprovalService>.Instance);
 
         _hub = new ChatHub(
@@ -62,28 +74,36 @@ public sealed class ChatHubTopicTests : IDisposable
             _hubSender.Object,
             new RetentionSettings { PageSize = 2 },
             new DictationSettings(),
+            new VouchingAccounts(),
+            _households,
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller(),
+            Context = new SignedInCaller(),
             Groups = new Mock<IGroupManager>().Object
         };
 
         // A page call nobody scripted still has to come back with something usable, or a test
         // about the cursor fails inside the live-stream reporting that runs after it.
         _store.Setup(s => s.GetTopicPageAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<int>()))
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<TopicViewer>(), It.IsAny<string?>(), It.IsAny<int>(),
+                It.IsAny<bool>(), It.IsAny<IReadOnlyList<string>?>()))
             .ReturnsAsync(new TopicPage([], null));
     }
 
+    // A new topic is the conversation its own id names, and it is the caller's: whose it is was
+    // settled when the connection arrived, whatever the browser's copy says.
     [Fact]
-    public async Task SaveTopic_WritesThroughTheTopicStore()
+    public async Task SaveTopic_ANewTopic_IsWrittenThroughTheTopicStoreAsTheCallers()
     {
+        var identity = ConversationIdGenerator.CreateFor("topic-1");
         var topic = new TopicMetadata(
-            "topic-1", 7, 42, "jack", "Chat", new DateTimeOffset(2026, 8, 12, 0, 0, 0, TimeSpan.Zero), null);
+            "topic-1", identity.ChatId, identity.ThreadId, "jack", "Chat",
+            new DateTimeOffset(2026, 8, 12, 0, 0, 0, TimeSpan.Zero), null, OwnerId: "someone-else", Shared: true);
 
         await _hub.SaveTopic(topic);
 
-        _store.Verify(s => s.SaveTopicAsync(topic, false), Times.Once);
+        var expected = topic with { OwnerId = "fran", TenantId = "home", Shared = false, OwnerName = "fran" };
+        _store.Verify(s => s.SaveTopicAsync(expected, false), Times.Once);
     }
 
     // A topic last driven by voice or a schedule has counters the browser never saw, so the
@@ -96,8 +116,8 @@ public sealed class ChatHubTopicTests : IDisposable
             "topic-1", 7, 42, "jack", "Chat",
             new DateTimeOffset(2026, 8, 10, 0, 0, 0, TimeSpan.Zero),
             new DateTimeOffset(2026, 8, 12, 9, 0, 0, TimeSpan.Zero),
-            LastMessageSnippet: "the latest reply", MessageCount: 9, ReadPosition: 4);
-        _store.Setup(s => s.GetTopicAsync("jack", 7, "topic-1")).ReturnsAsync(stored);
+            LastMessageSnippet: "the latest reply", MessageCount: 9, ReadPosition: 4, TenantId: "home");
+        _store.Setup(s => s.GetTopicAsync("home", "jack", 7, "topic-1")).ReturnsAsync(stored);
         var stale = stored with
         {
             Name = "Renamed",
@@ -120,6 +140,8 @@ public sealed class ChatHubTopicTests : IDisposable
     {
         IReadOnlyList<ChatHistoryMessage> stored =
             [new ChatHistoryMessage("m-1", "user", "hello", "fran", null, null)];
+        _store.Setup(s => s.GetTopicByChatIdAndThreadIdAsync("jack", 7, 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Topic("topic-1"));
         _store.Setup(s => s.GetHistoryAsync("jack", 7, 42)).ReturnsAsync(stored);
 
         var history = await _hub.GetHistory("jack", 7, 42);
@@ -132,7 +154,7 @@ public sealed class ChatHubTopicTests : IDisposable
     [Fact]
     public async Task GetTopicPage_WithNoPageSizeAsked_UsesTheConfiguredOne()
     {
-        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", null, 2))
+        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), null, 2, false, It.IsAny<IReadOnlyList<string>?>()))
             .ReturnsAsync(new TopicPage([], "42"));
 
         var page = await _hub.GetTopicPage("jack", "kitchen");
@@ -145,7 +167,7 @@ public sealed class ChatHubTopicTests : IDisposable
     [Fact]
     public async Task GetTopicPage_SaysWhichOfItsTopicsHaveAReplyInFlight()
     {
-        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", null, 2))
+        _store.Setup(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), null, 2, false, It.IsAny<IReadOnlyList<string>?>()))
             .ReturnsAsync(new TopicPage([Topic("busy"), Topic("quiet")], null));
         _streamService.GetOrCreateStream("busy", "prompt", "fran", CancellationToken.None);
 
@@ -155,14 +177,14 @@ public sealed class ChatHubTopicTests : IDisposable
     }
 
     private static TopicMetadata Topic(string topicId) => new(
-        topicId, 7, 42, "jack", topicId, new DateTimeOffset(2026, 8, 12, 0, 0, 0, TimeSpan.Zero), null);
+        topicId, 7, 42, "jack", topicId, new DateTimeOffset(2026, 8, 12, 0, 0, 0, TimeSpan.Zero), null, TenantId: "home");
 
     [Fact]
     public async Task GetTopicPage_CarriesTheCursorThroughToTheStore()
     {
         await _hub.GetTopicPage("jack", "kitchen", cursor: "1700", pageSize: 5);
 
-        _store.Verify(s => s.GetTopicPageAsync("jack", "kitchen", "1700", 5), Times.Once);
+        _store.Verify(s => s.GetTopicPageAsync("jack", "kitchen", It.IsAny<TopicViewer>(), "1700", 5, false, It.IsAny<IReadOnlyList<string>?>()), Times.Once);
     }
 
     // The delete used to succeed and say nothing, so a second tab kept showing a row for a
@@ -176,7 +198,7 @@ public sealed class ChatHubTopicTests : IDisposable
         await _hub.DeleteTopic("jack", "topic-1", 7, 42);
 
         _hubSender.Verify(s => s.SendToGroupAsync(
-            "space:kitchen",
+            "space:home:kitchen",
             "OnTopicChanged",
             It.Is<TopicChangedNotification>(n =>
                 n.ChangeType == TopicChangeType.Deleted && n.TopicId == "topic-1"),
@@ -194,7 +216,7 @@ public sealed class ChatHubTopicTests : IDisposable
         await _hub.DeleteTopic("jack", "topic-1", 7, 42);
 
         _hubSender.Verify(s => s.SendToGroupAsync(
-            "space:kitchen",
+            "space:home:kitchen",
             "OnTopicChanged",
             It.Is<TopicChangedNotification>(n => n.TopicId == "topic-1"),
             It.IsAny<CancellationToken>()), Times.Exactly(2));

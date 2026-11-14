@@ -28,6 +28,13 @@ public static class ClaimExemptions
 {
     public static IReadOnlyDictionary<string, Exemption> Reasons { get; } = new Dictionary<string, Exemption>
     {
+        [WebBrowsingSkill.AWorkerReportsALoginWall.Id] = new(ExemptionKind.Unwritten,
+            "Its first half is held by the tool set rather than the prose: a worker is never given "
+            + "web_login (AgentSpec.WithheldTools, pinned by AgentSpecProjectionTests), so it cannot "
+            + "start a handoff whatever it reads. What it says instead is in its answer, and no "
+            + "scenario runs a real worker into a login wall yet — the canned workers of the two "
+            + "login scenarios answer with that report, so the parent's half, handing the wall off, "
+            + "is what they measure under a-login-page-is-handed-off."),
         [WebBrowsingPrompt.NoProbeCalls.Id] = new(ExemptionKind.Unfalsifiable,
             "Written on 2026-08-20 against an observed quirk: on Home Assistant voice turns the "
             + "model sometimes opens with a minimal canary against example.com — a web_search for "

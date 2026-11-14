@@ -30,6 +30,13 @@ export class ApiError extends Error {
 }
 
 export const UNAUTHORIZED_EVENT = "sugary:unauthorized";
+export const SUSPENDED_EVENT = "sugary:suspended";
+
+// The proxy's session check refuses a suspended household's every call 403 and says so in a header
+// of its own, which the app's own 403s (Sugary turned off, a refused key) never carry.
+export function isSuspension(response: Response): boolean {
+  return response.status === 403 && response.headers.get("X-Ziggurat-Refusal") === "suspended";
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
@@ -39,8 +46,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(0, "");
   }
 
-  if (response.status === 401 && !path.startsWith("/session")) {
+  // The proxy answers a call whose session is gone 401, never a redirect, so the page can send the
+  // person to sign in (App).
+  if (response.status === 401) {
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
+  if (isSuspension(response)) {
+    window.dispatchEvent(new Event(SUSPENDED_EVENT));
   }
   if (!response.ok) {
     const problem = await response.json().catch(() => null);
@@ -93,8 +105,6 @@ const RECORD_PAGE = 200;
 
 export const api = {
   session: () => request<SessionState>("/session"),
-  signIn: (code: string) => request<void>("/session", json("POST", { code })),
-  signOut: () => request<void>("/session", { method: "DELETE" }),
 
   estimate: (input: EstimateInput, signal?: AbortSignal) =>
     request<MealEstimate>("/estimates", { method: "POST", body: estimateForm(input), signal }),
@@ -110,7 +120,9 @@ export const api = {
 
   meals: (skip = 0, take = 50) => request<Meal[]>(`/meals?skip=${skip}&take=${take}`),
   createMeal: (meal: SaveMeal) => request<Meal>("/meals", json("POST", meal)),
-  updateMeal: (id: string, meal: SaveMeal) => request<Meal>(`/meals/${id}`, json("PUT", meal)),
+  // `loaded` is what the sheet opened with: the server keeps whatever another phone changed since.
+  updateMeal: (id: string, meal: SaveMeal, loaded: SaveMeal) =>
+    request<Meal>(`/meals/${id}`, json("PUT", { ...meal, loaded })),
   deleteMeal: (id: string) => request<void>(`/meals/${id}`, { method: "DELETE" }),
   photoUrl: (id: string) => `/api/meals/${id}/photo`,
   // The photo kept with a meal, to send with a correction of it.
@@ -136,7 +148,8 @@ export const api = {
     }
   },
   createDose: (dose: SaveDose) => request<Dose>("/doses", json("POST", dose)),
-  updateDose: (id: string, dose: SaveDose) => request<Dose>(`/doses/${id}`, json("PUT", dose)),
+  updateDose: (id: string, dose: SaveDose, loaded: SaveDose) =>
+    request<Dose>(`/doses/${id}`, json("PUT", { ...dose, loaded })),
   deleteDose: (id: string) => request<void>(`/doses/${id}`, { method: "DELETE" }),
 
   exercise: (from: string | null, skip = 0, take = RECORD_PAGE) =>
@@ -153,7 +166,8 @@ export const api = {
     }
   },
   createExercise: (session: SaveExercise) => request<Exercise>("/exercise", json("POST", session)),
-  updateExercise: (id: string, session: SaveExercise) => request<Exercise>(`/exercise/${id}`, json("PUT", session)),
+  updateExercise: (id: string, session: SaveExercise, loaded: SaveExercise) =>
+    request<Exercise>(`/exercise/${id}`, json("PUT", { ...session, loaded })),
   deleteExercise: (id: string) => request<void>(`/exercise/${id}`, { method: "DELETE" }),
   // What she called her other sessions, the latest first, for Otro to offer back.
   exerciseNames: () => request<string[]>("/exercise/names"),
@@ -161,7 +175,8 @@ export const api = {
   // All of them, newest first: a few a year, and the forecast reads every one.
   pens: () => request<Pen[]>("/pens"),
   createPen: (pen: SavePen) => request<Pen>("/pens", json("POST", pen)),
-  updatePen: (id: string, pen: SavePen) => request<Pen>(`/pens/${id}`, json("PUT", pen)),
+  updatePen: (id: string, pen: SavePen, loaded: SavePen) =>
+    request<Pen>(`/pens/${id}`, json("PUT", { ...pen, loaded })),
   deletePen: (id: string) => request<void>(`/pens/${id}`, { method: "DELETE" }),
   push: () => request<{ publicKey: string | null }>("/push"),
   savePushSubscription: (subscription: SavePushSubscription) =>
@@ -170,7 +185,8 @@ export const api = {
     request<void>(`/push/subscription?endpoint=${encodeURIComponent(endpoint)}`, { method: "DELETE" }),
   periods: () => request<Period[]>("/periods"),
   createPeriod: (period: SavePeriod) => request<Period>("/periods", json("POST", period)),
-  updatePeriod: (id: string, period: SavePeriod) => request<Period>(`/periods/${id}`, json("PUT", period)),
+  updatePeriod: (id: string, period: SavePeriod, loaded: SavePeriod) =>
+    request<Period>(`/periods/${id}`, json("PUT", { ...period, loaded })),
   deletePeriod: (id: string) => request<void>(`/periods/${id}`, { method: "DELETE" }),
   dayNotes: () => request<DayNote[]>("/day-notes"),
   // Empty text deletes the note; the server then answers with nothing.
@@ -178,11 +194,13 @@ export const api = {
 
   foods: () => request<Food[]>("/foods"),
   createFood: (food: SaveFood) => request<Food>("/foods", json("POST", food)),
-  updateFood: (id: string, food: SaveFood) => request<Food>(`/foods/${id}`, json("PUT", food)),
+  updateFood: (id: string, food: SaveFood, loaded: SaveFood) =>
+    request<Food>(`/foods/${id}`, json("PUT", { ...food, loaded })),
   deleteFood: (id: string) => request<void>(`/foods/${id}`, { method: "DELETE" }),
   recipes: () => request<Recipe[]>("/recipes"),
   createRecipe: (recipe: SaveRecipe) => request<Recipe>("/recipes", json("POST", recipe)),
-  updateRecipe: (id: string, recipe: SaveRecipe) => request<Recipe>(`/recipes/${id}`, json("PUT", recipe)),
+  updateRecipe: (id: string, recipe: SaveRecipe, loaded: SaveRecipe) =>
+    request<Recipe>(`/recipes/${id}`, json("PUT", { ...recipe, loaded })),
   deleteRecipe: (id: string) => request<void>(`/recipes/${id}`, { method: "DELETE" }),
 
   // Each time carries its offset in the phone's own zone, so the file reads like the clock on the wall.

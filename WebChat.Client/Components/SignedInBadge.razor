@@ -1,0 +1,25 @@
+@inherits StoreSubscriberComponent
+@inject UserIdentityStore Store
+@inject IAccountService Accounts
+
+@* Who this page is signed in as, drawn from the account, and the way to that account's own page —
+   passkeys, devices, signing out — which an installed app has no address bar to reach. Nothing to
+   pick: the proxy let the page through as this person, and the hub took them from the same check. *@
+<button type="button" class="signed-in-person" title="@_person?.DisplayName" aria-label="@Label"
+        disabled="@(_person is null)" @onclick="Accounts.OpenAccount">
+    @if (_person is not null)
+    {
+        <AvatarImage UserId="@_person.DisplayName" AvatarUrl="@_person.AvatarUrl" Size="32" />
+    }
+</button>
+
+@code {
+    private SignedInPerson? _person;
+
+    private string Label => _person is null ? "Signing in" : $"Your account, signed in as {_person.DisplayName}";
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state.SignedIn, person => _person = person);
+    }
+}

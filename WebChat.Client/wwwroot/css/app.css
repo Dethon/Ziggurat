@@ -345,6 +345,42 @@ h1, h2, h3 {
     color: var(--text-muted);
 }
 
+/* The time, and beside it who sees the conversation: the owner's toggle, or whose it is. */
+.header-conversation-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.header-conversation-share {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    padding: 0 0.4rem;
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.header-conversation-share.on {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.header-conversation-owner,
+.topic-owner {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Tapping the title swaps it for this field in place, so the field keeps the title's type
    and box. 1rem because anything smaller makes iOS Safari zoom the page on focus. */
 .header-conversation-edit {
@@ -1252,6 +1288,117 @@ h1, h2, h3 {
     color: var(--accent);
 }
 
+/* A Sugary estimate in a review copy. */
+.meal-estimate-total {
+    margin: 0 0 0.5rem;
+}
+
+.meal-estimate-items {
+    list-style: none;
+    margin: 0 0 0.5rem;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+}
+
+.meal-estimate-items li {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 0.5rem;
+    align-items: baseline;
+}
+
+.meal-estimate-item {
+    font-weight: 600;
+}
+
+.meal-estimate-portion,
+.meal-estimate-note {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+}
+
+.meal-estimate-carbs {
+    margin-left: auto;
+}
+
+.meal-estimate-note {
+    flex-basis: 100%;
+}
+
+.meal-estimate-question {
+    margin: 0.25rem 0;
+    font-style: italic;
+}
+
+/* An answer that is one JSON object, as an outline of its fields. */
+.json-outline {
+    margin: 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 0.75rem;
+    row-gap: 0.25rem;
+}
+
+.json-outline dt {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+}
+
+.json-outline dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+/* A list entry has no label of its own: it spans the row, set off from its neighbours. */
+.json-outline dd:not(dt + dd) {
+    grid-column: 1 / -1;
+    padding-left: 0.75rem;
+    border-left: 2px solid var(--border-color);
+}
+
+/* A turn a service started: one quiet line in the flow of the conversation, not a bubble. */
+.service-notice {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0.5rem auto;
+    max-width: 90%;
+}
+
+.service-notice-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: transparent;
+    border: 1px dashed var(--border-color);
+    border-radius: 999px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
+}
+
+.service-notice-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.service-notice-time {
+    opacity: 0.7;
+}
+
+.service-notice-prompt {
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .toggle-icon {
     flex: 0 0 auto;
     transition: transform var(--transition-normal);
@@ -1725,6 +1872,14 @@ h1, h2, h3 {
     color: var(--text-secondary);
 }
 
+.empty-state p.empty-state-notice {
+    margin: 0 0 1.5rem 0;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+    color: var(--text-primary);
+}
+
 /* Suggestion Chips */
 .suggestion-chips {
     display: flex;
@@ -2126,6 +2281,71 @@ select:focus:not(:focus-visible) {
    Approval Modal
    =================================== */
 
+/* A ringing timer: above everything, approvals included, until it is dismissed. */
+.alert-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+    backdrop-filter: blur(4px);
+    animation: modalFadeIn 0.2s ease-out;
+}
+
+.alert-modal {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-color);
+    max-width: 420px;
+    width: 90%;
+    padding: 2rem 1.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    text-align: center;
+    animation: modalSlideIn 0.25s ease-out;
+}
+
+.alert-modal h3 {
+    margin: 0;
+}
+
+.alert-modal-icon {
+    color: var(--accent);
+    animation: alertSway 1.5s ease-in-out infinite;
+}
+
+.alert-modal-text {
+    margin: 0;
+    font-size: 1.25rem;
+    overflow-wrap: anywhere;
+}
+
+.btn-dismiss-alert {
+    margin-top: 0.5rem;
+    min-width: 10rem;
+    min-height: 44px;
+    font-size: 1.05rem;
+}
+
+@keyframes alertSway {
+    0%, 100% { transform: rotate(0deg); }
+    20% { transform: rotate(-14deg); }
+    40% { transform: rotate(12deg); }
+    60% { transform: rotate(-8deg); }
+    80% { transform: rotate(4deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .alert-modal-icon {
+        animation: none;
+    }
+}
+
 .approval-modal-overlay {
     position: fixed;
     top: 0;
@@ -2310,6 +2530,23 @@ select:focus:not(:focus-visible) {
     box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
 }
 
+.approval-status {
+    margin-right: auto;
+    align-self: center;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.btn-close-approval {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color) !important;
+}
+
+.btn-close-approval:hover {
+    background: var(--bg-tertiary);
+}
+
 .btn-always {
     background: var(--bg-secondary);
     color: var(--accent);
@@ -2354,31 +2591,35 @@ select:focus:not(:focus-visible) {
 }
 
 /* ===================================
-   User Identity Picker
+   Signed-in Person
    =================================== */
 
-.user-identity-picker {
-    position: relative;
-}
-
-.avatar-button {
+.signed-in-person {
     width: 36px;
     height: 36px;
     border-radius: 50%;
     overflow: hidden;
     border: 2px solid var(--border-color);
     background: var(--bg-tertiary);
-    cursor: pointer;
-    padding: 0;
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
 }
 
-.avatar-button:hover {
+.signed-in-person:hover:not(:disabled),
+.signed-in-person:focus-visible {
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent-light);
+    outline: none;
+}
+
+.signed-in-person:disabled {
+    cursor: default;
 }
 
 .avatar-image {
@@ -2386,59 +2627,6 @@ select:focus:not(:focus-visible) {
     height: 100%;
     object-fit: cover;
     object-position: center;
-}
-
-.avatar-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-tertiary);
-    color: var(--text-muted);
-    font-size: 18px;
-    font-weight: 600;
-}
-
-.user-dropdown-menu {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    min-width: 180px;
-    background-color: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: var(--shadow-lg);
-    z-index: 100;
-    overflow: hidden;
-    animation: dropdownSlide 0.15s ease-out;
-}
-
-.user-dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    cursor: pointer;
-    transition: background-color var(--transition-fast);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-}
-
-.user-dropdown-item:hover {
-    background-color: var(--bg-tertiary);
-}
-
-.user-dropdown-item.selected {
-    background-color: var(--accent-subtle);
-    color: var(--accent);
-}
-
-.user-avatar-small {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    object-fit: cover;
 }
 
 /* ===================================
@@ -2937,4 +3125,582 @@ select:focus:not(:focus-visible) {
     .dictation-timer {
         min-width: 2.25rem;
     }
+}
+
+/* ===================================
+   Household admin area
+   =================================== */
+
+/* The way in, beside the person's face: drawn as the theme toggle is, so the header reads as one row
+   of controls. Shown to the household's owners alone. */
+.admin-entry {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    color: var(--text-secondary);
+    transition: all var(--transition-normal);
+}
+
+.admin-entry:hover {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.admin-entry svg {
+    width: 20px;
+    height: 20px;
+}
+
+.admin-heading {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 1.125rem;
+}
+
+.admin-back {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+.admin-back:hover {
+    color: var(--accent);
+}
+
+/* The chat's content area clips, since its lists scroll themselves; an admin page scrolls as a page. */
+.admin-content {
+    overflow-y: auto;
+    padding: 1.5rem 1rem 3rem;
+}
+
+.admin-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    max-width: 40rem;
+    width: 100%;
+    margin: 0 auto 1.5rem;
+}
+
+.admin-nav a {
+    padding: 0.375rem 0.875rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.admin-nav a.active {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.admin-page,
+.admin-status {
+    max-width: 40rem;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.admin-status {
+    color: var(--text-secondary);
+}
+
+.admin-section h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 1.5rem;
+    margin: 0 0 0.5rem;
+    color: var(--text-primary);
+}
+
+.admin-lede {
+    color: var(--text-secondary);
+    margin: 0 0 1.5rem;
+}
+
+.admin-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.admin-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.admin-field-label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.admin-field input {
+    font: inherit;
+    padding: 0.625rem 0.75rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    min-width: 0;
+}
+
+.admin-field input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.admin-field-hint {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.admin-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.admin-save {
+    font: inherit;
+    font-weight: 600;
+    padding: 0.625rem 1.5rem;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    transition: background var(--transition-normal);
+}
+
+.admin-save:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.admin-save:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.admin-field textarea,
+.admin-field select {
+    font: inherit;
+    padding: 0.625rem 0.75rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    min-width: 0;
+}
+
+.admin-field textarea {
+    resize: vertical;
+}
+
+.admin-field textarea:focus,
+.admin-field select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.admin-agent,
+.admin-agent-add {
+    margin-top: 1.5rem;
+    padding: 1.25rem;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.admin-agent-header h2,
+.admin-agent-add h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 1.2rem;
+    margin: 0;
+    color: var(--text-primary);
+}
+
+.admin-agent-header {
+    margin-bottom: 1rem;
+}
+
+.admin-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    cursor: pointer;
+}
+
+.admin-toggle input {
+    margin-top: 0.25rem;
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--accent);
+}
+
+.admin-toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.admin-colour {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.admin-colour input[type=color] {
+    width: 2.75rem;
+    height: 2.5rem;
+    padding: 0.125rem;
+    flex: none;
+}
+
+.admin-colour input:not([type=color]) {
+    flex: 1;
+}
+
+.admin-agent-meta {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.admin-actions {
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.admin-secondary {
+    font: inherit;
+    padding: 0.625rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.admin-secondary:hover:not(:disabled) {
+    border-color: var(--accent);
+}
+
+.admin-secondary:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.admin-confirm,
+.admin-versions {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.admin-confirm p {
+    margin: 0 0 0.75rem;
+}
+
+.admin-versions ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.admin-version {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.admin-version > div {
+    min-width: 0;
+}
+
+.admin-agent-definition {
+    margin-top: 0.75rem;
+}
+
+.admin-agent-definition summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+}
+
+.admin-agent-definition pre {
+    margin: 0.5rem 0 0;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    font-size: 0.8125rem;
+    max-height: 24rem;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.admin-version-instructions {
+    margin: 0.25rem 0 0;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.admin-notice {
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.admin-notice p {
+    margin: 0;
+}
+
+.admin-notice ul {
+    margin: 0.5rem 0 0;
+    padding-left: 1.25rem;
+}
+
+.admin-notice-saved {
+    border-color: var(--success);
+}
+
+.admin-notice-warning {
+    border-color: var(--warning);
+}
+
+.admin-notice-refused,
+.admin-notice-unavailable {
+    border-color: var(--error-border);
+    background: var(--error-bg);
+}
+
+.admin-key + .admin-key {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.admin-key h2 {
+    margin: 0;
+    font-size: 1.05rem;
+}
+
+.admin-key-needed {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--warning);
+}
+
+.admin-key-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    margin: 0;
+    color: var(--text-secondary);
+}
+
+.admin-key-state {
+    font-weight: 600;
+}
+
+.admin-key-status-working .admin-key-state {
+    color: var(--success);
+}
+
+.admin-key-status-rejected .admin-key-state {
+    color: var(--error);
+}
+
+.admin-key-status-unchecked .admin-key-state {
+    color: var(--warning);
+}
+
+.admin-key-bots {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.admin-key-bots li {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+
+.admin-key-agent {
+    font-family: monospace;
+}
+
+.admin-key-check {
+    align-self: flex-start;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+}
+
+.admin-member {
+    margin-top: 1.5rem;
+    padding: 1.25rem;
+    border-radius: 14px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.admin-member-disabled {
+    color: var(--warning);
+}
+
+.admin-check {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+}
+
+.admin-check input {
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--accent);
+}
+
+.admin-minted {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--accent);
+    background: var(--accent-subtle);
+}
+
+.admin-minted p {
+    margin: 0 0 0.5rem;
+    overflow-wrap: anywhere;
+}
+
+.admin-minted p:last-child {
+    margin-bottom: 0;
+}
+
+.admin-usage-month {
+    max-width: 14rem;
+    margin-bottom: 1rem;
+}
+
+.admin-usage-table {
+    width: 100%;
+    margin-top: 1.5rem;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+.admin-usage-table caption {
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding-bottom: 0.5rem;
+}
+
+.admin-usage-table th,
+.admin-usage-table td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    overflow-wrap: anywhere;
+}
+
+.admin-usage-table thead th {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.admin-usage-table tbody th {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.admin-usage-table .admin-usage-figure {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.admin-usage-none {
+    color: var(--text-muted);
+}
+
+.admin-usage-lemonade h2 {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+}
+
+.admin-usage-lemonade ul {
+    margin: 0;
+    padding-left: 1.25rem;
+}
+
+@media (max-width: 480px) {
+    .admin-entry {
+        width: 36px;
+        height: 36px;
+    }
+
+    .admin-entry svg {
+        width: 18px;
+        height: 18px;
+    }
+}
+
+/* The Lemonade box's way in: at an address or through the tenant kit. */
+.admin-choice {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.25rem;
+}
+
+.admin-choice legend {
+    padding: 0;
+    margin-bottom: 0.375rem;
+    width: 100%;
+}
+
+.admin-choice label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+}
+
+.admin-field.admin-choice input {
+    padding: 0;
+    border-radius: 0;
+    accent-color: var(--accent);
+}
+
+.admin-key-kit {
+    margin: 0;
+    color: var(--text-secondary);
 }

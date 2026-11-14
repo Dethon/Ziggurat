@@ -10,9 +10,19 @@ public record ChatMessageModel
     public string? ToolCalls { get; init; }
     public bool IsError { get; init; }
 
+    // The structured answer its turn asked for, by name (ChatHistoryMessage.ResponseFormat).
+    public string? ResponseFormat { get; init; }
+
     public string? SenderId { get; init; }
+
+    // The name the message was sent under, for a person the page cannot otherwise name.
+    public string? SenderName { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
     public string? MessageId { get; init; }
+
+    // A person's message as the page that sent it named the send (UserMessageInfo.CorrelationId): the
+    // stream's copy of a message is the one shown when the ids match. None for one loaded from history.
+    public string? CorrelationId { get; init; }
 
     // References, never bytes: the browser mints a short-lived download URL when the transcript
     // renders one, so a reload costs the same whether or not files were sent.

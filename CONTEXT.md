@@ -376,7 +376,9 @@ _Avoid_: anchor index, offset, cursor
 A user with no stored memory entries. They may still have a personality profile, and
 their turns are still considered for extraction, so they can stop being one at any
 turn — except on a turn addressed to the Lemonade chat host, which is never extracted
-from and so can never be the turn that enrols them.
+from and so can never be the turn that enrols them. A user here is an account: a turn
+acting for none, such as the voice guest's, is not an unremembered user but nobody,
+and nothing is recalled for it or extracted from it.
 _Avoid_: user with no memories, new user, memoryless user, "skip recall" user
 
 ## Voice satellite
@@ -603,20 +605,97 @@ It is chosen from what the page offers about the picture — a description, a ca
 link's words, a filename — none of which is the label itself, only where one may come from.
 _Avoid_: caption, alt text, image name
 
+## Households
+
+**Household**:
+The people who share one Ziggurat: their agents, spaces, keys and shared data. Every person
+belongs to exactly one, and nothing a household shares is visible to another. The code calls it
+a tenant, and the operator's own is the home household.
+_Avoid_: tenant (in prose), family, account, organisation
+
+**Household configuration**:
+What a household is, kept by the accounts service in versioned sections — its settings, agents,
+keys, features and spaces — with its secrets sealed under a key of its own. A server reads only
+its own section of the calling household's configuration.
+_Avoid_: tenant settings, household config file, profile
+
+**Shared server**:
+A server the deployment runs for every household, answering each call for the household its
+verified token names.
+_Avoid_: cloud server, common server, global server
+
+**Own server**:
+A server a household runs at its own site, which reaches the deployment only through its tunnel.
+The home household's web search, vault, library, sandbox, printer, Home Assistant and voice are
+own servers.
+_Avoid_: home-only server, private server, tenant server, remote server
+
+**Set up** (an own server):
+A household has set up an own server of a name when it holds a live tunnel credential minted for
+that name, a machine's never counting; whether it is connected right now is another question. A
+household's agents reach only the own servers it set up, and are never told of the others.
+_Avoid_: enabled, configured, installed (for an own server)
+
+**Tunnel**:
+The one outbound connection an own server keeps open to the deployment, inside which every call
+to it, every notification from it, every page it serves and every back-call it makes travels. The
+deployment never dials a household's address.
+_Avoid_: reverse proxy, VPN, outpost connection, link
+
+**Relay**:
+The end of every tunnel inside the deployment: it admits a tunnel by its credential, routes the
+agent's calls and a person's pages into it, and lets through only the back-calls on its allowlist.
+_Avoid_: hub, gateway, broker
+
+**Back-call**:
+A request an own server makes to the deployment, carried back over its tunnel and allowed only to
+a short list of deployment services.
+_Avoid_: callback, upcall, reverse call
+
+**Tenant kit**:
+The compose file the repo ships for a household to run its own servers (`TenantKit/`), with their
+helpers and a Redis of its own, holding no deployment secret: each server holds the tunnel credential
+minted for it. The home household runs it beside the deployment.
+_Avoid_: household compose, edge stack, site bundle
+
+**State move**:
+The one-off that carries what a household's own servers kept in the deployment's Redis — remembered
+logins, one-time links, download routing — into its tenant kit's, when its servers move there.
+_Avoid_: migration (that is the household migration), sync, import
+
+**Agent template**:
+A shipped agent definition a household's agent starts from; a household changes its name and
+custom instructions.
+_Avoid_: default agent, base agent, preset
+
+**App admission**:
+Whether an app behind the proxy lets a request in, decided once for every app: the person the
+accounts service's assertion names for the app's channel, refused as signed out without one and as
+forbidden when the person lacks what the app asks. Each app only says how it answers each.
+_Avoid_: auth middleware, gate (for the decision), login check
+
+**Household agent catalogue**:
+A household's agents as a channel shows and checks them for a person of it: the household's own
+agents on the models it runs them on, with what the deployment decides about models. A household's
+own channel server is told its household's catalogue; a channel the deployment dials serves every
+household and is told the home's agents, never read as a household's list.
+_Avoid_: agent catalog (for a household's), registered catalogue (for a household's), agent list
+
 ## Outposts
 
 **Outpost**:
-A filesystem on a real machine that announces itself to the hub, rather than being configured
-into it. It is the only mount whose existence is decided by the machine it lives on, so it can
-be absent for reasons that are nobody's fault, and the only one presented as a separate machine
-at `outpost:<NAME>` rather than as a branch of the agent's own tree.
+A filesystem on a real machine that opens its own tunnel to the deployment, rather than being
+configured into it: an own server of its household whose credential was minted for
+`outpost-<NAME>`. It is the only mount whose existence is decided by the machine it lives on, so
+it can be absent for reasons that are nobody's fault, and the only one presented as a separate
+machine at `outpost:<NAME>` rather than as a branch of the agent's own tree.
 _Avoid_: remote filesystem, host filesystem, satellite, node
 
-**Outpost registration**:
-The hub's record that one outpost is live, named by the outpost and expiring on its own. It is
-a claim with a lifetime rather than a piece of configuration: nothing deletes it when a machine
-dies, it simply stops being renewed.
-_Avoid_: registration entry, lease, session, connection
+**Open outpost**:
+An outpost whose tunnel is open: what used to be its registration. It is there while the tunnel
+lives and gone when it closes — switched off, out of network, replaced by its own reconnect or its
+credential revoked — and is offered only to its own household's agents.
+_Avoid_: outpost registration, registration entry, lease, session
 
 **Jailed outpost**:
 An outpost that refuses every path outside its working directory. It is still mounted at the
@@ -624,11 +703,12 @@ machine's root, so jailing changes what an operation will do and never what a pa
 _Avoid_: chrooted, restricted mount, sandboxed outpost
 
 **Shadowed outpost**:
-An outpost shadowed by another outpost: its name is already another machine's, and it is
-therefore not mounted at all. Outposts are addressed as `outpost:<NAME>`, apart from the tree
-every other mount shares, so a machine named like a mount sits beside it and only another
-machine can shadow one. The first mounted always wins, so a name collision costs the newcomer
-rather than quietly replacing what was there.
+An outpost whose mount point is already another's, and which is therefore not mounted at all.
+Outposts are addressed as `outpost:<NAME>`, apart from the tree every other mount shares, so a
+machine named like a mount sits beside it; and a household holds one tunnel per server name, so
+two of its machines cannot answer to one NAME — a second opening replaces the first. What is left
+is a binary publishing a NAME other than the one its credential was minted for: the first mounted
+always wins.
 _Avoid_: duplicate mount, conflicting outpost, rejected registration
 
 ## The shell over the mounts
@@ -757,6 +837,20 @@ The sections that are in an agent's instructions on every turn, assembled in a
 fixed order from what its servers and definition declare. It is what the model
 knows before it decides what to do; it never changes shape mid-conversation.
 _Avoid_: system prompt, standing sections, static prompt, core prompt
+
+**Prompt document**:
+A section's or a skill's words as a text file shipped in the repo: a small header
+carrying its declaration — a section's purpose, band, budget, audience, conflicts and
+claims, or a skill's description, budgets, server and claims — over the words, and
+named parts for words the host adds or swaps in. The manifest is read from them.
+_Avoid_: prompt file, prompt template (a template is an agent's)
+
+**Placeholder**:
+A named hole, `{{name}}`, in a prompt document's words that the host fills with what
+only it knows — the date, the agent's name, the language, the satellites, the mounts.
+The document lists its placeholders and the host names what it fills, so neither can
+drop one without the other failing.
+_Avoid_: variable, slot, token
 
 **Skill**:
 A body of guidance loaded when a request calls for it — by the model, or ahead of

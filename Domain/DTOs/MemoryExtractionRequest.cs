@@ -10,4 +10,7 @@ public record MemoryExtractionRequest(
     string? AgentId)
 {
     public string? FallbackContent { get; init; }
+
+    // The household of the account the turn acted for: what extracting from it costs is theirs.
+    public string? TenantId { get; init; }
 }

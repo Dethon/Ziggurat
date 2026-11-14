@@ -74,6 +74,24 @@ public class SkillsProviderPendingTests
         asked.ShouldNotBeNull().Caller.TurnModel.ShouldBe("lemonade/qwen3");
     }
 
+    // A worker's agent is named for its prompt ("subagent-jonas-worker"), but its calls are billed to
+    // its profile's id, as its model calls are: billed to the name, a household's usage listed the
+    // worker twice, once by name and once by that prompt name.
+    [Fact]
+    public async Task AWorkersRequest_IsBilledToTheAgentIdItWasMadeFor_NotTheAgentsName()
+    {
+        SkillPreloadRequest? asked = null;
+        var preloader = new Mock<ISkillPreloader>();
+        preloader.Setup(p => p.PreloadAsync(It.IsAny<SkillPreloadRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<SkillPreloadRequest, CancellationToken>((r, _) => asked = r)
+            .ReturnsAsync(SkillPreload.NotAsked);
+        var request = new ChatMessage(ChatRole.User, "enciende la luz");
+
+        await Provide(preloader.Object, request, agentId: "jonas-worker");
+
+        asked.ShouldNotBeNull().Caller.AgentId.ShouldBe("jonas-worker");
+    }
+
     [Theory]
     [InlineData(SkillPreloadOutcome.Deadline)]
     [InlineData(SkillPreloadOutcome.Error)]
@@ -111,9 +129,9 @@ public class SkillsProviderPendingTests
         (context.Messages ?? []).Where(m => !ReferenceEquals(m, request)).ToList();
 
 #pragma warning disable MAAI001 // Driving a provider by hand is the only way to test it alone.
-    private static async Task<AIContext> Provide(ISkillPreloader preloader, ChatMessage request)
+    private static async Task<AIContext> Provide(ISkillPreloader preloader, ChatMessage request, string? agentId = null)
     {
-        using var provider = new SkillsProvider(_ => [_home], preloader);
+        using var provider = new SkillsProvider(_ => [_home], preloader, agentId: agentId);
         return await provider.InvokingAsync(
             new AIContextProvider.InvokingContext(new FakeAiAgent(), null, new AIContext { Messages = [request] }),
             CancellationToken.None);

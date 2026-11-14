@@ -36,6 +36,7 @@ public sealed class MessagePipeline(
         {
             Role = "user",
             Content = content,
+            CorrelationId = correlationId,
             SenderId = senderId,
             Timestamp = DateTimeOffset.UtcNow,
             Attachments = attachments

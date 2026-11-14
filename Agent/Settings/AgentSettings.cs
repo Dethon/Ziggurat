@@ -2,10 +2,14 @@ using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Security;
+using Domain.Security.Signing;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Domain.Tools.FileSystem.Bridge;
+using Infrastructure.Agents.Mcp;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Judgments;
+using Infrastructure.Tunnels;
 using JetBrains.Annotations;
 
 namespace Agent.Settings;
@@ -14,28 +18,66 @@ public record AgentSettings
 {
     public required OpenRouterConfiguration OpenRouter { get; init; }
     public required RedisConfiguration Redis { get; init; }
-    public required AgentDefinition[] Agents { get; [UsedImplicitly] init; }
 
-    // Who answers when the channel that carried a message named no agent. Empty is legal and means
-    // such a message is refused rather than routed by position in the array above.
+    // No agents: a household's are its configuration's, kept by the accounts service
+    // (.claude/rules/household-config.md), read per turn and built from the shipped templates or the
+    // definitions seeded for it (HouseholdAgents).
+
+    // Who answers when the channel that carried a message named no agent, for a channel whose messages
+    // belong to one agent by nature; any other channel's go to the household's default. Empty is legal
+    // and means every such message reaches its household's default.
     public AgentDefaults AgentDefaults { get; [UsedImplicitly] init; } = new();
     public ChannelEndpoint[] ChannelEndpoints { get; init; } = [];
+
+    // The deployment's worker profiles, every household's agents' alike: a worker runs its parent's
+    // model for its parent's household, and the household's `workers` feature decides whether its
+    // agents may spawn one at all.
     public SubAgentDefinition[] SubAgents { get; init; } = [];
+
+    // Where the deployment runs each shared server, by the household feature that offers it.
+    public SharedServers SharedServers { get; init; } = new();
     public PatchableModel[] PatchableModels { get; init; } = [];
     public AttachmentConfiguration Attachments { get; init; } = new();
     public ReadImageConfiguration ReadImages { get; init; } = new();
     public RetentionSettings Retention { get; init; } = new();
-    public OutpostConfiguration Outposts { get; init; } = new();
     public AgentApiConfiguration AgentApi { get; init; } = new();
 
-    // The deployment secret every configured MCP endpoint and channel connection presents, bound
-    // under the same name the servers bind it by (MCP__SHAREDSECRET), so one line reaches both ends.
+    // Where the accounts service publishes the keys its assertions verify with (ACCOUNTS__JWKSURL):
+    // the registration API takes its person from the one SexyTime forwards.
+    public AccountsClientConfig Accounts { get; init; } = new();
+
+    // Each configured MCP server's own credential, keyed by the name it answers to (ServerAddress.Name,
+    // the host the agent dials it at — MCP__SECRETS__<host>): every configured endpoint and channel
+    // connection presents the one for its server, the same value that server binds as its own
+    // (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
+
+    // The key the agent signs its call tokens with, and the delegations deferred turns act on. A deployment names a directory in the agent's own volume (SIGNING__KEYDIRECTORY), where the
+    // key is generated on first start; a test stack hands it a fixed one (SIGNING__PRIVATEKEY).
+    public SigningKeySettings Signing { get; init; } = new();
+
+    public CallTokenSettings CallTokens { get; init; } = new();
+
+    // How long a login handoff's delegation lives; a schedule's or a watch's lives as long as the
+    // object it names.
+    public DelegationSettings Delegations { get; init; } = new();
+
+    // Where a fire whose author named no channel is delivered (Domain/delivery.json), which the agent
+    // reads too: a fire acting for somebody must deliver where that default says, not wherever the
+    // server that raised it chose.
+    public DeliverySettings Delivery { get; init; } = new();
+
+    // The browser origins the registration API answers with credentials (CORS__ALLOWEDORIGINS__n),
+    // the same section the hub binds.
+    public CorsSettings Cors { get; init; } = new();
     public LemonadeChatConfiguration LemonadeChat { get; init; } = new();
     public TypeSafeOptions TypeSafe { get; init; } = new();
     public SkillPreloadSettings SkillPreload { get; init; } = new();
     public ExecScreenSettings ExecScreen { get; init; } = new();
     public VfsBridgeSettings VfsBridge { get; init; } = new();
+
+    // Where a household server's back-calls reach beside the agent: the shared Lemonade.
+    public required BackCallSettings BackCalls { get; init; }
 }
 
 // The Lemonade chat host: somebody's own box on the local network, outside the compose stack, and
@@ -45,15 +87,6 @@ public record LemonadeChatConfiguration
 {
     public string ApiUrl { get; [UsedImplicitly] init; } = "";
     public string? ApiKey { get; [UsedImplicitly] init; }
-}
-
-public record OutpostConfiguration
-{
-    // The one value on either side of an outpost's life that is a secret, so the only one that
-    // arrives as an environment variable rather than as configuration or a flag. Empty means no
-    // machine may attach: an unset secret refuses every registration rather than accepting any,
-    // because a deployment that forgot to set it must not be one anyone on the network can join.
-    public string SharedSecret { get; [UsedImplicitly] init; } = "";
 }
 
 // The custom-agent registration API's gate. A secret, so it arrives as an environment variable

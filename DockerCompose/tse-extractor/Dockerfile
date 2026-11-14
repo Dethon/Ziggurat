@@ -56,6 +56,14 @@ ENV PIP_DEFAULT_TIMEOUT=60 \
 # the first leg that actually failed.
 RUN pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu "torch==2.1.2" "torchaudio==2.1.2"
 
+# numpy<2 for every install from here on, not only the one that names it: torch 2.1.2 is built
+# against NumPy 1.x, and under 2.x every tensor<->array hand-off raises "Numpy is not available" —
+# torchaudio.load is one, so every /extract answered 500. onnx (below) pulls ml_dtypes, whose 0.6
+# wants numpy>=2, and pip upgraded numpy under torch (prod, 2026-11-12). With the constraint it
+# resolves ml_dtypes 0.5.x, which onnx 1.22 accepts. After torch's layer, so that layer stays cached.
+RUN echo "numpy<2" > /etc/pip-constraints.txt
+ENV PIP_CONSTRAINT=/etc/pip-constraints.txt
+
 RUN pip install --no-cache-dir "numpy<2" soundfile pyyaml scipy silero-vad tqdm \
         kaldiio hdbscan umap-learn scikit-learn "onnxruntime==1.27.0" requests flask
 

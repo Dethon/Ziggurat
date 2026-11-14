@@ -52,30 +52,25 @@ public class JackettFixture : IAsyncLifetime
         await WaitForApiReady();
     }
 
+    // Waits for the state, under a budget only a broken container exhausts: thirty tries of a second
+    // each ran out while the suite was starting every other container at once beside a running stack,
+    // for a Jackett that answers in four seconds on a quiet machine.
     private async Task WaitForApiReady()
     {
         using var httpClient = new HttpClient();
         httpClient.BaseAddress = new Uri(ApiUrl);
         httpClient.Timeout = TimeSpan.FromSeconds(5);
-        for (var i = 0; i < 30; i++)
+        await Eventually.Until(async () =>
         {
             try
             {
-                var response = await httpClient.GetAsync("server/config");
-                if (response.IsSuccessStatusCode)
-                {
-                    return;
-                }
+                return (await httpClient.GetAsync("server/config")).IsSuccessStatusCode;
             }
-            catch
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
-                // Ignore and retry
+                return false;
             }
-
-            await Task.Delay(1000);
-        }
-
-        throw new TimeoutException("Jackett API did not become ready in time");
+        }, "Jackett's API to answer", ContainerReadiness.Budget, ContainerReadiness.Interval);
     }
 
     public JackettSearchClient CreateClient()

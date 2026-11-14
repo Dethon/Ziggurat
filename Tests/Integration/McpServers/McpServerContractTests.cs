@@ -3,6 +3,7 @@ using Domain.DTOs.Channel;
 using Domain.Prompts;
 using Infrastructure.Utils;
 using Mcp.Hosting;
+using Mcp.Hosting.Tunnel;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -75,15 +76,16 @@ public class McpServerContractTests
 
         gates.Count.ShouldBe(1, $"{id} must have exactly one /mcp gate");
         gates[0].Secret.ShouldNotBeNullOrEmpty($"{id}'s row must configure a secret for this to mean anything");
-        gates[0].Secret.ShouldBe(((IMcpHostSettings)row.Settings).Mcp.SharedSecret,
+        // A tunnelled server's secret is its tunnel credential, which the relay presents.
+        var gate = ((IMcpHostSettings)row.Settings).Mcp;
+        gates[0].Secret.ShouldBe(gate.Tunnel.IsConfigured ? gate.Tunnel.Credential : gate.SharedSecret,
             $"{id} must gate /mcp with the secret its settings carry");
     }
 
-    // Every deployment server shares one secret; the outpost is not part of the deployment, and the
-    // secret its /mcp asks for is the one it registers with — never the deployment's, which a
-    // machine on somebody's desk does not have.
+    // The outpost is not part of the deployment: its /mcp asks for the tunnel credential the relay
+    // presents — never the deployment's secret, which a machine on somebody's desk does not have.
     [Fact]
-    public void TheOutpost_GatesItsMcpEndpointBehindItsOwnSecret()
+    public void TheOutpost_GatesItsMcpEndpointBehindItsTunnelCredential()
     {
         using var server = new ConfiguredServer(McpServerRegistrations.Get("outpost"));
 
@@ -91,8 +93,40 @@ public class McpServerContractTests
             .Select(descriptor => descriptor.ImplementationInstance)
             .OfType<McpSecretGate>()
             .Single().Secret
-            .ShouldBe(McpServerRegistrations.OutpostSecret);
+            .ShouldBe(McpServerRegistrations.OutpostCredential);
     }
+
+    // Holding a server's credential is not enough to act through it: every deployment server checks a
+    // tool call's token, for the name its settings say the agent dials it at. Asserted on the
+    // registration because the behaviour over the wire is CallTokenGateTests', written once.
+    [Theory]
+    [MemberData(nameof(DeploymentServers))]
+    public void EveryDeploymentServer_ChecksCallTokensForTheNameItsSettingsCarry(string id)
+    {
+        var row = McpServerRegistrations.Get(id);
+        using var server = new ConfiguredServer(row);
+
+        var gate = server.Provider.GetService<CallTokenGate>();
+
+        gate.ShouldNotBeNull($"{id} must check every tool call's token");
+        gate.Audience.ShouldNotBeNullOrEmpty($"{id}'s row must name the server for this to mean anything");
+        gate.Audience.ShouldBe(((IMcpHostSettings)row.Settings).Mcp.Audience,
+            $"{id} must check tokens for the name its settings carry");
+    }
+
+    // The outpost checks a tool call's token like every server, with the keys its tunnel delivers
+    // rather than any it could be pointed at.
+    [Fact]
+    public void TheOutpost_ChecksCallTokensAgainstWhatItsTunnelDelivers()
+    {
+        using var server = new ConfiguredServer(McpServerRegistrations.Get("outpost"));
+
+        server.Provider.GetService<CallTokenGate>().ShouldNotBeNull("the outpost must check every tool call's token");
+        server.Provider.GetService<TunnelTrust>().ShouldNotBeNull("the outpost checks tokens against its tunnel's keys");
+    }
+
+    public static TheoryData<string> DeploymentServers => McpServerRegistrations.Ids(
+        McpServerRegistrations.All.Where(row => row.Id != "outpost"));
 
     // Two filters nested around each other is the failure this counts: the outer one converts the
     // very cancellation the inner deliberately rethrows, so a cancelled call comes back as an error
@@ -122,6 +156,22 @@ public class McpServerContractTests
 
         tools.ShouldContain(ChannelProtocol.SendReplyTool, $"{id} must advertise send_reply");
         tools.ShouldContain(ChannelProtocol.RequestApprovalTool, $"{id} must advertise request_approval");
+    }
+
+    // A schedule's or a watch's fire names the channels it is delivered to by id, and the agent opens
+    // its conversation there with create_conversation: a channel a person can name as a delivery and
+    // that cannot open one takes the fire into nothing. Telegram was such a channel until pass 20
+    // (a reminder "por Telegram" fired and reached nobody).
+    [Theory]
+    [InlineData("signalr")]
+    [InlineData("telegram")]
+    [InlineData("voice")]
+    public void EveryChannelAFireIsDeliveredTo_AdvertisesCreateConversation(string id)
+    {
+        using var server = new ConfiguredServer(McpServerRegistrations.Get(id));
+
+        server.Provider.GetServices<McpServerTool>().Select(tool => tool.ProtocolTool.Name)
+            .ShouldContain(ChannelProtocol.CreateConversationTool, $"{id} must advertise create_conversation");
     }
 
     // One row per skill the manifest declares: the server it names publishes the index and the
@@ -191,8 +241,8 @@ public class McpServerContractTests
     public static TheoryData<string> ToolOnlyServers => McpServerRegistrations.Ids(
         McpServerRegistrations.All.Where(row => row.Role == McpServerRole.Tool));
 
-    // The SignalR module connects its Redis multiplexer and ServiceBus its client eagerly, at
-    // Configure time, and registers them as instance singletons — which DI never disposes, in the
+    // The SignalR module connects its Redis multiplexer eagerly, at
+    // Configure time, and registers it as an instance singleton — which DI never disposes, in the
     // shipped server or here. There each instance lives exactly as long as the process; here a row
     // is configured once per theory case, so without this wrapper every case would leak a
     // multiplexer whose background reconnect loop runs until the test process exits.

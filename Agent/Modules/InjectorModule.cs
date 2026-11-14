@@ -4,19 +4,25 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Judgments;
 using Domain.Monitor;
-using Domain.Outposts;
 using Domain.Prompts;
+using Domain.Security;
+using Domain.Security.Signing;
 using Domain.Skills;
 using Domain.Tools.FileSystem;
 using Infrastructure.Agents;
 using Infrastructure.Agents.ChatClients;
+using Infrastructure.Agents.Mcp;
 using Infrastructure.Clients;
+using Infrastructure.Clients.Accounts;
 using Infrastructure.Clients.Channels;
+using Infrastructure.Conversations;
 using Infrastructure.Judgments;
 using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
+using Infrastructure.Tunnels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -30,6 +36,10 @@ public static class InjectorModule
     {
         public IServiceCollection AddAgent(AgentSettings settings)
         {
+            // Before any of them is read: a section the settings lack is named here, not met as a
+            // NullReferenceException wherever it is first used.
+            RequiredSettings.Checked(settings);
+
             var llmConfig = new OpenRouterConfig
             {
                 ApiUrl = settings.OpenRouter.ApiUrl,
@@ -41,20 +51,45 @@ public static class InjectorModule
                 MaxInlineImageBytes = settings.ReadImages.MaxInlineBytes
             };
 
-            // Before anything is registered: a default naming an agent nobody configured routes
-            // every unattributed message into an error, and the deployment should refuse to start
-            // rather than discover it one message at a time.
-            settings.AgentDefaults.Validate(settings.Agents.Select(a => a.Id));
+            // The agents are each household's (HouseholdAgents): what the deployment itself names is its
+            // worker profiles, its shared servers and its channels, each checked here before anything is
+            // registered. A template reaches only the shared servers among these (HouseholdAgents).
+            var named = settings.SubAgents.SelectMany(a => a.McpServerEndpoints)
+                .Concat(settings.SharedServers.All)
+                .ToList();
+
+            // An endpoint is a server's URL or a household server's name (reached through its tunnel),
+            // and nothing else: anything else would slip past the credential check below and fail in
+            // the first session that dialled it — or, for a channel, in a connection retrying for ever.
+            var unreadable = named
+                .Concat(settings.ChannelEndpoints.Select(c => c.Endpoint))
+                .Where(endpoint => ServerAddress.FromUrl(endpoint) is null && !TunnelCredentialProtocol.IsServerName(endpoint))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (unreadable.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"MCP endpoints that are neither an http(s) URL nor a household server's name: {string.Join(", ", unreadable)}.");
+            }
+
+            // And for a server the deployment configured without its credential: dialled bare, its
+            // gate would refuse every call, and the session that needed it would fail far from here.
+            var credentials = McpCredentials.From(settings.Mcp);
+            var uncredentialed = credentials.MissingFor(named.Concat(settings.ChannelEndpoints.Select(c => c.Endpoint)));
+            if (uncredentialed.Count > 0)
+            {
+                throw new InvalidOperationException(
+                    $"No MCP credential for {string.Join(", ", uncredentialed)}: set MCP__SECRETS__<host> for each " +
+                    "configured server, the same value the server reads as MCP__SHAREDSECRET.");
+            }
 
             // The same rule for the other thing an agent names rather than carries: a section id
             // nothing declares is a behaviour somebody meant to give an agent and it would
             // otherwise go missing in silence. The projection refuses it too, per agent built;
             // this refuses the deployment.
             PromptManifest.Validate(
-                settings.Agents.Select(a => (a.Id, (IEnumerable<string>)a.PromptSections))
+                AgentTemplates.All.Select(a => (a.Id, (IEnumerable<string>)a.PromptSections))
                     .Concat(settings.SubAgents.Select(a => (a.Id, (IEnumerable<string>)a.PromptSections))));
-
-            services.Configure<AgentRegistryOptions>(options => options.Agents = settings.Agents);
 
             var lemonadeChatHost = new LemonadeChatHostOptions
             {
@@ -65,8 +100,27 @@ public static class InjectorModule
             return services
                 .AddSingleton(settings.AgentDefaults)
                 .AddSingleton(settings.Retention)
-                // Read by the agent factory and applied to every configured endpoint it composes.
-                .AddSingleton(settings.Mcp)
+                // The credentials checked above, and the only ones: the agent factory applies them
+                // to every configured endpoint it composes, and each channel connection presents
+                // its own server's.
+                .AddSingleton(credentials)
+                // The agent's own key, opened before anything dials: a deployment generates it into
+                // its volume on first start, and its public half is what every server verifies a call
+                // token against (AgentKeysApi).
+                .AddSingleton(_ => SigningKeyStore.Open(settings.Signing))
+                // On the wall clock, which is what every server's gate checks a token's dates
+                // against — not the TimeProvider registered below, which an eval pins to its
+                // scenario's day for what the prompt says the date is.
+                .AddSingleton(sp => new CallTokens(
+                    sp.GetRequiredService<SigningKeyStore>(), TimeProvider.System, settings.CallTokens,
+                    settings.Delegations))
+                // A fire's delegation is the agent's own word, checked against its own keys — every
+                // one it still publishes, so a rotation strands nothing before redelegate re-signs it —
+                // on the wall clock it was signed on, and against the delivery default the servers
+                // that raise fires resolve a deliverTo with (Domain/delivery.json).
+                .AddSingleton(sp => new DelegationVerifier(
+                    sp.GetRequiredService<SigningKeyStore>(), TimeProvider.System, settings.Delivery,
+                    settings.Mcp.TokenVerification))
                 .AddRedis(settings.Redis, settings.Retention)
                 .AddMetricsPublishing("agent")
                 .AddSingleton<ChatThreadResolver>()
@@ -74,8 +128,39 @@ public static class InjectorModule
                 // the bridge endpoint answers that command's file operations from it.
                 .AddSingleton<IVfsBridge>(sp => new VfsBridge(sp.GetRequiredService<TimeProvider>(), settings.VfsBridge))
                 .AddSingleton<IDomainToolRegistry, DomainToolRegistry>()
-                .AddSingleton<CustomAgentRegistry>()
+                // Before the channel connections start, so a restarted agent has its people's
+                // custom agents back by the first turn; a plain IHostedService singleton, so the
+                // one instance the provider reads is the one that loads.
+                .AddSingleton<ICustomAgentStore>(sp => new RedisCustomAgentStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>()))
+                .AddSingleton(sp => new CustomAgentRegistry(sp.GetRequiredService<ICustomAgentStore>()))
+                .AddSingleton<IHostedService>(sp => sp.GetRequiredService<CustomAgentRegistry>())
+                // Each household's agents, from its configuration: read with the agent's own credential
+                // there (CALLERS__agent, the one it holds for its own API) and a token it signs for
+                // the configuration, so that credential alone, which SexyTime's server shares, opens
+                // no household's key.
+                // The signing key is opened at the first ask, not as the reader is made: the host
+                // resolves its hosted services before anything is asked.
+                .AddHouseholdConfiguration(
+                    settings.Accounts, settings.AgentApi.SharedSecret,
+                    sp => () => HouseholdConfigurationClient.AgentToken(sp.GetRequiredService<CallTokens>())())
+                .AddSingleton(settings.SharedServers)
+                .AddSingleton<IHouseholdAgentSource>(sp => new HouseholdAgentSource(
+                    sp.GetRequiredService<IHouseholdConfiguration>(),
+                    settings.SharedServers,
+                    sp.GetService<ILogger<HouseholdAgentSource>>()))
                 .AddSingleton<IAgentDefinitionProvider, AgentDefinitionProvider>()
+                // Who of a household an owner disabled, from the same view the turn's agents are built
+                // from: the monitor refuses their turns and believes no delegation naming them.
+                .AddSingleton<IAccountStanding>(sp => new HouseholdAccountStanding(sp.GetRequiredService<IHouseholdConfiguration>()))
+                // Read once the agent listens, and waited for by the channel connections, so their
+                // first registration carries the home's agents rather than none.
+                .AddSingleton(sp => new ChannelAgentCatalogs(
+                    sp.GetRequiredService<IHouseholdAgentSource>(),
+                    settings.Accounts.ConfigurationLifetime,
+                    sp.GetRequiredService<ILogger<ChannelAgentCatalogs>>(),
+                    sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default))
+                .AddSingleton<IHostedService>(sp => sp.GetRequiredService<ChannelAgentCatalogs>())
                 .AddSingleton<IAgentFactory>(sp =>
                     new MultiAgentFactory(
                         sp,
@@ -110,8 +195,7 @@ public static class InjectorModule
                     sp.GetRequiredService<OpenRouterModelCapabilities>())
                 .AddHostedService<ModelCapabilityRefresher>()
                 .AddLemonadeChatHost(lemonadeChatHost)
-                .AddTypeSafe(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey), settings.SkillPreload, settings.ExecScreen)
-                .AddOutposts(settings.Outposts);
+                .AddTypeSafe(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey), settings.SkillPreload, settings.ExecScreen);
         }
 
         // The judge is registered as every Jev host registers it; the preloader and the exec screen
@@ -132,50 +216,67 @@ public static class InjectorModule
                     sp.GetRequiredService<TimeProvider>(),
                     sp.GetRequiredService<IMetricsPublisher>()));
 
-        // An empty address is the feature switched off: no discovery, no refresher, and an empty
-        // source for the catalogue to read. A configured one is asked for its models on a timer.
+        // The deployment's box is the home's: an empty address is none, and its source answers nothing;
+        // a configured one is asked for its models on a timer. Every household's own box is read from
+        // its configuration and asked on the same timer (HouseholdLemonadeHosts), whether or not the
+        // deployment has a box of its own.
         private IServiceCollection AddLemonadeChatHost(LemonadeChatHostOptions host)
         {
-            if (!host.IsConfigured)
+            if (host.IsConfigured)
             {
-                return services.AddSingleton<ILemonadeModelSource>(FixedLemonadeModelSource.None);
+                services
+                    .AddSingleton(host)
+                    // Shares the chat clients' pool: the pool is per host, so the box gets its own
+                    // connections inside it, and the discovery rides the same ones the turns use.
+                    .AddSingleton(sp => new LemonadeModelDiscovery(
+                        new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
+                        host,
+                        sp.GetRequiredService<ILogger<LemonadeModelDiscovery>>()))
+                    .AddSingleton<ILemonadeModelSource>(sp => sp.GetRequiredService<LemonadeModelDiscovery>());
+            }
+            else
+            {
+                services.AddSingleton<ILemonadeModelSource>(FixedLemonadeModelSource.None);
             }
 
             return services
-                .AddSingleton(host)
-                // Shares the chat clients' pool: the pool is per host, so the box gets its own
-                // connections inside it, and the discovery rides the same ones the turns use.
-                .AddSingleton(sp => new LemonadeModelDiscovery(
-                    new HttpClient(HostedConnectionPool.Shared, disposeHandler: false),
-                    host,
-                    sp.GetRequiredService<ILogger<LemonadeModelDiscovery>>()))
-                .AddSingleton<ILemonadeModelSource>(sp => sp.GetRequiredService<LemonadeModelDiscovery>())
-                .AddHostedService<LemonadeModelRefresher>();
+                .AddSingleton(sp => new HouseholdLemonadeHosts(
+                    host, sp.GetRequiredService<ILemonadeModelSource>(), sp.GetRequiredService<IHouseholdConfiguration>(),
+                    sp.GetRequiredService<ILoggerFactory>(),
+                    // A box behind a household's router, through its own forwarder's tunnel: the relay
+                    // is in the serving process alone, so a command's host reaches none.
+                    sp.GetService<TunnelRegistry>() is { } tunnels
+                        ? household => tunnels.StreamsTo(household, HouseholdServerNames.Lemonade, TunnelProtocol.ChatTag)
+                        : null))
+                .AddSingleton<ILemonadeHosts>(sp => sp.GetRequiredService<HouseholdLemonadeHosts>())
+                .AddHostedService<LemonadeModelRefresher>()
+                // Each household's own box is a dashboard tile of that household's, probed from what
+                // its Keys page saved, on the pool its turns ride (or its kit's tunnel).
+                .AddHostedService(sp => new LemonadeBoxHealthProbes(
+                    () => sp.GetRequiredService<HouseholdLemonadeHosts>().Boxes,
+                    sp.GetRequiredService<IMetricsPublisher>(),
+                    HostedConnectionPool.Shared));
         }
 
         public IServiceCollection AddChatMonitoring(AgentSettings settings, CommandLineParams cmdParams)
         {
-            foreach (var endpoint in settings.ChannelEndpoints)
+            // A channel server's /mcp is gated like every other deployment server's, so each run of a
+            // connection — and every reconnect it makes — presents that server's credential, which the
+            // host hands it with the endpoint (a household server's tunnel presents its own). The
+            // channels dialled by URL each have one connection serving every household, made here; a
+            // household server named by its server name has one per household, made by the host as
+            // that household first opens its tunnel.
+            foreach (var endpoint in settings.ChannelEndpoints.Where(e => !NamesOwnServer(e)))
             {
-                var channelId = endpoint.ChannelId;
-                var attachOnly = endpoint.AttachOnly;
-                var hostsReviewCopies = endpoint.HostsReviewCopies;
-                // A channel server's /mcp is gated like every other deployment server's, so each
-                // connection — and every reconnect it makes — presents the deployment secret.
-                services = services.AddSingleton<IChannelConnection>(sp =>
-                    new McpChannelConnection(
-                        channelId, attachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
-                        mcpSecret: settings.Mcp.SharedSecret)
-                    {
-                        HostsReviewCopies = hostsReviewCopies
-                    });
+                services = services.AddSingleton<IChannelConnection>(sp => ConnectionFor(sp, endpoint, ChannelHousehold.Every));
             }
 
             return services
-                .AddSingleton<IReadOnlyList<IChannelConnection>>(sp =>
-                    sp.GetServices<IChannelConnection>().ToList())
+                .AddSingleton(sp => new LiveConnectionSet<IChannelConnection>(sp.GetServices<IChannelConnection>()))
+                .AddSingleton<IConnectionSet<IChannelConnection>>(sp =>
+                    sp.GetRequiredService<LiveConnectionSet<IChannelConnection>>())
                 .AddSingleton<IAttachmentSource>(sp => new ChannelAttachmentSource(
-                    sp.GetRequiredService<IReadOnlyList<IChannelConnection>>(),
+                    sp.GetRequiredService<IConnectionSet<IChannelConnection>>(),
                     sp.GetService<ILogger<ChannelAttachmentSource>>()))
                 .AddSingleton<ChatMonitor>()
                 .AddHostedService<ChatMonitoring>()
@@ -183,21 +284,57 @@ public static class InjectorModule
                     new ChannelConnectionHost(
                         settings.ChannelEndpoints,
                         sp.GetServices<IChannelConnection>().OfType<IMcpChannelConnection>().ToList(),
-                        // Read per registration, not captured once: attachment capability is
-                        // discovered from the model provider and refreshed while the agent runs.
-                        () => AgentCatalogBuilder.Build(
-                            settings.Agents,
-                            settings.PatchableModels,
-                            sp.GetRequiredService<IModelCapabilityCatalog>(),
-                            sp.GetRequiredService<ILemonadeModelSource>()),
-                        sp.GetRequiredService<ILogger<ChannelConnectionHost>>()));
+                        // The channels dialled by URL serve every household and are told the home's
+                        // agents; a household's own channel server is told its household's.
+                        () => CatalogOf(sp, settings, null, home: true),
+                        sp.GetRequiredService<ILogger<ChannelConnectionHost>>(),
+                        sp.GetService<IHostApplicationLifetime>()?.ApplicationStarted ?? default,
+                        sp.GetRequiredService<McpCredentials>(),
+                        // A channel endpoint naming a household server follows that server's tunnels
+                        // (the relay's, AddTunnelRelay).
+                        sp.GetService<IOwnChannelServers>(),
+                        sp.GetRequiredService<ChannelAgentCatalogs>().FirstRead,
+                        async (household, ct) =>
+                        {
+                            await sp.GetRequiredService<ChannelAgentCatalogs>().ReadAsync(household.HouseholdId, ct);
+                            return () => CatalogOf(sp, settings, household.HouseholdId, household.Home);
+                        },
+                        (endpoint, household) =>
+                        {
+                            var connection = ConnectionFor(sp, endpoint, household);
+                            sp.GetRequiredService<LiveConnectionSet<IChannelConnection>>().Add(connection);
+                            return connection;
+                        }));
         }
 
-        private IServiceCollection AddOutposts(OutpostConfiguration outposts) =>
-            // The registry and the secret travel together, because neither is any use without the
-            // other: a registration nobody may dial is a mount that cannot be reached.
-            services.AddSingleton(sp => new OutpostAccess(
-                sp.GetRequiredService<IOutpostRegistry>(), outposts.SharedSecret));
+        // Read per registration, not captured once: attachment capability is discovered from the model
+        // provider and refreshed while the agent runs.
+        // A household's own channel server offers its own box's models; a channel the deployment dials
+        // is the home's, on the home's box, and is told every household's own beside it.
+        private static IReadOnlyList<AgentCatalogEntry> CatalogOf(
+            IServiceProvider sp, AgentSettings settings, string? householdId, bool home) =>
+            AgentCatalogBuilder.Build(
+                sp.GetRequiredService<ChannelAgentCatalogs>().Current(householdId),
+                settings.PatchableModels,
+                sp.GetRequiredService<IModelCapabilityCatalog>(),
+                sp.GetRequiredService<ILemonadeHosts>().For(householdId, home)?.Models ?? FixedLemonadeModelSource.None);
+
+        private static IReadOnlyDictionary<string, IReadOnlyList<PatchableModel>> HouseholdLemonadeModels(IServiceProvider sp) =>
+            sp.GetRequiredService<ILemonadeHosts>().ModelsByHousehold
+                .ToDictionary(h => h.Key, h => LemonadeModelCatalog.ToPatchable(h.Value));
+
+        private static bool NamesOwnServer(ChannelEndpoint endpoint) =>
+            McpServerEndpoint.Of(endpoint.Endpoint, _ => null).NamesOwnServer;
+
+        private static McpChannelConnection ConnectionFor(
+            IServiceProvider sp, ChannelEndpoint endpoint, ChannelHousehold household) =>
+            new(endpoint.ChannelId, endpoint.AttachOnly, sp.GetService<ILogger<McpChannelConnection>>(),
+                callTokens: sp.GetRequiredService<CallTokens>())
+            {
+                HostsReviewCopies = endpoint.HostsReviewCopies,
+                Household = household,
+                HouseholdLemonadeModels = household.IsEvery ? () => HouseholdLemonadeModels(sp) : null
+            };
 
         private IServiceCollection AddRedis(RedisConfiguration config, RetentionSettings retention)
         {
@@ -208,21 +345,16 @@ public static class InjectorModule
                     sp.GetRequiredService<IConnectionMultiplexer>(),
                     retention,
                     sp.GetRequiredService<TimeProvider>()))
+                // The topics the agent mints itself: a voice conversation's (TopicMintingApi), and a
+                // fire's that only an attach-only channel delivers, which nothing else anchors.
+                .AddSingleton<IConversationFactory>(sp => new ConversationFactory(
+                    sp.GetRequiredService<IThreadStateStore>(), sp.GetRequiredService<TimeProvider>()))
                 .AddSingleton<IPushSubscriptionStore>(sp => new RedisPushSubscriptionStore(
                     sp.GetRequiredService<IConnectionMultiplexer>()))
-                // Outside this process for the same reason an outpost registration is: recycling the
-                // agent must not blind it to a picture that is still in view.
+                // Outside this process: recycling the agent must not blind it to a picture that is
+                // still in view.
                 .AddSingleton<IReadImageStore>(sp => new RedisReadImageStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>()))
-                // An outpost registration survives the agent recycling because it lives here
-                // rather than in this process: a container restart must not silently drop every
-                // machine that had announced itself.
-                .AddSingleton<IOutpostStore>(sp => new RedisOutpostStore(
-                    sp.GetRequiredService<IConnectionMultiplexer>()))
-                .AddSingleton<IOutpostRegistry>(sp => new OutpostRegistry(
-                    sp.GetRequiredService<IOutpostStore>(),
-                    sp.GetRequiredService<IMetricsPublisher>(),
-                    sp.GetRequiredService<TimeProvider>()));
+                    sp.GetRequiredService<IConnectionMultiplexer>()));
         }
     }
 }

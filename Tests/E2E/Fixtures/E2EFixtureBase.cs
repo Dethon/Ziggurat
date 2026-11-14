@@ -19,6 +19,10 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     private readonly List<IBrowserContext> _mine = [];
 
     protected virtual TimeSpan ContainerStartupTimeout => TimeSpan.FromMinutes(5);
+
+    // Headers every request a page makes carries, as a proxy in front of the app would add them: a
+    // stack with no proxy hands its app what the session check would have.
+    protected virtual IEnumerable<KeyValuePair<string, string>>? PageHeaders => null;
     protected virtual TimeSpan ImageBuildTimeout => TimeSpan.FromMinutes(20);
 
     public async Task InitializeAsync()
@@ -61,6 +65,13 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     {
         var headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false";
 
+        // What an expectation that names no timeout waits for: an admin page's answer to a save
+        // crosses the app, the proxy, the session check and the accounts service, and two suites
+        // running at once took that past Playwright's five seconds. An expectation returns as soon as
+        // it holds, so the larger cap costs a passing test nothing; every wait that relies on timing
+        // out quickly names its own.
+        Assertions.SetDefaultExpectTimeout(20_000);
+
         _sharedPlaywright = await Playwright.CreateAsync();
         return await _sharedPlaywright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
@@ -75,7 +86,14 @@ public abstract class E2EFixtureBase : IAsyncLifetime
                 "--use-fake-device-for-media-stream",
                 $"--use-file-for-fake-audio-capture={FakeMicrophoneAudio.WriteToTempFile()}",
                 "--use-fake-ui-for-media-stream",
-                "--autoplay-policy=no-user-gesture-required"
+                "--autoplay-policy=no-user-gesture-required",
+                // Nothing here listens to what a page plays, and an AudioContext is clocked by its
+                // output device: on WSL, ALSA's default is the pulse plugin and that is WSLg's one
+                // PulseServer for the whole host. When it stalled, every recording in every test
+                // browser froze at once — samples stuck, the context still "running", both suites
+                // of a double run losing every dictation case from the same second. A fake output
+                // stream is clocked by Chromium's own timer instead.
+                "--disable-audio-output"
             ]
         });
     }
@@ -84,7 +102,12 @@ public abstract class E2EFixtureBase : IAsyncLifetime
     // meta-viewport, and with it the tap heuristics that decide whether a touch becomes a click.
     // A gesture test that only sets hasTouch is still being judged by desktop rules, which is
     // how a tap bug can reproduce on a phone and pass here.
-    public async Task<IPage> CreatePageAsync(bool hasTouch = false, bool isMobile = false)
+    // withoutServiceWorker: for a test that answers the page's own requests (page.RouteAsync), which
+    // a service worker would answer first, out of the route's sight.
+    public Task<IPage> CreatePageAsync(bool hasTouch = false, bool isMobile = false, bool withoutServiceWorker = false) =>
+        E2ETrace.TimeAsync("page:create", () => CreatePageCoreAsync(hasTouch, isMobile, withoutServiceWorker));
+
+    private async Task<IPage> CreatePageCoreAsync(bool hasTouch, bool isMobile, bool withoutServiceWorker)
     {
         if (_browser is null)
         {
@@ -106,9 +129,17 @@ public abstract class E2EFixtureBase : IAsyncLifetime
             HasTouch = hasTouch || isMobile,
             IsMobile = isMobile,
             DeviceScaleFactor = isMobile ? 3 : null,
-            ViewportSize = isMobile ? new ViewportSize { Width = 390, Height = 844 } : null
+            ViewportSize = isMobile ? new ViewportSize { Width = 390, Height = 844 } : null,
+            ExtraHTTPHeaders = PageHeaders,
+            ServiceWorkers = withoutServiceWorker ? ServiceWorkerPolicy.Block : ServiceWorkerPolicy.Allow
         });
         _mine.Add(context);
+
+        // A Blazor app's first load is several megabytes of WebAssembly, and on a machine running a
+        // second suite beside this one a whole stack's pages booting at once took a network-idle
+        // navigation past Playwright's thirty seconds. A page that never loads still fails, later.
+        context.SetDefaultNavigationTimeout(60_000);
+
         // The fake UI already answers the prompt; granting as well covers the permissions API,
         // which the page may consult before ever calling getUserMedia.
         await context.GrantPermissionsAsync(["microphone"]);
@@ -136,6 +167,18 @@ public abstract class E2EFixtureBase : IAsyncLifetime
 
         return await context.NewPageAsync();
     }
+
+    // A browser of its own on a profile kept in userDataDir, so what it installed — a service worker
+    // above all — is still there when the profile is opened again. Nothing routes its requests:
+    // CreatePageAsync's catch-all route arms interception, and an intercepted worker script is never
+    // byte-compared, so every update check reinstalls the worker. The caller closes it.
+    public Task<IBrowserContext> OpenProfileAsync(string userDataDir) =>
+        (_sharedPlaywright ?? throw new InvalidOperationException("Browser not initialized. Call InitializeAsync first."))
+            .Chromium.LaunchPersistentContextAsync(userDataDir, new BrowserTypeLaunchPersistentContextOptions
+            {
+                Headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false",
+                IgnoreHTTPSErrors = true
+            });
 
     // Opt-in with PLAYWRIGHT_TRACE=1. A trace zip per page, saved when the next page replaces it
     // or the fixture shuts down, so a run that fails deep inside the suite still leaves the

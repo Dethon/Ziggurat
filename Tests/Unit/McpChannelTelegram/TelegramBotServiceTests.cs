@@ -15,22 +15,58 @@ public class TelegramBotServiceTests : IDisposable
         _harness.Enqueue(new Update
         {
             Id = 1,
-            Message = TelegramPollingHarness.TextMessage("/hello", username: "eve")
+            Message = TelegramPollingHarness.TextMessage("/hello", username: "eve", userId: 3)
         });
 
         await _harness.RunAsync();
 
-        _harness.Sent.ShouldHaveSingleItem().Text.ShouldBe("You are not authorized to use this bot.");
+        _harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("ask an owner of the household for an invite");
+    }
+
+    // A username is its owner's to change and Telegram's to reassign, so a name that matches is no
+    // longer anybody: only the linked number is.
+    [Fact]
+    public async Task ExecuteAsync_UnlinkedIdUnderALinkedUsername_SendsRejection()
+    {
+        using var harness = new TelegramPollingHarness(TelegramPollingHarness.AliceId);
+        await harness.ReceiveAsync();
+        harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("/hello", username: "alice", userId: 99)
+        });
+
+        await harness.RunAsync();
+
+        harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("ask an owner of the household for an invite");
+        (await harness.ReceiveAsync()).ShouldBeEmpty();
     }
 
     [Fact]
-    public async Task ExecuteAsync_MessageWithoutSlashOrThread_IsIgnored()
+    public async Task ExecuteAsync_LinkedId_EmitsTheirUsernameAsSender()
     {
         await _harness.ReceiveAsync();
         _harness.Enqueue(new Update
         {
             Id = 1,
-            Message = TelegramPollingHarness.TextMessage("just chatting")
+            Message = TelegramPollingHarness.TextMessage("/hello", username: "bob", userId: TelegramPollingHarness.BobId)
+        });
+
+        await _harness.RunAsync();
+
+        _harness.Sent.ShouldBeEmpty();
+        (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Sender.ShouldBe("bob");
+    }
+
+    // A group's chatter is not addressed to the bot: only a command or a forum thread is.
+    [Fact]
+    public async Task ExecuteAsync_GroupMessageWithoutSlashOrThread_IsIgnored()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.GroupMessage("just chatting")
         });
 
         await _harness.RunAsync();
@@ -39,11 +75,47 @@ public class TelegramBotServiceTests : IDisposable
         (await _harness.ReceiveAsync()).ShouldBeEmpty();
     }
 
+    // Everything said in a private chat is said to the bot (user's decision, 2026-11-06): a linked
+    // person's plain words are their turn, as a slash or a thread made them before.
+    [Fact]
+    public async Task ExecuteAsync_PrivateMessageWithoutSlashOrThread_IsATurn()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("hola, ¿qué tal?")
+        });
+
+        await _harness.RunAsync();
+
+        _harness.Sent.ShouldBeEmpty();
+        (await _harness.ReceiveAsync()).ShouldHaveSingleItem().Message!.Content.ShouldBe("hola, ¿qué tal?");
+    }
+
+    // And a stranger's plain words are answered with the ways in, not with silence.
+    [Fact]
+    public async Task ExecuteAsync_StrangersPrivateMessageWithoutSlash_IsShownTheWaysIn()
+    {
+        await _harness.ReceiveAsync();
+        _harness.Enqueue(new Update
+        {
+            Id = 1,
+            Message = TelegramPollingHarness.TextMessage("hola", username: "eve", userId: 3)
+        });
+
+        await _harness.RunAsync();
+
+        _harness.Sent.ShouldHaveSingleItem().Text.ShouldContain("ask an owner of the household for an invite");
+        (await _harness.ReceiveAsync()).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ExecuteAsync_CallbackQuery_RoutesToApprovalRouter()
     {
         var (approvalId, resultTask) =
-            _harness.CallbackRouter.RegisterApproval(TimeSpan.FromSeconds(10), CancellationToken.None);
+            _harness.CallbackRouter.RegisterApproval(
+                TimeSpan.FromSeconds(10), new HashSet<long> { 1 }, CancellationToken.None);
 
         _harness.Enqueue(new Update
         {
@@ -82,7 +154,7 @@ public class TelegramBotServiceTests : IDisposable
     // waiting for a reply. Before that, the same scenario buffered the message and delivered it
     // late on the agent's next reconnect poll (the stable "channel-telegram" subscriber id survives
     // the disconnect). Telegram's own emit path has no way to signal failure back to the sender
-    // (unlike ServiceBus's broker-level abandon/redeliver, or Schedule/Library's durable record),
+    // (unlike Schedule/Library's durable record),
     // so buffering — not dropping — is the correct behavior here: the message must always reach the
     // inbox, regardless of whether anyone is known to be listening right now.
     [Fact]

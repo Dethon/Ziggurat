@@ -84,6 +84,14 @@ internal sealed class AggressiveRetryPolicy : IRetryPolicy
 {
     public TimeSpan? NextRetryDelay(RetryContext retryContext)
     {
+        // The hub's session check answering is not a server to wait for: no retry gets a
+        // signed-out page or a suspended household back in, and every one asks the accounts
+        // service again. Giving up closes the connection, which hands the page to the proxy.
+        if (HubRefusal.Is(retryContext.RetryReason))
+        {
+            return null;
+        }
+
         // First retry is immediate for fast mobile resume; subsequent retries
         // back off slightly to avoid hammering a temporarily unavailable server.
         return retryContext.PreviousRetryCount == 0

@@ -13,5 +13,17 @@ public sealed class MutableAgentCatalog : IMutableAgentCatalog
 
     public bool Exists(string agentId) => _agents.Any(a => a.Id == agentId);
 
-    public void Replace(IReadOnlyList<AgentCatalogEntry> agents) => _agents = [.. agents];
+    private volatile IReadOnlyDictionary<string, IReadOnlyList<PatchableModel>> _lemonade =
+        new Dictionary<string, IReadOnlyList<PatchableModel>>();
+
+    public IReadOnlyList<PatchableModel> LemonadeModelsOf(string householdId) =>
+        _lemonade.GetValueOrDefault(householdId) ?? [];
+
+    public void Replace(
+        IReadOnlyList<AgentCatalogEntry> agents,
+        IReadOnlyDictionary<string, IReadOnlyList<PatchableModel>>? householdLemonadeModels = null)
+    {
+        _agents = [.. agents];
+        _lemonade = householdLemonadeModels ?? new Dictionary<string, IReadOnlyList<PatchableModel>>();
+    }
 }

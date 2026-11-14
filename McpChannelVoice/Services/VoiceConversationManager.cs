@@ -16,10 +16,10 @@ public enum BindingTransfer
 
 // One active conversation per satellite. Each utterance renews a TimeProvider-based
 // idle timer; when it fires, the in-memory mapping is dropped so the next utterance
-// mints a fresh conversation. Persisted Redis history and the WebChat topic are left
+// mints a fresh conversation. The agent's history and the chat client's topic are left
 // intact (the timer only clears local routing state).
 public sealed class VoiceConversationManager(
-    IConversationFactory factory,
+    ITopicMinter topics,
     ReplyTextAccumulator accumulator,
     TimeProvider time,
     TimeSpan lifetime,
@@ -32,15 +32,18 @@ public sealed class VoiceConversationManager(
     private readonly Lock _gate = new();
     private long _generation;
 
-    // firstUtterance only seeds the new conversation's WebChat topic (its InitialPrompt);
-    // the caller still dispatches the utterance itself via the channel using the returned id.
+    // The lock is released across the mint (I/O) and re-acquired with a second existence check. In
+    // practice a satellite's utterances are processed sequentially by its own connection loop, so
+    // concurrent calls for the same satellite don't occur; the double-check is a cheap safeguard
+    // that discards a redundant creation if they ever do.
     //
-    // The lock is released across factory.CreateAsync (I/O) and re-acquired with a second
-    // existence check. In practice a satellite's utterances are processed sequentially by its
-    // own connection loop, so concurrent calls for the same satellite don't occur; the
-    // double-check is a cheap safeguard that discards a redundant creation if they ever do.
+    // The speaker is who opens a conversation, so a minted one waits for them: the agent mints its
+    // topic for whoever the accounts service's assertion of them names — a recognised speaker's own,
+    // the guest's the household's — under the name they go by. A conversation that already exists
+    // never waits, which keeps every later turn's resolution beside the rest of its dispatch.
     public async Task<string> GetOrCreateAsync(
-        SatelliteSession session, string agentId, string firstUtterance, CancellationToken ct)
+        SatelliteSession session, string agentId, CancellationToken ct,
+        Task<(string Sender, string? Assertion)>? speaker = null)
     {
         lock (_gate)
         {
@@ -51,15 +54,9 @@ public sealed class VoiceConversationManager(
             }
         }
 
-        var creation = await factory.CreateAsync(
-            new CreateConversationParams
-            {
-                AgentId = agentId,
-                TopicName = $"{session.Config.Identity} @ {session.Config.Room}",
-                Sender = session.Config.Identity,
-                InitialPrompt = firstUtterance
-            },
-            ct);
+        var (sender, assertion) = speaker is null ? (session.Config.Identity, (string?)null) : await speaker;
+        var minted = await topics.MintAsync(
+            new TopicMintRequest(agentId, $"{session.Config.Identity} @ {session.Config.Room}", sender), assertion, ct);
 
         lock (_gate)
         {
@@ -72,12 +69,12 @@ public sealed class VoiceConversationManager(
             var satelliteId = session.SatelliteId;
             var generation = ++_generation;
             var timer = time.CreateTimer(_ => Expire(satelliteId, generation), null, lifetime, Timeout.InfiniteTimeSpan);
-            _bySatellite[satelliteId] = new Entry(creation.Identity.ConversationId, timer, generation, time.GetTimestamp());
-            _conversationToSatellite[creation.Identity.ConversationId] = satelliteId;
+            _bySatellite[satelliteId] = new Entry(minted.ConversationId, timer, generation, time.GetTimestamp());
+            _conversationToSatellite[minted.ConversationId] = satelliteId;
             logger.LogInformation(
                 "Voice conversation {ConversationId} opened for satellite {Satellite}",
-                creation.Identity.ConversationId, satelliteId);
-            return creation.Identity.ConversationId;
+                minted.ConversationId, satelliteId);
+            return minted.ConversationId;
         }
     }
 

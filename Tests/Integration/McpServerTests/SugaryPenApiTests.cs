@@ -195,4 +195,26 @@ public class SugaryPenApiTests
 
         (await server.Browser().GetAsync("/api/pens")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
+
+    // One person, two phones: one corrects how many days a pen lasts while the other, open on it since
+    // before, corrects its insulin. Each change stands; the same field changed on both is refused.
+    [Fact]
+    public async Task TwoPhonesChangingOnePen_EachChangeStands_AndTheSameFieldIsRefused()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var phone = await server.SignedInAsync();
+        var other = await server.SignedInAsync();
+        var saved = await ReadAsync(await phone.PostAsJsonAsync("/api/pens", Pen()));
+        var url = $"/api/pens/{Text(saved, "id")}";
+        var opened = StaleSheet.Opened(saved, "kind", "insulin", "openedOn", "days");
+
+        (await phone.PutAsJsonAsync(url, StaleSheet.Changed(opened, "days", 30))).StatusCode.ShouldBe(HttpStatusCode.OK);
+        var merged = await ReadAsync(await other.PutAsJsonAsync(url, StaleSheet.Changed(opened, "insulin", "Lyumjev")));
+
+        merged["days"]!.GetValue<int>().ShouldBe(30);
+        Text(merged, "insulin").ShouldBe("Lyumjev");
+        (await other.PutAsJsonAsync(url, StaleSheet.Changed(opened, "days", 21))).StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        (await ListAsync(phone)).Single()!["days"]!.GetValue<int>().ShouldBe(30);
+    }
+
 }

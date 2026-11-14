@@ -230,7 +230,9 @@ public class MergeTests
             throw new InvalidOperationException("No items were produced.");
         }, cts.Token);
 
-        var completed = await Task.WhenAny(readTask, Task.Delay(1000, CancellationToken.None));
+        // A buffering merge waits on an outer stream that never ends, so the read never completes; the
+        // cap only says how long to wait for that hang, and a loaded machine took the read past a second.
+        var completed = await Task.WhenAny(readTask, Task.Delay(TimeSpan.FromSeconds(10), CancellationToken.None));
         completed.ShouldBe(readTask);
 
         (await readTask).ShouldBe(1);

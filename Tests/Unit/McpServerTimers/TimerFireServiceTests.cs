@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs.Voice;
+using Domain.Exceptions;
 using Infrastructure.Timers;
 using McpServerTimers.Services;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -10,6 +11,22 @@ namespace Tests.Unit.McpServerTimers;
 
 public class TimerFireServiceTests
 {
+    private const string Home = "0a1b";
+
+    // Every household's voice server is this one announcer: the loop's part is asking it.
+    private sealed class OneVoice(IInsistentAnnouncer announcer) : IHouseholdVoices
+    {
+        public HouseholdVoice For(string tenantId) => new(announcer, null!, null!);
+    }
+
+    private sealed class NoChannels : IChannelAlerts
+    {
+        public Task<bool> RingAsync(ArmedTimer timer, CancellationToken ct) => Task.FromResult(false);
+
+        public Task<IReadOnlyList<DismissedAlert>> StopAllAsync(string tenantId, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<DismissedAlert>>([]);
+    }
+
     private sealed class RecordingAnnouncer : IInsistentAnnouncer
     {
         private readonly List<AnnounceRequest> _requests = [];
@@ -36,6 +53,107 @@ public class TimerFireServiceTests
         }
     }
 
+    private sealed class RecordingChannels : IChannelAlerts
+    {
+        private readonly List<string> _rung = [];
+        public IReadOnlyList<string> Rung
+        {
+            get { lock (_rung) { return _rung.ToList(); } }
+        }
+
+        public Task<bool> RingAsync(ArmedTimer timer, CancellationToken ct)
+        {
+            lock (_rung)
+            { _rung.Add(timer.Id); }
+            return Task.FromResult(true);
+        }
+
+        public Task<IReadOnlyList<DismissedAlert>> StopAllAsync(string tenantId, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<DismissedAlert>>([]);
+    }
+
+    // A voice server that answers the ring with each satellite's status as given.
+    private sealed class AnsweringAnnouncer(params string[] statuses) : IInsistentAnnouncer
+    {
+        public int Calls;
+
+        public Task<AnnounceResponse> StartAsync(AnnounceRequest request, CancellationToken ct)
+        {
+            Interlocked.Increment(ref Calls);
+            return Task.FromResult(new AnnounceResponse
+            {
+                AnnouncementId = "a1",
+                Satellites = [.. statuses.Select((status, i) => new AnnouncementOutcome { Id = $"sat-{i}", Status = status })]
+            });
+        }
+    }
+
+    // A voice server that cannot be reached at all: a household's kit whose tunnel is not open.
+    private sealed class UnreachableAnnouncer : IInsistentAnnouncer
+    {
+        public int Calls;
+
+        public Task<AnnounceResponse> StartAsync(AnnounceRequest request, CancellationToken ct)
+        {
+            Interlocked.Increment(ref Calls);
+            throw new VoiceHubUnavailableException("The voice hub is unreachable: voice is offline: its tunnel is not open");
+        }
+    }
+
+    private static Task<(RecordingChannels Channels, AnsweringAnnouncer Voice)> FireOneAsync(params string[] statuses) =>
+        FireOneAsync(new AnsweringAnnouncer(statuses), voice => voice.Calls);
+
+    private static async Task<(RecordingChannels Channels, TVoice Voice)> FireOneAsync<TVoice>(TVoice voice, Func<TVoice, int> calls)
+        where TVoice : IInsistentAnnouncer
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var store = new InMemoryTimerStore();
+        var channels = new RecordingChannels();
+        var now = time.GetUtcNow().UtcDateTime;
+        await store.ArmAsync(new ArmedTimer
+        {
+            Id = "pasta", TenantId = Home, Owner = new global::Domain.DTOs.Channel.Account(Home, "nuria"),
+            Target = new AnnounceTarget { Room = "Salón" }, DurationSeconds = 1, CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(1)
+        });
+        var service = new TimerFireService(store, new OneVoice(voice), channels, time, NullLogger<TimerFireService>.Instance);
+        await service.StartAsync(CancellationToken.None);
+        time.Advance(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => calls(voice) == 1, TimeSpan.FromSeconds(5));
+        await Eventually.Settle();
+        await service.StopAsync(CancellationToken.None);
+        return (channels, voice);
+    }
+
+    // The satellite it names is off when it comes due: the voice server takes the ring and says every
+    // target is offline, so nothing would be heard. It rings on its owner's channels instead, as a timer
+    // with no satellite does (user's decision, pass 18: "pasta" in Casa Vidal's Salón rang nowhere).
+    [Fact]
+    public async Task ExecuteAsync_EverySatelliteItNamesOffline_RingsOnItsOwnersChannels()
+    {
+        var (channels, _) = await FireOneAsync(AnnouncementOutcome.Offline);
+
+        channels.Rung.ShouldBe(["pasta"]);
+    }
+
+    // The household's voice server itself is unreachable when it comes due — its kit restarting, the
+    // house without power, the household suspended: nothing would be heard either, so it rings on its
+    // owner's channels too (user's decision, pass 19: "horno" in Casa Vidal's Salón rang nowhere).
+    [Fact]
+    public async Task ExecuteAsync_TheVoiceServerUnreachable_RingsOnItsOwnersChannels()
+    {
+        var (channels, _) = await FireOneAsync(new UnreachableAnnouncer(), voice => voice.Calls);
+
+        channels.Rung.ShouldBe(["pasta"]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ASatelliteItNamesRinging_DoesNotRingOnChannelsToo()
+    {
+        var (channels, _) = await FireOneAsync(AnnouncementOutcome.Started, AnnouncementOutcome.Offline);
+
+        channels.Rung.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task ExecuteAsync_DueTimer_RingsAsInsistentTimerAlert()
     {
@@ -46,13 +164,14 @@ public class TimerFireServiceTests
         await store.ArmAsync(new ArmedTimer
         {
             Id = "pasta",
+            TenantId = Home,
             Text = "pasta is ready",
             Target = new AnnounceTarget { Room = "Kitchen" },
             DurationSeconds = 5,
             CreatedAtUtc = now,
             FiresAtUtc = now.AddSeconds(5)
         });
-        var service = new TimerFireService(store, announcer, time, NullLogger<TimerFireService>.Instance);
+        var service = new TimerFireService(store, new OneVoice(announcer), new NoChannels(), time, NullLogger<TimerFireService>.Instance);
 
         await service.StartAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(4));
@@ -70,7 +189,7 @@ public class TimerFireServiceTests
         request.Insistent!.GapSeconds.ShouldBe(10);
         request.Insistent.MaxRepeats.ShouldBe(12);
         request.Insistent.RampStartPercent.ShouldBe(100); // kitchen timers ring at full volume from round 1
-        (await store.GetAsync("pasta")).ShouldBeNull(); // fire-once
+        (await store.GetAsync(Home, "pasta")).ShouldBeNull(); // fire-once
 
         await service.StopAsync(CancellationToken.None);
     }
@@ -85,12 +204,13 @@ public class TimerFireServiceTests
         await store.ArmAsync(new ArmedTimer
         {
             Id = "pasta",
+            TenantId = Home,
             Target = new AnnounceTarget { Room = "Kitchen" },
             DurationSeconds = 1,
             CreatedAtUtc = now,
             FiresAtUtc = now.AddSeconds(1)
         });
-        var service = new TimerFireService(store, announcer, time, NullLogger<TimerFireService>.Instance);
+        var service = new TimerFireService(store, new OneVoice(announcer), new NoChannels(), time, NullLogger<TimerFireService>.Instance);
 
         await service.StartAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(2));
@@ -109,15 +229,15 @@ public class TimerFireServiceTests
         var now = time.GetUtcNow().UtcDateTime;
         await store.ArmAsync(new ArmedTimer
         {
-            Id = "first", Target = new AnnounceTarget { Room = "Ghost" }, DurationSeconds = 1,
+            Id = "first", TenantId = Home, Target = new AnnounceTarget { Room = "Ghost" }, DurationSeconds = 1,
             CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(1)
         });
         await store.ArmAsync(new ArmedTimer
         {
-            Id = "second", Target = new AnnounceTarget { Room = "Kitchen" }, DurationSeconds = 3,
+            Id = "second", TenantId = Home, Target = new AnnounceTarget { Room = "Kitchen" }, DurationSeconds = 3,
             CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(3)
         });
-        var service = new TimerFireService(store, announcer, time, NullLogger<TimerFireService>.Instance);
+        var service = new TimerFireService(store, new OneVoice(announcer), new NoChannels(), time, NullLogger<TimerFireService>.Instance);
 
         await service.StartAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(2));
@@ -141,15 +261,15 @@ public class TimerFireServiceTests
         var now = time.GetUtcNow().UtcDateTime;
         await store.ArmAsync(new ArmedTimer
         {
-            Id = "first", Target = new AnnounceTarget { Room = "Slow" }, DurationSeconds = 1,
+            Id = "first", TenantId = Home, Target = new AnnounceTarget { Room = "Slow" }, DurationSeconds = 1,
             CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(1)
         });
         await store.ArmAsync(new ArmedTimer
         {
-            Id = "second", Target = new AnnounceTarget { Room = "Kitchen" }, DurationSeconds = 3,
+            Id = "second", TenantId = Home, Target = new AnnounceTarget { Room = "Kitchen" }, DurationSeconds = 3,
             CreatedAtUtc = now, FiresAtUtc = now.AddSeconds(3)
         });
-        var service = new TimerFireService(store, announcer, time, NullLogger<TimerFireService>.Instance);
+        var service = new TimerFireService(store, new OneVoice(announcer), new NoChannels(), time, NullLogger<TimerFireService>.Instance);
 
         await service.StartAsync(CancellationToken.None);
         time.Advance(TimeSpan.FromSeconds(2));

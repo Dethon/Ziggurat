@@ -4,6 +4,7 @@
 @using Domain.DTOs.Metrics.Enums
 @using static Dashboard.Client.Components.PillSelector
 @inject MetricFamilyTable Families
+@inject HouseholdDirectory Directory
 
 <div class="errors-page">
     <MetricControls TStore="ErrorsStore" TState="ErrorsState"
@@ -33,8 +34,8 @@
                     @foreach (var evt in GetSortedEvents(state))
                     {
                         <div class="table-row">
-                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
-                            <span class="svc-badge">@evt.Service</span>
+                            <span>@DashboardTime.Event(evt.Timestamp)</span>
+                            <span class="svc-badge" title="@evt.Service">@_names.ServiceLabel(evt.Service)</span>
                             <span class="err-type tooltip-anchor" tabindex="0">
                                 <span class="err-type-text">@ShortName(evt.ErrorType)</span>
                                 <span class="tooltip-popup">@evt.ErrorType</span>
@@ -56,6 +57,10 @@
 </div>
 
 @code {
+    private HouseholdNames _names = new([], Answered: false);
+
+    protected override async Task OnInitializedAsync() => _names = await Directory.NamesAsync();
+
     private static readonly IReadOnlyList<PillOption> DimensionOptions =
     [
         new("Service", nameof(ErrorDimension.Service)),

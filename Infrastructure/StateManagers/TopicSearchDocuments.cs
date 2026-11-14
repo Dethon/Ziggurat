@@ -18,13 +18,19 @@ internal sealed record TopicSearchHit(long ChatId, string TopicId, double Score)
 // The document carries the topic's own expiry and is refreshed by the same write, so it is purged
 // with the conversation it describes and never outlives it.
 //
+// Each document is its topic's household's: kept under `topicdoc@{tenantId}:{agentId}:{chatId}:{topicId}`
+// and tagged with the household, and every search is filtered by the searcher's, so a search can never
+// answer one household with another's topics. The index is `idx:household-topics` over the `topicdoc@`
+// prefix; the one before households (`idx:topics` over `topicdoc:`) had no household field, and the
+// household migration drops it once it has moved its documents (TopicHouseholds).
+//
 // Every operation degrades to nothing on a Redis without RediSearch. A deployment can run the
 // plain image — the E2E stack does — and an append that threw there would take the conversation
 // down with it over a feature nobody asked that deployment for.
 internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpan expiration)
 {
-    private const string IndexName = "idx:topics";
-    private const string KeyPrefix = "topicdoc:";
+    public const string IndexName = "idx:household-topics";
+    public const string KeyPrefix = "topicdoc@";
 
     // What one conversation contributes to the index. Bounded, because a document that grew with
     // the conversation would make an old chat cost more to keep searchable than to keep.
@@ -59,6 +65,7 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
 
         HashEntry[] entries =
         [
+            new("household", RedisThreadStateStore.HouseholdOf(topic)),
             new("topicId", topic.TopicId),
             new("chatId", topic.ChatId),
             new("agentId", topic.AgentId),
@@ -90,7 +97,7 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
     // is the last hit's score and identity, and the next page starts right below that hit. The
     // range is deliberately both sides of the archive cutoff — search is the way into the archive.
     public async Task<IReadOnlyList<TopicSearchHit>> SearchAsync(
-        string agentId, string spaceSlug, string query, string? cursor, int pageSize)
+        string household, string agentId, IReadOnlyList<string> spaceSlugs, string query, string? cursor, int pageSize)
     {
         var terms = Terms(query);
         if (terms.Length == 0 || !await EnsureIndexAsync())
@@ -100,7 +107,7 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
 
         if (ParseCursor(cursor) is not { } from)
         {
-            return await RunAsync(agentId, spaceSlug, terms, "-inf +inf", pageSize);
+            return await RunAsync(household, agentId, spaceSlugs, terms, "-inf +inf", pageSize);
         }
 
         // The cursor's own score is read again inclusively and cut by hit identity, because the
@@ -108,20 +115,20 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
         // bound loses whatever the page break split off the run.
         var score = from.Score.ToString(CultureInfo.InvariantCulture);
         var tied = AfterCursor(
-            await RunAsync(agentId, spaceSlug, terms, $"{score} {score}", MaxTiedHits),
+            await RunAsync(household, agentId, spaceSlugs, terms, $"{score} {score}", MaxTiedHits),
             from.Member);
 
         var page = tied.Take(pageSize).ToList();
         return page.Count < pageSize
-            ? [.. page, .. await RunAsync(agentId, spaceSlug, terms, $"-inf ({score}", pageSize - page.Count)]
+            ? [.. page, .. await RunAsync(household, agentId, spaceSlugs, terms, $"-inf ({score}", pageSize - page.Count)]
             : page;
     }
 
     private async Task<List<TopicSearchHit>> RunAsync(
-        string agentId, string spaceSlug, string terms, string range, int take)
+        string household, string agentId, IReadOnlyList<string> spaceSlugs, string terms, string range, int take)
     {
         var search = new Query(
-                $"@agentId:{{{Tag(agentId)}}} @space:{{{Tag(spaceSlug)}}} "
+                $"@household:{{{Tag(household)}}} @agentId:{{{Tag(agentId)}}} @space:{{{string.Join(" | ", spaceSlugs.Select(Tag))}}} "
                 + $"@score:[{range}] (@name|text:({terms}))")
             .SetSortBy("score", ascending: false)
             .Limit(0, take)
@@ -171,7 +178,9 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
             : null;
     }
 
-    private async Task<bool> EnsureIndexAsync()
+    // Whether the index can be used, made here if it is missing: the household migration asks after
+    // moving the documents, so a deployment's searches work before any host's first write.
+    public async Task<bool> EnsureIndexAsync()
     {
         switch ((IndexState)Volatile.Read(ref _indexState))
         {
@@ -198,6 +207,7 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
         try
         {
             var schema = new Schema()
+                .AddTagField("household")
                 .AddTagField("agentId")
                 .AddTagField("space")
                 .AddTextField("name")
@@ -250,6 +260,9 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
 
     private static string Tag(string value) => value.Replace("-", "\\-");
 
+    public static string DocumentKey(string household, string agentId, long chatId, string topicId) =>
+        $"{KeyPrefix}{household}:{agentId}:{chatId}:{topicId}";
+
     private static string DocumentKey(TopicMetadata topic) =>
-        $"{KeyPrefix}{topic.AgentId}:{topic.ChatId}:{topic.TopicId}";
+        DocumentKey(RedisThreadStateStore.HouseholdOf(topic), topic.AgentId, topic.ChatId, topic.TopicId);
 }

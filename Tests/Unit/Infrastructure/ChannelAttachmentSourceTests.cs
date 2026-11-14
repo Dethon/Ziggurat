@@ -64,8 +64,26 @@ public class ChannelAttachmentSourceTests
         (await source.FetchAsync("telegram", "7-42/abc", CancellationToken.None)).ShouldBeNull();
     }
 
+    // Two households' servers of one name each keep their own files: a reference is asked of the
+    // connection of the household that took it, never another's of that id.
+    [Fact]
+    public async Task AnAttachment_IsFetchedFromTheConnectionOfTheHouseholdThatTookIt()
+    {
+        var home = new CountingChannel { ChannelId = "voice", Household = ChannelHousehold.Own("home", home: true), Bytes = [1] };
+        var casa = new CountingChannel { ChannelId = "voice", Household = ChannelHousehold.Own("casa", home: false), Bytes = [2] };
+        var source = new ChannelAttachmentSource([home, casa]);
+
+        (await source.FetchAsync("voice", "casa", "7-42/abc", CancellationToken.None)).ShouldBe([2]);
+        (await source.FetchAsync("voice", "home", "7-42/abc", CancellationToken.None)).ShouldBe([1]);
+        (await source.FetchAsync("voice", "elsewhere", "7-42/abc", CancellationToken.None)).ShouldBeNull();
+
+        (home.Fetches, casa.Fetches).ShouldBe((1, 1));
+    }
+
     private sealed class CountingChannel : IChannelConnection
     {
+        public ChannelHousehold Household { get; init; } = ChannelHousehold.Every;
+
         private int _fetches;
 
         public int Fetches => Volatile.Read(ref _fetches);
@@ -74,11 +92,13 @@ public class ChannelAttachmentSourceTests
 
         public TaskCompletionSource? Gate { get; init; }
 
-        public string ChannelId => "signalr";
+        public string ChannelId { get; init; } = "signalr";
 
         public bool AttachOnly => false;
 
         public bool HostsReviewCopies => false;
+
+        public bool IsConnected => true;
 
         public IAsyncEnumerable<ChannelMessage> Messages => AsyncEnumerable.Empty<ChannelMessage>();
 
@@ -99,9 +119,14 @@ public class ChannelAttachmentSourceTests
             string conversationId, AttachmentReference attachment, byte[] bytes, CancellationToken ct) =>
             Task.FromResult(false);
 
-        public Task<ToolApprovalResult> RequestApprovalAsync(
-            string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct) =>
-            Task.FromResult(new ToolApprovalResult());
+        public Task<ToolApprovalResult?> AskApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
+            Task.FromResult<ToolApprovalResult?>(null);
+
+        public Task<ToolApprovalResult?> OfferApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
+            Task.FromResult<ToolApprovalResult?>(null);
+
+        public Task SettleApprovalAsync(string approvalId, ToolApprovalResult result, CancellationToken ct) =>
+            Task.CompletedTask;
 
         public Task NotifyAutoApprovedAsync(
             string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct) =>
@@ -109,7 +134,7 @@ public class ChannelAttachmentSourceTests
 
         public Task<string?> CreateConversationAsync(
             string agentId, string topicName, string sender, string? initialPrompt,
-            string? address, string? existingConversationId, CancellationToken ct) =>
+            string? address, string? existingConversationId, Principal? principal, bool group, CancellationToken ct) =>
             Task.FromResult<string?>(null);
     }
 }

@@ -1,11 +1,15 @@
 using System.Net;
 using System.Net.Sockets;
+using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.FileSystem;
 using Domain.DTOs.Voice;
+using Domain.Security.Signing;
 using Domain.Tools.Timers.Vfs;
 using Infrastructure.Clients.Voice;
 using Infrastructure.Timers;
+using Mcp.Hosting;
 using McpChannelVoice.Services;
 using McpChannelVoice.Services.WyomingProtocol;
 using McpChannelVoice.Settings;
@@ -16,6 +20,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shouldly;
+using Tests.Unit.McpChannelVoice;
 
 namespace Tests.Integration.McpServerTimers;
 
@@ -93,7 +98,7 @@ public class TimerRingE2ETests
         builder.Services.AddSingleton<ReplyTextAccumulator>();
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddSingleton<VoiceConversationManager>(sp => new VoiceConversationManager(
-            Mock.Of<IConversationFactory>(), sp.GetRequiredService<ReplyTextAccumulator>(),
+            new FakeTopicMinter(), sp.GetRequiredService<ReplyTextAccumulator>(),
             sp.GetRequiredService<TimeProvider>(), TimeSpan.FromMinutes(5),
             NullLogger<VoiceConversationManager>.Instance));
         builder.Services.AddSingleton<AnnouncementService>();
@@ -125,13 +130,17 @@ public class TimerRingE2ETests
         using var hubClient = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{apiPort}") };
         var hubClientFactory = new FixedClientFactory(hubClient);
         var store = new InMemoryTimerStore();
-        var fs = new TimerFileSystem(
-            store, timers,
-            new HttpAlertDismisser(hubClientFactory, "secret"),
-            new HttpSatelliteCatalog(hubClientFactory, "secret"));
+        var voices = new HttpHouseholdVoices(hubClientFactory, "secret");
+        var channels = new ChannelAlerts(new ChannelNotificationEmitter(new ChannelInbox(), DeliveryPolicy.GateOnLive));
+        // As the registrar hands the mount every call: as the person the call's token names, whose
+        // household's hub this one is.
+        var fs = (TimerFileSystem)new TimerFileSystem(store, timers, voices, channels).For(new FileSystemCaller(
+            new ConversationContext("nabu", "conv-1", "f1", new ReplyTarget("voice", "conv-1"),
+                Principal: new Principal("voice", "f1", new Account("0a1b", "f1")),
+                Identity: IdentityClaims.Person("f1", "0a1b", "voice", [])),
+            null));
         var fireLoop = new TimerFireService(
-            store, new HttpInsistentAnnouncer(hubClientFactory, "secret"), timers,
-            NullLogger<TimerFireService>.Instance);
+            store, voices, channels, timers, NullLogger<TimerFireService>.Instance);
         await fireLoop.StartAsync(ct);
 
         // Arm through the VFS — CreateAsync resolves {room: Kitchen} against the hub's /satellites.

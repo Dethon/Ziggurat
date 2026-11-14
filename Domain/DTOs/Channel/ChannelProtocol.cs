@@ -28,6 +28,33 @@ public static class ChannelProtocol
     // one party connected to both channels; the message and the history still carry references.
     public const string StoreAttachmentTool = "store_attachment";
 
+    // An approval is its asker's, answered wherever they are (ApprovalRelay). The question is asked
+    // where the turn's delivery anchors (request_approval, carrying the question's own id) and
+    // offered to the asking account on every channel that can reach a person wherever they are; the
+    // first answer wins and every other channel is told it was answered elsewhere. Hidden from the
+    // model like every other channel-protocol tool, and offered only by a channel with a person to
+    // reach: a dual-role server answers no offer, which is how it is never asked one.
+    public const string OfferApprovalTool = "offer_approval";
+    public const string SettleApprovalTool = "settle_approval";
+
+    // An insistent alert for one person — a timer with no satellite to ring on — rung on every
+    // channel that can show one (AlertRelay): offered there, and settled everywhere on the first
+    // dismissal. offer_alert is advertised only by a channel with a person to reach (the chat
+    // client, Telegram); settle_alert also by the server that raised the alert, so it stops holding
+    // it as ringing. Hidden from the model like every other channel-protocol tool.
+    public const string OfferAlertTool = "offer_alert";
+    public const string SettleAlertTool = "settle_alert";
+
+    // What a channel answers an offered alert with when the person dismissed it there. Anything else
+    // — no_answer above, a refusal of the call — is not a dismissal and ends nothing.
+    public const string AlertDismissed = "dismissed";
+
+    // What a channel answers an approval with when nobody answered it there: the question could not
+    // be shown (no live session, no satellite), the person could not be reached, or it was answered
+    // somewhere else first. It is not a refusal — a refusal is the person's, or the asking channel's
+    // own time-out — so it never ends a question another channel may still be showing.
+    public const string NoAnswer = "no_answer";
+
     // How long a channel_receive call may be held open server-side before returning an empty
     // batch. Verified safe: a 45s hold completes on the SDK's default client timeout, and no
     // reverse proxy sits between the agent and a channel server (ChannelEndpoints are
@@ -47,6 +74,27 @@ public static class ChannelProtocol
     // ending in "/". A bare key would share the namespace of progressToken and traceparent,
     // where a later spec revision is free to claim it out from under us.
     public const string ConversationContextMetaKey = "com.herfluffness/conversationContext";
+
+    // _meta key under which every tools/call the agent makes carries its call token for the one
+    // server it is sent to: who the call acts for, signed by the agent. A server acts for whoever the
+    // token names and for nobody the conversation context above merely claims.
+    public const string CallTokenMetaKey = "com.herfluffness/callToken";
+
+    // _meta key under which a call that creates or rewrites something a later turn will act on — a
+    // schedule, a watch, a login handoff — carries the agent's delegation for it, minted for that
+    // call as the person the call acts for. The server stores it with the object and hands it back
+    // with the fire; a write that carries none leaves the object nobody's.
+    public const string DelegationMetaKey = "com.herfluffness/delegation";
+
+    // The agent's own: where the code that makes a write says what it delegates (kind, id, digest),
+    // for the signing transport to sign as whoever the call acts for. Never leaves the agent — the
+    // transport removes it from every call it sends.
+    public const string DelegateMetaKey = "com.herfluffness/delegate";
+
+    // The two tools a server that keeps delegations answers the agent's operator commands with
+    // (IDelegationStore): listed and replaced, never seen by a model.
+    public const string ListDelegationsTool = "delegations_list";
+    public const string ReplaceDelegationTool = "delegations_replace";
 
     // Sender attributed to channel/message notifications the system originates on a user's
     // behalf rather than the user themselves — e.g. the /cancel command and download-completion
@@ -78,4 +126,14 @@ public static class ChannelProtocol
     }
 
     public static T? Deserialize<T>(JsonElement element) => element.Deserialize<T>(SerializerOptions);
+
+    // An approval's answer as a channel spelled it. Underscores are the Telegram keyboard's spelling
+    // of the same words, and "denied" its word for a refusal; anything else unreadable is a refusal,
+    // so a channel's reason for one ("rejected: …") still reads as one.
+    public static ToolApprovalResult? ParseApprovalAnswer(string? text) =>
+        string.IsNullOrWhiteSpace(text) || text == NoAnswer
+            ? null
+            : Enum.TryParse<ToolApprovalResult>(text.Replace("_", ""), ignoreCase: true, out var parsed)
+                ? parsed
+                : ToolApprovalResult.Rejected;
 }

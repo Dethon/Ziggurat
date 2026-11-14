@@ -3,6 +3,7 @@ using Domain.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Mcp.Hosting;
 using McpChannelSignalR.Hubs;
@@ -41,6 +42,7 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
     {
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
@@ -52,21 +54,33 @@ public sealed class ChatHubCapabilityRefusalTests : IDisposable
                 DefaultModelAttachmentKinds: [])
         ]);
 
+        // The household runs jack as the agent registered it, on the same model.
+        var households = new HouseholdSpacesAccounts();
+        households.SavedAgents["home"] = new AgentsSection
+        {
+            Agents = [new HouseholdAgent { Id = "jack", Definition = new AgentDefinition
+            {
+                Id = "jack", Name = "Jack", Model = "text/only", McpServerEndpoints = []
+            } }]
+        };
+
         _hub = new ChatHub(
             _sessionService,
             _streamService,
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             _catalog,
-            threadStore: null!,
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
+            new VouchingAccounts(),
+            households,
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
 
         _sessionService.StartSession(TopicId, "jack", 7, 42, "default", "Chat");

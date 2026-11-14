@@ -12,12 +12,17 @@ namespace Tests.Integration.Clients;
 // been blocked by network security" and every later one read the thread. The browser sees only
 // the shape, so the test builds the shape: the page the browse asked for, then the page's own
 // script landing it on an error the server answers once.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsC)]
 public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture)
 {
+    // The script sends the page on, and the blocker after it holds the parse until the page's follow-up
+    // has been asked for (Challenge): when the browser issues a script's navigation is its own
+    // business, and a busy one issued it after the page looked settled and had been read. Held, the
+    // page cannot look ready before its navigation is in flight, so the browse sees it go.
     private const string ChallengePage =
         "<!DOCTYPE html><html><head><title>Checking</title></head><body><p>One moment.</p>"
-        + "<script>location.replace(location.pathname + '?solution=1');</script></body></html>";
+        + "<script>location.replace(location.pathname + '?solution=1');</script>"
+        + "<script src=\"/challenge-blocker.js\"></script></body></html>";
 
     private const string RealPage =
         "<!DOCTYPE html><html><head><title>The thread</title></head><body><article><h1>The thread</h1>"
@@ -33,12 +38,13 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
 
         var host = $"https://challenge-{Guid.NewGuid():N}.test";
         var refusals = 0;
+        var challenge = new Challenge();
         await fixture.Browser.RouteOnContextAsync($"{host}/**", route =>
-            route.Request.Url.Contains("solution=")
+            challenge.Answer(route, () => route.Request.Url.Contains("solution=")
                 ? Interlocked.Increment(ref refusals) == 1
                     ? FulfillLateAsync(route, 403, BlockPage)
                     : FulfillLateAsync(route, 200, RealPage)
-                : FulfillAsync(route, 200, ChallengePage));
+                : FulfillAsync(route, 200, ChallengePage)));
 
         var sessionId = $"test-{Guid.NewGuid():N}";
         try
@@ -46,9 +52,10 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
             var result = await fixture.Browser.NavigateAsync(
                 new BrowseRequest(sessionId, $"{host}/thread") { Caller = JudgmentCaller.None });
 
-            result.Status.ShouldBe(BrowseStatus.Success, result.ErrorMessage);
-            result.Content.ShouldNotBeNull().ShouldContain("The comments a reader came for");
-            result.HttpStatus.ShouldBe(200);
+            var seen = $"at {result.Url} after {refusals} refusals, {challenge}, {result.Status} {result.HttpStatus}: {result.ErrorMessage}";
+            result.Status.ShouldBe(BrowseStatus.Success, seen);
+            result.Content.ShouldNotBeNull().ShouldContain("The comments a reader came for", customMessage: seen);
+            result.HttpStatus.ShouldBe(200, seen);
         }
         finally
         {
@@ -66,7 +73,8 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
 
         var host = $"https://challenge-{Guid.NewGuid():N}.test";
         var asked = 0;
-        await fixture.Browser.RouteOnContextAsync($"{host}/**", route =>
+        var challenge = new Challenge();
+        await fixture.Browser.RouteOnContextAsync($"{host}/**", route => challenge.Answer(route, () =>
         {
             if (route.Request.Url.Contains("solution="))
             {
@@ -75,7 +83,7 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
 
             Interlocked.Increment(ref asked);
             return FulfillAsync(route, 200, ChallengePage);
-        });
+        }));
 
         var sessionId = $"test-{Guid.NewGuid():N}";
         try
@@ -83,13 +91,52 @@ public class SelfNavigatedErrorBrowseTests(IsolatedSessionBrowserFixture fixture
             var result = await fixture.Browser.NavigateAsync(
                 new BrowseRequest(sessionId, $"{host}/thread") { Caller = JudgmentCaller.None });
 
-            result.HttpStatus.ShouldBe(403);
+            var seen = $"at {result.Url} after {asked} asks, {challenge}, {result.Status}: {result.Content?[..Math.Min(80, result.Content.Length)]}";
+            result.HttpStatus.ShouldBe(403, seen);
             result.Content.ShouldNotBeNull().ShouldContain("You have been blocked");
-            asked.ShouldBe(2);
+            asked.ShouldBe(2, seen);
         }
         finally
         {
             await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
+    // Holds each challenge's blocker until that challenge's follow-up has been asked for, then lets the
+    // parse finish; every other request is answered as the test says.
+    private sealed class Challenge
+    {
+        private int _blockers;
+        private int _followUps;
+        private string _failures = "";
+
+        public override string ToString() =>
+            $"{Volatile.Read(ref _followUps)} follow-ups, {Volatile.Read(ref _blockers)} blockers{_failures}";
+
+        public async Task Answer(IRoute route, Func<Task> otherwise)
+        {
+            if (route.Request.Url.Contains("challenge-blocker.js"))
+            {
+                var mine = Interlocked.Increment(ref _blockers);
+                await Eventually.Until(() => Volatile.Read(ref _followUps) >= mine, "the challenge's follow-up to be asked for");
+                await route.FulfillAsync(new() { Status = 200, ContentType = "text/javascript", Body = "" });
+                return;
+            }
+
+            if (route.Request.Url.Contains("solution="))
+            {
+                Interlocked.Increment(ref _followUps);
+            }
+
+            try
+            {
+                await otherwise();
+            }
+            catch (Exception ex)
+            {
+                _failures += $", answering {route.Request.Url} threw {ex.GetType().Name}: {ex.Message}";
+                throw;
+            }
         }
     }
 

@@ -1,5 +1,7 @@
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
+using Domain.Monitor;
 using Domain.Tools.Sugary.Estimation;
 using McpServerSugary.Channel;
 using McpServerSugary.Clips;
@@ -19,17 +21,18 @@ public static class EstimateEndpoints
 {
     public static void MapEstimateEndpoints(this IEndpointRouteBuilder api)
     {
-        // The session cookie is SameSite=Strict, so a cross-site form post never carries it and an
-        // antiforgery token would add nothing.
+        // The proxy's session cookie is SameSite=Lax, so a cross-site form post never carries it and is
+        // refused before it gets here; and no other origin reads the answer, since nothing here
+        // allows one to.
         api.MapPost("/estimates", EstimateAsync).DisableAntiforgery();
     }
 
-    // The form is read here rather than bound, so the route matches whatever a caller sends and the
-    // cookie gate answers first: a bound form would make a JSON post not match at all, and a phone
-    // that has not signed in would be told the route does not exist.
+    // The form is read here rather than bound, so the route matches whatever a caller sends: a bound
+    // form would make a JSON post not match at all, and be told the route does not exist. Each turn
+    // acts for the person the proxy named, and only they may answer the estimate it opened.
     private static async Task<IResult> EstimateAsync(
-        HttpRequest request, SugaryChannel channel, UploadStore uploads, OpenEstimates estimates,
-        IAgentCatalog catalog, SugarySettings settings, ClipProcessor clips, ILogger<ClipProcessor> logger,
+        HttpRequest request, Person person, SugaryChannel channel, UploadStore uploads, OpenEstimates estimates,
+        HouseholdAgentCatalogue agents, SugarySettings settings, ClipProcessor clips, ILogger<ClipProcessor> logger,
         ILoggerFactory loggers, CancellationToken ct)
     {
         if (!request.HasFormContentType)
@@ -52,7 +55,8 @@ public static class EstimateEndpoints
 
         if (field("conversationId") is { Length: > 0 } conversation)
         {
-            return await FollowUpAsync(conversation, photos, filmed, field, channel, estimates, Log(loggers), ct);
+            return await FollowUpAsync(
+                person, conversation, photos, filmed, field, channel, estimates, Log(loggers), ct);
         }
 
         var description = field("description");
@@ -65,7 +69,8 @@ public static class EstimateEndpoints
         // a turn nor a file, and a model that cannot see photos never answers as if none was sent.
         if ((PhotoUpload.Refusal(photos, settings.Uploads)
              ?? ClipUpload.Refusal(filmed, settings.Uploads)
-             ?? PhotoUpload.ModelRefusal(photos, filmed.Count > 0, catalog.Get(settings.Agent))) is { } refusal)
+             ?? PhotoUpload.ModelRefusal(
+                 photos, filmed.Count > 0, await SugaryAgent.OfAsync(person, agents, settings, Log(loggers), ct))) is { } refusal)
         {
             return Problem(StatusCodes.Status400BadRequest, refusal);
         }
@@ -97,7 +102,7 @@ public static class EstimateEndpoints
         // The photos cross to the agent as references to this store, never as bytes on the turn, so
         // the conversation's history stays the size of its words (ADR-0020).
         var review = ReviewOf(description, photos.Count == 0 && clip is not null);
-        var opened = estimates.Open(review);
+        var opened = estimates.Open(person.Account, review);
         var attachments = (await PhotoUpload.StoreAsync(opened, photos, uploads, ct))
             .Concat(clip is null ? [] : await ClipUpload.StoreAsync(opened, clip, uploads, ct))
             .ToList();
@@ -105,7 +110,9 @@ public static class EstimateEndpoints
             photos.Count, description, field("clarifications"), field("language"), field("counted"),
             Filmed: clip is not null));
         return Answer(
-            await channel.AskAsync(opened, turn, MealEstimateSchema.Format, attachments, patch: null, review, ct),
+            await channel.AskAsync(
+                person.Account, person.Assertion, opened, turn, MealEstimateSchema.Format, attachments, patch: null,
+                review, ct),
             opened, Log(loggers));
     }
 
@@ -113,7 +120,7 @@ public static class EstimateEndpoints
     // still holds with her photos and words; hydration puts the photos back on the way to the model,
     // so they are neither stored nor sent again.
     private static async Task<IResult> FollowUpAsync(
-        string conversation, IReadOnlyList<IFormFile> photos, IReadOnlyList<IFormFile> clips,
+        Person person, string conversation, IReadOnlyList<IFormFile> photos, IReadOnlyList<IFormFile> clips,
         Func<string, string?> field, SugaryChannel channel, OpenEstimates estimates, ILogger log,
         CancellationToken ct)
     {
@@ -125,7 +132,7 @@ public static class EstimateEndpoints
                 : "Answers go without a clip: the estimate already has this meal's clip.");
         }
 
-        if (estimates.TryContinue(conversation) is not { } review)
+        if (estimates.TryContinue(person.Account, conversation) is not { } review)
         {
             return Problem(StatusCodes.Status410Gone,
                 "This estimate is no longer open, so the meal has to be estimated again.");
@@ -133,7 +140,9 @@ public static class EstimateEndpoints
 
         var turn = MealTurn.FollowUp(new MealFollowUp(field("clarifications"), field("counted"), field("language")));
         return Answer(
-            await channel.AskAsync(conversation, turn, MealEstimateSchema.Format, [], patch: null, review, ct),
+            await channel.AskAsync(
+                person.Account, person.Assertion, conversation, turn, MealEstimateSchema.Format, [], patch: null, review,
+                ct),
             conversation, log);
     }
 
@@ -146,6 +155,9 @@ public static class EstimateEndpoints
     private static IResult Answer(TurnReply reply, string conversation, ILogger log) => reply switch
     {
         TurnReply.Answered answered => Read(answered.Text, conversation, log),
+        // A turn the agent refused for the household (Sugary off, its key refused, out of credit) is
+        // forbidden with the refusal's code, which the app says in her language with who can fix it.
+        TurnReply.Failed failed when RefusalAnswers.CodeOf(failed.Reason) is { } code => Problem(StatusCodes.Status403Forbidden, code),
         TurnReply.Failed => Problem(StatusCodes.Status502BadGateway, ""),
         TurnReply.Unanswered => Problem(StatusCodes.Status502BadGateway, "The model returned no answer."),
         TurnReply.NotListening => Problem(StatusCodes.Status502BadGateway,

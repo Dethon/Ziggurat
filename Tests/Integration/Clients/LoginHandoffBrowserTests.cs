@@ -1,0 +1,497 @@
+using System.Net;
+using System.Net.WebSockets;
+using System.Text;
+using Domain.Contracts;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
+using Domain.Judgments;
+using Infrastructure.Clients.Browser;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Playwright;
+using Shouldly;
+using Tests.Integration.Fixtures;
+using Tests.Integration.McpServerTests;
+using static Tests.Integration.McpServerTests.WebIdentityServerHarness;
+
+namespace Tests.Integration.Clients;
+
+// The whole handoff against real Camoufox, driven the way a person's browser drives it: the link,
+// the claim, frames over the socket, clicks and typing back, Done — and then the agent's own
+// `asMe` browse of the site is logged in.
+[Collection(PlaywrightCollections.IsolatedSessionsD)]
+public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, RedisFixture redis)
+    : IClassFixture<RedisFixture>
+{
+    private const string Site = "https://handoff-site.test";
+
+    // The two fields fill the top of the 1920x1080 viewport in known bands, so a click at a
+    // fraction of the frame lands in one: the username across 0-200px, the password 300-500px. The
+    // button is what lets Enter submit a form of two fields.
+    private static Task ServeAsync(IRoute route) => route.FulfillAsync(new RouteFulfillOptions
+    {
+        ContentType = "text/html",
+        Body = new Uri(route.Request.Url).AbsolutePath switch
+        {
+            "/login" =>
+                """
+                <!DOCTYPE html><html><body style="margin:0">
+                <form id="f" onsubmit="event.preventDefault(); document.cookie='session=' + document.getElementById('user').value + '; path=/'; document.body.textContent='welcome'">
+                  <input id="user" aria-label="Username" style="position:absolute;left:0;top:0;width:100%;height:200px;font-size:40px">
+                  <input id="pass" type="password" aria-label="Password" style="position:absolute;left:0;top:300px;width:100%;height:200px;font-size:40px">
+                  <button type="submit" style="position:absolute;left:0;top:600px">Sign in</button>
+                </form></body></html>
+                """,
+            _ => "<!DOCTYPE html><html><body><p id='c'></p><script>document.getElementById('c').textContent='cookies:'+(document.cookie||'none')</script></body></html>"
+        }
+    });
+
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task AHandedOffLogin_IsInheritedByTheNextAsMeBrowse()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        // A person is their account, and its opaque id is what their browser context goes by.
+        var account = new Account("home", Guid.NewGuid().ToString("N"));
+        var person = account.UserId;
+        var telegram = $"tg-{Guid.NewGuid():N}";
+        var conversation = $"conv-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", ServeAsync, person);
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", ServeAsync);
+
+        await using var server = await StartAsync(
+            configure: services =>
+            {
+                services.RemoveAll<IWebBrowser>();
+                services.RemoveAll<IHandoffBrowser>();
+                services.AddSingleton<IWebBrowser>(fixture.Browser);
+                services.AddSingleton<IHandoffBrowser>(fixture.Browser);
+            },
+            settings: s => s with
+            {
+                RedisConnectionString = redis.ConnectionString,
+                Handoff = s.Handoff with { PublicBaseUrl = "https://assistants.test" }
+            });
+        var context = Context(telegram, account, conversation);
+        var sessionId = $"jonas:{conversation}";
+        try
+        {
+            var started = Envelope(await server.CallAsync(
+                "web_login", new Dictionary<string, object?> { ["url"] = $"{Site}/login" }, context));
+            var path = new Uri(started["link"]!.GetValue<string>()).AbsolutePath;
+
+            // Nothing the agent holds reaches the handoff tab: its session has no tab at all.
+            Envelope(await server.CallAsync("web_snapshot", [], context))["errorCode"].ShouldNotBeNull();
+
+            var cookies = new CookieContainer();
+            using var http = new HttpClient(new HttpClientHandler { CookieContainer = cookies })
+            {
+                BaseAddress = new Uri(server.PagesAddress)
+            };
+            (await http.PostAsync($"{path}/claim", null)).EnsureSuccessStatusCode();
+
+            using var socket = new ClientWebSocket();
+            socket.Options.Cookies = cookies;
+            await socket.ConnectAsync(new Uri($"{server.PagesAddress.Replace("http", "ws")}{BrowsePagePath.For(account.TenantId)}/handoff/live"),
+                CancellationToken.None);
+            var buffer = new byte[512 * 1024];
+            var frame = await socket.ReceiveAsync(buffer, CancellationToken.None);
+            frame.MessageType.ShouldBe(WebSocketMessageType.Binary);
+            buffer[0].ShouldBe((byte)0xFF, "a frame is a JPEG");
+
+            async Task SendAsync(string json) => await socket.SendAsync(
+                Encoding.UTF8.GetBytes(json), WebSocketMessageType.Text, true, CancellationToken.None);
+            await SendAsync("""{"type":"mousedown","x":0.5,"y":0.09}""");
+            await SendAsync("""{"type":"mouseup","x":0.5,"y":0.09}""");
+            await SendAsync("""{"type":"text","value":"fran"}""");
+            await SendAsync("""{"type":"mousedown","x":0.5,"y":0.37}""");
+            await SendAsync("""{"type":"mouseup","x":0.5,"y":0.37}""");
+            await SendAsync("""{"type":"text","value":"s3cret"}""");
+            await SendAsync("""{"type":"keydown","key":"Enter"}""");
+            await SendAsync("""{"type":"keyup","key":"Enter"}""");
+
+            // The typing landed once the person's context holds the cookie the form set.
+            var probe = $"probe-{Guid.NewGuid():N}";
+            await Eventually.Until(() => WhoAmI(probe, person).Contains("session=fran"),
+                "the login typed through the view to set its cookie");
+            await fixture.Browser.CloseSessionAsync(probe);
+
+            (await http.PostAsync($"{BrowsePagePath.For(account.TenantId)}/handoff/done",
+                new StringContent("{}", Encoding.UTF8, "application/json"))).StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+            var browse = await server.CallAsync("web_browse",
+                new Dictionary<string, object?> { ["url"] = $"{Site}/whoami", ["asMe"] = true }, context);
+            string.Join("\n", browse.Content.OfType<ModelContextProtocol.Protocol.TextContentBlock>().Select(t => t.Text))
+                .ShouldContain("session=fran");
+
+            var anonymous = await server.CallAsync("web_browse",
+                new Dictionary<string, object?> { ["url"] = $"{Site}/whoami?anon" }, context);
+            string.Join("\n", anonymous.Content.OfType<ModelContextProtocol.Protocol.TextContentBlock>().Select(t => t.Text))
+                .ShouldNotContain("session=fran");
+        }
+        finally
+        {
+            await fixture.Browser.CloseSessionAsync(sessionId);
+        }
+    }
+
+    private string WhoAmI(string sessionId, string person)
+    {
+        var result = fixture.Browser.NavigateAsync(new BrowseRequest(sessionId, $"{Site}/whoami?{Guid.NewGuid():N}")
+        {
+            Caller = JudgmentCaller.None,
+            Person = person
+        }).GetAwaiter().GetResult();
+        return result.Content ?? "";
+    }
+
+    // The view is the page as it is now: what the person types into it shows in the next frames. A
+    // view that sent its first frame and then nothing left a person typing into a picture that never
+    // changed, with no way to tell whether a key had landed.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task TypingIntoTheHandoff_IsSeenInTheFramesThatFollow()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", ServeAsync, person);
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/login");
+        try
+        {
+            var frames = 0;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff, _ =>
+            {
+                Interlocked.Increment(ref frames);
+                return Task.CompletedTask;
+            });
+            await Eventually.Until(() => Volatile.Read(ref frames) > 0, "a frame of the handoff tab");
+            await Eventually.Settle();
+            var settled = Volatile.Read(ref frames);
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseDown(0.5, 0.05));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseUp(0.5, 0.05));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Text("fran"));
+
+            await Eventually.Until(() => Volatile.Read(ref frames) > settled,
+                $"a frame after the typing (frames: {settled} before it)");
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
+    // A phone's view asks for its own size, and the tab is drawn at it: the site's phone layout at a
+    // readable scale, not a desktop page shrunk to a strip — and the view is told where its fields are,
+    // so a tap on one brings up the right keyboard.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task AViewsSize_IsTheSizeTheTabIsDrawnAt_AndItsFieldsAreTold()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", ServeAsync, person);
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/login");
+        try
+        {
+            HandoffFrame? last = null;
+            IReadOnlyList<HandoffField>? fields = null;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff,
+                frame => { Volatile.Write(ref last, frame); return Task.CompletedTask; },
+                told => { Volatile.Write(ref fields, told); return Task.CompletedTask; });
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Resize(390, 700));
+
+            await Eventually.Until(() => Volatile.Read(ref last) is { ViewportWidth: 390, ViewportHeight: 700 },
+                $"a frame drawn at the view's size (last: {Volatile.Read(ref last)?.ViewportWidth}x{Volatile.Read(ref last)?.ViewportHeight})");
+            await Eventually.Until(() => Volatile.Read(ref fields) is { Count: 2 },
+                $"the login form's two fields (told: {Volatile.Read(ref fields)?.Count})");
+            Volatile.Read(ref fields)!.Select(f => f.Kind).ShouldBe(["text", "password"]);
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
+    // Camoufox's screencast draws a page as if it were never scrolled while clicks land where it is: a
+    // login form below the fold was out of sight for good, and once the site scrolled a field into view
+    // every tap landed somewhere else than the picture showed. A scrolled page is shown where it is.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task AScrolledPage_IsShownWhereItIsScrolledTo()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = "<!DOCTYPE html><html><body style='margin:0'><div style='height:2000px;background:#f00'></div><div style='height:2000px;background:#00f'></div></body></html>"
+        }), person);
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/tall");
+        try
+        {
+            HandoffFrame? last = null;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff,
+                frame => { Volatile.Write(ref last, frame); return Task.CompletedTask; });
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Resize(390, 700));
+            await Eventually.Until(() => Volatile.Read(ref last) is { ViewportWidth: 390 }, "a frame at the view's size");
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseMove(0.5, 0.5));
+            foreach (var _ in Enumerable.Range(0, 12))
+            {
+                await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Wheel(0, 400));
+            }
+
+            using var playwright = await Playwright.CreateAsync();
+            await using var chromium = await playwright.Chromium.LaunchAsync();
+            var decoder = await chromium.NewPageAsync();
+            await Eventually.Until(async () => await CentreIsBlueAsync(decoder, Volatile.Read(ref last)!.Jpeg),
+                "a frame of the blue half the page was scrolled to");
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
+    // A login form inside a box of its own that scrolls, on a page that never does: the box scrolled is
+    // what is shown, as the page scrolled is. The screencast sends about twenty frames a second whether
+    // anything moved or not, and each asks for a shot once scrolled: the shots are held to five a second.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task AScrolledBox_IsShownWhereItIsScrolledTo_AndShotsAreHeldToFiveASecond()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = "<!DOCTYPE html><html><body style='margin:0;overflow:hidden'><div style='height:100vh;overflow:auto'>"
+                   + "<div style='height:2000px;background:#f00'></div><div style='height:2000px;background:#00f'></div></div></body></html>"
+        }), person);
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/box");
+        try
+        {
+            HandoffFrame? last = null;
+            var frames = 0;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff, frame =>
+            {
+                Volatile.Write(ref last, frame);
+                Interlocked.Increment(ref frames);
+                return Task.CompletedTask;
+            });
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Resize(390, 700));
+            await Eventually.Until(() => Volatile.Read(ref last) is { ViewportWidth: 390 }, "a frame at the view's size");
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseMove(0.5, 0.5));
+            foreach (var _ in Enumerable.Range(0, 12))
+            {
+                await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Wheel(0, 400));
+            }
+
+            using var playwright = await Playwright.CreateAsync();
+            await using var chromium = await playwright.Chromium.LaunchAsync();
+            var decoder = await chromium.NewPageAsync();
+            await Eventually.Until(async () => await CentreIsBlueAsync(decoder, Volatile.Read(ref last)!.Jpeg),
+                "a frame of the blue half the box was scrolled to");
+
+            var before = Volatile.Read(ref frames);
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            (Volatile.Read(ref frames) - before).ShouldBeLessThanOrEqualTo(12, "a scrolled page's shots in two seconds, at five a second");
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
+    private static async ValueTask<bool> CentreIsBlueAsync(IPage decoder, byte[] jpeg) =>
+        await decoder.EvaluateAsync<bool>(
+            """
+            async data => {
+              const image = new Image();
+              image.src = 'data:image/jpeg;base64,' + data;
+              await image.decode();
+              const canvas = document.createElement('canvas');
+              canvas.width = image.width; canvas.height = image.height;
+              const context = canvas.getContext('2d');
+              context.drawImage(image, 0, 0);
+              const [r, , b] = context.getImageData(image.width / 2, image.height / 2, 1, 1).data;
+              return b > 200 && r < 60;
+            }
+            """, Convert.ToBase64String(jpeg));
+
+    // A phone that comes back from its authenticator app opens a second view before the first one's
+    // socket is noticed gone; the first one's ending must not stop the second's frames.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task ANewerView_KeepsItsFrames_WhenTheOlderOneEnds()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", ServeAsync, person);
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/login");
+        try
+        {
+            var older = await fixture.Browser.StreamHandoffAsync(handoff, _ => Task.CompletedTask);
+            var frames = 0;
+            await using var newer = await fixture.Browser.StreamHandoffAsync(handoff, _ =>
+            {
+                Interlocked.Increment(ref frames);
+                return Task.CompletedTask;
+            });
+            await older.DisposeAsync();
+            await Eventually.Until(() => Volatile.Read(ref frames) > 0, "a frame of the newer view");
+            var before = Volatile.Read(ref frames);
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseDown(0.5, 0.05));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseUp(0.5, 0.05));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Text("fran"));
+
+            await Eventually.Until(() => Volatile.Read(ref frames) > before,
+                $"a frame after the typing, with the older view gone (frames: {before} before it)");
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
+    // A sign-in window the login page opens is what the view shows and types into, and the
+    // handoff knows the hosts it passed through.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task APopupTheHandoffOpens_JoinsTheView_AndTakesTheTyping()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        const string sso = "https://handoff-sso.test";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = $"<!DOCTYPE html><html><body style='margin:0'><button style='position:absolute;left:0;top:0;width:100%;height:400px' onclick=\"window.open('{sso}/signin')\">Sign in with SSO</button></body></html>"
+        }), person);
+        await fixture.Browser.RouteOnContextAsync($"{sso}/**", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = "<!DOCTYPE html><html><body><input id='u' autofocus oninput=\"document.cookie='sso='+this.value+'; path=/'\"></body></html>"
+        }), person);
+
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/start");
+        try
+        {
+            var frames = 0;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff, _ =>
+            {
+                Interlocked.Increment(ref frames);
+                return Task.CompletedTask;
+            });
+            await Eventually.Until(() => Volatile.Read(ref frames) > 0, "a frame of the handoff tab");
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseDown(0.5, 0.1));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseUp(0.5, 0.1));
+            await Eventually.Until(() => fixture.Browser.HandoffVisitedHosts(handoff).Contains("handoff-sso.test"),
+                "the sign-in window to open");
+
+            await Eventually.Until(() =>
+            {
+                fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Text("x")).GetAwaiter().GetResult();
+                return WhoAmIOn(sso, person).Contains("sso=x");
+            }, "typing to land in the sign-in window");
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
+    // Nothing in the browser can answer a passkey — no authenticator, no Bluetooth for a phone — and
+    // Firefox waited out the site's whole timeout for a security key behind a prompt the view never
+    // shows. Refused at once, the site goes on to its other ways of signing in.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task ASitesPasskeyAsk_IsRefusedAtOnce()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body =
+                """
+                <!DOCTYPE html><html><body style="margin:0">
+                <button style="position:absolute;left:0;top:0;width:100%;height:400px">Sign in with a passkey</button>
+                <script>
+                  const c = new Uint8Array(32);
+                  const asked = async (name, ask) => {
+                    const t0 = Date.now();
+                    try { await ask(); document.cookie = name + '=resolved; path=/'; }
+                    catch (e) { document.cookie = name + '=' + e.name + '-' + (Date.now() - t0) + '; path=/'; }
+                  };
+                  document.querySelector('button').onclick = async () => {
+                    await asked('get', () => navigator.credentials.get({ publicKey: { challenge: c, rpId: 'handoff-site.test', timeout: 60000 } }));
+                    await asked('create', () => navigator.credentials.create({ publicKey: {
+                      challenge: c, rp: { id: 'handoff-site.test', name: 'Site' }, user: { id: new Uint8Array(8), name: 'fran', displayName: 'Fran' },
+                      pubKeyCredParams: [{ type: 'public-key', alg: -7 }], timeout: 60000 } }));
+                  };
+                </script></body></html>
+                """
+        }), person);
+
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/login");
+        try
+        {
+            var frames = 0;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff, _ =>
+            {
+                Interlocked.Increment(ref frames);
+                return Task.CompletedTask;
+            });
+            await Eventually.Until(() => Volatile.Read(ref frames) > 0, "a frame of the handoff tab");
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseDown(0.5, 0.1));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseUp(0.5, 0.1));
+
+            var cookies = "";
+            await Eventually.Until(() => (cookies = WhoAmIOn(Site, person)).Contains("create="),
+                $"both asks to be answered (cookies: {cookies})");
+            var answers = cookies.Split(';', ':').Select(c => c.Trim()).Where(c => c.StartsWith("get=") || c.StartsWith("create="))
+                .ToDictionary(c => c[..c.IndexOf('=')], c => c[(c.IndexOf('=') + 1)..]);
+            foreach (var (ask, answer) in answers)
+            {
+                answer.ShouldStartWith("NotAllowedError-", customMessage: ask);
+                int.Parse(answer["NotAllowedError-".Length..]).ShouldBeLessThan(3000, ask);
+            }
+
+            answers.Keys.ShouldBe(["get", "create"], ignoreOrder: true);
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
+    private string WhoAmIOn(string site, string person)
+    {
+        fixture.Browser.RouteOnContextAsync($"{site}/whoami*", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = "<!DOCTYPE html><html><body><p id='c'></p><script>document.getElementById('c').textContent='cookies:'+(document.cookie||'none')</script></body></html>"
+        }), person).GetAwaiter().GetResult();
+        var result = fixture.Browser.NavigateAsync(new BrowseRequest($"probe-{Guid.NewGuid():N}", $"{site}/whoami?{Guid.NewGuid():N}")
+        {
+            Caller = JudgmentCaller.None,
+            Person = person
+        }).GetAwaiter().GetResult();
+        return result.Content ?? "";
+    }
+}

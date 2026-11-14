@@ -13,25 +13,25 @@ internal static class McpFileSystemDiscovery
     private const string ResourcePrefix = "filesystem://";
 
     // Answers the mount names it refused, because a shadowed mount is the one way a filesystem can
-    // be perfectly valid and simply not there — and the machine serving it has no way to find that
-    // out for itself.
+    // be perfectly valid and simply not there.
     public static async Task<IReadOnlyList<string>> DiscoverAndMountAsync(
         IReadOnlyList<McpClient> clients,
         IReadOnlySet<McpClient> dynamicClients,
         VirtualFileSystemRegistry registry,
         ILogger logger,
-        CancellationToken ct)
+        CancellationToken ct,
+        TimeZoneInfo? localZone = null)
     {
         var perClient = await Task.WhenAll(clients
             .Where(c => c.ServerCapabilities.Resources is not null)
             .Select(async client => (
-                Mounts: await GatherMountsAsync(client, logger, ct),
+                Mounts: await GatherMountsAsync(client, logger, localZone, ct),
                 Registered: dynamicClients.Contains(client))));
 
         // In the order the endpoints were dialled. A mount point already taken is a collision the
         // newcomer loses: it is shadowed, the existing mount is untouched, and the fact is logged,
-        // because at the machine this looks exactly like a registration that worked and a mount
-        // that never appeared. Outposts publish machine addresses, so the newcomer that loses is a
+        // because at the machine this looks exactly like a tunnel that opened and a mount that
+        // never appeared. Outposts publish machine addresses, so the newcomer that loses is a
         // machine whose name another machine already has.
         var shadowed = new List<string>();
         foreach (var (mount, backend, registered) in perClient
@@ -39,17 +39,15 @@ internal static class McpFileSystemDiscovery
         {
             // What keeps a machine apart from the deployment's mounts — never served into a sandbox
             // command, listed as a machine — reads its address, and the address is the machine's
-            // own word. Who registered the endpoint is this hub's own knowledge: a mount from a
-            // registered endpoint that is not at a machine address (an outpost binary from before
-            // `outpost:`) would pass for a deployment mount, so it is not mounted. Answered with
-            // the shadowed, which is the one verdict that tells its operator it is not there.
+            // own word. Which endpoints are machines is this hub's own knowledge (an outpost's
+            // tunnel): a mount from one that is not at a machine address would pass for a
+            // deployment mount, so it is not mounted, and is answered with the shadowed.
             if (registered && !OutpostMountPoint.Addresses(mount.MountPoint))
             {
                 shadowed.Add(mount.Name);
                 logger.LogWarning(
-                    "Filesystem '{Name}' was registered by a machine but publishes '{MountPoint}', which "
-                    + "is not a machine address ({Scheme}<name>), so it was not mounted; the outpost "
-                    + "binary on that machine predates the address and needs updating",
+                    "Filesystem '{Name}' is served by an outpost but publishes '{MountPoint}', which "
+                    + "is not a machine address ({Scheme}<name>), so it was not mounted",
                     mount.Name, mount.MountPoint, OutpostMountPoint.Scheme);
                 continue;
             }
@@ -72,7 +70,7 @@ internal static class McpFileSystemDiscovery
     }
 
     private static async Task<IReadOnlyList<(FileSystemMount Mount, McpFileSystemBackend Backend)>> GatherMountsAsync(
-        McpClient client, ILogger logger, CancellationToken ct)
+        McpClient client, ILogger logger, TimeZoneInfo? localZone, CancellationToken ct)
     {
         var resources = await client.ListResourcesAsync(cancellationToken: ct);
         var filesystemResources = resources
@@ -108,7 +106,7 @@ internal static class McpFileSystemDiscovery
                     return ((FileSystemMount Mount, McpFileSystemBackend Backend)?)null;
                 }
 
-                var backend = new McpFileSystemBackend(client, mount.Name, advertised, logger);
+                var backend = new McpFileSystemBackend(client, mount.Name, advertised, logger, localZone);
                 return (mount, backend);
             }
             catch (Exception ex)

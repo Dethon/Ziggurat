@@ -1,0 +1,46 @@
+@using Domain.Tools.Sugary.Estimation
+
+@code {
+    [Parameter] public MealEstimate Estimate { get; set; } = null!;
+
+    // Whole grams, rounded as the app rounds them, so the review copy says what the app said.
+    private static double Whole(double value) => Math.Round(value);
+
+    private static string Grams(double value) => $"{Whole(value)} g";
+
+    private static string Range(Interval interval) =>
+        Whole(interval.Low) == Whole(interval.High) ? Grams(interval.Best) : $"{Whole(interval.Low)}–{Whole(interval.High)} g";
+}
+
+@* A Sugary estimate in a review copy, as the app shows it: the meal's carbs, then what is on the plate
+   and what the estimator asked. *@
+<div class="meal-estimate">
+    <p class="meal-estimate-total">
+        <strong>@Range(Estimate.Total)</strong> of carbs, best guess @Grams(Estimate.Total.Best)
+    </p>
+    @if (Estimate.Items.Count > 0)
+    {
+        <ul class="meal-estimate-items">
+            @foreach (var item in Estimate.Items)
+            {
+                <li>
+                    <span class="meal-estimate-item">@item.Name</span>
+                    <span class="meal-estimate-portion">@item.Portion</span>
+                    <span class="meal-estimate-carbs">@Range(item.Carbs)</span>
+                    @if (item.Note is { } note)
+                    {
+                        <span class="meal-estimate-note">@note</span>
+                    }
+                </li>
+            }
+        </ul>
+    }
+    @foreach (var question in Estimate.Questions)
+    {
+        <p class="meal-estimate-question">@question.Text <span>(@string.Join(" / ", question.Options))</span></p>
+    }
+    @foreach (var note in Estimate.Notes)
+    {
+        <p class="meal-estimate-note">@note</p>
+    }
+</div>

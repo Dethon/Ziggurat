@@ -41,6 +41,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
     private readonly DataLoadEffect _dataLoad;
     private readonly RecordingMetricsCatchUp _catchUp;
     private readonly MetricsLiveConnection _liveConnection;
+    private readonly RecordingSignIn _signIn = new();
 
     public MetricsLiveConnectionTests()
     {
@@ -55,7 +56,7 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _catchUp = new RecordingMetricsCatchUp(new MetricsCatchUp(_families, overview));
         _liveConnection = new MetricsLiveConnection(
             _hub, binder, _connectionStore, _catchUp, _dataLoad, _time,
-            NullLogger<MetricsLiveConnection>.Instance);
+            NullLogger<MetricsLiveConnection>.Instance, _signIn);
     }
 
     public async ValueTask DisposeAsync()
@@ -117,6 +118,29 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connecting);
         _hub.StartGate.SetResult();
         await FinishAsync(connecting);
+    }
+
+    // The proxy refused the hub because nobody is signed in — a session that ran out, or an installed
+    // dashboard opened signed out. Retrying would knock forever ("Connecting" for good, as an upgraded
+    // operator's installed dashboard showed); the page is sent to be opened again, which the proxy
+    // answers with sign-in, once.
+    [Fact]
+    public async Task ConnectAsync_TheHubRefusesASignedOutPage_SendsItToSignInOnceAndStopsKnocking()
+    {
+        _hub.SignedOut = true;
+
+        await ConnectAsync();
+
+        _signIn.Sent.ShouldBe(1);
+        _hub.StartAttempts.ShouldBe(1);
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connecting);
+    }
+
+    private sealed class RecordingSignIn : global::Dashboard.Client.Contracts.ISignIn
+    {
+        public int Sent { get; private set; }
+
+        public void SendToSignIn() => Sent++;
     }
 
     // A dashboard opened while the agent is still starting: nobody up the stack retries, and the
@@ -484,6 +508,22 @@ public sealed class MetricsLiveConnectionTests : IAsyncDisposable
         await reconnected;
 
         _healthStore.State.Services.ShouldContain(s => s.Service == "agent" && s.IsHealthy);
+    }
+
+    // Two households' voice servers beat under one service name; a tile is the service of one of
+    // them, so the second push is a second tile rather than the first one repainted.
+    [Fact]
+    public async Task HealthPushes_OfOneServiceFromTwoHouseholds_AreTwoTiles()
+    {
+        await ConnectAsync();
+        var at = new DateTimeOffset(2026, 3, 24, 12, 0, 0, TimeSpan.Zero);
+
+        await _hub.RaiseAsync("OnHealthUpdate", new ServiceHealthUpdate("mcp-channel-voice", true, at, "home"));
+        await _hub.RaiseAsync("OnHealthUpdate", new ServiceHealthUpdate("mcp-channel-voice", false, at, "other"));
+
+        _healthStore.State.Services.Where(s => s.Service == "mcp-channel-voice")
+            .Select(s => (s.Household, s.IsHealthy))
+            .ShouldBe([("home", true), ("other", false)], ignoreOrder: true);
     }
 
     // A close with no Reconnecting before it: the server disallowed automatic reconnect, or the

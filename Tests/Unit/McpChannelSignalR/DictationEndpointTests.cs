@@ -85,6 +85,21 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         transcript!.Text.ShouldBe("pon el temporizador");
     }
 
+    // The recording is heard by the shared Lemonade for the household of whoever asked for its
+    // ticket, which is where the hub's verified connection is known; the upload itself carries
+    // nothing but the ticket.
+    [Fact]
+    public async Task ARecording_IsTranscribedForTheHouseholdOfWhoeverAskedForItsTicket()
+    {
+        _transcriber.Result = new() { Text = "hola" };
+        var ticket = _tickets.MintDictation(Space, "household-home");
+
+        await PostAsync(ticket.Token, Space, Wav(1024));
+
+        _transcriber.Requests.ShouldHaveSingleItem().TenantId.ShouldBe("household-home");
+        _metrics.Published.OfType<VoiceEvent>().ShouldAllBe(e => e.TenantId == "household-home");
+    }
+
     // A dictation produces composer text, so it must not force a conversation into existence the
     // way picking a file does, and it must not spend one of a message's attachment slots.
     [Fact]
@@ -96,7 +111,7 @@ public sealed class DictationEndpointTests : IAsyncLifetime
         await PostAsync(ticket.Token, Space, Wav(1024));
 
         Directory.Exists(_root).ShouldBeFalse();
-        _tickets.MintUpload("topic-1", new ConversationIdentity(7, 42), Space).Token.ShouldNotBeNullOrWhiteSpace();
+        _tickets.MintUpload("topic-1", "jonas", new ConversationIdentity(7, 42), Space).Token.ShouldNotBeNullOrWhiteSpace();
     }
 
     // Every other refusal here answers in words, and the browser puts whatever the server said in

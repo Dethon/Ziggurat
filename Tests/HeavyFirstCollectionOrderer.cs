@@ -19,15 +19,50 @@ public class HeavyFirstCollectionOrderer : ITestCollectionOrderer
     // order, which is what xUnit would have done with all of them.
     private static readonly string[] _bootsSomething =
     [
+        // The classes that wait on a real model come first, by name: their time is the provider's
+        // and costs the machine almost nothing, but each is a serial chain of turns, and one offered
+        // its thread late ends the run — McpAgentFileSystemTests started at 77 s and finished at 124.
+        // Prefixes would not do: "McpAgent" matched fourteen classes, most of them quick unit tests,
+        // and pushed these past the threads that start at once.
+        "McpAgentFileSystemTests",
+        "McpAgentTests",
+        "McpAgentMultiFileSystemTests",
+        "McpAgentReasoningTests",
+        "MemoryExtractionResponseFormatTests",
+        "MemoryProfileSynthesisResponseFormatTests",
+        "MemoryConsolidationResponseFormatTests",
+        "SubAgentTests",
+        "ThreadSessionTests",
+        "ToolApprovalChatClientTests",
+        "OpenRouterToolCallingWithReasoningTests",
         "WebChatE2E.",
-        "Lemonade",
+        // Every Camoufox collection — the shared chain, the timing pair and the isolated lanes —
+        // waits on a browser container before its first test, and the class pinning a fingerprint
+        // launches two of its own.
+        "Playwright",
+        "CamoufoxFingerprintPinTests",
+        // Longer chains before shorter ones: there are more of these than threads, and a chain of
+        // half a minute offered its thread late is what the run then ends on (EvalWebTests started
+        // at 54 s behind the short model classes below and finished at 100).
+        "EvalWebTests",
+        "SugaryClip",
         "DashboardE2E",
-        "PlaywrightWebBrowserIntegration",
+        "DashboardAdminE2E",
+        // The Lemonade container's chain by name: "Lemonade" matches nineteen classes.
+        "LemonadeEntrypointConfigTests",
+        // The longest classes that start nothing but their own in-process servers: a class is
+        // serialised, so its sum is its length.
+        "McpWebBrowseAsMeTests",
         // Home Assistant cold-starts on a freshly seeded /config and does not serve its API until
         // the integration loader has run — seconds on an idle machine, but it was being offered a
         // thread behind every unit test and then racing a three-minute readiness cap against a
         // daemon busy starting everything else. It boots something, so it belongs here.
         "HomeAssistantClientTests",
+        // The integration classes that otherwise start last and end the run.
+        "HouseholdMigrationCommandTests",
+        "SugaryPeopleApiTests",
+        "HouseholdChannelServersTests",
+        "Lemonade",
     ];
 
     public IEnumerable<ITestCollection> OrderTestCollections(IEnumerable<ITestCollection> testCollections) =>

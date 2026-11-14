@@ -135,8 +135,18 @@ internal class MemoryDisk(string name, IDictionary<string, string> files, string
 
     public override string DescribeMount => $"In-memory {name}.";
 
+    // How often each kind of read reached the mount, for a test that pins what a walk costs it.
+    private int _infos, _globs, _reads;
+
+    public int Infos => _infos;
+
+    public int Globs => _globs;
+
+    public int Reads => _reads;
+
     public override Task<FsResult<FsInfoResult>> InfoAsync(string path, CancellationToken ct)
     {
+        Interlocked.Increment(ref _infos);
         var key = path.Trim('/');
         var isDir = Files.Keys.Any(k => k.StartsWith(key + "/", StringComparison.Ordinal));
         return Task.FromResult<FsResult<FsInfoResult>>(new FsResult<FsInfoResult>.Ok(
@@ -147,6 +157,7 @@ internal class MemoryDisk(string name, IDictionary<string, string> files, string
 
     public override Task<FsResult<FsGlobResult>> GlobAsync(string basePath, string pattern, CancellationToken ct)
     {
+        Interlocked.Increment(ref _globs);
         var prefix = basePath.Trim('/') is { Length: > 0 } b ? b + "/" : "";
         var entries = Files.Keys
             .Where(k => k.StartsWith(prefix, StringComparison.Ordinal))
@@ -162,6 +173,7 @@ internal class MemoryDisk(string name, IDictionary<string, string> files, string
         string path, [EnumeratorCancellation] CancellationToken ct)
     {
         await Task.CompletedTask;
+        Interlocked.Increment(ref _reads);
         if (!Files.TryGetValue(path.Trim('/'), out var content))
         {
             throw new FileSystemOperationException(new global::Domain.Tools.ToolErrorResult

@@ -34,11 +34,43 @@ public class ThreadSessionToolFilterTests
     }
 
     [Fact]
+    public void FilterMcpTools_AWithheldTool_IsRemoved_AndItsServersOtherToolsStay()
+    {
+        AITool[] tools =
+        [
+            Tool("mcp__mcp-websearch__web_browse"),
+            Tool("mcp__mcp-websearch__web_login"),
+            Tool("mcp__mcp-websearch__web_action")
+        ];
+
+        var result = ThreadSessionBuilder.FilterMcpTools(tools, filesystemToolsActive: false, withheld: new HashSet<string> { "web_login" });
+
+        result.Select(t => t.Name).ShouldBe(["mcp__mcp-websearch__web_browse", "mcp__mcp-websearch__web_action"]);
+    }
+
+    [Fact]
     public void FilterMcpTools_ChannelReceiveTool_IsAlwaysRemoved()
     {
         AITool[] tools =
         [
             Tool($"mcp__mcp-scheduling__{ChannelProtocol.ReceiveTool}"),
+            Tool("mcp__mcp-websearch__web_browse")
+        ];
+
+        var result = ThreadSessionBuilder.FilterMcpTools(tools, filesystemToolsActive: false);
+
+        result.Select(t => t.Name).ShouldBe(["mcp__mcp-websearch__web_browse"]);
+    }
+
+    // The operator commands' tools sit on the same /mcp as a schedule's or a watch's files; a model
+    // offered them could list whose delegations the house keeps.
+    [Fact]
+    public void FilterMcpTools_DelegationStoreTools_AreAlwaysRemoved()
+    {
+        AITool[] tools =
+        [
+            Tool($"mcp__mcp-scheduling__{ChannelProtocol.ListDelegationsTool}"),
+            Tool($"mcp__mcp-homeassistant__{ChannelProtocol.ReplaceDelegationTool}"),
             Tool("mcp__mcp-websearch__web_browse")
         ];
 
@@ -54,6 +86,8 @@ public class ThreadSessionToolFilterTests
         [
             Tool("mcp__mcp-scheduling__send_reply"),
             Tool("mcp__mcp-scheduling__request_approval"),
+            Tool("mcp__mcp-telegram__offer_approval"),
+            Tool("mcp__mcp-telegram__settle_approval"),
             Tool("mcp__mcp-scheduling__register_agents"),
             Tool("mcp__mcp-scheduling__create_conversation"),
             Tool("mcp__mcp-scheduling__fs_glob")

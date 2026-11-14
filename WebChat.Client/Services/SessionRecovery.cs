@@ -1,23 +1,19 @@
 using WebChat.Client.Contracts;
 using WebChat.Client.State.Space;
-using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.Services;
 
 public sealed class SessionRecovery(
-    IChatSessionService sessionService,
     ITopicService topicService,
     IPushSubscriptionService pushSubscriptionService,
-    UserIdentityStore userIdentityStore,
     SpaceStore spaceStore) : ISessionRecovery
 {
-    public Task RecoverAsync()
-    {
-        var registerTask = RegisterUserAsync();
-        var joinTask = topicService.JoinSpaceAsync(spaceStore.State.CurrentSlug);
-
-        return Task.WhenAll(registerTask, joinTask, ResubscribePushAsync());
-    }
+    // A connection that comes back is a new one to the hub, which knows who it is from the proxy's
+    // headers as it arrives; what it does not know is the space this page is in, or where to push.
+    public Task RecoverAsync() =>
+        Task.WhenAll(
+            topicService.JoinSpaceAsync(spaceStore.State.CurrentSlug),
+            ResubscribePushAsync());
 
     // Re-sends the existing push subscription without force-refreshing the push channel.
     // A full resubscribe would generate a new endpoint in Chrome and lose the space
@@ -32,11 +28,5 @@ public sealed class SessionRecovery(
         {
             // Best-effort — a browser that has dropped its subscription must not fail recovery
         }
-    }
-
-    private Task RegisterUserAsync()
-    {
-        var userId = userIdentityStore.State.SelectedUserId;
-        return string.IsNullOrEmpty(userId) ? Task.CompletedTask : sessionService.RegisterUserAsync(userId);
     }
 }

@@ -1,158 +1,81 @@
 using Domain.Contracts;
-using Domain.DTOs;
 using Domain.Outposts;
+using Domain.Security;
 using Domain.Tools;
-using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Agents;
 
-// Everything an agent needs to reach the machines that registered themselves: where to ask which
-// ones are live, and what to present when dialling one. They travel together because neither is
-// any use without the other — a registration nobody may dial is a mount that cannot be reached.
-public sealed record OutpostAccess(IOutpostRegistry Registry, string SharedSecret);
-
-// What one session build was given, and which of those endpoints were machines. The registrations
-// are kept whole because the verdict written back afterwards is per outpost and only for a machine
-// whose own dial survived — the endpoint address is what ties a registration to its dial, since a
-// mount name proves nothing: the deployment's own filesystem can hold the same one.
+// What one session build was given, and which of those endpoints were machines.
 internal sealed record ComposedEndpoints(
     IReadOnlyList<McpServerEndpoint> Endpoints,
-    IReadOnlyList<OutpostRegistration> Outposts);
+    IReadOnlyList<LiveOutpost> Outposts)
+{
+    // The same machines on the same openings of their tunnels, in the same (name) order: a machine
+    // that opened, closed or reopened since makes a session built from the other a stale one.
+    public bool ReachesTheSameMachinesAs(ComposedEndpoints other) => ServerState.Same(Machines, other.Machines);
 
-// Live outposts joining an agent's endpoint list, asked for at the moment a session is built.
+    private IReadOnlyList<ServerState> Machines =>
+        [.. Outposts.Select(o => new ServerState(o.Name, Online: true, o.Endpoint.Generation))];
+}
+
+// The household's live outposts joining an agent's endpoint list, asked for at the moment a session
+// is built.
 //
 // Asked then rather than when the agent is created, because an agent outlives many sessions and an
-// outpost outlives none: a registration takes effect at the next session build and an expiry
-// likewise, and nothing ever mutates a session that already exists. That is the same rule ADR-0012
-// sets for a channel server's tool set, for the same reason.
+// outpost's tunnel outlives none: asked at every turn's start, a machine whose tunnel opened, closed
+// or reopened since the last turn makes that turn build a new session (ReachesTheSameMachinesAs), and
+// nothing ever mutates a session that already exists.
+// That is the same rule ADR-0012 sets for a channel server's tool set, for the same reason.
 //
-// Configured endpoints stay first and outposts follow in the order the registry lists them. Mount
-// order is what decides a name collision — the existing mount always wins — and since an outpost is
-// addressed as a machine rather than as a path in the deployment's tree, the collision it can lose
-// is to another machine of the same name, decided by that order rather than by whichever dial
-// happened to finish first.
+// Configured endpoints stay first and outposts follow in name order. Mount order is what decides a
+// name collision — the existing mount always wins — and since an outpost is addressed as a machine
+// rather than as a path in the deployment's tree, and a household holds one tunnel per server name,
+// the collision it can lose is to a definition naming its tunnel's server outright, which is skipped
+// here rather than dialled twice.
 internal static class OutpostEndpoints
 {
-    public static async Task<ComposedEndpoints> ComposeAsync(
+    public static ComposedEndpoints Compose(
         IReadOnlyList<McpServerEndpoint> configured,
-        OutpostAccess? outposts,
+        IOutposts? outposts,
         bool usesOutposts,
-        ILogger? logger,
-        CancellationToken ct)
+        string? tenantId)
     {
-        var registry = outposts?.Registry;
         // Nothing is opted in by default. An agent that exists to search for downloads has no
         // business reaching somebody's laptop, and a new machine appearing on the network must not
         // silently widen what any agent can touch.
-        if (!usesOutposts || registry is null)
+        if (!usesOutposts || outposts is null)
         {
             return new ComposedEndpoints(configured, []);
         }
 
-        try
-        {
-            var live = await registry.ListAsync(ct);
-            return live.Count == 0
-                ? new ComposedEndpoints(configured, [])
-                : new ComposedEndpoints(
-                    [
-                        .. configured,
-                        .. live.Select(outpost =>
-                            McpServerEndpoint.Dynamic(outpost.Endpoint, outposts!.SharedSecret))
-                    ],
-                    live);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // The registry being unreachable costs this session its outposts and nothing else: a
-            // turn that could still be answered from the deployment's own filesystems must not
-            // fail because a machine's registration could not be looked up.
-            logger?.LogWarning(ex,
-                "Live outposts could not be read, so this session is built from configured endpoints alone");
-            return new ComposedEndpoints(configured, []);
-        }
+        var named = configured.Select(e => e.Server).OfType<ServerAddress>().ToHashSet();
+        var live = outposts.Live(tenantId).Where(o => o.Endpoint.Server is not { } server || !named.Contains(server)).ToList();
+        return new ComposedEndpoints([.. configured, .. live.Select(o => o.Endpoint)], live);
     }
 
-    // What the build made of each machine, written back onto its registration. This is the only
-    // moment it can be known: a mount name lives inside a server's own filesystem resource, so the
-    // collision is discovered here, long after the registration succeeded and nowhere the machine
-    // can see. The next keepalive carries it home.
+    // A machine whose tunnel was open and which did not answer, told to the registry that will be asked
+    // about it by name. The open tunnel is the evidence it is a real thing rather than a typo, and the
+    // failed dial is the evidence it is not here now — which together are the one absence worth trying
+    // again.
     //
-    // Only the outposts this session was given are written, and only where the build reached a
-    // decision about one: the machine's own dial produced a client, and its mount then happened or
-    // was shadowed. An outpost that could not be dialled is left as it was, because "the hub could
-    // not reach you" is not a verdict on a mount and calling it shadowed would name the wrong
-    // problem — and its name alone proves nothing, since a configured mount holding the same name
-    // would otherwise vouch for a machine the build never reached.
-    //
-    // A build that does not record — a subagent's — mounts the same machines and leaves their
-    // registrations exactly as it found them. The verdict answers "did the agent you registered
-    // with mount you", and a delegated task is not that agent.
-    public static async Task RecordVerdictsAsync(
-        OutpostAccess? access,
-        bool recordsVerdicts,
-        IReadOnlyList<OutpostRegistration> outposts,
-        IReadOnlyList<string> mounted,
-        IReadOnlyList<string> shadowed,
-        IReadOnlyList<string> dialled,
-        ILogger? logger,
-        CancellationToken ct)
-    {
-        if (!recordsVerdicts || access?.Registry is not { } registry || outposts.Count == 0)
-        {
-            return;
-        }
-
-        try
-        {
-            await Task.WhenAll(outposts
-                .Select(outpost => (outpost.Name, Verdict: Verdict(outpost, mounted, shadowed, dialled)))
-                .Where(v => v.Verdict is not null)
-                .Select(v => registry.RecordVerdictAsync(v.Name, v.Verdict!.Value, ct)));
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // The verdict is feedback, not function. A session that built must not fail because
-            // the machine it built from cannot be told about it.
-            logger?.LogWarning(ex, "The mount verdicts for this session could not be recorded");
-        }
-    }
-
-    // A machine that registered and did not answer, told to the registry that will be asked about it
-    // by name. The registration is the evidence it is a real thing rather than a typo, and the dial
-    // is the evidence it is not here now — which together are the one absence worth trying again.
-    //
-    // Judged by the endpoint address rather than the name, for the same reason the verdict is: a
-    // configured mount can hold the same name and would otherwise vouch for a machine nobody reached.
+    // Judged by the server each dial reached rather than by the mount name, because a configured
+    // mount can hold the same name and would otherwise vouch for a machine nobody reached.
     public static void DeclareUnreachable(
         IVirtualFileSystemRegistry? registry,
-        IReadOnlyList<OutpostRegistration> outposts,
-        IReadOnlyList<string> dialled)
+        IReadOnlyList<LiveOutpost> outposts,
+        IReadOnlyList<ServerAddress> dialled)
     {
         if (registry is null)
         {
             return;
         }
 
-        foreach (var outpost in outposts.Where(o => !dialled.Contains(o.Endpoint, StringComparer.Ordinal)))
+        foreach (var outpost in outposts.Where(o => o.Endpoint.Server is not { } server || !dialled.Contains(server)))
         {
             registry.DeclareAbsence(
                 OutpostMountPoint.For(outpost.Name),
                 CapabilityState.Unavailable,
-                "the machine registered with the hub but did not answer when this conversation started");
+                "the machine's tunnel was open but it did not answer when this conversation started");
         }
     }
-
-    // Undialled first, judged by the endpoint address rather than the name, because the address is
-    // the one thing that is the machine's own. Then shadowed before mounted: a name that is both
-    // is exactly the collision case, where the mount that is there belongs to somebody else.
-    private static OutpostVerdict? Verdict(
-        OutpostRegistration outpost,
-        IReadOnlyList<string> mounted,
-        IReadOnlyList<string> shadowed,
-        IReadOnlyList<string> dialled) =>
-        !dialled.Contains(outpost.Endpoint, StringComparer.Ordinal) ? null
-        : shadowed.Contains(outpost.Name, StringComparer.Ordinal) ? OutpostVerdict.Shadowed
-        : mounted.Contains(outpost.Name, StringComparer.Ordinal) ? OutpostVerdict.Mounted
-        : null;
 }

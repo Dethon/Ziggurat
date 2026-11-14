@@ -58,7 +58,8 @@ public class ChatMonitorDeliveryIdentityTests
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher(published),
             recallHook,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -98,7 +99,8 @@ public class ChatMonitorDeliveryIdentityTests
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher(published),
             recallHook,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -149,7 +151,8 @@ public class ChatMonitorDeliveryIdentityTests
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher(published),
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 
@@ -255,28 +258,29 @@ public class ChatMonitorDeliveryIdentityTests
 
     private static Task RunAsync(IReadOnlyList<IChannelConnection> channels) =>
         new ChatMonitor(
-            channels,
+            ConnectionSet.Of(channels),
             MonitorTestMocks.CreateAgentFactory(ReplyingAgent()),
             MonitorTestMocks.CreateThreadResolver(),
             CapturingPublisher([]),
             null,
-            new Mock<ILogger<ChatMonitor>>().Object)
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier())
             .Monitor(CancellationToken.None);
 
     private sealed class RecordingRecallHook : IMemoryRecallHook
     {
         public List<string?> ConversationIds { get; } = [];
 
-        public Task EnrichAsync(
+        public Task<MemoryExtraction?> EnrichAsync(
             ChatMessage message,
-            string userId,
+            Account? account,
             string? conversationId,
             string? agentId,
             AgentSession thread,
             CancellationToken ct)
         {
             ConversationIds.Add(conversationId);
-            return Task.CompletedTask;
+            return Task.FromResult<MemoryExtraction?>(null);
         }
     }
 

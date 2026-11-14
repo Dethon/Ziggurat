@@ -8,6 +8,9 @@
     <LangVersion>14</LangVersion>
     <NoWarn>$(NoWarn);OPENAI001</NoWarn>
     <UserSecretsId>bae64127-c00e-4499-8325-0fb6b452133c</UserSecretsId>
+    <!-- The test host runs dozens of in-process servers at once; workstation GC's one collector
+         thread stopped every one of them for each other's garbage. -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,6 +26,7 @@
     <PackageReference Include="Testcontainers" Version="4.16.0" />
     <PackageReference Include="WireMock.Net" Version="2.19.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
     <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -50,13 +54,15 @@
     <ProjectReference Include="..\Dashboard.Client\Dashboard.Client.csproj" />
     <ProjectReference Include="..\McpChannelSignalR\McpChannelSignalR.csproj" />
     <ProjectReference Include="..\McpChannelTelegram\McpChannelTelegram.csproj" />
-    <ProjectReference Include="..\McpChannelServiceBus\McpChannelServiceBus.csproj" />
     <ProjectReference Include="..\McpChannelVoice\McpChannelVoice.csproj" />
     <ProjectReference Include="..\McpServerScheduling\McpServerScheduling.csproj" />
     <ProjectReference Include="..\McpServerTimers\McpServerTimers.csproj" />
     <ProjectReference Include="..\McpServerSugary\McpServerSugary.csproj" />
     <ProjectReference Include="..\Observability\Observability.csproj" />
     <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
+    <ProjectReference Include="..\LemonadeForwarder\LemonadeForwarder.csproj" />
+    <ProjectReference Include="..\Accounts\Accounts.csproj" />
+    <ProjectReference Include="..\HouseholdMigration\HouseholdMigration.csproj" />
   </ItemGroup>
 
   <ItemGroup>

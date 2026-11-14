@@ -112,6 +112,24 @@ public class WebBrowseToolTests
         seen.ShouldNotBeNull().Caller.ShouldBe(caller);
     }
 
+    // Saved logins the server cannot open are a refusal nothing retries: browsing on would be the
+    // person silently logged out of everything.
+    [Fact]
+    public async Task UnreadableSavedLogins_AreRefusedAsUnsupported_NotRetried()
+    {
+        SetUpNavigate(Result("https://a.test/") with
+        {
+            Status = BrowseStatus.LoginsUnreadable,
+            ErrorMessage = "The remembered logins of 'fran' cannot be read: the configured key does not open them."
+        });
+
+        var result = await new TestableWebBrowseTool(_browser.Object).RunAsync();
+
+        result.Envelope["errorCode"]!.GetValue<string>().ShouldBe("unsupported_operation");
+        result.Envelope["retryable"]!.GetValue<bool>().ShouldBeFalse();
+        result.Envelope["message"]!.GetValue<string>().ShouldContain("cannot be read");
+    }
+
     private void SetUpNavigate(BrowseResult result) =>
         _browser
             .Setup(b => b.NavigateAsync(It.IsAny<BrowseRequest>(), It.IsAny<CancellationToken>()))
@@ -126,7 +144,7 @@ public class WebBrowseToolTests
     {
         public Task<WebBrowseToolResult> RunAsync(
             int offset = 0, bool snapshot = false, JudgmentCaller? caller = null) =>
-            RunAsync("s", caller ?? JudgmentCaller.None, "https://a.test/", null, 10000, offset,
+            RunAsync("s", caller ?? JudgmentCaller.None, null, "https://a.test/", null, 10000, offset,
                 useReadability: false, scrollToLoad: false, scrollSteps: 3, snapshot,
                 CancellationToken.None);
     }

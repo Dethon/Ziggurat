@@ -13,9 +13,10 @@ public sealed record Scenario
 {
     public required string Name { get; init; }
 
-    // The shipped agent this runs as, by the id in Agent/appsettings.json. Naming it here rather
-    // than building a spec is the point: a misconfigured model, provider routing, language or
-    // prompt section has to fail the suite rather than be bypassed by it.
+    // The agent this runs as, by its id in the eval's copies of today's definitions
+    // (Tests/TestAgents.json). Naming it here rather than building a spec is the point: a
+    // misconfigured model, provider routing, language or prompt section has to fail the suite
+    // rather than be bypassed by it.
     public required string AgentId { get; init; }
 
     public required EvalTurn Turn { get; init; }
@@ -175,6 +176,10 @@ public sealed record EvalTurn
     // The schema a channel asked the answer in, honoured for this turn alone (ADR-0044). Null is a
     // turn answered in prose, which is every channel but Sugary's.
     public ResponseFormat? ResponseFormat { get; init; }
+
+    // What raised the turn when nobody sent it — a schedule, a watch — as a fire's conversation
+    // context carries it to every server the turn calls. Null is a person's own message.
+    public MessageOriginKind? Origin { get; init; }
 
     // Files the channel holds for this turn, in the order the person sent them. They reach the
     // agent as references of the turn's channel, and the stack answers the fetch hydration makes.

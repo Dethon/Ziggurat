@@ -13,25 +13,30 @@
 #   scripts/run-outpost.sh                                  this machine, this directory
 #   scripts/run-outpost.sh --jailed                          confined to it
 #   scripts/run-outpost.sh --name laptop --dir ~/project --jailed --exec
-#   scripts/run-outpost.sh --hub http://192.168.5.43:5000 --port 8100
+#   scripts/run-outpost.sh --hub https://assistants.example.com
 #   scripts/run-outpost.sh --jailed --install-service        the same, at every boot
 #   scripts/run-outpost.sh --uninstall-service               take it back off
 #
 # Every flag the binary takes is passed straight through. The script only fills in
 # --name, --dir and --hub when you did not type them, so anything you type wins.
 #
-# Defaults: --name is this machine's hostname, --dir is the directory you ran this from,
-# --hub is $DEFAULT_HUB below. Jailing and exec are off unless asked for, as they are in
+# Defaults: --name is this machine's hostname in lowercase (its tunnel credential is minted for
+# outpost-<name>, a lowercase DNS label), --dir is the directory you ran this from, --hub is
+# $DEFAULT_HUB below. Jailing and exec are off unless asked for, as they are in
 # the binary — this script does not make either easier to switch on by accident.
 #
-# SHAREDSECRET is the one value that is not a flag, because a command line is visible to
-# every process on the machine. It is taken from the environment, or from
-# OUTPOSTS__SHAREDSECRET in DockerCompose/.env when the environment does not have it. An
-# empty secret refuses everything at both ends, so an unset one stops the script here
-# rather than starting an outpost the hub will not accept and nothing can dial.
+# CREDENTIAL is the one value that is not a flag, because a command line is visible to every
+# process on the machine: the tunnel credential the operator minted for this machine
+# (`mint-tunnel-credential --household <id> --server outpost-<name>`), shown once when minted.
+# It is taken from the environment, or from the installed service's file for this name when the
+# environment does not have it. With none the relay refuses the tunnel, so an unset one stops the
+# script here rather than starting an outpost nothing will ever reach.
 #
-# Ctrl-C reaches the binary directly (it is exec'd, not backgrounded), so stopping it
-# deregisters the machine at once instead of leaving the mount to lapse 90 seconds later.
+# The outpost opens one tunnel out to the hub and listens on nothing the hub dials, so it needs
+# no open port, no forwarded port and no address of its own that the hub can reach.
+#
+# Ctrl-C reaches the binary directly (it is exec'd, not backgrounded), so stopping it closes
+# its tunnel and the agent stops offering the machine at once.
 #
 # --install-service and --uninstall-service
 #
@@ -53,8 +58,8 @@
 # file busy", and a `git clean` of bin/ would leave the unit pointing at nothing. The copy is
 # renamed into place, so a reinstall never disturbs the process already running the old file.
 #
-# The secret stays out of the unit for the reason it stays off the command line: it is written to
-# ~/.config/ziggurat-outpost/<name>.env at mode 600 and named there by EnvironmentFile=.
+# The credential stays out of the unit for the reason it stays off the command line: it is written
+# to ~/.config/ziggurat-outpost/<name>.env at mode 600 and named there by EnvironmentFile=.
 #
 # WSL
 #
@@ -63,14 +68,10 @@
 # (keeping whatever else is in it), installs and enables the unit by hand, and tells you to run
 # `wsl --shutdown` from Windows — the setting only takes effect when the distro next starts.
 #
-# Two WSL facts this script cannot fix for you, both about being reachable rather than about
-# running: a distro does not start when Windows boots, so the service starts when you first open
-# the distro (or when something else does — a Task Scheduler entry running `wsl.exe -d <distro>
-# --exec true` at logon is the usual answer); and under WSL's default NAT networking the address
-# the outpost works out for itself is the VM's 172.x, which the hub cannot dial back. Pass
-# --advertise with an address the hub can reach and forward the port to it, or turn on mirrored
-# networking. The script warns when it sees that combination — the registration would otherwise
-# succeed and the mount would simply never answer.
+# One WSL fact this script cannot fix for you: a distro does not start when Windows boots, so the
+# service starts when you first open the distro (or when something else does — a Task Scheduler
+# entry running `wsl.exe -d <distro> --exec true` at logon is the usual answer). WSL's NAT is no
+# obstacle: the tunnel is outbound.
 
 set -euo pipefail
 
@@ -79,11 +80,10 @@ INVOKED_FROM="$PWD"
 PROJECT="$ROOT/McpServerOutpost"
 OUT="$PROJECT/bin/outpost"
 BIN="$OUT/McpServerOutpost"
-ENV_FILE="$ROOT/DockerCompose/.env"
 CONFIG="${CONFIG:-Release}"
-DEFAULT_HUB="${DEFAULT_HUB:-http://192.168.5.45:5000}"
+DEFAULT_HUB="${DEFAULT_HUB:-https://assistants.herfluffness.com}"
 
-# Where the service's own copy of the binary and its secret live. Under the user's home, because
+# Where the service's own copy of the binary and its credential live. Under the user's home, because
 # the unit is the user's.
 INSTALL_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/ziggurat-outpost"
 INSTALL_BIN="$INSTALL_DIR/McpServerOutpost"
@@ -93,7 +93,7 @@ UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 usage() {
   # The header comment above, to its end: one description, not two that can disagree.
   awk 'NR > 1 && !/^#/ { exit } NR > 1 { sub(/^#[[:space:]]?/, ""); print }' "${BASH_SOURCE[0]}"
-  echo "Binary flags: --name --dir --jailed --exec --hub --advertise --port --ext"
+  echo "Binary flags: --name --dir --jailed --exec --hub --ext"
   echo "Script flags: --install-service --uninstall-service"
 }
 
@@ -142,39 +142,20 @@ drop_flag() {
   flags=(${out[@]+"${out[@]}"})
 }
 
-# One key out of the env file, read rather than sourced: the file is the compose stack's
-# and holds every secret the deployment has, none of which this needs. Trimmed at the edges
-# only — a secret is allowed to contain a space, and mangling one here would start an outpost
-# the hub silently refuses.
-secret_from_env_file() {
-  [[ -f $ENV_FILE ]] || return 0
+# The credential an installed service for this name already holds, read rather than sourced. Trimmed
+# at the edges only, so a reinstall or a foreground run reuses what was installed.
+credential_from_unit_env() {
+  [[ -f $UNIT_ENV ]] || return 0
   local value
-  value="$(grep -m1 -E '^[[:space:]]*OUTPOSTS__SHAREDSECRET=' "$ENV_FILE" || true)"
+  value="$(grep -m1 -E '^[[:space:]]*CREDENTIAL=' "$UNIT_ENV" || true)"
   value="${value#*=}"
   value="${value#"${value%%[![:space:]]*}"}"
   value="${value%"${value##*[![:space:]]}"}"
-  value="${value%\"}"
-  value="${value#\"}"
   printf '%s' "$value"
 }
 
 is_wsl() {
   [[ -n ${WSL_DISTRO_NAME:-} ]] || grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null
-}
-
-# Said on every start under WSL NAT, not only when installing the service: the registration
-# succeeds and the mount simply never answers, so the run that looks fine is exactly the one
-# that needs the warning.
-warn_wsl_nat() {
-  if is_wsl && ! typed --advertise; then
-    local port
-    port="$(flag_value --port || true)"
-    echo >&2
-    echo "WSL: this outpost will register whatever address WSL's NAT gives it (172.x), which the" >&2
-    echo "hub cannot dial back — the registration succeeds and the mount never answers. Start it" >&2
-    echo "again with --advertise <an address the hub can reach> and forward port ${port:-8099} to" >&2
-    echo "this distro, or turn on mirrored networking." >&2
-  fi
 }
 
 # The canonical question, and the only one worth asking: not whether systemd is installed but
@@ -200,7 +181,7 @@ unit_path() {
   printf '%s' "${1//%/%%}"
 }
 
-# A file name has a smaller alphabet than an outpost name does — the name reaches the hub intact,
+# A file name could have a smaller alphabet than an outpost name — the name reaches the hub intact,
 # and only what this machine writes to disk is folded.
 safe_name() {
   printf '%s' "$1" | tr -c 'A-Za-z0-9_.-' '-'
@@ -228,7 +209,7 @@ done
 # Resolved before anything is published or removed, because the outpost's name is what both the
 # unit and the uninstall are keyed on, and it is the same answer either way.
 flags=()
-typed --name || flags+=(--name "$(hostname -s 2>/dev/null || uname -n)")
+typed --name || flags+=(--name "$( (hostname -s 2>/dev/null || uname -n) | tr '[:upper:]' '[:lower:]')")
 # Absolute, so the workspace the mount declares is the same directory whatever the
 # binary's own working directory turns out to be.
 typed --dir || flags+=(--dir "$INVOKED_FROM")
@@ -321,7 +302,7 @@ enable_wsl_systemd() {
 }
 
 install_service() {
-  local secret=$1 dir
+  local credential=$1 dir
   dir="$(flag_value --dir)"
 
   mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$UNIT_DIR"
@@ -335,7 +316,7 @@ install_service() {
   # Never briefly world-readable, which writing then chmod'ing would be.
   (
     umask 077
-    printf 'SHAREDSECRET=%s\n' "$secret" >"$UNIT_ENV"
+    printf 'CREDENTIAL=%s\n' "$credential" >"$UNIT_ENV"
   )
 
   local exec_line
@@ -357,13 +338,11 @@ EnvironmentFile=$(unit_path "$UNIT_ENV")
 WorkingDirectory=$(unit_path "$dir")
 Restart=always
 RestartSec=10
-# No start-rate limit, deliberately. The outpost resolves the address the hub will dial at startup
-# and refuses to start when it cannot, so a machine that booted before its network came up fails
-# its first few starts — exactly the case a rate limit would turn into a permanent 'failed'. The
-# registrar's own rule is that a hub coming back later must find the machine there; the unit keeps
-# the same promise one level up.
+# No start-rate limit, deliberately. The outpost reopens its tunnel by itself whenever the hub is
+# away, so a hub coming back later finds the machine there; the unit keeps the same promise one
+# level up, and a start that failed is tried again rather than left 'failed'.
 StartLimitIntervalSec=0
-# A clean stop is what deregisters the machine at the hub, so give it room to say so before SIGKILL.
+# A clean stop closes the tunnel, so the agent stops offering the machine at once; give it room.
 TimeoutStopSec=20
 
 [Install]
@@ -395,8 +374,6 @@ UNITEOF
     echo "installed and enabled $UNIT, but systemd is not running on this distro."
     echo "Run 'wsl --shutdown' in Windows, then reopen this distro — it starts there."
   fi
-
-  warn_wsl_nat
 }
 
 if [[ $ACTION == uninstall ]]; then
@@ -409,13 +386,13 @@ command -v dotnet >/dev/null 2>&1 || {
   exit 1
 }
 
-secret="${SHAREDSECRET:-}"
-[[ -n $secret ]] || secret="$(secret_from_env_file)"
-if [[ -z $secret ]]; then
-  echo "No shared secret. An outpost without one registers with nobody and answers nobody:" >&2
-  echo "  the hub refuses an unset secret, and so does this binary's own /mcp." >&2
-  echo "Set OUTPOSTS__SHAREDSECRET in $ENV_FILE (the same value the hub reads), or export" >&2
-  echo "SHAREDSECRET for this run. It is deliberately not a flag." >&2
+credential="${CREDENTIAL:-}"
+[[ -n $credential ]] || credential="$(credential_from_unit_env)"
+if [[ -z $credential ]]; then
+  echo "No tunnel credential. An outpost without one opens no tunnel and nothing reaches it." >&2
+  echo "Ask the operator to mint one for 'outpost-$NAME':" >&2
+  echo "  docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household <id> --server outpost-$NAME" >&2
+  echo "and export CREDENTIAL for this run. It is deliberately not a flag." >&2
   exit 1
 fi
 
@@ -448,14 +425,12 @@ if [[ $ACTION == install ]]; then
   drop_flag --dir
   flags+=(--dir "$install_dir")
   echo "installing: McpServerOutpost ${flags[*]}"
-  install_service "$secret"
+  install_service "$credential"
   exit 0
 fi
-
-warn_wsl_nat
 
 echo "running: McpServerOutpost ${flags[*]}"
 
 # exec, so Ctrl-C and any supervisor's TERM land on the binary itself: a clean stop is
-# what sends the deregistration.
-exec env SHAREDSECRET="$secret" "$BIN" "${flags[@]}"
+# what closes the tunnel.
+exec env CREDENTIAL="$credential" "$BIN" "${flags[@]}"

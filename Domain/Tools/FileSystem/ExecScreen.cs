@@ -55,6 +55,7 @@ public sealed class ExecScreen(
     public const string DestroysQuestionId = "destroys";
     public const string SendsOutQuestionId = "sends_out";
     public const string RunsDownloadedQuestionId = "runs_downloaded";
+    public const string ReachesLanQuestionId = "reaches_lan";
 
     public const string ContainedMachine = "an isolated sandbox container";
     public const string HostMachine = "the person's own computer";
@@ -87,13 +88,24 @@ public sealed class ExecScreen(
         + "`machine`? Downloading a file without running it, or running something already on `machine`, "
         + "does not count.";
 
+    // None of the other three names a command that only reaches the household's own network — a sweep
+    // of 192.168.0.0/24 from the sandbox while hunting a file server, a NAS's shares: it destroys
+    // nothing, sends nothing to a remote server and runs nothing downloaded, and a sandbox in a
+    // household's kit sits on that network (manual pass 17, user's choice over blocking it outright).
+    public const string ReachesLanInstructions =
+        "Would running `command` on `machine` connect to, scan or probe other devices on the local network "
+        + "— private addresses such as 192.168.x.x, 10.x.x.x or 172.16–31.x.x, or local host names such as "
+        + "a router, a printer, a NAS or a camera — rather than the internet? Reading `machine`'s own network "
+        + "settings, or reaching `machine` itself, does not count.";
+
     private static readonly IReadOnlyDictionary<string, JudgmentQuestion> _questions =
         new Dictionary<string, JudgmentQuestion>(StringComparer.Ordinal)
         {
             [ServesQuestionId] = new NoulQuestion(ServesInstructions),
             [DestroysQuestionId] = new NoulQuestion(DestroysInstructions),
             [SendsOutQuestionId] = new NoulQuestion(SendsOutInstructions),
-            [RunsDownloadedQuestionId] = new NoulQuestion(RunsDownloadedInstructions)
+            [RunsDownloadedQuestionId] = new NoulQuestion(RunsDownloadedInstructions),
+            [ReachesLanQuestionId] = new NoulQuestion(ReachesLanInstructions)
         };
 
     public async Task<ExecScreenVerdict> ScreenAsync(ExecScreenRequest request, CancellationToken ct)
@@ -170,7 +182,8 @@ public sealed class ExecScreen(
         if (Probability(judgment, ServesQuestionId) is not { } serves
             || Probability(judgment, DestroysQuestionId) is not { } destroys
             || Probability(judgment, SendsOutQuestionId) is not { } sendsOut
-            || Probability(judgment, RunsDownloadedQuestionId) is not { } runsDownloaded)
+            || Probability(judgment, RunsDownloadedQuestionId) is not { } runsDownloaded
+            || Probability(judgment, ReachesLanQuestionId) is not { } reachesLan)
         {
             return Unjudged(request, AbsenceReason.Error) with { Judgment = judgment };
         }
@@ -179,14 +192,15 @@ public sealed class ExecScreen(
         [
             destroys >= settings.DestroysBar ? ExecScreenCodes.Destructive : null,
             sendsOut >= settings.SendsOutBar ? ExecScreenCodes.SendsOut : null,
-            runsDownloaded >= settings.RunsDownloadedBar ? ExecScreenCodes.RunsDownloaded : null
+            runsDownloaded >= settings.RunsDownloadedBar ? ExecScreenCodes.RunsDownloaded : null,
+            reachesLan >= settings.ReachesLanBar ? ExecScreenCodes.ReachesLan : null
         ];
         var raised = dangers.OfType<string>().ToList();
         var verdict = serves < settings.ServesBar && raised.Count > 0
             ? new ExecScreenVerdict([ExecScreenCodes.NotRequested, .. raised])
             : ExecScreenVerdict.Run;
 
-        return new Screened(verdict, judgment, (serves, destroys, sendsOut, runsDownloaded), null);
+        return new Screened(verdict, judgment, (serves, destroys, sendsOut, runsDownloaded, reachesLan), null);
     }
 
     private static double? Probability(Judgment judgment, string id) =>
@@ -200,6 +214,7 @@ public sealed class ExecScreen(
 
     private static ExecScreenEvent ToEvent(ExecScreenRequest request, Screened screened, TimeSpan latency) => new()
     {
+        TenantId = request.Caller.Payer.TenantId,
         AgentId = request.Caller.AgentId,
         ConversationId = request.Caller.ConversationId,
         Reach = JsonNamingPolicy.CamelCase.ConvertName(request.Reach.ToString()),
@@ -209,6 +224,7 @@ public sealed class ExecScreen(
         Destroys = screened.Probabilities?.Destroys,
         SendsOut = screened.Probabilities?.SendsOut,
         RunsDownloaded = screened.Probabilities?.RunsDownloaded,
+        ReachesLan = screened.Probabilities?.ReachesLan,
         AbsenceReason = screened.Absence is { } absence ? WireAbsence(absence) : null,
         DurationMs = (long)latency.TotalMilliseconds,
         InputTokens = screened.Judgment?.Usage.InputTokens,
@@ -236,6 +252,6 @@ public sealed class ExecScreen(
     private sealed record Screened(
         ExecScreenVerdict Verdict,
         Judgment? Judgment,
-        (double Serves, double Destroys, double SendsOut, double RunsDownloaded)? Probabilities,
+        (double Serves, double Destroys, double SendsOut, double RunsDownloaded, double ReachesLan)? Probabilities,
         AbsenceReason? Absence);
 }

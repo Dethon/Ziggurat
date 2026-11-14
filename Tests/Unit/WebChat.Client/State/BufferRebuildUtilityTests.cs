@@ -358,6 +358,65 @@ public sealed class BufferRebuildUtilityTests
         assert(result);
     }
 
+    // The prompt a stream is resumed under is drawn from the stream's state, which carries no time;
+    // the buffered user message beside it does. A service's turn ("You finished logging in") drew
+    // its notice with no time until a reload read it from history.
+    [Fact]
+    public void ResumeFromBuffer_TheCurrentPrompt_KeepsTheTimeAndNameItWasSentWith()
+    {
+        var sentAt = new DateTimeOffset(2026, 11, 3, 17, 18, 0, TimeSpan.Zero);
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "[login finished]", UserMessage = new UserMessageInfo("login", sentAt, "Login"), SequenceNumber = 1 }
+        };
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, [], "[login finished]", "login");
+
+        var prompt = result.MergedMessages.ShouldHaveSingleItem();
+        prompt.Timestamp.ShouldBe(sentAt);
+        prompt.SenderName.ShouldBe("Login");
+    }
+
+    // Two people sending in a shared topic at once put both their messages on one stream, and the
+    // stream's state names one prompt — whichever send came last. A page resuming it drew only that
+    // one, so Ana, whose own message it was, never saw Carlos's until a reload.
+    [Fact]
+    public void ResumeFromBuffer_EveryMessageTheStreamCarried_IsDrawnOnceAndInItsOrder()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "Yo pongo el vino.", UserMessage = new UserMessageInfo("carlos", null, "Carlos") },
+            new() { Content = "Yo traigo el postre.", UserMessage = new UserMessageInfo("ana", null, "Ana") },
+            new() { Content = "Apuntado el vino.", MessageId = "m1", SequenceNumber = 1 },
+            new() { Content = "Apuntado el postre.", MessageId = "m2", SequenceNumber = 2 }
+        };
+        List<ChatMessageModel> page =
+        [
+            new() { Role = "user", Content = "Yo traigo el postre.", SenderId = "ana" }
+        ];
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, page, "Yo traigo el postre.", "ana");
+
+        result.MergedMessages.Where(m => m.Role == "user").Select(m => (m.SenderId, m.Content)).ShouldBe(
+            [("ana", "Yo traigo el postre."), ("carlos", "Yo pongo el vino.")]);
+    }
+
+    // The same words sent again are a message of their own: the page shows the first "ok", the stream
+    // carries the second.
+    [Fact]
+    public void ResumeFromBuffer_TheSameWordsSentAgain_AreDrawnAgain()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "ok", UserMessage = new UserMessageInfo("carlos", null, "Carlos", "second") }
+        };
+        List<ChatMessageModel> page = [new() { Role = "user", Content = "ok", SenderId = "carlos", CorrelationId = "first" }];
+
+        var result = BufferRebuildUtility.ResumeFromBuffer(buffer, page, "ok", "carlos");
+
+        result.MergedMessages.Count(m => m.Role == "user").ShouldBe(2);
+    }
+
     public static IEnumerable<object[]> AnchorPositioningCases
     {
         get
@@ -688,4 +747,19 @@ public sealed class BufferRebuildUtilityTests
     }
 
     #endregion
+
+    // Another person's message in a shared topic arrives on the stream with the name they sent it
+    // under, which is how the page draws them.
+    [Fact]
+    public void RebuildFromBuffer_AUserMessage_KeepsItsSendersName()
+    {
+        var buffer = new List<ChatStreamMessage>
+        {
+            new() { Content = "hola", UserMessage = new UserMessageInfo("u-2", null, "Marta"), SequenceNumber = 1 }
+        };
+
+        var (completed, _) = BufferRebuildUtility.RebuildFromBuffer(buffer);
+
+        completed.Single().SenderName.ShouldBe("Marta");
+    }
 }

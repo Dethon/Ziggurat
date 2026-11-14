@@ -9,7 +9,7 @@ namespace Tests.Integration.Clients;
 // The honestly browser-dependent claims of the tab pool: real pages side by side, each holding its
 // own DOM while the other is browsed. Everything here observes the pool the way the model would —
 // through walls and results — never by reaching past the browser contract.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsB)]
 public class BrowseTabsTests(IsolatedSessionBrowserFixture fixture)
 {
     [Trait("Category", "External")]
@@ -133,50 +133,6 @@ public class BrowseTabsTests(IsolatedSessionBrowserFixture fixture)
 
             (await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId)))
                 .Url.ShouldNotBeNull().ShouldContain("example.com");
-        }
-        finally
-        {
-            await fixture.Browser.CloseSessionAsync(sessionId);
-        }
-    }
-
-    [Trait("Category", "External")]
-    [SkippableFact]
-    public async Task AClickThatOpensANewTab_AnswersFromThePopup()
-    {
-        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
-
-        var sessionId = $"test-{Guid.NewGuid():N}";
-        try
-        {
-            await BrowseAsync(sessionId, "https://example.com/");
-            await InjectAsync(sessionId,
-                """
-                <button id="open" onclick="window.open('https://example.org/')">Open elsewhere</button>
-                """);
-            var snapshot = await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId));
-            var buttonRef = System.Text.RegularExpressions.Regex
-                .Match(snapshot.Snapshot!, @"button ""Open elsewhere"" \[ref=(e-\d+)\]").Groups[1].Value;
-            buttonRef.ShouldNotBeNullOrEmpty();
-
-            var result = await fixture.Browser.ActionAsync(new WebActionRequest(
-                sessionId, buttonRef, WebActionType.Click));
-
-            // The action answers from where the site actually took the model, not with a stale
-            // diff of the page left behind.
-            result.Status.ShouldBe(WebActionStatus.Success);
-            result.NavigationOccurred.ShouldBeTrue();
-            result.Url.ShouldNotBeNull().ShouldContain("example.org");
-            result.Snapshot.ShouldNotBeNull();
-
-            // The popup joined the pool as the tab the next ref-less call addresses…
-            (await fixture.Browser.SnapshotAsync(new SnapshotRequest(sessionId)))
-                .Url.ShouldNotBeNull().ShouldContain("example.org");
-
-            // …and the opener lives on beside it, still addressable by its URL.
-            (await fixture.Browser.SnapshotAsync(
-                    new SnapshotRequest(sessionId, ForUrl: "https://example.com/")))
-                .ErrorMessage.ShouldBeNull();
         }
         finally
         {

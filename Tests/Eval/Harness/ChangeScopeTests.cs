@@ -35,6 +35,34 @@ public class ChangeScopeTests
             ["cites a timer", "guards a timer", "judges a timer"], ignoreOrder: true);
     }
 
+    // A section's claims are declared in its document's header, unquoted, beside the prose they are
+    // about: an edit anywhere in the document can break them.
+    [Fact]
+    public void AChangedPromptDocument_SelectsEveryScenarioThatTestsAClaimItsHeaderDeclares()
+    {
+        var selected = ChangeScope.Select(
+            ["Domain/Prompts/Sections/timers_prompt.md"],
+            Reading(("Domain/Prompts/Sections/timers_prompt.md",
+                $"---\nname: timers_prompt\nclaims:\n- {_timer.Id}: a timer\n---\n\n## Timers\n")),
+            _suite, _claims);
+
+        selected.Select(s => s.Name).ShouldBe(
+            ["cites a timer", "guards a timer", "judges a timer"], ignoreOrder: true);
+    }
+
+    // Prose that mentions a claim's id is not its declaration; only the header declares.
+    [Fact]
+    public void AClaimIdInADocumentsWords_IsNotADeclaration()
+    {
+        var selected = ChangeScope.Select(
+            ["Domain/Prompts/Sections/vault_prompt.md"],
+            Reading(("Domain/Prompts/Sections/vault_prompt.md",
+                $"---\nname: vault_prompt\n---\n\nSee \"{_timer.Id}\" and {_timer.Id}.\n")),
+            _suite, _claims);
+
+        selected.ShouldBeEmpty();
+    }
+
     [Fact]
     public void AConditionalCitation_CountsAsACitation()
     {
@@ -95,9 +123,9 @@ public class ChangeScopeTests
     [Fact]
     public void AgainstTheRealSuite_TheTimerPromptSelectsItsOwnFamilyAndNoVaultScenario()
     {
-        // The seam this tier stands on: a real section file, the real manifest, the real suite.
+        // The seam this tier stands on: a real section document, the real manifest, the real suite.
         var selected = ChangeScope.Select(
-            ["Domain/Prompts/TimerPrompt.cs"],
+            ["Domain/Prompts/Sections/timers_prompt.md"],
             path => File.ReadAllText(Path.Combine(RepositoryRoot.Path, path)),
             EvalSuite.All, PromptManifest.Claims);
 
@@ -105,6 +133,56 @@ public class ChangeScopeTests
         selected.ShouldAllBe(s => Cited(s).Any(claim => claim.StartsWith("timers.")));
         selected.ShouldNotContain(s => Cited(s).Any(claim => claim.StartsWith("vault.")));
     }
+
+    // Every shipped section document, edited alone, selects exactly the scenarios that test one of
+    // the claims it declares — the claims having moved out of the code and into the documents, this
+    // is what keeps an edit of a document's words running what those words teach.
+    public static TheoryData<string> SectionDocuments =>
+        [.. PromptDocuments.Sections.Where(d => d.Claims.Count > 0).Select(d => d.Name)];
+
+    [Theory]
+    [MemberData(nameof(SectionDocuments))]
+    public void AgainstTheRealSuite_EachSectionDocument_SelectsTheScenariosOfItsClaims(string name)
+    {
+        var path = $"Domain/Prompts/Sections/{name}.md";
+        var claims = PromptDocuments.Section(name).Claims.Select(c => c.Id).ToHashSet();
+
+        var selected = ChangeScope.Select(
+            [path],
+            file => File.ReadAllText(Path.Combine(RepositoryRoot.Path, file)),
+            EvalSuite.All, PromptManifest.Claims);
+
+        selected.Select(s => s.Name).ShouldBe(
+            EvalSuite.All.Where(s => Tested(s).Any(claims.Contains)).Select(s => s.Name),
+            ignoreOrder: true);
+    }
+
+    // The same for skills: a skill's claims — its trigger claim first — moved into its document, so
+    // an edit of a body's words alone has to select the family that body teaches.
+    public static TheoryData<string> SkillDocuments =>
+        [.. PromptDocuments.Skills.Where(d => d.Claims.Count > 0).Select(d => d.Name)];
+
+    [Theory]
+    [MemberData(nameof(SkillDocuments))]
+    public void AgainstTheRealSuite_EachSkillDocument_SelectsTheScenariosOfItsClaims(string name)
+    {
+        var path = $"Domain/Prompts/Skills/{name}.md";
+        var claims = PromptDocuments.Skill(name).Claims.Select(c => c.Id).ToHashSet();
+
+        var selected = ChangeScope.Select(
+            [path],
+            file => File.ReadAllText(Path.Combine(RepositoryRoot.Path, file)),
+            EvalSuite.All, PromptManifest.Claims);
+
+        selected.ShouldNotBeEmpty();
+        selected.Select(s => s.Name).ShouldBe(
+            EvalSuite.All.Where(s => Tested(s).Any(claims.Contains)).Select(s => s.Name),
+            ignoreOrder: true);
+    }
+
+    private static IEnumerable<string> Tested(Scenario scenario) =>
+        Cited(scenario).Concat(scenario.IfDelegated.SelectMany(condition =>
+            condition.Claims.Concat(condition.Judged.Select(check => check.Claim))));
 
     private static IEnumerable<string> Cited(Scenario scenario) =>
         scenario.Claims

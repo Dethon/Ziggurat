@@ -2,9 +2,10 @@ import { useId, useState } from "react";
 import { api } from "../api";
 import { Icon } from "../components/Icon";
 import { Sheet } from "../components/Sheet";
-import { MAX_PERIOD_DAYS, periodProblem, type PeriodProblem } from "../cycle";
+import { MAX_PERIOD_DAYS, periodProblem, refusedBecause, type PeriodProblem } from "../cycle";
 import { useEdited } from "../edited";
 import { errorMessage } from "../errors";
+import { openedPeriod, overRecord, useShown } from "../stale";
 import { formatDays } from "../format";
 import type { Language, Translate } from "../i18n";
 import { useSettings } from "../settings";
@@ -49,6 +50,7 @@ export function PeriodSheet({
   const values = { start, end: chosenEnd };
   // A recorded period is saved again only once its days changed.
   const edited = useEdited(values);
+  const shown = useShown(values);
   const ready = start !== "" && (ongoing || end !== "") && problem === null && (!period || edited);
 
   async function save() {
@@ -58,9 +60,14 @@ export function PeriodSheet({
     setBusy(true);
     setError(null);
     try {
-      onSaved(await (period ? api.updatePeriod(period.id, values) : api.createPeriod(values)));
+      onSaved(
+        await (period
+          ? api.updatePeriod(period.id, overRecord(openedPeriod(period), shown, values), openedPeriod(period))
+          : api.createPeriod(values)),
+      );
     } catch (failure) {
-      setError(errorMessage(failure, t, "save"));
+      const refused = await refusedBecause(values, period?.id, today, api.periods);
+      setError(refused?.problem ? problemText(refused.problem, t, language) : errorMessage(failure, t, "save"));
       setBusy(false);
     }
   }

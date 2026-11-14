@@ -1,4 +1,5 @@
 using System.Globalization;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 
@@ -11,6 +12,20 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     private readonly List<TopicMetadata> _savedTopics = new();
     private readonly HashSet<string> _deletedTopicIds = new();
     private readonly List<string> _joinedSpaces = new();
+    private readonly List<HouseholdSpace> _spaces = new();
+
+    // A space of the signed-in person's household, as the hub answers them.
+    public FakeTopicService WithSpace(
+        string slug, string name = "Main", string accentColor = "#112233", string? defaultAgent = null)
+    {
+        _spaces.Add(new HouseholdSpace
+        {
+            Slug = slug, Name = name, AccentColor = accentColor, DefaultAgent = defaultAgent, Order = _spaces.Count
+        });
+        return this;
+    }
+
+    public Exception? ThrowOnGetSpaces { get; set; }
 
     public void SetHistory(long chatId, long threadId, params ChatHistoryMessage[] messages)
     {
@@ -174,6 +189,20 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
     private static double Score(TopicMetadata topic) =>
         topic.LastWriteAt.ToUnixTimeMilliseconds();
 
+    public Task<HubResult<IReadOnlyList<HouseholdSpace>>> GetSpacesAsync()
+    {
+        recorder?.Record("spaces");
+
+        if (ThrowOnGetSpaces is not null)
+        {
+            return Task.FromException<HubResult<IReadOnlyList<HouseholdSpace>>>(ThrowOnGetSpaces);
+        }
+
+        return Task.FromResult(NotLive
+            ? HubResult<IReadOnlyList<HouseholdSpace>>.NotLive
+            : HubResult<IReadOnlyList<HouseholdSpace>>.Answered(_spaces.ToList()));
+    }
+
     public Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug)
     {
         recorder?.Record($"join:{spaceSlug}");
@@ -184,6 +213,21 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         }
 
         _joinedSpaces.Add(spaceSlug);
+        return Task.FromResult(HubResult<Nothing>.Answered(default));
+    }
+
+    private readonly List<(string AgentId, long ChatId, string TopicId, bool Shared)> _sharedChanges = [];
+
+    public IReadOnlyList<(string AgentId, long ChatId, string TopicId, bool Shared)> SharedChanges => _sharedChanges;
+
+    public Task<HubResult<Nothing>> SetTopicSharedAsync(string agentId, long chatId, string topicId, bool shared)
+    {
+        if (NotLive)
+        {
+            return Task.FromResult(HubResult<Nothing>.NotLive);
+        }
+
+        _sharedChanges.Add((agentId, chatId, topicId, shared));
         return Task.FromResult(HubResult<Nothing>.Answered(default));
     }
 

@@ -12,7 +12,6 @@ using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Space;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
-using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client.State;
 
@@ -28,9 +27,7 @@ public sealed class InitializationEffectTests : IDisposable
     private readonly MessagesStore _messagesStore;
     private readonly StreamingStore _streamingStore;
     private readonly SpaceStore _spaceStore;
-    private readonly UserIdentityStore _userIdentityStore;
     private readonly FakeChatLiveConnection _liveConnection;
-    private readonly FakeChatSessionService _sessionService;
     private readonly FakeAgentService _agentService;
     private readonly FakeTopicService _topicService;
     private readonly FakeConfigService _configService;
@@ -39,6 +36,7 @@ public sealed class InitializationEffectTests : IDisposable
     private readonly FakePushSubscriptionService _pushService;
     private readonly RecordingLogger<InitializationEffect> _logger = new();
     private readonly InitializationEffect _effect;
+    private readonly ArmedClock _time = new();
 
     public InitializationEffectTests()
     {
@@ -47,10 +45,8 @@ public sealed class InitializationEffectTests : IDisposable
         _messagesStore = new MessagesStore(_dispatcher);
         _streamingStore = new StreamingStore(_dispatcher);
         _spaceStore = new SpaceStore(_dispatcher);
-        _userIdentityStore = new UserIdentityStore(_dispatcher);
 
         _liveConnection = new FakeChatLiveConnection(_calls);
-        _sessionService = new FakeChatSessionService(_calls);
         _agentService = new FakeAgentService(_calls);
         _topicService = new FakeTopicService(_calls);
         _configService = new FakeConfigService(_calls);
@@ -62,40 +58,38 @@ public sealed class InitializationEffectTests : IDisposable
             _dispatcher,
             _connectionStore,
             _liveConnection,
-            _sessionService,
             _agentService,
             _topicService,
             _configService,
             _localStorage,
             _streamResumeService,
             _pushService,
-            _userIdentityStore,
             _spaceStore,
-            _logger);
+            _logger,
+            _time);
     }
 
     [Fact]
     public async Task HandleInitializeAsync_FirstLoad_RunsTheStepsInOrder()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.Agents = [_agentOne];
         _topicService.SeedTopic(TestChat.Topic("topic-1"));
-        _dispatcher.Dispatch(new SelectUser("user-1"));
         _calls.Reset();
 
         await _effect.HandleInitializeAsync();
 
+        // Nothing between the connect and the rest: the hub took the person from the proxy's
+        // headers as the connection arrived, so there is nobody to name and nothing to wait for.
         _calls.Calls.ShouldBe(
         [
             "connect",
-            "register-user",
-            "space:default",
+            "spaces",
             "join:default",
             "agents",
             // No agentConfigPatch read here: per-agent settings hang off SetAgents, which
             // AgentSettingsEffect handles, so they load on every catalog rather than this one.
             "storage-get:selectedAgentId",
-            "storage-set:selectedAgentId",
             "topics:agent-1"
             // No history: opening the client costs one page of rows and nothing per
             // conversation. A transcript is fetched when its conversation is opened.
@@ -108,7 +102,7 @@ public sealed class InitializationEffectTests : IDisposable
     // sidebar is complete without a single message.
     public async Task HandleInitializeAsync_Completes_NoTopicsHistoryIsInTheStore()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.Agents = [_agentOne];
         _topicService.SeedTopic(TestChat.Topic("topic-1"));
         _topicService.SeedTopic(TestChat.Topic("topic-2", chatId: 11, threadId: 21));
@@ -124,8 +118,8 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task HandleInitializeAsync_PushSubscriptionHangs_StillFinishesTheRest()
     {
-        _configService.WithSpace("default");
-        _configService.Config = new AppConfig(null, [], "vapid-public-key");
+        _topicService.WithSpace("default");
+        _configService.Config = new AppConfig(null, "vapid-public-key");
         _pushService.BlockUntilReleased = true;
         _agentService.Agents = [_agentOne];
 
@@ -139,7 +133,7 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task HandleInitializeAsync_StreamResumeHangs_StillFinishesTheRest()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _streamResumeService.BlockUntilReleased = true;
         _agentService.Agents = [_agentOne];
         _topicService.SeedTopic(TestChat.Topic("topic-1"));
@@ -152,17 +146,70 @@ public sealed class InitializationEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task HandleInitializeAsync_UnknownSpace_RetriesWithTheFallbackSlug()
+    public async Task HandleInitializeAsync_ASlugThatIsNoneOfTheHouseholdsSpaces_OpensItsFirstSpace()
     {
-        _configService.WithSpace("default", name: "Main");
+        _topicService.WithSpace("kitchen", name: "Kitchen").WithSpace("default", name: "Main");
         _dispatcher.Dispatch(new SelectSpace("ghost"));
         _calls.Reset();
 
         await _effect.HandleInitializeAsync();
 
-        _calls.Calls.ShouldBe(["connect", "space:ghost", "space:default", "join:default", "agents"]);
-        _spaceStore.State.CurrentSlug.ShouldBe("default");
-        _spaceStore.State.SpaceName.ShouldBe("Main");
+        _calls.Calls.ShouldBe(["connect", "spaces", "join:kitchen", "agents"]);
+        _spaceStore.State.CurrentSlug.ShouldBe("kitchen");
+        _spaceStore.State.SpaceName.ShouldBe("Kitchen");
+    }
+
+    // The household names an agent for the space, and nobody picked another in it.
+    [Fact]
+    public async Task HandleInitializeAsync_ASpaceWithADefaultAgent_OpensOnIt()
+    {
+        _topicService.WithSpace("default").WithSpace("kitchen", name: "Kitchen", defaultAgent: "agent-2");
+        _dispatcher.Dispatch(new SelectSpace("kitchen"));
+        _agentService.Agents = [_agentOne, _agentTwo];
+
+        await _effect.HandleInitializeAsync();
+
+        _topicsStore.State.SelectedAgentId.ShouldBe("agent-2");
+        _calls.Calls.ShouldContain("topics:agent-2");
+    }
+
+    // A space that names no agent, on a device that never picked one, opens on the agent the
+    // household answers by default - not on whichever it lists first, which in the home is Jack, the
+    // download assistant, while the Agents page says Jonas answers by default.
+    [Fact]
+    public async Task HandleInitializeAsync_ASpaceNamingNoAgent_OpensOnTheHouseholdsDefault()
+    {
+        _topicService.WithSpace("default");
+        _agentService.Agents = [_agentOne, _agentTwo with { IsHouseholdDefault = true }];
+
+        await _effect.HandleInitializeAsync();
+
+        _topicsStore.State.SelectedAgentId.ShouldBe("agent-2");
+    }
+
+    [Fact]
+    public async Task HandleInitializeAsync_APickInTheSpace_WinsOverItsDefaultAgent()
+    {
+        _topicService.WithSpace("kitchen", name: "Kitchen", defaultAgent: "agent-2");
+        _dispatcher.Dispatch(new SelectSpace("kitchen"));
+        _localStorage.Seed("selectedAgentId:kitchen", "agent-1");
+        _agentService.Agents = [_agentOne, _agentTwo];
+
+        await _effect.HandleInitializeAsync();
+
+        _topicsStore.State.SelectedAgentId.ShouldBe("agent-1");
+    }
+
+    // A default agent the household no longer runs is no agent to open on.
+    [Fact]
+    public async Task HandleInitializeAsync_ASpacesDefaultAgentIsNotInTheCatalog_OpensOnTheFirst()
+    {
+        _topicService.WithSpace("default", defaultAgent: "agent-gone");
+        _agentService.Agents = [_agentOne, _agentTwo];
+
+        await _effect.HandleInitializeAsync();
+
+        _topicsStore.State.SelectedAgentId.ShouldBe("agent-1");
     }
 
     [Fact]
@@ -182,7 +229,7 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task HandleInitializeAsync_TheCatalogWasNotLive_ALaterSetAgentsCompletesInitialization()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.NotLive = true;
         _topicService.SeedTopic(TestChat.Topic("topic-1"));
         _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "first"));
@@ -193,7 +240,39 @@ public sealed class InitializationEffectTests : IDisposable
 
         await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
-        _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
+    }
+
+    // The agent registering again tells a browser only that agents may have changed, since every
+    // household is shown its own: the client asks for its household's again and shows that answer.
+    [Fact]
+    public async Task AgentsUpdated_AsksForTheHouseholdsAgentsAgain()
+    {
+        _topicService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        await _effect.HandleInitializeAsync();
+
+        _agentService.Agents = [_agentOne, _agentTwo];
+        _dispatcher.Dispatch(new AgentsUpdated());
+
+        await TestChat.Eventually(() => _topicsStore.State.Agents.Count == 2);
+    }
+
+    // Opened in the not-live window, the nudge finishes what first load could not, as the list it
+    // once carried did.
+    [Fact]
+    public async Task HandleInitializeAsync_TheCatalogWasNotLive_ALaterAgentsUpdatedCompletesInitialization()
+    {
+        _topicService.WithSpace("default");
+        _agentService.NotLive = true;
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        await _effect.HandleInitializeAsync();
+
+        _agentService.NotLive = false;
+        _agentService.Agents = [_agentOne];
+        _dispatcher.Dispatch(new AgentsUpdated());
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
     }
 
     // Nothing broadcasts SetAgents on its own — the agent has to re-register for that. The
@@ -202,7 +281,7 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task HandleInitializeAsync_TheCatalogWasNotLive_TheNextEpochRetriesAndCompletesInitialization()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.NotLive = true;
         _topicService.SeedTopic(TestChat.Topic("topic-1"));
         _topicService.SetHistory(10, 20, TestChat.HistoryMessage("m-1", "first"));
@@ -217,7 +296,27 @@ public sealed class InitializationEffectTests : IDisposable
 
         await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
         await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
-        _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
+    }
+
+    // A page opened while the hub restarts (a deploy) fails its first connect, and the connection
+    // keeps trying on its own. Its first epoch is the first live one this page ever had: the spaces,
+    // the agents and the topics are all still owed, not only a catalog. It used to come up Connected
+    // with no agents and stay that way.
+    [Fact]
+    public async Task HandleInitializeAsync_TheFirstConnectFailed_TheFirstEpochFinishesInitialization()
+    {
+        _topicService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        _topicService.SeedTopic(TestChat.Topic("topic-1"));
+        _liveConnection.ThrowOnConnect = new HttpRequestException("502 Bad Gateway");
+        await Should.ThrowAsync<HttpRequestException>(() => _effect.HandleInitializeAsync());
+
+        _liveConnection.ThrowOnConnect = null;
+        _dispatcher.Dispatch(new ConnectionConnected());
+
+        await TestChat.Eventually(() => _topicsStore.State.SelectedAgentId == "agent-1");
+        await TestChat.Eventually(() => _topicsStore.State.Topics.Count == 1);
+        _topicService.JoinedSpaces.ShouldBe(["default"]);
     }
 
     // A retry that also comes up not live must not clear the awaiting flag — the epoch after
@@ -225,7 +324,7 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task HandleInitializeAsync_TheRetryIsAlsoNotLive_TheEpochAfterThatStillRetries()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.NotLive = true;
         await _effect.HandleInitializeAsync();
         _dispatcher.Dispatch(new ConnectionConnected());
@@ -248,7 +347,7 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task HandleInitializeAsync_ARetryAndABroadcastOnTheSameEpoch_CompleteInitializationOnce()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.NotLive = true;
         _topicService.SeedTopic(TestChat.Topic("topic-1"));
         await _effect.HandleInitializeAsync();
@@ -278,7 +377,7 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task HandleInitializeAsync_TheCatalogWasLive_ALaterSetAgentsLoadsNothingAgain()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.Agents = [_agentOne];
         _topicService.SeedTopic(TestChat.Topic("topic-1"));
         await _effect.HandleInitializeAsync();
@@ -293,7 +392,7 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task HandleInitializeAsync_NoAgents_SelectsNothingAndLoadsNoTopics()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.Agents = [];
 
         await _effect.HandleInitializeAsync();
@@ -303,22 +402,24 @@ public sealed class InitializationEffectTests : IDisposable
     }
 
     [Fact]
-    public async Task HandleInitializeAsync_SavedAgentIsGone_FallsBackToTheFirstAndPersistsIt()
+    // What the space opened on is not the person's pick until they pick it, so a default the
+    // household sets later still reaches them.
+    public async Task HandleInitializeAsync_SavedAgentIsGone_FallsBackToTheFirstWithoutRememberingIt()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _localStorage.Seed("selectedAgentId", "agent-gone");
         _agentService.Agents = [_agentOne, _agentTwo];
 
         await _effect.HandleInitializeAsync();
 
         _topicsStore.State.SelectedAgentId.ShouldBe("agent-1");
-        _localStorage.Values["selectedAgentId"].ShouldBe("agent-1");
+        _localStorage.Values["selectedAgentId"].ShouldBe("agent-gone");
     }
 
     [Fact]
     public async Task HandleInitializeAsync_SavedAgentIsInTheCatalog_SelectsItWithoutRewriting()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _localStorage.Seed("selectedAgentId", "agent-2");
         _agentService.Agents = [_agentOne, _agentTwo];
         _calls.Reset();
@@ -332,7 +433,7 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task Dispatch_Initialize_RunsTheSameWork()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.Agents = [_agentOne];
 
         _dispatcher.Dispatch(new Initialize());
@@ -344,7 +445,7 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task Dispatch_Initialize_FaultIsLoggedRatherThanDiscarded()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.ThrowOnGetAgents = new InvalidOperationException("agent list unavailable");
 
         _dispatcher.Dispatch(new Initialize());
@@ -353,10 +454,31 @@ public sealed class InitializationEffectTests : IDisposable
         entry.Exception.ShouldBeOfType<InvalidOperationException>().Message.ShouldBe("agent list unavailable");
     }
 
+    // The hub answered, but could not read the household just then (the accounts service slow, a
+    // session check refused for a moment): the connection stays live, so nothing else would ever
+    // finish the load — a person was left on an empty, "Connected" page with no agent and no topic
+    // until they reloaded. The first load asks again, later, until it is answered.
+    [Fact]
+    public async Task HandleInitializeAsync_TheHubCouldNotReadTheHousehold_AsksAgainUntilItCan()
+    {
+        _topicService.WithSpace("default");
+        _agentService.Agents = [_agentOne];
+        _agentService.ThrowOnGetAgents = new Microsoft.AspNetCore.SignalR.HubException("This household's agents could not be read right now.");
+        _agentService.ThrowTimes = 2;
+
+        var loading = _effect.HandleInitializeAsync();
+        await _time.AdvancePastAsync(InitializationEffect.FirstRetryDelay);
+        await _time.AdvancePastAsync(InitializationEffect.FirstRetryDelay * 2);
+        await loading;
+
+        _calls.Calls.Count(c => c == "agents").ShouldBe(3);
+        _calls.Calls.ShouldContain("topics:agent-1");
+    }
+
     [Fact]
     public async Task Disposed_StopsHandlingInitialize()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.Agents = [_agentOne];
         _effect.Dispose();
 
@@ -373,7 +495,7 @@ public sealed class InitializationEffectTests : IDisposable
     [Fact]
     public async Task HandleInitializeAsync_InitialConnectThrows_ALaterEpochStillTriggersRecovery()
     {
-        _configService.WithSpace("default");
+        _topicService.WithSpace("default");
         _agentService.Agents = [_agentOne];
         _liveConnection.ThrowOnConnect = new InvalidOperationException("offline at first load");
         var recovery = new FakeSessionRecovery();
@@ -399,6 +521,5 @@ public sealed class InitializationEffectTests : IDisposable
         _messagesStore.Dispose();
         _streamingStore.Dispose();
         _spaceStore.Dispose();
-        _userIdentityStore.Dispose();
     }
 }

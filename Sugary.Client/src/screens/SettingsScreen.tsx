@@ -1,5 +1,5 @@
 import { api } from "../api";
-import { useConfirm } from "../components/Confirm";
+import { accountUrl } from "../signin";
 import { Icon } from "../components/Icon";
 import type { Language } from "../i18n";
 import { useSettings, type RationSize } from "../settings";
@@ -22,9 +22,8 @@ const LANGUAGES: { code: Language; name: string }[] = [
   { code: "en", name: "English" },
 ];
 
-export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }) {
+export function SettingsScreen() {
   const { t, rationSize, language, theme, update } = useSettings();
-  const [confirm, confirming] = useConfirm();
 
   return (
     <div className="screen">
@@ -115,26 +114,18 @@ export function SettingsScreen({ onSignOut }: { onSignOut: (() => void) | null }
         <p className="muted">{t("aboutText")}</p>
       </details>
 
-      {onSignOut && (
-        <button
-          type="button"
-          className="row-button sign-out"
-          onClick={async () => {
-            if (await confirm({ title: t("signOutTitle"), body: t("signOutBody"), confirm: t("signOut") })) {
-              onSignOut();
-            }
-          }}
-        >
-          <Icon name="signOut" size={20} />
-          <span>{t("signOut")}</span>
-        </button>
-      )}
+      {/* Signing in and out is the deployment's, once for every app: its account page lists the
+          person's passkeys and devices and ends a device's session, and leads back here. A full
+          load, which the installed app's worker passes to the network. */}
+      <a className="row-button account" href={accountUrl(window.location.href)}>
+        <Icon name="person" size={20} />
+        <span>{t("account")}</span>
+      </a>
 
       <p className="colophon">
         <Icon name="slice" size={18} />
         Sugary · {t("tagline")}
       </p>
-      {confirming}
     </div>
   );
 }

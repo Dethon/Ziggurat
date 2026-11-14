@@ -1,3 +1,4 @@
+using System.Net;
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -14,6 +15,7 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client.Services;
 
@@ -40,7 +42,7 @@ public sealed class ChatLiveConnectionTests : IDisposable
         var pipeline = new MessagePipeline(
             _dispatcher, _messagesStore, topicStreams, NullLogger<MessagePipeline>.Instance);
         var hubEventDispatcher = new HubEventDispatcher(
-            _dispatcher, _topicsStore, topicStreams, pipeline);
+            _dispatcher, _topicsStore, topicStreams, pipeline, new UserIdentityStore(_dispatcher));
 
         _binder = new HubEventBinder(hubEventDispatcher);
         _liveConnection = new ChatLiveConnection(
@@ -230,6 +232,52 @@ public sealed class ChatLiveConnectionTests : IDisposable
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
     }
 
+    // Nothing else retries a first connect: the visibility and online triggers fire only when the
+    // page is backgrounded or the network drops, and a page opened while the hub restarts has
+    // neither happen to it. It keeps trying by itself until it is live.
+    [Fact]
+    public async Task ConnectAsync_FirstConnectFails_KeepsTryingByItselfUntilLive()
+    {
+        foreach (var _ in Enumerable.Range(0, 6))
+        {
+            _factory.Enqueue(new FakeHubConnection
+            {
+                StartBehavior = _ => Task.FromException(new HttpRequestException("502 Bad Gateway"))
+            });
+        }
+
+        await Should.ThrowAsync<HttpRequestException>(() => _liveConnection.ConnectAsync());
+
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (_connectionStore.State.Status != ConnectionStatus.Connected && DateTime.UtcNow < deadline)
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(5);
+        }
+
+        _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
+        _factory.Created.Count.ShouldBe(7);
+    }
+
+    // A refusal is the session check's answer, which no retry gets past.
+    [Fact]
+    public async Task ConnectAsync_FirstConnectRefused_DoesNotTryAgain()
+    {
+        _factory.Enqueue(new FakeHubConnection
+        {
+            StartBehavior = _ => Task.FromException(Refusal(HttpStatusCode.Forbidden))
+        });
+
+        await Should.ThrowAsync<HttpRequestException>(() => _liveConnection.ConnectAsync());
+        foreach (var _ in Enumerable.Range(0, 120))
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(1);
+        }
+
+        _factory.Created.Count.ShouldBe(1);
+    }
+
     [Fact]
     public async Task ConnectAsync_FirstConnectFails_DropsTheFailedConnectionThere()
     {
@@ -285,6 +333,80 @@ public sealed class ChatLiveConnectionTests : IDisposable
         _factory.Created.Count.ShouldBe(2);
         _connectionStore.State.Status.ShouldBe(ConnectionStatus.Connected);
     }
+
+    // The hub's session check answering the connection — signed out (401), or let in no longer
+    // (403: a suspended household) — is not a network to wait out. Retried, a signed-out page asked
+    // the accounts service once a second for as long as it stayed open, and the person sat on
+    // "Reconnecting" with no way to sign in again; the page is handed to the proxy instead, which
+    // says what it is now.
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task TheConnectionClosesRefused_ItIsNotRebuilt_AndTheRefusalIsAnnounced(HttpStatusCode status)
+    {
+        var refused = new List<HubSessionRefused>();
+        using var _ = _dispatcher.RegisterHandler<HubSessionRefused>(refused.Add);
+        await _liveConnection.ConnectAsync();
+
+        await AdvanceUntilCompleteAsync(_factory.Created.Single().RaiseClosedAsync(Refusal(status)));
+
+        _factory.Created.Count.ShouldBe(1);
+        refused.ShouldBe([new HubSessionRefused(SignedOut: status == HttpStatusCode.Unauthorized)]);
+    }
+
+    [Fact]
+    public async Task ARebuildTheHubRefuses_StopsAtTheFirstAttempt_AndTheRefusalIsAnnounced()
+    {
+        var refused = new List<HubSessionRefused>();
+        using var _ = _dispatcher.RegisterHandler<HubSessionRefused>(refused.Add);
+        await _liveConnection.ConnectAsync();
+        _factory.Created.Single().State = HubConnectionState.Reconnecting;
+        _factory.CreateBehavior = () => new FakeHubConnection
+        {
+            StartBehavior = _ => Task.FromException(Refusal(HttpStatusCode.Unauthorized))
+        };
+
+        var reconnect = _liveConnection.ReconnectIfNeededAsync();
+        await AdvanceUntilCompleteAsync(reconnect);
+
+        _factory.Created.Count.ShouldBe(2);
+        refused.ShouldBe([new HubSessionRefused(SignedOut: true)]);
+    }
+
+    // An installed app opens on its cached client whatever the proxy would now say, so the first
+    // connect is where a suspended household's page learns it: refused there, it is announced too.
+    [Fact]
+    public async Task TheFirstConnectRefused_IsAnnounced()
+    {
+        var refused = new List<HubSessionRefused>();
+        using var _ = _dispatcher.RegisterHandler<HubSessionRefused>(refused.Add);
+        _factory.Enqueue(new FakeHubConnection
+        {
+            StartBehavior = _ => Task.FromException(Refusal(HttpStatusCode.Forbidden))
+        });
+
+        await Should.ThrowAsync<HttpRequestException>(() => _liveConnection.ConnectAsync());
+
+        refused.ShouldBe([new HubSessionRefused(SignedOut: false)]);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized, false)]
+    [InlineData(HttpStatusCode.Forbidden, false)]
+    [InlineData(HttpStatusCode.BadGateway, true)]
+    public void TheAutomaticReconnect_GivesUpOnARefusal_AndKeepsTryingOtherwise(HttpStatusCode status, bool retries)
+    {
+        var delay = new AggressiveRetryPolicy().NextRetryDelay(new RetryContext
+        {
+            PreviousRetryCount = 3,
+            RetryReason = Refusal(status)
+        });
+
+        (delay is not null).ShouldBe(retries);
+    }
+
+    private static HttpRequestException Refusal(HttpStatusCode status) =>
+        new($"Response status code does not indicate success: {(int)status}.", null, status);
 
     private static TopicChangedNotification TopicCreated(string topicId) =>
         new(TopicChangeType.Created, topicId, TestChat.Topic(topicId));

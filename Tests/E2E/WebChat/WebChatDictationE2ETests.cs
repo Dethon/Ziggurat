@@ -2,20 +2,17 @@ using System.Text.Json;
 using Microsoft.Playwright;
 using Shouldly;
 using Tests.E2E.Fixtures;
+using Tests.Integration.Fixtures;
 
 namespace Tests.E2E.WebChat;
 
-// The microphone itself: holding it, the cap that stops it, and the two ways a finger can get
-// ahead of a graph that has not opened yet.
+// The microphone itself: holding it, tapping it, and what a held dictation traces. The cap, the
+// screen held awake and the path it opens on are WebChatDictationLongE2ETests'.
 [Collection(WebChatE2ECollections.Dictation)]
 [Trait("Category", "E2E")]
 public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
     : DictationE2EBase(fixture)
 {
-    // Short enough that the cap case need not wait out the stack's two minutes, and long enough
-    // that opening the microphone and the press that precedes it both fit inside it comfortably.
-    private const int CapMs = 4_000;
-
     // The whole of a good dictation: a held microphone, a finger that drifts a little while it is
     // held, words in the composer, and a recording whose bytes are what whisper can actually read.
     [SkippableFact]
@@ -40,7 +37,9 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
             await TouchAsync(cdp, "touchMove", Point(mic.X - step * 5, mic.Y - step * 3));
             await Task.Delay(60);
         }
-        await Task.Delay(SpectrumHoldMs);
+        // Past the opening transient, the measured window, and the closing one.
+        await HoldUntilRecordedAsync(page,
+            FakeMicrophoneAudio.TranscriptionRate / 5 + 8192 + FakeMicrophoneAudio.TranscriptionRate / 5, SpectrumHoldMs);
         await TouchAsync(cdp, "touchEnd");
 
         // The words land in the composer, not in a message: the person is always the one who
@@ -107,65 +106,50 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         Fixture.TranscriptionStatus = 200;
         Fixture.Transcript = "no debería existir";
 
-        var page = await OpenAsync();
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await PressableMicAsync(page);
-
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+        IPage? tapped = null;
 
         // The press has to outlast the run starting — _onUp returns without deciding anything when
         // there is no run yet — and end well inside the 400 ms mis-tap floor, which dictation.js
-        // measures on the page's own performance.now(). Eighty milliseconds of sleep guaranteed
-        // neither: it was longer than starting takes, and a stalled round trip carried it past the
-        // floor, where the app is right to treat the gesture as the hold it had become. Waiting for
-        // the run makes the press as short as this gesture can be and still be one.
-        await page.WaitForFunctionAsync(
-            "() => window.dictation && window.dictation._run",
-            null,
-            new PageWaitForFunctionOptions { Timeout = 15_000 });
-        await TouchAsync(cdp, "touchEnd");
+        // measures on the page's own performance.now(). Waiting for the run makes the press as short
+        // as this gesture can be and still be one, but the release is still a round trip, and on a
+        // machine running a second suite a stalled one carried the press past the floor, where the
+        // app is right to treat the gesture as the hold it had become. So the tap is the best of a
+        // few: a page that never shows the hint on any of them has a tap that does not work.
+        var aTapLanded = await LatencyBudget.HoldsOnceAsync(async () =>
+        {
+            var page = await OpenAsync();
+            var cdp = await page.Context.NewCDPSessionAsync(page);
+            var mic = await PressableMicAsync(page);
 
-        await Assertions.Expect(page.Locator(".composer-hint"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
+            await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
+            await page.WaitForFunctionAsync(
+                "() => window.dictation && window.dictation._run",
+                null,
+                new PageWaitForFunctionOptions { Timeout = 15_000 });
+            await TouchAsync(cdp, "touchEnd");
+
+            // Either the tap's hint or the hold's ending — a transcript, or a refusal when the hold
+            // was too short to have heard anything: whichever the page decided.
+            await page.WaitForFunctionAsync(
+                "() => document.querySelector('.composer-hint') !== null" +
+                " || document.querySelector('.composer-refusal') !== null" +
+                " || document.querySelector('textarea.chat-input')?.value !== ''",
+                null,
+                new PageWaitForFunctionOptions { Timeout = 15_000 });
+            if (!await page.Locator(".composer-hint").IsVisibleAsync())
+            {
+                return false;
+            }
+
+            tapped = page;
+            return true;
+        });
+
+        aTapLanded.ShouldBeTrue("no tap showed the hold hint; every press was read as a hold");
+        var page = tapped!;
         await Task.Delay(1_500);
         await Assertions.Expect(page.Locator("textarea.chat-input")).ToHaveValueAsync("");
         await Assertions.Expect(page.Locator(".composer-refusal")).ToBeHiddenAsync();
-    }
-
-    // A pocketed phone must not record indefinitely. The cap is the server's number, learned
-    // through the same limits call the attachment rules arrive on — the client carries none.
-    [SkippableFact]
-    public async Task ADictationThatRunsPastTheCap_StopsItselfAndTranscribesWhatItHas()
-    {
-        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
-        Fixture.TranscriptionStatus = 200;
-        Fixture.Transcript = "se paró solo";
-
-        var page = await OpenAsync();
-
-        // The stack's cap is two minutes, which is the number every other case here needs to be
-        // out of its way. This case is the cap, so it shortens it for its own page — and pins it,
-        // because the limits response lands whenever the connection produces it and would
-        // otherwise put the stack's number back over the top of this one.
-        await page.EvaluateAsync(
-            "() => { const d = window.dictation;"
-            + " d.configure({ maxMs: " + CapMs + ", minMs: d._limits.minMs });"
-            + " d.configure = () => {}; }");
-
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await PressableMicAsync(page);
-
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-
-        // Never released: the words arrive because the recording ended itself.
-        await Assertions.Expect(page.Locator("textarea.chat-input"))
-            .ToHaveValueAsync(
-                "se paró solo",
-                new LocatorAssertionsToHaveValueOptions { Timeout = CapMs + 30_000 });
-
-        await TouchAsync(cdp, "touchEnd");
     }
 
     // The trace is the only witness on a phone, and this is what it must be able to say for the
@@ -229,131 +213,6 @@ public sealed class WebChatDictationE2ETests(WebChatE2EFixture fixture)
         trace.ShouldContain("track: unmute");
         trace.ShouldMatch(@"peak -?\d+ dB");
         trace.ShouldMatch(@"last sound at \d+ms");
-    }
-
-    // The verdict of the route experiment, made permanent. The wedge that kept coming back was
-    // per-path: the raw capture path came up born-dead until a reboot while the processed path
-    // recorded fine through the same wedge — confirmed live on the phone that suffers it. So the
-    // processed path is the only path: every open asks for echo cancellation, and there is no
-    // probe, no mid-run swap and no remembered route left to reason about. One grant per
-    // dictation, wedge-immune by default.
-    [SkippableFact]
-    public async Task EveryDictation_OpensOnceAndOnTheProcessedPath()
-    {
-        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
-        Fixture.TranscriptionStatus = 200;
-        Fixture.Transcript = "una sola ruta";
-
-        var page = await OpenAsync();
-        await page.EvaluateAsync(
-            """
-            () => {
-                window.__opens = [];
-                const open = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
-                navigator.mediaDevices.getUserMedia = constraints => {
-                    window.__opens.push(constraints);
-                    return open(constraints);
-                };
-            }
-            """);
-
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        await DictateAsync(cdp, page, HoldMs);
-
-        // Words arriving proves the processed path carried a real recording end to end.
-        await Assertions.Expect(page.Locator("textarea.chat-input"))
-            .ToHaveValueAsync("una sola ruta", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
-
-        (await page.EvaluateAsync<int>("() => window.__opens.length")).ShouldBe(1);
-        (await page.EvaluateAsync<bool>(
-            "() => window.__opens[0].audio.echoCancellation === true")).ShouldBeTrue();
-    }
-
-    // A phone dims and locks a screen nothing has touched for a while, and someone holding the
-    // microphone and talking into it is touching nothing: the longer the dictation, the likelier it
-    // is cut off by the screen going out. On this app that is not merely dark — the lock hides the
-    // page, and a hidden page throws the recording away — so a sentence spoken into a phone left to
-    // itself ends as nothing at all. The screen is asked to stay awake for exactly as long as the
-    // microphone is open, and the lock is let go at both ends a recording has: the release that
-    // transcribes it, and the slide that throws it away. A lock still held after that is a phone
-    // that never sleeps again.
-    [SkippableFact]
-    public async Task ADictationInFlight_HoldsTheScreenAwakeAndLetsGoWhenItEnds()
-    {
-        Skip.If(string.IsNullOrEmpty(Fixture.WebChatUrl), "WebChat stack not available");
-        Fixture.TranscriptionStatus = 200;
-        Fixture.Transcript = "la pantalla sigue encendida";
-
-        var page = await OpenAsync();
-
-        // Every lock the page asks for, kept where the test can ask about it afterwards. Stubbed
-        // rather than taken for real because a headless browser on a machine with no screen is not
-        // where the platform's own answer means anything; what is being pinned is that this app asks
-        // and lets go, at the right two moments.
-        await page.EvaluateAsync(
-            """
-            () => {
-                window.__locks = [];
-                Object.defineProperty(navigator, 'wakeLock', {
-                    configurable: true,
-                    value: {
-                        request: async type => {
-                            const lock = {
-                                type: type,
-                                released: false,
-                                release: async () => { lock.released = true; }
-                            };
-                            window.__locks.push(lock);
-                            return lock;
-                        }
-                    }
-                });
-            }
-            """);
-
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var mic = await PressableMicAsync(page);
-
-        // A recording that ends as words.
-        await TouchAsync(cdp, "touchStart", Point(mic.X, mic.Y));
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]"))
-            .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 15_000 });
-
-        // The lock is asked for at the press and granted a turn later, so it is waited for as the
-        // state it is rather than assumed to be there by the time the strip is.
-        await page.WaitForFunctionAsync(
-            "() => window.__locks.length > 0",
-            null,
-            new PageWaitForFunctionOptions { Timeout = 15_000 });
-        var held = await page.EvaluateAsync<string[]>(
-            "() => window.__locks.filter(l => !l.released).map(l => l.type)");
-        held.ShouldBe(["screen"]);
-
-        await Task.Delay(HoldMs);
-        await TouchAsync(cdp, "touchEnd");
-
-        await Assertions.Expect(page.Locator("textarea.chat-input"))
-            .ToHaveValueAsync(
-                "la pantalla sigue encendida", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
-        (await page.EvaluateAsync<bool>("() => window.__locks.every(l => l.released)"))
-            .ShouldBeTrue("the screen was still being held awake after the dictation ended");
-
-        // And a recording thrown away, which ends down a different path entirely.
-        await page.Locator("textarea.chat-input").FillAsync("");
-        var again = await PressableMicAsync(page);
-        await TouchAsync(cdp, "touchStart", Point(again.X, again.Y));
-        await page.WaitForFunctionAsync(
-            "() => window.__locks.length > 1",
-            null,
-            new PageWaitForFunctionOptions { Timeout = 15_000 });
-        await TouchAsync(cdp, "touchMove", Point(again.X - 120, again.Y));
-        await TouchAsync(cdp, "touchEnd");
-
-        await Assertions.Expect(page.Locator("[data-testid=dictation-strip]")).ToBeHiddenAsync();
-        await page.WaitForFunctionAsync(
-            "() => window.__locks.every(l => l.released)",
-            null,
-            new PageWaitForFunctionOptions { Timeout = 15_000 });
     }
 
 }

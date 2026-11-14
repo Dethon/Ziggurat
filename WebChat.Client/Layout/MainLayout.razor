@@ -18,7 +18,8 @@
                 <span class="status-dot @StatusCssClass"></span>
                 @StatusLabel
             </div>
-            <UserIdentityPicker />
+            <AdminEntry />
+            <SignedInBadge />
             <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
                 @if (_isDarkTheme)
                 {
@@ -45,6 +46,7 @@
     private bool _disposed;
     private string _accentColor = SpaceConfig.DefaultAccentColor;
     private string _spaceName = "Main";
+    private string _spaceSlug = SpaceConfig.DefaultSlug;
     private ConnectionStatus _status;
     private IDisposable? _spaceSubscription;
     private IDisposable? _connectionSubscription;
@@ -91,13 +93,21 @@
                 _spaceName = state.SpaceName;
                 changed = true;
             }
+            if (_spaceSlug != state.CurrentSlug)
+            {
+                _spaceSlug = state.CurrentSlug;
+                changed = true;
+            }
             if (changed)
             {
                 InvokeAsync(async () =>
                 {
                     if (_disposed) return;
-                    var displayName = _spaceName == "Main" ? null : _spaceName;
+                    var displayName = _spaceSlug == SpaceConfig.DefaultSlug ? null : _spaceName;
                     await Js.InvokeVoidAsync("faviconHelper.setColor", _accentColor);
+                    // The page's host knows no household, so the manifest an install reads is told
+                    // the space's name and colour by the page that learned them from the hub.
+                    await Js.InvokeVoidAsync("manifestHelper.setSpace", _spaceSlug, _spaceName, _accentColor);
                     await Js.InvokeVoidAsync("accentHelper.setVar", _accentColor);
                     await Js.InvokeVoidAsync("faviconHelper.setSpaceTitle", displayName);
                     StateHasChanged();

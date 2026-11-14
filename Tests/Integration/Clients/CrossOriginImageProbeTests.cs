@@ -13,7 +13,7 @@ namespace Tests.Integration.Clients;
 //
 // This shipped once as "the site refused to serve i-1", which reads as the site's doing and was
 // not: the same URL in the same page loads as an <img> without complaint.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsD)]
 public class CrossOriginImageProbeTests(IsolatedSessionBrowserFixture fixture)
 {
     [Trait("Category", "External")]

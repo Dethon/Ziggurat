@@ -1,4 +1,3 @@
-using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
@@ -11,6 +10,7 @@ using WebChat.Client.State.Messages;
 using WebChat.Client.State.Pipeline;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Topics;
+using WebChat.Client.State.UserIdentity;
 
 namespace Tests.Unit.WebChat.Client.Services;
 
@@ -21,8 +21,12 @@ public sealed class HubEventBinderTests : IDisposable
         "OnTopicChanged",
         "OnStreamStarted",
         "OnApprovalResolved",
+        "OnApprovalOffered",
+        "OnAlertOffered",
+        "OnAlertSettled",
         "OnUserMessage",
-        "OnAgentsUpdated"
+        "OnAgentsUpdated",
+        "OnAccessChanged"
     ];
 
     private readonly Dispatcher _dispatcher = new();
@@ -41,7 +45,7 @@ public sealed class HubEventBinderTests : IDisposable
         var pipeline = new MessagePipeline(
             _dispatcher, _messagesStore, topicStreams, NullLogger<MessagePipeline>.Instance);
         var hubEventDispatcher = new HubEventDispatcher(
-            _dispatcher, _topicsStore, topicStreams, pipeline);
+            _dispatcher, _topicsStore, topicStreams, pipeline, new UserIdentityStore(_dispatcher));
 
         _binder = new HubEventBinder(hubEventDispatcher);
     }
@@ -92,16 +96,32 @@ public sealed class HubEventBinderTests : IDisposable
         second.BoundWireNames.ShouldBe(_serverPushes, ignoreOrder: true);
     }
 
+    // The push carries no agents (every household is shown its own); it is told on as an action, for
+    // the effect that asks the hub again.
     [Fact]
-    public void Bind_AgentsUpdatedPush_ReachesTheStore()
+    public void Bind_AgentsUpdatedPush_IsDispatched()
     {
         var connection = new FakeHubConnection();
+        var told = 0;
+        using var _ = _dispatcher.RegisterHandler<AgentsUpdated>(_ => told++);
         _binder.Bind(connection);
 
-        connection.Raise<IReadOnlyList<AgentCatalogEntry>>(
-            "OnAgentsUpdated", [new AgentCatalogEntry("agent-1", "Agent One", null)]);
+        connection.Raise("OnAgentsUpdated", new AgentsUpdatedNotification());
 
-        _topicsStore.State.Agents.ShouldContain(agent => agent.Id == "agent-1");
+        told.ShouldBe(1);
+    }
+
+    [Fact]
+    public void OnAccessChanged_IsDispatchedAsAccessChanged()
+    {
+        var connection = new FakeHubConnection();
+        var told = 0;
+        using var _ = _dispatcher.RegisterHandler<AccessChanged>(_ => told++);
+        _binder.Bind(connection);
+
+        connection.Raise("OnAccessChanged", new AccessChangedNotification());
+
+        told.ShouldBe(1);
     }
 
     private static TopicChangedNotification TopicCreated(string topicId) =>

@@ -54,7 +54,7 @@
                     @foreach (var evt in state.Events.TakeLast(50).Reverse())
                     {
                         <div class="table-row">
-                            <span>@evt.Timestamp.ToString("dd/MM HH:mm:ss")</span>
+                            <span>@DashboardTime.Event(evt.Timestamp)</span>
                             <span>@evt.Kind</span>
                             <span class="@OutcomeClass(evt.Outcome)">@evt.Outcome</span>
                             <span title="@evt.Selector">@evt.Selector</span>

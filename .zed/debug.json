@@ -9,6 +9,9 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_ENVIRONMENT": "Local",
       "ASPNETCORE_URLS": "http://localhost:5000"
     },
@@ -50,6 +53,22 @@
     }
   },
   {
+    "label": "Local: Accounts",
+    "adapter": "netcoredbg",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/Accounts/bin/Debug/net10.0/Accounts.dll",
+    "cwd": "$ZED_WORKTREE_ROOT/Accounts",
+    "env": {
+      "DOTNET_ENVIRONMENT": "Local",
+      "ASPNETCORE_ENVIRONMENT": "Local",
+      "ASPNETCORE_URLS": "http://localhost:5004"
+    },
+    "build": {
+      "command": "dotnet",
+      "args": ["build", "$ZED_WORKTREE_ROOT/Accounts/Accounts.csproj", "-c", "Debug"]
+    }
+  },
+  {
     "label": "Local: MCP Library",
     "adapter": "netcoredbg",
     "request": "launch",
@@ -58,6 +77,9 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_URLS": "http://localhost:6001"
     },
     "build": {
@@ -74,6 +96,9 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_URLS": "http://localhost:6002"
     },
     "build": {
@@ -90,7 +115,9 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
-      "ASPNETCORE_URLS": "http://localhost:6003"
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks"
     },
     "build": {
       "command": "dotnet",
@@ -106,6 +133,9 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_URLS": "http://localhost:6005"
     },
     "build": {
@@ -122,6 +152,9 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_URLS": "http://localhost:6006"
     },
     "build": {
@@ -138,6 +171,9 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_URLS": "http://localhost:6004"
     },
     "build": {
@@ -154,6 +190,9 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_ENVIRONMENT": "Local",
       "ASPNETCORE_URLS": "http://localhost:6010"
     },
@@ -171,27 +210,14 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_URLS": "http://localhost:6011"
     },
     "build": {
       "command": "dotnet",
       "args": ["build", "$ZED_WORKTREE_ROOT/McpChannelTelegram/McpChannelTelegram.csproj", "-c", "Debug"]
-    }
-  },
-  {
-    "label": "Local: MCP Channel ServiceBus",
-    "adapter": "netcoredbg",
-    "request": "launch",
-    "program": "$ZED_WORKTREE_ROOT/McpChannelServiceBus/bin/Debug/net10.0/McpChannelServiceBus.dll",
-    "cwd": "$ZED_WORKTREE_ROOT/McpChannelServiceBus",
-    "env": {
-      "DOTNET_ENVIRONMENT": "Local",
-      "MCP__SHAREDSECRET": "local-mcp-secret",
-      "ASPNETCORE_URLS": "http://localhost:6012"
-    },
-    "build": {
-      "command": "dotnet",
-      "args": ["build", "$ZED_WORKTREE_ROOT/McpChannelServiceBus/McpChannelServiceBus.csproj", "-c", "Debug"]
     }
   },
   {
@@ -203,9 +229,12 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_ENVIRONMENT": "Local",
       "ASPNETCORE_URLS": "http://localhost:6015",
-      "RedisConnectionString": "localhost:6379",
+      "RedisConnectionString": "localhost:6379,password=local-redis-password",
       "Satellites__kitchen-01__Identity": "household",
       "Satellites__kitchen-01__Room": "Kitchen",
       "Satellites__kitchen-01__WakeWord": "hey_jarvis",
@@ -225,8 +254,11 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_URLS": "http://localhost:6013",
-      "RedisConnectionString": "localhost:6379"
+      "RedisConnectionString": "localhost:6379,password=local-redis-password"
     },
     "build": {
       "command": "dotnet",
@@ -242,6 +274,9 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_URLS": "http://localhost:6014",
       "SPOOLPATH": "$ZED_WORKTREE_ROOT/McpServerPrinter/.spool"
     },
@@ -259,6 +294,9 @@
     "env": {
       "DOTNET_ENVIRONMENT": "Local",
       "MCP__SHAREDSECRET": "local-mcp-secret",
+      "MCP__SECRETS__localhost": "local-mcp-secret",
+      "MCP__AUDIENCE": "localhost",
+      "MCP__AGENTKEYSURL": "http://localhost:5000/internal/jwks",
       "ASPNETCORE_URLS": "http://localhost:6016",
       "VoiceHub__BaseUrl": "http://localhost:6015"
     },

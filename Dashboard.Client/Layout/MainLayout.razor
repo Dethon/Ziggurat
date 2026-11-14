@@ -40,9 +40,14 @@
         <NavLink href="/web" class="sidebar-icon" title="Web">
             <Icon Glyph="Icons.Globe" Size="1.1em" />
         </NavLink>
+        @* A house: the deployment's households, each with its people and the servers it connected. *@
+        <NavLink href="/households" class="sidebar-icon" title="Households">
+            <Icon Glyph="Icons.House" Size="1.1em" />
+        </NavLink>
         <ConnectionIndicator />
     </nav>
     <main class="content">
+        <HouseholdPicker />
         @Body
     </main>
 </div>

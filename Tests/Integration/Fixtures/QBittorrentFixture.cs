@@ -41,9 +41,10 @@ public class QBittorrentFixture : IAsyncLifetime
 
     private async Task WaitForContainerAndConfigure()
     {
-        // Wait for container logs to have the temporary password
+        // Waits for the state, under a budget only a broken container exhausts (ContainerReadiness).
         string? tempPassword = null;
-        for (var i = 0; i < 60; i++)
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.Elapsed < ContainerReadiness.Budget)
         {
             var logs = await _container.GetLogsAsync();
             var allLines = (logs.Stdout + logs.Stderr)
@@ -67,16 +68,13 @@ public class QBittorrentFixture : IAsyncLifetime
                 }
             }
 
-            await Task.Delay(1000);
+            await Task.Delay(ContainerReadiness.Interval);
         }
 
         if (string.IsNullOrEmpty(tempPassword))
         {
             throw new TimeoutException("Could not get qBittorrent temporary password from logs");
         }
-
-        // Give qBittorrent extra time to initialize its WebUI
-        await Task.Delay(3000);
 
         var cookieContainer = new CookieContainer();
         var handler = new HttpClientHandler
@@ -91,27 +89,38 @@ public class QBittorrentFixture : IAsyncLifetime
         httpClient.DefaultRequestHeaders.Add("Origin", $"http://localhost:{WebUiPort}");
         httpClient.DefaultRequestHeaders.Add("Referer", $"http://localhost:{WebUiPort}/");
 
-        for (var attempt = 0; attempt < 10; attempt++)
+        // The password is in the log before the WebUI answers, so the login is retried until it is
+        // accepted, under the same budget (a refused connection is the WebUI not listening yet).
+        var lastAnswer = "no answer";
+        var loggedIn = false;
+        var loginClock = System.Diagnostics.Stopwatch.StartNew();
+        while (!loggedIn && loginClock.Elapsed < ContainerReadiness.Budget)
         {
             var loginContent = new FormUrlEncodedContent([
                 new KeyValuePair<string, string>("username", DefaultUsername),
                 new KeyValuePair<string, string>("password", tempPassword)
             ]);
-            var loginResponse = await httpClient.PostAsync("auth/login", loginContent);
-            var responseContent = await loginResponse.Content.ReadAsStringAsync();
-
-            if (loginResponse.IsSuccessStatusCode && responseContent.Contains("Ok"))
+            try
             {
-                break;
+                var loginResponse = await httpClient.PostAsync("auth/login", loginContent);
+                var responseContent = await loginResponse.Content.ReadAsStringAsync();
+                loggedIn = loginResponse.IsSuccessStatusCode && responseContent.Contains("Ok");
+                lastAnswer = $"{loginResponse.StatusCode}: {responseContent}";
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                lastAnswer = ex.Message;
             }
 
-            if (attempt == 9)
+            if (!loggedIn)
             {
-                throw new InvalidOperationException(
-                    $"Failed to login to qBittorrent after 10 attempts. Password: {tempPassword}, Response: {loginResponse.StatusCode}, Body: {responseContent}");
+                await Task.Delay(ContainerReadiness.Interval);
             }
+        }
 
-            await Task.Delay(1000);
+        if (!loggedIn)
+        {
+            throw new InvalidOperationException($"Could not log in to qBittorrent within {ContainerReadiness.Budget}: {lastAnswer}");
         }
 
         var setPasswordContent = new FormUrlEncodedContent([

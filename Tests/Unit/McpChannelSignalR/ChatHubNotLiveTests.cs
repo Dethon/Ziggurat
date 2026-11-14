@@ -32,6 +32,7 @@ public class ChatHubNotLiveTests
     {
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             NullLogger<StreamService>.Instance);
 
@@ -42,15 +43,17 @@ public class ChatHubNotLiveTests
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            threadStore: null!,
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
+            new VouchingAccounts(),
+            new HouseholdSpacesAccounts(),
             NullLogger<ChatHub>.Instance)
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
 
         _sessionService.StartSession(TopicId, "jack", 7, 42, "default", "Chat");
@@ -110,15 +113,17 @@ public class ChatHubNotLiveTests
             approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast),
             new Mock<IAgentCatalog>().Object,
-            threadStore: null!,
+            new Mock<IThreadStateStore>().Object,
             pushSubscriptionStore: null!,
             attachmentService: null!,
             new Mock<IHubNotificationSender>().Object,
             new RetentionSettings(),
             new DictationSettings(),
+            new VouchingAccounts(),
+            new HouseholdSpacesAccounts(),
             factory.CreateLogger<ChatHub>())
         {
-            Context = new RegisteredCaller()
+            Context = new SignedInCaller()
         };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));

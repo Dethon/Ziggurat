@@ -1,10 +1,11 @@
 using System.Globalization;
+using System.Text;
 
 namespace Domain.Tools.Sugary.Vfs;
 
 public enum SugaryNodeKind
 {
-    Root, Readme, Foods, Periods, DayNotes, DoseMeals, MealsDir, ItemsDir, DosesDir, ExerciseDir, MealsMonth, ItemsMonth, DosesMonth,
+    Root, People, Readme, Foods, Periods, DayNotes, DoseMeals, MealsDir, ItemsDir, DosesDir, ExerciseDir, MealsMonth, ItemsMonth, DosesMonth,
     ExerciseMonth, Unknown
 }
 
@@ -12,13 +13,14 @@ public enum SugaryNodeKind
 public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
 {
     public bool IsDirectory =>
-        Kind is SugaryNodeKind.Root or SugaryNodeKind.MealsDir or SugaryNodeKind.ItemsDir or SugaryNodeKind.DosesDir
+        Kind is SugaryNodeKind.Root or SugaryNodeKind.People or SugaryNodeKind.MealsDir or SugaryNodeKind.ItemsDir or SugaryNodeKind.DosesDir
             or SugaryNodeKind.ExerciseDir;
 
     // The path a listing or a search hit names this node by, mount-root-relative with a leading slash.
     public string Path => Kind switch
     {
         SugaryNodeKind.Root => "/",
+        SugaryNodeKind.People => "/" + SugaryPath.PeopleDirName,
         SugaryNodeKind.Readme => "/" + SugaryPath.ReadmeFileName,
         SugaryNodeKind.Foods => "/" + SugaryPath.FoodsFileName,
         SugaryNodeKind.Periods => "/" + SugaryPath.PeriodsFileName,
@@ -36,6 +38,9 @@ public sealed record SugaryNode(SugaryNodeKind Kind, string? Month = null)
     };
 }
 
+// Person is the folder's name under people/ (null: the reader's own log), Rest the path inside that log.
+public sealed record SugaryLocation(string? Person, string Rest, bool IsPeople = false);
+
 public static class SugaryPath
 {
     public const string ReadmeFileName = "README.md";
@@ -49,10 +54,50 @@ public static class SugaryPath
     public const string DosesDirName = "doses";
     public const string ExerciseDirName = "exercise";
 
+    // Where everyone else's logs are, for a reader an owner let read them: people/<name>/ holds the same
+    // files as the root does for the reader's own.
+    public const string PeopleDirName = "people";
+
+    // Whose log a path is in: the reader's own (Person null), the people directory itself, or the
+    // person a folder under it names, with the rest of the path inside their log.
+    public static SugaryLocation Locate(string? path)
+    {
+        var segments = Segments(path);
+        return segments switch
+        {
+            [PeopleDirName] => new SugaryLocation(null, "/", IsPeople: true),
+            [PeopleDirName, var person, .. var rest] => new SugaryLocation(person, "/" + string.Join('/', rest)),
+            _ => new SugaryLocation(null, path ?? "/")
+        };
+    }
+
+    // A display name as a folder under people/: its letters and digits lowercased, every other run of
+    // characters one hyphen, so no name can climb out of its folder or split it in two.
+    public static string FolderOf(string displayName)
+    {
+        var folder = new StringBuilder();
+        foreach (var c in displayName.Trim().ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                folder.Append(c);
+            }
+            else if (folder.Length > 0 && folder[^1] != '-')
+            {
+                folder.Append('-');
+            }
+        }
+
+        var trimmed = folder.ToString().TrimEnd('-');
+        return trimmed.Length == 0 ? "person" : trimmed;
+    }
+
+    private static string[] Segments(string? path) =>
+        (path ?? "").Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     public static SugaryNode Parse(string? path)
     {
-        var segments = (path ?? "").Trim('/')
-            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var segments = Segments(path);
 
         return segments switch
         {

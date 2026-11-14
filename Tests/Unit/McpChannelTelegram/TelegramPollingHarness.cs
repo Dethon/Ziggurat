@@ -1,7 +1,11 @@
 using System.Collections.Concurrent;
 using Domain.Agents;
 using Domain.Channels;
+using Domain.Contracts;
+using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
+using Infrastructure.Clients.Accounts;
 using Mcp.Hosting;
 using McpChannelTelegram.Services;
 using McpChannelTelegram.Settings;
@@ -13,6 +17,7 @@ using Telegram.Bot.Requests;
 using Telegram.Bot.Requests.Abstractions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Tests.Unit.McpChannelTelegram;
 
@@ -26,33 +31,67 @@ internal sealed class TelegramPollingHarness : IDisposable
     public const string SubscriberId = ChannelProtocol.ChannelClientNamePrefix + "telegram";
     public const string AgentId = "jack";
 
-    private readonly CancellationTokenSource _cts = new();
+    // The household's jack bot, as its configuration keeps it, and the deployment's shared bot.
+    public const string JackToken = "1001:jack-token";
+    public const string SharedToken = "1000:shared-token";
+
+    private CancellationTokenSource _cts = new();
     private readonly ConcurrentQueue<SendMessageRequest> _sent = new();
 
-    public TelegramPollingHarness(params string[] allowedUsernames)
+    private readonly ConcurrentDictionary<int, Action> _beforeBatch = new();
+    private readonly ITelegramAccounts _telegramAccounts;
+
+    // Alice is Telegram user 1 and Bob user 2, both linked to accounts in the household, unless a
+    // test links others.
+    public const long AliceId = 1;
+    public const long BobId = 2;
+
+    // A group chat's id is negative; a supergroup's starts -100.
+    public const long FamilyGroup = -100_200;
+
+    // The household's own jack bot is the one polled, as its configuration says.
+    public TelegramPollingHarness(params long[] linkedUserIds) : this(null, linkedUserIds, shared: false)
     {
+    }
+
+    // Against a real accounts service, through the client the deployment uses, instead of the fake:
+    // nobody is linked until a test links them there, on the shared bot, which every household's people
+    // link through.
+    public TelegramPollingHarness(AccountsResolverClient accountsService) : this(accountsService, [], shared: true)
+    {
+    }
+
+    // The deployment's shared bot is the one polled, and no household has a bot of its own until a
+    // test saves one.
+    public static TelegramPollingHarness OnTheSharedBot(params long[] linkedUserIds) => new(null, linkedUserIds, shared: true);
+
+    private TelegramPollingHarness(AccountsResolverClient? accountsService, long[] linkedUserIds, bool shared)
+    {
+        Settings = new ChannelSettings { Dictation = Dictation };
+
+        var linked = linkedUserIds.Length > 0
+            ? linkedUserIds.Select(id => (Id: id, Name: $"person-{id}"))
+            : [(AliceId, "alice"), (BobId, "bob")];
+        foreach (var (id, name) in linked)
+        {
+            Accounts.Link(id, name);
+        }
+
+        IAccountResolver resolver = accountsService is null ? Accounts : accountsService;
+        ITelegramAccounts telegramAccounts = accountsService is null ? Accounts : accountsService;
+        _telegramAccounts = telegramAccounts;
+        Access = new TelegramAccess(resolver, telegramAccounts, Settings.LinkCache, Time);
         Inbox = new ChannelInbox(Time);
         Emitter = new ChannelNotificationEmitter(Inbox, DeliveryPolicy.BufferAlways, SubscriberId);
-        BotRegistry = new BotRegistry(new Dictionary<string, ITelegramBotClient>
+        if (!shared)
         {
-            [AgentId] = BotClient.Object
-        });
+            Households.SaveBots(new HouseholdTelegramBot(FakeTelegramAccounts.Household, AgentId, JackToken));
+        }
 
-        Service = new TelegramBotService(
-            BotRegistry,
-            new ChannelSettings
-            {
-                Bots = [new AgentBotConfig { AgentId = AgentId, BotToken = "unused" }],
-                AllowedUsernames = allowedUsernames.Length > 0 ? allowedUsernames : ["alice", "bob"],
-                Dictation = Dictation
-            },
-            Emitter,
-            CallbackRouter,
-            Catalog,
-            new VoiceNoteDictation(
-                Transcriber, Dictation, Metrics, new Mock<ILogger<VoiceNoteDictation>>().Object),
-            Time,
-            new Mock<ILogger<TelegramBotService>>().Object);
+        BotRegistry = new BotRegistry(shared ? SharedToken : null, Connect);
+        BotRegistry.Replace(Households.TelegramBotsAsync(CancellationToken.None).GetAwaiter().GetResult());
+        Bot = BotRegistry.All.Single(bot => bot.Client == BotClient.Object);
+        Service = NewService();
 
         BotClient
             .Setup(b => b.SendRequest(It.IsAny<SendMessageRequest>(), It.IsAny<CancellationToken>()))
@@ -65,19 +104,70 @@ internal sealed class TelegramPollingHarness : IDisposable
             }));
     }
 
+    // The client of the bot the harness polls (Bot): the household's jack bot, or the shared bot.
     public Mock<ITelegramBotClient> BotClient { get; } = new();
+    public TelegramBot Bot { get; }
+    public FakeTelegramAccounts Accounts { get; } = new();
+    public FakeTelegramHouseholds Households { get; } = new();
+    public InMemoryChatAgentChoices Choices { get; } = new();
+    public BotSettings Bots { get; } = new();
+    public TelegramAccess Access { get; }
     public FakeTranscriber Transcriber { get; } = new();
     public RecordingMetricsPublisher Metrics { get; } = new();
     public DictationSettings Dictation { get; } = new();
+    public ChannelSettings Settings { get; }
     public FakeTimeProvider Time { get; } = new();
     public ApprovalCallbackRouter CallbackRouter { get; } = new();
     public MutableAgentCatalog Catalog { get; } = new();
     public ChannelInbox Inbox { get; }
     public ChannelNotificationEmitter Emitter { get; }
     public BotRegistry BotRegistry { get; }
-    public TelegramBotService Service { get; }
+    public TelegramBotService Service { get; private set; }
 
     public IReadOnlyList<SendMessageRequest> Sent => [.. _sent];
+
+    // Any other bot's client, made the first time a token is connected: a household's bot a test saves.
+    public ConcurrentDictionary<string, Mock<ITelegramBotClient>> OtherBots { get; } = new();
+
+    // The household's jack, on the model a test says: what a file sent to it is checked against.
+    public void HouseholdRunsJackOn(string model) =>
+        Households.Agents[FakeTelegramAccounts.Household] = new AgentsSection
+        {
+            Agents =
+            [
+                new HouseholdAgent
+                {
+                    Id = AgentId,
+                    Definition = new AgentDefinition { Id = AgentId, Name = "Jack", Model = model, McpServerEndpoints = [] }
+                }
+            ]
+        };
+
+    // The server stopped and started again over the same stores, which the next run drives.
+    public void Restart()
+    {
+        Service.Dispose();
+        _cts.Dispose();
+        _cts = new CancellationTokenSource();
+        Service = NewService();
+    }
+
+    private TelegramBotService NewService() => new(
+        BotRegistry,
+        Emitter,
+        CallbackRouter,
+        Catalog,
+        new VoiceNoteDictation(
+            Transcriber, Dictation, Metrics, new Mock<ILogger<VoiceNoteDictation>>().Object),
+        new TelegramGate(Access, _telegramAccounts, new Mock<ILogger<TelegramGate>>().Object),
+        new ChatAgents(Choices, Households, new Mock<ILogger<ChatAgents>>().Object),
+        Households,
+        Bots,
+        Time,
+        new Mock<ILogger<TelegramBotService>>().Object);
+
+    private ITelegramBotClient Connect(string token) =>
+        token is JackToken or SharedToken ? BotClient.Object : OtherBots.GetOrAdd(token, _ => new Mock<ITelegramBotClient>()).Object;
 
     // One poll answers with these updates; the next cancels, which is how the pump stops.
     public void Enqueue(params Update[] updates) => EnqueueSequence((TimeSpan.Zero, updates));
@@ -94,6 +184,11 @@ internal sealed class TelegramPollingHarness : IDisposable
                 var index = Interlocked.Increment(ref callCount) - 1;
                 if (index < batches.Length)
                 {
+                    if (_beforeBatch.TryGetValue(index, out var before))
+                    {
+                        before();
+                    }
+
                     Time.Advance(batches[index].Elapsed);
                     return Task.FromResult(batches[index].Updates);
                 }
@@ -102,6 +197,10 @@ internal sealed class TelegramPollingHarness : IDisposable
                 return Task.FromException<Update[]>(new OperationCanceledException(ct));
             });
     }
+
+    // Something that happens elsewhere between two polls — the accounts service coming back, a
+    // person linked on another bot — before the batch at that index is answered.
+    public void OnBatch(int index, Action before) => _beforeBatch[index] = before;
 
     public async Task RunAsync()
     {
@@ -135,6 +234,25 @@ internal sealed class TelegramPollingHarness : IDisposable
     public Task<IReadOnlyList<ChannelInboxItem>> ReceiveAsync() =>
         Inbox.ReceiveAsync(SubscriberId, TimeSpan.Zero, CancellationToken.None);
 
+    // Taps a button on the last keyboard the bot sent, once it has sent one: an approval's keyboard
+    // goes out on a call the test started but cannot await, since that call waits for the tap.
+    public async Task TapAsync(long fromUserId, string button)
+    {
+        await Eventually.Until(() => LastKeyboard is not null, "the approval keyboard to be sent");
+
+        var data = LastKeyboard!.InlineKeyboard.First()
+            .Single(b => b.CallbackData!.StartsWith(button + ":", StringComparison.Ordinal)).CallbackData;
+        await CallbackRouter.HandleCallbackQueryAsync(BotClient.Object, new CallbackQuery
+        {
+            Id = "cb-1",
+            Data = data,
+            From = new User { Id = fromUserId, IsBot = false, FirstName = "Someone" }
+        }, CancellationToken.None);
+    }
+
+    private InlineKeyboardMarkup? LastKeyboard =>
+        Sent.Select(r => r.ReplyMarkup).OfType<InlineKeyboardMarkup>().LastOrDefault();
+
     // Releases whatever the album buffer is holding, then lets the release settle.
     public async Task QuietForAsync(TimeSpan span)
     {
@@ -148,14 +266,25 @@ internal sealed class TelegramPollingHarness : IDisposable
         _cts.Dispose();
     }
 
-    public static Message TextMessage(string text, long chatId = 100, string username = "alice") => new()
-    {
-        Id = 10,
-        Date = DateTime.UtcNow,
-        Text = text,
-        Chat = new Chat { Id = chatId, Type = ChatType.Private },
-        From = new User { Id = 1, IsBot = false, FirstName = username, Username = username }
-    };
+    public static Message TextMessage(
+        string text, long chatId = 100, string? username = "alice", long userId = AliceId) => new()
+        {
+            Id = 10,
+            Date = DateTime.UtcNow,
+            Text = text,
+            Chat = new Chat { Id = chatId, Type = ChatType.Private },
+            From = new User { Id = userId, IsBot = false, FirstName = username ?? "Someone", Username = username }
+        };
+
+    public static Message GroupMessage(
+        string text, long chatId = FamilyGroup, string? username = "alice", long userId = AliceId) => new()
+        {
+            Id = 10,
+            Date = DateTime.UtcNow,
+            Text = text,
+            Chat = new Chat { Id = chatId, Type = ChatType.Supergroup, Title = "Family" },
+            From = new User { Id = userId, IsBot = false, FirstName = username ?? "Someone", Username = username }
+        };
 
     public static Message MediaMessage(
         int messageId = 10,
@@ -163,15 +292,16 @@ internal sealed class TelegramPollingHarness : IDisposable
         long chatId = 100,
         string username = "alice",
         int? threadId = null,
-        string? mediaGroupId = null) => new()
+        string? mediaGroupId = null,
+        ChatType chatType = ChatType.Private) => new()
         {
             Id = messageId,
             Date = DateTime.UtcNow,
             Caption = caption,
             MessageThreadId = threadId,
             MediaGroupId = mediaGroupId,
-            Chat = new Chat { Id = chatId, Type = ChatType.Private },
-            From = new User { Id = 1, IsBot = false, FirstName = username, Username = username }
+            Chat = new Chat { Id = chatId, Type = chatType },
+            From = new User { Id = AliceId, IsBot = false, FirstName = username, Username = username }
         };
 
     public static PhotoSize[] Photo(string fileId = "photo-1", long? sizeBytes = 2048) =>

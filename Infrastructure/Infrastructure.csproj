@@ -38,10 +38,17 @@
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
     <PackageReference Include="StackExchange.Redis" Version="3.4.5" />
     <PackageReference Include="Terminal.Gui" Version="2.5.0" />
+    <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
     </ItemGroup>
 
+    <!-- Mcp.Hosting for the one accessor a server reads who a call acts for through (CallTurn):
+         the fs_* registrar here is server-side code, and a second reading of the call's _meta
+         would be the one a later check could not reach. And for the tunnel's framing (TunnelMux),
+         which the relay here and every tunnelled server speak, written once. The reverse reference
+         stays forbidden. -->
     <ItemGroup>
       <ProjectReference Include="..\Domain\Domain.csproj" />
+      <ProjectReference Include="..\Mcp.Hosting\Mcp.Hosting.csproj" />
     </ItemGroup>
 
 

@@ -105,7 +105,8 @@ public class ChatMonitorScheduleMetricsTests
             threadResolver,
             publisher,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
         await publisher.DisposeAsync();
@@ -142,6 +143,66 @@ public class ChatMonitorScheduleMetricsTests
         }
     }
 
+    // The operator's dashboard listed every household's fire prompts ("Dile a Iker, en una sola línea:
+    // «Beber agua»"), while their conversations are theirs alone: a household's own schedule says its
+    // id, its duration and how it went, and only the home's say what they asked.
+    [Theory]
+    [InlineData(null, "do the thing")]
+    [InlineData("casa", "")]
+    public async Task Monitor_ScheduledMessage_RecordsItsPromptForTheHomeAlone(string? household, string recorded)
+    {
+        var scheduling = MonitorTestMocks.CreateChannel("scheduling", ScheduledMessage() with { HouseholdId = household });
+        var published = CapturePublishedMetrics(out var metricsPublisher);
+
+        var monitor = new ChatMonitor(
+            ConnectionSet.Of([scheduling]),
+            MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
+            MonitorTestMocks.CreateThreadResolver(),
+            metricsPublisher.Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier(),
+            agentDefinitions: MonitorTestMocks.Households(suspended: "nobody"));
+        await monitor.Monitor(CancellationToken.None);
+
+        var evt = published.OfType<ScheduleExecutionEvent>().ShouldHaveSingleItem();
+        evt.ScheduleId.ShouldBe("morning-news");
+        evt.Prompt.ShouldBe(recorded);
+    }
+
+    // Casa Vidal's turn on its own Lemonade box failed with the box's 500, and its reply's delivery can
+    // fail as any target can: both were filed as the deployment's own errors, so the dashboard's
+    // filter for the household showed none of them and the deployment's showed another household's.
+    [Fact]
+    public async Task Monitor_AHouseholdsTurn_FilesItsErrorsUnderThatHousehold()
+    {
+        // The fire's own channel cannot take the reply, as any channel may be down.
+        var scheduling = new Mock<IChannelConnection>();
+        scheduling.SetupGet(c => c.ChannelId).Returns("scheduling");
+        scheduling.SetupGet(c => c.Messages)
+            .Returns(new[] { ScheduledMessage() with { HouseholdId = "casa" } }.ToAsyncEnumerable());
+        scheduling.Setup(c => c.SendReplyAsync(It.IsAny<SendReplyParams>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("channel down"));
+        var agent = new FakeAiAgent { ExceptionToThrow = new InvalidOperationException("the box answered 500") };
+        var published = CapturePublishedMetrics(out var metricsPublisher);
+
+        var monitor = new ChatMonitor(
+            ConnectionSet.Of([scheduling.Object]),
+            MonitorTestMocks.CreateAgentFactory(agent),
+            MonitorTestMocks.CreateThreadResolver(),
+            metricsPublisher.Object,
+            null,
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier(),
+            agentDefinitions: MonitorTestMocks.Households(suspended: "nobody"));
+        await monitor.Monitor(CancellationToken.None);
+
+        var errors = published.OfType<ErrorEvent>().ToList();
+        errors.ShouldContain(e => e.ErrorType == nameof(InvalidOperationException), string.Join("; ", published.Select(e => $"{e.GetType().Name}:{(e as ErrorEvent)?.ErrorType}:{e.TenantId}")));
+        errors.ShouldContain(e => e.ErrorType == nameof(HttpRequestException));
+        errors.ShouldAllBe(e => e.TenantId == "casa");
+    }
+
     private static ChannelMessage ScheduledMessage(params ReplyTarget[] replyTo) => new()
     {
         ConversationId = "fire-1",
@@ -165,10 +226,11 @@ public class ChatMonitorScheduleMetricsTests
 
     private static ChatMonitor BuildMonitor(
         IReadOnlyList<IChannelConnection> channels, Mock<IMetricsPublisher> metricsPublisher) => new(
-        channels,
+        ConnectionSet.Of(channels),
         MonitorTestMocks.CreateAgentFactory(MonitorTestMocks.CreateAgent()),
         MonitorTestMocks.CreateThreadResolver(),
         metricsPublisher.Object,
         null,
-        new Mock<ILogger<ChatMonitor>>().Object);
+        new Mock<ILogger<ChatMonitor>>().Object,
+        TestAssertions.Verifier());
 }

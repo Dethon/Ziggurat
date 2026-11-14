@@ -1,0 +1,497 @@
+using System.Net;
+using System.Net.Http.Json;
+using Accounts.Members;
+using Accounts.Passkeys;
+using Accounts.Sessions;
+using Accounts.Store;
+using Domain.DTOs.Admin;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Playwright;
+using Shouldly;
+using Tests.Integration.Fixtures;
+
+namespace Tests.Integration.Accounts;
+
+// Enrolling and signing in the way a person does, in Chromium with a virtual authenticator standing
+// in for the phone's: a platform authenticator that keeps discoverable credentials and verifies its
+// user. The service runs in-process on localhost, which the browser treats as a secure context.
+public class PasskeyCeremoniesTests : IAsyncLifetime
+{
+    private const string CreateButton = "Create a passkey";
+    private const string SignInButton = "Sign in with a passkey";
+
+    private IPlaywright _playwright = null!;
+    private IBrowser _browser = null!;
+
+    public async Task InitializeAsync()
+    {
+        _playwright = await Playwright.CreateAsync();
+        _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+        {
+            Headless = Environment.GetEnvironmentVariable("PLAYWRIGHT_HEADLESS") != "false"
+        });
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _browser.CloseAsync();
+        _playwright.Dispose();
+    }
+
+    [Fact]
+    public async Task AMintedLink_EnrollsAPasskeyOnceAndThenRefuses()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+
+        await EnrollAsync(server, page, fran);
+
+        var session = await SessionOfAsync(context);
+        var check = await server.VerifyAsync(session);
+        check.StatusCode.ShouldBe(HttpStatusCode.OK);
+        check.Headers.GetValues("X-Ziggurat-User").ShouldBe([fran.UserId]);
+
+        var again = await page.GotoAsync(fran.Url.ToString());
+        again!.Status.ShouldBe((int)HttpStatusCode.Gone);
+        (await page.ContentAsync()).ShouldContain("can no longer be used");
+        (await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = CreateButton }).CountAsync()).ShouldBe(0);
+    }
+
+    // The operator's household list hands back the new household's owner link; the passkey it
+    // enrolls signs its owner into that household, not the operator's.
+    [Fact]
+    public async Task ANewHouseholdsOwnerLink_EnrollsItsOwnerIntoThatHousehold()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var created = await server.Admin(await server.MintSessionAsync(fran.UserId))
+            .PostAsync(AdminProtocol.Households, new NewHousehold("Casa", "Ana"));
+        var link = (await created.Content.ReadFromJsonAsync<AdminSaved<OwnerLink>>())!.Value;
+        var (context, page) = await DeviceAsync();
+
+        await EnrollAsync(server, page, new AccountsServer.MintedLink(link.UserId, link.HouseholdId, new Uri(link.Url)));
+
+        var check = await server.VerifyAsync(await SessionOfAsync(context));
+        check.StatusCode.ShouldBe(HttpStatusCode.OK);
+        check.Headers.GetValues("X-Ziggurat-User").ShouldBe([link.UserId]);
+        check.Headers.GetValues("X-Ziggurat-Tenant").ShouldBe([link.HouseholdId]);
+        link.HouseholdId.ShouldNotBe(fran.TenantId);
+        check.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["owner"]);
+    }
+
+    [Fact]
+    public async Task TheSessionCookie_IsHttpOnlySecureAndLax()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+
+        await EnrollAsync(server, page, fran);
+
+        var cookie = (await context.CookiesAsync()).Single(c => c.Name == SessionCookie.Name);
+        cookie.HttpOnly.ShouldBeTrue();
+        cookie.Secure.ShouldBeTrue();
+        cookie.SameSite.ShouldBe(SameSiteAttribute.Lax);
+        // Until revoked: the longest a browser keeps a cookie, which is 400 days.
+        DateTimeOffset.FromUnixTimeSeconds((long)cookie.Expires).ShouldBeGreaterThan(DateTimeOffset.UtcNow.AddDays(399));
+    }
+
+    [Fact]
+    public async Task SigningIn_AsksForNoUsernameAndReturnsSignedIn()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        await context.ClearCookiesAsync();
+        var back = new Uri(server.Address, "/chat?topic=7").ToString();
+
+        await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in?returnUrl=" + Uri.EscapeDataString(back)).ToString());
+        (await page.Locator("input").CountAsync()).ShouldBe(0);
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = SignInButton }).ClickAsync();
+        await page.WaitForURLAsync(back);
+
+        var check = await server.VerifyAsync(await SessionOfAsync(context));
+        check.StatusCode.ShouldBe(HttpStatusCode.OK);
+        check.Headers.GetValues("X-Ziggurat-User").ShouldBe([fran.UserId]);
+        check.Headers.GetValues("X-Ziggurat-Tenant").ShouldBe([fran.TenantId]);
+        check.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["owner,operator"]);
+    }
+
+    // An installed app opened signed out has nothing to do on sign-in but sign in, so the passkey is
+    // offered as the page opens and the app comes back without a tap.
+    [Fact]
+    public async Task InAnInstalledApp_SignInOffersThePasskeyAtOnce()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        await context.ClearCookiesAsync();
+        await context.AddInitScriptAsync(Installed);
+        var back = new Uri(server.Address, "/chat?topic=7").ToString();
+
+        await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in?returnUrl=" + Uri.EscapeDataString(back)).ToString());
+        await page.WaitForURLAsync(back);
+
+        (await server.VerifyAsync(await SessionOfAsync(context))).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // Having just signed out, the passkey is not put in front of the person again: it would sign them
+    // straight back in. Nor in a browser tab, where the page may have been opened only to look at it.
+    [Theory]
+    [InlineData(true, "&signedOut=1")]
+    [InlineData(false, "")]
+    public async Task SignIn_AfterSigningOutOrInATab_WaitsToBeAsked(bool installed, string query)
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        await context.ClearCookiesAsync();
+        if (installed)
+        {
+            await context.AddInitScriptAsync(Installed);
+        }
+
+        var begun = 0;
+        page.Request += (_, request) =>
+        {
+            if (request.Url.Contains("/accounts/api/sign-in/options", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref begun);
+            }
+        };
+
+        await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in?returnUrl=%2Fchat" + query).ToString());
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Eventually.Settle();
+
+        begun.ShouldBe(0);
+        await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = SignInButton })).ToBeEnabledAsync();
+    }
+
+    // What the page asks to know it is an installed app; a browser launched for a test is a tab.
+    private const string Installed =
+        """
+        (() => {
+          const ask = window.matchMedia.bind(window);
+          window.matchMedia = query => query.includes('display-mode: standalone')
+            ? { matches: true, media: query, addEventListener() {}, removeEventListener() {} }
+            : ask(query);
+        })();
+        """;
+
+    // A crafted sign-in link must not hand a fresh session's redirect to a site that is not ours.
+    [Fact]
+    public async Task SigningIn_ReturnsOnlyToTheDeploymentsOwnOrigins()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        await context.ClearCookiesAsync();
+
+        await page.GotoAsync(new Uri(server.Address,
+            "/accounts/sign-in?returnUrl=" + Uri.EscapeDataString("https://elsewhere.example/steal")).ToString());
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = SignInButton }).ClickAsync();
+
+        await page.WaitForURLAsync(server.Address.ToString());
+    }
+
+    [Fact]
+    public async Task RevokingAPasskey_EndsEverySessionItBeganAndSignsInNoMore()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        var enrolled = await SessionOfAsync(context);
+        await context.ClearCookiesAsync();
+        await SignInAsync(server, page);
+        var signedIn = await SessionOfAsync(context);
+        var minted = await server.MintSessionAsync(fran.UserId);
+        var passkeys = server.Service<PasskeyStore>();
+        var passkey = (await passkeys.ListAsync(fran.UserId, CancellationToken.None)).ShouldHaveSingleItem();
+
+        (await passkeys.RevokeAsync(fran.UserId, passkey.Id, CancellationToken.None)).ShouldBeTrue();
+
+        (await server.VerifyAsync(enrolled, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await server.VerifyAsync(signedIn, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await server.VerifyAsync(minted)).StatusCode.ShouldBe(HttpStatusCode.OK, "a session the passkey did not begin");
+        (await passkeys.ListAsync(fran.UserId, CancellationToken.None)).ShouldBeEmpty();
+
+        await context.ClearCookiesAsync();
+        await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in").ToString());
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = SignInButton }).ClickAsync();
+        await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync("not recognised");
+        // Somebody who revoked their only passkey has no way back but an owner's recovery link, and the
+        // refusal said nothing of it.
+        await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync("recovery link");
+        (await context.CookiesAsync()).ShouldNotContain(c => c.Name == SessionCookie.Name);
+    }
+
+    // A member an owner disabled still holds a working passkey, and proves it by signing; they are told
+    // why they are not let in rather than that the passkey is unknown — which only somebody holding it
+    // can learn — and no session is issued.
+    [Fact]
+    public async Task ADisabledMembersPasskey_IsToldTheyAreDisabled_AndSignsNothingIn()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        await server.MintOperatorAsync("Fran");
+        var laura = AccountsServer.MintedLink.Parse(
+            (await server.RunAsync("mint-link", "--user", await server.SeedMemberAsync("Laura"))).Output);
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, laura);
+        await context.ClearCookiesAsync();
+
+        await server.Service<MemberStore>().DisableAsync(laura.TenantId, laura.UserId, CancellationToken.None);
+        await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in").ToString());
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = SignInButton }).ClickAsync();
+
+        await Assertions.Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync(PasskeyEndpoints.DisabledAccount);
+        (await context.CookiesAsync()).ShouldNotContain(c => c.Name == SessionCookie.Name);
+    }
+
+    // A recovery link adds a second passkey to the same person rather than making a new one.
+    [Fact]
+    public async Task ARecoveryLink_AddsAPasskeyToTheSamePerson()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (_, phone) = await DeviceAsync();
+        await EnrollAsync(server, phone, fran);
+        var recovery = await server.MintOperatorAsync("Fran");
+        var (laptopContext, laptop) = await DeviceAsync();
+
+        await EnrollAsync(server, laptop, recovery);
+
+        (await server.VerifyAsync(await SessionOfAsync(laptopContext))).Headers.GetValues("X-Ziggurat-User")
+            .ShouldBe([fran.UserId]);
+        (await server.Service<PasskeyStore>().ListAsync(fran.UserId, CancellationToken.None)).Count.ShouldBe(2);
+    }
+
+    // Revoking a passkey signs out every device it signed in, this one included, so the page says
+    // which passkey this device's session began with: two passkeys listed by their dates alone left a
+    // person on their phone revoking blind.
+    [Fact]
+    public async Task TheAccountPage_SaysWhichPasskeySignedInThisDevice()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (_, phone) = await DeviceAsync();
+        await EnrollAsync(server, phone, fran);
+        var (_, laptop) = await DeviceAsync();
+        await EnrollAsync(server, laptop, await server.MintOperatorAsync("Fran"));
+
+        await laptop.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+
+        var items = laptop.Locator("li[data-passkey-id]");
+        await Assertions.Expect(items).ToHaveCountAsync(2);
+        await Assertions.Expect(items.Filter(new LocatorFilterOptions { HasText = "this device" })).ToHaveCountAsync(1);
+        await Assertions.Expect(items.Last).ToContainTextAsync("this device");
+    }
+
+    [Fact]
+    public async Task RevokingAPasskeyOnTheAccountPage_EndsEverySessionItBegan()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        var enrolled = await SessionOfAsync(context);
+        await context.ClearCookiesAsync();
+        await SignInAsync(server, page);
+        var signedIn = await SessionOfAsync(context);
+        var minted = await server.MintSessionAsync(fran.UserId);
+        await SeedSecondPasskeyAsync(server, fran.UserId);
+
+        await page.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+        // The page asks before taking a passkey away.
+        page.Dialog += (_, dialog) => dialog.AcceptAsync();
+        await page.Locator("li[data-passkey-id]", new PageLocatorOptions { HasText = "this device" })
+            .GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Revoke passkey" }).ClickAsync();
+        await page.WaitForURLAsync(url => url.Contains("/accounts/sign-in", StringComparison.Ordinal));
+
+        (await server.VerifyAsync(enrolled, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await server.VerifyAsync(signedIn, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await server.VerifyAsync(minted)).StatusCode.ShouldBe(HttpStatusCode.OK, "a session the passkey did not begin");
+    }
+
+    // A person's only passkey is their only way in: revoking it with one click locked Tomás out until an
+    // owner minted him a recovery link. The page offers no revoke for it, and a post is refused.
+    [Fact]
+    public async Task RevokingYourOnlyPasskey_IsRefused_AndSignsNothingOut()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        var enrolled = await SessionOfAsync(context);
+        var passkey = (await server.Service<PasskeyStore>().ListAsync(fran.UserId, CancellationToken.None)).ShouldHaveSingleItem();
+
+        await page.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+        await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Revoke passkey" })).ToHaveCountAsync(0);
+        await Assertions.Expect(page.Locator("li[data-passkey-id]")).ToContainTextAsync("add another");
+        var refused = await page.EvaluateAsync<int>(
+            """
+            async id => {
+              const form = new FormData();
+              const token = document.querySelector('form input[type=hidden]');
+              if (token) form.append(token.name, token.value);
+              return (await fetch(`/accounts/account/passkeys/${id}/revoke`, { method: 'POST', body: form, redirect: 'manual' })).status;
+            }
+            """, passkey.Id);
+
+        refused.ShouldBe(409);
+        (await server.Service<PasskeyStore>().ListAsync(fran.UserId, CancellationToken.None)).ShouldHaveSingleItem();
+        (await server.VerifyAsync(enrolled)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    private static async Task SeedSecondPasskeyAsync(AccountsServer server, string userId)
+    {
+        await using var db = await server.Service<IDbContextFactory<AccountsDbContext>>().CreateDbContextAsync();
+        var user = await db.Users.SingleAsync(u => u.Id == userId);
+        db.Credentials.Add(new Credential
+        {
+            Id = Tokens.NewId(), TenantId = user.TenantId, UserId = userId, CredentialId = Tokens.NewId(),
+            PublicKey = [1], CreatedAt = server.Clock.GetUtcNow()
+        });
+        await db.SaveChangesAsync();
+    }
+
+    // A second device signed in already adds its own passkey from the account page, and then signs
+    // in with it as the same person.
+    [Fact]
+    public async Task AddingAPasskeyFromTheAccountPage_SignsInAsTheSamePerson()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (_, phone) = await DeviceAsync();
+        await EnrollAsync(server, phone, fran);
+        var (laptopContext, laptop) = await DeviceAsync();
+        await SignInWithoutPasskeyAsync(server, laptopContext, await server.MintSessionAsync(fran.UserId));
+
+        await laptop.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+        await laptop.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Add a passkey" }).ClickAsync();
+        await Assertions.Expect(laptop.Locator("[data-passkey-id]")).ToHaveCountAsync(2);
+
+        await laptopContext.ClearCookiesAsync();
+        await SignInAsync(server, laptop);
+        (await server.VerifyAsync(await SessionOfAsync(laptopContext))).Headers.GetValues("X-Ziggurat-User")
+            .ShouldBe([fran.UserId]);
+    }
+
+    [Fact]
+    public async Task AnInvite_EnrollsAPersonWithTheNamedRoleAndDisplayName()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (ownerContext, owner) = await DeviceAsync();
+        await SignInWithoutPasskeyAsync(server, ownerContext, await server.MintSessionAsync(fran.UserId));
+        // Minted through the admin API, as the admin area's members page mints it.
+        var invite = (await MintAsync(server, fran.UserId, AdminProtocol.MemberInvites, new MemberInvite("Laura", AdminMember.Member))).Url;
+        var (lauraContext, laura) = await DeviceAsync();
+
+        await laura.GotoAsync(invite!);
+        await laura.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = CreateButton }).ClickAsync();
+        await laura.WaitForURLAsync(server.Address.ToString());
+
+        var check = await server.VerifyAsync(await SessionOfAsync(lauraContext));
+        check.StatusCode.ShouldBe(HttpStatusCode.OK);
+        check.Headers.GetValues("X-Ziggurat-User").Single().ShouldNotBe(fran.UserId);
+        check.Headers.GetValues("X-Ziggurat-Tenant").ShouldBe([fran.TenantId]);
+        check.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["member"]);
+        await laura.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+        await Assertions.Expect(laura.GetByRole(AriaRole.Heading, new PageGetByRoleOptions { Level = 1 })).ToContainTextAsync("Laura");
+
+        await lauraContext.ClearCookiesAsync();
+        var again = await laura.GotoAsync(invite!);
+        again!.Status.ShouldBe((int)HttpStatusCode.Gone);
+    }
+
+    // A member who lost every device gets a link from an owner, and it is the same person again.
+    [Fact]
+    public async Task AMembersRecoveryLink_AddsAPasskeyToThatPerson()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var lauraId = await server.SeedMemberAsync("Laura");
+        var (ownerContext, owner) = await DeviceAsync();
+        await SignInWithoutPasskeyAsync(server, ownerContext, await server.MintSessionAsync(fran.UserId));
+        var recovery = (await MintAsync(server, fran.UserId, AdminProtocol.MemberRecovery(lauraId), new { })).Url;
+        var (lauraContext, laura) = await DeviceAsync();
+
+        await laura.GotoAsync(recovery!);
+        await laura.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = CreateButton }).ClickAsync();
+        await laura.WaitForURLAsync(server.Address.ToString());
+
+        (await server.VerifyAsync(await SessionOfAsync(lauraContext))).Headers.GetValues("X-Ziggurat-User")
+            .ShouldBe([lauraId]);
+        (await server.Service<PasskeyStore>().ListAsync(lauraId, CancellationToken.None)).ShouldHaveSingleItem();
+    }
+
+    private static async Task<MemberLink> MintAsync(AccountsServer server, string ownerId, string path, object body)
+    {
+        var minted = await server.Admin(await server.MintSessionAsync(ownerId))
+            .SendAsync(new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(body, body.GetType()) });
+        minted.StatusCode.ShouldBe(HttpStatusCode.OK);
+        return (await minted.Content.ReadFromJsonAsync<AdminSaved<MemberLink>>())!.Value;
+    }
+
+    // A browser signed in with a session the operator's command minted, as the E2E stack signs in.
+    private static Task SignInWithoutPasskeyAsync(AccountsServer server, IBrowserContext context, string session) =>
+        context.AddCookiesAsync([
+            new Microsoft.Playwright.Cookie
+            {
+                Name = SessionCookie.Name,
+                Value = session,
+                Url = server.Address.ToString(),
+                Secure = true,
+                HttpOnly = true,
+                SameSite = SameSiteAttribute.Lax
+            }
+        ]);
+
+    // A browser with a platform authenticator that keeps discoverable credentials and verifies its
+    // user, as a phone's does. The authenticator belongs to the page, so a ceremony after another
+    // runs on the same page.
+    private async Task<(IBrowserContext Context, IPage Page)> DeviceAsync()
+    {
+        var context = await _browser.NewContextAsync();
+        var page = await context.NewPageAsync();
+        var cdp = await context.NewCDPSessionAsync(page);
+        await cdp.SendAsync("WebAuthn.enable");
+        await cdp.SendAsync("WebAuthn.addVirtualAuthenticator", new Dictionary<string, object>
+        {
+            ["options"] = new
+            {
+                protocol = "ctap2",
+                transport = "internal",
+                hasResidentKey = true,
+                hasUserVerification = true,
+                isUserVerified = true
+            }
+        });
+        return (context, page);
+    }
+
+    // After enrolling, the person lands on the deployment's front page, signed in.
+    private static async Task EnrollAsync(AccountsServer server, IPage page, AccountsServer.MintedLink link)
+    {
+        await page.GotoAsync(link.Url.ToString());
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = CreateButton }).ClickAsync();
+        await page.WaitForURLAsync(server.Address.ToString());
+    }
+
+    private static async Task SignInAsync(AccountsServer server, IPage page)
+    {
+        await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in").ToString());
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = SignInButton }).ClickAsync();
+        await page.WaitForURLAsync(server.Address.ToString());
+    }
+
+    private static async Task<string> SessionOfAsync(IBrowserContext context) =>
+        (await context.CookiesAsync()).Single(c => c.Name == SessionCookie.Name).Value;
+}

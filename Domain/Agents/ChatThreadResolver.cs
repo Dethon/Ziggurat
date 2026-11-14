@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Domain.Contracts;
+using Domain.Conversations;
 
 namespace Domain.Agents;
 
@@ -10,6 +11,21 @@ public sealed class ChatThreadResolver(IThreadStateStore? threadStateStore = nul
     private int _isDisposed;
 
     public IEnumerable<AgentKey> AgentKeys => _contexts.Keys;
+
+    // The household a conversation's topic records, where the agent keeps one over it (an id shaped as a
+    // topic's, ConversationIdentity): a conversation is that household's, and no other household's
+    // server may join it or have its history read. None for a conversation no topic holds.
+    public async Task<string?> HouseholdOfAsync(AgentKey key, CancellationToken ct)
+    {
+        if (threadStateStore is null || ConversationIdentity.Parse(key.ConversationId) is not { } id)
+        {
+            return null;
+        }
+
+        var topic = await threadStateStore.GetTopicByChatIdAndThreadIdAsync(
+            key.AgentId ?? "default", id.ChatId, id.ThreadId, ct);
+        return topic?.TenantId;
+    }
 
     public ChatThreadContext Resolve(AgentKey key)
     {

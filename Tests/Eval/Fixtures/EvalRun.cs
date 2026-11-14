@@ -3,6 +3,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.Extensions;
+using Domain.Security.Signing;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,9 +16,18 @@ namespace Tests.Eval.Fixtures;
 // pinned clock, and a stack carried over from the previous run has neither.
 public static class EvalRun
 {
-    // The user every scenario runs as. Memory is scoped to it, and the forget tool refuses a run
-    // that carries no identity — so it is one constant rather than a string repeated per fixture.
+    // The account every scenario runs as, by its user id. Memory is keyed by it, and the forget
+    // tool refuses a turn that acts for no account — so it is one constant rather than a string
+    // repeated per fixture.
     public const string UserId = "eval-user";
+
+    // The household that account belongs to: nothing in a run is keyed by it, but an account
+    // always names one.
+    public const string Tenant = "eval-home";
+
+    // The account that user signed in as, which every turn's principal carries as a signed-in
+    // channel stamps it: what follows the person — their memory, their Sugary log — is found by it.
+    public static readonly Account Account = new(Tenant, UserId);
 
     // One run in a slot of its own. The gate is what bounds how many stacks stand at once now
     // that a scenario's runs go out together, and the lease is the database this run is alone on.
@@ -34,23 +44,26 @@ public static class EvalRun
 
         // Named so the recording can tell this agent's calls from a real worker's: both are built
         // by the one factory and heard by the one observer. Both of its names — the one its
-        // metrics carry and the one its session does, which is the display name the factory
-        // composes from the definition's name and the conversation.
+        // metrics carry, which is its id, and the one its session does, which is the display name
+        // the factory composes from the definition's name and the conversation.
         var recording = new Recording
         {
             Parent = ShippedDefinition.Repository.Settings.Agents
                 .Where(agent => agent.Id == scenario.AgentId)
-                .SelectMany(agent => new[] { agent.Name, $"{agent.Name}-{conversationId}" })
+                .SelectMany(agent => new[] { agent.Id, $"{agent.Name}-{conversationId}" })
                 .ToList()
         };
         await using var stack = await EvalStack.StartAsync(
             scenario, redisConnectionString, recording);
 
-        await using var agent = stack.Factory.Create(
+        // Built for the turn's channel, as a conversation group is: whichever agent serves a satellite
+        // reads the voice rules.
+        await using var agent = await stack.Factory.CreateAsync(
             new AgentKey(conversationId, scenario.AgentId),
             userId: UserId,
             agentId: scenario.AgentId,
-            approvalHandler: new AutoApproveHandler());
+            approvalHandler: new AutoApproveHandler(),
+            channelId: scenario.Turn.Channel ?? (scenario.Turn.SatelliteId is null ? ChannelIds.SignalR : ChannelIds.Voice));
 
         // Taken after the stack is up and before the turn goes out, so what the diff reports is
         // what this turn did rather than what arming the scenario did.
@@ -135,15 +148,32 @@ public static class EvalRun
         // Set on the message the recall hook would have set it on, so the block reaches the model
         // through the decoration that renders it in production rather than through a second path.
         message.SetMemoryContext(memories);
+        // Every turn acts for the eval's one account, as a channel on accounts stamps a person's turn
+        // and a fire acts for the person whose write its delegation stands behind — an eval's fire
+        // stands in for one the person wrote from the channel it delivers to. Memory is keyed by the
+        // account, so its user id is the one the remembered facts are filed under.
+        var channel = EvalAttachments.Channel(scenario.Turn);
         message.SetConversationContext(new ConversationContext(
             scenario.AgentId, conversationId, UserId,
-            new ReplyTarget(
-                EvalAttachments.Channel(scenario.Turn),
-                conversationId,
-                scenario.Turn.SatelliteId)));
+            new ReplyTarget(channel, conversationId, scenario.Turn.SatelliteId),
+            OriginKind: scenario.Turn.Origin,
+            Principal: new Principal(channel, UserId, Account),
+            Identity: IdentityOf(scenario.Turn, channel)));
 
         return message;
     }
+
+    // An eval drives the agent below the turn-start check — no channel server, no monitor — so it
+    // stamps what that check answers: for a person's turn, the eval account's assertion on the turn's
+    // channel (signed with the accounts test key, as a test stack's accounts service signs it); for a
+    // schedule's, a watch's or a login's fire, the delegation the agent would have signed when the
+    // eval account wrote it from that channel. A download's fire acts for nobody, as in the
+    // deployment. EvalRunTests holds each to what the agent's own checks answer.
+    private static IdentityClaims? IdentityOf(EvalTurn turn, string channel) =>
+        turn.Origin is MessageOriginKind.Download ? null : IdentityClaims.Person(UserId, Tenant, channel, Roles);
+
+    // The household role the accounts service names a member with.
+    public static IReadOnlyList<string> Roles { get; } = ["member"];
 
     // The turn's files put in the sandbox as ConversationGroup puts a channel's there: after the
     // session is built, because the mounts only exist then, and recorded on the message rather than
@@ -202,8 +232,7 @@ public static class EvalRun
 // that decides whether asking is needed.
 public sealed class AutoApproveHandler : IToolApprovalHandler
 {
-    public Task<ToolApprovalResult> RequestApprovalAsync(
-        string conversationId, IReadOnlyList<ToolApprovalRequest> requests, CancellationToken ct) =>
+    public Task<ToolApprovalResult> RequestApprovalAsync(ApprovalAsk ask, CancellationToken ct) =>
         Task.FromResult(ToolApprovalResult.Approved);
 
     public Task NotifyAutoApprovedAsync(

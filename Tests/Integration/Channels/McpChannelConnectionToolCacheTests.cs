@@ -10,9 +10,10 @@ using Tests.Integration.McpServers;
 
 namespace Tests.Integration.Channels;
 
-// The capability probe asks "does this server offer this tool". Nothing can change that answer
-// while a connection is up — every server in this repo registers its tools before its transport
-// starts — so it is asked once per connection generation. Driven against a real server over
+// The capability probe asks "does this server offer this tool". A server registers its tools before
+// its transport starts, so it is asked once per connection generation — and the health check's own
+// listing refreshes the answer, since the server behind a client can be replaced without the client
+// reconnecting. Driven against a real server over
 // loopback, because the count is only meaningful if the round trips are real.
 // See docs/adr/0012-a-servers-tool-set-is-fixed-for-a-connection-generation.md.
 public class McpChannelConnectionToolCacheTests
@@ -204,10 +205,44 @@ public class McpChannelConnectionToolCacheTests
         (await CreateAsync(connection)).ShouldBeNull();
     }
 
+    // The server behind a connection can change without the connection changing: a channel server's
+    // container recreated with a new image is answered by the same client, whose pump only retries
+    // (pass 20: Telegram gained create_conversation, and a running agent's fires kept finding none
+    // until it restarted). The health check lists the tools anyway, so what it lists is what is offered.
+    [Fact]
+    public async Task CreateConversation_AToolTheServerGainedBehindTheSameClient_IsFoundAfterTheNextHealthCheck()
+    {
+        Volatile.Write(ref _offersCreate, false);
+        await using var server = await InMemoryMcpServer.StartAsync(services => services
+            .AddMcpServer()
+            .WithHttpTransport()
+            .WithTools<ConversationTools>()
+            .WithRequestFilters(filters => filters.AddListToolsFilter(next => async (context, ct) =>
+            {
+                var result = await next(context, ct);
+                return Volatile.Read(ref _offersCreate)
+                    ? result
+                    : new ModelContextProtocol.Protocol.ListToolsResult
+                    {
+                        Tools = [.. result.Tools.Where(t => t.Name != ChannelProtocol.CreateConversationTool)]
+                    };
+            })));
+        await using var connection = new McpChannelConnection("test");
+        await connection.ConnectAsync(server.Endpoint, CancellationToken.None);
+        (await CreateAsync(connection)).ShouldBeNull();
+
+        Volatile.Write(ref _offersCreate, true);
+        (await connection.IsHealthyAsync(CancellationToken.None)).ShouldBeTrue();
+
+        (await CreateAsync(connection)).ShouldBe("conv-1");
+    }
+
+    private static bool _offersCreate;
+
     private static Task<string?> CreateAsync(McpChannelConnection connection) =>
         connection.CreateConversationAsync(
             "agent-1", "topic", "sender", initialPrompt: null, address: null,
-            existingConversationId: null, CancellationToken.None);
+            existingConversationId: null, principal: null, group: false, CancellationToken.None);
 
     private static Task<RunningServer> StartServerAsync() => InMemoryMcpServer.StartAsync(services => services
         .AddMcpServer()

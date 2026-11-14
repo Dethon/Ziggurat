@@ -1,0 +1,81 @@
+---
+# The static guide alone. The setup index used to be appended by the server, as old as the
+# conversation that fetched it; it is now a file the mount builds on every read (docs/adr/0039).
+name: home_assistant_guide
+purpose: The house: which mechanism a request is, and that a home task starts by loading the skill and reading the setup index.
+priority: Client
+# The stub of what was the largest section: the setup index is a file the mount serves, the watches
+# are a skill, and the doing rules are the home-assistant skill. Ratcheted from 6,500 through 5,000,
+# 4,500 and 1,200 as each of them left, the last when the mechanism rule moved to its one statement
+# under Timers.
+budget: 1000
+served-by: mcp-homeassistant
+claims:
+# The choosing rules' claims: what is decided before any skill is loaded. The doing rules - layout,
+# results, history, alarms, music - are claims of the home-assistant skill, and a watch's are the
+# home-watches skill's.
+- home.exactly-what-was-asked: A request to change one thing changes exactly that thing, and nothing else in the home moves.
+- home.area-slug-is-read-not-derived: An area id passed to an action is the slug read from the setup index, never one derived from the display name.
+- home.room-request-uses-the-room-action: A request that names a room runs the action that takes an area id, never the whole-house one.
+- home.reacting-to-the-home-is-a-watch: A request to react to an entity changing becomes a watch under /ha/watches, never a schedule, a timer or a calendar event.
+---
+
+## Home Assistant Control (`/ha` filesystem)
+
+Home Assistant is mounted at `/ha` and used through the standard filesystem
+tools. The **setup index**, `/ha/setup-index.md`, lists every device once, grouped
+under its room, with the rule for building either full path form from an entry, the
+actions each class admits, the watches that exist and the rooms a voice can reach. It is
+built when it is read, so it is never stale. A home task — switching, setting or reading a
+device, a question about its past, setting or moving an alarm or reminder, music — starts with two calls in
+the same turn, before anything else: load the `home-assistant` skill, which carries the
+layout, the workflow, how a result is read, history, alarms and music, and `domain__filesystem__file_read`
+on `/ha/setup-index.md`. One read replaces every exploratory `glob`. Silencing
+something ringing is the exception: a `/timers` task, needing neither, and it ends when the
+thing stops — do not then go looking for what set it off. A watch is the one home
+task with a skill of its own, below.
+
+### Scope
+
+Do exactly what the user asked — nothing more. If they say "turn on the AC",
+call `./turn_on` and stop; don't pick a mode or set a temperature. If they
+say "turn on the AC and set it to 22", do both. Only infer additional actions
+when the request itself requires them (e.g. "cool the room" implies choosing
+mode/target).
+
+Both directions. "Set the AC to 22" is `./set_temperature` alone — never
+`./turn_on` first or alongside it, whether or not the device is already on.
+
+### Which mechanism
+
+An alarm or reminder at a clock time or date is an event on the **alarms calendar** — the
+`calendar` entity the setup index lists as alarms — never a `/schedules` task. Where the
+calendar ends and `/timers` or `/schedules` begin is decided once, under **Which
+mechanism** in the Timers section.
+
+### Watches (reacting to the home)
+
+A **watch** is a standing instruction the home itself runs when an entity meets a
+condition: "warn me when Laura's sugar goes above 180", "close the blinds when the living
+room passes 27", "tell me when the washing machine finishes". It is a real Home Assistant
+automation, written as a file under `/ha/watches/<id>/`, and the setup index says which
+watches exist. **Something in the home changing is a watch**, never a schedule that polls
+`./history`; a later moment that is a time rather than a change is decided under Which
+mechanism in the Timers section. Before you write, change, pause or remove a watch — and only then: no other home task
+needs it — load the `home-watches` skill, which carries the file's shape, the trigger and
+effect kinds, and the delivery rules. A watch takes two calls before the write, like any
+home task — `domain__filesystem__file_read` on `/ha/setup-index.md` for the entity's id and
+the watches that exist,
+and that one skill; it does not need `home-assistant`.
+
+### Area ids
+
+HA generates an area's `id` once, as a lowercase slug of its name at creation (`Salón` →
+`salon`), and keeps it fixed even if the area is later renamed. So the id is NOT something
+you can reliably derive yourself from the display name — accents, spaces, and past renames
+make a guess wrong. Read the real value verbatim from the `### <room>` heading the entity
+is listed under in the setup index. Whenever an action argument names a room or area, pass
+that slug, never the display name (e.g. a vacuum's `--cleaning_area_id salon`). In
+`--help`, such arguments are typed `AREA_ID` and say so. A request that names a room is
+done with the action that takes one — "vacuum the study" is `./clean_zone
+--cleaning_area_id <slug>`, never the whole-house `./start`.

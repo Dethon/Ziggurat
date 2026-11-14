@@ -18,23 +18,29 @@ public sealed class NullThreadStateStore : IThreadStateStore
 
     public Task AppendMessagesAsync(string key, IReadOnlyList<ChatMessage> messages) => Task.CompletedTask;
 
+    public Task DropTailAsync(string key, int count) => Task.CompletedTask;
+
     public Task DeleteAsync(AgentKey key) => Task.CompletedTask;
 
     public Task<bool> ExistsAsync(string key, CancellationToken ct = default) => Task.FromResult(false);
 
     public Task SaveTopicAsync(TopicMetadata topic, bool keepTtl = false) => Task.CompletedTask;
 
-    public Task DeleteTopicAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
+    public Task DeleteTopicAsync(string tenantId, string agentId, long chatId, string topicId) => Task.CompletedTask;
 
-    public Task MarkTopicReadAsync(string agentId, long chatId, string topicId) => Task.CompletedTask;
+    public Task MarkTopicReadAsync(string tenantId, string agentId, long chatId, string topicId, string userId) => Task.CompletedTask;
 
     public Task<TopicPage> GetTopicPageAsync(
-        string agentId, string spaceSlug, string? cursor, int pageSize, bool archived = false)
+        string agentId, string spaceSlug, TopicViewer viewer, string? cursor, int pageSize, bool archived = false,
+        IReadOnlyList<string>? alsoSpaces = null)
         => Task.FromResult(new TopicPage([], null));
 
     public Task<TopicPage> SearchTopicsAsync(
-        string agentId, string spaceSlug, string query, string? cursor, int pageSize)
+        string agentId, string spaceSlug, TopicViewer viewer, string query, string? cursor, int pageSize,
+        IReadOnlyList<string>? alsoSpaces = null)
         => Task.FromResult(new TopicPage([], null));
+
+    public Task<IReadOnlyList<string>> SpacesHoldingTopicsAsync(string tenantId) => Task.FromResult<IReadOnlyList<string>>([]);
 
     public Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
         => Task.FromResult<IReadOnlyList<ChatHistoryMessage>>([]);
@@ -43,6 +49,6 @@ public sealed class NullThreadStateStore : IThreadStateStore
         string agentId, long chatId, long threadId, CancellationToken ct = default)
         => Task.FromResult<TopicMetadata?>(null);
 
-    public Task<TopicMetadata?> GetTopicAsync(string agentId, long chatId, string topicId) =>
+    public Task<TopicMetadata?> GetTopicAsync(string tenantId, string agentId, long chatId, string topicId) =>
         Task.FromResult<TopicMetadata?>(null);
 }

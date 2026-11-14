@@ -34,6 +34,7 @@ public static class EvalTools
     public static readonly string WebBrowse = Served + WebBrowseTool.Name;
     public static readonly string WebSnapshot = Served + WebSnapshotTool.Name;
     public static readonly string WebAction = Served + WebActionTool.Name;
+    public static readonly string WebLogin = Served + WebLoginTool.Name;
 
     public static readonly string Create = Prefix + VfsTextCreateTool.Name;
     public static readonly string Read = Prefix + VfsFileReadTool.Name;

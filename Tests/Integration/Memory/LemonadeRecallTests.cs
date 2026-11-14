@@ -1,5 +1,6 @@
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.Extensions;
 using Domain.Memory;
@@ -35,8 +36,7 @@ public class LemonadeRecallTests(LemonadeMemorySearchFixture redisFixture, Lemon
         await StoreAsync(store, embeddingService, userId, "Al usuario le gusta el café tostado oscuro");
 
         var message = new ChatMessage(ChatRole.User, "¿Qué lenguaje debería usar?");
-        await CreateHook(store, embeddingService)
-            .EnrichAsync(message, userId, "conv_1", null, CreateSession(), CancellationToken.None);
+        await Extracted(CreateHook(store, embeddingService), message, new Account("home", userId), "conv_1", null, CreateSession(), CancellationToken.None);
 
         var context = message.GetMemoryContext();
         context.ShouldNotBeNull();
@@ -73,8 +73,7 @@ public class LemonadeRecallTests(LemonadeMemorySearchFixture redisFixture, Lemon
             });
 
         var message = new ChatMessage(ChatRole.User, "¿Qué lenguaje debería usar?");
-        await CreateHook(store, unreachable, metricsPublisher.Object)
-            .EnrichAsync(message, userId, "conv_1", null, CreateSession(), CancellationToken.None);
+        await Extracted(CreateHook(store, unreachable, metricsPublisher.Object), message, new Account("home", userId), "conv_1", null, CreateSession(), CancellationToken.None);
 
         message.GetMemoryContext().ShouldBeNull();
         errors.ShouldContain(e => e.Service == MemoryRecallHook.EmbeddingErrorService);
@@ -133,5 +132,16 @@ public class LemonadeRecallTests(LemonadeMemorySearchFixture redisFixture, Lemon
         var session = new Mock<AgentSession>().Object;
         session.StateBag.SetValue(RedisChatMessageStore.StateKey, $"state-{Guid.NewGuid():N}");
         return session;
+    }
+
+    // Recall hands the extraction back for a turn that worked; these run it as one.
+    private static async Task Extracted(
+        global::Infrastructure.Memory.MemoryRecallHook hook, Microsoft.Extensions.AI.ChatMessage message, global::Domain.DTOs.Channel.Account? account,
+        string? conversationId, string? agentId, Microsoft.Agents.AI.AgentSession thread, CancellationToken ct)
+    {
+        if (await hook.EnrichAsync(message, account, conversationId, agentId, thread, ct) is { } extract)
+        {
+            await extract(ct);
+        }
     }
 }

@@ -134,7 +134,8 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
                 MealOutcome.InRange, null,
                 [new LoggedItem(0, "toast", null, null, null, new CarbRange(20, 30, 40), ItemSource.Label, null, false, null)])
         ]);
-        var sugary = new SugaryFileSystem(log, TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"), new DuckDbTableEngine());
+        var sugary = new SugaryFileSystem(log, TimeZoneInfo.FindSystemTimeZoneById("Europe/Madrid"), new DuckDbTableEngine())
+            .For(InMemorySugaryLog.Her);
         var call = Mint((sugary, "/sugary", null));
 
         var result = await ExecAsync(client,
@@ -299,23 +300,29 @@ public class SandboxMountsE2ETests(SandboxE2EFixture fixture)
         Stdout(second).ShouldBe("changed by a tool\n");
     }
 
-    // A vault-sized tree stays practical to search from the shell.
+    // A vault-sized tree stays practical to search from the shell: a recursive grep costs the mount one
+    // listing per directory, at most one attribute per entry and one read per file — the daemon's cache
+    // for the call — however long a busy machine takes over it. Counted on the mount rather than timed,
+    // since a time bound measured the machine and failed with the cache working.
     [SkippableFact]
     public async Task ARecursiveGrepOverAVaultSizedTree_StaysPractical()
     {
         Skip.IfNot(fixture.Available, "Docker is not available");
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
         await using var client = await fixture.ConnectAsync(cts.Token);
         var files = Enumerable.Range(0, 40)
             .SelectMany(d => Enumerable.Range(0, 25).Select(f => (Path: $"d{d}/n{f}.md", Text: f == 0 ? "TODO here\n" : "nothing\n")))
             .ToDictionary(x => x.Path, x => x.Text);
-        var call = fixture.Bridge.Mint(BridgeFixtures.Registry((new MemoryDisk("vault", files), "/vault", null)), BridgeFixtures.Everything, null, null);
-        var started = System.Diagnostics.Stopwatch.StartNew();
+        var vault = new MemoryDisk("vault", files);
+        var call = fixture.Bridge.Mint(BridgeFixtures.Registry((vault, "/vault", null)), BridgeFixtures.Everything, null, null);
 
         var result = await ExecAsync(client, "grep -rl TODO /vault | wc -l", call, cts.Token);
 
         Stdout(result).ShouldBe("40\n", result.ToString());
-        started.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(30));
+        const int directories = 40 + 1;
+        vault.Globs.ShouldBeLessThanOrEqualTo(directories, "one listing per directory");
+        vault.Reads.ShouldBeLessThanOrEqualTo(files.Count, "one read per file");
+        vault.Infos.ShouldBeLessThanOrEqualTo(files.Count + directories, "at most one attribute per entry");
     }
 
     // An exec the agent minted nothing for serves nothing.

@@ -10,7 +10,7 @@ namespace Domain.Monitor;
 
 // Internal because the turn is: this is the one place a reply's wire record is built, and it is
 // built out of the turn that produced the update.
-internal class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logger)
+internal class ReplyDispatcher(ILogger logger)
 {
     public async Task<bool> DeliverUpdateAsync(
         AgentResponseUpdate update, Turn turn, CancellationToken ct)
@@ -25,7 +25,7 @@ internal class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logge
 
         foreach (var error in update.Contents.OfType<ErrorContent>())
         {
-            metricsPublisher.Publish(new ErrorEvent
+            turn.Metrics.Publish(new ErrorEvent
             {
                 Service = "agent",
                 ErrorType = error.ErrorCode ?? "Unknown",
@@ -65,7 +65,7 @@ internal class ReplyDispatcher(IMetricsPublisher metricsPublisher, ILogger logge
             // would also suppress its schedule-execution metric).
             logger.LogWarning(ex, "Failed to deliver reply to {ChannelId}; skipping target",
                 target.Channel.ChannelId);
-            metricsPublisher.Publish(new ErrorEvent
+            turn.Metrics.Publish(new ErrorEvent
             {
                 Service = "agent",
                 ErrorType = ex.GetType().Name,

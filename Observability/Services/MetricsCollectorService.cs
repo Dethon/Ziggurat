@@ -1,12 +1,23 @@
 using System.Text.Json;
 using Domain.DTOs.Metrics;
+using Domain.DTOs.Metrics.Enums;
+using Domain.Metrics;
 using Microsoft.AspNetCore.SignalR;
 using Observability.Hubs;
 using StackExchange.Redis;
 
 namespace Observability.Services;
 
-public record ServiceHealthUpdate(string Service, bool IsHealthy, DateTimeOffset Timestamp);
+// Household is null for the deployment's own services and a probed container.
+public record ServiceHealthUpdate(string Service, bool IsHealthy, DateTimeOffset Timestamp, string? Household = null);
+
+// The totals-hash fields Lemonade's use is counted under.
+public static class LemonadeTotals
+{
+    public const string TranscribedMs = "lemonade:transcription:ms";
+    public const string SpokenCharacters = "lemonade:speech:chars";
+    public const string Embeddings = "lemonade:embedding:count";
+}
 
 public sealed class MetricsCollectorService(
     IConnectionMultiplexer redis,
@@ -79,15 +90,16 @@ public sealed class MetricsCollectorService(
         {
             var db = redis.GetDatabase();
             var now = _time.GetUtcNow();
-            var knownServices = await ServiceHealthRegistry.ListAsync(db, now);
+            var roster = await ServiceHealthRegistry.ListAsync(db, now);
 
-            foreach (var service in knownServices)
+            foreach (var member in roster)
             {
-                var isHealthy = await db.KeyExistsAsync($"metrics:health:{service}");
+                var isHealthy = await db.KeyExistsAsync(ServiceHealthRegistry.HealthKey(member));
                 if (!isHealthy)
                 {
+                    var (service, tenantId) = ServiceHealthRegistry.Parse(member);
                     await hubContext.Clients.All.SendAsync("OnHealthUpdate",
-                        new ServiceHealthUpdate(service, false, now));
+                        new ServiceHealthUpdate(service, false, now, tenantId));
                 }
             }
         }
@@ -99,6 +111,8 @@ public sealed class MetricsCollectorService(
 
     internal async Task ProcessEventAsync(MetricEvent evt, IDatabase db)
     {
+        await db.SetAddAsync(MetricKeys.Scopes, MetricKeys.ScopeOf(evt.TenantId));
+
         switch (evt)
         {
             case TokenUsageEvent token:
@@ -149,14 +163,17 @@ public sealed class MetricsCollectorService(
             case ExecScreenEvent screen:
                 await ProcessExecScreenAsync(screen, db);
                 break;
+            case LemonadeUsageEvent lemonade:
+                await ProcessLemonadeUsageAsync(lemonade, db);
+                break;
         }
     }
 
     private async Task ProcessTokenUsageAsync(TokenUsageEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:tokens:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Tokens, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
@@ -165,7 +182,7 @@ public sealed class MetricsCollectorService(
             db.HashIncrementAsync(totalsKey, "tokens:input", evt.InputTokens),
             db.HashIncrementAsync(totalsKey, "tokens:output", evt.OutputTokens),
             db.HashIncrementAsync(totalsKey, "tokens:cost", (long)(evt.Cost * 10000m)),
-            db.HashIncrementAsync(totalsKey, $"tokens:byUser:{evt.Sender}", evt.InputTokens + evt.OutputTokens),
+            db.HashIncrementAsync(totalsKey, $"tokens:byUser:{evt.UserId ?? evt.Sender}", evt.InputTokens + evt.OutputTokens),
             db.HashIncrementAsync(totalsKey, $"tokens:byModel:{evt.Model}", evt.InputTokens + evt.OutputTokens),
             db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
             db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
@@ -175,9 +192,9 @@ public sealed class MetricsCollectorService(
 
     private async Task ProcessToolCallAsync(ToolCallEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:tools:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Tools, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
@@ -208,7 +225,8 @@ public sealed class MetricsCollectorService(
                 Message = evt.Error ?? "Tool call failed",
                 Timestamp = evt.Timestamp,
                 AgentId = evt.AgentId,
-                ConversationId = evt.ConversationId
+                ConversationId = evt.ConversationId,
+                TenantId = evt.TenantId
             };
             await ProcessErrorAsync(errorEvent, db);
         }
@@ -216,9 +234,9 @@ public sealed class MetricsCollectorService(
 
     private async Task ProcessErrorAsync(ErrorEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:errors:{dateKey}";
-        var recentKey = "metrics:errors:recent";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Errors, scope, evt.Timestamp);
+        var recentKey = MetricKeys.RecentErrors(scope);
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
@@ -234,8 +252,8 @@ public sealed class MetricsCollectorService(
 
     private async Task ProcessScheduleExecutionAsync(ScheduleExecutionEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:schedules:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Schedules, scope, evt.Timestamp);
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
@@ -252,8 +270,8 @@ public sealed class MetricsCollectorService(
     // there.
     private async Task ProcessOutpostAsync(OutpostEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:outposts:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Outposts, scope, evt.Timestamp);
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         await Task.WhenAll(
@@ -263,22 +281,47 @@ public sealed class MetricsCollectorService(
 
     private async Task ProcessHeartbeatAsync(HeartbeatEvent evt, IDatabase db)
     {
-        var key = $"metrics:health:{evt.Service}";
+        // Keyed by household too: two households' servers of one service are two tiles, not one
+        // that whichever beat last paints.
+        var member = ServiceHealthRegistry.Member(evt.Service, evt.TenantId);
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         await Task.WhenAll(
-            db.StringSetAsync(key, json, TimeSpan.FromSeconds(60)),
-            ServiceHealthRegistry.MarkSeenAsync(db, evt.Service, evt.Timestamp));
+            db.StringSetAsync(ServiceHealthRegistry.HealthKey(member), json, TimeSpan.FromSeconds(60)),
+            ServiceHealthRegistry.MarkSeenAsync(db, member, evt.Timestamp));
 
         await hubContext.Clients.All.SendAsync("OnHealthUpdate",
-            new ServiceHealthUpdate(evt.Service, true, evt.Timestamp));
+            new ServiceHealthUpdate(evt.Service, true, evt.Timestamp, evt.TenantId));
+    }
+
+    // Kept as each household's running totals in their own units — milliseconds of speech heard,
+    // characters spoken, texts embedded — and pushed nowhere: the household view is the admin
+    // area's, and the events stay for re-reading by channel.
+    private async Task ProcessLemonadeUsageAsync(LemonadeUsageEvent evt, IDatabase db)
+    {
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Lemonade, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
+        var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
+        var (field, amount) = evt.Use switch
+        {
+            LemonadeUse.Transcription => (LemonadeTotals.TranscribedMs, (long)Math.Round(evt.Amount * 1000)),
+            LemonadeUse.Speech => (LemonadeTotals.SpokenCharacters, (long)evt.Amount),
+            _ => (LemonadeTotals.Embeddings, (long)evt.Amount)
+        };
+
+        await Task.WhenAll(
+            db.SortedSetAddAsync(sortedSetKey, json, evt.Timestamp.ToUnixTimeMilliseconds()),
+            db.HashIncrementAsync(totalsKey, field, amount),
+            db.KeyExpireAsync(sortedSetKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry),
+            db.KeyExpireAsync(totalsKey, _dailyKeyTtl, ExpireWhen.HasNoExpiry));
     }
 
     private async Task ProcessLatencyAsync(LatencyEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:latency:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Latency, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
@@ -294,9 +337,9 @@ public sealed class MetricsCollectorService(
 
     private async Task ProcessMemoryRecallAsync(MemoryRecallEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:memory-recall:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.MemoryRecall, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
@@ -314,9 +357,9 @@ public sealed class MetricsCollectorService(
 
     private async Task ProcessMemoryExtractionAsync(MemoryExtractionEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:memory-extraction:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.MemoryExtraction, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
@@ -336,9 +379,9 @@ public sealed class MetricsCollectorService(
 
     private async Task ProcessMemoryJudgmentAsync(MemoryJudgmentEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:memory-judgment:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.MemoryJudgment, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         var tasks = new List<Task>
@@ -361,9 +404,9 @@ public sealed class MetricsCollectorService(
 
     private async Task ProcessMemoryDreamingAsync(MemoryDreamingEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:memory-dreaming:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.MemoryDreaming, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
@@ -389,8 +432,8 @@ public sealed class MetricsCollectorService(
 
     private async Task ProcessContextTruncationAsync(ContextTruncationEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:truncations:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Truncations, scope, evt.Timestamp);
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
@@ -406,9 +449,9 @@ public sealed class MetricsCollectorService(
     // preload's does.
     private async Task ProcessModalDismissalAsync(ModalDismissalEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:modals:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Modals, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         var tasks = new List<Task>
@@ -434,9 +477,9 @@ public sealed class MetricsCollectorService(
     // beside "how many timed out"; the latency accumulates as voice's does.
     private async Task ProcessSkillPreloadAsync(SkillPreloadEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:skills:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Skills, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         var tasks = new List<Task>
@@ -463,9 +506,9 @@ public sealed class MetricsCollectorService(
     // dashboard page reads these yet; the events are kept for re-reading the bars.
     private async Task ProcessExecScreenAsync(ExecScreenEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:execscreen:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.ExecScreen, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 
         var tasks = new List<Task>
@@ -487,9 +530,9 @@ public sealed class MetricsCollectorService(
 
     private async Task ProcessVoiceAsync(VoiceEvent evt, IDatabase db)
     {
-        var dateKey = evt.Timestamp.UtcDateTime.ToString("yyyy-MM-dd");
-        var sortedSetKey = $"metrics:voice:{dateKey}";
-        var totalsKey = $"metrics:totals:{dateKey}";
+        var scope = MetricKeys.ScopeOf(evt.TenantId);
+        var sortedSetKey = MetricKeys.Daily(MetricKeys.Voice, scope, evt.Timestamp);
+        var totalsKey = MetricKeys.Daily(MetricKeys.Totals, scope, evt.Timestamp);
         var score = evt.Timestamp.ToUnixTimeMilliseconds();
         var json = JsonSerializer.Serialize<MetricEvent>(evt, _jsonOptions);
 

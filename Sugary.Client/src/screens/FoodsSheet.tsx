@@ -15,6 +15,7 @@ import { usePantry } from "../pantry";
 import { asFood, describeRecipe, helping, shelf, usedIn, type ShelfEntry } from "../recipes";
 import { useSaving } from "../saving";
 import { useSettings } from "../settings";
+import { openedFood } from "../stale";
 import type { DraftItem, Food, Recipe, SaveFood, Unit } from "../types";
 
 type View =
@@ -369,7 +370,7 @@ export function FoodSheet({
   };
   // One of hers is saved again only once something about it changed.
   const edited = useEdited(next);
-  const save = () => run(() => (food ? api.updateFood(food.id, next) : api.createFood(next)), onDone);
+  const save = () => run(() => (food ? api.updateFood(food.id, next, openedFood(food)) : api.createFood(next)), onDone);
 
   async function fromFound(found: Found) {
     setError(null);

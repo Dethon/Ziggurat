@@ -1,6 +1,5 @@
 using Domain.Security;
 using Mcp.Hosting;
-using McpChannelServiceBus.Modules;
 using McpChannelSignalR.Modules;
 using McpChannelTelegram.Modules;
 using McpChannelVoice.Modules;
@@ -23,7 +22,6 @@ using OutpostSettings = McpServerOutpost.Settings;
 using PrinterSettings = McpServerPrinter.Settings;
 using SandboxSettings = McpServerSandbox.Settings;
 using SchedulingSettings = McpServerScheduling.Settings;
-using ServiceBusSettings = McpChannelServiceBus.Settings;
 // Aliased because Tests.Integration has sibling namespaces named after the server projects, which
 // shadow the project namespaces from inside Tests.
 using SignalRSettings = McpChannelSignalR.Settings;
@@ -73,15 +71,12 @@ public static class McpServerRegistrations
     // ConfigureChannel eagerly calls ConnectionMultiplexer.Connect. abortConnect=false makes that
     // hand back a disconnected multiplexer instead of throwing, so the registration theory runs
     // without a Redis container; port 1 is refused instantly and the short timeouts keep the
-    // background reconnect loop from lingering.
+    // background reconnect loop from lingering. The command timeouts matter as much: a command
+    // sent to a multiplexer that never connects waits in its backlog for the full timeout, and the
+    // heartbeat every metrics-publishing host sends at start is one — the buffered publisher's
+    // disposal then waited out the default five seconds on every host a test stopped.
     public const string UnreachableRedis =
-        "127.0.0.1:1,abortConnect=false,connectTimeout=100,connectRetry=1";
-
-    // ConfigureChannel eagerly constructs a ServiceBusClient from this, which parses the
-    // connection string without ever dialing out. Well-formed but unreachable — SharedAccessKey
-    // just needs to be valid base64.
-    public const string FakeServiceBusConnectionString =
-        "Endpoint=sb://fake.servicebus.windows.net/;SharedAccessKeyName=x;SharedAccessKey=Zm9vYmFyMTIzNDU2Nzg5MA==";
+        "127.0.0.1:1,abortConnect=false,connectTimeout=100,connectRetry=1,syncTimeout=100,asyncTimeout=100";
 
     // The declared delivery policy is part of the row, so this table is the single place where
     // "this is a channel server, and this is the policy it chose" is verified against the real
@@ -90,19 +85,19 @@ public static class McpServerRegistrations
     // caller assumed, and none of them was visible anywhere but inside the emitter.
     //
     // Broadcast for the two chat-shaped transports whose callers cannot retry; gate-on-live for
-    // the three whose callers settle a durable record on a confirmed delivery — a schedule, a
-    // routing entry, a broker message — and would otherwise keep the record *and* leave a buffered
+    // the two whose callers settle a durable record on a confirmed delivery — a schedule, a
+    // routing entry — and would otherwise keep the record *and* leave a buffered
     // duplicate behind, and for Sugary, whose app waits on its own request; buffer-always for the one transport with no way to tell a sender to try
     // again later.
     //
     // The tool servers all take unreachable-but-well-formed connection details for the same reason
     // the channel rows do: registration must run with no container and no network.
-    // Every deployment row gates /mcp behind the one deployment secret; the outpost behind its own,
-    // which is deliberately a different value so a row that fell through to the deployment's
-    // would be caught rather than agree by coincidence.
+    // Every deployment row gates /mcp behind the one deployment secret; the outpost behind its tunnel
+    // credential, which is deliberately a different value so a row that fell through to the
+    // deployment's would be caught rather than agree by coincidence.
     public static McpGateSettings DeploymentGate => McpTestSecret.Gate;
 
-    public const string OutpostSecret = "outpost-own-secret";
+    public const string OutpostCredential = "outpost-tunnel-credential";
 
     public static IReadOnlyList<McpServerRow> All =>
     [
@@ -112,20 +107,9 @@ public static class McpServerRegistrations
             DeliveryPolicy.Broadcast),
 
         Row("telegram", "McpChannelTelegram", McpServerRole.Channel,
-            new TelegramSettings.ChannelSettings { Bots = [], AllowedUsernames = [], Mcp = DeploymentGate },
+            new TelegramSettings.ChannelSettings { Mcp = DeploymentGate },
             (services, settings) => services.ConfigureChannel(settings),
             DeliveryPolicy.BufferAlways),
-
-        Row("servicebus", "McpChannelServiceBus", McpServerRole.Channel,
-            new ServiceBusSettings.ChannelSettings
-            {
-                ServiceBusConnectionString = FakeServiceBusConnectionString,
-                PromptQueueName = "prompts",
-                ResponseQueueName = "responses",
-                Mcp = DeploymentGate
-            },
-            (services, settings) => services.ConfigureChannel(settings),
-            DeliveryPolicy.GateOnLive),
 
         // ConfigureVoiceChannel's IConnectionMultiplexer registration is a lazy factory (unlike
         // SignalR's eager Connect), and nothing in this registration-only test resolves it, so no
@@ -180,7 +164,7 @@ public static class McpServerRegistrations
         Row("idealista", "McpServerIdealista", McpServerRole.Tool,
             new IdealistaSettings.McpSettings
             {
-                Idealista = new IdealistaSettings.IdealistaConfiguration { ApiKey = "x", ApiSecret = "x" },
+                Idealista = new IdealistaSettings.IdealistaConfiguration(),
                 Mcp = DeploymentGate
             },
             (services, settings) => services.ConfigureMcp(settings)),
@@ -200,7 +184,8 @@ public static class McpServerRegistrations
             {
                 Name = "outpost",
                 WorkingDirectory = "/home/someone/project",
-                SharedSecret = OutpostSecret
+                Hub = "https://assistants.example",
+                Credential = OutpostCredential
             },
             (services, settings) => services.ConfigureMcp(settings)),
 
@@ -229,10 +214,12 @@ public static class McpServerRegistrations
             (services, settings) => services.ConfigureSugary(settings),
             DeliveryPolicy.GateOnLive),
 
-        // The voice hub is reached through a named HttpClient, which never dials at registration.
-        Row("timers", "McpServerTimers", McpServerRole.Tool,
+        // The voice hub is reached through a named HttpClient, which never dials at registration. A
+        // channel too: a timer with no satellite rings on its owner's channels through the agent.
+        Row("timers", "McpServerTimers", McpServerRole.DualRole,
             new TimersSettings.TimerSettings { Mcp = DeploymentGate },
-            (services, settings) => services.ConfigureTimers(settings)),
+            (services, settings) => services.ConfigureTimers(settings),
+            DeliveryPolicy.GateOnLive),
 
         Row("vault", "McpServerVault", McpServerRole.Tool,
             new VaultSettings.McpSettings { VaultPath = "/vault", AllowedExtensions = [".md"], Mcp = DeploymentGate },
@@ -240,15 +227,18 @@ public static class McpServerRegistrations
 
         // CapSolver and Camoufox left absent, which is how a deployment without them runs: the
         // solver client is not registered and the browser gets a null endpoint. PlaywrightWebBrowser
-        // launches nothing until its first navigation.
-        Row("websearch", "McpServerWebSearch", McpServerRole.Tool,
+        // launches nothing until its first navigation. Dual-role since the login handoff: Done wakes
+        // the agent in the conversation that asked, buffered always, because a person pressing
+        // Done cannot be told to try again while the agent reconnects.
+        Row("websearch", "McpServerWebSearch", McpServerRole.DualRole,
             new WebSearchSettings.McpSettings
             {
                 BraveSearch = new WebSearchSettings.BraveSearchConfiguration { ApiKey = "x" },
                 RedisConnectionString = UnreachableRedis,
                 Mcp = DeploymentGate
             },
-            (services, settings) => services.ConfigureMcp(settings))
+            (services, settings) => services.ConfigureMcp(settings),
+            DeliveryPolicy.BufferAlways)
     ];
 
     public static IReadOnlyList<McpServerRow> ChannelServers =>

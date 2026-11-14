@@ -2,81 +2,32 @@ namespace Domain.Prompts;
 
 public static class MemoryPrompts
 {
-    public const string FeatureSystemPrompt =
-        """
-        ## Memory System
+    private static readonly PromptDocument _document = PromptDocuments.Section(PromptManifest.Memory);
 
-        You have persistent memory. Relevant memories about the user are automatically included in messages — look for the `[Memory context]` block at the start of user messages.
+    // The feature's section (Sections/memory.md). The three prompts below are not sections: they are
+    // the system prompts of the memory pipeline's own model calls, which no agent's prompt contains.
+    public static readonly string FeatureSystemPrompt = _document.Text;
 
-        Let this context silently shape your answer — apply known preferences and instructions — but do not restate the memories themselves. Memory is invisible plumbing — never mention memories, the memory context block, or memory operations to the user unless they explicitly ask what you remember or ask you to forget something. Asking **why** something is the way it is ("¿y por qué nueve minutos?") is not that question: answer with the preference itself ("cueces la pasta nueve minutos"), never with where it is kept or that you kept it.
-
-        Storage and recall are automatic: what the user says is remembered on its own, and nothing is ever written anywhere to keep it — no note, no file. Your only memory action is removal via `memory_forget`. Each fact in the context block carries its id in brackets; a forget names that id exactly, or the fact's own words as the query.
-
-        ### When to forget
-
-        Read the context block against each message before you answer it: a fact the message has just made false or finished goes in that same turn, unasked. A friendly message is no exception — "ya nos hemos mudado" both deserves a reply and expires "está buscando piso".
-
-        - **User corrects information:** delete the outdated memory unasked — "actually I work at NewCo now" deletes the old employer.
-        - **User explicitly asks to forget:** delete as requested.
-        - **Information is clearly outdated:** a plan the user reports as done — home from the conference, moved in, the course finished — expired the moment they said so.
-        - **Bulk cleanup:** sweep low-value automatically-extracted memories when the store gets noisy.
-
-        A forget nobody asked for is silent: the reply neither announces it nor asks whether to make it.
-
-        ### Privacy
-
-        Memories are scoped to the active user automatically. Never reference memories from other users.
-        """;
-
-    // Every falsifiable statement the feature prompt above makes. They divide in two: what the
-    // agent does with a fact it was given, and when it removes one. The first half is asserted on
-    // the reply, the second on the store afterwards — a deletion leaves nothing in the call log
-    // that says which fact went.
     public static readonly PromptClaim RecallShapesTheAnswer =
-        new("memory.recall-shapes-the-answer",
-            "A preference or instruction in the recall block is applied to the answer without being asked for again.");
+        _document.Claim("memory.recall-shapes-the-answer");
 
     public static readonly PromptClaim MemoriesAreNotRestated =
-        new("memory.memories-are-not-restated",
-            "The reply uses what was remembered without repeating the memory back to the user.");
+        _document.Claim("memory.memories-are-not-restated");
 
     public static readonly PromptClaim MechanismIsNeverMentioned =
-        new("memory.mechanism-is-never-mentioned",
-            "Memories, the memory context block and memory operations are never mentioned unless the user asked about them.");
-
-    // Two sentences above deliberately declare no claim. "Your only memory action is removal" is
-    // a description of the toolset, not a contract — there is no other memory tool an agent could
-    // call, so no run can falsify it, and what it guards (a value memory holds is not asked for
-    // again) is already memory.recall-shapes-the-answer. "Never reference memories from other
-    // users" is enforced by the store, which scopes every call to the run's user id: no code path
-    // can hand the agent another user's memories for a scenario to witness.
+        _document.Claim("memory.mechanism-is-never-mentioned");
 
     public static readonly PromptClaim CorrectionDeletesTheStaleFact =
-        new("memory.correction-deletes-the-stale-fact",
-            "A user correcting a remembered fact has the outdated one deleted without asking for it to be forgotten.");
+        _document.Claim("memory.correction-deletes-the-stale-fact");
 
     public static readonly PromptClaim ExplicitForgetIsObeyed =
-        new("memory.explicit-forget-is-obeyed",
-            "A request to forget something removes it.");
+        _document.Claim("memory.explicit-forget-is-obeyed");
 
     public static readonly PromptClaim OutdatedFactsAreDeleted =
-        new("memory.outdated-facts-are-deleted",
-            "A memory that has clearly expired is deleted rather than carried.");
+        _document.Claim("memory.outdated-facts-are-deleted");
 
     public static readonly PromptClaim NoisyStoreIsSwept =
-        new("memory.noisy-store-is-swept",
-            "Low-value automatically-extracted memories are swept when the store gets noisy.");
-
-    public static readonly IReadOnlyList<PromptClaim> Claims =
-    [
-        RecallShapesTheAnswer,
-        MemoriesAreNotRestated,
-        MechanismIsNeverMentioned,
-        CorrectionDeletesTheStaleFact,
-        ExplicitForgetIsObeyed,
-        OutdatedFactsAreDeleted,
-        NoisyStoreIsSwept
-    ];
+        _document.Claim("memory.noisy-store-is-swept");
 
     public const string ExtractionSystemPrompt =
         """
@@ -129,6 +80,7 @@ public static class MemoryPrompts
         - Do not extract observations derived from generic or exploratory questions (e.g. "what can you do?", "how does this work?") — these reveal nothing about the user.
         - Do not extract short-lived or ephemeral information: current tasks, transient moods, one-off requests, in-progress actions, current location or whereabouts, specific travel logistics (hotel bookings, flight numbers, itineraries for a particular trip), or anything that will lose relevance within days. However, standing instructions ("always use X", "whenever I ask about Y, do Z", "remember to check X for Y") are permanent even if they mention travel, tools, or other typically ephemeral topics — always extract these as Instruction memories with importance 1.0.
         - Do not infer lasting preferences from single requests. A user asking for something once (e.g. "what's the weather today?", "find me a cheap hotel") is a task, not a preference. Only extract a preference when the user **explicitly** states one ("I prefer X over Y", "always do X", "I like X").
+        - A request to forget something, or a statement that something said or remembered is not true, is never a memory: emit nothing for it — not what the user is not, not that earlier information was wrong, and never the forgotten detail itself. Forgetting is handled elsewhere. Only a correction that states the right value is extracted, as the right value alone ("my daughter is Ana, not Lucía" → "The user's daughter is named Ana").
         - A question is never a memory. If the user's current message is fundamentally a question or request for help, the default outcome is zero candidates — unless the question itself reveals an explicit standing fact ("I'm a vegetarian, what should I cook?" → extract the vegetarian fact, not the cooking question).
         - Do not extract trivial details, small talk, or conversational filler that carries no actionable insight.
         - Do not extract information already covered by the existing profile.

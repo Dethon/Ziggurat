@@ -295,7 +295,7 @@ public class ModalDismisser(ModalJudge? judge = null)
 
         try
         {
-            if (!await ClickWithoutLeavingAsync(page, target, urlBefore, ct))
+            if (!await ClickWithoutLeavingAsync(page, target, urlBefore, ct, JudgedClickTimeoutMs))
             {
                 return ModalOverlayOutcome.LeftStanding(pattern.Type, pick);
             }
@@ -315,12 +315,18 @@ public class ModalDismisser(ModalJudge? judge = null)
             pick.Latency);
     }
 
+    // The judgment's pick is one control, already chosen and re-read by name, so it is given time to
+    // stop moving: a click waits for its target to settle, and a wall still sliding in, or a busy host,
+    // took that past a second and left the wall standing. The selector and word paths keep a second
+    // each — they try candidates in turn, and one that cannot be clicked must not hold up the browse.
+    private const int JudgedClickTimeoutMs = 5000;
+
     // Clicks, then verifies the page is still the page: a control that navigated away was not a
     // dismissal, so the browser goes back and the answer is false. Every path clicks through here.
     private static async Task<bool> ClickWithoutLeavingAsync(
-        IPage page, ILocator control, string urlBefore, CancellationToken ct)
+        IPage page, ILocator control, string urlBefore, CancellationToken ct, int timeoutMs = 1000)
     {
-        await control.ClickAsync(new LocatorClickOptions { Timeout = 1000 });
+        await control.ClickAsync(new LocatorClickOptions { Timeout = timeoutMs });
 
         await Task.Delay(100, ct);
         if (page.Url != urlBefore && !IsSamePageNavigation(urlBefore, page.Url))

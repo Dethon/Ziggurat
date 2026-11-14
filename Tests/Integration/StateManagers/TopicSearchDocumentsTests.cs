@@ -28,6 +28,22 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
             },
             time ?? TimeProvider.System);
 
+    // A search is the searcher's household's: another household's topic saying the same words, in a
+    // space of the same name and with the same agent, is never a hit, shared or not.
+    [Fact]
+    public async Task SearchTopicsAsync_ReturnsOnlyTheSearchersHouseholdsTopics()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(Topic("t-ours", 790, "Damson gin"));
+        await store.SaveTopicAsync(Topic("t-away", 791, "Damson gin") with { TenantId = "away", Shared = true });
+
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "damson", null, 10);
+        var foundAway = await store.SearchTopicsAsync(_agentId, "default", new TopicViewer("laura", "away"), "damson", null, 10);
+
+        found.Topics.Select(t => t.TopicId).ShouldBe(["t-ours"]);
+        foundAway.Topics.Select(t => t.TopicId).ShouldBe(["t-away"]);
+    }
+
     [Fact]
     public async Task SearchTopicsAsync_MatchesTheTopicName()
     {
@@ -35,7 +51,7 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         await store.SaveTopicAsync(Topic("t-1", 700, "Planting the tomatoes"));
         await store.SaveTopicAsync(Topic("t-2", 701, "Rewiring the shed"));
 
-        var found = await store.SearchTopicsAsync(_agentId, "default", "tomatoes", null, 10);
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "tomatoes", null, 10);
 
         found.Topics.Select(t => t.TopicId).ShouldBe(["t-1"]);
     }
@@ -52,10 +68,10 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         clock.Advance(TimeSpan.FromDays(31));
         await store.SaveTopicAsync(Topic("t-new", 711, "Fresh greenhouse notes", clock.GetUtcNow()));
 
-        (await store.GetTopicPageAsync(_agentId, "default", null, 10))
+        (await store.GetTopicPageAsync(_agentId, "default", _anyone, null, 10))
             .Topics.Select(t => t.TopicId).ShouldBe(["t-new"]);
 
-        var found = await store.SearchTopicsAsync(_agentId, "default", "greenhouse", null, 10);
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "greenhouse", null, 10);
 
         found.Topics.Select(t => t.TopicId).ShouldBe(["t-new", "t-old"]);
     }
@@ -71,8 +87,8 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
             clock.Advance(TimeSpan.FromMinutes(1));
         }
 
-        var first = await store.SearchTopicsAsync(_agentId, "default", "kettle", null, 2);
-        var second = await store.SearchTopicsAsync(_agentId, "default", "kettle", first.NextCursor, 2);
+        var first = await store.SearchTopicsAsync(_agentId, "default", _anyone, "kettle", null, 2);
+        var second = await store.SearchTopicsAsync(_agentId, "default", _anyone, "kettle", first.NextCursor, 2);
 
         first.Topics.Select(t => t.TopicId).ShouldBe(["t-page-2", "t-page-1"]);
         second.Topics.Select(t => t.TopicId).ShouldBe(["t-page-0"]);
@@ -91,12 +107,41 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         clock.Advance(TimeSpan.FromMinutes(1));
         await store.SaveTopicAsync(Topic("t-tie-2", 772, "Compost heap two", clock.GetUtcNow()));
 
-        var first = await store.SearchTopicsAsync(_agentId, "default", "compost", null, 2);
-        var second = await store.SearchTopicsAsync(_agentId, "default", "compost", first.NextCursor, 2);
+        var first = await store.SearchTopicsAsync(_agentId, "default", _anyone, "compost", null, 2);
+        var second = await store.SearchTopicsAsync(_agentId, "default", _anyone, "compost", first.NextCursor, 2);
 
         first.Topics.First().TopicId.ShouldBe("t-tie-2");
         first.Topics.Concat(second.Topics).Select(t => t.TopicId)
             .ShouldBe(["t-tie-0", "t-tie-1", "t-tie-2"], ignoreOrder: true);
+    }
+
+    // Search finds what the list would show and nothing else: another person's private topic is
+    // not found, and a page of results still fills from below the ones passed over.
+    [Fact]
+    public async Task SearchTopicsAsync_PassesOverAnotherPersonsPrivateTopics_AndStillFillsThePage()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 4, 0, 0, 0, TimeSpan.Zero));
+        var store = NewStore(clock);
+        TopicMetadata[] oldestFirst =
+        [
+            Topic("t-pear-mine", 790, "Pear tart, mine") with { OwnerId = "fran", TenantId = "home" },
+            Topic("t-pear-shared", 791, "Pear tart, shared") with { OwnerId = "laura", TenantId = "home", Shared = true },
+            Topic("t-pear-laura-1", 792, "Pear tart, Laura's") with { OwnerId = "laura", TenantId = "home" },
+            Topic("t-pear-laura-2", 793, "Pear tart, Laura's again") with { OwnerId = "laura", TenantId = "home" }
+        ];
+        foreach (var topic in oldestFirst)
+        {
+            await store.SaveTopicAsync(topic with { CreatedAt = clock.GetUtcNow(), LastMessageAt = clock.GetUtcNow() });
+            clock.Advance(TimeSpan.FromMinutes(1));
+        }
+
+        var first = await store.SearchTopicsAsync(_agentId, "default", _asFran, "pear", null, 1);
+        var second = await store.SearchTopicsAsync(_agentId, "default", _asFran, "pear", first.NextCursor, 1);
+        var third = await store.SearchTopicsAsync(_agentId, "default", _asFran, "pear", second.NextCursor, 1);
+
+        first.Topics.Select(t => t.TopicId).ShouldBe(["t-pear-shared"]);
+        second.Topics.Select(t => t.TopicId).ShouldBe(["t-pear-mine"]);
+        third.Topics.ShouldBeEmpty();
     }
 
     [Fact]
@@ -105,9 +150,22 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         var store = NewStore();
         await store.SaveTopicAsync(Topic("t-here", 730, "Marmalade recipe") with { SpaceSlug = "kitchen" });
 
-        var found = await store.SearchTopicsAsync(_agentId, "default", "marmalade", null, 10);
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "marmalade", null, 10);
 
         found.Topics.ShouldBeEmpty();
+    }
+
+    // The default space's search finds a removed space's topics as its list shows them.
+    [Fact]
+    public async Task SearchTopicsAsync_AlsoSearchingAnotherSpace_FindsItsConversations()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(Topic("t-attic", 731, "Quince jelly") with { SpaceSlug = "attic" });
+        await store.SaveTopicAsync(Topic("t-main", 732, "Quince paste"));
+
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "quince", null, 10, alsoSpaces: ["attic"]);
+
+        found.Topics.Select(t => t.TopicId).ShouldBe(["t-attic", "t-main"], ignoreOrder: true);
     }
 
     // A conversation found by something said in it rather than by what it is called.
@@ -122,7 +180,7 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
             new ChatMessage(ChatRole.Assistant, "noted")
         ]);
 
-        var found = await store.SearchTopicsAsync(_agentId, "default", "dentist", null, 10);
+        var found = await store.SearchTopicsAsync(_agentId, "default", _anyone, "dentist", null, 10);
 
         found.Topics.Select(t => t.TopicId).ShouldBe(["t-said"]);
     }
@@ -135,14 +193,17 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         var store = NewStore();
         await store.SaveTopicAsync(Topic("t-keepdoc", 780, "Quince jelly"));
         var db = redis.Connection.GetDatabase();
-        var docKey = $"topicdoc:{_agentId}:780:t-keepdoc";
+        var docKey = $"topicdoc@home:{_agentId}:780:t-keepdoc";
         await db.KeyExpireAsync(docKey, TimeSpan.FromDays(10));
 
         await store.SaveTopicAsync(Topic("t-keepdoc", 780, "Quince jelly renamed"), keepTtl: true);
 
+        // Redis keeps an expiry as an instant on its own clock, which a container's clock correction
+        // can move by a second either way; what a refresh would have set is the archive horizon, months
+        // away, so a day's margin tells the two apart without reading the clock to the second.
         var ttl = await db.KeyTimeToLiveAsync(docKey);
         ttl.ShouldNotBeNull();
-        ttl.Value.ShouldBeLessThanOrEqualTo(TimeSpan.FromDays(10));
+        ttl.Value.ShouldBeLessThan(TimeSpan.FromDays(11));
     }
 
     // Purge takes what a topic is searched by with it, on the same clock and refreshed by the
@@ -153,15 +214,21 @@ public class TopicSearchDocumentsTests(TopicSearchFixture redis) : IClassFixture
         var store = NewStore();
         await store.SaveTopicAsync(Topic("t-gone", 760, "Rhubarb crumble"));
 
-        await store.DeleteTopicAsync(_agentId, 760, "t-gone");
+        await store.DeleteTopicAsync("home", _agentId, 760, "t-gone");
 
-        (await store.SearchTopicsAsync(_agentId, "default", "rhubarb", null, 10)).Topics.ShouldBeEmpty();
+        (await store.SearchTopicsAsync(_agentId, "default", _anyone, "rhubarb", null, 10)).Topics.ShouldBeEmpty();
     }
+
+    private static readonly TopicViewer _asFran = new("fran", "home");
+
+    // Every topic these tests write is nobody's unless a test owns it, and a topic nobody owns is its
+    // household's.
+    private static readonly TopicViewer _anyone = new("anyone", "home");
 
     private TopicMetadata Topic(string topicId, long chatId, string name, DateTimeOffset? at = null)
     {
         var when = at ?? DateTimeOffset.UtcNow;
-        return new TopicMetadata(topicId, chatId, 0, _agentId, name, when, when);
+        return new TopicMetadata(topicId, chatId, 0, _agentId, name, when, when, TenantId: "home");
     }
 
     private string HistoryKey(long chatId) =>

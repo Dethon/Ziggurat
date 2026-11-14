@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using Domain.Exceptions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
@@ -257,7 +258,10 @@ public static class IAsyncEnumerableExtensions
                 {
                     errorResponse = new AgentResponseUpdate
                     {
-                        Contents = [new ErrorContent($"An error occurred: {ex.Message}") { ErrorCode = ex.GetType().Name }]
+                        Contents = [new ErrorContent(TurnFailure.Answer(ex))
+                        {
+                            ErrorCode = ex.GetType().Name
+                        }]
                     };
                     break;
                 }

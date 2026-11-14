@@ -66,6 +66,25 @@ public class MetricsCollectorServiceTests
                 ("tokens:byModel:gpt-4", 150)
             ]),
         new HashIncrementCase(
+            "TokenUsageOfAnAccount",
+            new TokenUsageEvent
+            {
+                Sender = "Alice",
+                UserId = "acc-alice",
+                Model = "gpt-4",
+                InputTokens = 100,
+                OutputTokens = 50,
+                Cost = 0.0025m,
+                Timestamp = _fixedTimestamp
+            },
+            [
+                ("tokens:input", 100),
+                ("tokens:output", 50),
+                ("tokens:cost", 25),
+                ("tokens:byUser:acc-alice", 150),
+                ("tokens:byModel:gpt-4", 150)
+            ]),
+        new HashIncrementCase(
             "MemoryRecall",
             new MemoryRecallEvent
             {
@@ -210,7 +229,7 @@ public class MetricsCollectorServiceTests
         foreach (var (field, value) in @case.ExpectedIncrements)
         {
             _db.Verify(d => d.HashIncrementAsync(
-                $"metrics:totals:{FixedDate}", field, value, It.IsAny<CommandFlags>()), Times.Once);
+                $"metrics:totals:deployment:{FixedDate}", field, value, It.IsAny<CommandFlags>()), Times.Once);
         }
     }
 
@@ -236,7 +255,7 @@ public class MetricsCollectorServiceTests
                 Cost = 0.01m,
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:tokens:{FixedDate}",
+            $"metrics:tokens:deployment:{FixedDate}",
             "\"sender\":\"alice\""),
         new SortedSetCase(
             "ScheduleExecution",
@@ -248,7 +267,7 @@ public class MetricsCollectorServiceTests
                 Success = true,
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:schedules:{FixedDate}",
+            $"metrics:schedules:deployment:{FixedDate}",
             string.Empty),
         new SortedSetCase(
             "MemoryRecall",
@@ -259,7 +278,7 @@ public class MetricsCollectorServiceTests
                 UserId = "alice",
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:memory-recall:{FixedDate}",
+            $"metrics:memory-recall:deployment:{FixedDate}",
             "\"userId\":\"alice\""),
         new SortedSetCase(
             "MemoryExtraction",
@@ -271,7 +290,7 @@ public class MetricsCollectorServiceTests
                 UserId = "bob",
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:memory-extraction:{FixedDate}",
+            $"metrics:memory-extraction:deployment:{FixedDate}",
             "\"userId\":\"bob\""),
         new SortedSetCase(
             "MemoryJudgment",
@@ -283,7 +302,7 @@ public class MetricsCollectorServiceTests
                 Skipped = true,
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:memory-judgment:{FixedDate}",
+            $"metrics:memory-judgment:deployment:{FixedDate}",
             "\"kind\":\"gate\""),
         new SortedSetCase(
             "MemoryDreaming",
@@ -295,7 +314,7 @@ public class MetricsCollectorServiceTests
                 UserId = "alice",
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:memory-dreaming:{FixedDate}",
+            $"metrics:memory-dreaming:deployment:{FixedDate}",
             "\"userId\":\"alice\""),
         new SortedSetCase(
             "Latency",
@@ -306,7 +325,7 @@ public class MetricsCollectorServiceTests
                 Model = "anthropic/claude",
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:latency:{FixedDate}",
+            $"metrics:latency:deployment:{FixedDate}",
             "\"type\":\"latency\""),
         new SortedSetCase(
             "Voice",
@@ -316,7 +335,7 @@ public class MetricsCollectorServiceTests
                 SatelliteId = "kitchen-01",
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:voice:{FixedDate}",
+            $"metrics:voice:deployment:{FixedDate}",
             "\"satelliteId\":\"kitchen-01\""),
         new SortedSetCase(
             "SkillPreload",
@@ -325,7 +344,7 @@ public class MetricsCollectorServiceTests
                 Outcome = SkillPreloadOutcomes.Deadline,
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:skills:{FixedDate}",
+            $"metrics:skills:deployment:{FixedDate}",
             "\"outcome\":\"deadline\""),
         new SortedSetCase(
             "ModalDismissal",
@@ -335,7 +354,7 @@ public class MetricsCollectorServiceTests
                 Outcome = ModalDismissalOutcomes.LeftStanding,
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:modals:{FixedDate}",
+            $"metrics:modals:deployment:{FixedDate}",
             "\"outcome\":\"left-standing\""),
         new SortedSetCase(
             "ExecScreen",
@@ -346,7 +365,7 @@ public class MetricsCollectorServiceTests
                 AbsenceReason = ExecScreenAbsences.Deadline,
                 Timestamp = _fixedTimestamp
             },
-            $"metrics:execscreen:{FixedDate}",
+            $"metrics:execscreen:deployment:{FixedDate}",
             "\"absenceReason\":\"deadline\"")
     };
 
@@ -482,7 +501,8 @@ public class MetricsCollectorServiceTests
                 && Math.Abs((double)i.Arguments[2]! - _fixedTimestamp.ToUnixTimeSeconds()) < 1)
             .ShouldBe(1);
 
-        _db.Invocations.ShouldNotContain(i => i.Method.Name == "SetAddAsync");
+        _db.Invocations.ShouldNotContain(i => i.Method.Name == "SetAddAsync"
+            && i.Arguments[0]!.ToString() == ServiceHealthRegistry.LegacyKey);
     }
 
     [Fact]
@@ -538,15 +558,15 @@ public class MetricsCollectorServiceTests
 
         _db.Invocations
             .Count(i => i.Method.Name == "ListLeftPushAsync"
-                && i.Arguments[0]?.ToString() == "metrics:errors:recent"
+                && i.Arguments[0]?.ToString() == "metrics:errors:recent:deployment"
                 && i.Arguments[1]!.ToString()!.Contains("\"errorType\":\"NullRef\""))
             .ShouldBe(1);
 
         _db.Verify(d => d.ListTrimAsync(
-            "metrics:errors:recent", 0, 99, It.IsAny<CommandFlags>()), Times.Once);
+            "metrics:errors:recent:deployment", 0, 99, It.IsAny<CommandFlags>()), Times.Once);
 
         _db.Verify(d => d.SortedSetAddAsync(
-            $"metrics:errors:{FixedDate}",
+            $"metrics:errors:deployment:{FixedDate}",
             It.IsAny<RedisValue>(),
             evt.Timestamp.ToUnixTimeMilliseconds(),
             It.IsAny<SortedSetWhen>(),
@@ -567,11 +587,11 @@ public class MetricsCollectorServiceTests
         await _sut.ProcessEventAsync(evt, _db.Object);
 
         _db.Verify(d => d.HashIncrementAsync(
-            $"metrics:totals:{FixedDate}", "tools:count", 1, It.IsAny<CommandFlags>()), Times.Once);
+            $"metrics:totals:deployment:{FixedDate}", "tools:count", 1, It.IsAny<CommandFlags>()), Times.Once);
         _db.Verify(d => d.HashIncrementAsync(
-            $"metrics:totals:{FixedDate}", "tools:byName:search", 1, It.IsAny<CommandFlags>()), Times.Once);
+            $"metrics:totals:deployment:{FixedDate}", "tools:byName:search", 1, It.IsAny<CommandFlags>()), Times.Once);
         _db.Verify(d => d.HashIncrementAsync(
-            $"metrics:totals:{FixedDate}", "tools:errors", It.IsAny<long>(), It.IsAny<CommandFlags>()), Times.Never);
+            $"metrics:totals:deployment:{FixedDate}", "tools:errors", It.IsAny<long>(), It.IsAny<CommandFlags>()), Times.Never);
         _db.Verify(d => d.SortedSetAddAsync(
             It.Is<RedisKey>(k => k.ToString().StartsWith("metrics:errors:")),
             It.IsAny<RedisValue>(),
@@ -595,10 +615,10 @@ public class MetricsCollectorServiceTests
         await _sut.ProcessEventAsync(evt, _db.Object);
 
         _db.Verify(d => d.HashIncrementAsync(
-            $"metrics:totals:{FixedDate}", "tools:errors", 1, It.IsAny<CommandFlags>()), Times.Once);
+            $"metrics:totals:deployment:{FixedDate}", "tools:errors", 1, It.IsAny<CommandFlags>()), Times.Once);
 
         _db.Verify(d => d.SortedSetAddAsync(
-            $"metrics:errors:{FixedDate}",
+            $"metrics:errors:deployment:{FixedDate}",
             It.Is<RedisValue>(v => v.ToString().Contains("\"errorType\":\"search\"")
                 && v.ToString().Contains("\"message\":\"timeout\"")),
             evt.Timestamp.ToUnixTimeMilliseconds(),
@@ -626,6 +646,6 @@ public class MetricsCollectorServiceTests
         await _sut.ProcessEventAsync(evt, _db.Object);
 
         _db.Verify(d => d.HashIncrementAsync(
-            $"metrics:totals:{FixedDate}", "memory:profileRegens", It.IsAny<long>(), It.IsAny<CommandFlags>()), Times.Never);
+            $"metrics:totals:deployment:{FixedDate}", "memory:profileRegens", It.IsAny<long>(), It.IsAny<CommandFlags>()), Times.Never);
     }
 }

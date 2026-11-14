@@ -1,19 +1,32 @@
 using Domain.DTOs;
 using Domain.Security;
+using Infrastructure.Clients.Accounts;
+using Infrastructure.Clients.Topics;
 using Infrastructure.Judgments;
+using Infrastructure.Metrics;
 using Mcp.Hosting;
 
 namespace McpChannelVoice.Settings;
 
 public record VoiceSettings : IMcpHostSettings
 {
-    // The deployment secret this server's /mcp asks for (MCP__SHAREDSECRET).
+    // This server's own credential, which its /mcp asks for (MCP__SHAREDSECRET).
     public McpGateSettings Mcp { get; init; } = new();
 
-    // Agent that handles voice transcripts. Sent as the message AgentId so the agent
-    // host resolves this definition; null falls back to the first configured agent.
+    // Where a recognised speaker's profile is resolved to their account, asked with Mcp's credential.
+    public AccountsClientConfig Accounts { get; init; } = new();
+
+    // Where the agent mints the topic each new conversation opens under.
+    public AgentClientConfig Agent { get; init; } = new();
+
+    // The agent a satellite's words are for, where an operator pins one. Null — the default — names
+    // none, and the agent sends each turn to the voice agent of the household it is for, the one its
+    // owner marked on the Agents page (HouseholdAgents.VoiceAgent).
     public string? AgentId { get; init; }
+    // The metrics feed's alone, and unused when Metrics names a URL: a household's voice posts its
+    // events on its metrics back-call (METRICS__URL) and reaches no deployment database.
     public string RedisConnectionString { get; init; } = "redis:6379";
+    public MetricsFeedConfig Metrics { get; init; } = new();
     public WyomingClientSettings WyomingClient { get; init; } = new();
     public SttSettings Stt { get; init; } = new();
     public TtsSettings Tts { get; init; } = new();
@@ -32,11 +45,6 @@ public record VoiceSettings : IMcpHostSettings
     public OpenRouterKey OpenRouter { get; init; } = new();
     public TypeSafeOptions TypeSafe { get; init; } = new();
     public ApprovalSettings Approval { get; init; } = new();
-
-    // The same block the Agent and chat hosts bind. This channel writes conversations and never
-    // reads the list, so only the purge horizon reaches anything here — but it has to be the same
-    // number, or a topic voice wrote would age on a different clock from one anybody else wrote.
-    public RetentionSettings Retention { get; init; } = new();
 
     // Channel-wide default geographic locality (e.g. "Madrid, Spain"). Satellites that don't set
     // their own Locality inherit this one. Surfaced to the agent via SatelliteConfig.DisplayLocation.

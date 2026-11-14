@@ -13,8 +13,127 @@ public static class MechanismScenarios
     public static IReadOnlyList<Scenario> All =>
     [
         RemindMeInTenMinutes, TurnTheAirOffInAnHour, WakeMeAtSeven, SixHoursFromNow,
-        FromTheOfficeAboutTheKitchen, NoSatelliteAtAll
+        FromTheOfficeAboutTheKitchen, NoSatelliteAtAll, TomorrowAtEightWithoutAHome, ACountdownWithoutAVoiceServer,
+        AnEnglishScheduleRequest
     ];
+
+    // A household that set up no voice server has nothing that rings, and its agents reach no timers
+    // (HouseholdAgents): a countdown it asks for is a one-shot schedule at now plus the duration whose
+    // prompt tells the person, set without looking for the timers it does not have.
+    public static Scenario ACountdownWithoutAVoiceServer => new()
+    {
+        Name = "a countdown without a voice server is a schedule that tells the person",
+        AgentId = ShippedDefinition.TemplatePrefix + "jonas" + ShippedDefinition.NoVoiceSuffix,
+        Turn = new EvalTurn
+        {
+            Text = "pon un temporizador de diez minutos para la pasta",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            CallExpectation.LoadsSkill(SchedulingSkill.Name),
+            new CallExpectation
+            {
+                Label = "schedule",
+                Tool = EvalTools.Create,
+                Arguments =
+                [
+                    Arg.PathMatches(@"^/schedules/[^/]+/[^/]+(/schedule\.json)?$"),
+                    Arg.Body("content",
+                        Arg.Any(
+                            Arg.Matches("runAt", @"^2026-08-17T20:10(:00)?(\.0+)?(\+02:00)?$"),
+                            Arg.Matches("runAt", @"^2026-08-17T18:10(:00)?(\.0+)?Z$")),
+                        Arg.Mentions("prompt", "(?i)pasta"))
+                ]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/schedules*")],
+        CallCeiling = 6,
+        // No prose of its own: with the timers withheld the model filed the countdown as a schedule 6 runs
+        // of 6 (deepseek-v4.1-flash-1017, 2026-11-03) on the scheduling section as it stands.
+        Claims = [SchedulingSkill.LoadsForAScheduleRequest.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // A household without Home Assistant has no alarms calendar, and the template a new household's
+    // assistant comes from dials none. A reminder at a clock time then has one place to go - a
+    // schedule whose prompt tells the person - and a manual pass found the agent declining the
+    // calendar it lacked and asking instead of setting it.
+    public static Scenario TomorrowAtEightWithoutAHome => new()
+    {
+        Name = "a clock-time reminder without a home is a schedule that tells the person",
+        AgentId = ShippedDefinition.TemplatePrefix + "jonas",
+        Turn = new EvalTurn
+        {
+            Text = "recuérdame mañana a las ocho que riegue las plantas",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            CallExpectation.LoadsSkill(SchedulingSkill.Name),
+            new CallExpectation
+            {
+                Label = "schedule",
+                Tool = EvalTools.Create,
+                Arguments =
+                [
+                    Arg.PathMatches(@"^/schedules/[^/]+/[^/]+(/schedule\.json)?$"),
+                    Arg.Body("content",
+                        Arg.Any(
+                            Arg.Matches("runAt", @"^2026-08-18T08:00(:00)?(\.0+)?(\+02:00)?$"),
+                            Arg.Matches("runAt", @"^2026-08-18T06:00(:00)?(\.0+)?Z$")),
+                        Arg.Mentions("prompt", "(?i)plant|regar|riega|riegue"))
+                ]
+            }
+        ],
+        Permitted =
+        [
+            .. CallPermission.Looking("/schedules*"),
+            .. CallPermission.Looking("/timers*"),
+            CallPermission.Load(CountdownTimersSkill.Name)
+        ],
+        CallCeiling = 6,
+        Claims = [TimerPrompt.NoHomeReminderIsASchedule.Id, SchedulingSkill.LoadsForAScheduleRequest.Id],
+        Policy = new RunPolicy(2, 3)
+    };
+
+    // A household that pins no language is answered in the language of each message. An English
+    // member of a household on Madrid's clock asked for a schedule four times by hand and was answered
+    // in Spanish every time ("Hecho: ... hoy a las 00:35"), while their plain questions stayed English:
+    // the turn that schedules is the one that drifts.
+    public static Scenario AnEnglishScheduleRequest => new()
+    {
+        Name = "an English schedule request is answered in English",
+        AgentId = ShippedDefinition.TemplatePrefix + "jonas" + ShippedDefinition.NoVoiceSuffix,
+        Turn = new EvalTurn
+        {
+            Text = "Schedule a one-time task tomorrow at 9 that tells me \"buy milk\". Just do it.",
+            Sender = "fran"
+        },
+        Instant = EvalInstant.Evening,
+        Required =
+        [
+            CallExpectation.LoadsSkill(SchedulingSkill.Name),
+            new CallExpectation
+            {
+                Label = "schedule",
+                Tool = EvalTools.Create,
+                Arguments = [Arg.PathMatches(@"^/schedules/[^/]+/[^/]+(/schedule\.json)?$")]
+            }
+        ],
+        Permitted = [.. CallPermission.Looking("/schedules*")],
+        CallCeiling = 6,
+        Reply = new ReplyExpectation
+        {
+            NeverSays = ["Hecho", "Listo", "mañana", "a las ", "te aviso", "una sola vez", "programad", "recordatorio"]
+        },
+        Claims = [LanguagePrompt.ReplyFollowsTheMessage.Id, SchedulingSkill.LoadsForAScheduleRequest.Id],
+        // Measured at 11 of 15 on the shipped prompt (2026-11-05): four runs keep a pass at that rate
+        // from reddening one full pass in six.
+        Policy = new RunPolicy(2, 4)
+    };
 
     // A person is being told something, and the time is a duration: a countdown, with the message
     // to speak in `text`. Nothing else in the home is touched — with /schedules and the alarms

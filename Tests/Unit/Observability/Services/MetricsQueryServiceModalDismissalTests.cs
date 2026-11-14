@@ -38,7 +38,7 @@ public class MetricsQueryServiceModalDismissalTests
             new ModalDismissalEvent { Kind = ModalKinds.Newsletter, Outcome = ModalDismissalOutcomes.LeftStanding, Timestamp = at.AddHours(1) }
         }.Select(e => new RedisValue(JsonSerializer.Serialize(e, _jsonOptions))).ToArray();
 
-        _db.Setup(d => d.SortedSetRangeByScoreAsync("metrics:modals:2026-09-18", It.IsAny<double>(), It.IsAny<double>(),
+        _db.Setup(d => d.SortedSetRangeByScoreAsync("metrics:modals:deployment:2026-09-18", It.IsAny<double>(), It.IsAny<double>(),
                 It.IsAny<Exclude>(), It.IsAny<Order>(), It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CommandFlags>()))
             .ReturnsAsync(entries);
     }

@@ -1,0 +1,148 @@
+@page "/admin/spaces"
+@layout AdminLayout
+@inherits StoreSubscriberComponent
+@using Domain.DTOs.Admin
+@using Domain.DTOs.Household
+@using Domain.DTOs.WebChat
+@using WebChat.Client.Components.Admin
+@using WebChat.Client.State.Admin
+@inject HouseholdSpacesStore Store
+@inject IDispatcher Dispatcher
+
+<PageTitle>Household spaces</PageTitle>
+
+<section class="admin-section" aria-labelledby="admin-spaces-heading">
+    <h1 id="admin-spaces-heading">Spaces</h1>
+    <p class="admin-lede">
+        Each space keeps its own conversations, under its own name and colour, and opens on the agent you pick
+        for it unless a person picked another there. The conversations of a space you remove stay in the
+        default space. Changes are saved together.
+    </p>
+
+    @if (_state.Notice is { } notice)
+    {
+        <AdminNoticeView Notice="notice" />
+    }
+
+    @if (_state.Spaces is { } saved)
+    {
+        <form class="admin-form" @onsubmit="Save" aria-label="The household's spaces">
+            @for (var i = 0; i < _drafts.All.Count; i++)
+            {
+                var index = i;
+                var draft = _drafts.All[index];
+                <article class="admin-agent" aria-label="@(draft.SavedName ?? draft.Slug)">
+                    <header class="admin-agent-header">
+                        <h2>@(draft.SavedName ?? draft.Slug)</h2>
+                        <span class="admin-agent-meta">
+                            /@(draft.Slug == SpaceConfig.DefaultSlug ? "" : draft.Slug)
+                            @if (draft.Slug == SpaceConfig.DefaultSlug)
+                            {
+                                <span class="admin-agent-default"> · the default space</span>
+                            }
+                            @if (draft.SavedName is null)
+                            {
+                                <span class="admin-agent-default"> · not saved yet</span>
+                            }
+                        </span>
+                    </header>
+                    <label class="admin-field">
+                        <span class="admin-field-label">Name</span>
+                        <input name="spaceName" @bind="draft.Name" @bind:event="oninput" maxlength="@AdminSpaces.NameLength"
+                               autocomplete="off" />
+                    </label>
+                    <label class="admin-field">
+                        <span class="admin-field-label">Colour</span>
+                        <span class="admin-colour">
+                            <input type="color" aria-label="Pick the colour of @draft.Name" value="@Picked(draft.AccentColor)"
+                                   @onchange="e => draft.AccentColor = e.Value as string ?? draft.AccentColor" />
+                            <input name="accentColor" @bind="draft.AccentColor" @bind:event="oninput" spellcheck="false"
+                                   autocomplete="off" placeholder="#e9601f" />
+                        </span>
+                    </label>
+                    <label class="admin-field">
+                        <span class="admin-field-label">Opens on</span>
+                        <select name="defaultAgent" @bind="draft.DefaultAgent">
+                            <option value="">The household's default agent</option>
+                            @foreach (var agent in saved.Agents)
+                            {
+                                <option value="@agent.Id">@agent.Name</option>
+                            }
+                        </select>
+                    </label>
+                    <div class="admin-actions">
+                        <button type="button" class="admin-secondary" disabled="@(index == 0)" @onclick="() => _drafts.Move(index, -1)">Move up</button>
+                        <button type="button" class="admin-secondary" disabled="@(index == _drafts.All.Count - 1)"
+                                @onclick="() => _drafts.Move(index, 1)">Move down</button>
+                        @if (draft.Slug != SpaceConfig.DefaultSlug)
+                        {
+                            <button type="button" class="admin-secondary" @onclick="() => _drafts.Remove(index)">Remove</button>
+                        }
+                    </div>
+                </article>
+            }
+            <div class="admin-actions">
+                <button type="submit" class="admin-save" disabled="@_state.Saving">@(_state.Saving ? "Saving" : "Save spaces")</button>
+            </div>
+        </form>
+
+        <form class="admin-form admin-agent-add" @onsubmit="Add" aria-labelledby="admin-space-add-heading">
+            <h2 id="admin-space-add-heading">Add a space</h2>
+            <label class="admin-field">
+                <span class="admin-field-label">Address</span>
+                <input name="newSpaceSlug" @bind="_newSlug" @bind:event="oninput" spellcheck="false" autocomplete="off"
+                       placeholder="kitchen" />
+                <span class="admin-field-hint">
+                    Lowercase letters, digits and inner hyphens: the space opens at /@(_newSlug.Length > 0 ? _newSlug : "kitchen").
+                    It cannot be changed later.
+                </span>
+            </label>
+            <label class="admin-field">
+                <span class="admin-field-label">Name</span>
+                <input name="newSpaceName" @bind="_newName" @bind:event="oninput" maxlength="@AdminSpaces.NameLength" autocomplete="off" />
+            </label>
+            <div class="admin-actions">
+                <button type="submit" class="admin-secondary">Add space</button>
+            </div>
+        </form>
+    }
+    else if (_state.Notice is null)
+    {
+        <p class="admin-status">Loading the household's spaces</p>
+    }
+</section>
+
+@code {
+    private HouseholdSpacesState _state = HouseholdSpacesState.Initial;
+    private SpaceDrafts _drafts = new([]);
+    private string _newSlug = "";
+    private string _newName = "";
+
+    protected override void OnInitialized()
+    {
+        Subscribe(Store.StateObservable, state => state, state => _state = state);
+        // The spaces take what the admin API answered — on opening and after a save — and are the
+        // owner's to edit in between; nothing is saved until they save.
+        Subscribe(Store.StateObservable, state => state.Spaces, spaces =>
+        {
+            if (spaces is not null)
+            {
+                _drafts = new SpaceDrafts(spaces.Spaces);
+            }
+        });
+        Dispatcher.Dispatch(new LoadHouseholdSpaces());
+    }
+
+    // A colour picker takes #rrggbb alone; a shorter or translucent colour still shows in the field.
+    private static string Picked(string colour) =>
+        colour.Length == 7 && SpaceConfig.IsValidHexColor(colour) ? colour : SpaceConfig.DefaultAccentColor;
+
+    private void Add()
+    {
+        _drafts.Add(_newSlug, _newName);
+        (_newSlug, _newName) = ("", "");
+    }
+
+    private void Save() => Dispatcher.Dispatch(new SaveHouseholdSpaces(_drafts.ToSection(),
+        _state.Spaces is { } loaded ? new SpacesSection { Spaces = loaded.Spaces } : null));
+}

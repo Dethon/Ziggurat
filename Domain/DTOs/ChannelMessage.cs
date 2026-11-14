@@ -12,6 +12,25 @@ public record ChannelMessage
     public required string ChannelId { get; init; }
     public string? AgentId { get; init; }
     public string? UserId { get; init; }
+    public Principal? Principal { get; init; }
+
+    // The accounts service's assertion the channel carried, unverified: the conversation group checks
+    // it as the message arrives and nothing else reads it (ChannelMessageNotification.Assertion).
+    public string? Assertion { get; init; }
+
+    // A fire's delegation as its server carried it, unverified: the conversation group checks it as
+    // the fire arrives and nothing else reads it (ChannelMessageNotification.Delegation).
+    public FireDelegation? Delegation { get; init; }
+
+    // What the fire's server reported beside what it asks (ChannelMessageNotification.FireReport): the
+    // conversation group frames it as a report around Content once the delegation was checked.
+    public string? FireReport { get; init; }
+
+    // The household a fire's server says its object is kept under (ChannelMessageNotification.HouseholdId):
+    // the conversation group refuses the fire while that household is suspended, and believes it for
+    // nothing else.
+    public string? HouseholdId { get; init; }
+
     public IReadOnlyList<ReplyTarget>? ReplyTo { get; init; }
     public MessageOrigin? Origin { get; init; }
     public string? Location { get; init; }

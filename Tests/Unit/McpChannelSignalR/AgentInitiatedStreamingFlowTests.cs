@@ -21,6 +21,7 @@ public class AgentInitiatedStreamingFlowTests
         var sessionService = new SessionService();
         var streamService = new StreamService(
             sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             new Mock<ILogger<StreamService>>().Object);
         var hubSender = new Mock<IHubNotificationSender>();
@@ -29,6 +30,7 @@ public class AgentInitiatedStreamingFlowTests
             .AddSingleton(streamService)
             .AddSingleton<IStreamService>(streamService)
             .AddSingleton(hubSender.Object)
+            .AddSingleton(SharedTopic())
             .BuildServiceProvider();
         sessionService.StartSession("topic-1", "jack", 7, 42, "default", "Downloads");
 
@@ -52,9 +54,19 @@ public class AgentInitiatedStreamingFlowTests
         received.ShouldContain(m => m.IsComplete);
         streamService.IsStreaming("topic-1").ShouldBeFalse();
         hubSender.Verify(s => s.SendToGroupAsync(
-            "space:default",
+            "space:home:default",
             "OnStreamStarted",
             It.Is<StreamStartedNotification>(n => n.TopicId == "topic-1"),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The conversation's topic, which the household shares: its news is its household's space's.
+    private static IThreadStateStore SharedTopic()
+    {
+        var store = new Mock<IThreadStateStore>();
+        store.Setup(s => s.GetTopicByChatIdAndThreadIdAsync("jack", 7, 42, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TopicMetadata("topic-1", 7, 42, "jack", "Downloads", DateTimeOffset.UtcNow, null,
+                OwnerId: "fran", TenantId: "home", Shared: true));
+        return store.Object;
     }
 }

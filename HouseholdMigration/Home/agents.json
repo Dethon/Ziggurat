@@ -1,0 +1,130 @@
+{
+  "schemaVersion": 1,
+  "defaultAgent": "jonas",
+  "agents": [
+    {
+      "id": "jack",
+      "definition": {
+        "id": "jack",
+        "name": "Jack",
+        "description": "Download assistant (library/torrent search and downloads).",
+        "model": "openai/gpt-6-luna",
+        "reasoningEffort": "low",
+        "mcpServerEndpoints": [
+          "library",
+          "websearch"
+        ],
+        "enabledFeatures": [
+          "filesystem.glob",
+          "filesystem.move",
+          "filesystem.info",
+          "filesystem.read",
+          "filesystem.remove"
+        ],
+        "whitelistPatterns": [
+          "domain__filesystem*",
+          "mcp__library*",
+          "mcp__websearch*"
+        ]
+      }
+    },
+    {
+      "id": "jonas",
+      "definition": {
+        "id": "jonas",
+        "usesOutposts": true,
+        "name": "Jonas",
+        "description": "General-purpose personal assistant (vault notes, web search, real-estate, home automation).",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "providerRouting": {
+          "ignore": [
+            "relace",
+            "morph"
+          ]
+        },
+        "reasoningEffort": "high",
+        "mcpServerEndpoints": [
+          "vault",
+          "sandbox",
+          "websearch",
+          "http://mcp-idealista:8080/mcp",
+          "homeassistant",
+          "http://mcp-scheduling:8080/mcp",
+          "printer",
+          "http://mcp-timers:8080/mcp",
+          "http://mcp-sugary:8080/mcp"
+        ],
+        "enabledFeatures": [
+          "filesystem",
+          "subagents",
+          "memory"
+        ],
+        "whitelistPatterns": [
+          "domain__filesystem*",
+          "mcp__websearch*",
+          "mcp__mcp-idealista*",
+          "domain__subagents*",
+          "domain__memory*"
+        ]
+      }
+    },
+    {
+      "id": "nabu",
+      "definition": {
+        "id": "nabu",
+        "usesOutposts": true,
+        "name": "Nabu",
+        "description": "Voice assistant with the full personal-assistant toolset (vault notes, web search, home automation, printing, timers, scheduled tasks), driven by speech; every reply is spoken aloud, so answers are one short sentence of plain words — no formatting, no narration, no explanation.",
+        "model": "deepseek/deepseek-v4.1-flash-1017",
+        "providerRouting": {
+          "sort": "throughput",
+          "preferredMaxLatency": {
+            "p50": 1
+          },
+          "ignore": [
+            "morph"
+          ]
+        },
+        "reasoningEffort": "low",
+        "language": "es",
+        "promptSections": [
+          "voice"
+        ],
+        "mcpServerEndpoints": [
+          "vault",
+          "sandbox",
+          "websearch",
+          "homeassistant",
+          "http://mcp-scheduling:8080/mcp",
+          "printer",
+          "http://mcp-timers:8080/mcp"
+        ],
+        "enabledFeatures": [
+          "filesystem",
+          "subagents",
+          "memory"
+        ],
+        "whitelistPatterns": [
+          "domain__filesystem*",
+          "mcp__websearch*",
+          "domain__subagents*",
+          "domain__memory*"
+        ]
+      }
+    },
+    {
+      "id": "sugary",
+      "definition": {
+        "id": "sugary",
+        "name": "Sugary",
+        "description": "Carb counting for a person with type 1 diabetes: estimates the carbohydrate in a meal they photograph, film or describe, for the Sugary app. Never suggests insulin doses.",
+        "model": "google/gemini-3.8-flash",
+        "reasoningEffort": "medium",
+        "mcpServerEndpoints": [
+          "http://mcp-sugary:8080/mcp"
+        ],
+        "noTools": true
+      }
+    }
+  ]
+}

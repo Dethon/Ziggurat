@@ -12,8 +12,11 @@ namespace Tests;
 // sleep it replaces and the slow case still passes.
 public static class Eventually
 {
-    // Long enough that only a genuine failure exhausts it, and never paid when the state arrives.
-    private static readonly TimeSpan _budget = TimeSpan.FromSeconds(10);
+    // Long enough that only a genuine failure exhausts it, and never paid when the state arrives. Ten
+    // seconds was not: with the machine busy past the suite — a second checkout's run, builds beside
+    // it — a tunnel's opening (an accounts check, a socket, a handshake) and a monitor's restarts
+    // took longer, and tests failed on time they would have been given anyway.
+    private static readonly TimeSpan _budget = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan _interval = TimeSpan.FromMilliseconds(5);
 
     public static async Task Until(Func<bool> condition, string because)
@@ -26,20 +29,24 @@ public static class Eventually
         condition().ShouldBeTrue($"waited {_budget.TotalSeconds:0}s for {because}");
     }
 
-    public static async Task Until(Func<ValueTask<bool>> condition, string because)
+    public static Task Until(Func<ValueTask<bool>> condition, string because) => Until(condition, because, _budget, _interval);
+
+    // For state a running stack produces over seconds — a container started, its tunnel opened — which
+    // no budget meant for in-process work covers, asked at an interval the far end can bear.
+    public static async Task Until(Func<ValueTask<bool>> condition, string because, TimeSpan budget, TimeSpan interval)
     {
         var clock = Stopwatch.StartNew();
-        while (clock.Elapsed < _budget)
+        while (clock.Elapsed < budget)
         {
             if (await condition())
             {
                 return;
             }
 
-            await Task.Delay(_interval);
+            await Task.Delay(interval);
         }
 
-        (await condition()).ShouldBeTrue($"waited {_budget.TotalSeconds:0}s for {because}");
+        (await condition()).ShouldBeTrue($"waited {budget.TotalSeconds:0}s for {because}");
     }
 
     // A claim that something does *not* happen cannot be polled — there is no state to wait for,

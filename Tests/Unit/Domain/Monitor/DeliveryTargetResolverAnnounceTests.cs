@@ -17,9 +17,9 @@ public class DeliveryTargetResolverAnnounceTests
         var calls = new List<(string?, string?, string?)>();
         var m = new Mock<IChannelConnection>();
         m.SetupGet(c => c.ChannelId).Returns(id);
-        m.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
-            .Callback((string _, string _, string _, string? prompt, string? address, string? existing, CancellationToken _) => calls.Add((prompt, address, existing)))
-            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, CancellationToken _) => existing);
+        m.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string _, string _, string? prompt, string? address, string? existing, Principal? _, bool _, CancellationToken _) => calls.Add((prompt, address, existing)))
+            .ReturnsAsync((string _, string _, string _, string? _, string? _, string? existing, Principal? _, bool _, CancellationToken _) => existing);
         return (m, calls);
     }
 
@@ -54,7 +54,7 @@ public class DeliveryTargetResolverAnnounceTests
     {
         var failing = new Mock<IChannelConnection>();
         failing.SetupGet(c => c.ChannelId).Returns("signalr");
-        failing.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+        failing.Setup(c => c.CreateConversationAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<Principal?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new HttpRequestException("connection reset"));
         var (telegram, telegramCalls) = Channel("telegram");
         var targets = new[]

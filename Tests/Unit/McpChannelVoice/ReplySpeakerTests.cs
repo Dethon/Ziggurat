@@ -6,6 +6,7 @@ using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.DTOs.Voice;
 using Domain.DTOs.WebChat;
+using Domain.Monitor;
 using McpChannelVoice.Services;
 using McpChannelVoice.Settings;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,21 +43,13 @@ public class ReplySpeakerTests
             new SatelliteConfig { Identity = "household", Room = "Kitchen" });
         _sessions.Register(_session);
 
-        var factory = new Mock<IConversationFactory>();
-        factory.Setup(f => f.CreateAsync(It.IsAny<CreateConversationParams>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() =>
-            {
-                var identity = ConversationIdGenerator.CreateFor("topic-kitchen");
-                var topic = new TopicMetadata("topic-kitchen", identity.ChatId, identity.ThreadId, "agent-1",
-                    "household @ Kitchen", DateTimeOffset.UtcNow, null);
-                return new ConversationCreation(identity, topic);
-            });
+        var factory = new FakeTopicMinter();
 
         var manager = new VoiceConversationManager(
-            factory.Object, _accumulator, _conversationClock,
+            factory, _accumulator, _conversationClock,
             _conversationLifetime, NullLogger<VoiceConversationManager>.Instance);
 
-        _conversationId = manager.GetOrCreateAsync(_session, "agent-1", "hello", default).GetAwaiter().GetResult();
+        _conversationId = manager.GetOrCreateAsync(_session, "agent-1", default).GetAwaiter().GetResult();
 
         _tts.Setup(t => t.SynthesizeAsync(
                 It.IsAny<string>(), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()))
@@ -182,6 +175,25 @@ public class ReplySpeakerTests
             It.Is<string>(s => s.Contains("boom")), It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    // A turn the agent refused is answered in English prose meant for a screen; spoken by the Spanish
+    // voice it was noise ("Yoro seoldas no voice agente yet"). Voice says each refusal it knows in its
+    // own words instead, and anything else as the error it is.
+    [Fact]
+    public void SpeakUtteranceReply_ARefusalItKnows_IsSpokenInItsOwnWords_NotAsAnError()
+    {
+        Say(_speaker, RefusalAnswers.NoVoiceAgent, ReplyContentType.Error, true);
+
+        _tts.Verify(t => t.SynthesizeAsync(
+            It.Is<string>(s => s.Contains("agente de voz") && !s.Contains("error") && !s.Contains("voice agent")),
+            It.IsAny<SynthesisOptions>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public void EveryRefusalTheAgentAnswers_HasAVoiceOfItsOwn()
+    {
+        RefusalAnswers.All.Where(answer => !SpokenRefusals.TryRender(answer, out _)).ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task SpeakUtteranceReply_Error_FlaggedComplete_EndsTheStreamSoTheTurnResolves()
     {
@@ -228,7 +240,7 @@ public class ReplySpeakerTests
         // Faulted agent run as ChatMonitor emits it: buffered Text (never isComplete) -> Error
         // (isComplete=false) -> trailing StreamComplete. The partial answer and the error must be
         // spoken together, in order, as a SINGLE utterance — never the error first with the leftover
-        // partial spoken after it (the divergence from the Telegram/ServiceBus flush-on-error contract).
+        // partial spoken after it (the divergence from the Telegram flush-on-error contract).
         Say(_speaker, "El tiempo es", ReplyContentType.Text, false);
         Say(_speaker, "boom", ReplyContentType.Error, false);
         Say(_speaker, "", ReplyContentType.StreamComplete, true);

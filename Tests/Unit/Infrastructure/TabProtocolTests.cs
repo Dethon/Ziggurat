@@ -252,7 +252,7 @@ public class TabProtocolTests
         await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
 
         var ran = false;
-        var outcome = await manager.OnUrlAsync("s1", "https://gone.test/", StampPolicy.None, _ =>
+        var outcome = await manager.OnUrlAsync("s1", "https://gone.test/", ctx.Object, StampPolicy.None, _ =>
         {
             ran = true;
             return Task.FromResult(true);
@@ -278,7 +278,7 @@ public class TabProtocolTests
 
         var (release, holder) = await HoldCurrentTabAsync(manager, "s1");
         var ran = false;
-        var queued = manager.OnUrlAsync("s1", "https://a.test/", StampPolicy.None, _ =>
+        var queued = manager.OnUrlAsync("s1", "https://a.test/", ctx.Object, StampPolicy.None, _ =>
         {
             ran = true;
             return Task.FromResult(true);
@@ -650,6 +650,86 @@ public class TabProtocolTests
     }
 
     [Fact]
+    public async Task APopupAdoptedWhileTheActingTabAnswers_StaysTheCurrentTab()
+    {
+        // A loaded browser reports a click's popup after the grace: the action answers from the
+        // acting tab, and its tail must not take "current" back from the popup it opened.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+        var popup = FakePage.Create("https://popup.test/window");
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+
+        await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            ActThat(),
+            answer: _ =>
+            {
+                pages[0].RaisePopup(popup);
+                return Task.FromResult("from the acting tab");
+            },
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
+
+        var current = await manager.OnCurrentTabAsync(
+            "s1", StampPolicy.None, cx => Task.FromResult(cx.Page));
+        current.ShouldBe(new TabOutcome<IPage>.Ran(popup.Mock.Object));
+    }
+
+    [Fact]
+    public async Task APopupThatClosedItselfBeforeTheActingTabsTail_HandsCurrentBackToTheOpener()
+    {
+        // A login window that shuts once it has done its work: adopted while the click answered,
+        // gone before the click's tail. Current is the opener again, never a page that is closed.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+        var popup = FakePage.Create("https://popup.test/window");
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        await StampElementsAsync(manager, "s1", 1);
+
+        await manager.OnRefAsync(
+            "s1", "e-1", StampPolicy.AugmentUnlessNavigated(RefNamespace.Element),
+            ActThat(),
+            answer: _ =>
+            {
+                pages[0].RaisePopup(popup);
+                popup.Closed = true;
+                return Task.FromResult("from the acting tab");
+            },
+            popup: new PopupAnswer<string>(
+                StampPolicy.Restamp(RefNamespace.Element), _ => Task.FromResult("from the popup")));
+
+        (await manager.OnCurrentTabAsync("s1", StampPolicy.None, cx => Task.FromResult(cx.Page)))
+            .ShouldBe(new TabOutcome<IPage>.Ran(pages[0].Mock.Object));
+    }
+
+    [Fact]
+    public async Task APopupAdoptedWhileRefLessCallsQueueOnTheOpener_IsWhereTheyRun_AndStaysCurrent()
+    {
+        // A ref-less call reads "current" before it waits for that tab's lock. The popup adopted
+        // while it waits is current by the time it runs, and the call that held the lock must not
+        // hand current back to the opener as it finishes.
+        var (ctx, pages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+        var popup = FakePage.Create("https://popup.test/window");
+
+        await manager.BrowseAsync("s1", "https://a.test/", ctx.Object, _ => Task.FromResult(true));
+        var (release, holder) = await HoldCurrentTabAsync(manager, "s1");
+        var queued = manager.OnCurrentTabAsync("s1", StampPolicy.None, cx => Task.FromResult(cx.Page));
+        await Eventually.Settle();
+
+        pages[0].RaisePopup(popup);
+        release.SetResult();
+        await holder;
+
+        (await queued).ShouldBe(new TabOutcome<IPage>.Ran(popup.Mock.Object));
+        (await manager.OnCurrentTabAsync("s1", StampPolicy.None, cx => Task.FromResult(cx.Page)))
+            .ShouldBe(new TabOutcome<IPage>.Ran(popup.Mock.Object));
+    }
+
+    [Fact]
     public async Task AStalePendingPopupFromAnEarlierCall_DoesNotDivertTheAction()
     {
         var (ctx, pages) = TabPoolFakes.CreateContext();
@@ -724,7 +804,7 @@ public class TabProtocolTests
         outcome.ShouldBe(new TabOutcome<string>.Closed("https://a.test/"));
 
         // The session's other tab lives on and still answers.
-        (await manager.OnUrlAsync("s1", "https://b.test/", StampPolicy.None, _ => Task.FromResult("alive")))
+        (await manager.OnUrlAsync("s1", "https://b.test/", ctx.Object, StampPolicy.None, _ => Task.FromResult("alive")))
             .ShouldBeOfType<TabOutcome<string>.Ran>();
     }
 
@@ -839,5 +919,62 @@ public class TabProtocolTests
             });
 
         next.ShouldBeOfType<TabOutcome<bool>.Ran>();
+    }
+
+    // A tab belongs to the browser context it opened in for life, and only a browse addressed to
+    // that context may reuse it: a page open in one person's context answering another's browse
+    // would hand one person's session to the other.
+    [Fact]
+    public async Task AUrlOpenInOneContext_IsNotReusedForABrowseAddressedToAnother()
+    {
+        var (anonymous, anonymousPages) = TabPoolFakes.CreateContext();
+        var (person, personPages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", anonymous.Object, _ => Task.FromResult(true));
+        IPage? ranOn = null;
+        await manager.BrowseAsync("s1", "https://a.test/", person.Object, cx =>
+        {
+            ranOn = cx.Page;
+            return Task.FromResult(true);
+        });
+
+        personPages.ShouldHaveSingleItem();
+        ranOn.ShouldBeSameAs(personPages[0].Mock.Object);
+
+        // And the same context still reuses its own.
+        await manager.BrowseAsync("s1", "https://a.test/", anonymous.Object, _ => Task.FromResult(true));
+        anonymousPages.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task APopup_IsAdoptedIntoItsOpenersContext()
+    {
+        var (anonymous, _) = TabPoolFakes.CreateContext();
+        var (person, personPages) = TabPoolFakes.CreateContext();
+        await using var manager = new BrowserSessionManager();
+
+        await manager.BrowseAsync("s1", "https://a.test/", person.Object, _ => Task.FromResult(true));
+        var popupPage = FakePage.Create("https://popup.test/window");
+        personPages[0].RaisePopup(popupPage);
+        await Eventually.Until(() => manager.Get("s1")!.Tabs.Count == 2, "the popup to join the pool");
+
+        // The popup's address browsed in its opener's context reuses the popup's tab...
+        IPage? personRan = null;
+        await manager.BrowseAsync("s1", "https://popup.test/window", person.Object, cx =>
+        {
+            personRan = cx.Page;
+            return Task.FromResult(true);
+        });
+        personRan.ShouldBeSameAs(popupPage.Mock.Object);
+
+        // ...and in another context opens a tab of its own.
+        IPage? anonymousRan = null;
+        await manager.BrowseAsync("s1", "https://popup.test/window", anonymous.Object, cx =>
+        {
+            anonymousRan = cx.Page;
+            return Task.FromResult(true);
+        });
+        anonymousRan.ShouldNotBeSameAs(popupPage.Mock.Object);
     }
 }

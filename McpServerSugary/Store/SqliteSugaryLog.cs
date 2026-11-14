@@ -1,22 +1,25 @@
 using Domain.Contracts;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Sugary;
 using Microsoft.EntityFrameworkCore;
 
 namespace McpServerSugary.Store;
 
-// The mount's reads, a context per call: the mount is a singleton answering overlapping calls, and
-// a context is not safe to share between them.
-public sealed class SqliteSugaryLog(IDbContextFactory<SugaryDbContext> contexts) : ISugaryLog
+// The mount's and the downloads' reads, a context per call opened for the person the read is for:
+// the mount is a singleton answering overlapping calls, and a context is not safe to share between
+// them. The context's filters keep each read to that person's log and their household's foods.
+public sealed class SqliteSugaryLog(SugaryStore store) : ISugaryLog
 {
-    public async Task<IReadOnlyList<DateTimeOffset>> MealTimesAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<DateTimeOffset>> MealTimesAsync(Account owner, CancellationToken ct)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = store.For(owner);
         return await db.Meals.AsNoTracking().OrderBy(m => m.EatenAt).Select(m => m.EatenAt).ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<LoggedMeal>> MealsAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    public async Task<IReadOnlyList<LoggedMeal>> MealsAsync(
+        Account owner, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = store.For(owner);
         // Projected so the photo stays in the database.
         var meals = await db.Meals.AsNoTracking()
             .Where(m => m.EatenAt >= from && m.EatenAt < to)
@@ -37,15 +40,16 @@ public sealed class SqliteSugaryLog(IDbContextFactory<SugaryDbContext> contexts)
         return meals.Select(ToLogged).ToList();
     }
 
-    public async Task<IReadOnlyList<DateTimeOffset>> DoseTimesAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<DateTimeOffset>> DoseTimesAsync(Account owner, CancellationToken ct)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = store.For(owner);
         return await db.Doses.AsNoTracking().OrderBy(d => d.TakenAt).Select(d => d.TakenAt).ToListAsync(ct);
     }
 
-    public async Task<IReadOnlyList<LoggedDose>> DosesAsync(DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+    public async Task<IReadOnlyList<LoggedDose>> DosesAsync(
+        Account owner, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = store.For(owner);
         var doses = await db.Doses.AsNoTracking()
             .Where(d => d.TakenAt >= from && d.TakenAt < to)
             .OrderBy(d => d.TakenAt)
@@ -53,16 +57,16 @@ public sealed class SqliteSugaryLog(IDbContextFactory<SugaryDbContext> contexts)
         return doses.Select(d => new LoggedDose(d.Id, d.TakenAt, d.Units, d.Kind, d.MealIds, d.Note)).ToList();
     }
 
-    public async Task<IReadOnlyList<DateTimeOffset>> ExerciseTimesAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<DateTimeOffset>> ExerciseTimesAsync(Account owner, CancellationToken ct)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = store.For(owner);
         return await db.ExerciseSessions.AsNoTracking().OrderBy(e => e.StartedAt).Select(e => e.StartedAt).ToListAsync(ct);
     }
 
     public async Task<IReadOnlyList<LoggedExercise>> ExerciseAsync(
-        DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
+        Account owner, DateTimeOffset from, DateTimeOffset to, CancellationToken ct)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = store.For(owner);
         var sessions = await db.ExerciseSessions.AsNoTracking()
             .Where(e => e.StartedAt >= from && e.StartedAt < to)
             .OrderBy(e => e.StartedAt)
@@ -70,23 +74,23 @@ public sealed class SqliteSugaryLog(IDbContextFactory<SugaryDbContext> contexts)
         return sessions.Select(e => new LoggedExercise(e.Id, e.Kind, e.Name, e.StartedAt, e.EndedAt, e.Note)).ToList();
     }
 
-    public async Task<IReadOnlyList<LoggedPeriod>> PeriodsAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<LoggedPeriod>> PeriodsAsync(Account owner, CancellationToken ct)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = store.For(owner);
         var periods = await db.Periods.AsNoTracking().OrderBy(p => p.Start).ToListAsync(ct);
         return periods.Select(p => new LoggedPeriod(p.Id, p.Start, p.End)).ToList();
     }
 
-    public async Task<IReadOnlyList<LoggedDayNote>> DayNotesAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<LoggedDayNote>> DayNotesAsync(Account owner, CancellationToken ct)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = store.For(owner);
         var notes = await db.DayNotes.AsNoTracking().OrderBy(n => n.Day).ToListAsync(ct);
         return notes.Select(n => new LoggedDayNote(n.Day, n.Text)).ToList();
     }
 
-    public async Task<IReadOnlyList<SavedFood>> FoodsAsync(CancellationToken ct)
+    public async Task<IReadOnlyList<SavedFood>> FoodsAsync(Account owner, CancellationToken ct)
     {
-        await using var db = await contexts.CreateDbContextAsync(ct);
+        await using var db = store.For(owner);
         var foods = await db.Foods.AsNoTracking().OrderBy(f => f.Name).ToListAsync(ct);
         return foods
             .Select(f => new SavedFood(

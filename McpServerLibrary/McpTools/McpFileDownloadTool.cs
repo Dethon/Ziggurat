@@ -1,11 +1,11 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
-using Domain.Channels;
 using Domain.Contracts;
 using Domain.Tools;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads;
 using Infrastructure.Utils;
+using Mcp.Hosting;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -24,14 +24,14 @@ public class McpFileDownloadTool(
     public async Task<CallToolResult> McpRun(
         RequestContext<CallToolRequestParams> context,
         [Description("Id from a prior file_search result. Mutually exclusive with link — when set, omit link and title entirely.")]
-        int? searchResultId,
+        int? searchResultId = null,
         [Description("Magnet URI or http(s) .torrent URL obtained from any other tool. Requires title. Mutually exclusive with searchResultId — omit when downloading by searchResultId; never pass placeholders like \"\" or \"null\".")]
-        string? link,
+        string? link = null,
         [Description("Descriptive title for the download — required when link is provided, ignored otherwise. Use the real release/display name, never placeholders like \"null\".")]
-        string? title,
-        CancellationToken cancellationToken)
+        string? title = null,
+        CancellationToken cancellationToken = default)
     {
-        if (!ConversationScope.TryResolve(context.Params?.Meta, out var sessionId))
+        if (!context.TryScope(out var sessionId))
         {
             return ToolResponse.Create(ToolError.Create(
                 ToolError.Codes.InvalidArgument,
@@ -47,7 +47,7 @@ public class McpFileDownloadTool(
             return ToolResponse.Create(validation);
         }
 
-        var conversationContext = ConversationScope.Parse(context.Params?.Meta);
+        var conversationContext = context.Turn;
 
         var result = searchResultId.HasValue
             ? await Run(sessionId, searchResultId.Value, conversationContext, cancellationToken)

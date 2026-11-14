@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
@@ -96,6 +97,8 @@ public sealed class StreamResumeService(
 
         // A wire that cannot be opened leaves the caller to end the stream, which keeps what
         // was just shown as a message rather than taking it back off the screen.
-        return await streamingService.TryReadResumedStreamAsync(lease, topic);
+        // The wire starts with whatever the stream carried after the state just drawn: opening it
+        // took round trips, and a page opening a topic mid-reply lost what was written meanwhile.
+        return await streamingService.TryReadResumedStreamAsync(lease, topic, StreamSeen.Of(state.BufferedMessages));
     }
 }

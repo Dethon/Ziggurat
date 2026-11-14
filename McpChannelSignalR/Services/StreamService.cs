@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
@@ -9,6 +10,7 @@ namespace McpChannelSignalR.Services;
 
 public sealed class StreamService(
     SessionService sessionService,
+    IThreadStateStore threadStore,
     IPushNotificationService pushNotificationService,
     ILogger<StreamService> logger) : IStreamService, IDisposable
 {
@@ -18,7 +20,16 @@ public sealed class StreamService(
     private readonly ConcurrentDictionary<string, string> _currentPrompts = new();
     private readonly ConcurrentDictionary<string, string> _currentSenderIds = new();
     private readonly ConcurrentDictionary<string, int> _pendingPromptCounts = new();
+
+    // Bumped whenever who may see a topic changes (its owner shares it or stops), so a reply streaming
+    // to a page asks again whether that page's person still may, and only then.
+    private readonly ConcurrentDictionary<string, int> _audiences = new();
     private readonly Lock _streamLock = new();
+
+    // A chunk is added to the buffer and written to the readers as one step, and a reader joining
+    // takes the buffer and subscribes as one, so it misses nothing written meanwhile and sees nothing
+    // twice.
+    private readonly Lock _writeLock = new();
     private bool _disposed;
 
     public async Task WriteReplyAsync(SendReplyParams p)
@@ -118,6 +129,25 @@ public sealed class StreamService(
         }
     }
 
+    // A page resuming the topic's stream (the same join, found by topic): null when none is running.
+    // Carried is what the stream carried since the state the page drew (StreamSeen.Since), or, for a
+    // page that says nothing of it, everything.
+    public (ChannelReader<ChatStreamMessage> Live, IReadOnlyList<ChatStreamMessage> Carried)? Join(
+        string topicId, StreamSeen? seen = null)
+    {
+        lock (_writeLock)
+        {
+            // ReSharper disable once InconsistentlySynchronizedField
+            if (!_responseChannels.TryGetValue(topicId, out var channel))
+            {
+                return null;
+            }
+
+            var (live, carried) = Join(topicId, channel);
+            return (live, seen?.Since(carried) ?? carried);
+        }
+    }
+
     public IAsyncEnumerable<ChatStreamMessage>? SubscribeToStream(
         string topicId,
         CancellationToken cancellationToken)
@@ -128,26 +158,44 @@ public sealed class StreamService(
             : channel.Subscribe().ReadAllAsync(cancellationToken);
     }
 
-    public async Task WriteMessageAsync(
+    public Task WriteMessageAsync(
         string topicId,
         ChatStreamMessage message)
     {
-        // ReSharper disable once InconsistentlySynchronizedField
-        if (!_responseChannels.TryGetValue(topicId, out var channel))
+        lock (_writeLock)
         {
-            // No subscriber means no stream was ever created — the same designed miss as above,
-            // one map further down.
-            logger.LogDebug("WriteMessage: topicId {TopicId} not found in _responseChannels", topicId);
-            return;
+            // ReSharper disable once InconsistentlySynchronizedField
+            if (!_responseChannels.TryGetValue(topicId, out var channel))
+            {
+                // No subscriber means no stream was ever created — the same designed miss as above,
+                // one map further down.
+                logger.LogDebug("WriteMessage: topicId {TopicId} not found in _responseChannels", topicId);
+                return Task.CompletedTask;
+            }
+
+            _streamBuffers.GetOrAdd(topicId, _ => new StreamBuffer()).Add(message);
+            channel.Write(message);
         }
 
-        var buffer = _streamBuffers.GetOrAdd(topicId, _ => new StreamBuffer());
-        buffer.Add(message);
-        await channel.WriteAsync(message, CancellationToken.None);
+        return Task.CompletedTask;
+    }
+
+    // A send joining a stream another send opened (two people sending in a shared topic at once) is
+    // read on its own wire alone, so it is handed what the stream carried before it subscribed: the
+    // other person's message, and the reply to it as far as it got. A new stream has carried nothing.
+    public (ChannelReader<ChatStreamMessage> Live, IReadOnlyList<ChatStreamMessage> Carried) Join(
+        string topicId, BroadcastChannel<ChatStreamMessage> channel)
+    {
+        lock (_writeLock)
+        {
+            var carried = _streamBuffers.TryGetValue(topicId, out var buffer) ? buffer.GetAll() : [];
+            return (channel.Subscribe(), carried);
+        }
     }
 
     private void CompleteStream(string topicId)
     {
+        ChannelSession? finished = null;
         string? spaceSlug = null;
         string? topicName = null;
 
@@ -163,6 +211,7 @@ public sealed class StreamService(
             // Resolve space slug and topic name before cleanup
             if (sessionService.TryGetSession(topicId, out var session))
             {
+                finished = session;
                 spaceSlug = session?.SpaceSlug;
                 topicName = session?.TopicName;
             }
@@ -175,22 +224,38 @@ public sealed class StreamService(
             CleanupStreamState(topicId);
         }
 
-        if (spaceSlug is not null)
+        if (finished is not null && spaceSlug is not null)
         {
-            _ = SendPushNotificationAsync(spaceSlug, topicName);
+            _ = SendPushNotificationAsync(finished, spaceSlug, topicName);
         }
     }
 
-    private async Task SendPushNotificationAsync(string spaceSlug, string? topicName)
+    // The topic's name rides on the push, so a private topic's goes to its owner's devices alone,
+    // the way its news on the hub does (TopicAudience); any other topic's goes to the space.
+    private async Task SendPushNotificationAsync(ChannelSession session, string spaceSlug, string? topicName)
     {
         try
         {
             var url = $"/{spaceSlug}";
-            await pushNotificationService.SendToSpaceAsync(
-                spaceSlug,
-                topicName ?? "New response",
-                "The agent has finished responding",
-                url);
+            var title = topicName ?? "New response";
+            const string body = "The agent has finished responding";
+            var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(
+                session.AgentId, session.ChatId, session.ThreadId);
+
+            // A space is its household's, so a topic recording none — or none held — has no space
+            // whose phones may hear of it.
+            if (topic?.TenantId is not { } household)
+            {
+                return;
+            }
+
+            if (topic is { IsPrivate: true, OwnerId: { } owner })
+            {
+                await pushNotificationService.SendToPersonAsync(new Account(household, owner), spaceSlug, title, body, url);
+                return;
+            }
+
+            await pushNotificationService.SendToSpaceAsync(household, spaceSlug, title, body, url);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -216,6 +281,10 @@ public sealed class StreamService(
             CleanupStreamState(topicId);
         }
     }
+
+    public int AudienceOf(string topicId) => _audiences.GetValueOrDefault(topicId);
+
+    public void AudienceChanged(string topicId) => _audiences.AddOrUpdate(topicId, 1, (_, version) => version + 1);
 
     public bool IsStreaming(string topicId)
     {
@@ -263,6 +332,7 @@ public sealed class StreamService(
         _currentPrompts.TryRemove(topicId, out _);
         _currentSenderIds.TryRemove(topicId, out _);
         _pendingPromptCounts.TryRemove(topicId, out _);
+        _audiences.TryRemove(topicId, out _);
 
         if (_cancellationTokens.TryRemove(topicId, out var cts))
         {

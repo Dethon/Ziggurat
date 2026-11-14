@@ -13,6 +13,10 @@ public sealed class FakeMetricsHubConnection : IMetricsHubConnection
 
     public int FailedStartsRemaining { get; set; }
 
+    // The proxy's session check answering the hub's negotiate as a signed-out request is: every start
+    // fails as SignalR reports an HTTP refusal.
+    public bool SignedOut { get; set; }
+
     public bool Disposed { get; private set; }
 
     // Holds a start open, so a test can dispose the module while a start that is going to succeed is
@@ -46,6 +50,12 @@ public sealed class FakeMetricsHubConnection : IMetricsHubConnection
         if (StartGate is { } gate)
         {
             await gate.Task;
+        }
+
+        if (SignedOut)
+        {
+            throw new HttpRequestException("Response status code does not indicate success: 401 (Unauthorized).",
+                null, System.Net.HttpStatusCode.Unauthorized);
         }
 
         if (FailedStartsRemaining > 0)

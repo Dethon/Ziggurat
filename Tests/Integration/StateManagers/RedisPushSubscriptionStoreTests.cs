@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Infrastructure.StateManagers;
 using Shouldly;
@@ -10,6 +11,11 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
 {
     private readonly RedisPushSubscriptionStore _store = new(fixture.Connection);
     private readonly List<string> _createdUserIds = [];
+
+    // This test's own household, so a space's subscriptions read here are only what it saved.
+    private readonly string _home = $"home{Guid.NewGuid():N}";
+
+    private Account As(string userId) => new(_home, userId);
 
     public Task InitializeAsync() => Task.CompletedTask;
 
@@ -27,7 +33,7 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
 
                 // Endpoints can be in multiple space sets — scan and remove from all
                 var server = fixture.Connection.GetServer(fixture.Connection.GetEndPoints().First());
-                await foreach (var key in server.KeysAsync(pattern: "push:space:*"))
+                await foreach (var key in server.KeysAsync(pattern: "push:space@*"))
                 {
                     await db.SetRemoveAsync(key, endpoint);
                 }
@@ -40,6 +46,61 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
     private PushSubscriptionDto CreateSubscription(string endpoint = "https://fcm.googleapis.com/fcm/send/abc123") =>
         new(endpoint, "BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUb...", "tBHItJI5svbpC7sc9d8M2w==");
 
+    // A phone is its owner's to unsubscribe: somebody naming another person's endpoint — a page of
+    // theirs that once had it, a shared tablet — takes nothing of theirs away.
+    [Fact]
+    public async Task RemoveAsync_SomebodyElsesEndpoint_LeavesItSubscribed()
+    {
+        var mine = $"test-user-{Guid.NewGuid():N}";
+        var hers = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.AddRange([mine, hers]);
+        var herPhone = CreateSubscription($"https://push.example/{hers}");
+        await _store.SaveAsync(As(hers), herPhone);
+
+        await _store.RemoveAsync(mine, herPhone.Endpoint);
+
+        (await _store.GetBySpaceAsync(_home, "default")).Select(s => s.UserId).ShouldBe([hers]);
+    }
+
+    // A replacement moves the caller's own old phone to its new endpoint. Named with somebody else's
+    // old endpoint — another household's above all — it moves nothing: the new phone joins only the
+    // caller's own space, never the spaces the other phone was in.
+    [Fact]
+    public async Task SaveAsync_ReplacingSomebodyElsesEndpoint_JoinsNoneOfTheirSpaces()
+    {
+        var mine = $"test-user-{Guid.NewGuid():N}";
+        var hers = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.AddRange([mine, hers]);
+        var elsewhere = $"elsewhere{Guid.NewGuid():N}";
+        var herPhone = CreateSubscription($"https://push.example/{hers}");
+        var myPhone = CreateSubscription($"https://push.example/{mine}");
+        await _store.SaveAsync(new Account(elsewhere, hers), herPhone, "kitchen");
+
+        await _store.SaveAsync(As(mine), myPhone, "default", replacingEndpoint: herPhone.Endpoint);
+
+        (await _store.GetBySpaceAsync(elsewhere, "kitchen")).Select(s => s.UserId).ShouldBe([hers]);
+        (await _store.GetBySpaceAsync(_home, "default")).Select(s => s.UserId).ShouldBe([mine]);
+    }
+
+    // A space is a household's room, and two households may both have one called "default": a push to
+    // one household's space never reaches the other's phones.
+    [Fact]
+    public async Task GetBySpaceAsync_TheSameSpaceInAnotherHousehold_IsNotListed()
+    {
+        var mine = $"test-user-{Guid.NewGuid():N}";
+        var hers = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.AddRange([mine, hers]);
+        var elsewhere = $"elsewhere{Guid.NewGuid():N}";
+        var myPhone = CreateSubscription($"https://push.example/{mine}");
+        var herPhone = CreateSubscription($"https://push.example/{hers}");
+
+        await _store.SaveAsync(As(mine), myPhone);
+        await _store.SaveAsync(new Account(elsewhere, hers), herPhone);
+
+        (await _store.GetBySpaceAsync(_home, "default")).ShouldBe([(mine, myPhone)]);
+        (await _store.GetBySpaceAsync(elsewhere, "default")).ShouldBe([(hers, herPhone)]);
+    }
+
     [Fact]
     public async Task SaveAsync_SameEndpoint_OverwritesPrevious()
     {
@@ -48,8 +109,8 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var sub1 = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/same", "key1", "auth1");
         var sub2 = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/same", "key2", "auth2");
 
-        await _store.SaveAsync(userId, sub1);
-        await _store.SaveAsync(userId, sub2);
+        await _store.SaveAsync(As(userId), sub1);
+        await _store.SaveAsync(As(userId), sub2);
 
         var all = await _store.GetAllAsync();
         var userSubs = all.Where(x => x.UserId == userId).ToList();
@@ -75,8 +136,8 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         _createdUserIds.Add(userId2);
         var sharedEndpoint = "https://fcm.googleapis.com/fcm/send/shared";
 
-        await _store.SaveAsync(userId1, CreateSubscription(sharedEndpoint));
-        await _store.SaveAsync(userId2, CreateSubscription("https://fcm.googleapis.com/fcm/send/other"));
+        await _store.SaveAsync(As(userId1), CreateSubscription(sharedEndpoint));
+        await _store.SaveAsync(As(userId2), CreateSubscription("https://fcm.googleapis.com/fcm/send/other"));
 
         await _store.RemoveByEndpointAsync(sharedEndpoint);
 
@@ -93,8 +154,8 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         _createdUserIds.Add(userId1);
         _createdUserIds.Add(userId2);
 
-        await _store.SaveAsync(userId1, CreateSubscription("https://fcm.googleapis.com/fcm/send/u1d1"));
-        await _store.SaveAsync(userId2, CreateSubscription("https://fcm.googleapis.com/fcm/send/u2d1"));
+        await _store.SaveAsync(As(userId1), CreateSubscription("https://fcm.googleapis.com/fcm/send/u1d1"));
+        await _store.SaveAsync(As(userId2), CreateSubscription("https://fcm.googleapis.com/fcm/send/u2d1"));
 
         var all = await _store.GetAllAsync();
         all.ShouldContain(x => x.UserId == userId1);
@@ -109,10 +170,10 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var sub1 = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/space-a", "k1", "a1");
         var sub2 = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/space-b", "k2", "a2");
 
-        await _store.SaveAsync(userId, sub1, "space-a");
-        await _store.SaveAsync(userId, sub2, "space-b");
+        await _store.SaveAsync(As(userId), sub1, "space-a");
+        await _store.SaveAsync(As(userId), sub2, "space-b");
 
-        var spaceASubs = await _store.GetBySpaceAsync("space-a");
+        var spaceASubs = await _store.GetBySpaceAsync(_home, "space-a");
         spaceASubs.ShouldContain(x => x.Subscription.Endpoint == sub1.Endpoint);
         spaceASubs.ShouldNotContain(x => x.Subscription.Endpoint == sub2.Endpoint);
     }
@@ -124,9 +185,9 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         _createdUserIds.Add(userId);
         var sub = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/default-space", "k1", "a1");
 
-        await _store.SaveAsync(userId, sub);
+        await _store.SaveAsync(As(userId), sub);
 
-        var defaultSubs = await _store.GetBySpaceAsync("default");
+        var defaultSubs = await _store.GetBySpaceAsync(_home, "default");
         defaultSubs.ShouldContain(x => x.Subscription.Endpoint == sub.Endpoint);
     }
 
@@ -148,9 +209,9 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         _createdUserIds.Add(userId3);
         var sharedEndpoint = "https://fcm.googleapis.com/fcm/send/shared-across-all";
 
-        await _store.SaveAsync(userId1, CreateSubscription(sharedEndpoint));
-        await _store.SaveAsync(userId2, CreateSubscription(sharedEndpoint));
-        await _store.SaveAsync(userId3, CreateSubscription(sharedEndpoint));
+        await _store.SaveAsync(As(userId1), CreateSubscription(sharedEndpoint));
+        await _store.SaveAsync(As(userId2), CreateSubscription(sharedEndpoint));
+        await _store.SaveAsync(As(userId3), CreateSubscription(sharedEndpoint));
 
         await _store.RemoveByEndpointAsync(sharedEndpoint);
 
@@ -166,7 +227,7 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var endpoint = "https://fcm.googleapis.com/fcm/send/indexed";
         var sub = CreateSubscription(endpoint);
 
-        await _store.SaveAsync(userId, sub);
+        await _store.SaveAsync(As(userId), sub);
 
         var db = fixture.Connection.GetDatabase();
         var indexValue = await db.StringGetAsync($"push:ep:{endpoint}");
@@ -192,13 +253,31 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var endpoint = "https://fcm.googleapis.com/fcm/send/transfer-space";
         var sub = new PushSubscriptionDto(endpoint, "k1", "a1");
 
-        await _store.SaveAsync(userA, sub, "space-old");
+        await _store.SaveAsync(As(userA), sub, "space-old");
 
-        await _store.SaveAsync(userB, sub, "space-new");
+        await _store.SaveAsync(As(userB), sub, "space-new");
 
-        var newSpaceSubs = await _store.GetBySpaceAsync("space-new");
+        var newSpaceSubs = await _store.GetBySpaceAsync(_home, "space-new");
         newSpaceSubs.ShouldContain(x => x.Subscription.Endpoint == endpoint);
         newSpaceSubs.First(x => x.Subscription.Endpoint == endpoint).UserId.ShouldBe(userB);
+    }
+
+    // A browser signed in as somebody of another household now is theirs: the spaces it was in under
+    // its last owner no longer list it, or a push to their household's space would reach the new one's.
+    [Fact]
+    public async Task SaveAsync_AnEndpointNowSomebodyOfAnotherHouseholds_LeavesTheOldHouseholdsSpaces()
+    {
+        var userA = $"test-user-{Guid.NewGuid():N}";
+        var userB = $"test-user-{Guid.NewGuid():N}";
+        _createdUserIds.AddRange([userA, userB]);
+        var elsewhere = $"elsewhere{Guid.NewGuid():N}";
+        var phone = CreateSubscription($"https://push.example/moved-{userA}");
+
+        await _store.SaveAsync(As(userA), phone);
+        await _store.SaveAsync(new Account(elsewhere, userB), phone);
+
+        (await _store.GetBySpaceAsync(_home, "default")).ShouldBeEmpty();
+        (await _store.GetBySpaceAsync(elsewhere, "default")).ShouldBe([(userB, phone)]);
     }
 
     [Fact]
@@ -209,14 +288,14 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var endpoint = "https://fcm.googleapis.com/fcm/send/multi-space";
         var sub = new PushSubscriptionDto(endpoint, "k1", "a1");
 
-        await _store.SaveAsync(userId, sub, "space-a");
-        await _store.SaveAsync(userId, sub, "space-b");
+        await _store.SaveAsync(As(userId), sub, "space-a");
+        await _store.SaveAsync(As(userId), sub, "space-b");
 
-        var spaceASubs = await _store.GetBySpaceAsync("space-a");
+        var spaceASubs = await _store.GetBySpaceAsync(_home, "space-a");
         spaceASubs.ShouldContain(x => x.Subscription.Endpoint == endpoint,
             "Endpoint should remain in space-a after saving to space-b");
 
-        var spaceBSubs = await _store.GetBySpaceAsync("space-b");
+        var spaceBSubs = await _store.GetBySpaceAsync(_home, "space-b");
         spaceBSubs.ShouldContain(x => x.Subscription.Endpoint == endpoint,
             "Endpoint should be added to space-b");
     }
@@ -232,16 +311,16 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var newSub = new PushSubscriptionDto(newEndpoint, "k2", "a2");
 
         // Device visits default then x with old endpoint
-        await _store.SaveAsync(userId, oldSub);
-        await _store.SaveAsync(userId, oldSub, "x");
+        await _store.SaveAsync(As(userId), oldSub);
+        await _store.SaveAsync(As(userId), oldSub, "x");
 
-        await _store.SaveAsync(userId, newSub, "x", replacingEndpoint: oldEndpoint);
+        await _store.SaveAsync(As(userId), newSub, "x", replacingEndpoint: oldEndpoint);
 
-        var defaultSubs = await _store.GetBySpaceAsync("default");
+        var defaultSubs = await _store.GetBySpaceAsync(_home, "default");
         defaultSubs.ShouldContain(x => x.Subscription.Endpoint == newEndpoint,
             "New endpoint should inherit default space membership from old endpoint");
 
-        var xSubs = await _store.GetBySpaceAsync("x");
+        var xSubs = await _store.GetBySpaceAsync(_home, "x");
         xSubs.ShouldContain(x => x.Subscription.Endpoint == newEndpoint);
 
         defaultSubs.ShouldNotContain(x => x.Subscription.Endpoint == oldEndpoint);
@@ -258,8 +337,8 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var oldSub = new PushSubscriptionDto(oldEndpoint, "k1", "a1");
         var newSub = new PushSubscriptionDto(newEndpoint, "k2", "a2");
 
-        await _store.SaveAsync(userId, oldSub);
-        await _store.SaveAsync(userId, newSub, replacingEndpoint: oldEndpoint);
+        await _store.SaveAsync(As(userId), oldSub);
+        await _store.SaveAsync(As(userId), newSub, replacingEndpoint: oldEndpoint);
 
         var all = await _store.GetAllAsync();
         all.ShouldNotContain(x => x.Subscription.Endpoint == oldEndpoint);
@@ -282,16 +361,16 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var endpoint = "https://fcm.googleapis.com/fcm/send/remove-space-cleanup";
         var sub = new PushSubscriptionDto(endpoint, "k1", "a1");
 
-        await _store.SaveAsync(userId, sub, "space-a");
-        await _store.SaveAsync(userId, sub, "space-b");
+        await _store.SaveAsync(As(userId), sub, "space-a");
+        await _store.SaveAsync(As(userId), sub, "space-b");
 
         await _store.RemoveAsync(userId, endpoint);
 
         // Verify at Redis level — space sets must not contain the endpoint
         var db = fixture.Connection.GetDatabase();
-        (await db.SetContainsAsync("push:space:space-a", endpoint)).ShouldBeFalse(
+        (await db.SetContainsAsync($"push:space@{_home}:space-a", endpoint)).ShouldBeFalse(
             "Endpoint should be removed from space-a set after RemoveAsync");
-        (await db.SetContainsAsync("push:space:space-b", endpoint)).ShouldBeFalse(
+        (await db.SetContainsAsync($"push:space@{_home}:space-b", endpoint)).ShouldBeFalse(
             "Endpoint should be removed from space-b set after RemoveAsync");
     }
 
@@ -303,16 +382,16 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var endpoint = "https://fcm.googleapis.com/fcm/send/remove-ep-space-cleanup";
         var sub = new PushSubscriptionDto(endpoint, "k1", "a1");
 
-        await _store.SaveAsync(userId, sub, "space-x");
-        await _store.SaveAsync(userId, sub, "space-y");
+        await _store.SaveAsync(As(userId), sub, "space-x");
+        await _store.SaveAsync(As(userId), sub, "space-y");
 
         await _store.RemoveByEndpointAsync(endpoint);
 
         // Verify at Redis level — space sets must not contain the endpoint
         var db = fixture.Connection.GetDatabase();
-        (await db.SetContainsAsync("push:space:space-x", endpoint)).ShouldBeFalse(
+        (await db.SetContainsAsync($"push:space@{_home}:space-x", endpoint)).ShouldBeFalse(
             "Endpoint should be removed from space-x set after RemoveByEndpointAsync");
-        (await db.SetContainsAsync("push:space:space-y", endpoint)).ShouldBeFalse(
+        (await db.SetContainsAsync($"push:space@{_home}:space-y", endpoint)).ShouldBeFalse(
             "Endpoint should be removed from space-y set after RemoveByEndpointAsync");
     }
 
@@ -324,8 +403,8 @@ public sealed class RedisPushSubscriptionStoreTests(RedisFixture fixture)
         var sub1 = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/keep", "k1", "a1");
         var sub2 = new PushSubscriptionDto("https://fcm.googleapis.com/fcm/send/remove", "k2", "a2");
 
-        await _store.SaveAsync(userId, sub1);
-        await _store.SaveAsync(userId, sub2);
+        await _store.SaveAsync(As(userId), sub1);
+        await _store.SaveAsync(As(userId), sub2);
         await _store.RemoveAsync(userId, sub2.Endpoint);
 
         var all = await _store.GetAllAsync();

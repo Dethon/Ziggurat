@@ -15,7 +15,7 @@ namespace Tests.Integration.Clients;
 // selector and no word list closes is closed by what its buttons say, by index into the list the
 // names were read from, and the browse envelope names the click as `judgment(<index>)`. The
 // browser is the test's own so it can carry the judge and the recording publisher.
-[Collection(PlaywrightCollections.IsolatedSessions)]
+[Collection(PlaywrightCollections.IsolatedSessionsD)]
 public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) : IAsyncLifetime
 {
     private readonly RecordingMetricsPublisher _published = new();
@@ -40,6 +40,27 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
         "<button class='cmp-secondary' onclick=\"document.title='SETTINGS'\">Configurar</button>" +
         "<button class='cmp-primary' onclick=\"document.getElementById('cmp').style.display='none'\">Rechazar todo</button>" +
         "</div><p>Main content</p>";
+
+    // The pick still sliding into place when the judgment comes back: a click waits for its control to
+    // stop moving, and a busy host took that wait past the second it was given, leaving the wall up.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task Navigate_APickStillMovingWhenJudged_IsClickedOnceItSettles()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WsEndpoint), "Camoufox WebSocket endpoint unknown.");
+        var judge = Choices((ModalJudge.RejectQuestionId, "1", 0.9), (ModalJudge.AcceptQuestionId, ModalJudge.NoneChoice, 0.8));
+        var browser = await BrowserAsync(judge);
+        var url = await ServeAsync(browser,
+            "<style>@keyframes slide { from { transform: translateX(0) } to { transform: translateX(240px) } }</style>" +
+            CookieWall.Replace("class='cmp-primary'", "class='cmp-primary' style='animation: slide 3s linear'"));
+        var sessionId = Guid.NewGuid().ToString();
+
+        var result = await browser.NavigateAsync(new BrowseRequest(sessionId, url) { Caller = JudgmentCaller.None });
+
+        result.DismissedModals.ShouldNotBeNull().ShouldHaveSingleItem().Selector.ShouldBe("judgment(1)");
+        (await browser.EvaluateOnSessionAsync<bool>(sessionId,
+            "() => document.getElementById('cmp').style.display === 'none'")).ShouldBeTrue();
+    }
 
     [Trait("Category", "External")]
     [SkippableFact]
@@ -178,7 +199,10 @@ public class ModalJudgmentDismissalTests(IsolatedSessionBrowserFixture fixture) 
     }
 
     private async Task<PlaywrightWebBrowser> BrowserAsync(IJudge judge) =>
-        await BrowserAsync(new ModalJudge(judge, new ModalJudgmentSettings(), TimeProvider.System));
+        // A deadline these cases never test (ModalJudge's own tests do): the judge here answers at
+        // once, but beside a second suite the production second ran out before the pick came back
+        // and the wall was left standing.
+        await BrowserAsync(new ModalJudge(judge, new ModalJudgmentSettings { DeadlineMs = 15_000 }, TimeProvider.System));
 
     private async Task<PlaywrightWebBrowser> BrowserAsync(ModalJudge modalJudge)
     {

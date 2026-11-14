@@ -9,10 +9,11 @@ namespace Tests.Eval.Fixtures;
 // because a worker that really runs dials what its own profile names.
 public class EvalStackTests
 {
-    private static readonly AgentSettings _shipped = new()
+    private static readonly TestAgentSettings _shipped = new()
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = "https://openrouter.ai/api/v1/", ApiKey = "" },
         Redis = new RedisConfiguration { ConnectionString = "localhost" },
+        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
         Agents =
         [
             new AgentDefinition
@@ -44,6 +45,25 @@ public class EvalStackTests
             .ShouldBe(["http://127.0.0.1:5001/mcp"]);
     }
 
+    // The deployment's shared servers are named apart from any agent, and the agent refuses to start
+    // naming one it holds no credential for: each points at the stack where the stack hosts it, and one
+    // it does not host is not named at all.
+    [Fact]
+    public void Rehosted_TheSharedServers_PointAtTheStack_AndTheUnhostedOnesAreDropped()
+    {
+        var shipped = _shipped with
+        {
+            SharedServers = new SharedServers
+            {
+                Scheduling = "http://mcp-scheduling:8080/mcp", Idealista = "http://mcp-idealista:8080/mcp"
+            }
+        };
+        var hosted = new Dictionary<string, string>(_hosted) { ["mcp-scheduling"] = "http://127.0.0.1:5003/mcp" };
+
+        EvalStack.Rehosted(shipped, hosted).SharedServers
+            .ShouldBe(new SharedServers { Scheduling = "http://127.0.0.1:5003/mcp" });
+    }
+
     [Fact]
     public void Alone_TheScenariosAgent_LosesItsWorkers_AndNobodyElseDoes()
     {
@@ -73,16 +93,47 @@ public class EvalStackTests
         EvalStack.Rehosted(_shipped, _hosted).SubAgents.Single().McpServerEndpoints
             .ShouldBe(["http://127.0.0.1:5002/mcp"]);
     }
+
+    // A household's own server is named rather than addressed, and the stack runs no tunnel: the name
+    // stays in the definition while the stack hosts the server standing in for it, and is resolved
+    // to that server, at its URL, when the session is built.
+    [Fact]
+    public void Rehosted_AHouseholdServerNamedByItsName_StaysNamedWhileTheStackHostsIt()
+    {
+        var named = _shipped with
+        {
+            Agents = [_shipped.Agents[0] with { McpServerEndpoints = ["vault", "library"] }]
+        };
+
+        EvalStack.Rehosted(named, _hosted).Agents.Single().McpServerEndpoints.ShouldBe(["vault"]);
+    }
+
+    [Fact]
+    public void OwnServers_ResolveAHouseholdServerToTheServerTheStackHostsInItsPlace()
+    {
+        var named = _shipped with
+        {
+            Agents = [_shipped.Agents[0] with { McpServerEndpoints = ["vault"] }],
+            SubAgents = [_shipped.SubAgents[0] with { McpServerEndpoints = ["websearch"] }]
+        };
+
+        var servers = EvalStack.OwnServers(named, _hosted);
+
+        servers.Resolve("any-household", "vault")!.Address.ShouldBe("http://127.0.0.1:5001/mcp");
+        servers.Resolve(null, "websearch")!.Address.ShouldBe("http://127.0.0.1:5002/mcp");
+        servers.Resolve("any-household", "library").ShouldBeNull();
+    }
 }
 // A stack stands up what the run can dial and nothing else. A server the agent's definition does
 // not name was always dropped from its endpoints, so starting it bought nothing — and for the
 // sugary agent, whose one server is Sugary's, it was a sandbox container per benchmark meal.
 public class EvalStackDialledTests
 {
-    private static readonly AgentSettings _shipped = new()
+    private static readonly TestAgentSettings _shipped = new()
     {
         OpenRouter = new OpenRouterConfiguration { ApiUrl = "https://openrouter.ai/api/v1/", ApiKey = "" },
         Redis = new RedisConfiguration { ConnectionString = "localhost" },
+        BackCalls = new() { LemonadeUrl = "http://lemonade:13305" },
         Agents =
         [
             new AgentDefinition
@@ -118,6 +169,18 @@ public class EvalStackDialledTests
     public void AnAgentWithoutWorkers_DialsOnlyItsOwn()
     {
         EvalStack.Dialled(_shipped, "sugary").ShouldBe(["mcp-sugary"]);
+    }
+
+    // A household server named by its name is the compose server the deployment ran in its place.
+    [Fact]
+    public void AnAgentNamingAHouseholdServer_DialsTheServerThatStandsInForIt()
+    {
+        var named = _shipped with
+        {
+            Agents = [_shipped.Agents[1] with { McpServerEndpoints = ["vault", "http://mcp-sugary:8080/mcp"] }]
+        };
+
+        EvalStack.Dialled(named, "sugary").ShouldBe(["mcp-vault", "mcp-sugary"]);
     }
 
     // The definition a scenario runs is the shipped one: the stacks' servers are chosen from it,

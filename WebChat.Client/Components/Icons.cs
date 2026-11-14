@@ -36,6 +36,9 @@ public static class Icons
         + "2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 "
         + "0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z");
 
+    // The household: the admin area's entry, offered to its owners.
+    public static readonly IconGlyph House = Filled("M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8Z");
+
     // Lemonade's own mark — the lemon body and the leaf from its logo.svg, on the 32-unit grid it
     // was drawn on and in its own colours, so a person who knows the app recognises it. The glow
     // filters are left out; at 14px they were only blur. The gradient ids carry the wrapper's
@@ -87,6 +90,12 @@ public static class Icons
         + "22Zm6-5q.825 0 1.413-.587Q14 15.825 14 15t-.587-1.413Q12.825 13 12 13t-1.412.587Q10 14.175 10 15t.588 "
         + "1.413Q11.175 17 12 17ZM9 8h6V6q0-1.25-.875-2.125T12 3q-1.25 0-2.125.875T9 6Z");
 
+    // Two people: a conversation the household shares, beside Lock for one that is its owner's alone.
+    public static readonly IconGlyph People = Filled(
+        "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3Zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 "
+        + "8 5 5 6.34 5 8s1.34 3 3 3Zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5Zm8 0c-.29 0-.62.02"
+        + "-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5Z");
+
     public static readonly IconGlyph Microphone = Filled(
         "M12 14q-1.25 0-2.125-.875T9 11V5q0-1.25.875-2.125T12 2q1.25 0 2.125.875T15 5v6q0 1.25-.875 2.125T12 "
         + "14Zm-1 7v-3.075q-2.6-.35-4.3-2.325T5 11h2q0 2.075 1.463 3.537T12 16q2.075 0 3.538-1.463T17 11h2q0 "
@@ -95,6 +104,11 @@ public static class Icons
     public static readonly IconGlyph Sync = Filled(
         "M12 4V1L8 5l4 4V6a6 6 0 0 1 5.3 8.8l1.46 1.46A8 8 0 0 0 12 4Zm0 14a6 6 0 0 1-5.3-8.8L5.24 7.74A8 8 0 0 0 "
         + "12 20v3l4-4-4-4Z");
+
+    // A ringing timer's alert.
+    public static readonly IconGlyph Bell = Filled(
+        "M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 0 0-3 0v.68C7.63 "
+        + "5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2Z");
 
     public static readonly IconGlyph Ring = Filled(
         "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z");

@@ -7,17 +7,18 @@ namespace Tests.Unit.Infrastructure;
 
 public class CommandEnvironmentTests
 {
-    // Every key the deployment's secrets file declares, read from the file itself so a secret
-    // added there later is covered without touching this test.
-    private static IReadOnlyList<string> DeploymentSecretKeys()
-    {
-        var envFile = Path.Combine(TestHelpers.FindSolutionRoot(), "DockerCompose", ".env");
-        return File.ReadAllLines(envFile)
+    // Every key the deployment's secrets file and the tenant kit's declare — the sandbox runs in the
+    // kit, beside the household's own — read from the files themselves so a secret added there later
+    // is covered without touching this test.
+    private static IReadOnlyList<string> DeploymentSecretKeys() =>
+    [
+        .. new[] { "DockerCompose", "TenantKit" }
+            .SelectMany(folder => File.ReadAllLines(Path.Combine(TestHelpers.FindSolutionRoot(), folder, ".env")))
             .Select(line => line.Trim())
             .Where(line => line.Length > 0 && !line.StartsWith('#') && line.Contains('='))
             .Select(line => line.Split('=', 2)[0])
-            .ToList();
-    }
+            .Distinct()
+    ];
 
     [Fact]
     public void Minimal_FromAServerHoldingEverySecret_PassesNoneOfThem()

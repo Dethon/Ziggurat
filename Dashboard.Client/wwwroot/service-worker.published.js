@@ -34,15 +34,20 @@ async function onActivate(event) {
     self.clients.claim();
 }
 
+// A page being opened goes to the network first, and is answered from the cache only when the network
+// cannot be reached: the dashboard is the operator's alone, and the proxy answers a page nobody is
+// signed in to with sign-in on the main host. Answered from the cache, a signed-out page loaded the
+// app, the app's hub was refused, and the reload it asked for was answered from the cache again.
 async function onFetch(event) {
-    let cachedResponse = null;
-    if (event.request.method === 'GET') {
-        // For all navigation requests, try to serve index.html from cache
-        const shouldServeIndexHtml = event.request.mode === 'navigate';
-        const request = shouldServeIndexHtml ? 'index.html' : event.request;
-        const cache = await caches.open(cacheName);
-        cachedResponse = await cache.match(request);
+    const cache = await caches.open(cacheName);
+    if (event.request.method === 'GET' && event.request.mode === 'navigate') {
+        try {
+            return await fetch(event.request);
+        } catch {
+            return (await cache.match('index.html')) || Response.error();
+        }
     }
 
+    const cachedResponse = event.request.method === 'GET' ? await cache.match(event.request) : null;
     return cachedResponse || fetch(event.request);
 }

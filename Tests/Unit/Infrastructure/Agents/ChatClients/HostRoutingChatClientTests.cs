@@ -292,7 +292,8 @@ public sealed class HostRoutingChatClientTests
             MonitorTestMocks.CreateThreadResolver(),
             NoOpMetricsPublisher.Instance,
             null,
-            new Mock<ILogger<ChatMonitor>>().Object);
+            new Mock<ILogger<ChatMonitor>>().Object,
+            TestAssertions.Verifier());
 
         await monitor.Monitor(CancellationToken.None);
 

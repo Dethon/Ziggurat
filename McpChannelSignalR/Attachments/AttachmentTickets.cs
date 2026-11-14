@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using Domain.Agents;
 using Domain.Conversations;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Settings;
@@ -19,44 +20,50 @@ public sealed class AttachmentTickets(AttachmentSettings settings, TimeProvider 
     // resolved it rather than its values.
     public sealed class UploadScope(
         string topicId,
-        string conversationId,
+        AgentKey conversation,
         string? spaceSlug,
         DateTimeOffset expiresAt)
     {
         private int _used;
 
         public string TopicId { get; } = topicId;
-        public string ConversationId { get; } = conversationId;
+
+        // The conversation and the agent holding it, which the file is kept for.
+        public AgentKey Conversation { get; } = conversation;
+        public string ConversationId => Conversation.ConversationId;
         public string? SpaceSlug { get; } = spaceSlug;
         public DateTimeOffset ExpiresAt { get; } = expiresAt;
 
         public bool TryTakeSlot(int maximum) => Interlocked.Increment(ref _used) <= maximum;
     }
 
-    private sealed record DownloadScope(string AttachmentId, DateTimeOffset ExpiresAt);
+    // A download is the person's the hub checked could see the file, and no one else's: the ticket
+    // rides in a URL, which a page can be made to hand on.
+    private sealed record DownloadScope(string AttachmentId, string UserId, DateTimeOffset ExpiresAt);
 
     // No slot counter and no conversation: a dictation produces composer text, so it must not
     // spend one of a message's attachment slots or force a conversation into existence the way
-    // picking a file does.
-    private sealed record DictationScope(string SpaceSlug, DateTimeOffset ExpiresAt);
+    // picking a file does. The household is the minting connection's, verified by the hub: the upload
+    // carries only the ticket, and the recording is transcribed on that household's behalf.
+    public sealed record DictationScope(string SpaceSlug, DateTimeOffset ExpiresAt, string? TenantId);
 
     // The identity, not two adjacent same-typed strings: swapping the topic and the conversation
     // spelling used to compile.
-    public UploadTicket MintUpload(string topicId, ConversationIdentity conversation, string? spaceSlug)
+    public UploadTicket MintUpload(string topicId, string agentId, ConversationIdentity conversation, string? spaceSlug)
     {
         Prune();
         var token = NewToken();
         var expiresAt = timeProvider.GetUtcNow().AddSeconds(settings.TicketTtlSeconds);
-        _uploads[token] = new UploadScope(topicId, conversation.ConversationId, spaceSlug, expiresAt);
+        _uploads[token] = new UploadScope(topicId, new AgentKey(conversation.ConversationId, agentId), spaceSlug, expiresAt);
         return new UploadTicket(token, expiresAt);
     }
 
-    public DownloadTicket MintDownload(string attachmentId)
+    public DownloadTicket MintDownload(string attachmentId, string userId)
     {
         Prune();
         var token = NewToken();
         var expiresAt = timeProvider.GetUtcNow().AddSeconds(settings.TicketTtlSeconds);
-        _downloads[token] = new DownloadScope(attachmentId, expiresAt);
+        _downloads[token] = new DownloadScope(attachmentId, userId, expiresAt);
         return new DownloadTicket(token, expiresAt);
     }
 
@@ -74,33 +81,35 @@ public sealed class AttachmentTickets(AttachmentSettings settings, TimeProvider 
         return scope.ExpiresAt <= timeProvider.GetUtcNow() || scope.TopicId != topicId ? null : scope;
     }
 
-    public DictationTicket MintDictation(string spaceSlug)
+    public DictationTicket MintDictation(string spaceSlug, string? tenantId = null)
     {
         Prune();
         var token = NewToken();
         var expiresAt = timeProvider.GetUtcNow().AddSeconds(settings.TicketTtlSeconds);
-        _dictations[token] = new DictationScope(spaceSlug, expiresAt);
+        _dictations[token] = new DictationScope(spaceSlug, expiresAt, tenantId);
         return new DictationTicket(token, expiresAt);
     }
 
-    public bool ResolvesDictation(string? token, string? spaceSlug)
+    // Null covers no such ticket, one that has expired and one minted for another space.
+    public DictationScope? ResolveDictation(string? token, string? spaceSlug)
     {
         if (string.IsNullOrWhiteSpace(token) || !_dictations.TryGetValue(token, out var scope))
         {
-            return false;
+            return null;
         }
 
-        return scope.ExpiresAt > timeProvider.GetUtcNow() && scope.SpaceSlug == spaceSlug;
+        return scope.ExpiresAt > timeProvider.GetUtcNow() && scope.SpaceSlug == spaceSlug ? scope : null;
     }
 
-    public bool ResolvesDownload(string? token, string attachmentId)
+    // The person a live ticket for this file was minted for, or null for no such ticket.
+    public string? DownloaderOf(string? token, string attachmentId)
     {
         if (string.IsNullOrWhiteSpace(token) || !_downloads.TryGetValue(token, out var scope))
         {
-            return false;
+            return null;
         }
 
-        return scope.ExpiresAt > timeProvider.GetUtcNow() && scope.AttachmentId == attachmentId;
+        return scope.ExpiresAt > timeProvider.GetUtcNow() && scope.AttachmentId == attachmentId ? scope.UserId : null;
     }
 
     private void Prune()

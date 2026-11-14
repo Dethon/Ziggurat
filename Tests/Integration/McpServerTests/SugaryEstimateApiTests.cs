@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
+using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using Domain.Prompts;
 using Domain.Tools.Sugary.Estimation;
@@ -181,6 +182,26 @@ public class SugaryEstimateApiTests
         response.StatusCode.ShouldBe(HttpStatusCode.BadGateway);
         (await DetailAsync(response)).ShouldBeEmpty();
         (await response.Content.ReadAsStringAsync()).ShouldNotContain("credits");
+    }
+
+    // A turn the agent refused for the household — Sugary turned off, its key refused, out of credit —
+    // is not a meal that went wrong: the app is told which refusal by its code, and says it in her
+    // language, still without the agent's English.
+    [Fact]
+    public async Task ATurnTheAgentRefused_IsForbidden_WithTheRefusalsCode()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = await server.SignedInAsync();
+
+        var answer = app.PostAsync("/api/estimates", Form("paella"));
+        var turn = await NextTurnAsync(agent);
+        await SendAsync(agent, turn, ReplyContentType.Error, global::Domain.Monitor.RefusalAnswers.SugaryOff);
+        await SendAsync(agent, turn, ReplyContentType.StreamComplete, "", isComplete: true);
+
+        var response = await answer;
+        response.StatusCode.ShouldBe(HttpStatusCode.Forbidden);
+        (await DetailAsync(response)).ShouldBe("sugary-off");
     }
 
     // What the agent sends when its provider refuses the call: the exception's message as caught.
@@ -400,6 +421,7 @@ public class SugaryEstimateApiTests
         await using var server = await SugaryServer.StartAsync();
         var agent = await server.AgentAsync();
         await agent.RegisterAgentsAsync([Sugary("text/only", accepts: [])], CancellationToken.None);
+        server.HouseholdAgents.Add(new HouseholdAgentName("sugary", "Sugary", Model: "text/only"));
         var app = await server.SignedInAsync();
 
         var refused = await app.PostAsync("/api/estimates", Form("paella", photos: [Photo(1, 10)]));
@@ -416,6 +438,28 @@ public class SugaryEstimateApiTests
         turn.Attachments.ShouldBeNull();
         await ReplyAsync(agent, turn, Estimate);
         (await answer).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // The sugary agent is the person's household's, on the model it runs there: the catalogue the
+    // agent registered is the home's, whose sugary may see pictures while the household's does not.
+    [Fact]
+    public async Task APhotoForTheModelTheHouseholdsSugaryRuns_IsRefusedThoughTheHomesSugarySeesIt()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        await agent.RegisterAgentsAsync(
+            [Sugary("sees/pictures", accepts: [AttachmentKind.Image]) with
+            {
+                PatchableModels = [new PatchableModel("text/only", "Text", [])]
+            }],
+            CancellationToken.None);
+        server.HouseholdAgents.Add(new HouseholdAgentName("sugary", "Sugary", Model: "text/only"));
+        var app = await server.SignedInAsync();
+
+        var refused = await app.PostAsync("/api/estimates", Form("paella", photos: [Photo(1, 10)]));
+
+        refused.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await DetailAsync(refused)).ShouldStartWith("text/only cannot read photos");
     }
 
     // The catalogue names every agent, and only the one the app's turns are routed to is asked about.
@@ -526,6 +570,75 @@ public class SugaryEstimateApiTests
 
         await ReplyAsync(agent, followUp, AnsweredEstimate);
         (await ReadAsync(await second))["conversationId"]!.GetValue<string>().ShouldBe(conversation);
+    }
+
+    // An estimate is a turn of the person whose phone asked for it, on the Sugary channel: the
+    // principal carries their account, so whatever follows the person — their review copy among it —
+    // is theirs, and the turn goes by the account's id, which is all the proxy's headers say.
+    [Fact]
+    public async Task AnEstimateTurn_ActsForThePersonSignedIn_AndSoDoTheirAnswers()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var app = server.As(SugaryServer.Him);
+
+        var first = app.PostAsync("/api/estimates", Form("a bowl of lentils"));
+        var firstTurn = await NextTurnAsync(agent);
+        await ReplyAsync(agent, firstTurn, Estimate);
+        var conversation = (await ReadAsync(await first))["conversationId"]!.GetValue<string>();
+        var second = app.PostAsync("/api/estimates", FollowUp(conversation, Answer));
+        var followUp = await NextTurnAsync(agent);
+        await ReplyAsync(agent, followUp, AnsweredEstimate);
+        await ReadAsync(await second);
+
+        foreach (var turn in new[] { firstTurn, followUp })
+        {
+            turn.Principal.ShouldBe(new Principal("sugary", SugaryServer.Him.UserId, SugaryServer.Him));
+            turn.Sender.ShouldBe(SugaryServer.Him.UserId);
+        }
+    }
+
+    // What the agent believes about the turn is the accounts service's word, which the proxy put on
+    // the phone's request: the estimate and each answer carry that very assertion on to the agent.
+    [Fact]
+    public async Task AnEstimateTurn_CarriesTheAssertionTheRequestCameWith()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var assertion = TestAssertions.Of(SugaryServer.Him, "sugary");
+        var app = server.Forwarded(SugaryServer.Him, assertion);
+
+        var first = app.PostAsync("/api/estimates", Form("a bowl of lentils"));
+        var firstTurn = await NextTurnAsync(agent);
+        await ReplyAsync(agent, firstTurn, Estimate);
+        var conversation = (await ReadAsync(await first))["conversationId"]!.GetValue<string>();
+        var second = app.PostAsync("/api/estimates", FollowUp(conversation, Answer));
+        var followUp = await NextTurnAsync(agent);
+        await ReplyAsync(agent, followUp, AnsweredEstimate);
+        await ReadAsync(await second);
+
+        firstTurn.Assertion.ShouldBe(assertion);
+        followUp.Assertion.ShouldBe(assertion);
+    }
+
+    // A meal's conversation is its person's: somebody else's answers would continue it as their own
+    // turn, on her photos and her words.
+    [Fact]
+    public async Task HisAnswer_ToHerEstimate_IsRefusedAsGone_BeforeAnythingIsSent()
+    {
+        await using var server = await SugaryServer.StartAsync();
+        var agent = await server.AgentAsync();
+        var conversation = await EstimateAsync(server.As(SugaryServer.Her), agent);
+
+        var response = await server.As(SugaryServer.Him).PostAsync("/api/estimates", FollowUp(conversation, Answer));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Gone);
+        (await DetailAsync(response)).ShouldContain("estimated again");
+        var mine = server.As(SugaryServer.Her).PostAsync("/api/estimates", FollowUp(conversation, Answer));
+        var next = await NextTurnAsync(agent);
+        next.Principal!.Account.ShouldBe(SugaryServer.Her, "nothing of his reached the agent first");
+        await ReplyAsync(agent, next, AnsweredEstimate);
+        await ReadAsync(await mine);
     }
 
     // A conversation the server never opened is not one the agent can carry on: it would estimate

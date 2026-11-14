@@ -2,6 +2,7 @@ using Domain.Contracts;
 using Domain.Tools.Config;
 using Domain.Tools.Downloads.Vfs;
 using Domain.Tools.Files;
+using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Mcp.Hosting;
@@ -47,6 +48,11 @@ public static class ConfigModule
             .AddFileSystemTools<MediaLibraryDiskFileSystem>()
             .WithPrompts<McpSystemPrompt>()
             .AddFileSystemResource<MediaLibraryDiskFileSystem>();
+
+        if (settings.Metrics.Url.Length > 0)
+        {
+            services.AddMetricsPublishing("mcp-library", settings.Metrics);
+        }
 
         return services;
     }

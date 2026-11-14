@@ -1,4 +1,6 @@
+@using Dashboard.Client.Metrics
 @using Dashboard.Client.State.Health
+@inject HouseholdDirectory Directory
 
 <div class="health-grid">
     @foreach (var svc in Services)
@@ -6,6 +8,10 @@
         <div class="health-item" title="@(svc.IsHealthy ? "Healthy" : "Unhealthy") — Last seen: @(svc.LastSeen ?? "never")">
             <span class="health-dot @(svc.IsHealthy ? "healthy" : "unhealthy")"></span>
             <span class="health-name">@svc.Service</span>
+            @if (svc.Household is { } household)
+            {
+                <span class="health-household" title="@household">@_names.Of(household)</span>
+            }
         </div>
     }
     @if (!Services.Any())
@@ -16,6 +22,11 @@
 
 @code {
     [Parameter, EditorRequired] public IEnumerable<ServiceHealth> Services { get; set; } = [];
+
+    // A household's server is labelled by the household's name, as the picker names it.
+    private HouseholdNames _names = new([], Answered: false);
+
+    protected override async Task OnInitializedAsync() => _names = await Directory.NamesAsync();
 }
 
 <style>
@@ -25,5 +36,6 @@
     .health-dot.healthy { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
     .health-dot.unhealthy { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
     .health-name { font-size: 0.85rem; color: var(--text-primary); }
+    .health-household { font-size: 0.7rem; color: var(--text-secondary); font-family: monospace; }
     .no-data { color: var(--text-secondary); font-size: 0.85rem; }
 </style>

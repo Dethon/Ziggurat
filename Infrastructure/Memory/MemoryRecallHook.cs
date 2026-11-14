@@ -1,6 +1,7 @@
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.DTOs.Metrics;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Extensions;
@@ -49,45 +50,66 @@ public class MemoryRecallHook(
         "Instruct: Given a person's message to their personal assistant, retrieve the stored facts "
         + "about that person that would change how the assistant answers it\nQuery: ";
 
-    public async Task EnrichAsync(
+    public async Task<MemoryExtraction?> EnrichAsync(
         ChatMessage message,
-        string userId,
+        Account? account,
         string? conversationId,
         string? agentId,
         AgentSession thread,
         CancellationToken ct)
     {
-        if (!agentDefinitionProvider.HasFeatureEnabled(agentId, "memory"))
+        var agent = await AgentAsync(agentId, account, ct);
+        if (agent is not null && !agent.EnabledFeatures.Contains("memory", StringComparer.OrdinalIgnoreCase))
         {
-            return;
+            return null;
         }
 
-        // The second reason nothing is written to memory, stated beside the first. A person picks
-        // a model on their own box so that what they type stays there, and extraction sends
-        // exactly their own words to a hosted model — so a turn addressed to the box is not
-        // extracted from. It reads what the turn *asked for*, because that is all there is here:
-        // this runs before the agent, so no host has been chosen yet, and the gate therefore
-        // fails closed. Recall below is deliberately not skipped with it: the box may read what
-        // the agent already knew, and the boundary is one-way on purpose.
+        // Memory belongs to a person, and a turn acting for no account is nobody's: the voice guest
+        // a visitor or the television speaks as, or a channel that has not moved onto accounts yet.
+        // It reads nothing and writes nothing, and there is no name to fall back to — the sender a
+        // channel reports is a label, which another person can share.
+        if (account is null)
+        {
+            return null;
+        }
+
+        var userId = account.UserId;
+
+        // Everything this recall publishes is the household's whose account the turn acts for.
+        var metrics = metricsPublisher.ForHousehold(account.TenantId);
+
+        // The two reasons a turn reads memory and writes none, stated together. A person picks a
+        // model on their own box so that what they type stays there, and extraction sends exactly
+        // their own words to a hosted model — so a turn addressed to the box is not extracted from.
+        // It reads what the turn *asked for*, because that is all there is here: this runs before
+        // the agent, so no host has been chosen yet, and the gate therefore fails closed. Recall
+        // below is deliberately not skipped with it: the box may read what the agent already knew,
+        // and the boundary is one-way on purpose.
         var isLemonadeTurn = LemonadeModelId.IsLemonade(message.GetConfigPatch()?.Model);
+
+        // A turn nobody sent — a schedule's or a watch's fire, a login wake — acts for the person
+        // whose own turn set it going, so it reads their memory; but its words are a prompt they
+        // left for later or a server's notice, never something they just said. Before accounts a
+        // fire was only ever extracted into its server's own bucket ("scheduler", "watch"), never a
+        // person's, and keying by account must not widen that. Read off the context the
+        // conversation group stamps on the turn before it asks for recall.
+        var isFire = message.GetConversationContext()?.OriginKind is not null;
 
         try
         {
             var messageText = message.Text;
             if (string.IsNullOrWhiteSpace(messageText))
             {
-                return;
+                return null;
             }
 
             // Opened here rather than where the stopwatch used to start, which was above the guard:
             // the scope publishes on disposal, so opening it earlier would report a recall latency
             // for a recall that never happened. The guard is a string emptiness check, so nothing
             // measurable moves.
-            var agentName = agentId is not null
-                ? agentDefinitionProvider.GetById(agentId)?.Name ?? agentId
-                : null;
-            using var latency = metricsPublisher.MeasureLatency(
-                LatencyStage.MemoryRecall, conversationId, agentName);
+            // Keyed by the agent's id, which a household's rename leaves alone, as its other figures are.
+            using var latency = metrics.MeasureLatency(
+                LatencyStage.MemoryRecall, conversationId, agentId);
 
             // Whether the user is remembered at all needs nothing from the thread, and both
             // are Redis round trips on the blocking path, so it is asked alongside the read
@@ -108,7 +130,7 @@ public class MemoryRecallHook(
                 : Task.FromResult<PersonalityProfile?>(null);
 
             var memories = await SearchMemoriesAsync(
-                userId, messageText, persisted, hasMemoriesTask, conversationId, agentName, ct);
+                metrics, userId, messageText, persisted, hasMemoriesTask, conversationId, agentId, ct);
             var profile = await profileTask;
 
             if (memories.Count > 0 || profile is not null)
@@ -125,7 +147,7 @@ public class MemoryRecallHook(
                 catch (Exception ex)
                 {
                     logger.LogWarning(ex, "Failed to update access timestamps for user {UserId}", userId);
-                    metricsPublisher.Publish(new ErrorEvent
+                    metrics.Publish(new ErrorEvent
                     {
                         Service = "memory",
                         ErrorType = ex.GetType().Name,
@@ -134,45 +156,52 @@ public class MemoryRecallHook(
                 }
             });
 
-            if (!isLemonadeTurn)
-            {
-                await extractionQueue.EnqueueAsync(
+            // Handed back rather than queued: the conversation group queues it once the turn worked
+            // (MemoryExtraction). The anchor is read now, before the turn is persisted, as before.
+            MemoryExtraction? extraction = isLemonadeTurn || isFire
+                ? null
+                : extractCt => extractionQueue.EnqueueAsync(
                     new MemoryExtractionRequest(userId, stateKey, anchor, conversationId, agentId)
                     {
-                        FallbackContent = messageText
-                    }, ct);
-            }
+                        FallbackContent = messageText,
+                        TenantId = account.TenantId
+                    }, extractCt);
 
             // Same duration as the latency event the scope publishes, taken off the scope rather
             // than from a second stopwatch.
-            metricsPublisher.Publish(new MemoryRecallEvent
+            metrics.Publish(new MemoryRecallEvent
             {
                 DurationMs = latency.ElapsedMilliseconds,
                 MemoryCount = memories.Count,
                 UserId = userId,
                 ConversationId = conversationId,
-                AgentId = agentName
+                AgentId = agentId,
+                AgentName = agentId is null ? null : agent?.Name
             });
+            return extraction;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Memory recall failed for user {UserId}", userId);
-            metricsPublisher.Publish(new ErrorEvent
+            metrics.Publish(new ErrorEvent
             {
                 Service = "memory",
                 ErrorType = ex.GetType().Name,
                 Message = $"Recall failed: {ex.Message}"
             });
         }
+
+        return null;
     }
 
     private async Task<IReadOnlyList<MemorySearchResult>> SearchMemoriesAsync(
+        IMetricsPublisher metrics,
         string userId,
         string messageText,
         ChatMessage[]? persisted,
         Task<bool> hasMemoriesTask,
         string? conversationId,
-        string? agentName,
+        string? agentId,
         CancellationToken ct)
     {
         // An unremembered user — one with no stored memory entries — pays neither an
@@ -191,9 +220,9 @@ public class MemoryRecallHook(
         // difference between the stage and what storage is known to cost. The scope
         // publishes on disposal, so a failed call is measured too.
         float[]? embedding;
-        using (metricsPublisher.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentName))
+        using (metrics.MeasureLatency(LatencyStage.MemoryEmbedding, conversationId, agentId))
         {
-            embedding = await EmbedAsync(embeddingInput, userId, ct);
+            embedding = await EmbedAsync(metrics, embeddingInput, userId, ct);
         }
 
         // An embedding outage costs the turn its recall block and nothing else. Throwing
@@ -209,6 +238,28 @@ public class MemoryRecallHook(
         // A result with no measured similarity came from a search that took none, and is passed
         // on as found rather than judged by a number it does not have.
         return [.. found.Where(r => r.Similarity is not { } similarity || similarity >= options.MinSimilarity)];
+    }
+
+    // The turn's agent as its household has it, or none: unknown, or a household that could not be read
+    // just now, which fails open as an unknown agent does. The turn's agent was built from the same
+    // household a moment ago, so this is the reader's kept copy.
+    private async Task<AgentDefinition?> AgentAsync(string? agentId, Account? account, CancellationToken ct)
+    {
+        if (agentId is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await agentDefinitionProvider.GetByIdAsync(agentId, account?.TenantId, account, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or HouseholdConfigRefusedException
+                                       or TaskCanceledException && !ct.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Could not read agent {AgentId}; recalling as for an unknown agent", agentId);
+            return null;
+        }
     }
 
     // Never faults. It runs alongside the search rather than after it, so a search that
@@ -228,11 +279,13 @@ public class MemoryRecallHook(
         }
     }
 
-    private async Task<float[]?> EmbedAsync(string input, string userId, CancellationToken ct)
+    private async Task<float[]?> EmbedAsync(IMetricsPublisher metrics, string input, string userId, CancellationToken ct)
     {
         try
         {
-            return await embeddingService.GenerateEmbeddingAsync(input, ct);
+            var embedding = await embeddingService.GenerateEmbeddingAsync(input, ct);
+            metrics.RecordEmbedded(1);
+            return embedding;
         }
         // Only a cancellation the turn itself asked for propagates. An HttpClient timeout
         // also arrives as a TaskCanceledException, and a hung server is the likeliest way
@@ -250,7 +303,7 @@ public class MemoryRecallHook(
             // Published under its own service name so an embedding outage is distinguishable
             // from an ordinary recall that simply found nothing.
             logger.LogWarning(ex, "Embedding the recall window failed for user {UserId}", userId);
-            metricsPublisher.Publish(new ErrorEvent
+            metrics.Publish(new ErrorEvent
             {
                 Service = EmbeddingErrorService,
                 ErrorType = ex.GetType().Name,

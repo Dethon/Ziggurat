@@ -1,6 +1,10 @@
+using Domain.Channels;
 using Domain.Contracts;
+using Domain.DTOs.Channel;
+using Domain.DTOs.Tunnel;
 using Domain.Judgments;
 using Domain.Prompts;
+using Domain.Security.Sealing;
 using Domain.Tools.Web;
 using Infrastructure.Clients;
 using Infrastructure.Clients.Browser;
@@ -10,10 +14,13 @@ using Infrastructure.Metrics;
 using Infrastructure.StateManagers;
 using Infrastructure.Utils;
 using Mcp.Hosting;
+using Mcp.Hosting.Tunnel;
+using McpServerWebSearch.Handoff;
 using McpServerWebSearch.McpPrompts;
 using McpServerWebSearch.McpTools;
 using McpServerWebSearch.Settings;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace McpServerWebSearch.Modules;
@@ -29,8 +36,31 @@ public static class ConfigModule
                 // publish resolves the publisher, so registration runs with no container.
                 .AddSingleton<IConnectionMultiplexer>(
                     _ => RedisConnection.ConnectResiliently(settings.RedisConnectionString))
-                .AddMetricsPublishing("mcp-websearch")
+                .AddMetricsPublishing("mcp-websearch", settings.Metrics)
                 .AddTypeSafeJudge(settings.TypeSafe.KeyedBy(settings.OpenRouter.ApiKey))
+                .AddPagesListener(settings.Listeners)
+                // Tunnelled, the proxy's /browse/* reaches the pages listener through the relay, by
+                // this tag; dialled, nothing reads it.
+                .AddTunnelListener(TunnelProtocol.PagesTag, settings.Listeners.Pages)
+                .AddSingleton(settings.Handoff)
+                .AddSingleton(TimeProvider.System)
+                .AddSingleton<OneTimeLinks>()
+                .AddSingleton<IPersonStateStore>(sp => new RedisPersonStateStore(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    SealingKey.Parse(settings.Logins.StateKey, "Logins:StateKey")))
+                .AddSingleton(sp => new PersonLogins(
+                    sp.GetRequiredService<IPersonContexts>(),
+                    sp.GetRequiredService<IPersonStateStore>(),
+                    sp.GetRequiredService<TimeProvider>(),
+                    TimeSpan.FromSeconds(settings.Logins.SaveDebounceSeconds),
+                    settings.Logins.MaxRecordBytes,
+                    sp.GetRequiredService<ILogger<PersonLogins>>()))
+                .AddSingleton<ILoginSites>(sp => sp.GetRequiredService<PersonLogins>())
+                .AddSingleton<AsMeGate>()
+                .AddSingleton<LoginHandoffs>()
+                .AddSingleton<ILoginHandoffs>(sp => sp.GetRequiredService<LoginHandoffs>())
+                .AddSingleton<LoginsPages>()
+                .AddSingleton<ILoginsPages>(sp => sp.GetRequiredService<LoginsPages>())
                 .AddWebSearchClients(settings)
                 .AddToolServer(settings, ToolResponse.Create)
                 .WithTools<McpWebSearchTool>()
@@ -38,6 +68,16 @@ public static class ConfigModule
                 .WithTools<McpWebSnapshotTool>()
                 .WithTools<McpWebActionTool>()
                 .WithTools<McpViewImageTool>()
+                .WithTools<McpWebLoginTool>()
+                .WithTools<McpWebLoginsTool>()
+                // A channel too, for the login wake: Done raises a turn in the conversation that
+                // asked. Buffered always, because the person pressing Done cannot be told to try
+                // again while the agent reconnects; the target is the id the agent's connection
+                // derives for the "websearch" endpoint.
+                .AddChannelServer(
+                    DeliveryPolicy.BufferAlways,
+                    ChannelProtocol.ChannelClientNamePrefix + "websearch",
+                    noOutboundSurface: true)
                 // The skill that teaches this server's tools ships beside them, so a deployment
                 // without the browser cannot advertise how to drive one.
                 .AddSkills(WebBrowsingSkill.Text)
@@ -69,7 +109,7 @@ public static class ConfigModule
                 });
             }
 
-            services.AddSingleton<IWebBrowser>(sp =>
+            services.AddSingleton(sp =>
             {
                 var captchaSolver = sp.GetService<ICaptchaSolver>();
                 return new PlaywrightWebBrowser(
@@ -84,8 +124,14 @@ public static class ConfigModule
                         !string.IsNullOrWhiteSpace(settings.OpenRouter.ApiKey)
                             ? new ModalJudge(sp.GetRequiredService<IJudge>(), settings.Judgment, TimeProvider.System)
                             : null),
-                    metricsPublisher: sp.GetRequiredService<IMetricsPublisher>());
+                    metricsPublisher: sp.GetRequiredService<IMetricsPublisher>(),
+                    personStates: sp.GetRequiredService<IPersonStateStore>());
             });
+            // One browser: the tabs the agent browses and the tabs people log in on share its
+            // contexts.
+            services.AddSingleton<IWebBrowser>(sp => sp.GetRequiredService<PlaywrightWebBrowser>());
+            services.AddSingleton<IHandoffBrowser>(sp => sp.GetRequiredService<PlaywrightWebBrowser>());
+            services.AddSingleton<IPersonContexts>(sp => sp.GetRequiredService<PlaywrightWebBrowser>());
 
             return services;
         }

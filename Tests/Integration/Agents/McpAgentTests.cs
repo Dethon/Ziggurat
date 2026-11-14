@@ -40,7 +40,9 @@ public class McpAgentTests(McpLibraryServerFixture mcpFixture, RedisFixture redi
             NoOpMetricsPublisher.Instance,
             TimeProvider.System,
             [],
-            []);
+            [],
+            // Signed as the deployment's agent signs, or every gated server refuses its calls.
+            callTokens: McpTestSecret.CallTokens);
     }
 
     private Task<List<AiResponse>> RunAsync(

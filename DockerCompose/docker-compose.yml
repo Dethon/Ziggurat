@@ -5,10 +5,19 @@ name: jackbot
 x-timezone: &timezone
   TZ: Europe/Madrid
 
-# One name for the STT model on every side at once: the lemonade entrypoint pre-pulls it, and the
-# voice hub and both chat channels request it. The four must agree or the model that decodes is
-# not the model that was warmed, and every transcription pays for a lazy pull of a second one.
+# One name for the STT model on every side at once: the lemonade entrypoint pre-pulls it, and both
+# chat channels request it, as a household's voice server does over its tunnel (the tenant kit's
+# STT_MODEL names the same). They must agree or the model that decodes is not the model that was
+# warmed, and every transcription pays for a lazy pull of a second one.
 x-stt-model: &stt-model ${STT_MODEL:-Whisper-Large-v3-Turbo}
+
+# The browser origins the agent's registration API and the hub answer with a visitor's
+# credentials: the deployment's own hosts, the ones the Caddyfile serves them on. Per deployment,
+# and one list for both so they cannot disagree; a page on any other origin gets no CORS headers.
+# Add a host as __2, __3 ...; with none at all both are same-origin only.
+x-cors-origins: &cors-origins
+  CORS__ALLOWEDORIGINS__0: https://assistants.herfluffness.com
+  CORS__ALLOWEDORIGINS__1: https://sexy.herfluffness.com
 
 services:
   redis:
@@ -19,12 +28,15 @@ services:
         max-file: "3"
     container_name: redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - ./volumes/redis_data:/data
     environment:
       <<: *timezone
-      REDIS_ARGS: "--appendonly yes"
+      REDIS_ARGS: "--appendonly yes --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"
+      # redis-cli reads it, so the health check below authenticates without the password in
+      # its command line.
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -35,153 +47,13 @@ services:
     networks:
       - jackbot
 
-  qbittorrent:
-    image: qbittorrentofficial/qbittorrent-nox:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: qbittorrent
-    ports:
-      - "8001:8001"
-      - "6881:6881/tcp"
-      - "6881:6881/udp"
-    volumes:
-      - ./volumes/qbittorrent_config:/config
-      - ${DATA_PATH:-./volumes/data}/downloads:/downloads
-    environment:
-      <<: *timezone
-      PUID: ${PUID:-1654}
-      PGID: ${PGID:-1654}
-      QBT_LEGAL_NOTICE: confirm
-      QBT_VERSION: 5.1.2-2
-      QBT_TORRENTING_PORT: 6881
-      QBT_WEBUI_PORT: 8001
-      UMASK: "002"
-    stop_grace_period: 30m
-    restart: unless-stopped
-    networks:
-      - jackbot
-
-  homeassistant:
-    image: ghcr.io/home-assistant/home-assistant:stable
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: homeassistant
-    ports:
-      - "8123:8123"
-    volumes:
-      - ./volumes/homeassistant_config:/config
-    environment:
-      <<: *timezone
-    restart: unless-stopped
-    networks:
-      - jackbot
-
-  music-assistant:
-    image: ghcr.io/music-assistant/server:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: music-assistant
-    # host networking is required for mDNS/zeroconf discovery (Spotify Connect,
-    # AirPlay, Chromecast). Binds directly on the host: 8095 (web UI + API),
-    # 1704/1705/1780 (snapcast), 8097 (stream server).
-    network_mode: host
-    volumes:
-      - ./volumes/music-assistant-data:/data
-    environment:
-      <<: *timezone
-    restart: unless-stopped
-
-  filebrowser:
-    image: filebrowser/filebrowser:v2
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: filebrowser
-    user: ${PUID:-1654}:${PGID:-1654}
-    ports:
-      - "8002:80"
-    volumes:
-      - ${DATA_PATH:-./volumes/data}:/srv
-      - ./volumes/filebrowser_database:/database
-      - ./volumes/filebrowser_config:/config
-    environment:
-      <<: *timezone
-    restart: unless-stopped
-    networks:
-      - jackbot
-
-  jackett:
-    image: lscr.io/linuxserver/jackett:latest
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: jackett
-    ports:
-      - "8003:9117"
-    volumes:
-      - ./volumes/jackett_config:/config
-      - ./volumes/jackett_data/downloads:/downloads
-    environment:
-      <<: *timezone
-      PUID: ${PUID:-1654}
-      PGID: ${PGID:-1654}
-      UMASK: "022"
-    restart: unless-stopped
-    networks:
-      - jackbot
-  #    depends_on:
-  #      - flaresolverr
-
-  #  flaresolverr:
-  #    image: ghcr.io/flaresolverr/flaresolverr:latest
-  #    logging:
-  #      options:
-  #        max-size: "5m"
-  #        max-file: "3"
-  #    container_name: flaresolverr
-  #    environment:
-  #      - LOG_LEVEL=info
-  #      - LOG_HTML=false
-  #      - CAPTCHA_SOLVER=none
-  #    ports:
-  #      - "8191:8191"
-  #    networks:
-  #      - jackbot
-  #    restart: unless-stopped
-
-  plex:
-    image: lscr.io/linuxserver/plex:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: plex
-    network_mode: host
-    devices:
-      - /dev/dri:/dev/dri
-    volumes:
-      - ./volumes/plex_config:/config
-      - ${DATA_PATH:-./volumes/data}:/media
-    environment:
-      <<: *timezone
-      PUID: ${PUID:-1654}
-      PGID: ${PGID:-1654}
-      VERSION: docker
-    restart: unless-stopped
-
+  # A household's own servers — web search with its browser, the vault, the library with qBittorrent
+  # and Jackett, the sandbox, the printer, Home Assistant with Music Assistant, and voice with speech
+  # extraction — are not here, nor the household's LAN tools over its media (Plex, filebrowser): they
+  # run in the tenant kit (TenantKit/) at the household's site, the servers reaching this deployment
+  # through their tunnels to the relay in the agent, so this file carries none of their mounts,
+  # devices, satellites or secrets. Lemonade below is the shared box, and the one service handed a
+  # device.
   base-sdk:
     image: base-sdk:latest
     build:
@@ -196,181 +68,6 @@ services:
     networks:
       - jackbot
 
-  mcp-library:
-    image: mcp-library:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-library
-    ports:
-      - "6001:8080"
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpServerLibrary/Dockerfile
-    user: ${PUID:-1654}:${PGID:-1654}
-    volumes:
-      - ${DATA_PATH:-./volumes/data}:/media
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
-    networks:
-      - jackbot
-    depends_on:
-      qbittorrent:
-        condition: service_started
-      jackett:
-        condition: service_started
-      base-sdk:
-        condition: service_started
-      redis:
-        condition: service_healthy
-
-  mcp-vault:
-    image: mcp-vault:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-vault
-    ports:
-      - "6002:8080"
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpServerVault/Dockerfile
-    user: ${PUID:-1654}:${PGID:-1654}
-    volumes:
-      - ${VAULT_PATH:-./volumes/vault}:/vault
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
-    networks:
-      - jackbot
-    depends_on:
-      - base-sdk
-
-  mcp-sandbox:
-    image: mcp-sandbox:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-sandbox
-    ports:
-      - "6004:8080"
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpServerSandbox/Dockerfile
-    # No `user:` — the image's entrypoint is a root launcher (sandbox-runtime/) that starts the MCP
-    # server as a uid of its own and runs every command as PUID:PGID, its bounding set dropped. It
-    # needs SYS_ADMIN for the per-command mount namespace and the FUSE mount of the session's other
-    # mounts at /vfs (with /dev/fuse below); commands never hold it.
-    cap_add:
-      - SYS_ADMIN
-    # docker-default denies every mount, so on an AppArmor host (prod) every exec would fail; this
-    # profile allows only the launcher's own. Install it on the host before `up` — see its header.
-    # Docker's own syscall filter grants a SYS_ADMIN container bpf, perf_event_open, setns and more;
-    # ours is Docker's default with that cut to mount, umount2 and unshare(CLONE_NEWNS).
-    security_opt:
-      - apparmor=ziggurat-sandbox
-      - seccomp=./seccomp/ziggurat-sandbox.json
-    # Only /dev/dri, same as lemonade: the render node alone keeps this up on hosts with no
-    # /dev/kfd (Intel iGPU, Raspberry Pi). An AMD host that wants ROCm/HIP inside the sandbox
-    # adds the compute node via docker-compose.override.rocm.yml.
-    devices:
-      - /dev/dri:/dev/dri
-      - /dev/fuse:/dev/fuse
-    # /dev/dri/renderD* is root:render 0660 and --device preserves host ownership, so PUID
-    # needs render as a supplementary GID or every open is EACCES and whatever the agent
-    # installed silently falls back to CPU. Set RENDER_GID from the target host:
-    # getent group render | cut -d: -f3
-    group_add:
-      - "${RENDER_GID:-993}"
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-    volumes:
-      - ${SANDBOX_HOME_PATH:-./volumes/sandbox}:/home/sandbox_user
-    restart: unless-stopped
-    # No env_file: this container runs whatever the model writes, so it is handed the one secret it
-    # needs by name rather than the deployment's whole secrets file. Commands get none of it either
-    # way — the launcher gives them a minimal environment, and the server runs as a uid they cannot
-    # inspect.
-    environment:
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
-      HOME: /home/sandbox_user
-      PATH: /home/sandbox_user/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      PUID: ${PUID:-1654}
-      PGID: ${PGID:-1654}
-      # Where a command's file operations on the other mounts are answered: the agent's exec
-      # bridge, on this network only (the proxy never routes it).
-      VFSBRIDGEURL: http://agent:8080/api/vfs-bridge
-    networks:
-      - jackbot
-    depends_on:
-      - base-sdk
-
-  camoufox:
-    image: camoufox:latest
-    build:
-      context: ./camoufox
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: camoufox
-    ports:
-      - "9377:9377"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9377/json"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    environment:
-      <<: *timezone
-    restart: unless-stopped
-    networks:
-      - jackbot
-
-  mcp-websearch:
-    image: mcp-websearch:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-websearch
-    ports:
-      - "6003:8080"
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpServerWebSearch/Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
-    networks:
-      - jackbot
-    depends_on:
-      camoufox:
-        condition: service_healthy
-      base-sdk:
-        condition: service_started
-      redis:
-        condition: service_healthy
-
   mcp-idealista:
     image: mcp-idealista:latest
     logging:
@@ -378,56 +75,22 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-idealista
-    ports:
-      - "6005:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerIdealista/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # No Idealista key of the deployment's: every search is made with the calling household's own,
+      # asked of the accounts service (its keys section) with this server's credential below.
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_IDEALISTA}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-idealista
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
       - base-sdk
-
-  mcp-homeassistant:
-    image: mcp-homeassistant:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-homeassistant
-    ports:
-      - "6006:8080"
-    # The watch callback (/api/homeassistant/watch-fired) is guarded by the voice hub's announce
-    # secret, Announce__Token, which reaches this container through .env like the timers server's.
-    # The hub itself is asked to resolve a watch's announcement target when the watch is written.
-    # music-assistant runs with network_mode: host, so it is not on the jackbot bridge and its
-    # container name does not resolve. Its podcast-episode API is reached via the host gateway.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpServerHomeAssistant/Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
-    networks:
-      - jackbot
-    depends_on:
-      base-sdk:
-        condition: service_started
-      homeassistant:
-        condition: service_started
-      mcp-channel-voice:
-        condition: service_started
 
   mcp-channel-signalr:
     image: mcp-channel-signalr:latest
@@ -436,20 +99,27 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-channel-signalr
-    ports:
-      - "6010:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelSignalR/Dockerfile
     volumes:
       - chat-uploads:/data/uploads
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      WEBPUSH__SUBJECT: ${WEBPUSH__SUBJECT}
+      WEBPUSH__PUBLICKEY: ${WEBPUSH__PUBLICKEY}
+      WEBPUSH__PRIVATEKEY: ${WEBPUSH__PRIVATEKEY}
+      <<: [ *timezone, *cors-origins ]
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_SIGNALR}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-channel-signalr
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
       Dictation__Transcription__Model: *stt-model
+      # Where the accounts service publishes the keys its assertions verify with: this app believes
+      # the person X-Ziggurat-Assertion names, never the plain headers beside it.
+      ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -465,17 +135,23 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-channel-telegram
-    ports:
-      - "6011:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpChannelTelegram/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env. Who may use the
+      # bots is nobody's list here: a sender is admitted by the account the accounts service has
+      # their numeric Telegram id linked to, asked with this server's own MCP credential. The shared
+      # bot serves every household; a household's own bots (the home's jack and jonas) are its
+      # configuration's keys, read from the accounts service with the same credential.
+      BOTS__SHAREDTOKEN: ${TELEGRAM_SHARED_BOT_TOKEN}
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      MCP__SHAREDSECRET: ${MCP_SECRET_CHANNEL_TELEGRAM}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-channel-telegram
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
       Dictation__Transcription__Model: *stt-model
     networks:
       - jackbot
@@ -485,29 +161,6 @@ services:
       redis:
         condition: service_healthy
 
-  mcp-channel-servicebus:
-    image: mcp-channel-servicebus:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-channel-servicebus
-    ports:
-      - "6012:8080"
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpChannelServiceBus/Dockerfile
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
-    networks:
-      - jackbot
-    depends_on:
-      - base-sdk
-
   mcp-scheduling:
     image: mcp-scheduling:latest
     logging:
@@ -515,17 +168,17 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-scheduling
-    ports:
-      - "6013:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerScheduling/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      MCP__SHAREDSECRET: ${MCP_SECRET_SCHEDULING}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-scheduling
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -534,32 +187,6 @@ services:
       redis:
         condition: service_healthy
 
-  mcp-printer:
-    image: mcp-printer:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-printer
-    ports:
-      - "6014:8080"
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpServerPrinter/Dockerfile
-    volumes:
-      - printer-spool:/spool
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
-    networks:
-      - jackbot
-    depends_on:
-      base-sdk:
-        condition: service_started
-
   mcp-timers:
     image: mcp-timers:latest
     logging:
@@ -567,23 +194,26 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-timers
-    ports:
-      - "6016:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerTimers/Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      MCP__SHAREDSECRET: ${MCP_SECRET_TIMERS}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-timers
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
+      # The household's voice server, which rings its satellites, has no address here: it is reached
+      # through the relay's endpoint on the agent, down its tunnel. The relay asks this server's name
+      # and its own credential above (the agent's MCP__SECRETS__mcp-timers), and presents the voice
+      # server the credential of its tunnel, so no announce secret is needed.
+      VOICEHUB__BASEURL: http://agent:8080/internal/relay/voice/
     networks:
       - jackbot
     depends_on:
       base-sdk:
-        condition: service_started
-      mcp-channel-voice:
         condition: service_started
 
   # Docker creates a missing bind-mount folder as root, and mcp-sugary runs as PUID, so on a fresh
@@ -612,11 +242,11 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: mcp-sugary
-    # Her phone reaches the app through Caddy at sugary.herfluffness.com. The port is published on
-    # loopback only, for local runs and the E2E: the sign-in limit counts by X-Forwarded-For, which a
-    # caller on the LAN could otherwise set to anything.
-    ports:
-      - "127.0.0.1:6017:8080"
+    # A person's phone reaches the app through Caddy at sugary.herfluffness.com, and nothing else
+    # reaches it: the app believes the person the proxy's session check signs in X-Ziggurat-Assertion,
+    # verified against the accounts service's keys, never the plain X-Ziggurat-* headers a caller past
+    # the proxy could set to anybody. Local runs publish it on loopback through
+    # docker-compose.override.ports.yml.
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: McpServerSugary/Dockerfile
@@ -631,19 +261,24 @@ services:
     user: ${PUID:-1654}:${PGID:-1654}
     volumes:
       - ./volumes/sugary:/data
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      WEBPUSH__SUBJECT: ${WEBPUSH__SUBJECT}
+      WEBPUSH__PUBLICKEY: ${WEBPUSH__PUBLICKEY}
+      WEBPUSH__PRIVATEKEY: ${WEBPUSH__PRIVATEKEY}
       # Also the zone the tables' times are written in (HomeZone empty): the same anchor the Home
       # Assistant container runs on, so a meal lines up with the glucose history /ha serves.
       <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
-      # Her app is served on this port too (every route but /mcp), and through Caddy over HTTPS,
-      # which installing it and live scanning need. This deployment is reached only through the VPN,
-      # so the app's own access code is switched off; set it back to true (and SUGARYAPP__ACCESSCODE
-      # in .env) for a deployment the open network can reach. /mcp keeps the deployment secret.
-      SUGARYAPP__REQUIREACCESSCODE: "false"
-      SUGARYAPP__ACCESSCODE: ${SUGARYAPP__ACCESSCODE}
+      # The app is served on this port too (every route but /mcp), through Caddy over HTTPS, which
+      # installing it and live scanning need, and behind the proxy's session check: it has no sign-in
+      # of its own. /mcp keeps this server's own credential.
+      MCP__SHAREDSECRET: ${MCP_SECRET_SUGARY}
+      # A tool call's token: the agent's, for this name, checked against the keys it publishes.
+      MCP__AUDIENCE: mcp-sugary
+      MCP__AGENTKEYSURL: http://agent:8080/internal/jwks
+      # Where the accounts service publishes the keys its assertions verify with: this app believes
+      # the person X-Ziggurat-Assertion names, never the plain headers beside it.
+      ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
     networks:
       - jackbot
     depends_on:
@@ -651,48 +286,6 @@ services:
         condition: service_completed_successfully
       base-sdk:
         condition: service_started
-
-  mcp-channel-voice:
-    image: mcp-channel-voice:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: mcp-channel-voice
-    ports:
-      - "6015:8080"
-    build:
-      context: ${REPOSITORY_PATH}
-      dockerfile: McpChannelVoice/Dockerfile
-    restart: unless-stopped
-    # The hub writes the bind mounts below (profile.json cache, audit ring). PUID/PGID in
-    # .env — the same pair the other volume-writing services use — must own ./volumes/voices
-    # instead of chowning the host dirs to the image default (1654, the aspnet app user).
-    user: ${PUID:-1654}:${PGID:-1654}
-    volumes:
-      - ./volumes/voices:/voices
-      - ./volumes/tse-audit:/tse-audit
-    env_file:
-      - .env
-    environment:
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
-      Announce__Escalation__WebhookUrl: ""
-      Stt__OpenAi__Model: *stt-model
-      Tse__Mode: "${Tse__Mode:-Off}"
-      Tse__Endpoint: "${Tse__Endpoint:-http://tse-extractor:9098}"
-      Tse__TimeoutMs: "${Tse__TimeoutMs:-90000}"
-      Tse__NoiseFloorThreshold: "${Tse__NoiseFloorThreshold:-400}"
-      Tse__AuditDir: "${Tse__AuditDir:-}"
-    networks:
-      - jackbot
-    depends_on:
-      base-sdk:
-        condition: service_started
-      redis:
-        condition: service_healthy
-      lemonade:
-        condition: service_healthy
 
   lemonade:
     image: lemonade:latest
@@ -703,13 +296,14 @@ services:
     container_name: lemonade
     build: ./lemonade
     ports:
-      - "13305:13305"
+      - "${LAN_BIND_ADDRESS:-127.0.0.1}:13305:13305"
     environment:
       <<: *timezone
       STT_BACKEND: ${STT_BACKEND:-gpu}
-      # Warmed by the entrypoint's pre-pull; kept in lockstep with the hub's Stt__OpenAi__Model
-      # (mcp-channel-voice above) so an override warms the model the hub actually requests instead
-      # of leaving the container to lazily download the right one on the first utterance.
+      # Warmed by the entrypoint's pre-pull; kept in lockstep with what voice requests (the tenant
+      # kit's STT_MODEL), which reaches this Lemonade over its tunnel's lemonade back-call, so an
+      # override warms the model voice actually requests instead of leaving the container to lazily
+      # download the right one on the first utterance.
       STT_MODEL: *stt-model
       # Only read when STT_MODEL names a `user.` model, which Lemonade knows nothing about until
       # the pre-pull registers it. Lemonade resolves checkpoints against HuggingFace/ModelScope
@@ -765,38 +359,23 @@ services:
     networks:
       - jackbot
 
-  tse-extractor:
-    image: tse-extractor:latest
-    logging:
-      options:
-        max-size: "5m"
-        max-file: "3"
-    container_name: tse-extractor
+  # Docker creates a missing bind-mount folder as root, and the agent runs as PUID, so on a fresh host
+  # it could not write its signing key. This one-shot step, from the same image, hands
+  # ./volumes/agent-keys to PUID:PGID and exits before the agent starts; a no-op on every later start.
+  agent-volume:
+    image: agent:latest
+    container_name: agent-volume
     build:
-      context: ./tse-extractor
-    restart: unless-stopped
-    # Writes the /models bind mount (checkpoint provisioning, ONNX export, enroll cache), so it
-    # follows the same PUID/PGID convention as the other volume-writing services: PUID must own
-    # ./volumes/tse-models. Deployments that ran the pre-user root container need a one-time
-    # chown of that dir or provisioning/export/cache writes fail after the upgrade.
-    user: ${PUID:-1654}:${PGID:-1654}
-    environment:
-      # 0 = auto: one torch thread per PHYSICAL core (SMT oversubscription measured ~1.6x
-      # slower — see app.py). Set an explicit count only to tune away from that.
-      TSE_TORCH_THREADS: "${TSE_TORCH_THREADS:-0}"
-      # 1 = run the BSRNN core via onnxruntime (parity-gated at startup; any failure
-      # falls back to eager torch). 0 = force the eager path.
-      TSE_ONNX: "${TSE_ONNX:-1}"
-      # Persist the concat-enrollment + speaker-embedding cache in the models volume so
-      # a container recreate doesn't recompute the embedding inside the first live turn.
-      ENROLL_CACHE: /models/enroll-cache
-    ports:
-      - "9098:9098"
+      context: ${REPOSITORY_PATH}
+      dockerfile: Agent/Dockerfile
+    user: "0:0"
+    entrypoint: ["chown", "${PUID:-1654}:${PGID:-1654}", "/keys"]
     volumes:
-      - ./volumes/tse-models:/models
-      - ./volumes/voices:/voices:ro
-    networks:
-      - jackbot
+      - ./volumes/agent-keys:/keys
+    restart: "no"
+    depends_on:
+      base-sdk:
+        condition: service_started
 
   agent:
     image: agent:latest
@@ -805,50 +384,55 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: agent
-    ports:
-      - "5000:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Agent/Dockerfile
     command: [ "--chat", "Web", "--reasoning" ]
     restart: unless-stopped
-    env_file:
-      - .env
+    # The agent signs every call it makes to a server with a key it generates into this volume on
+    # first start, nothing to provision, and publishes the public half at /internal/jwks on the compose
+    # network alone. Losing the volume costs a new key, which every server picks up on its own.
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/agent-keys:/keys
     environment:
-      <<: *timezone
-      MCP__SHAREDSECRET: ${MCP__SHAREDSECRET}
+      SIGNING__KEYDIRECTORY: /keys
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      OPENROUTER__APIKEY: ${OPENROUTER__APIKEY}
+      LemonadeChat__ApiUrl: ${LemonadeChat__ApiUrl}
+      LemonadeChat__ApiKey: ${LemonadeChat__ApiKey}
+      <<: [ *timezone, *cors-origins ]
+      REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      # Each shared server's credential by the host the agent dials, the same variable the server
+      # reads as its own MCP__SHAREDSECRET. A household's own servers have none here: each is reached
+      # through its tunnel, whose relay presents the credential the tunnel was opened with.
+      MCP__SECRETS__mcp-idealista: ${MCP_SECRET_IDEALISTA}
+      MCP__SECRETS__mcp-channel-signalr: ${MCP_SECRET_CHANNEL_SIGNALR}
+      MCP__SECRETS__mcp-channel-telegram: ${MCP_SECRET_CHANNEL_TELEGRAM}
+      MCP__SECRETS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
+      MCP__SECRETS__mcp-timers: ${MCP_SECRET_TIMERS}
+      MCP__SECRETS__mcp-sugary: ${MCP_SECRET_SUGARY}
       AGENTAPI__SHAREDSECRET: ${AGENTAPI__SHAREDSECRET}
+      # Where the accounts service publishes the keys its assertions verify with: the registration
+      # API acts for the person the X-Ziggurat-Assertion SexyTime's server forwards names.
+      ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
     networks:
       - jackbot
     depends_on:
-      mcp-library:
-        condition: service_started
-      mcp-vault:
-        condition: service_started
-      mcp-sandbox:
-        condition: service_started
-      mcp-websearch:
-        condition: service_started
       mcp-idealista:
-        condition: service_started
-      mcp-homeassistant:
         condition: service_started
       mcp-channel-signalr:
         condition: service_started
       mcp-channel-telegram:
         condition: service_started
-      mcp-channel-servicebus:
-        condition: service_started
       mcp-scheduling:
-        condition: service_started
-      mcp-printer:
-        condition: service_started
-      mcp-channel-voice:
         condition: service_started
       mcp-sugary:
         condition: service_started
       redis:
         condition: service_healthy
+      agent-volume:
+        condition: service_completed_successfully
       base-sdk:
         condition: service_started
 
@@ -859,14 +443,12 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: webui
-    ports:
-      - "5001:8080"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: WebChat/Dockerfile
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      WEBPUSH__PUBLICKEY: ${WEBPUSH__PUBLICKEY}
       <<: *timezone
     restart: unless-stopped
     networks:
@@ -882,20 +464,18 @@ services:
         max-size: "5m"
         max-file: "3"
     container_name: observability
-    # music-assistant runs with network_mode: host (for mDNS/zeroconf discovery), so it
-    # is not on the jackbot bridge and its container name no longer resolves. The health
-    # probe reaches its host-published port via the host gateway instead.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     build:
       context: ${REPOSITORY_PATH}
       dockerfile: Observability/Dockerfile
-    ports:
-      - "5003:8080"
-    env_file:
-      - .env
     environment:
+      # The secrets this service reads, by name: it is never handed the whole .env.
+      LemonadeChat__ApiUrl: ${LemonadeChat__ApiUrl}
+      LemonadeChat__ApiKey: ${LemonadeChat__ApiKey}
       <<: *timezone
+      REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      # Where the accounts service publishes the keys its assertions verify with: the dashboard
+      # serves only the operator X-Ziggurat-Assertion names, never the plain headers beside it.
+      ACCOUNTS__JWKSURL: http://accounts:8080/accounts/internal/jwks
       # LemonadeChat__ApiUrl arrives through .env, as it does for the agent: the probe row for
       # the Lemonade chat host exists only when that line is set. A literal here would win over
       # .env and keep the probe off.
@@ -905,6 +485,163 @@ services:
         condition: service_healthy
     networks:
       - jackbot
+
+  # Docker creates a missing bind-mount folder as root, and accounts runs as PUID, so on a fresh host
+  # it could not create its store. This one-shot step, from the same image, hands ./volumes/accounts
+  # to PUID:PGID and exits before the service starts; it is a no-op on every later start.
+  accounts-volume:
+    image: accounts:latest
+    container_name: accounts-volume
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: Accounts/Dockerfile
+    user: "0:0"
+    entrypoint: ["chown", "${PUID:-1654}:${PGID:-1654}", "/data"]
+    volumes:
+      - ./volumes/accounts:/data
+    restart: "no"
+    depends_on:
+      base-sdk:
+        condition: service_started
+
+  # Households, people, passkeys, invites and sessions. Caddy routes /accounts/* on the main host
+  # here (sign-in, enrollment) and asks /accounts/verify about every protected request; nothing
+  # else reaches it. Its store is a SQLite file in this volume, backed up with the volume. The
+  # operator's way in, before anyone can sign in and after losing every passkey:
+  #   docker exec accounts dotnet Accounts.dll mint-link --operator --name "<display name>"
+  # and a recovery link for anyone: docker exec accounts dotnet Accounts.dll mint-link --user <id>
+  # It signs who a turn is for with a key it generates into this volume (signing/) on first start,
+  # nothing to provision; rotate-signing-key and, once the old key's assertions have run out,
+  # retire-signing-keys change it beside the running service. A household's own server opens its
+  # tunnel with a credential minted here, printed once:
+  #   docker exec accounts dotnet Accounts.dll mint-tunnel-credential --household <id> --server <name>
+  # list-tunnel-credentials shows them without their secrets, and revoke-tunnel-credential --id <id>
+  # revokes one and tells the relay, which closes its tunnel.
+  accounts:
+    image: accounts:latest
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "3"
+    container_name: accounts
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: Accounts/Dockerfile
+    restart: unless-stopped
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/accounts:/data
+    environment:
+      <<: *timezone
+      # Per deployment, not secrets. A passkey belongs to the parent domain, so one signs in on every
+      # host under it; the session cookie is set there for the same reason. The origins are the
+      # hosts the Caddyfile serves people on: a ceremony's page must be on one, and sign-in returns
+      # only to one. Links the operator's command prints start with the public base.
+      WEBAUTHN__RELYINGPARTYID: herfluffness.com
+      ALLOWEDORIGINS__0: https://assistants.herfluffness.com
+      ALLOWEDORIGINS__1: https://sexy.herfluffness.com
+      ALLOWEDORIGINS__2: https://sugary.herfluffness.com
+      ALLOWEDORIGINS__3: https://assistants-dashboard.herfluffness.com
+      SESSIONCOOKIE__DOMAIN: .herfluffness.com
+      PUBLICBASEURL: https://assistants.herfluffness.com
+      # The bot people link their Telegram through, the shared bot, without the @: the account page's
+      # link code and an invite are shown as its t.me deep link. Left empty they are shown as a bare code to
+      # send the bot as /start <code>, which is safe; a wrong name would send codes to a stranger's bot.
+      # This deployment's shared bot is jonas's own (TELEGRAM_SHARED_BOT_TOKEN is its token).
+      TELEGRAM__BOTUSERNAME: giver_jonasbot
+      # The servers that may ask whose account an identity is, each by the credential it already
+      # holds for its own /mcp, so no secret exists for this alone. Caddy answers the internal API
+      # 404 from outside. A household's voice server is no caller here: it asks on its tunnel's
+      # accounts back-call, and is admitted by the live tunnel credential the relay shows for it.
+      CALLERS__mcp-channel-signalr: ${MCP_SECRET_CHANNEL_SIGNALR}
+      CALLERS__mcp-channel-telegram: ${MCP_SECRET_CHANNEL_TELEGRAM}
+      # The shared servers that read their own section of the calling household's configuration —
+      # Idealista its keys, scheduling, Sugary and timers the household's zone — each by the credential it
+      # already holds for its own /mcp, and each proving the household with what its call carries.
+      CALLERS__mcp-idealista: ${MCP_SECRET_IDEALISTA}
+      CALLERS__mcp-scheduling: ${MCP_SECRET_SCHEDULING}
+      CALLERS__mcp-sugary: ${MCP_SECRET_SUGARY}
+      CALLERS__mcp-timers: ${MCP_SECRET_TIMERS}
+      # The household migration below, and only its household import: it can make the operator and
+      # mint their link, so it is admitted by a secret of its own, left empty — nobody — but for the run.
+      CALLERS__household-migration: ${HOUSEHOLD_MIGRATION_SECRET}
+      # The agent, whose relay asks on every tunnel's open which household's server its credential
+      # is, and nothing else. The agent has no /mcp of its own; the credential it already holds for
+      # its own API is the one it asks with, so again no secret exists for this alone. SexyTime's
+      # server holds that one too, which lets it ask about a tunnel credential only if it already
+      # has one — and a credential opens a tunnel by itself.
+      CALLERS__agent: ${AGENTAPI__SHAREDSECRET}
+      # Where a revoked tunnel credential is announced, so the relay closes its tunnel at once, and a
+      # saved household configuration, so every reader drops what it kept of that household.
+      REDIS__CONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      # The master key every household's data key is wrapped with, which seals that household's
+      # secrets (its OpenRouter key, Idealista's keys, its Telegram bots). This service's alone.
+      HOUSEHOLDCONFIG__MASTERKEY: ${HOUSEHOLD_CONFIG_MASTER_KEY}
+      # Where the agent publishes the keys its call tokens verify with: a shared server proves which
+      # household it asks about with the call token it was handed, and the agent proves it is the
+      # agent with one of its own.
+      AGENTKEYSURL: http://agent:8080/internal/jwks
+      # Where the agent answers, for the operator's household list: its relay says which of a
+      # household's own servers are connected, asked with CALLERS__agent above, the agent API's secret.
+      AGENTURL: http://agent:8080
+      # Where the dashboard's host answers, for an owner's usage page: its usage route is asked with an
+      # assertion this service signs for the owner, which the host verifies against this service's keys
+      # as it verifies everything, so no secret exists for this.
+      OBSERVABILITYURL: http://observability:8080
+    networks:
+      - jackbot
+    depends_on:
+      accounts-volume:
+        condition: service_completed_successfully
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  # One-shot, by hand, on the deploy that brings accounts: carries the retired identity map's people
+  # into the home household as accounts, and what was filed under their names — memories, remembered
+  # logins, phones, schedules' writers, topics, voice profiles, the Sugary log — onto their user ids;
+  # seeds the home's configuration (settings, agents, features, the chat client's spaces, its keys);
+  # and moves every shared store into the home household.
+  # Under a profile, so `up` never starts it. Put the people in ./volumes/household-migration/people.json
+  # and HOUSEHOLD_MIGRATION_SECRET in .env (then `docker compose up -d accounts`), and run
+  #   ... | docker compose --profile migrate run --rm -T household-migration \
+  #     --people /input/people.json --operator <name> --owner <name> --sugary <name> [--dry-run] \
+  #     --home-keys -
+  # piping in, never from a file in the volume, the home's keys as .env held them before households:
+  # { "telegramBots": { "jack": { "token": BOTS__0 }, "jonas": { "token": BOTS__1 } },
+  #   "idealista": { "apiKey": IDEALISTA__APIKEY, "secret": IDEALISTA__SECRET } }.
+  # Running it again changes nothing. The steps are .scratch/tenants-config/deploy.md.
+  household-migration:
+    image: household-migration:latest
+    profiles: ["migrate"]
+    build:
+      context: ${REPOSITORY_PATH}
+      dockerfile: HouseholdMigration/Dockerfile
+    restart: "no"
+    # The owner of the Sugary and voices volumes it writes in, as their services run. The voice
+    # profiles and the remembered logins are the ones the deployment kept before the home moved into
+    # the tenant kit, which carries both over afterwards (TenantKit/README.md): it runs first.
+    user: ${PUID:-1654}:${PGID:-1654}
+    volumes:
+      - ./volumes/household-migration:/input:ro
+      - ./volumes/sugary:/sugary
+      - ./volumes/voices:/voices
+    environment:
+      <<: *timezone
+      REDISCONNECTIONSTRING: redis:6379,password=${REDIS_PASSWORD}
+      ACCOUNTS__CREDENTIAL: ${HOUSEHOLD_MIGRATION_SECRET}
+      # Opens each remembered login sealed under a person's name and seals it again under their user id.
+      LOGINS__STATEKEY: ${LOGINS__STATEKEY}
+    networks:
+      - jackbot
+    depends_on:
+      base-sdk:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      accounts:
+        condition: service_started
 
   caddy:
     build:
@@ -930,10 +667,10 @@ services:
       - webui
       - agent
       - mcp-sugary
+      - accounts
 
 networks:
   jackbot:
 
 volumes:
-  printer-spool:
   chat-uploads:

@@ -7,6 +7,7 @@ using Observability.Hubs;
 using Observability.Services;
 using Shouldly;
 using StackExchange.Redis;
+using Tests.E2E.Fixtures;
 
 namespace Tests.Unit.Observability.Services;
 
@@ -131,5 +132,22 @@ public class HttpHealthProbeServiceTests
 
         HttpHealthProbeService.Targets(configuration)
             .ShouldBe([("lemonade", "http://lemonade:13305/api/v1/health")]);
+    }
+
+    // The deployment's own servers that publish no metrics of their own are probed, so each is a
+    // tile: the ones that do (agent, the chat channels) beat their own heartbeat.
+    [Theory]
+    [InlineData("mcp-idealista", "http://mcp-idealista:8080/mcp")]
+    [InlineData("mcp-scheduling", "http://mcp-scheduling:8080/mcp")]
+    [InlineData("mcp-timers", "http://mcp-timers:8080/mcp")]
+    [InlineData("mcp-sugary", "http://mcp-sugary:8080/mcp")]
+    [InlineData("accounts", "http://accounts:8080/accounts/sign-in")]
+    public void TheShippedTargets_ProbeEveryServerWithNoHeartbeatOfItsOwn(string service, string url)
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(TestHelpers.FindSolutionRoot(), "Observability", "appsettings.json"))
+            .Build();
+
+        HttpHealthProbeService.Targets(configuration).ShouldContain((service, url));
     }
 }

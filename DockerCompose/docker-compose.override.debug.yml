@@ -43,62 +43,7 @@ services:
     volumes:
       - vsdbg:/remote_debugger:ro
 
-  mcp-library:
-    build:
-      args:
-        - BUILD_CONFIGURATION=Debug
-    cap_add:
-      - SYS_PTRACE
-    security_opt:
-      - seccomp:unconfined
-    volumes:
-      - vsdbg:/remote_debugger:ro
-
-  mcp-vault:
-    build:
-      args:
-        - BUILD_CONFIGURATION=Debug
-    cap_add:
-      - SYS_PTRACE
-    security_opt:
-      - seccomp:unconfined
-    volumes:
-      - vsdbg:/remote_debugger:ro
-
-  mcp-sandbox:
-    build:
-      args:
-        - BUILD_CONFIGURATION=Debug
-    cap_add:
-      - SYS_PTRACE
-    security_opt:
-      - seccomp:unconfined
-    volumes:
-      - vsdbg:/remote_debugger:ro
-
-  mcp-websearch:
-    build:
-      args:
-        - BUILD_CONFIGURATION=Debug
-    cap_add:
-      - SYS_PTRACE
-    security_opt:
-      - seccomp:unconfined
-    volumes:
-      - vsdbg:/remote_debugger:ro
-
   mcp-idealista:
-    build:
-      args:
-        - BUILD_CONFIGURATION=Debug
-    cap_add:
-      - SYS_PTRACE
-    security_opt:
-      - seccomp:unconfined
-    volumes:
-      - vsdbg:/remote_debugger:ro
-
-  mcp-homeassistant:
     build:
       args:
         - BUILD_CONFIGURATION=Debug
@@ -131,46 +76,7 @@ services:
     volumes:
       - vsdbg:/remote_debugger:ro
 
-  mcp-channel-servicebus:
-    build:
-      args:
-        - BUILD_CONFIGURATION=Debug
-    cap_add:
-      - SYS_PTRACE
-    security_opt:
-      - seccomp:unconfined
-    volumes:
-      - vsdbg:/remote_debugger:ro
-
-  mcp-channel-voice:
-    build:
-      args:
-        - BUILD_CONFIGURATION=Debug
-    # The hub dials each satellite's Wyoming server as a client; satellites running on
-    # the Docker host (e.g. a WSL nabu-satellite) are reached via host.docker.internal.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    environment:
-      - DOTNET_ENVIRONMENT=Development
-    cap_add:
-      - SYS_PTRACE
-    security_opt:
-      - seccomp:unconfined
-    volumes:
-      - vsdbg:/remote_debugger:ro
-
   mcp-scheduling:
-    build:
-      args:
-        - BUILD_CONFIGURATION=Debug
-    cap_add:
-      - SYS_PTRACE
-    security_opt:
-      - seccomp:unconfined
-    volumes:
-      - vsdbg:/remote_debugger:ro
-
-  mcp-printer:
     build:
       args:
         - BUILD_CONFIGURATION=Debug

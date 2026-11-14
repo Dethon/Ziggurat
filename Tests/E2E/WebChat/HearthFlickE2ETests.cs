@@ -56,57 +56,6 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         run.SelectedAfterTap.ShouldBe(run.AimedRow, run.Report);
     }
 
-    // The cure for the flick is a non-passive `touchmove` listener on the whole sheet, so the one
-    // thing it could plausibly break is the conversation list's own scrolling. `_onDown` bails for
-    // targets inside `.hearth-rows` without setting `_dragging`, which is the gate that keeps the
-    // list native; this proves that gate end to end rather than by reading it.
-    [SkippableFact]
-    public async Task MobileViewport_WithTheSheetOpen_DraggingTheConversationListStillScrollsIt()
-    {
-        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
-
-        var page = await fixture.CreatePageAsync(hasTouch: true, isMobile: true);
-        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
-
-        var tag = Guid.NewGuid().ToString("N")[..4];
-        await CreateTopicAsync(page, $"Scroll one {tag} answer briefly");
-        await CreateTopicAsync(page, $"Scroll two {tag} answer briefly");
-        await CreateTopicAsync(page, $"Scroll three {tag} answer briefly");
-        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page, tag);
-
-        await EnsurePeekAsync(page);
-        var cdp = await page.Context.NewCDPSessionAsync(page);
-        var handle = await CentreOfAsync(page, ".hearth-handle");
-        await DragAsync(cdp, handle.X, handle.Y, handle.Y - 560, 56, 18, frameMs: 34);
-        await WaitForSheetSettledAsync(page);
-
-        // A handful of seeded rows need not overflow a full-height sheet, and a list that cannot
-        // scroll would pass this test for the wrong reason. Shrink the scroller so the rows it
-        // already holds overflow it.
-        await page.EvaluateAsync("() => document.querySelector('.hearth-rows').style.maxHeight = '120px'");
-        var overflows = await page.EvaluateAsync<bool>(
-            "() => { const r = document.querySelector('.hearth-rows'); return r.scrollHeight > r.clientHeight + 8; }");
-        overflows.ShouldBeTrue("the conversation list does not overflow, so this test would prove nothing");
-
-        var (x, y) = await CentreOfAsync(page, ".hearth-rows");
-        await DragAsync(cdp, x, y + 40, y - 40, 16, 12, frameMs: 28);
-
-        // The scroll, not half a second of hoping for it. A flick keeps moving after the finger
-        // leaves, so how long it takes to leave zero belongs to the machine: half a second is
-        // plenty on a quiet one and not always enough on a loaded one, where this failed as the
-        // handler swallowing a scroll that was merely late. Waiting for the state itself both
-        // returns the moment it arrives and says the same thing on any machine.
-        await page.WaitForFunctionAsync(
-            "() => document.querySelector('.hearth-rows').scrollTop > 0",
-            null,
-            new PageWaitForFunctionOptions { Timeout = 10_000 });
-
-        var scrollTop = await page.EvaluateAsync<double>(
-            "() => document.querySelector('.hearth-rows').scrollTop");
-        scrollTop.ShouldBeGreaterThan(0, "the sheet's touchmove handler swallowed the list's own scrolling");
-    }
-
     private sealed record Run(
         double Vy,
         string DetentAfterGesture,
@@ -114,13 +63,13 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         string SelectedAfterTap,
         string Report);
 
-    private async Task<Run> RunGestureThenTapAsync(bool fast)
+    private async Task<Run> RunGestureThenTapAsync(bool fast, int attempt = 1)
     {
         // isMobile is not a synonym for hasTouch: it turns on Chromium's mobile emulation
         // (390x844, DSF 3, hasTouch) and with it the tap heuristics a phone is judged by.
-        var page = await fixture.CreatePageAsync(hasTouch: true, isMobile: true);
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex(), hasTouch: true, isMobile: true);
         await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
-        await WebChatE2ETests.SelectUserAndAgentAsync(page, fixture.NextUserIndex());
+        await WebChatE2ETests.SelectAgentAsync(page);
 
         // Topics from earlier runs survive in the stack, so unique names keep "the row I aimed at"
         // and "the row that got selected" from being two different rows with the same text.
@@ -162,8 +111,20 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         var frameMs = fast ? 16.0 : 34.0;
 
         var swipeStartedAt = DateTime.UtcNow;
+        var monotonic = System.Diagnostics.Stopwatch.StartNew();
         await DragAsync(cdp, x, y, y - travel, steps, gapMs, frameMs);
         var releasedAt = DateTime.UtcNow;
+
+        // CDP takes each frame's time as wall-clock seconds, and Chromium turns it into the event's
+        // timeStamp by the wall clock's offset from its own monotonic one as the frame arrives. The
+        // VM's wall clock steps now and then — once by 1.8 s backwards mid-flick — and the frames
+        // after the step land that far apart: the app read -0.017 px/ms off a flick stamped at
+        // -2.3. Such a gesture measured the clock, not the sheet, so it is made again on a fresh page.
+        var clockStepped = Math.Abs((releasedAt - swipeStartedAt).TotalMilliseconds - monotonic.ElapsedMilliseconds) > 100;
+        if (clockStepped && attempt < 3)
+        {
+            return await RunGestureThenTapAsync(fast, attempt + 1);
+        }
 
         // Read the app's own velocity the instant the drag released — do not hope, assert.
         var vy = await page.EvaluateAsync<double>("() => window.hearthSheet._vy");
@@ -173,6 +134,16 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         var detentAfterGesture = settle.SheetClass;
 
         var aim = await AimAtAnUnselectedRowAsync(page, tag);
+        // The overlay cleared before the drag can come back during it — this test's own topics are
+        // turns on a real model, which may answer one with a tool call — and then it is what every
+        // row hit-tests to. That is a leaked overlay, not the sheet swallowing a tap: clear it and aim
+        // again, as the drag's own guard above does.
+        if (aim.Name.Length == 0 && await page.Locator(".approval-modal-overlay").CountAsync() > 0)
+        {
+            await WebChatE2ETests.DismissApprovalOverlayAsync(page);
+            aim = await AimAtAnUnselectedRowAsync(page, tag);
+        }
+
         var msSinceRelease = (DateTime.UtcNow - releasedAt).TotalMilliseconds;
 
         var selected = "<never tapped: no reachable unselected row>";
@@ -225,7 +196,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
 
     // ---- gesture synthesis -------------------------------------------------------------------
 
-    private static Dictionary<string, object> Point(double x, double y) =>
+    internal static Dictionary<string, object> Point(double x, double y) =>
         new() { ["x"] = x, ["y"] = y, ["id"] = 1 };
 
     // touchEnd/touchCancel must carry an EMPTY touchPoints array; touchStart/touchMove must carry
@@ -239,7 +210,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
     // against a -0.6 threshold and the test failed for having faithfully reported the load. Stamping
     // each frame puts the interval back in the test's hands, where the rest of the gesture already
     // lives.
-    private static Task TouchAsync(
+    internal static Task TouchAsync(
         ICDPSession cdp, string type, double atEpochSeconds, params Dictionary<string, object>[] points) =>
         cdp.SendAsync("Input.dispatchTouchEvent", new Dictionary<string, object>
         {
@@ -250,7 +221,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
 
     // frameMs is the interval the gesture claims between frames, which is now also the interval the
     // app sees. gapMs is still real waiting, because the sheet's own animation runs on real time.
-    private static async Task DragAsync(
+    internal static async Task DragAsync(
         ICDPSession cdp, double x, double yFrom, double yTo, int steps, int gapMs, double frameMs)
     {
         var stampedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
@@ -272,7 +243,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
 
     // ---- instrumentation ---------------------------------------------------------------------
 
-    private static Task InstallTapLogAsync(IPage page) => page.EvaluateAsync(
+    internal static Task InstallTapLogAsync(IPage page) => page.EvaluateAsync(
         """
         () => {
             window.__taplog = [];
@@ -321,7 +292,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
 
     // Drained per phase: a setup click's own `click` in the buffer would otherwise satisfy the
     // very thing this test is looking for.
-    private static async Task<string> DrainLogAsync(IPage page, string label)
+    internal static async Task<string> DrainLogAsync(IPage page, string label)
     {
         var body = await page.EvaluateAsync<string>(
             """
@@ -339,7 +310,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
 
     // ---- page state --------------------------------------------------------------------------
 
-    private static async Task EnsurePeekAsync(IPage page)
+    internal static async Task EnsurePeekAsync(IPage page)
     {
         for (var attempt = 0; attempt < 4; attempt++)
         {
@@ -363,7 +334,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
         throw new InvalidOperationException("Could not return the hearth sheet to the peek detent");
     }
 
-    private sealed record Settle(string SheetClass, string Transform, double ElapsedMs, bool Settled);
+    internal sealed record Settle(string SheetClass, string Transform, double ElapsedMs, bool Settled);
 
     // "Reached full and settled": the detent class landed and the composited transform stopped
     // changing. Capped, because the whole point is to tap while the fling Chromium derived from
@@ -380,7 +351,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
     // element for as long as it runs, however little of it a stalled sampler managed to see. The
     // repeat count stays on top of that, because a transition that has been committed but has not
     // begun is not yet an animation either.
-    private static async Task<Settle> WaitForSheetSettledAsync(IPage page)
+    internal static async Task<Settle> WaitForSheetSettledAsync(IPage page)
     {
         var started = DateTime.UtcNow;
         var previous = "";
@@ -404,9 +375,9 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
             final.ClassName, final.Transform, (DateTime.UtcNow - started).TotalMilliseconds, false);
     }
 
-    private sealed record SheetRead(string ClassName, string Transform, bool Still);
+    internal sealed record SheetRead(string ClassName, string Transform, bool Still);
 
-    private static async Task<SheetRead> ReadSheetAsync(IPage page)
+    internal static async Task<SheetRead> ReadSheetAsync(IPage page)
     {
         var state = await page.EvaluateAsync<string[]>(
             """
@@ -422,7 +393,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
 
     // Returns an empty Name rather than throwing when nothing is reachable: the dump it carries is
     // the diagnostic, and a thrown exception would take the whole event log down with it.
-    private static async Task<(float X, float Y, string Name, string Hit, string Dump)> AimAtAnUnselectedRowAsync(IPage page, string tag)
+    internal static async Task<(float X, float Y, string Name, string Hit, string Dump)> AimAtAnUnselectedRowAsync(IPage page, string tag)
     {
         var aim = await page.EvaluateAsync<JsonElement>(
             """
@@ -471,7 +442,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
                 aim.GetProperty("dump").GetString() ?? "");
     }
 
-    private static async Task<string> WaitForSelectionAsync(IPage page, string wanted)
+    internal static async Task<string> WaitForSelectionAsync(IPage page, string wanted)
     {
         var deadline = DateTime.UtcNow.AddSeconds(5);
         var selected = "";
@@ -497,7 +468,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
 
     // ---- seeding -----------------------------------------------------------------------------
 
-    private static async Task CreateTopicAsync(IPage page, string message)
+    internal static async Task CreateTopicAsync(IPage page, string message)
     {
         var chatInput = page.Locator("textarea.chat-input");
         await WebChatE2ETests.ClickThroughApprovalsAsync(page, page.Locator(".hearth-new:visible").First);
@@ -508,7 +479,7 @@ public sealed class HearthFlickE2ETests(WebChatE2EFixture fixture, ITestOutputHe
             .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
     }
 
-    private static async Task<(float X, float Y)> CentreOfAsync(IPage page, string selector)
+    internal static async Task<(float X, float Y)> CentreOfAsync(IPage page, string selector)
     {
         var box = await page.Locator(selector + ":visible").First.BoundingBoxAsync()
             ?? throw new InvalidOperationException($"{selector} has no bounding box");

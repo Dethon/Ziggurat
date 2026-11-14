@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.Tools.Web;
 using Infrastructure.Agents;
 using Shouldly;
 
@@ -54,7 +55,7 @@ public sealed class AgentSpecProjectionTests
     private static AgentSpec AgentSpec() => AgentSpecProjection.ForAgent(
         _agentDefinition, new AgentKey("conv-1", "jack"), "fran", _openRouter,
         _patchable, lemonadeHostAddress: null,
-        mcpSecret: McpSecret, new DeploymentEndpoints(_agentDefinition.McpServerEndpoints), logger: null);
+        _credentials, new DeploymentEndpoints(_agentDefinition.McpServerEndpoints), logger: null);
 
     // What the parent above resolves to, handed down the way the factory hands it: off the
     // parent's own spec, so a worker can never be spawned on a model its parent is not running.
@@ -62,11 +63,19 @@ public sealed class AgentSpecProjectionTests
         new("conv-1", "fran", ["allow-*"], usesOutposts, AgentSpec().Model, AgentSpec().ProviderRouting);
 
     private static AgentSpec SubAgentSpec() => AgentSpecProjection.ForSubAgent(
-        _subAgentDefinition, Spawn(), _openRouter, _patchable, lemonadeHostAddress: null, McpSecret, null);
+        _subAgentDefinition, Spawn(), _openRouter, _patchable, lemonadeHostAddress: null, _credentials, null);
 
     private static readonly FixedPatchableModelSource _patchable = new(["model-a", "model-b"]);
 
-    private const string McpSecret = "deployment-secret";
+    private const string McpSecret = "tools-secret";
+
+    // A credential per server, keyed by host: "tools" is the one server both definitions dial.
+    private static readonly McpCredentials _credentials = new(new Dictionary<string, string>
+    {
+        ["tools"] = McpSecret,
+        ["mcp-vault"] = "vault-secret",
+        ["mcp-sandbox"] = "sandbox-secret"
+    });
 
     // One row per field the two paths resolve, so a new difference is a new row rather than a
     // new test. A row whose two expectations are equal is a difference this change removed on
@@ -80,11 +89,12 @@ public sealed class AgentSpecProjectionTests
         Row("routing session id", s => WithoutSpawnId(s.RoutingSessionId),
             "jack:conv-1", "subagent-worker:<spawn>"),
         Row("conversation id", s => s.ConversationId, "conv-1", "conv-1"),
-        Row("metrics identity", s => s.MetricsAgentId, "Jack", "Worker"),
+        // The figures are keyed by the agent's id, which a household's rename leaves alone, and shown
+        // under the name it goes by.
+        Row("metrics identity", s => (s.AgentId, s.MetricsAgentName), ("jack", "Jack"), ("worker", "Worker")),
         Row("keeps history", s => s.KeepsHistory, true, false),
         // A mount verdict answers "did the agent you registered with mount you", so a delegated
         // task's collision set is nobody's business at the machine.
-        Row("records outpost verdicts", s => s.RecordsOutpostVerdicts, true, false),
         // A worker names no model: it runs the one its parent runs, whoever the parent is.
         Row("model", s => s.Model, "z-ai/glm-5.2", "z-ai/glm-5.2"),
         // The parent's list, so a turn the person moved to another model moves its workers with
@@ -98,12 +108,17 @@ public sealed class AgentSpecProjectionTests
             new[] { "text_read" }, new[] { "text_read" }),
         Row("whitelist patterns", s => s.WhitelistPatterns,
             new[] { "allow-*" }, new[] { "allow-*" }),
+        // A handoff only ever comes from a conversation a person is in. A worker's calls carry its
+        // parent's context, so the server cannot tell them apart; the worker is simply not given
+        // the tool, and reports a login wall to its parent instead.
+        Row("withheld tools", s => s.WithheldTools.Order().ToArray(),
+            Array.Empty<string>(), new[] { WebLoginTool.Name, WebLoginsTool.Name }.Order().ToArray()),
         // Routing says who serves a model, so it travels with the model: the worker gets what
         // its parent resolved, not the global default it would fall back to on its own.
         Row("provider routing", s => s.ProviderRouting, _declaredRouting, _declaredRouting),
         // An endpoint stops being a bare string here. Everything the projection reads came out of
         // appsettings.json, so everything it composes is marked configured; a dynamic one is
-        // contributed later, by the registry of live outposts, and never by a definition. Every
+        // contributed later, by the household's open outposts, and never by a definition. Every
         // configured endpoint is a deployment server, so every one presents the deployment secret
         // its /mcp asks for — a worker's as much as its parent's.
         Row("mcp server endpoints", s => s.McpServerEndpoints,
@@ -135,8 +150,30 @@ public sealed class AgentSpecProjectionTests
         AgentSpecProjection.ForSubAgent(
                 _subAgentDefinition with { UsesOutposts = ownDefinition },
                 Spawn(usesOutposts: parent), _openRouter, _patchable, lemonadeHostAddress: null,
-                McpSecret, null)
+                _credentials, null)
             .UsesOutposts.ShouldBe(expected);
+    }
+
+    // One credential no longer opens every server: each endpoint presents its own host's, so a
+    // leak from one container opens that container alone.
+    [Fact]
+    public void EachConfiguredEndpoint_PresentsItsOwnHostsCredential()
+    {
+        string[] endpoints = ["http://mcp-vault:8080/mcp", "http://mcp-sandbox:8080/mcp"];
+
+        Project(_agentDefinition with { McpServerEndpoints = endpoints }).McpServerEndpoints.ShouldBe(
+        [
+            McpServerEndpoint.Configured("http://mcp-vault:8080/mcp", "vault-secret"),
+            McpServerEndpoint.Configured("http://mcp-sandbox:8080/mcp", "sandbox-secret")
+        ]);
+        AgentSpecProjection.ForSubAgent(
+                _subAgentDefinition with { McpServerEndpoints = endpoints }, Spawn(), _openRouter, _patchable,
+                lemonadeHostAddress: null, _credentials, null)
+            .McpServerEndpoints.ShouldBe(
+            [
+                McpServerEndpoint.Configured("http://mcp-vault:8080/mcp", "vault-secret"),
+                McpServerEndpoint.Configured("http://mcp-sandbox:8080/mcp", "sandbox-secret")
+            ]);
     }
 
     // An agent that calls nothing is dialled for its servers' prompts alone; one that also enabled a
@@ -166,7 +203,7 @@ public sealed class AgentSpecProjectionTests
 
     private static AgentSpec Project(AgentDefinition definition) => AgentSpecProjection.ForAgent(
         definition, new AgentKey("conv-1", "jack"), "fran", _openRouter, _patchable, lemonadeHostAddress: null,
-        McpSecret, new DeploymentEndpoints(definition.McpServerEndpoints), logger: null);
+        _credentials, new DeploymentEndpoints(definition.McpServerEndpoints), logger: null);
 
     // The session id is what OpenRouter sticks a prompt cache to, so two spawns of the same
     // subagent definition must not land on one.

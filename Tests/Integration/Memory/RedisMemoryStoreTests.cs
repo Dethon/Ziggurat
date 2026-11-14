@@ -163,11 +163,11 @@ public class RedisMemoryStoreTests(MemorySearchFixture redisFixture) : IClassFix
         // Arrange
         var store = CreateStore();
         var userId = $"user_{Guid.NewGuid():N}";
-        var memory = CreateMemory(userId, "Accessed memory");
+        // Last read an hour ago: the update reads the wall clock, which this machine's VM has been seen
+        // to step back by a second between two readings ten milliseconds apart (pass 18's suite).
+        var memory = CreateMemory(userId, "Accessed memory") with { LastAccessedAt = DateTimeOffset.UtcNow.AddHours(-1) };
         await store.StoreAsync(memory);
         var originalAccessTime = memory.LastAccessedAt;
-
-        await Task.Delay(10); // Ensure time difference
 
         // Act
         var updated = await store.UpdateAccessAsync(userId, memory.Id);
@@ -425,6 +425,36 @@ public class RedisMemoryStoreTests(MemorySearchFixture redisFixture) : IClassFix
 
         // Assert
         userIds.ShouldContain(userId);
+    }
+
+    // Memory is keyed by account now, and dreaming visits whoever this names: every account
+    // holding a memory or a profile is one of them, under the opaque id the accounts service gave.
+    [Fact]
+    public async Task GetAllUserIdsAsync_AccountsHoldingMemoriesOrAProfile_AreEachNamed()
+    {
+        // Arrange
+        var store = CreateStore();
+        var fran = Guid.NewGuid().ToString("N");
+        var ana = Guid.NewGuid().ToString("N");
+        var luis = Guid.NewGuid().ToString("N");
+        await store.StoreAsync(CreateMemory(fran, "Le gusta el café solo"));
+        await store.StoreAsync(CreateMemory(fran, "Tiene un gato"));
+        await store.StoreAsync(CreateMemory(ana, "Es alérgica a los cacahuetes"));
+        await store.SaveProfileAsync(new PersonalityProfile
+        {
+            UserId = luis,
+            Summary = "Va al grano",
+            LastUpdated = DateTimeOffset.UtcNow
+        });
+
+        // Act
+        var userIds = await store.GetAllUserIdsAsync();
+
+        // Assert
+        userIds.ShouldContain(fran);
+        userIds.ShouldContain(ana);
+        userIds.ShouldContain(luis);
+        userIds.Count(id => id == fran).ShouldBe(1);
     }
 
     [Fact]

@@ -3,9 +3,11 @@ using Domain.Prompts;
 using Domain.Tools.HomeAssistant.Vfs;
 using Infrastructure.Clients.Voice;
 using Infrastructure.Extensions;
+using Infrastructure.Metrics;
 using Infrastructure.Utils;
 using Mcp.Hosting;
 using McpServerHomeAssistant.McpPrompts;
+using McpServerHomeAssistant.Services;
 using McpServerHomeAssistant.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -71,11 +73,18 @@ public static class ConfigModule
                 // buffers nothing itself (docs/adr/0038).
                 .AddChannelServer(DeliveryPolicy.Broadcast, noOutboundSurface: true)
                 .AddFileSystemTools<HaFileSystem>()
+                // The watches' delegations, for the agent's redelegate and retire-signing-keys.
+                .AddDelegationStore<WatchDelegationStore>()
                 .AddFileSystemResource<HaFileSystem>()
                 // The skills that teach this server's tools ship beside them, so a deployment
                 // without the home cannot advertise how to watch it.
                 .AddSkills(HomeWatchesSkill.Text, HomeAssistantSkill.Text)
                 .WithPrompts<McpSystemPrompt>();
+
+            if (settings.Metrics.Url.Length > 0)
+            {
+                services.AddMetricsPublishing("mcp-homeassistant", settings.Metrics);
+            }
 
             return services;
         }

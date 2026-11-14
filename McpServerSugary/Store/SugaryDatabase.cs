@@ -10,8 +10,9 @@ public static class SugaryDatabase
     // One registration for the server and for the import command, so both open the same file the
     // same way.
     public static IServiceCollection AddSugaryStore(this IServiceCollection services, SugarySettings settings) =>
-        services.AddDbContextFactory<SugaryDbContext>(options =>
-            options.UseSqlite($"Data Source={settings.DatabasePath}"));
+        services
+            .AddDbContextFactory<SugaryDbContext>(options => options.UseSqlite($"Data Source={settings.DatabasePath}"))
+            .AddSingleton<SugaryStore>();
 
     // Creates the file's directory and brings the schema up to date. Run before anything reads or
     // writes; never at registration, which must not touch the disk.

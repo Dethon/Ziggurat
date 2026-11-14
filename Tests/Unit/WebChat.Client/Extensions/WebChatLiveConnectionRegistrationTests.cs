@@ -8,6 +8,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Services;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State.Alert;
 using WebChat.Client.State.Approval;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Hub;
@@ -72,6 +73,8 @@ public sealed class WebChatLiveConnectionRegistrationTests
         services.AddScoped<NavigationManager>(_ => new FakeNavigationManager());
         services.AddScoped(_ => new Mock<IJSRuntime>().Object);
         services.AddScoped<ILocalStorageService>(_ => new FakeLocalStorageService());
+        services.AddScoped<IOpenTopicMemory>(_ => new FakeOpenTopicMemory());
+        services.AddScoped<IAccountService, AccountService>();
 
         services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
         services.AddScoped<ConnectionEventDispatcher>();
@@ -83,12 +86,14 @@ public sealed class WebChatLiveConnectionRegistrationTests
         services.AddScoped<ITopicService, TopicService>();
         services.AddScoped<IAgentService, AgentService>();
         services.AddScoped<IApprovalService, ApprovalService>();
+        services.AddScoped<IAlertService, AlertService>();
         services.AddScoped<AttachmentEndpointResolver>();
         services.AddScoped<IAttachmentService, AttachmentService>();
         services.AddScoped<IAttachmentUploader, HttpAttachmentUploader>();
         services.AddScoped<IDictationService, DictationService>();
         services.AddScoped<IDictationBridge, JsDictationBridge>();
         services.AddScoped<ApprovalResponder>();
+        services.AddScoped<AlertDismisser>();
 
         services.AddWebChatStores();
         services.AddWebChatEffects();

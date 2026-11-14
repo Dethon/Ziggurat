@@ -24,12 +24,14 @@ public class CreateConversationToolTests
     {
         _streamService = new StreamService(
             _sessionService,
+            new Mock<IThreadStateStore>().Object,
             new Mock<IPushNotificationService>().Object,
             new Mock<ILogger<StreamService>>().Object);
         _services = new ServiceCollection()
             .AddSingleton(_sessionService)
             .AddSingleton(_streamService)
             .AddSingleton(_hubSender.Object)
+            .AddSingleton(_topics.Store)
             .AddSingleton<IConversationFactory>(new ConversationFactory(_topics.Store, TimeProvider.System))
             .BuildServiceProvider();
     }
@@ -111,9 +113,46 @@ public class CreateConversationToolTests
         _sessionService.GetTopicIdByConversationId("11:22").ShouldBe(topic.TopicId);
         _streamService.GetStreamState(topic.TopicId).ShouldNotBeNull().CurrentPrompt.ShouldBe("a plate of paella");
         _hubSender.Verify(s => s.SendToGroupAsync(
-            "space:default", "OnTopicChanged",
+            "space:home:default:user:fran", "OnTopicChanged",
             It.Is<TopicChangedNotification>(n => n.TopicId == topic.TopicId && n.ChangeType == TopicChangeType.Created),
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // A topic an agent opens (a schedule's fire, a meal's copy) has its first turn streaming at once, and
+    // the clients that were told of the topic are told of that stream too, as a later turn's are: a
+    // client that only added the row held it at no messages, never showed its preview or its badge,
+    // and treated it as read when opened.
+    [Fact]
+    public async Task McpRun_ATopicItMints_AnnouncesItsFirstStreamAfterTheTopic()
+    {
+        var sent = new List<string>();
+        _hubSender.Setup(s => s.SendToGroupAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<object>(), It.IsAny<CancellationToken>()))
+            .Callback((string _, string method, object _, CancellationToken _) => sent.Add(method))
+            .Returns(Task.CompletedTask);
+
+        await ShowAsync("11:22", "a plate of paella");
+
+        var topicId = _topics.Saved.ShouldHaveSingleItem().TopicId;
+        sent.Distinct().ShouldBe(["OnTopicChanged", "OnStreamStarted"]);
+        sent.LastIndexOf("OnTopicChanged").ShouldBeLessThan(sent.IndexOf("OnStreamStarted"));
+        _hubSender.Verify(s => s.SendToGroupAsync(
+            "space:home:default:user:fran", "OnStreamStarted",
+            It.Is<StreamStartedNotification>(n => n.TopicId == topicId),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // The prompt a minted topic opens with is buffered with the time it was sent, as a later turn's
+    // is: a fired reminder's notice was drawn with no time while the page followed it live.
+    [Fact]
+    public async Task McpRun_ATopicItMints_BuffersItsPromptWithTheTimeItWasSent()
+    {
+        await ShowAsync("11:22", "a plate of paella");
+
+        var topicId = _topics.Saved.ShouldHaveSingleItem().TopicId;
+        var prompt = _streamService.GetStreamState(topicId).ShouldNotBeNull().BufferedMessages.ShouldHaveSingleItem();
+        prompt.Content.ShouldBe("a plate of paella");
+        prompt.UserMessage.ShouldNotBeNull().Timestamp.ShouldNotBeNull();
     }
 
     [Fact]
@@ -126,6 +165,7 @@ public class CreateConversationToolTests
             ConversationId = "11:22", Content = string.Empty,
             ContentType = ReplyContentType.StreamComplete, IsComplete = true
         });
+        _hubSender.Invocations.Clear();
 
         var result = await ShowAsync("11:22", "about 300 g");
 
@@ -134,7 +174,7 @@ public class CreateConversationToolTests
         _streamService.GetStreamState(topicId).ShouldNotBeNull().BufferedMessages
             .ShouldContain(m => m.Content == "about 300 g" && m.UserMessage != null);
         _hubSender.Verify(s => s.SendToGroupAsync(
-            "space:default", "OnStreamStarted",
+            "space:home:default:user:fran", "OnStreamStarted",
             It.Is<StreamStartedNotification>(n => n.TopicId == topicId),
             It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -165,10 +205,72 @@ public class CreateConversationToolTests
         _topics.Saved.ShouldBeEmpty();
     }
 
-    private Task<string> ShowAsync(string conversationId, string prompt) =>
+    // A private chat's conversation is the chat's, whichever agent answers it: on the shared Telegram
+    // bot a chat switches agents with /agent, and one person writes to jack's and jonas's bots in one
+    // chat. Each agent's turns are a history of their own, so each gets its copy, and the live session
+    // follows the turn being announced: in pass 20 the jonas turns after a switch from sugary were
+    // attached to sugary's topic and no copy of the jonas conversation was ever made.
+    [Fact]
+    public async Task McpRun_AnotherAgentsTurnOnAConversationAnAgentsCopyHolds_MintsThatAgentsOwnCopy()
+    {
+        await ShowAsync("11:22", "a plate of paella");
+        var sugarys = _topics.Saved.ShouldHaveSingleItem();
+        _hubSender.Invocations.Clear();
+
+        var result = await ShowAsync("11:22", "what is seven times eight?", agentId: "jonas", topicName: "Telegram: Fran");
+
+        result.ShouldBe("11:22");
+        var jonas = _topics.Saved.Where(t => t.AgentId == "jonas").ShouldHaveSingleItem();
+        (jonas.ChatId, jonas.ThreadId, jonas.Name).ShouldBe((11L, 22L, "Telegram: Fran"));
+        _sessionService.GetTopicIdByConversationId("11:22").ShouldBe(jonas.TopicId);
+        _streamService.GetStreamState(jonas.TopicId).ShouldNotBeNull().CurrentPrompt.ShouldBe("what is seven times eight?");
+        (_streamService.GetStreamState(sugarys.TopicId)?.BufferedMessages ?? [])
+            .ShouldNotContain(m => m.Content == "what is seven times eight?");
+    }
+
+    // Switching back finds the first agent's copy again rather than minting another, and its turn is
+    // announced there.
+    [Fact]
+    public async Task McpRun_SwitchingBackToAnAgentWhoseCopyHoldsTheConversation_AttachesToThatCopy()
+    {
+        await ShowAsync("11:22", "a plate of paella");
+        var sugarys = _topics.Saved.ShouldHaveSingleItem().TopicId;
+        await ShowAsync("11:22", "what is seven times eight?", agentId: "jonas", topicName: "Telegram: Fran");
+        await _streamService.WriteReplyAsync(new SendReplyParams
+        {
+            ConversationId = "11:22", Content = string.Empty,
+            ContentType = ReplyContentType.StreamComplete, IsComplete = true
+        });
+
+        await ShowAsync("11:22", "about 300 g");
+
+        _topics.Saved.Count.ShouldBe(2);
+        _sessionService.GetTopicIdByConversationId("11:22").ShouldBe(sugarys);
+        _streamService.GetStreamState(sugarys).ShouldNotBeNull().BufferedMessages
+            .ShouldContain(m => m.Content == "about 300 g" && m.UserMessage != null);
+    }
+
+    // A topic whose session the conversation has moved on from ends without taking the newer one's
+    // pointer with it.
+    [Fact]
+    public void EndSession_OfATopicTheConversationMovedOnFrom_LeavesTheNewerTopicHoldingIt()
+    {
+        _sessionService.StartSession("sugarys", "sugary", 11, 22, "default", "Telegram: Fran");
+        _sessionService.StartSession("jonass", "jonas", 11, 22, "default", "Telegram: Fran");
+
+        _sessionService.EndSession("sugarys");
+
+        _sessionService.GetTopicIdByConversationId("11:22").ShouldBe("jonass");
+        _sessionService.GetTopicIdByChatId(11).ShouldBe("jonass");
+    }
+
+    // Sugary's turns are the person's, so the copy is theirs: its news is for their own connections.
+    private Task<string> ShowAsync(
+        string conversationId, string prompt, string agentId = "sugary", string topicName = "Meal estimate") =>
         CreateConversationTool.McpRun(
-            "sugary", "Meal estimate", "sugary-app", _services,
-            initialPrompt: prompt, address: null, existingConversationId: conversationId);
+            agentId, topicName, "sugary-app", _services,
+            initialPrompt: prompt, address: null, existingConversationId: conversationId,
+            principal: new Principal("sugary", "fran", new Account("home", "fran")));
 
     // The two calls the factory makes of the thread store, kept in memory.
     private sealed class TopicTable

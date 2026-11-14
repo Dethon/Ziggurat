@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Domain.Contracts;
 using Domain.DTOs;
+using Domain.DTOs.Channel;
 using Domain.Tools;
 using Domain.Tools.Memory;
 using Moq;
@@ -15,8 +16,16 @@ public class MemoryForgetToolTests
     private readonly Mock<IMemoryStore> _store = new();
     private readonly Mock<IEmbeddingService> _embedding = new();
 
+    // The account is the turn's, read per call; the agent's FeatureConfig.UserId is its opening
+    // turn's sender and names nobody, so it is set to a label that matches no memory here.
     private MemoryForgetTool CreateTool(string? userId = UserId) =>
-        new(_store.Object, _embedding.Object, new FeatureConfig(UserId: userId));
+        new(_store.Object, _embedding.Object,
+            new FeatureConfig(UserId: "Fran", ConversationContextProvider: () => TurnActingFor(userId)));
+
+    private static ConversationContext TurnActingFor(string? accountUserId) => new(
+        "jonas", "conv-1", "Fran", new ReplyTarget("signalr", "conv-1"),
+        Principal: new Principal(
+            "signalr", "Fran", accountUserId is null ? null : new Account("home", accountUserId)));
 
     private float[] StubEmbedding(string query, params float[] values)
     {
@@ -201,9 +210,9 @@ public class MemoryForgetToolTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    // Memory is scoped per user, so a run with no identity has nothing to scope to. That is a
+    // Memory is a person's, so a turn acting for no account has nobody's to reach. That is a
     // missing credential, not a passing outage — the envelope says so and offers no retry.
-    public async Task Run_MissingUserIdInFeatureConfig_RefusesAsAuthenticationAndDoesNotTouchStore(string? userId)
+    public async Task Run_ATurnActingForNoAccount_RefusesAsAuthenticationAndDoesNotTouchStore(string? userId)
     {
         var result = await CreateTool(userId).Run(memoryId: "mem1");
 

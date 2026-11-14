@@ -17,6 +17,9 @@ public sealed class AgentSelectionEffect : IDisposable
     private readonly ILogger<AgentSelectionEffect> _logger;
     private readonly IDisposable _selectAgentRegistration;
     private readonly IDisposable _setAgentsRegistration;
+    private readonly IDisposable _spaceValidatedRegistration;
+    private readonly IDisposable _reloadTopicsRegistration;
+    private readonly TopicsStore _topicsStore;
     private string? _previousAgentId;
 
     public AgentSelectionEffect(
@@ -30,6 +33,7 @@ public sealed class AgentSelectionEffect : IDisposable
         ILogger<AgentSelectionEffect> logger)
     {
         _dispatcher = dispatcher;
+        _topicsStore = topicsStore;
         _sessionService = sessionService;
         _localStorage = localStorage;
         _topicService = topicService;
@@ -43,14 +47,40 @@ public sealed class AgentSelectionEffect : IDisposable
         // catalog no longer contains it, and the hub dispatches SetAgents whenever the agent
         // re-registers its catalog.
         _selectAgentRegistration = dispatcher.RegisterHandler<SelectAgent>(
-            _ => HandleAgentChangedAsync(topicsStore.State.SelectedAgentId)
+            action => HandleAgentChangedAsync(topicsStore.State.SelectedAgentId, action.Picked)
                 .LogFaults(_logger, nameof(SelectAgent)));
         _setAgentsRegistration = dispatcher.RegisterHandler<SetAgents>(
             _ => HandleAgentChangedAsync(topicsStore.State.SelectedAgentId)
                 .LogFaults(_logger, nameof(SetAgents)));
+
+        // A space opened mid-session opens on its own agent, as first load opens the first space on
+        // its own; before the catalog is known that is first load's to do.
+        _spaceValidatedRegistration = dispatcher.RegisterHandler<SpaceValidated>(
+            _ => OpenSpaceOnItsAgentAsync().LogFaults(_logger, nameof(SpaceValidated)));
+        _reloadTopicsRegistration = dispatcher.RegisterHandler<ReloadTopics>(
+            _ => LoadTopicsForAgentAsync(topicsStore.State.SelectedAgentId).LogFaults(_logger, nameof(ReloadTopics)));
     }
 
-    public async Task HandleAgentChangedAsync(string? agentId)
+    private async Task OpenSpaceOnItsAgentAsync()
+    {
+        var agents = _topicsStore.State.Agents;
+        if (agents.Count == 0 || _topicsStore.State.SelectedAgentId is null)
+        {
+            return;
+        }
+
+        var agent = await SpaceAgent.ChooseAsync(_localStorage, agents, _spaceStore.State);
+        if (agent.Id != _topicsStore.State.SelectedAgentId)
+        {
+            _dispatcher.Dispatch(new SelectAgent(agent.Id, Picked: false));
+            return;
+        }
+
+        // The same agent in another space is another list of conversations.
+        await LoadTopicsForAgentAsync(agent.Id);
+    }
+
+    public async Task HandleAgentChangedAsync(string? agentId, bool picked = true)
     {
         var previousAgentId = _previousAgentId;
         _previousAgentId = agentId;
@@ -63,7 +93,11 @@ public sealed class AgentSelectionEffect : IDisposable
         }
 
         _sessionService.ClearSession();
-        await _localStorage.SetAsync("selectedAgentId", agentId ?? "");
+        if (picked)
+        {
+            await _localStorage.SetAsync(SpaceAgent.PickKeyOf(_spaceStore.State.CurrentSlug), agentId ?? "");
+        }
+
         await LoadTopicsForAgentAsync(agentId);
     }
 
@@ -98,5 +132,7 @@ public sealed class AgentSelectionEffect : IDisposable
     {
         _selectAgentRegistration.Dispose();
         _setAgentsRegistration.Dispose();
+        _spaceValidatedRegistration.Dispose();
+        _reloadTopicsRegistration.Dispose();
     }
 }

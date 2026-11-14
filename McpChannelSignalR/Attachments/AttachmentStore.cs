@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Domain.Agents;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
@@ -23,7 +24,13 @@ public sealed class AttachmentStore(
 {
     private const string MetadataFileName = "meta.json";
 
-    public sealed record Record(AttachmentReference Reference, string Path, string? SpaceSlug, DateTimeOffset StoredAt);
+    // Conversation is the history the file was kept for: its conversation and the agent holding it.
+    // A file kept before files named their agent names none, and was the home's.
+    public sealed record Record(
+        AttachmentReference Reference, string Path, string? SpaceSlug, DateTimeOffset StoredAt, AgentKey Conversation)
+    {
+        public string ConversationId => Conversation.ConversationId;
+    }
 
     private sealed record Metadata(
         string FileName,
@@ -31,16 +38,21 @@ public sealed class AttachmentStore(
         long SizeBytes,
         string ConversationId,
         string? SpaceSlug,
-        DateTimeOffset StoredAt);
+        DateTimeOffset StoredAt,
+        string? AgentId = null)
+    {
+        public AgentKey Conversation => new(ConversationId, AgentId);
+    }
 
     public async Task<AttachmentReference> SaveAsync(
-        string conversationId,
+        AgentKey conversation,
         string? spaceSlug,
         string fileName,
         string mediaType,
         Stream content,
         CancellationToken ct)
     {
+        var conversationId = conversation.ConversationId;
         var safeName = SafeFileName(fileName);
         var attachmentId = Guid.NewGuid().ToString("N");
         var id = $"{ConversationKey(conversationId)}/{attachmentId}";
@@ -56,7 +68,7 @@ public sealed class AttachmentStore(
         }
 
         var metadata = new Metadata(
-            safeName, mediaType, size, conversationId, spaceSlug, timeProvider.GetUtcNow());
+            safeName, mediaType, size, conversationId, spaceSlug, timeProvider.GetUtcNow(), conversation.AgentId);
         await File.WriteAllTextAsync(
             Path.Combine(directory, MetadataFileName), JsonSerializer.Serialize(metadata), ct);
 
@@ -76,13 +88,14 @@ public sealed class AttachmentStore(
     // same copy kept before — is never written over.
     public async Task<bool> SaveCopyAsync(
         string id,
-        string conversationId,
+        AgentKey conversation,
         string? spaceSlug,
         string fileName,
         string mediaType,
         byte[] bytes,
         CancellationToken ct)
     {
+        var conversationId = conversation.ConversationId;
         var directory = ResolveDirectory(id);
         if (directory is null
             || id.Split('/')[0] != ConversationKey(conversationId)
@@ -95,7 +108,7 @@ public sealed class AttachmentStore(
         var safeName = SafeFileName(fileName);
         await File.WriteAllBytesAsync(Path.Combine(directory, safeName), bytes, ct);
         var metadata = new Metadata(
-            safeName, mediaType, bytes.LongLength, conversationId, spaceSlug, timeProvider.GetUtcNow());
+            safeName, mediaType, bytes.LongLength, conversationId, spaceSlug, timeProvider.GetUtcNow(), conversation.AgentId);
         await File.WriteAllTextAsync(
             Path.Combine(directory, MetadataFileName), JsonSerializer.Serialize(metadata), ct);
         return true;
@@ -134,7 +147,7 @@ public sealed class AttachmentStore(
             MediaType = metadata.MediaType,
             SizeBytes = metadata.SizeBytes
         };
-        return new Record(reference, path, metadata.SpaceSlug, metadata.StoredAt);
+        return new Record(reference, path, metadata.SpaceSlug, metadata.StoredAt, metadata.Conversation);
     }
 
     public async Task<byte[]?> ReadBytesAsync(string id, CancellationToken ct)
@@ -193,14 +206,16 @@ public sealed class AttachmentStore(
             return 0;
         }
 
-        // Any readable metadata names the conversation; a directory with none was never completed
-        // and holds nothing the transcript can reference, so it needs no liveness answer.
-        // Any readable metadata names the conversation; a directory with none was never completed
-        // and holds nothing the transcript can reference, so it needs no liveness answer.
-        var conversationId = attachments
-            .Select(a => a.Metadata?.ConversationId)
-            .FirstOrDefault(id => id is not null);
-        if (conversationId is not null && await liveness.IsAliveAsync(conversationId, ct))
+        // Any readable metadata names the conversation and the agent holding it; a directory with none
+        // was never completed and holds nothing the transcript can reference, so it needs no liveness
+        // answer. A file that names its agent is asked about under it before one that does not.
+        var heldBy = attachments
+            .Select(a => a.Metadata)
+            .OfType<Metadata>()
+            .OrderBy(m => m.AgentId is null)
+            .Select(m => (AgentKey?)m.Conversation)
+            .FirstOrDefault();
+        if (heldBy is { } held && await liveness.IsAliveAsync(held, ct))
         {
             return 0;
         }

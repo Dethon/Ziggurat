@@ -15,8 +15,8 @@ MCP tools wrap Domain tools and expose them via Model Context Protocol.
 2. `[McpServerToolType]` class attribute, `[McpServerTool]` + `[Description]` method attributes
 3. Return `CallToolResult` via `ToolResponse.Create()`
 
-Any file under `McpServer*/McpTools/*.cs` is a working example, `ConversationScope.TryResolve`
-guard included.
+Any file under `McpServer*/McpTools/*.cs` is a working example, `context.TryScope` guard
+included.
 
 The scope guard is only needed by tools that cache per-caller state across calls
 (`file_search`/`download_file`, the `web_*` browse tools). A stateless tool takes no scope at all.
@@ -52,7 +52,7 @@ mcp-hosting rule owns the filter's contract), which logs and returns an error re
 
 `McpServer.SessionId` is always null under the 2026-07-28 protocol, and `ClientInfo.Name` is the
 *agent* name, so it collapses every user and conversation into one bucket. Per-caller state is
-namespaced with `Domain.Channels.ConversationScope`, which reads the `ConversationContext` the
-agent stamps into every `tools/call`'s `_meta`. Never fall back when it is absent — return a
+namespaced by the call's turn, read through `Mcp.Hosting`'s `CallTurn` accessor
+(`context.TryScope(out var scope)`, `context.Turn`) — never by parsing the `_meta` yourself. Never fall back when it is absent — return a
 `ToolError`, because a shared-bucket fallback leaks state across conversations and a per-request
 fallback silently severs multi-call flows.
