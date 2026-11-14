@@ -244,6 +244,8 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         await SeedSecondPasskeyAsync(server, fran.UserId);
 
         await page.GotoAsync(new Uri(server.Address, "/accounts/account").ToString());
+        // The page asks before taking a passkey away.
+        page.Dialog += (_, dialog) => dialog.AcceptAsync();
         await page.Locator("li[data-passkey-id]", new PageLocatorOptions { HasText = "this device" })
             .GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Revoke passkey" }).ClickAsync();
         await page.WaitForURLAsync(url => url.Contains("/accounts/sign-in", StringComparison.Ordinal));

@@ -90,6 +90,20 @@ public sealed class AccountServiceTests
             "/accounts/account?returnUrl=" + Uri.EscapeDataString("http://localhost/cocina"));
     }
 
+    // The person's own account — passkeys, devices, signing out — is the accounts service's page, and an
+    // installed app has no address bar to reach it by: the app opens it, saying where to come back to.
+    [Fact]
+    public void OpenAccount_GoesToTheAccountPageAndSaysWhereToComeBack()
+    {
+        var navigation = new FakeNavigationManager("http://localhost/cocina?topic=7");
+        var service = new AccountService(new HttpClient(), navigation);
+
+        service.OpenAccount();
+
+        navigation.NavigatedTo.ShouldHaveSingleItem().ShouldBe(
+            "/accounts/account?returnUrl=" + Uri.EscapeDataString("http://localhost/cocina?topic=7"));
+    }
+
     private AccountService Service(HttpStatusCode status, string body) =>
         new(new HttpClient(new AnsweringHandler(status, body)) { BaseAddress = new Uri("http://localhost/") }, _navigation);
 

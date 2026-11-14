@@ -108,6 +108,31 @@ public class WebChatSignInE2ETests(WebChatE2EFixture fixture)
             .ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 });
     }
 
+    // An installed app has no address bar: the person's own account — passkeys, devices, signing out —
+    // is reached from the avatar, and the account page's Back returns to the chat it was opened from,
+    // with nothing but taps on the pages themselves.
+    [SkippableFact]
+    public async Task TheAvatar_OpensTheAccountPage_WhoseBackReturnsToTheChat()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        var chat = page.Url;
+        var avatar = page.Locator("button.signed-in-person");
+        await Assertions.Expect(avatar).ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 });
+
+        await avatar.ClickAsync();
+        await page.WaitForURLAsync(url => url.Contains("/accounts/account", StringComparison.Ordinal));
+        await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Sign out", Exact = true }))
+            .ToBeVisibleAsync();
+
+        await page.Locator("a[data-back]").ClickAsync();
+        await page.WaitForURLAsync(chat);
+        await Assertions.Expect(page.Locator("textarea.chat-input"))
+            .ToBeEnabledAsync(new LocatorAssertionsToBeEnabledOptions { Timeout = 60_000 });
+    }
+
     // A platform authenticator that keeps discoverable credentials and verifies its user, standing
     // in for the phone's; it belongs to the page, so enrolling and signing in share one.
     private static async Task AddVirtualAuthenticatorAsync(IPage page)

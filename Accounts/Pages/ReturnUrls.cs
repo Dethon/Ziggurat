@@ -29,4 +29,17 @@ public static class ReturnUrls
             ? url.ToString()
             : front;
     }
+
+    // The return when it is one of the deployment's own, and nothing otherwise — for a page that has a
+    // better fallback of its own than the main host's front page.
+    public static string? Allowed(AccountsSettings settings, string? returnUrl)
+    {
+        if (string.IsNullOrEmpty(returnUrl))
+        {
+            return null;
+        }
+
+        var resolved = Resolve(settings, returnUrl);
+        return resolved == settings.PublicBase.ToString() && returnUrl != resolved ? null : resolved;
+    }
 }

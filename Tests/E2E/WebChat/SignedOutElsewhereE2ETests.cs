@@ -36,7 +36,7 @@ public partial class SignedOutElsewhereE2ETests(WebChatE2EFixture fixture)
             .ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
 
         await laptop.GotoAsync(new Uri(new Uri(fixture.WebChatUrl), "/accounts/account").ToString());
-        var otherDevice = laptop.Locator("li[data-session-id]").Filter(new LocatorFilterOptions { HasNotText = "(this device)" });
+        var otherDevice = laptop.Locator("li[data-session-id]").Filter(new LocatorFilterOptions { HasNot = laptop.Locator(".this-device") });
         await Assertions.Expect(otherDevice).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
         await otherDevice.GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Sign out this device" }).ClickAsync();
         await Assertions.Expect(laptop.Locator("li[data-session-id]")).ToHaveCountAsync(1);

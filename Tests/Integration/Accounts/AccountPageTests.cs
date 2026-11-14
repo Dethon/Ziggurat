@@ -66,20 +66,131 @@ public class AccountPageTests
         System.Text.RegularExpressions.Regex.Match(page, "Signed in [^<]*").Value.ShouldNotContain("UTC");
     }
 
-    // The chat client opens this page by navigating away from itself, and an installed app has no
-    // Back button: with no way back on the page, a person who looked at their account was stuck there
-    // until they closed the app.
-    [Fact]
-    public async Task ThePage_LeadsBackToTheChat()
+    // An app opens this page by navigating away from itself, and an installed app has no Back button:
+    // with no way back on the page, a person who looked at their account was stuck there until they
+    // closed the app. Back is where the app said it came from, when that is one of the deployment's
+    // own; otherwise the front of whichever host the page is on — the chat's, Sugary's, the dashboard's.
+    [Theory]
+    [InlineData("/cocina?topic=7", "/cocina?topic=7")]
+    [InlineData("https://elsewhere.example/phish", "/")]
+    [InlineData(null, "/")]
+    public async Task ThePage_LeadsBackWhereItWasOpenedFrom(string? returnUrl, string back)
     {
         await using var server = await AccountsServer.StartAsync();
         var fran = await server.MintOperatorAsync("Fran");
         var session = await server.MintSessionAsync(fran.UserId);
 
-        var page = await server.SignedIn(session).PageAsync(Account);
+        var page = await server.SignedIn(session).PageAsync(WithReturn(returnUrl));
 
-        page.ShouldContain("<a href=\"/\">Back to chat</a>");
+        System.Text.RegularExpressions.Regex.Match(page, "<a [^>]*data-back[^>]*>").Value
+            .ShouldContain($"href=\"{System.Net.WebUtility.HtmlEncode(back)}\"");
     }
+
+    // A form posts and comes back to the page, and the way back must survive that trip: saving a name
+    // used to drop where the app had sent the person from, and Back then went to the chat's front page.
+    [Fact]
+    public async Task AFormsRoundTrip_KeepsWhereToGoBack()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var laura = await server.SeedMemberAsync("Laura");
+        var browser = server.SignedIn(await server.MintSessionAsync(laura));
+        var here = WithReturn("/cocina");
+
+        var page = await browser.PageAsync(here);
+        page.ShouldContain($"action=\"{Account}/profile?returnUrl=%2Fcocina\"");
+
+        var response = await browser.PostAsync(here, $"{Account}/profile?returnUrl=%2Fcocina", ("displayName", "Laura"), ("avatarUrl", ""));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+        response.Headers.Location!.ToString().ShouldBe(here);
+    }
+
+    // Signing out is what a person comes to this page for most, so it is one plain button rather
+    // than a row to find among the devices, and it leaves for sign-in — saying they signed out, and
+    // not offering the passkey at once — which then brings them back to the app, not to this page.
+    [Fact]
+    public async Task SigningOut_EndsThisDevicesSessionAndLeavesForSignInAndBack()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var sessions = server.Service<SessionStore>();
+        var phone = (await sessions.IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
+        var laptop = (await sessions.IssueAsync(fran.UserId, null, "laptop", CancellationToken.None))!;
+        var browser = server.SignedIn(phone.Token);
+
+        var page = await browser.PageAsync(WithReturn("/cocina"));
+        page.ShouldContain($"action=\"/accounts/sign-out?returnUrl=%2Fcocina\"");
+        var response = await browser.PostAsync(WithReturn("/cocina"), "/accounts/sign-out?returnUrl=%2Fcocina");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+        response.Headers.Location.ShouldBe(new Uri(server.Address, "/accounts/sign-in?returnUrl=%2Fcocina&signedOut=1"));
+        response.Headers.GetValues("Set-Cookie").ShouldContain(c => c.StartsWith("ziggurat_session=;", StringComparison.Ordinal));
+        (await server.VerifyAsync(phone.Token, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await server.VerifyAsync(laptop.Token)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task SigningOutWithoutTheFormsToken_IsRefused()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var session = await server.MintSessionAsync(fran.UserId);
+
+        var response = await server.SignedIn(session).PostWithoutPageAsync("/accounts/sign-out");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await server.VerifyAsync(session)).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // Signing out this device from its own row is the same sign-out: it used to come back to this
+    // page, which then sent the now signed-out person to sign in and back to the account page.
+    [Fact]
+    public async Task SigningOutThisDeviceFromItsRow_LeavesForSignInAndBack()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var phone = (await server.Service<SessionStore>().IssueAsync(fran.UserId, null, "phone", CancellationToken.None))!;
+        var browser = server.SignedIn(phone.Token);
+
+        var response = await browser.PostAsync(WithReturn("/cocina"), $"{Account}/sessions/{phone.Id}/revoke?returnUrl=%2Fcocina");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+        response.Headers.Location.ShouldBe(new Uri(server.Address, "/accounts/sign-in?returnUrl=%2Fcocina&signedOut=1"));
+    }
+
+    // A device is listed as a person would name it, its user agent kept for whoever wants it.
+    [Fact]
+    public async Task ThePage_NamesEachDeviceByItsBrowserAndSystem()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        const string android =
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36";
+        var phone = (await server.Service<SessionStore>().IssueAsync(fran.UserId, null, android, CancellationToken.None))!;
+
+        var page = await server.SignedIn(phone.Token).PageAsync(Account);
+
+        page.ShouldContain(">Chrome on Android<");
+        page.ShouldContain($"title=\"{System.Net.WebUtility.HtmlEncode(android)}\"");
+    }
+
+    // A stale form's page is the one a person meets with no Back button to "go back" with: it links
+    // to the page again, fresh, keeping the way back.
+    [Fact]
+    public async Task AStaleForm_LinksToThePageAgain()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var session = await server.MintSessionAsync(fran.UserId);
+
+        var response = await server.SignedIn(session).PostWithoutPageAsync($"{Account}/telegram?returnUrl=%2Fcocina");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).ShouldContain($"href=\"{Account}?returnUrl=%2Fcocina\"");
+    }
+
+    private static string WithReturn(string? returnUrl) =>
+        returnUrl is null ? Account : $"{Account}?returnUrl={Uri.EscapeDataString(returnUrl)}";
 
     [Fact]
     public async Task RevokingADevice_EndsThatSessionAlone()

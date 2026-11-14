@@ -21,4 +21,8 @@ public sealed class FakeAccountService : IAccountService
     public int SentToNotice { get; private set; }
 
     public void SendToNotice() => SentToNotice++;
+
+    public int OpenedAccount { get; private set; }
+
+    public void OpenAccount() => OpenedAccount++;
 }

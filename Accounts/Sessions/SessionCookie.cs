@@ -22,4 +22,16 @@ public static class SessionCookie
             MaxAge = _browserLimit,
             IsEssential = true
         });
+
+    // Signing out: the browser forgets the cookie as well as the store forgetting the session, so the
+    // next page is plainly signed out rather than carrying a token nothing accepts.
+    public static void Clear(HttpResponse response, AccountsSettings settings) =>
+        response.Cookies.Delete(Name, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = true,
+            SameSite = SameSiteMode.Lax,
+            Path = "/",
+            Domain = settings.SessionCookie.Domain.Length > 0 ? settings.SessionCookie.Domain : null
+        });
 }

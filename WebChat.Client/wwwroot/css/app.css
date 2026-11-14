@@ -2605,6 +2605,21 @@ select:focus:not(:focus-visible) {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color var(--transition-fast);
+}
+
+.signed-in-person:hover:not(:disabled),
+.signed-in-person:focus-visible {
+    border-color: var(--accent);
+    outline: none;
+}
+
+.signed-in-person:disabled {
+    cursor: default;
 }
 
 .avatar-image {

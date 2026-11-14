@@ -14,7 +14,7 @@ namespace Accounts.Pages;
 public sealed class PageGuard(SessionStore sessions, IAntiforgery antiforgery, AccountsSettings settings)
 {
     public async Task<(SessionIdentity? Viewer, IResult? Refusal)> CheckAsync(
-        HttpContext http, string returnTo, bool ownersOnly, CancellationToken ct)
+        HttpContext http, string returnTo, bool ownersOnly, CancellationToken ct, bool refuseSuspended = true)
     {
         var token = http.Request.Cookies[SessionCookie.Name];
         var viewer = string.IsNullOrEmpty(token) ? null : await sessions.VerifyAsync(token, ct);
@@ -27,20 +27,22 @@ public sealed class PageGuard(SessionStore sessions, IAntiforgery antiforgery, A
         // As the session check refuses it, and first, so a stale form is not what they are told: nothing
         // of a suspended household opens until it is resumed, and an owner's invite or recovery link
         // minted here would be a way in that outlasts the suspension.
-        if (viewer.HouseholdSuspended)
+        if (refuseSuspended && viewer.HouseholdSuspended)
         {
             return (null, SessionCheck.Suspended(http, page: !script, GoesBackTo(http.Request.Query["returnUrl"])));
         }
 
         if (!await antiforgery.IsRequestValidAsync(http))
         {
+            // Nothing on an installed app goes back, so the page itself is the way to a fresh form.
             return (null, AccountsPages.Page(http, "Try again",
-                """
-                <main>
-                  <h1>That form had gone stale.</h1>
-                  <p>Go back, reload the page and try again.</p>
-                </main>
-                """,
+                $"""
+                 <main class="card">
+                   <h1>That form had gone stale</h1>
+                   <p>Nothing was changed. Open the page again and try once more.</p>
+                   <a class="button primary" href="{AccountsPages.Encode(returnTo)}">Open it again</a>
+                 </main>
+                 """,
                 StatusCodes.Status400BadRequest));
         }
 
@@ -48,9 +50,9 @@ public sealed class PageGuard(SessionStore sessions, IAntiforgery antiforgery, A
         {
             return (null, AccountsPages.Page(http, "Owners only",
                 $"""
-                 <main>
-                   <h1>Only an owner manages the household.</h1>
-                   <p><a href="{AccountPage.Url}">Back to your account</a></p>
+                 <main class="card">
+                   <h1>Only an owner manages the household</h1>
+                   <a class="button primary" href="{AccountPage.Url}">Back to your account</a>
                  </main>
                  """,
                 StatusCodes.Status403Forbidden));
@@ -61,16 +63,7 @@ public sealed class PageGuard(SessionStore sessions, IAntiforgery antiforgery, A
 
     // Where a suspended household's notice goes once it is resumed: the page that sent it here, when that
     // is one of the deployment's; nowhere named otherwise, and the notice loads itself again.
-    private string? GoesBackTo(string? returnUrl)
-    {
-        if (string.IsNullOrEmpty(returnUrl))
-        {
-            return null;
-        }
-
-        var resolved = ReturnUrls.Resolve(settings, returnUrl);
-        return resolved == settings.PublicBase.ToString() && returnUrl != resolved ? null : resolved;
-    }
+    private string? GoesBackTo(string? returnUrl) => ReturnUrls.Allowed(settings, returnUrl);
 
     // The hidden field a page's forms post back, and the cookie it is checked against.
     public string FormField(HttpContext http)

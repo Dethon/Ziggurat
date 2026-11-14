@@ -27,6 +27,9 @@ public sealed class AccountService(HttpClient httpClient, NavigationManager navi
         navigation.NavigateTo($"/accounts/sign-in?returnUrl={Uri.EscapeDataString(navigation.Uri)}", forceLoad: true);
 
     // The notice asks again until the household is resumed, then comes back here.
-    public void SendToNotice() =>
+    public void SendToNotice() => OpenAccount();
+
+    // A full load: the router would otherwise take the path for one of the app's own pages.
+    public void OpenAccount() =>
         navigation.NavigateTo($"/accounts/account?returnUrl={Uri.EscapeDataString(navigation.Uri)}", forceLoad: true);
 }

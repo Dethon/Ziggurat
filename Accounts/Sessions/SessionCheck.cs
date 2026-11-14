@@ -82,9 +82,11 @@ public static class SessionCheck
         return page
             ? AccountsPages.Page(http, "Household suspended",
                 $"""
-                 <main data-suspended{(goesBackTo is null ? "" : $" data-return=\"{AccountsPages.Encode(goesBackTo)}\"")}>
+                 <main class="card" data-suspended{(goesBackTo is null ? "" : $" data-return=\"{AccountsPages.Encode(goesBackTo)}\"")}>
+                   {AccountsPages.Mark(AccountsPages.Icons.Pause)}
                    <h1>Household suspended</h1>
-                   <p class="notice">{SuspendedNotice}</p>
+                   <p>{SuspendedNotice}</p>
+                   <p class="muted">This page checks again by itself every little while, and opens what you were using once it is resumed.</p>
                  </main>
                  """,
                 StatusCodes.Status403Forbidden)

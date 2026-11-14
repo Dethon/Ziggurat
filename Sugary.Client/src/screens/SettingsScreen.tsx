@@ -1,4 +1,5 @@
 import { api } from "../api";
+import { accountUrl } from "../signin";
 import { Icon } from "../components/Icon";
 import type { Language } from "../i18n";
 import { useSettings, type RationSize } from "../settings";
@@ -114,9 +115,9 @@ export function SettingsScreen() {
       </details>
 
       {/* Signing in and out is the deployment's, once for every app: its account page lists the
-          person's passkeys and devices and ends a device's session. A full load, which the
-          installed app's worker passes to the network. */}
-      <a className="row-button account" href="/accounts/account">
+          person's passkeys and devices and ends a device's session, and leads back here. A full
+          load, which the installed app's worker passes to the network. */}
+      <a className="row-button account" href={accountUrl(window.location.href)}>
         <Icon name="person" size={20} />
         <span>{t("account")}</span>
       </a>

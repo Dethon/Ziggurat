@@ -30,6 +30,9 @@ public sealed class SuspensionCoverageTests
             "exempt: an enrollment adds a passkey and a session that every way in refuses while suspended",
         ["/accounts/sign-in"] = "exempt: the sign-in page, signed out by definition",
         ["/accounts/passkeys.js"] = "exempt: the pages' script, no household's",
+        ["/accounts/theme.js"] = "exempt: the pages' theme script, no household's",
+        ["/accounts/sign-out"] =
+            "exempt: ends the caller's own session and nothing else, which a suspended household's person may still do (AccountPageTests)",
         ["/accounts/admin/household"] =
             "refuses: behind the session check (forward_auth channel=admin), which refuses a suspended household's session",
         ["/accounts/admin/operator"] = "exempt: the operator's, of the home household, which is never suspended",

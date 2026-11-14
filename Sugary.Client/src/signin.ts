@@ -17,6 +17,10 @@ export function noticeUrl(here: string): string {
   return `/accounts/account?returnUrl=${encodeURIComponent(here)}`;
 }
 
+// The same page is the person's account — passkeys, devices, signing out — whose Back then returns
+// to where it was opened from: an installed app has no Back button of its own.
+export const accountUrl = noticeUrl;
+
 export function goNotice(): void {
   window.location.assign(noticeUrl(window.location.href));
 }

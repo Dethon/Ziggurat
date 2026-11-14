@@ -112,27 +112,91 @@ public static class PasskeyScript
             catch { return 'That did not work.'; }
           };
 
-          button.addEventListener('click', async () => {
+          const label = button.textContent;
+          const show = (text, kind) => {
+            status.textContent = text;
+            status.className = 'status' + (kind ? ' ' + kind : '');
+          };
+          const ready = () => {
+            button.disabled = false;
+            button.removeAttribute('aria-busy');
+            button.textContent = label;
+          };
+          const busy = text => {
             button.disabled = true;
-            status.textContent = 'Waiting for your passkey…';
+            button.setAttribute('aria-busy', 'true');
+            show(text);
+          };
+
+          // What a person can do about a browser's refusal, in words; the browser's own message is not.
+          const reason = error =>
+            error.name === 'NotAllowedError' ? 'Nothing was chosen. Try again when you are ready.'
+            : error.name === 'InvalidStateError' ? (root.dataset.passkey === 'enroll'
+                ? 'This device already holds a passkey for this account, so there is nothing to add here: sign in instead.'
+                : 'This device already holds a passkey for this account: add one from another device.')
+            : error.name === 'NotSupportedError' || error.name === 'SecurityError' ? 'This browser cannot use passkeys here. Try your phone\'s own browser.'
+            : 'That did not work: ' + error.message;
+
+          // quiet: offered on its own when the page opened, so a prompt the browser refused to open
+          // without a tap, or one dismissed, puts the button back without a word.
+          const run = async quiet => {
+            busy(root.dataset.passkey === 'sign-in' ? 'Waiting for your passkey…' : 'Waiting for this device…');
             try {
               const ceremonies = { enroll, add, 'sign-in': signIn };
               const done = await ceremonies[root.dataset.passkey]();
               if (!done.ok) {
-                status.textContent = await errorOf(done);
-                button.disabled = false;
+                show(await errorOf(done), 'error');
+                ready();
                 return;
               }
-              status.textContent = 'Done.';
-              location.assign((await done.json()).redirect);
+              const { redirect } = await done.json();
+              // The app is still loading when the page leaves, so the button keeps saying so until it has.
+              button.textContent = root.dataset.passkey === 'sign-in' ? 'Signed in, opening…'
+                : root.dataset.passkey === 'add' ? 'Passkey added' : 'Passkey created, opening…';
+              show('');
+              if (root.dataset.passkey === 'add') location.reload();
+              else location.assign(redirect);
             } catch (error) {
-              status.textContent = error instanceof Refusal
-                ? await errorOf(error.response)
-                : error.name === 'NotAllowedError' ? 'Nothing was chosen. Try again when you are ready.'
-                : error.name === 'InvalidStateError' ? 'This device already holds a passkey for this account: add one from another device.'
-                : 'That did not work: ' + error.message;
-              button.disabled = false;
+              ready();
+              if (error instanceof Refusal) show(await errorOf(error.response), 'error');
+              else if (quiet && error instanceof DOMException) show('');
+              else show(reason(error), 'error');
+              // A sign-in that went nowhere is most often a device with no passkey: what to do then is shown.
+              const help = root.querySelector('details.help');
+              if (help && status.textContent) help.open = true;
+              if (error.name === 'InvalidStateError' && root.dataset.passkey === 'enroll') {
+                const link = document.createElement('a');
+                link.href = '/accounts/sign-in';
+                link.textContent = 'Sign in';
+                status.append(' ', link);
+              }
             }
+          };
+
+          button.addEventListener('click', () => run(false));
+
+          // An installed app opened signed out has nothing to do here but sign in, so the passkey is
+          // offered at once. Not in a browser tab, where the page may have been opened to read it; not
+          // after signing out (the page leaves data-autostart off); and once a minute at most, so a sign-in
+          // that cannot stick never becomes a prompt that keeps coming back.
+          const installed = matchMedia('(display-mode: standalone)').matches
+            || matchMedia('(display-mode: fullscreen)').matches || navigator.standalone === true;
+          if ('autostart' in root.dataset && installed && window.PublicKeyCredential) {
+            let recent = false;
+            try {
+              recent = Date.now() - Number(sessionStorage.getItem('passkey-autostart') || 0) < 60000;
+              sessionStorage.setItem('passkey-autostart', String(Date.now()));
+            } catch {
+              // No storage: offered anyway, once per page.
+            }
+            if (!recent) run(true);
+          }
+        })();
+        (() => {
+          // A form that takes something away says what before it does.
+          document.addEventListener('submit', event => {
+            const question = event.target.dataset && event.target.dataset.confirm;
+            if (question && !confirm(question)) event.preventDefault();
           });
         })();
         """;
