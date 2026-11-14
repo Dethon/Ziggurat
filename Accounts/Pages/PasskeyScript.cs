@@ -112,7 +112,7 @@ public static class PasskeyScript
             catch { return 'That did not work.'; }
           };
 
-          const label = button.textContent;
+          const label = button.innerHTML;
           const show = (text, kind) => {
             status.textContent = text;
             status.className = 'status' + (kind ? ' ' + kind : '');
@@ -120,7 +120,7 @@ public static class PasskeyScript
           const ready = () => {
             button.disabled = false;
             button.removeAttribute('aria-busy');
-            button.textContent = label;
+            button.innerHTML = label;
           };
           const busy = text => {
             button.disabled = true;
@@ -154,7 +154,8 @@ public static class PasskeyScript
               button.textContent = root.dataset.passkey === 'sign-in' ? 'Signed in, opening…'
                 : root.dataset.passkey === 'add' ? 'Passkey added' : 'Passkey created, opening…';
               show('');
-              if (root.dataset.passkey === 'add') location.reload();
+              // The account page again by a GET, keeping its way back: it may have been drawn by a form's POST.
+              if (root.dataset.passkey === 'add') location.assign('/accounts/account' + location.search);
               else location.assign(redirect);
             } catch (error) {
               ready();

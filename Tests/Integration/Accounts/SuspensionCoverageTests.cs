@@ -32,7 +32,7 @@ public sealed class SuspensionCoverageTests
         ["/accounts/passkeys.js"] = "exempt: the pages' script, no household's",
         ["/accounts/theme.js"] = "exempt: the pages' theme script, no household's",
         ["/accounts/sign-out"] =
-            "exempt: ends the caller's own session and nothing else, which a suspended household's person may still do (AccountPageTests)",
+            "exempt: ends the caller's own session and nothing else, which a suspended household's person may still do (AccountPageTests.ASuspendedHouseholdsPerson_CanStillSignOut)",
         ["/accounts/admin/household"] =
             "refuses: behind the session check (forward_auth channel=admin), which refuses a suspended household's session",
         ["/accounts/admin/operator"] = "exempt: the operator's, of the home household, which is never suspended",

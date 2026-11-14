@@ -158,6 +158,28 @@ public class AccountPageTests
         response.Headers.Location.ShouldBe(new Uri(server.Address, "/accounts/sign-in?returnUrl=%2Fcocina&signedOut=1"));
     }
 
+    // A suspended household opens nothing, but its person can still sign a shared device out: the
+    // page they loaded before the suspension still signs out, and they land on sign-in like anyone.
+    [Fact]
+    public async Task ASuspendedHouseholdsPerson_CanStillSignOut()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (casa, ana) = await server.SeedHouseholdAsync("Casa", "Ana");
+        var session = await server.MintSessionAsync(ana);
+        var browser = server.SignedIn(session);
+        var page = await browser.PageAsync(Account);
+        var token = System.Text.RegularExpressions.Regex.Match(page, """<input type="hidden" name="(?<name>[^"]+)" value="(?<value>[^"]+)">""");
+        (await server.Admin(await server.MintSessionAsync(fran.UserId))
+            .PutAsync(AdminProtocol.Suspension(casa), new HouseholdSuspension(true))).StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        var response = await browser.PostWithoutPageAsync("/accounts/sign-out", (token.Groups["name"].Value, token.Groups["value"].Value));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.SeeOther);
+        response.Headers.Location!.AbsolutePath.ShouldBe("/accounts/sign-in");
+        (await server.VerifyAsync(session, accept: "application/json")).StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
     // A device is listed as a person would name it, its user agent kept for whoever wants it.
     [Fact]
     public async Task ThePage_NamesEachDeviceByItsBrowserAndSystem()

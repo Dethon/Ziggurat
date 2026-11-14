@@ -119,6 +119,70 @@ public class PasskeyCeremoniesTests : IAsyncLifetime
         check.Headers.GetValues("X-Ziggurat-Roles").ShouldBe(["owner,operator"]);
     }
 
+    // An installed app opened signed out has nothing to do on sign-in but sign in, so the passkey is
+    // offered as the page opens and the app comes back without a tap.
+    [Fact]
+    public async Task InAnInstalledApp_SignInOffersThePasskeyAtOnce()
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        await context.ClearCookiesAsync();
+        await context.AddInitScriptAsync(Installed);
+        var back = new Uri(server.Address, "/chat?topic=7").ToString();
+
+        await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in?returnUrl=" + Uri.EscapeDataString(back)).ToString());
+        await page.WaitForURLAsync(back);
+
+        (await server.VerifyAsync(await SessionOfAsync(context))).StatusCode.ShouldBe(HttpStatusCode.OK);
+    }
+
+    // Having just signed out, the passkey is not put in front of the person again: it would sign them
+    // straight back in. Nor in a browser tab, where the page may have been opened only to look at it.
+    [Theory]
+    [InlineData(true, "&signedOut=1")]
+    [InlineData(false, "")]
+    public async Task SignIn_AfterSigningOutOrInATab_WaitsToBeAsked(bool installed, string query)
+    {
+        await using var server = await AccountsServer.StartAsync();
+        var fran = await server.MintOperatorAsync("Fran");
+        var (context, page) = await DeviceAsync();
+        await EnrollAsync(server, page, fran);
+        await context.ClearCookiesAsync();
+        if (installed)
+        {
+            await context.AddInitScriptAsync(Installed);
+        }
+
+        var begun = 0;
+        page.Request += (_, request) =>
+        {
+            if (request.Url.Contains("/accounts/api/sign-in/options", StringComparison.Ordinal))
+            {
+                Interlocked.Increment(ref begun);
+            }
+        };
+
+        await page.GotoAsync(new Uri(server.Address, "/accounts/sign-in?returnUrl=%2Fchat" + query).ToString());
+        await page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Eventually.Settle();
+
+        begun.ShouldBe(0);
+        await Assertions.Expect(page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = SignInButton })).ToBeEnabledAsync();
+    }
+
+    // What the page asks to know it is an installed app; a browser launched for a test is a tab.
+    private const string Installed =
+        """
+        (() => {
+          const ask = window.matchMedia.bind(window);
+          window.matchMedia = query => query.includes('display-mode: standalone')
+            ? { matches: true, media: query, addEventListener() {}, removeEventListener() {} }
+            : ask(query);
+        })();
+        """;
+
     // A crafted sign-in link must not hand a fresh session's redirect to a site that is not ours.
     [Fact]
     public async Task SigningIn_ReturnsOnlyToTheDeploymentsOwnOrigins()
