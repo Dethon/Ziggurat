@@ -99,6 +99,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<ReconnectionEffect>();
             services.AddScoped<SendMessageEffect>();
             services.AddScoped<TopicSelectionEffect>();
+            services.AddScoped<OpenTopicEffect>();
             services.AddScoped<TopicDeleteEffect>();
             services.AddScoped<TopicPagingEffect>();
             services.AddScoped<InitializationEffect>();

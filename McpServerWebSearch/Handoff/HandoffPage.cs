@@ -26,7 +26,10 @@ public static class HandoffPage
                              max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
         .top { display:flex; align-items:center; gap:10px; }
         .top .who { flex:1; min-width:0; }
-        h1 { font-size: 17px; font-weight: 600; margin: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        h1 { font-size: 17px; font-weight: 600; margin: 0 0 4px; }
+        .top h1 { margin: 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        nav.way { max-width: 1280px; margin: 0 auto; padding: max(8px, env(safe-area-inset-top)) 16px 0; }
+        nav.way a { color: var(--accent); font-weight: 600; text-decoration: none; display:inline-flex; min-height: 44px; align-items:center; }
         .lead { margin: 0; color: var(--muted); font-size: 13px; }
         .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--muted); margin-right:6px; vertical-align: middle; }
         .dot.live { background: var(--ok); }
@@ -117,6 +120,7 @@ public static class HandoffPage
 
     public static string Logins(string pages, string token, int minutes) => Page("Your logins",
         $$"""
+        <nav class="way"><a href="/">Open the chat</a></nav>
         <main>
           <h1>Logins the agent can use as you</h1>
           <p class="lead">Forget one and the agent is logged out of it, now and after a restart. A sign-in service another login still uses stays.</p>

@@ -205,7 +205,12 @@ public static class BrowsePagePolicy
             if (finished || (ws && ws.readyState <= 1)) return;
             ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + pages + '/handoff/live');
             ws.binaryType = 'blob';
-            ws.onopen = () => { retry = 0; dot.className = 'dot live'; sendSize(); };
+            ws.onopen = () => {
+              retry = 0; dot.className = 'dot live';
+              // Connecting again with the keyboard up must not shrink the site under the field: the last
+              // size is said again unless the width changed meanwhile.
+              if (sent && Math.abs(size().width - sent.width) <= 40) send({ type: 'resize', ...sent }); else sendSize();
+            };
             ws.onmessage = e => {
               if (typeof e.data === 'string') {
                 try { const m = JSON.parse(e.data); if (m.type === 'fields') fields = m.fields || []; } catch { }

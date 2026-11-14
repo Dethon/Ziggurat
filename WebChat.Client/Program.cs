@@ -38,6 +38,7 @@ builder.Services.AddScoped<ApprovalResponder>();
 builder.Services.AddScoped<AlertDismisser>();
 
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
+builder.Services.AddScoped<IOpenTopicMemory, OpenTopicMemory>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 
 builder.Services.AddWebChatStores();
@@ -60,6 +61,7 @@ _ = app.Services.GetRequiredService<SessionRecoveryEffect>();
 _ = app.Services.GetRequiredService<ReconnectionEffect>();
 _ = app.Services.GetRequiredService<SendMessageEffect>();
 _ = app.Services.GetRequiredService<TopicSelectionEffect>();
+_ = app.Services.GetRequiredService<OpenTopicEffect>();
 _ = app.Services.GetRequiredService<TopicDeleteEffect>();
 _ = app.Services.GetRequiredService<TopicPagingEffect>();
 _ = app.Services.GetRequiredService<InitializationEffect>();

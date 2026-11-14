@@ -161,13 +161,41 @@ public class WebChatSignInE2ETests(WebChatE2EFixture fixture)
 
         await page.EvaluateAsync("() => { window.beforeTheLink = true; }");
 
-        await page.Locator("#message-link").ClickAsync();
+        // A sibling's approval overlay can cover the page at any moment (testing.md, "E2E Tests").
+        await ClickThroughApprovalsAsync(page, page.Locator("#message-link"));
 
         // The page itself was loaded: the app's own window, routing the path as one of its own, would
         // still carry what was set on it.
         await page.WaitForURLAsync(url => url.Contains("/browse/", StringComparison.Ordinal));
         await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
         (await page.EvaluateAsync<bool>("() => window.beforeTheLink === true")).ShouldBeFalse();
+    }
+
+    // Leaving the app by a full load — the agent's login link, the account page — and coming back in the
+    // same window opens the conversation that was on screen, where the agent's reply arrives. An
+    // installed app has no address bar to say which, and it came back to the list.
+    [SkippableFact]
+    public async Task ComingBackFromAnotherServicesPage_OpensTheConversationThatWasOpen()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await GotoWebChatAsync(page, fixture.WebChatUrl);
+        await SelectAgentAsync(page);
+        await page.Locator("textarea.chat-input").FillAsync($"Errand {tag}: answer only OK.");
+        await page.GetByRole(AriaRole.Button, new PageGetByRoleOptions { Name = "Send", Exact = true })
+            .ClickAsync(new LocatorClickOptions { Timeout = 30_000 });
+        var open = page.Locator(".topic-item.selected", new PageLocatorOptions { HasText = $"Errand {tag}" });
+        await Assertions.Expect(open).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+
+        await page.Locator("button.signed-in-person").ClickAsync();
+        await page.WaitForURLAsync(url => url.Contains("/accounts/account", StringComparison.Ordinal));
+        await page.Locator("a[data-back]").ClickAsync();
+
+        await Assertions.Expect(open).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 60_000 });
+        await Assertions.Expect(page.Locator(".chat-message.user", new PageLocatorOptions { HasText = $"Errand {tag}" }))
+            .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
     }
 
     // A platform authenticator that keeps discoverable credentials and verifies its user, standing

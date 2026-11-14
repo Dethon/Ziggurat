@@ -140,6 +140,7 @@ public sealed class HandoffViewTests(RedisFixture redis) : IClassFixture<RedisFi
         await sockets.Single().CloseAsync();
 
         await Eventually.Until(() => Inputs.OfType<HandoffInput.Resize>().Count() == 2, "the view to connect again");
+        Inputs.OfType<HandoffInput.Resize>().Distinct().ShouldHaveSingleItem("connecting again says the same size");
         await Assertions.Expect(page.Locator("#done")).ToBeEnabledAsync();
     }
 

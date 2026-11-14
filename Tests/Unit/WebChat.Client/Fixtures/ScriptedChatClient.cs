@@ -164,6 +164,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         services.AddScoped<IHubConnectionFactory>(_ => Factory);
         services.AddScoped<IConfigService>(_ => ConfigService);
         services.AddScoped<ILocalStorageService>(_ => LocalStorage);
+        services.AddScoped<IOpenTopicMemory>(_ => new FakeOpenTopicMemory());
         services.AddScoped<IAccountService>(_ => Accounts);
         services.AddScoped<IPushSubscriptionService>(_ => new FakePushSubscriptionService());
         services.AddScoped<IAttachmentUploader>(_ => Uploader);

@@ -115,6 +115,7 @@ public sealed class BrowsePages(TunnelForwarder forwarder)
          <h1>Your household's browser is offline</h1>
          <p>This page is served by the browser at your household's own site, and it is not connected right now. Check that it is running, then open the link again.</p>
          <p><small>{{WebUtility.HtmlEncode(reason)}}</small></p>
+         <p><a href="/" style="color:#e9601f;font-weight:600">Open the chat</a></p>
          </main></body></html>
          """;
 }

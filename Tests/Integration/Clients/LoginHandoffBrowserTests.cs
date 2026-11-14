@@ -259,6 +259,58 @@ public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, Red
         }
     }
 
+    // A login form inside a box of its own that scrolls, on a page that never does: the box scrolled is
+    // what is shown, as the page scrolled is. The screencast sends about twenty frames a second whether
+    // anything moved or not, and each asks for a shot once scrolled: the shots are held to five a second.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task AScrolledBox_IsShownWhereItIsScrolledTo_AndShotsAreHeldToFiveASecond()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body = "<!DOCTYPE html><html><body style='margin:0;overflow:hidden'><div style='height:100vh;overflow:auto'>"
+                   + "<div style='height:2000px;background:#f00'></div><div style='height:2000px;background:#00f'></div></div></body></html>"
+        }), person);
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/box");
+        try
+        {
+            HandoffFrame? last = null;
+            var frames = 0;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff, frame =>
+            {
+                Volatile.Write(ref last, frame);
+                Interlocked.Increment(ref frames);
+                return Task.CompletedTask;
+            });
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Resize(390, 700));
+            await Eventually.Until(() => Volatile.Read(ref last) is { ViewportWidth: 390 }, "a frame at the view's size");
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseMove(0.5, 0.5));
+            foreach (var _ in Enumerable.Range(0, 12))
+            {
+                await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.Wheel(0, 400));
+            }
+
+            using var playwright = await Playwright.CreateAsync();
+            await using var chromium = await playwright.Chromium.LaunchAsync();
+            var decoder = await chromium.NewPageAsync();
+            await Eventually.Until(async () => await CentreIsBlueAsync(decoder, Volatile.Read(ref last)!.Jpeg),
+                "a frame of the blue half the box was scrolled to");
+
+            var before = Volatile.Read(ref frames);
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            (Volatile.Read(ref frames) - before).ShouldBeLessThanOrEqualTo(12, "a scrolled page's shots in two seconds, at five a second");
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
     private static async ValueTask<bool> CentreIsBlueAsync(IPage decoder, byte[] jpeg) =>
         await decoder.EvaluateAsync<bool>(
             """

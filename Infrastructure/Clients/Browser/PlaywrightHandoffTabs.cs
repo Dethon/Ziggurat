@@ -21,6 +21,11 @@ internal sealed class PlaywrightHandoffTabs(Func<string, Task<IBrowserContext>> 
     private const int MinViewport = 320;
     private const int MaxViewport = 1920;
 
+    // The most often a scrolled page is shot. The screencast sends about twenty frames a second whether
+    // or not anything moved, and each of them asks; a later one always comes, so a skipped ask loses
+    // nothing but load on the browser.
+    private static readonly TimeSpan _shotInterval = TimeSpan.FromMilliseconds(200);
+
     // How often the page on top is asked where its text fields are and whether it is scrolled.
     private static readonly TimeSpan _fieldsInterval = TimeSpan.FromMilliseconds(250);
 
@@ -30,6 +35,12 @@ internal sealed class PlaywrightHandoffTabs(Func<string, Task<IBrowserContext>> 
     private const string FieldsScript =
         """
         () => {
+          // A scroll anywhere — the page, or a box of its own that scrolls — leaves the screencast behind,
+          // so the first one seen is kept for the page's life.
+          if (!window.__handoffScrollWatch) {
+            window.__handoffScrollWatch = true;
+            document.addEventListener('scroll', () => { window.__handoffScrolled = true; }, { capture: true, passive: true });
+          }
           const w = window.innerWidth, h = window.innerHeight;
           const skip = new Set(['hidden', 'checkbox', 'radio', 'submit', 'button', 'reset', 'file', 'image', 'range', 'color']);
           const kindOf = e => {
@@ -54,7 +65,7 @@ internal sealed class PlaywrightHandoffTabs(Func<string, Task<IBrowserContext>> 
             fields.push({ x: r.left / w, y: r.top / h, width: r.width / w, height: r.height / h, kind: kindOf(e), focused: e === document.activeElement });
             if (fields.length === 40) break;
           }
-          return { scrolled: window.scrollX !== 0 || window.scrollY !== 0, fields };
+          return { scrolled: window.scrollX !== 0 || window.scrollY !== 0 || window.__handoffScrolled === true, fields };
         }
         """;
 
@@ -341,6 +352,7 @@ internal sealed class PlaywrightHandoffTabs(Func<string, Task<IBrowserContext>> 
         // scrolled page is: a scrolled page's frames are screenshots instead, which are taken where it is.
         private volatile bool _scrolled;
         private int _shooting;
+        private long _lastShot;
 
         public async Task<IAsyncDisposable> StartAsync()
         {
@@ -366,15 +378,22 @@ internal sealed class PlaywrightHandoffTabs(Func<string, Task<IBrowserContext>> 
 
         private async Task ShootAsync(IPage page)
         {
-            if (Interlocked.Exchange(ref _shooting, 1) == 1)
+            if (Environment.TickCount64 - Interlocked.Read(ref _lastShot) < _shotInterval.TotalMilliseconds
+                || Interlocked.Exchange(ref _shooting, 1) == 1)
             {
                 return;
             }
 
+            Interlocked.Exchange(ref _lastShot, Environment.TickCount64);
             try
             {
                 var viewport = page.ViewportSize;
-                var jpeg = await page.ScreenshotAsync(new PageScreenshotOptions { Type = ScreenshotType.Jpeg, Quality = 80 });
+                // The caret as it is: hiding it adds a style to the site, which repaints, which would ask
+                // for another shot — and the person typing wants to see where they are typing.
+                var jpeg = await page.ScreenshotAsync(new PageScreenshotOptions
+                {
+                    Type = ScreenshotType.Jpeg, Quality = 80, Caret = ScreenshotCaret.Initial
+                });
                 if (!_disposed)
                 {
                     await onFrame(new HandoffFrame(jpeg, viewport?.Width ?? 0, viewport?.Height ?? 0));
@@ -444,37 +463,14 @@ internal sealed class PlaywrightHandoffTabs(Func<string, Task<IBrowserContext>> 
             {
                 while (!ct.IsCancellationRequested)
                 {
-                    if (handoff.Top is { } top)
+                    try
                     {
-                        JsonElement? answer = null;
-                        try
-                        {
-                            answer = await top.EvaluateAsync<JsonElement>(FieldsScript);
-                        }
-                        catch (PlaywrightException)
-                        {
-                            // Mid-navigation, or closed: asked again on the next round.
-                        }
-
-                        if (answer is { ValueKind: JsonValueKind.Object } page)
-                        {
-                            var scrolled = page.TryGetProperty("scrolled", out var s) && s.ValueKind == JsonValueKind.True;
-                            if (scrolled != _scrolled)
-                            {
-                                _scrolled = scrolled;
-                                if (scrolled)
-                                {
-                                    await ShootAsync(top);
-                                }
-                            }
-
-                            var fields = FieldsOf(page.TryGetProperty("fields", out var f) ? f : default);
-                            if (onFields is not null && (told is null || !told.SequenceEqual(fields)))
-                            {
-                                told = fields;
-                                await onFields(fields);
-                            }
-                        }
+                        told = await WatchRoundAsync(told);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // One bad round — a page answering something unexpected — must not end the
+                        // view's field hints and scroll watch for the rest of the login.
                     }
 
                     await Task.Delay(_fieldsInterval, ct);
@@ -484,6 +480,44 @@ internal sealed class PlaywrightHandoffTabs(Func<string, Task<IBrowserContext>> 
             {
                 // The view ended.
             }
+        }
+
+        private async Task<IReadOnlyList<HandoffField>?> WatchRoundAsync(IReadOnlyList<HandoffField>? told)
+        {
+            if (handoff.Top is { } top)
+            {
+                JsonElement? answer = null;
+                try
+                {
+                    answer = await top.EvaluateAsync<JsonElement>(FieldsScript);
+                }
+                catch (PlaywrightException)
+                {
+                    // Mid-navigation, or closed: asked again on the next round.
+                }
+
+                if (answer is { ValueKind: JsonValueKind.Object } page)
+                {
+                    var scrolled = page.TryGetProperty("scrolled", out var s) && s.ValueKind == JsonValueKind.True;
+                    if (scrolled != _scrolled)
+                    {
+                        _scrolled = scrolled;
+                        if (scrolled)
+                        {
+                            await ShootAsync(top);
+                        }
+                    }
+
+                    var fields = FieldsOf(page.TryGetProperty("fields", out var f) ? f : default);
+                    if (onFields is not null && (told is null || !told.SequenceEqual(fields)))
+                    {
+                        told = fields;
+                        await onFields(fields);
+                    }
+                }
+            }
+
+            return told;
         }
 
         private static IReadOnlyList<HandoffField> FieldsOf(JsonElement answer) =>
