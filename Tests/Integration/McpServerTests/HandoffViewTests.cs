@@ -184,6 +184,16 @@ public sealed class HandoffViewTests(RedisFixture redis) : IClassFixture<RedisFi
         await Assertions.Expect(page.GetByText("You can go back to Telegram now.")).ToBeVisibleAsync();
     }
 
+    // Nothing in the agent's browser can answer a passkey, and a site that asks for one is refused at
+    // once — which a person sees only as the site saying something went wrong, so the view says why.
+    [Fact]
+    public async Task TheView_SaysPasskeysCannotBeUsedHere()
+    {
+        var page = await OpenAsync(FromChatClient(Fran));
+
+        await Assertions.Expect(page.GetByText("Passkeys can't be used here")).ToBeVisibleAsync();
+    }
+
     private IReadOnlyList<HandoffInput> Inputs => [.. _browser.Inputs];
 
     private async Task<string> LinkAsync(ConversationContext from)

@@ -113,6 +113,7 @@ public static class HandoffPage
           <div class="options" id="actions">
             <label class="remember"><input type="checkbox" id="remember" checked> Remember this login</label>
             <span class="note" id="remember-note" hidden>Remembering is off on this server: this login lasts until the browser restarts.</span>
+            <span class="note">Passkeys can't be used here. If the site asks for one, choose another way to sign in.</span>
           </div>
         </main>
         {{Data(pages, token, minutes)}}<script>{{BrowsePagePolicy.HandoffScript}}</script>

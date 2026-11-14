@@ -413,6 +413,73 @@ public class LoginHandoffBrowserTests(IsolatedSessionBrowserFixture fixture, Red
         }
     }
 
+    // Nothing in the browser can answer a passkey — no authenticator, no Bluetooth for a phone — and
+    // Firefox waited out the site's whole timeout for a security key behind a prompt the view never
+    // shows. Refused at once, the site goes on to its other ways of signing in.
+    [Trait("Category", "External")]
+    [SkippableFact]
+    public async Task ASitesPasskeyAsk_IsRefusedAtOnce()
+    {
+        Skip.IfNot(fixture.IsAvailable, "Camoufox unavailable.");
+
+        var person = $"fran-{Guid.NewGuid():N}";
+        await fixture.Browser.RouteOnContextAsync($"{Site}/**", route => route.FulfillAsync(new RouteFulfillOptions
+        {
+            ContentType = "text/html",
+            Body =
+                """
+                <!DOCTYPE html><html><body style="margin:0">
+                <button style="position:absolute;left:0;top:0;width:100%;height:400px">Sign in with a passkey</button>
+                <script>
+                  const c = new Uint8Array(32);
+                  const asked = async (name, ask) => {
+                    const t0 = Date.now();
+                    try { await ask(); document.cookie = name + '=resolved; path=/'; }
+                    catch (e) { document.cookie = name + '=' + e.name + '-' + (Date.now() - t0) + '; path=/'; }
+                  };
+                  document.querySelector('button').onclick = async () => {
+                    await asked('get', () => navigator.credentials.get({ publicKey: { challenge: c, rpId: 'handoff-site.test', timeout: 60000 } }));
+                    await asked('create', () => navigator.credentials.create({ publicKey: {
+                      challenge: c, rp: { id: 'handoff-site.test', name: 'Site' }, user: { id: new Uint8Array(8), name: 'fran', displayName: 'Fran' },
+                      pubKeyCredParams: [{ type: 'public-key', alg: -7 }], timeout: 60000 } }));
+                  };
+                </script></body></html>
+                """
+        }), person);
+
+        var handoff = await fixture.Browser.OpenHandoffAsync(person, $"{Site}/login");
+        try
+        {
+            var frames = 0;
+            await using var stream = await fixture.Browser.StreamHandoffAsync(handoff, _ =>
+            {
+                Interlocked.Increment(ref frames);
+                return Task.CompletedTask;
+            });
+            await Eventually.Until(() => Volatile.Read(ref frames) > 0, "a frame of the handoff tab");
+
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseDown(0.5, 0.1));
+            await fixture.Browser.SendHandoffInputAsync(handoff, new HandoffInput.MouseUp(0.5, 0.1));
+
+            var cookies = "";
+            await Eventually.Until(() => (cookies = WhoAmIOn(Site, person)).Contains("create="),
+                $"both asks to be answered (cookies: {cookies})");
+            var answers = cookies.Split(';', ':').Select(c => c.Trim()).Where(c => c.StartsWith("get=") || c.StartsWith("create="))
+                .ToDictionary(c => c[..c.IndexOf('=')], c => c[(c.IndexOf('=') + 1)..]);
+            foreach (var (ask, answer) in answers)
+            {
+                answer.ShouldStartWith("NotAllowedError-", customMessage: ask);
+                int.Parse(answer["NotAllowedError-".Length..]).ShouldBeLessThan(3000, ask);
+            }
+
+            answers.Keys.ShouldBe(["get", "create"], ignoreOrder: true);
+        }
+        finally
+        {
+            await fixture.Browser.CloseHandoffAsync(handoff);
+        }
+    }
+
     private string WhoAmIOn(string site, string person)
     {
         fixture.Browser.RouteOnContextAsync($"{site}/whoami*", route => route.FulfillAsync(new RouteFulfillOptions
