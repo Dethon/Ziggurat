@@ -2741,7 +2741,7 @@ select:focus:not(:focus-visible) {
 .hearth-rail-head { padding: 0.75rem 0.75rem 0.5rem; }
 .hearth-search { display: flex; align-items: center; gap: 0.5rem; padding: 0 0.75rem 0.5rem; }
 .hearth-search-input {
-    flex: 1; min-width: 0; width: 100%; padding: 0.5rem 0.75rem; border-radius: 10px;
+    flex: 1; min-width: 6rem; width: 100%; padding: 0.5rem 0.75rem; border-radius: 10px;
     background: var(--bg-tertiary); border: 1px solid var(--border-color);
     color: var(--text-primary); font-family: inherit; font-size: 0.85rem;
 }
@@ -2753,13 +2753,15 @@ select:focus:not(:focus-visible) {
     color: var(--text-secondary); font-size: 0.9rem; cursor: pointer;
 }
 .hearth-archive-toggle.on { background: var(--accent); border-color: var(--accent); color: var(--user-text); }
-/* Whose conversations, for whoever sees the household's every one: a list of its own, beside the
-   search for the same reason the archive toggle is. */
-.hearth-filter { padding: 0 0.75rem 0.5rem; }
+/* Whose conversations, for whoever sees the household's every one: a list of its own, in the search
+   row for the same reason the archive toggle is. The search keeps most of the row and the picker
+   ellipses a long name: on the desktop rail, which also carries the agent settings, it is held to
+   "Everyone's"; the phone's sheet, without them, gives it room for a name. */
 .hearth-filter-select {
-    width: 100%; padding: 0.4rem 0.75rem; border-radius: 10px;
+    flex: 0 1 5.5rem; min-width: 4.5rem; height: 2rem; padding: 0 0.5rem; border-radius: 10px;
     background: var(--bg-tertiary); border: 1px solid var(--border-color);
     color: var(--text-primary); font-family: inherit; font-size: 0.85rem;
+    text-overflow: ellipsis; white-space: nowrap; overflow: hidden; cursor: pointer;
 }
 .hearth-rows { flex: 1; overflow-y: auto; padding: 0 0.625rem 0.75rem; scroll-snap-type: y proximity;
     /* Contain overscroll so a downward pull at the top of the list doesn't chain into the
@@ -2905,6 +2907,7 @@ select:focus:not(:focus-visible) {
     /* The config trigger rides the peek bar so it is reachable without expanding the sheet, and
        opens upward from there for the same reason the agent combo does. */
     .hearth-search .agent-config { display: none; }
+    .hearth-filter-select { flex-basis: 7.5rem; }
     /* left-anchored here: the trigger sits at the start of the peek row, not the end */
     .hearth-peek .agent-config-menu { top: auto; bottom: calc(100% + 8px); left: 0; right: auto;
         animation: comboRise 0.14s ease-out; }

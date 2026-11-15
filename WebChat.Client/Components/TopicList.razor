@@ -42,22 +42,11 @@
             <input class="hearth-search-input" type="search" placeholder="Search conversations"
                    value="@_search" @oninput="OnSearchInput" @ref="_searchInput"
                    aria-label="Search conversations" />
-            <button class="hearth-archive-toggle @(_showingArchived ? "on" : "")"
-                    @onclick="ToggleArchived"
-                    aria-pressed="@_showingArchived"
-                    aria-label="Show archived conversations"
-                    data-tooltip="Archived">
-                <Icon Glyph="Icons.Archive" Size="18" />
-            </button>
-            <AgentConfigMenu />
-        </div>
-
-        @if (_seesAll)
-        {
-            @* Whose conversations: someone who sees every topic of the household reads their own
-               unless they ask for more. The server pages by it, so a filter here is a list of its
-               own rather than rows hidden from the one held. *@
-            <div class="hearth-filter">
+            @if (_seesAll)
+            {
+                @* Whose conversations: someone who sees every topic of the household reads their own
+                   unless they ask for more. The server pages by it, so a filter here is a list of its
+                   own rather than rows hidden from the one held, as the archive beside it is. *@
                 <select class="hearth-filter-select" aria-label="Whose conversations"
                         value="@TopicFilterChoice.Format(_filter)" @onchange="OnFilterChanged">
                     <option value="mine">Mine</option>
@@ -67,8 +56,16 @@
                         <option value="@TopicFilterChoice.Of(person.UserId)">@($"{person.DisplayName}'s")</option>
                     }
                 </select>
-            </div>
-        }
+            }
+            <button class="hearth-archive-toggle @(_showingArchived ? "on" : "")"
+                    @onclick="ToggleArchived"
+                    aria-pressed="@_showingArchived"
+                    aria-label="Show archived conversations"
+                    data-tooltip="Archived">
+                <Icon Glyph="Icons.Archive" Size="18" />
+            </button>
+            <AgentConfigMenu />
+        </div>
 
         <div class="hearth-rows">
             @{
