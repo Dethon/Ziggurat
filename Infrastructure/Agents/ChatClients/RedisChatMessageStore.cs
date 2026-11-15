@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs.Metrics.Enums;
 using Domain.Exceptions;
 using Domain.Extensions;
@@ -139,8 +140,10 @@ public sealed class RedisChatMessageStore(
         var failed = context.ResponseMessages?.Any(m => m.IsFailedTurn()) == true;
         var rerun = _rerun.TryGetValue(context.Session, out var read) ? read : Rerun.None;
 
-        // A name the line already holds elsewhere is not this message's: it is kept under a new one.
-        foreach (var taken in context.RequestMessages.Where(m => m.GetEntryId() is { } id && rerun.Taken.Contains(id)))
+        // A name the line already holds elsewhere is not this message's, and a legacy one is nobody's: it
+        // is kept under a new one.
+        foreach (var taken in context.RequestMessages.Where(m =>
+                     m.GetEntryId() is { } id && (rerun.Taken.Contains(id) || HistoryEntries.IsLegacy(id))))
         {
             taken.SetEntryId(Guid.NewGuid().ToString("N"));
         }
@@ -222,7 +225,11 @@ public sealed class RedisChatMessageStore(
                 return None;
             }
 
-            var trailing = stored.LastOrDefault()?.GetEntryId() is { } last && asked.Contains(last) ? last : null;
+            // Only a person's message is answered again: a name that is a reply's hides nothing from the model.
+            var trailing = stored.LastOrDefault() is { Role: var role } end && role == ChatRole.User
+                           && end.GetEntryId() is { } last && asked.Contains(last)
+                ? last
+                : null;
             var held = stored.Select(m => m.GetEntryId()).OfType<string>().Where(id => id != trailing).ToHashSet();
             return new Rerun(trailing, asked.Where(held.Contains).ToHashSet());
         }

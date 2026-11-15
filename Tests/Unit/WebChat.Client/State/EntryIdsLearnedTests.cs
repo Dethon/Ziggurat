@@ -79,6 +79,60 @@ public class EntryIdsLearnedTests : IDisposable
         _store.State.MessagesByTopic["t"].Select(m => m.EntryId).ShouldBe(["e1", null]);
     }
 
+    // What the store knows of a turn once it is kept — where it branched, what tools it called — is the
+    // page's too, without a reload.
+    [Fact]
+    public void AStreamedTurn_LearnsItsVersionsAndToolsFromTheHistory()
+    {
+        var versions = new MessageVersions("u1", 1, 2);
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "hola", EntryId = "u1" },
+            new ChatMessageModel { Role = "assistant", Content = "otra", MessageId = "r2" }
+        ]));
+
+        _dispatcher.Dispatch(new EntryIdsLearned("t",
+        [
+            History("user", "hola", "u1"),
+            History("assistant", "otra", "a2", "r2") with { Versions = versions, ToolsCalled = ["timer_set"] }
+        ]));
+
+        var reply = _store.State.MessagesByTopic["t"][1];
+        reply.Versions.ShouldBe(versions);
+        reply.ToolsCalled.ShouldBe(["timer_set"]);
+    }
+
+    // The "No reply" line stood for the answer that has now streamed in, and the history no longer has it.
+    [Fact]
+    public void ANoReplyLineTheHistoryNoLongerHas_Goes()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "hola", EntryId = "u1" },
+            new ChatMessageModel { Role = "assistant", NoReply = true, Versions = new MessageVersions("u1", 0, 1) },
+            new ChatMessageModel { Role = "assistant", Content = "otra", MessageId = "r2" }
+        ]));
+
+        _dispatcher.Dispatch(new EntryIdsLearned("t", [History("user", "hola", "u1"), History("assistant", "otra", "a2", "r2")]));
+
+        _store.State.MessagesByTopic["t"].Select(m => m.EntryId).ShouldBe(["u1", "a2"]);
+    }
+
+    // A rerun that was stopped again leaves the line the history now draws.
+    [Fact]
+    public void ANoReplyLineTheHistoryHas_IsDrawn()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("t", [new ChatMessageModel { Role = "user", Content = "hola", EntryId = "u1" }]));
+
+        _dispatcher.Dispatch(new EntryIdsLearned("t",
+        [
+            History("user", "hola", "u1"),
+            new ChatHistoryMessage(null, "assistant", "", null, null, Versions: new MessageVersions("u1", 1, 2), NoReply: true)
+        ]));
+
+        _store.State.MessagesByTopic["t"].Select(m => m.NoReply).ShouldBe([false, true]);
+    }
+
     private static ChatHistoryMessage History(string role, string content, string entryId, string? messageId = null) =>
         new(messageId, role, content, null, null, EntryId: entryId);
 }

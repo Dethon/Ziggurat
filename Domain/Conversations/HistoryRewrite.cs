@@ -58,7 +58,30 @@ public abstract record HistoryRewrite(string? LastSeen)
 
         return rewrite.Refusal(history.Messages, at) is { } refusal
             ? new RewriteRefused(refusal)
-            : new Rewritten(history, rewrite.Make(Stamped(history), at, now));
+            : new Rewritten(history, FailedTurnsWhole(rewrite.Make(Stamped(history), at, now)));
+    }
+
+    // A failed turn is the line's last: the person's words and what they were told instead of an answer,
+    // which a retry replaces. A mark a rewrite left anywhere else — under a reply a version brought back,
+    // or on words whose error was deleted — would hide a message from the model that no retry can reach,
+    // so it comes off; the words are then a message like any other.
+    private static ConversationHistory FailedTurnsWhole(ConversationHistory history)
+    {
+        var messages = history.Messages;
+        var tail = messages.Reverse().TakeWhile(m => m.IsFailedTurn()).Count();
+        var keepTail = tail > 0 && messages[^1].Role == ChatRole.Assistant;
+        var kept = keepTail ? messages.Count - tail : messages.Count;
+        return messages.Take(kept).Any(m => m.IsFailedTurn())
+            ? history with { Messages = [.. messages.Index().Select(x => x.Index < kept && x.Item.IsFailedTurn() ? Answered(x.Item) : x.Item)] }
+            : history;
+    }
+
+    private static ChatMessage Answered(ChatMessage message)
+    {
+        var copy = message.Clone();
+        copy.AdditionalProperties = message.AdditionalProperties is null ? [] : new(message.AdditionalProperties);
+        copy.UnmarkFailedTurn();
+        return copy;
     }
 
     // Where on the line the rewrite acts, as an index, before anything is stamped: a legacy name is a
@@ -141,7 +164,9 @@ public sealed record PutAside(string? AfterEntryId, string? LastSeen) : HistoryR
     {
         var at = from - 1;
         var slot = SlotAfter(history.Messages, at);
-        var tail = history.Messages.Skip(at + 1).ToList();
+
+        // A failed turn is replaced by its retry, never kept as a version.
+        var tail = history.Messages.Skip(at + 1).Where(m => !m.IsFailedTurn()).ToList();
         var versions = Copy(history);
         var existing = versions.GetValueOrDefault(slot);
 
@@ -150,7 +175,15 @@ public sealed record PutAside(string? AfterEntryId, string? LastSeen) : HistoryR
         IReadOnlyList<HistoryVersion> inactive = tail.Count == 0
             ? existing?.Inactive ?? []
             : [.. existing?.Inactive ?? [], new HistoryVersion(madeAt, tail)];
-        versions[slot] = new SlotVersions(now, inactive);
+        // A slot with nothing put aside has one version, which is no choice to draw.
+        if (inactive.Count == 0)
+        {
+            versions.Remove(slot);
+        }
+        else
+        {
+            versions[slot] = new SlotVersions(now, inactive);
+        }
 
         return new ConversationHistory([.. history.Messages.Take(at + 1)], versions);
     }

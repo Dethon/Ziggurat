@@ -45,6 +45,30 @@ public class RedisChatMessageStoreTurnInFlightTests
         _calls.Last().ShouldBe("clear");
     }
 
+    // Stop cancels the turn's token while the reply streams: the mark must go, or every rewrite of the
+    // topic is refused until it expires.
+    [Fact]
+    public async Task ATurnStoppedMidReply_ClearsTheMark()
+    {
+        using var cts = new CancellationTokenSource();
+        var history = new RedisChatMessageStore(_store.Object);
+        var agent = new SlowClient().AsAIAgent(new ChatClientAgentOptions { ChatHistoryProvider = history });
+        var session = await agent.CreateSessionAsync();
+        session.StateBag.SetValue(RedisChatMessageStore.StateKey, Key);
+        try
+        {
+            await foreach (var _ in agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hola")], session, cancellationToken: cts.Token))
+            {
+                await cts.CancelAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        _calls.ShouldContain("clear");
+    }
+
     [Fact]
     public async Task AFailedTurn_ClearsTheMarkAfterItIsKept()
     {
@@ -86,6 +110,28 @@ public class RedisChatMessageStoreTurnInFlightTests
 #pragma warning disable CS0162
             yield break;
 #pragma warning restore CS0162
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class SlowClient : IChatClient
+    {
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "first ");
+            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "second");
         }
 
         public object? GetService(Type serviceType, object? serviceKey = null) => null;

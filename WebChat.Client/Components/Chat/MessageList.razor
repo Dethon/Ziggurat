@@ -271,7 +271,12 @@
     private IReadOnlyList<MessageActionKind> ActionsFor(ChatMessageModel message, int index) =>
         MessageActionsLogic.For(message, new MessageActionContext(
             _isStreaming, _topic?.MayRewrite(_currentUserId) == true,
-            IsLastReply: index == _messages.Count - 1));
+            IsLastReply: index == _messages.Count - 1 && AnswersAPerson(index)));
+
+    // The reply at an index answers a person's own message, which a reroll may send again: not a turn a
+    // service started (a fire, a login), which acted for whoever its delegation named.
+    private bool AnswersAPerson(int index) =>
+        _messages.Take(index).LastOrDefault(m => m.Role == "user") is { } asked && ServiceNotice.Of(asked) is null;
 
     // The models the topic's agent may be run on, a reroll's choice.
     private IReadOnlyList<PatchableModel> RerollModels =>
@@ -382,7 +387,7 @@
                         <span>No reply</span>
                         <VersionSwitcher Versions="@slotVersions" Enabled="@MayRewrite"
                                          OnSwitch="@(index => HandleSwitchVersion(slotVersions, index))" />
-                        @if (MayRewrite && index == _messages.Count - 1)
+                        @if (MayRewrite && index == _messages.Count - 1 && AnswersAPerson(index))
                         {
                             <button class="btn-retry" @onclick="@(() => Reroll(null))">
                                 <Icon Glyph="Icons.Retry" Size="14" />

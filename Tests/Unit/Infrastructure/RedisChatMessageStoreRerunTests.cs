@@ -87,6 +87,15 @@ public class RedisChatMessageStoreRerunTests
         _stored[4].GetEntryId().ShouldNotBe("u1");
     }
 
+    // A legacy name is a place and a fingerprint, never a message's own: none is ever kept as one.
+    [Fact]
+    public async Task ALegacyName_IsNeverKept()
+    {
+        await RunAsync(new AnsweringClient(), Rerun("hola", "legacy:2:abcdef"));
+
+        _stored.Select(m => m.GetEntryId()).ShouldAllBe(id => id != null && !id.StartsWith("legacy:"));
+    }
+
     private static ChatMessage Rerun(string text, string entryId) => Stamped(ChatRole.User, text, entryId);
 
     private static ChatMessage Stamped(ChatRole role, string text, string entryId)

@@ -88,9 +88,14 @@ public sealed class HistoryEditEffect : IDisposable
 
         var putAside = await RewriteAsync(topicId, (topic, lastSeen) =>
             _topicService.PutAsideReplyAsync(topic.AgentId, topic.TopicId, topic.ChatId, entryId, lastSeen));
-        if (putAside)
+
+        // By the name the history gives it now: a conversation from before entry ids was stamped by the
+        // rewrite, and the legacy name the page held names nothing any more.
+        var named = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, [])
+            .LastOrDefault(m => m.Role == "user")?.EntryId;
+        if (putAside && named is not null)
         {
-            _dispatcher.Dispatch(new SendRerun(topicId, asked.Content, asked.Attachments ?? [], entryId, configPatch));
+            _dispatcher.Dispatch(new SendRerun(topicId, asked.Content, asked.Attachments ?? [], named, configPatch));
         }
     }
 

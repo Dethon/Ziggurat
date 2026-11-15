@@ -1190,6 +1190,7 @@ internal sealed class ConversationGroup(
                     }
                 },
                 ct)
+            .Finally(() => threadResolver.EndTurnAsync(state.DeliveryKey))
             .Select(pair => new TurnUpdate(pair.Item1, turn));
     }
 

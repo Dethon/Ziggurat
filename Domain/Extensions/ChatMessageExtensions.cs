@@ -47,6 +47,8 @@ public static class ChatMessageExtensions
             message.AdditionalProperties[FailedTurnKey] = true;
         }
 
+        public void UnmarkFailedTurn() => message.AdditionalProperties?.Remove(FailedTurnKey);
+
         // The message's own name in its conversation, given as it is stored: how a page addresses one
         // message to rewrite or fork from. Not MessageId, which is the provider's per-call response id
         // that approvals and the stream's bubbles are keyed by.

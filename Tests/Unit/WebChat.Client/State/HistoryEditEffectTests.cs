@@ -101,6 +101,7 @@ public sealed class HistoryEditEffectTests : IDisposable
     public async Task Reroll_PutsTheReplyAside_ThenAsksForTheMessageToBeAnsweredAgain()
     {
         var patch = new AgentConfigPatch { Model = "other/model" };
+        _topicService.SetHistory(7, 8, new ChatHistoryMessage(null, "user", "hola", null, null, EntryId: "e1"));
         SendRerun? asked = null;
         using var _ = _dispatcher.RegisterHandler<SendRerun>(a => asked = a);
 
@@ -110,6 +111,26 @@ public sealed class HistoryEditEffectTests : IDisposable
         asked.ShouldNotBeNull();
         (asked.TopicId, asked.Message, asked.RerunOf, asked.ConfigPatch).ShouldBe(("t", "hola", "e1", patch));
         asked.Attachments.ShouldBeEmpty();
+    }
+
+    // A conversation from before entry ids is stamped by the rewrite, so the message is answered again
+    // by the name the history now gives it, never the legacy one the page held.
+    [Fact]
+    public async Task Reroll_OfALegacyConversation_AsksByTheNameTheRewriteGaveIt()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "hola", EntryId = "legacy:0:aaa" },
+            new ChatMessageModel { Role = "assistant", Content = "buenas", EntryId = "legacy:1:bbb" }
+        ]));
+        _topicService.SetHistory(7, 8, new ChatHistoryMessage(null, "user", "hola", null, null, EntryId: "stamped"));
+        SendRerun? asked = null;
+        using var _ = _dispatcher.RegisterHandler<SendRerun>(a => asked = a);
+
+        await _effect.HandleRerollAsync("t", null);
+
+        _topicService.RepliesPutAside.ShouldHaveSingleItem().UserEntryId.ShouldBe("legacy:0:aaa");
+        asked.ShouldNotBeNull().RerunOf.ShouldBe("stamped");
     }
 
     [Fact]

@@ -251,6 +251,49 @@ public class HistoryRewriteTests
         after.Versions["u1"].Inactive.Single().Messages.Count.ShouldBe(4);
     }
 
+    // A failed turn is replaced by its retry, never kept: it is no version of anything.
+    [Fact]
+    public void AFailedTurn_PutAside_IsNoVersion()
+    {
+        var history = Line(("u1", "user"), ("a1", "assistant"));
+        history.Messages[1].MarkFailedTurn();
+
+        var after = Apply(history, new PutAsideReply("u1", "a1"));
+
+        after.Versions.ShouldNotContainKey("u1");
+    }
+
+    // A reroll failed, its error deleted: the earlier reply comes back under the message, which is
+    // no failed turn any more, so the model reads both again.
+    [Fact]
+    public void DeletingAFailedRerollsError_BringsTheOldReplyBack_UnderAMessageNoLongerFailed()
+    {
+        var history = Line(("u1", "user"), ("a1", "assistant"));
+        var aside = Apply(history, new PutAsideReply("u1", "a1"));
+        var failed = Message("u1", "user");
+        failed.MarkFailedTurn();
+        var error = Message("err", "assistant");
+        error.MarkFailedTurn();
+        aside = aside with { Messages = [failed, error] };
+
+        var after = Apply(aside, new CutFrom("err", "err"));
+
+        after.Messages.Select(m => (m.GetEntryId(), m.IsFailedTurn())).ShouldBe([("u1", false), ("a1", false)]);
+    }
+
+    // An ordinary failed turn's error deleted: what the person said stays, as a message the model reads.
+    [Fact]
+    public void DeletingAFailedTurnsError_LeavesThePersonsMessageForTheModel()
+    {
+        var history = Line(("u0", "user"), ("a0", "assistant"), ("u1", "user"), ("err", "assistant"));
+        history.Messages[2].MarkFailedTurn();
+        history.Messages[3].MarkFailedTurn();
+
+        var after = Apply(history, new CutFrom("err", "err"));
+
+        after.Messages.Select(m => (m.GetEntryId(), m.IsFailedTurn())).ShouldBe([("u0", false), ("a0", false), ("u1", false)]);
+    }
+
     [Fact]
     public void ARewrite_OfALineThatChangedSinceThePageSawIt_IsRefused()
     {

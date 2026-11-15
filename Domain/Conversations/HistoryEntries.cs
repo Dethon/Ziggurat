@@ -14,6 +14,9 @@ public static class HistoryEntries
 {
     private const string LegacyPrefix = "legacy:";
 
+    // A name derived from a message's place, which is never a message's own and never kept as one.
+    public static bool IsLegacy(string entryId) => entryId.StartsWith(LegacyPrefix, StringComparison.Ordinal);
+
     public static string IdAt(IReadOnlyList<ChatMessage> messages, int index) =>
         messages[index].GetEntryId() ?? $"{LegacyPrefix}{index}:{Fingerprint(messages[index])}";
 
