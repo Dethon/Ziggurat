@@ -26,7 +26,7 @@ self.addEventListener('push', event => {
         self.clients.matchAll({ type: 'window', includeUncontrolled: false })
             .then(clients => {
                 const isOnSpace = clients.some(
-                    c => c.visibilityState === 'visible' && new URL(c.url).pathname === notificationUrl
+                    c => c.visibilityState === 'visible' && spacePage(new URL(c.url).pathname) === spacePage(notificationUrl)
                 );
                 if (isOnSpace) return;
                 // One notification per conversation: a later reply in it replaces the earlier one.
@@ -43,6 +43,12 @@ self.addEventListener('push', event => {
             })
     );
 });
+
+// The default space is the front page as well as /default, and a trailing slash names the same space.
+function spacePage(path) {
+    const trimmed = path.replace(/\/+$/, '');
+    return trimmed === '' ? '/default' : trimmed;
+}
 
 self.addEventListener('notificationclick', event => {
     event.notification.close();

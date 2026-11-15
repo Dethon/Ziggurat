@@ -56,6 +56,10 @@ public sealed class ApprovalService(
             };
 
             await streamService.WriteMessageAsync(topicId, approvalMessage);
+            if (asker is not null && sessionService.GetSessionByConversationId(p.ConversationId) is { } session)
+            {
+                _ = PushAskedAsync(asker, session, topicId, requests, approvalId);
+            }
 
             var (result, _) = await WaitAsync(approvalId, context, ct);
 
@@ -151,13 +155,37 @@ public sealed class ApprovalService(
             ? approvalId
             : Guid.NewGuid().ToString("N");
 
+    // The card renders on a page its asker may not be looking at — the app in their pocket — so their
+    // devices are told, as a finished reply's are, and a tap opens the conversation holding it. The
+    // worker stays quiet where the space is on screen and the card already shows.
+    private async Task PushAskedAsync(
+        Account asker, ChannelSession session, string topicId, IReadOnlyList<ToolApprovalRequest> requests, string approvalId)
+    {
+        try
+        {
+            var spaceSlug = session.SpaceSlug ?? SpaceConfig.DefaultSlug;
+            var question = $"Approve {ToolNames(requests)}?";
+            await pushNotifications.SendToPersonAsync(asker, spaceSlug, new PushNotice(
+                "Approval needed",
+                session.TopicName is { Length: > 0 } name ? $"{question} ({name})" : question,
+                $"/{spaceSlug}",
+                new PushTopic(session.AgentId, topicId)));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to push approval {ApprovalId} to its asker's devices", approvalId);
+        }
+    }
+
+    private static string ToolNames(IReadOnlyList<ToolApprovalRequest> requests) =>
+        string.Join(", ", requests.Select(r => r.ToolName.Split("__").Last()));
+
     private async Task PushOfferAsync(OfferApprovalParams p, string spaceSlug)
     {
         try
         {
-            var tools = string.Join(", ", p.Requests.Select(r => r.ToolName.Split("__").Last()));
             await pushNotifications.SendToPersonAsync(
-                p.Asker, spaceSlug, new PushNotice("Approval needed", $"Approve {tools}?", "/"));
+                p.Asker, spaceSlug, new PushNotice("Approval needed", $"Approve {ToolNames(p.Requests)}?", "/"));
         }
         catch (Exception ex)
         {

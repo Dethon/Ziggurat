@@ -68,6 +68,49 @@ public class ApprovalServiceTests : IDisposable
         _sut.AskerOf(approvalId).ShouldBe(_fran);
     }
 
+    // A question asked in a topic is its asker's phone's news too: the card renders on a page they
+    // may not be looking at, so their devices are told, and a tap opens the conversation it is in.
+    // The worker stays quiet on a page showing the space, as it does for a finished reply.
+    [Fact]
+    public async Task RequestApprovalAsync_InATopic_PushesItsAskersDevicesWithTheConversation()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "kitchen", topicName: "Groceries");
+        _streamService.GetOrCreateStream("topic1", "prompt", "fran", CancellationToken.None);
+
+        _ = _sut.RequestApprovalAsync(
+            new RequestApprovalParams
+            {
+                ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = Buy(),
+                ApprovalId = Guid.NewGuid().ToString("N")
+            },
+            _fran);
+
+        await Eventually.Until(() => _push.Invocations.Count > 0, "the push to go out");
+        _push.Verify(push => push.SendToPersonAsync(
+                _fran, "kitchen",
+                new PushNotice("Approval needed", "Approve buy? (Groceries)", "/kitchen", new PushTopic("agent1", "topic1")),
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    // A turn acting for nobody has nobody whose phone to tell.
+    [Fact]
+    public async Task RequestApprovalAsync_InATopicForNobody_PushesNothing()
+    {
+        _sessionService.StartSession("topic1", "agent1", 100, 200, spaceSlug: "kitchen");
+        _streamService.GetOrCreateStream("topic1", "prompt", "user1", CancellationToken.None);
+
+        _ = _sut.RequestApprovalAsync(
+            new RequestApprovalParams
+            {
+                ConversationId = "100:200", Mode = ApprovalMode.Request, Requests = Buy(),
+                ApprovalId = Guid.NewGuid().ToString("N")
+            });
+
+        await Eventually.Settle();
+        _push.VerifyNoOtherCalls();
+    }
+
     // Answered on another channel, the question still lets through what it asked about here — the
     // approved call is written into the topic as if it had been answered on the card — and every
     // browser showing the card is told it was answered elsewhere.
