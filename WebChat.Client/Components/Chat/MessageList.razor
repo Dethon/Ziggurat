@@ -239,6 +239,25 @@
         }
     }
 
+    private IReadOnlyList<MessageActionKind> ActionsFor(ChatMessageModel message) =>
+        MessageActionsLogic.For(message, new MessageActionContext(
+            _isStreaming, _topic?.MayRewrite(_currentUserId) == true));
+
+    private void HandleAction(ChatMessageModel message, MessageActionKind action)
+    {
+        if (_topicId is null || message.EntryId is null)
+        {
+            return;
+        }
+
+        switch (action)
+        {
+            case MessageActionKind.Delete:
+                Dispatcher.Dispatch(new DeleteMessagesFrom(_topicId, message.EntryId));
+                break;
+        }
+    }
+
     private bool ShouldShowAvatar(int index)
     {
         if (index == 0)
@@ -301,6 +320,8 @@
                          IsOwnMessage="@IsOwnMessage(message)"
                          ShowRetry="@(message.IsError && index == _messages.Count - 1 && !_isStreaming)"
                          OnRetry="@HandleRetry"
+                         Actions="@ActionsFor(message)"
+                         OnAction="@(action => HandleAction(message, action))"
                          TopicOwnerId="@_topic?.OwnerId"
                          TopicOwnerName="@_topic?.OwnerName" />
         }

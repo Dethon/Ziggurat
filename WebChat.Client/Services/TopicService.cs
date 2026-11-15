@@ -45,6 +45,10 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
         string agentId, long chatId, long threadId) =>
         liveConnection.InvokeAsync<IReadOnlyList<ChatHistoryMessage>>("GetHistory", agentId, chatId, threadId);
 
+    public Task<HubResult<Nothing>> DeleteFromAsync(
+        string agentId, string topicId, long chatId, string entryId, string? lastSeen) =>
+        liveConnection.InvokeAsync("DeleteFrom", agentId, topicId, chatId, entryId, lastSeen);
+
     public Task<HubResult<Nothing>> JoinSpaceAsync(string spaceSlug) =>
         liveConnection.InvokeAsync("JoinSpace", spaceSlug);
 

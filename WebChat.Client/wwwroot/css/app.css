@@ -1260,6 +1260,102 @@ h1, h2, h3 {
 }
 
 /* ===================================
+   A bubble's actions: one tap target, a small menu above everything
+   =================================== */
+
+.message-actions {
+    position: relative;
+    display: inline-flex;
+}
+
+.btn-message-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    padding: 0.25rem;
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--transition-fast), background-color var(--transition-fast);
+}
+
+.chat-message:hover .btn-message-actions,
+.btn-message-actions[aria-expanded="true"] {
+    opacity: 0.6;
+}
+
+.btn-message-actions:hover {
+    opacity: 1;
+    background-color: var(--bg-tertiary);
+}
+
+.chat-message.user .btn-message-actions {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+@media (hover: none) {
+    .btn-message-actions {
+        opacity: 0.5;
+    }
+}
+
+.message-actions-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+}
+
+.message-actions-menu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 0.25rem);
+    z-index: 41;
+    min-width: 12rem;
+    max-width: min(18rem, calc(100vw - 2rem));
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem;
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    color: var(--text-primary);
+    text-align: left;
+}
+
+.message-action {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 0.875rem;
+    cursor: pointer;
+    text-align: left;
+}
+
+.message-action:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.message-action.danger {
+    color: #ef4444;
+}
+
+.message-actions-question {
+    padding: 0.5rem 0.625rem 0.25rem;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+/* ===================================
    Collapsible Blocks
    =================================== */
 

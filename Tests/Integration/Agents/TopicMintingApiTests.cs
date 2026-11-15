@@ -109,6 +109,7 @@ public sealed class TopicMintingApiTests(TopicSearchFixture redis) : IClassFixtu
         (topic.TopicId, topic.Name, topic.OwnerId, topic.TenantId, topic.Shared, topic.OwnerName)
             .ShouldBe((minted.TopicId, "Kitchen @ Cocina", "alice", Home, false, "Alice"));
         minted.ConversationId.ShouldBe($"{topic.ChatId}:{topic.ThreadId}");
+        topic.Mirrored.ShouldBeTrue();
         (await PageAsync(new TopicViewer("bob", Home))).ShouldBeEmpty();
     }
 

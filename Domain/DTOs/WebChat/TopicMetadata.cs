@@ -40,7 +40,11 @@ public record TopicMetadata(
     // How far each person read it, by account id: one person's devices share a position, and another
     // member reading a shared topic clears nothing for them (Carlos read the reply and Ana was shown
     // nothing unread, while the topic held one position for all).
-    IReadOnlyDictionary<string, long>? ReadBy = null)
+    IReadOnlyDictionary<string, long>? ReadBy = null,
+
+    // A topic over a conversation another channel goes on showing — a review copy, a voice
+    // conversation — so it is forked, never rewritten (TopicMirrors).
+    bool Mirrored = false)
 {
     // The topic as this person reads it: their own position, or the one from before for whoever has none.
     public TopicMetadata ReadFor(string? userId) =>

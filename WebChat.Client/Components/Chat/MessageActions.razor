@@ -1,0 +1,67 @@
+@* A bubble's actions, behind one tap target: the app is used on a phone, where nothing hovers. A
+   rewrite that discards anything is asked about once more inside the menu before it is made. *@
+
+@code {
+    [Parameter] public IReadOnlyList<MessageActionKind> Actions { get; set; } = [];
+    [Parameter] public EventCallback<MessageActionKind> OnAction { get; set; }
+
+    private bool _open;
+    private MessageActionKind? _confirming;
+
+    private void Toggle()
+    {
+        _open = !_open;
+        _confirming = null;
+    }
+
+    private void Close()
+    {
+        _open = false;
+        _confirming = null;
+    }
+
+    private async Task Choose(MessageActionKind action)
+    {
+        if (MessageActionLabels.AsksFirst(action) && _confirming != action)
+        {
+            _confirming = action;
+            return;
+        }
+
+        Close();
+        await OnAction.InvokeAsync(action);
+    }
+}
+
+<div class="message-actions">
+    <button class="btn-message-actions" @onclick="Toggle" aria-label="Message actions" aria-haspopup="menu"
+            aria-expanded="@(_open ? "true" : "false")" title="More">
+        <Icon Glyph="Icons.More" Size="14" />
+    </button>
+
+    @if (_open)
+    {
+        <div class="message-actions-backdrop" @onclick="Close"></div>
+        <div class="message-actions-menu" role="menu">
+            @if (_confirming is { } confirming)
+            {
+                <div class="message-actions-question">@MessageActionLabels.Question(confirming)</div>
+                <button role="menuitem" class="message-action danger" @onclick="() => Choose(confirming)">
+                    @MessageActionLabels.Label(confirming)
+                </button>
+                <button role="menuitem" class="message-action" @onclick="Close">Cancel</button>
+            }
+            else
+            {
+                @foreach (var action in Actions)
+                {
+                    <button role="menuitem" class="message-action @(MessageActionLabels.AsksFirst(action) ? "danger" : "")"
+                            @onclick="() => Choose(action)">
+                        <Icon Glyph="@MessageActionLabels.Glyph(action)" Size="14" />
+                        @MessageActionLabels.Label(action)
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>

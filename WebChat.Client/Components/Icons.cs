@@ -146,6 +146,13 @@ public static class Icons
     public static readonly IconGlyph Retry = Stroked(
         """<polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />""");
 
+    // A bubble's actions menu.
+    public static readonly IconGlyph More = Stroked(
+        """<circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" />""");
+
+    public static readonly IconGlyph TrashStroked = Stroked(
+        """<polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />""");
+
     public static readonly IconGlyph Sun = Stroked(
         """
         <circle cx="12" cy="12" r="5" />

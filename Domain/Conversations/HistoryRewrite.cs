@@ -17,7 +17,18 @@ public enum RewriteRefusal
 
 public abstract record RewriteOutcome;
 
-public sealed record Rewritten(ConversationHistory Before, ConversationHistory After) : RewriteOutcome;
+public sealed record Rewritten(ConversationHistory Before, ConversationHistory After) : RewriteOutcome
+{
+    // The files the conversation held before and holds nowhere now, on its line or in a version.
+    public IReadOnlyList<string> AttachmentsNoLongerHeld() => [.. AttachmentsOf(Before).Except(AttachmentsOf(After))];
+
+    private static IEnumerable<string> AttachmentsOf(ConversationHistory history) =>
+        history.Messages
+            .Concat(history.Versions.Values.SelectMany(slot => slot.Inactive).SelectMany(v => v.Messages))
+            .SelectMany(m => m.GetAttachments() ?? [])
+            .Select(a => a.Id)
+            .Distinct();
+}
 
 public sealed record RewriteRefused(RewriteRefusal Reason) : RewriteOutcome;
 
@@ -160,7 +171,15 @@ public sealed record SwitchVersion(string? SlotEntryId, int Index, string? LastS
 // never deletes the others.
 public sealed record CutFrom(string EntryId, string? LastSeen) : HistoryRewrite(LastSeen)
 {
-    private protected override int? Resolve(IReadOnlyList<ChatMessage> messages) => HistoryEntries.IndexOf(messages, EntryId);
+    // A reply is one bubble over its whole turn, so it is cut from the first message after the person's.
+    private protected override int? Resolve(IReadOnlyList<ChatMessage> messages) =>
+        HistoryEntries.IndexOf(messages, EntryId) is not { } index
+            ? null
+            : messages[index].Role == ChatRole.User
+                ? index
+                : messages.Take(index).Index().LastOrDefault(x => x.Item.Role == ChatRole.User) is { Item: not null } user
+                    ? user.Index + 1
+                    : 0;
 
     private protected override ConversationHistory Make(ConversationHistory history, int at, DateTimeOffset now)
     {

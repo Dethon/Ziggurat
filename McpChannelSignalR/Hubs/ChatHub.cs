@@ -939,6 +939,51 @@ public sealed class ChatHub(
             : hubSender.SendToTopicAsync(stored, spaceSlug, "OnTopicChanged", notification));
     }
 
+    // The message and everything after it on the line leave the conversation; on a reply, its whole turn.
+    public async Task DeleteFrom(string agentId, string topicId, long chatId, string entryId, string? lastSeen)
+    {
+        var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
+        await RewriteAsync(topic, key, new CutFrom(entryId, lastSeen));
+    }
+
+    // A topic this person may write in, over its own conversation, that no other channel goes on
+    // showing and no reply is being written to.
+    private async Task<(TopicMetadata Topic, string Key)> RewritableAsync(string agentId, string topicId, long chatId)
+    {
+        var topic = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId)
+                    ?? throw new HubException(NoSuchConversation);
+        RequireMayContinue(topic);
+        if (streamService.IsStreaming(topicId))
+        {
+            throw new HubException(TopicRefusals.ReplyRunning);
+        }
+
+        var key = new AgentKey(new ConversationIdentity(topic.ChatId, topic.ThreadId).ConversationId, agentId).ToString();
+        if (TopicMirrors.IsMirrored(topic, await threadStore.GetMessagesAsync(key) ?? []))
+        {
+            throw new HubException(TopicRefusals.Mirrored);
+        }
+
+        return (topic, key);
+    }
+
+    private async Task RewriteAsync(TopicMetadata topic, string key, HistoryRewrite rewrite)
+    {
+        switch (await threadStore.RewriteAsync(key, rewrite))
+        {
+            case RewriteRefused { Reason: RewriteRefusal.TurnInFlight }:
+                throw new HubException(TopicRefusals.ReplyRunning);
+            case RewriteRefused:
+                throw new HubException(TopicRefusals.Changed);
+            case Rewritten rewritten:
+                attachmentService.Delete(rewritten.AttachmentsNoLongerHeld());
+                var spaceSlug = HeardIn(topic.SpaceSlug);
+                await hubSender.SendToTopicAsync(
+                    topic, spaceSlug, "OnHistoryChanged", new HistoryChangedNotification(topic.TopicId, spaceSlug));
+                break;
+        }
+    }
+
     public async Task SubscribePush(PushSubscriptionDto subscription)
     {
         ValidateSubscription(subscription);

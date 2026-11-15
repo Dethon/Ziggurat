@@ -82,6 +82,15 @@ public sealed class AttachmentService(
 
     public void DeleteConversation(string conversationId) => store.DeleteConversation(conversationId);
 
+    // Files a rewrite left nothing holding. Another channel's reference is no file of this store's.
+    public void Delete(IEnumerable<string> attachmentIds)
+    {
+        foreach (var id in attachmentIds)
+        {
+            store.Delete(id);
+        }
+    }
+
     // The conversation a kept file belongs to and the agent holding it, so a download is minted only
     // for someone who may see that conversation's topic. No agent for a file kept before files named
     // theirs, which was the home's.

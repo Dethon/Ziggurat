@@ -1,3 +1,4 @@
+using Domain.Conversations;
 using Domain.DTOs.WebChat;
 
 namespace WebChat.Client.Models;
@@ -45,6 +46,17 @@ public class StoredTopic
     // conversations is reading them, so another person's private topic is read-only.
     public bool MayContinue(string? viewerId) => OwnerId is null || OwnerId == viewerId || Shared;
 
+    // Another channel goes on showing the conversation (TopicMetadata.Mirrored).
+    public bool Mirrored { get; set; }
+
+    // The hub's rule for rewriting it (ChatHub.RewritableAsync, TopicMirrors): continuing it, over its own
+    // conversation, which no other channel goes on showing. A voice topic from before the mark is told
+    // only by its messages, which the hub reads and this page does not, so the hub refuses that one.
+    public bool MayRewrite(string? viewerId) =>
+        MayContinue(viewerId)
+        && !Mirrored
+        && ConversationIdGenerator.CreateFor(TopicId) == new ConversationIdentity(ChatId, ThreadId);
+
     // True while the name is the stand-in a conversation started by a file was given: the file's
     // own name, because at that moment nothing had been typed. The first message with text takes
     // the name over. Not part of the metadata, so it never survives a reload — by then the
@@ -74,7 +86,8 @@ public class StoredTopic
             OwnerId = metadata.OwnerId,
             TenantId = metadata.TenantId,
             Shared = metadata.Shared,
-            OwnerName = metadata.OwnerName
+            OwnerName = metadata.OwnerName,
+            Mirrored = metadata.Mirrored
         };
     }
 
@@ -95,6 +108,7 @@ public class StoredTopic
             OwnerId,
             TenantId,
             Shared,
-            OwnerName);
+            OwnerName,
+            Mirrored: Mirrored);
     }
 }

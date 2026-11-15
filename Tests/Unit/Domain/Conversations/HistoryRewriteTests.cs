@@ -1,4 +1,5 @@
 using Domain.Conversations;
+using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Microsoft.Extensions.AI;
 using Shouldly;
@@ -105,6 +106,48 @@ public class HistoryRewriteTests
         after.Messages.Select(m => m.GetEntryId()).ShouldBe(["u1"]);
     }
 
+    // A reply is drawn as one bubble over every message of its turn, its tool calls among them, so
+    // deleting it takes them all, back to the person's message before it.
+    [Fact]
+    public void CutFrom_AReply_TakesItsWholeTurn()
+    {
+        var history = Line(("u1", "user"), ("call", "assistant"), ("result", "tool"), ("a1", "assistant"));
+
+        var after = Apply(history, new CutFrom("a1", "a1"));
+
+        after.Messages.Select(m => m.GetEntryId()).ShouldBe(["u1"]);
+    }
+
+    // What left the conversation and is held nowhere else, so its file can go with it.
+    [Fact]
+    public void ARewrite_NamesTheAttachmentsNothingHoldsAnyMore()
+    {
+        var kept = Message("u1", "user");
+        kept.SetAttachments([Attachment("c/kept"), Attachment("c/both")]);
+        var dropped = Message("u2", "user");
+        dropped.SetAttachments([Attachment("c/gone"), Attachment("c/both")]);
+        var history = new ConversationHistory([kept, Message("a1", "assistant"), dropped, Message("a2", "assistant")],
+            new Dictionary<string, SlotVersions>());
+
+        var outcome = HistoryRewrite.Apply(history, new CutFrom("u2", "a2"), Now).ShouldBeOfType<Rewritten>();
+
+        outcome.AttachmentsNoLongerHeld().ShouldBe(["c/gone"]);
+    }
+
+    // A version put aside still holds its files.
+    [Fact]
+    public void AnAttachmentInAVersionPutAside_IsStillHeld()
+    {
+        var withFile = Message("u2", "user");
+        withFile.SetAttachments([Attachment("c/photo")]);
+        var history = new ConversationHistory([Message("u1", "user"), Message("a1", "assistant"), withFile],
+            new Dictionary<string, SlotVersions>());
+
+        var outcome = HistoryRewrite.Apply(history, new PutAside("a1", "u2"), Now).ShouldBeOfType<Rewritten>();
+
+        outcome.AttachmentsNoLongerHeld().ShouldBeEmpty();
+    }
+
     [Fact]
     public void ARewrite_OfALineThatChangedSinceThePageSawIt_IsRefused()
     {
@@ -142,6 +185,9 @@ public class HistoryRewriteTests
 
     private static ConversationHistory Apply(ConversationHistory history, HistoryRewrite rewrite, DateTimeOffset? now = null) =>
         HistoryRewrite.Apply(history, rewrite, now ?? Now).ShouldBeOfType<Rewritten>().After;
+
+    private static AttachmentReference Attachment(string id) =>
+        new() { Id = id, FileName = "f.png", MediaType = "image/png", SizeBytes = 1 };
 
     private static ConversationHistory Line(params (string Id, string Role)[] messages) =>
         new([.. messages.Select(m => Message(m.Id, m.Role))], new Dictionary<string, SlotVersions>());

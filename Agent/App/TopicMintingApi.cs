@@ -74,7 +74,10 @@ public static class TopicMintingApi
                 TopicName = request.TopicName,
                 Sender = request.Sender,
                 Principal = identity.Principal,
-                GuestTenantId = identity.IsGuest ? identity.TenantId : null
+                GuestTenantId = identity.IsGuest ? identity.TenantId : null,
+
+                // A satellite goes on speaking in the conversation, so its topic is never rewritten.
+                Mirrored = true
             }, http.RequestAborted);
             return Results.Json(new TopicMinted(creation.Topic.TopicId, creation.Identity.ConversationId));
         });

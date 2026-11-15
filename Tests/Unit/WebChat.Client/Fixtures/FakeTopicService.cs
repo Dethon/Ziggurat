@@ -49,6 +49,10 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     public Exception? ThrowOnGetHistory { get; set; }
 
+    public Exception? ThrowOnDeleteFrom { get; set; }
+
+    public List<(string AgentId, string TopicId, long ChatId, string EntryId, string? LastSeen)> DeletedFrom { get; } = [];
+
     public Exception? ThrowOnDeleteTopic { get; set; }
 
     public Exception? ThrowOnSaveTopic { get; set; }
@@ -284,6 +288,19 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
         _savedTopics.Add(topic);
         return Task.FromResult(HubResult<Nothing>.Answered(default));
+    }
+
+    public Task<HubResult<Nothing>> DeleteFromAsync(
+        string agentId, string topicId, long chatId, string entryId, string? lastSeen)
+    {
+        recorder?.Record($"delete-from:{topicId}:{entryId}");
+        if (ThrowOnDeleteFrom is not null)
+        {
+            return Task.FromException<HubResult<Nothing>>(ThrowOnDeleteFrom);
+        }
+
+        DeletedFrom.Add((agentId, topicId, chatId, entryId, lastSeen));
+        return Task.FromResult(NotLive ? HubResult<Nothing>.NotLive : HubResult<Nothing>.Answered(default));
     }
 
     public async Task<HubResult<Nothing>> DeleteTopicAsync(string agentId, string topicId, long chatId, long threadId)

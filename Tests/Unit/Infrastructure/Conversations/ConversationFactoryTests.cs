@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Infrastructure.Conversations;
@@ -67,6 +68,21 @@ public class ConversationFactoryTests
 
         var topic = saved.ShouldHaveSingleItem();
         (topic.OwnerId, topic.Shared, topic.OwnerName).ShouldBe(((string?)null, true, (string?)null));
+    }
+
+    // A topic over another channel's conversation shows a history that channel goes on showing, so it
+    // is marked a mirror and forked, never rewritten; one the chat client's own turn opens is not.
+    [Fact]
+    public async Task CreateOverAsync_MarksTheTopicAMirror_AndCreateAsyncOnlyWhenAsked()
+    {
+        var (sut, saved) = Build();
+        var person = new Principal("telegram", "fran", new Account("t-home", "u-fran"));
+
+        await sut.CreateOverAsync(new ConversationIdentity(7, 7), Opening(person, "Fran"));
+        await sut.CreateAsync(Opening(person, "Fran"));
+        await sut.CreateAsync(Opening(person, "Fran") with { Mirrored = true });
+
+        saved.Select(t => t.Mirrored).ShouldBe([true, false, true]);
     }
 
     private static (ConversationFactory Sut, List<TopicMetadata> Saved) Build()

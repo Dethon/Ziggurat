@@ -11,6 +11,12 @@ public record UpdateMessage(string TopicId, string MessageId, ChatMessageModel M
 
 public record ClearMessages(string TopicId) : IAction;
 
+// A person deleting a message and everything after it on the line (HistoryEditEffect).
+public record DeleteMessagesFrom(string TopicId, string EntryId) : IAction;
+
+// Somebody rewrote a conversation, so a page holding it reads it again (HistoryEditEffect).
+public record HistoryChanged(string TopicId) : IAction;
+
 // The history read once a streamed turn was stored, naming the bubbles the stream drew.
 public record EntryIdsLearned(string TopicId, IReadOnlyList<ChatHistoryMessage> History) : IAction;
 

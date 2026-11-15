@@ -18,6 +18,9 @@ public sealed class HubEventDispatcher(
     IMessagePipeline pipeline,
     UserIdentityStore identityStore) : IHubEventDispatcher
 {
+    public void HandleHistoryChanged(HistoryChangedNotification notification) =>
+        dispatcher.Dispatch(new HistoryChanged(notification.TopicId));
+
     public void HandleTopicChanged(TopicChangedNotification notification)
     {
         switch (notification.ChangeType)

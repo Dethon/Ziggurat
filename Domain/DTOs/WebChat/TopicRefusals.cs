@@ -9,4 +9,13 @@ public static class TopicRefusals
     // The one answer for a topic the caller may not see, worded as for one that does not exist, so
     // naming another person's private topic tells the namer nothing about it — not even that it is.
     public const string NoSuchConversation = "No such conversation.";
+
+    // A topic another channel goes on showing (TopicMirrors) is forked, never rewritten.
+    public const string Mirrored = "This conversation is also shown on another channel, so it can't be changed here. Fork it to change it.";
+
+    // The page acted on a conversation that moved on since it was drawn.
+    public const string Changed = "This conversation changed since it was shown. Look again and retry.";
+
+    // A turn is writing to the conversation, and would write over the change.
+    public const string ReplyRunning = "A reply is still being written. Wait for it to finish, or stop it.";
 }
