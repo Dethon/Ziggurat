@@ -9,6 +9,7 @@ Spec: ../spec.md (Versions, One rewrite primitive)
   - put the tail after an anchor aside as a version of that slot;
   - switch a slot to one of its versions;
   - cut the tail from an anchor, removing it, the versions nested inside it, and the version from its slot. If the slot has other versions, the newest becomes active.
+- **Guards.** The page-view guard (anchor plus last shown entry) and the turn-in-flight guard (`agent-turn:` key) are checked inside the script. The conversation group sets and clears the in-flight key around each turn, persistence included, with a TTL backstop.
 - **The versions key.** `agent-versions:{agentId}:{chatId}:{threadId}`, following the list's TTL. It is removed by `DeleteAsync(AgentKey)` and by `/clear` (`ChatThreadResolver.ClearAsync`).
   - Check the household migration and anything that scans `agent-key:*` (attachment liveness, retention) and handle the new key there.
 - **Every rewrite keeps the topic record true:**
@@ -17,6 +18,7 @@ Spec: ../spec.md (Versions, One rewrite primitive)
   - the snippet is recomputed;
   - the TTL is refreshed;
   - the search document is rebuilt from the active line.
+- **Nested cleanup.** Removing nested slots on a cut recurses into the versions being removed, since their tails name further slots.
 - **Legacy lists.** A rewrite of a list with no entry ids stamps them first.
 - **The read side.** A store read gives the versions per slot, so later tickets can project them.
 
@@ -26,4 +28,5 @@ These run against real Redis (testcontainers):
 - nesting: put aside, switch inside the new line, switch back. The nested versions return.
 - a deleted message's words no longer match a search;
 - `MessageCount`, `ReadBy` and the snippet match the new line;
+- a rewrite is refused while the in-flight key exists, and refused when the page's last entry moved;
 - deleting the topic or clearing the thread removes the versions key.

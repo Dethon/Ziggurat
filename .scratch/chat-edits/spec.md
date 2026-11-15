@@ -30,7 +30,8 @@ The existing copy button stays. Retry on a failed turn is unchanged: a failed tu
   - Versions are ordered by when they were made, and a new version is shown at once.
   - A reply version shows the model that wrote it when that model is not the agent's own.
 - **What follows a switch.** Switching makes that version, and the line that was last shown under it, the conversation. Both the model and every page read it from then on.
-- **Delete inside a slot.** "Delete from here" on a bubble whose slot holds other versions removes that version and everything under it. The newest remaining version is then shown. When the slot holds no other versions, the conversation simply ends before that bubble.
+- **Delete inside a slot.** "Delete from here" on a bubble whose slot holds other versions removes that version and everything under it. The newest remaining version is then shown. When the slot holds no other versions, the conversation simply ends before that bubble (user's decision, 2026-11-15).
+- **An in-place edit copies the line below it.** The copy takes new entry ids, so versions of slots further down stay with the old line. They come back when the old version is switched to.
 - **A stopped or failed reroll** leaves my message with no reply on the active line. The page draws a "No reply" line with the switcher, so the earlier replies stay reachable.
 
 ### Who may do what (decided)
@@ -39,6 +40,7 @@ The existing copy button stays. Retry on a failed turn is unchanged: a failed tu
 - **Fork** is open to anyone who sees the topic, including a sees-all viewer reading someone else's topic. The fork is the forker's, and it is private.
 - **Mirrored topics are fork-only.** These are review copies of Telegram and Sugary conversations, and voice conversations. Such a topic shares its history with another channel, which goes on showing what that channel showed, so it cannot be rewritten.
 - **Nothing is rewritten while the topic streams.** The hub refuses the rewrite and the client hides the actions.
+- **A turn a service started can't be re-run.** That means a schedule's fire, a login wake, a watch or a download: a user message with an `OriginKind`, or a `ServiceNotice`. Re-sending its prompt as the person's turn would change who it acts for and lose its origin, so reroll and edit-and-re-run are not offered on it. Delete, edit in place and fork still are (user's decision, 2026-11-15).
 
 ### Side effects (decided)
 
@@ -83,6 +85,13 @@ There is one rewrite primitive, beside `DropTailAsync`. Given an anchor, it repl
 
 **Attachment files.** A file that no message on the line or in any version still references is deleted with the rewrite.
 
+**Guards.** The rewrite runs as one Lua script and checks two things there:
+- **The page's view.** The client sends the anchor's entry id and the entry id of the last message it shows. If either has moved, the rewrite is refused with "This conversation changed; reload it."
+- **A turn in flight.** It refuses while `agent-turn:{agentId}:{chatId}:{threadId}` exists, answering "A reply is still being written."
+  - The conversation group sets that key before a turn reads its history, and deletes it after the turn is persisted, including a stopped turn's partial reply (ticket 10).
+  - It has a TTL as a backstop against a crashed agent, refreshed while the turn runs.
+  - This covers what the hub's stream state cannot see: a fire's turn with no live page, and the gap between Stop and the agent persisting the partial reply.
+
 **History changed.** After a rewrite the hub tells the topic's audience `OnHistoryChanged(topicId)`. Every page on it, other than the one that asked, reads the history again before anything else is drawn on it. A rewrite followed by a turn sends the notification before the turn's message is broadcast, so other pages never draw the resent message twice.
 
 ### Turns that rewrite
@@ -94,6 +103,8 @@ There is one rewrite primitive, beside `DropTailAsync`. Given an anchor, it repl
   3. `RedisChatMessageStore` leaves that trailing entry out of the history it provides, because the request carries it.
   4. When storing, it does not append the request message again, so my message keeps its id and the version stays on the reply.
   5. A failed rerun marks the stored message failed in place. A retry of it is then an ordinary retry.
+  - **The entry is no longer trailing.** Something was appended between the put-aside and the turn, so the rerun is stored as an ordinary turn and its message is appended again under a new id. The put-aside reply stays a version at its slot.
+- **A retry keeps the entry id of the message it replaces.** Whenever `FailedTail` drops a failed tail and appends its retry, the retry's user message takes the dropped message's entry id. Versions keyed by that message, such as those of a failed reroll, stay reachable.
 - **The model is recorded on the reply.** Every stored reply message records the model that wrote it (`Model`, the turn's resolved model). History projects it, so a reroll on another model can be told apart.
 - **Continue** is a turn whose user message is marked `Continuation`.
   - It carries a fixed instruction, spelled once: carry on exactly where the last reply stopped, without repeating it.
@@ -109,7 +120,7 @@ There is one rewrite primitive, beside `DropTailAsync`. Given an anchor, it repl
   - the response messages that completed, with every tool call paired with its result, and any unpaired call dropped;
   - the partial text streamed so far.
 
-  The partial text is marked `Interrupted`. The model reads it from then on: it was said. History projects it with `IsInterrupted`, and the page draws "Stopped" under it.
+  This applies on every channel (user's decision, 2026-11-15), so a Telegram `/cancel` or a voice stop keeps the partial reply too. The partial text is marked `Interrupted`. The model reads it from then on: it was said. History projects it with `IsInterrupted`, and the page draws "Stopped" under it.
 - **Truncated.** A reply whose last model call ended because the output token limit was reached is marked `Interrupted` too. The finish reason is read where the stream's updates are collected.
 
 ### Mirrored topics

@@ -12,6 +12,8 @@ Spec: ../spec.md (Cut-off replies)
   Find where the partial updates are available on cancellation: `ConversationGroup.StreamAgentTurn`, or the framework's invoked context.
 - **The model reads it.** It stays in `ModelView`.
 - **History.** It projects `IsInterrupted`. The client draws "Stopped" under the bubble.
+- **Every channel.** This is the store's rule, so it covers Telegram's `/cancel` and a voice stop too.
+- **The in-flight key** (ticket 02) is cleared only after the partial reply is persisted. Ticket 02 sets and clears it, so if 10 lands first, add the key here.
 - **Docs.** Update `.claude/rules/channels.md` where it says "a stopped turn keeps nothing". Update `FailedTurnHistoryTests` too.
 
 ## Acceptance

@@ -11,6 +11,7 @@ Spec: ../spec.md (Turns that rewrite, Side effects)
   - puts the message and its tail aside as a version of the slot before it;
   - sends `OnHistoryChanged`;
   - then sends the new text as an ordinary turn on the person's stream, with the page's config patch. The original message's attachments are carried over.
+- **Fire turns.** Not offered on a message a service started (spec: "A turn a service started can't be re-run").
 - **Tool warning.** When the replaced tail called tools, the client confirms first and names the tools. The hub answers which tools those were (`ToolsCalledFrom(topicId, entryId)`, or carried on the history projection).
 
 ## Acceptance

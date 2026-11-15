@@ -15,6 +15,7 @@ The first end-to-end slice.
 
   On a reply's entry id it cuts from the first entry after the user message before it, so the hidden tool calls go too.
 - **Mirrored marker.** `TopicMetadata.Mirrors` is set by `ConversationFactory` for review copies and voice topics. For older topics it is derived, as the spec says.
+- Verify that `CreateConversationParams` (or the factory's caller) tells a voice or review-copy topic from a fire's topic. A fire's topic is WebChat's own and stays rewritable.
 - **Attachment files.** Files that no remaining message or version references are deleted.
 - **Other pages.** `OnHistoryChanged(topicId)` goes to the topic's audience. The client reloads the open topic's history when it is told.
 - **Client.**
