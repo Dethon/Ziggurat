@@ -481,6 +481,7 @@ public sealed class McpChannelConnection(
             SatelliteId = notification.SatelliteId,
             DismissedAlert = notification.DismissedAlert,
             ConfigPatch = notification.ConfigPatch,
+            RerunOf = notification.RerunOf,
             ResponseFormat = notification.ResponseFormat,
             ReviewCopy = notification.ReviewCopy,
             TurnKey = notification.TurnKey,

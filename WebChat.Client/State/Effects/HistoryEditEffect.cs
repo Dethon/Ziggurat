@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Microsoft.AspNetCore.SignalR;
 using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
@@ -45,6 +46,8 @@ public sealed class HistoryEditEffect : IDisposable
                 HandleEditAndRerunAsync(a.TopicId, a.EntryId, a.Text).LogFaults(_logger, nameof(EditAndRerun))),
             dispatcher.RegisterHandler<EditMessageInPlace>(a =>
                 HandleEditInPlaceAsync(a.TopicId, a.EntryId, a.Text).LogFaults(_logger, nameof(EditMessageInPlace))),
+            dispatcher.RegisterHandler<RerollLastReply>(a =>
+                HandleRerollAsync(a.TopicId, a.ConfigPatch).LogFaults(_logger, nameof(RerollLastReply))),
             dispatcher.RegisterHandler<SwitchMessageVersion>(a =>
                 HandleSwitchVersionAsync(a.TopicId, a.Slot, a.Index).LogFaults(_logger, nameof(SwitchMessageVersion))),
             dispatcher.RegisterHandler<HistoryChanged>(a =>
@@ -72,6 +75,24 @@ public sealed class HistoryEditEffect : IDisposable
     public Task<bool> HandleEditInPlaceAsync(string topicId, string entryId, string text) =>
         RewriteAsync(topicId, (topic, lastSeen) =>
             _topicService.EditInPlaceAsync(topic.AgentId, topic.TopicId, topic.ChatId, entryId, text, lastSeen));
+
+    // The last person's message is answered again: its reply is put aside, then the message goes as itself.
+    public async Task HandleRerollAsync(string topicId, AgentConfigPatch? configPatch)
+    {
+        var asked = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, [])
+            .LastOrDefault(m => m.Role == "user");
+        if (asked?.EntryId is not { } entryId)
+        {
+            return;
+        }
+
+        var putAside = await RewriteAsync(topicId, (topic, lastSeen) =>
+            _topicService.PutAsideReplyAsync(topic.AgentId, topic.TopicId, topic.ChatId, entryId, lastSeen));
+        if (putAside)
+        {
+            _dispatcher.Dispatch(new SendRerun(topicId, asked.Content, asked.Attachments ?? [], entryId, configPatch));
+        }
+    }
 
     public Task<bool> HandleSwitchVersionAsync(string topicId, string slot, int index) =>
         RewriteAsync(topicId, (topic, lastSeen) =>

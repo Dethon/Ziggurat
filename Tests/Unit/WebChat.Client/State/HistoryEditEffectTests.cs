@@ -96,6 +96,22 @@ public sealed class HistoryEditEffectTests : IDisposable
         sent.Attachments.ShouldBe([photo]);
     }
 
+    // The reply is put aside after the last person's message, which is then answered again as itself.
+    [Fact]
+    public async Task Reroll_PutsTheReplyAside_ThenAsksForTheMessageToBeAnsweredAgain()
+    {
+        var patch = new AgentConfigPatch { Model = "other/model" };
+        SendRerun? asked = null;
+        using var _ = _dispatcher.RegisterHandler<SendRerun>(a => asked = a);
+
+        await _effect.HandleRerollAsync("t", patch);
+
+        _topicService.RepliesPutAside.ShouldHaveSingleItem().ShouldBe(("jonas", "t", 7L, "e1", "e2"));
+        asked.ShouldNotBeNull();
+        (asked.TopicId, asked.Message, asked.RerunOf, asked.ConfigPatch).ShouldBe(("t", "hola", "e1", patch));
+        asked.Attachments.ShouldBeEmpty();
+    }
+
     [Fact]
     public async Task EditInPlace_AsksTheHub_AndSendsNothing()
     {

@@ -208,6 +208,18 @@ public sealed class ChatHubHistoryEditTests : IDisposable
         _hubSender.Verify(s => s.SendToGroupAsync(It.IsAny<string>(), "OnHistoryChanged", It.IsAny<HistoryChangedNotification>()));
     }
 
+    [Fact]
+    public async Task PutAsideReply_KeepsTheReplyAsAVersion_AndTellsTheTopicsAudience()
+    {
+        Holds(Topic());
+        Answers(new Rewritten(Empty, Empty));
+
+        await _hub.PutAsideReply("jonas", TopicId, _identity.ChatId, "u1", "a1");
+
+        _store.Verify(s => s.RewriteAsync(Key, new PutAsideReply("u1", "a1")));
+        _hubSender.Verify(s => s.SendToGroupAsync(It.IsAny<string>(), "OnHistoryChanged", It.IsAny<HistoryChangedNotification>()));
+    }
+
     // A file only the deleted messages held goes with them.
     [Fact]
     public async Task DeleteFrom_DeletesTheFilesNothingHoldsAnyMore()

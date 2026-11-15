@@ -157,6 +157,22 @@ public class McpChannelConnectionParsingTests
     }
 
     [Fact]
+    public async Task HandleChannelMessageNotification_WithRerunOf_MapsItOntoChannelMessage()
+    {
+        var conn = new McpChannelConnection("signalr");
+        conn.HandleChannelMessageNotification(Json("""
+        {"conversationId":"conv-1","sender":"fran","content":"hi","rerunOf":"entry-7"}
+        """));
+
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await foreach (var msg in conn.Messages.WithCancellation(cts.Token))
+        {
+            msg.RerunOf.ShouldBe("entry-7");
+            break;
+        }
+    }
+
+    [Fact]
     public async Task HandleChannelMessageNotification_WithResponseFormat_MapsItOntoChannelMessage()
     {
         var conn = new McpChannelConnection("sugary");

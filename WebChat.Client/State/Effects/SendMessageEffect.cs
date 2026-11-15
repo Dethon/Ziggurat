@@ -33,6 +33,7 @@ public sealed class SendMessageEffect : IDisposable
     private readonly IDisposable _sendMessageRegistration;
     private readonly IDisposable _cancelStreamingRegistration;
     private readonly IDisposable _retryLastMessageRegistration;
+    private readonly IDisposable _sendRerunRegistration;
 
     public SendMessageEffect(
         Dispatcher dispatcher,
@@ -68,6 +69,8 @@ public sealed class SendMessageEffect : IDisposable
         _cancelStreamingRegistration = dispatcher.RegisterHandler<CancelStreaming>(action =>
             HandleCancelStreamingAsync(action.TopicId).LogFaults(_logger, nameof(CancelStreaming)));
         _retryLastMessageRegistration = dispatcher.RegisterHandler<RetryLastMessage>(HandleRetryLastMessage);
+        _sendRerunRegistration = dispatcher.RegisterHandler<SendRerun>(action =>
+            HandleSendRerunAsync(action).LogFaults(_logger, nameof(SendRerun)));
     }
 
     private async Task HandleCancelStreamingAsync(string topicId)
@@ -228,6 +231,24 @@ public sealed class SendMessageEffect : IDisposable
         return source.Length > 50 ? source[..50] + "..." : source;
     }
 
+    // The message is shown already: nothing is drawn for it, and the reply streams in under it.
+    private async Task HandleSendRerunAsync(SendRerun action)
+    {
+        if (_topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == action.TopicId) is not { } topic)
+        {
+            return;
+        }
+
+        if (_sessionService.CurrentTopic?.TopicId != topic.TopicId
+            && !(await _sessionService.StartSessionAsync(topic)).IsLive)
+        {
+            _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+            return;
+        }
+
+        await _streamingService.RerunAsync(topic, action.Message, action.RerunOf, action.ConfigPatch, action.Attachments);
+    }
+
     private void HandleRetryLastMessage(RetryLastMessage action)
     {
         _dispatcher.Dispatch(new RemoveTrailingErrors(action.TopicId));
@@ -255,5 +276,6 @@ public sealed class SendMessageEffect : IDisposable
         _sendMessageRegistration.Dispose();
         _cancelStreamingRegistration.Dispose();
         _retryLastMessageRegistration.Dispose();
+        _sendRerunRegistration.Dispose();
     }
 }

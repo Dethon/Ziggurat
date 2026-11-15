@@ -268,9 +268,23 @@
 
     private bool MayRewrite => !_isStreaming && _topic?.MayRewrite(_currentUserId) == true;
 
-    private IReadOnlyList<MessageActionKind> ActionsFor(ChatMessageModel message) =>
+    private IReadOnlyList<MessageActionKind> ActionsFor(ChatMessageModel message, int index) =>
         MessageActionsLogic.For(message, new MessageActionContext(
-            _isStreaming, _topic?.MayRewrite(_currentUserId) == true));
+            _isStreaming, _topic?.MayRewrite(_currentUserId) == true,
+            IsLastReply: index == _messages.Count - 1));
+
+    // The models the topic's agent may be run on, a reroll's choice.
+    private IReadOnlyList<PatchableModel> RerollModels =>
+        TopicsStore.State.Agents.FirstOrDefault(a => a.Id == _topic?.AgentId)?.PatchableModels ?? [];
+
+    private void Reroll(string? model)
+    {
+        if (_topicId is not null)
+        {
+            Dispatcher.Dispatch(new RerollLastReply(
+                _topicId, model is null ? null : new AgentConfigPatch { Model = model }));
+        }
+    }
 
     private void HandleSwitchVersion(MessageVersions versions, int index)
     {
@@ -280,15 +294,19 @@
         }
     }
 
-    private void HandleAction(ChatMessageModel message, MessageActionKind action)
+    private void HandleAction(ChatMessageModel message, MessageActionChoice choice)
     {
         if (_topicId is null || message.EntryId is null)
         {
             return;
         }
 
-        switch (action)
+        switch (choice.Kind)
         {
+            case MessageActionKind.Reroll:
+            case MessageActionKind.RerollWith:
+                Reroll(choice.Model);
+                break;
             case MessageActionKind.Edit:
                 _editingEntryId = message.EntryId;
                 break;
@@ -357,11 +375,23 @@
 
             if (message is { NoReply: true, Versions: { } slotVersions })
             {
-                <div class="no-reply-line">
-                    <span>No reply</span>
-                    <VersionSwitcher Versions="@slotVersions" Enabled="@MayRewrite"
-                                     OnSwitch="@(index => HandleSwitchVersion(slotVersions, index))" />
-                </div>
+                // A reply streaming in is the answer this line stood for.
+                if (!_isStreaming)
+                {
+                    <div class="no-reply-line">
+                        <span>No reply</span>
+                        <VersionSwitcher Versions="@slotVersions" Enabled="@MayRewrite"
+                                         OnSwitch="@(index => HandleSwitchVersion(slotVersions, index))" />
+                        @if (MayRewrite && index == _messages.Count - 1)
+                        {
+                            <button class="btn-retry" @onclick="@(() => Reroll(null))">
+                                <Icon Glyph="Icons.Retry" Size="14" />
+                                Answer again
+                            </button>
+                        }
+                    </div>
+                }
+
                 continue;
             }
 
@@ -382,7 +412,8 @@
                          IsOwnMessage="@IsOwnMessage(message)"
                          ShowRetry="@(message.IsError && index == _messages.Count - 1 && !_isStreaming)"
                          OnRetry="@HandleRetry"
-                         Actions="@ActionsFor(message)"
+                         Actions="@ActionsFor(message, index)"
+                         RerollModels="@RerollModels"
                          MaySwitchVersions="@MayRewrite"
                          OnSwitchVersion="@(index => HandleSwitchVersion(message.Versions!, index))"
                          OnAction="@(action => HandleAction(message, action))"

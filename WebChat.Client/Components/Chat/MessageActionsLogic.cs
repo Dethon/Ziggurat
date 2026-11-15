@@ -4,13 +4,16 @@ namespace WebChat.Client.Components.Chat;
 
 public enum MessageActionKind
 {
+    Reroll,
+    RerollWith,
     Edit,
     Delete
 }
 
 // What the page knows about the topic a bubble is in: whether a reply is being written to it, and
 // whether this person may rewrite it (StoredTopic.MayRewrite).
-public sealed record MessageActionContext(bool Streaming, bool MayRewrite);
+// IsLastReply: the bubble is the conversation's last reply, the one a reroll answers again.
+public sealed record MessageActionContext(bool Streaming, bool MayRewrite, bool IsLastReply = false);
 
 // The actions a bubble's menu offers. None while a reply streams, since the hub refuses every rewrite
 // then, and none for a message not stored yet, which has no entry id to name it by.
@@ -26,6 +29,13 @@ public static class MessageActionsLogic
         if (!context.MayRewrite)
         {
             yield break;
+        }
+
+        // A failed reply has its Retry, which replaces it rather than keeping it as a version.
+        if (context.IsLastReply && message is { Role: "assistant", IsError: false })
+        {
+            yield return MessageActionKind.Reroll;
+            yield return MessageActionKind.RerollWith;
         }
 
         if (!message.IsError && (message.Role == "user" || !string.IsNullOrEmpty(message.Content)))

@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -63,6 +64,28 @@ public sealed class SendMessageEffectTests : IDisposable
             new ComposerStore(_dispatcher),
             _spaceStore,
             _logger);
+    }
+
+    // A reroll answers the message already shown again: it opens the stream asking for that, on the
+    // model it was asked on, and draws no second copy of the message.
+    [Fact]
+    public async Task SendRerun_OpensARerunStream_AndDrawsNoNewMessage()
+    {
+        var topic = new StoredTopic { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _mockSessionService.Setup(s => s.CurrentTopic).Returns(topic);
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1", [new ChatMessageModel { Role = "user", Content = "hola", EntryId = "u1" }]));
+        var patch = new AgentConfigPatch { Model = "other/model" };
+        var rerun = new TaskCompletionSource();
+        _mockStreamingService
+            .Setup(s => s.RerunAsync(It.IsAny<StoredTopic>(), "hola", "u1", patch, It.IsAny<IReadOnlyList<AttachmentReference>>()))
+            .Callback(() => rerun.TrySetResult())
+            .Returns(Task.CompletedTask);
+
+        _dispatcher.Dispatch(new SendRerun("topic-1", "hola", [], "u1", patch));
+        await rerun.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        _messagesStore.State.MessagesByTopic["topic-1"].ShouldHaveSingleItem();
     }
 
     [Fact]

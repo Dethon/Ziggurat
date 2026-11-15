@@ -12,6 +12,12 @@ public sealed class ChatMessagingService(IChatLiveConnection liveConnection) : I
         liveConnection.StreamAsync<ChatStreamMessage>(
             "SendMessage", topicId, message, correlationId, configPatch, attachments);
 
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendRerunAsync(
+        string topicId, string message, string? correlationId, AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments, string rerunOf) =>
+        liveConnection.StreamAsync<ChatStreamMessage>(
+            "SendRerun", topicId, message, correlationId, configPatch, attachments, rerunOf);
+
     public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId, StreamSeen? seen = null) =>
         liveConnection.StreamAsync<ChatStreamMessage>("ResumeStreamFrom", topicId, seen);
 

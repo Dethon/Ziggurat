@@ -1040,6 +1040,13 @@ internal sealed class ConversationGroup(
         userMessage.SetSatelliteId(message.SatelliteId);
         userMessage.SetDismissedAlert(message.DismissedAlert);
         userMessage.SetConfigPatch(message.ConfigPatch);
+
+        // A reroll's message is the one the conversation ends on: it goes as itself, by its entry id.
+        if (message.RerunOf is { } rerun)
+        {
+            userMessage.SetEntryId(rerun);
+        }
+
         userMessage.SetResponseFormat(message.ResponseFormat);
         // References only. The bytes rest wherever the channel keeps them and are put back on the
         // way to the model, so a history read costs the same whether or not files were sent
@@ -1075,7 +1082,9 @@ internal sealed class ConversationGroup(
             var extraction = await memoryRecallHook.EnrichAsync(
                 userMessage, message.Principal?.Account, state.DeliveryKey.ConversationId, message.AgentId,
                 state.Thread, _turnCt);
-            return (userMessage, extraction);
+
+            // What a reroll's person said was extracted when they first said it.
+            return (userMessage, message.RerunOf is null ? extraction : null);
         }
 
         return (userMessage, null);

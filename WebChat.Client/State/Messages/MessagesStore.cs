@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 
@@ -19,6 +20,9 @@ public record EditAndRerun(string TopicId, string EntryId, string Text) : IActio
 
 // A person correcting a message or a reply in place, no turn run, the old line kept as a version.
 public record EditMessageInPlace(string TopicId, string EntryId, string Text) : IAction;
+
+// A person asking for the last reply again, on another model when one is named.
+public record RerollLastReply(string TopicId, AgentConfigPatch? ConfigPatch = null) : IAction;
 
 // A person flipping a slot to another of its versions (HistoryEditEffect).
 public record SwitchMessageVersion(string TopicId, string Slot, int Index) : IAction;

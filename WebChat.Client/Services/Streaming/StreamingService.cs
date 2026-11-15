@@ -67,15 +67,44 @@ public sealed class StreamingService(
         }
     }
 
+    public async Task RerunAsync(
+        StoredTopic topic,
+        string message,
+        string rerunOf,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference> attachments)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            // The hub refuses to rewrite a topic a reply is running on, so there is nothing to enqueue
+            // a reroll behind.
+            var seen = topicStreams.Snapshot(topic.TopicId);
+            if (seen.HasStream)
+            {
+                return;
+            }
+
+            await StartNewStreamAsync(
+                new Outgoing(topic, message, null, configPatch ?? GetConfigPatch(topic), attachments, [], rerunOf), seen);
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
     // One message on its way out: what to say, where it goes, and the composer entries the send
     // empties when it lands. Six arguments travelled together through four methods before this.
+    // RerunOf: the message the conversation ends on, answered again (a reroll).
     private sealed record Outgoing(
         StoredTopic Topic,
         string Message,
         string? CorrelationId,
         AgentConfigPatch? ConfigPatch,
         IReadOnlyList<AttachmentReference>? Attachments,
-        IReadOnlyList<ComposerAttachment> Sending);
+        IReadOnlyList<ComposerAttachment> Sending,
+        string? RerunOf = null);
 
     private async Task EnqueueOrStartAsync(Outgoing outgoing, TopicStreamSnapshot seen)
     {
@@ -211,9 +240,13 @@ public sealed class StreamingService(
     // this is the one stream verb that raises a toast.
     private async Task<IAsyncEnumerable<ChatStreamMessage>?> OpenSendStreamAsync(Outgoing outgoing)
     {
-        var chunks = await messagingService.SendMessageAsync(
-            outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
-            outgoing.ConfigPatch, outgoing.Attachments);
+        var chunks = outgoing.RerunOf is { } rerunOf
+            ? await messagingService.SendRerunAsync(
+                outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
+                outgoing.ConfigPatch, outgoing.Attachments, rerunOf)
+            : await messagingService.SendMessageAsync(
+                outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
+                outgoing.ConfigPatch, outgoing.Attachments);
         if (chunks.IsLive)
         {
             return chunks.Value!;

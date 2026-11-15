@@ -161,6 +161,27 @@ public class HistoryRewriteTests
         after.Versions["a1"].Inactive.Single().Messages.Select(m => m.GetEntryId()).ShouldBe(["u2", "a2"]);
     }
 
+    // A reroll: the reply after a person's message is put aside as a version of the slot after it.
+    [Fact]
+    public void PutAsideReply_KeepsTheReplyAsAVersionOfTheSlotAfterThePersonsMessage()
+    {
+        var after = Apply(Line(("u1", "user"), ("a1", "assistant")), new PutAsideReply("u1", "a1"));
+
+        after.Messages.Select(m => m.GetEntryId()).ShouldBe(["u1"]);
+        after.Versions["u1"].Inactive.Single().Messages.Single().GetEntryId().ShouldBe("a1");
+    }
+
+    [Fact]
+    public void PutAsideReply_ToAServicesTurn_IsNotRunAgain()
+    {
+        var fire = Message("fire", "user");
+        fire.SetSenderId(ServiceSenders.Scheduler);
+        var history = new ConversationHistory([fire, Message("a1", "assistant")], new Dictionary<string, SlotVersions>());
+
+        HistoryRewrite.Apply(history, new PutAsideReply("fire", "a1"), Now)
+            .ShouldBeOfType<RewriteRefused>().Reason.ShouldBe(RewriteRefusal.NotRerunnable);
+    }
+
     [Fact]
     public void PutAsideFrom_TheFirstMessage_IsAVersionOfTheRoot()
     {

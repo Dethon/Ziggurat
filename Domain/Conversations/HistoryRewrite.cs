@@ -220,6 +220,19 @@ public sealed record EditInPlace(string EntryId, string Text, string? LastSeen) 
         contents.Where(c => c is not TextContent and not TextReasoningContent);
 }
 
+// A reroll, before the turn that answers the person's message again: the reply after it is kept as a
+// version of the slot after it, and the line ends on the message.
+public sealed record PutAsideReply(string UserEntryId, string? LastSeen) : HistoryRewrite(LastSeen)
+{
+    private protected override int? Resolve(IReadOnlyList<ChatMessage> messages) => HistoryEntries.IndexOf(messages, UserEntryId);
+
+    private protected override RewriteRefusal? Refusal(IReadOnlyList<ChatMessage> messages, int at) =>
+        IsPersonsMessage(messages[at]) ? null : RewriteRefusal.NotRerunnable;
+
+    private protected override ConversationHistory Make(ConversationHistory history, int at, DateTimeOffset now) =>
+        PutAside.Before(history, at + 1, now);
+}
+
 // The slot shows another of its versions, by its place in the order a person flips through them.
 public sealed record SwitchVersion(string? SlotEntryId, int Index, string? LastSeen) : HistoryRewrite(LastSeen)
 {

@@ -37,6 +37,9 @@ public record ChannelMessage
     public string? SatelliteId { get; init; }
     public string? DismissedAlert { get; init; }
     public AgentConfigPatch? ConfigPatch { get; init; }
+
+    // The entry id of the message the conversation ends on, when this turn answers it again (a reroll).
+    public string? RerunOf { get; init; }
     public ResponseFormat? ResponseFormat { get; init; }
 
     // The channel asks for this conversation to be shown on the review host too (ADR 0046).

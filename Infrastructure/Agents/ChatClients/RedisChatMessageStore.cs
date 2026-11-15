@@ -46,6 +46,10 @@ public sealed class RedisChatMessageStore(
     // retries it can take its place without reading the conversation again.
     private readonly ConditionalWeakTable<AgentSession, FailedTail> _failedTail = [];
 
+    // What this turn's request said of the line it was read against, by session: a reroll's message is
+    // the one the line ends on, and a message whose name the line already holds elsewhere is a new one.
+    private readonly ConditionalWeakTable<AgentSession, Rerun> _rerun = [];
+
     public IReadOnlyList<ChatMessage> LastProvided(AgentSession? session) =>
         session is not null && _lastProvided.TryGetValue(session, out var messages) ? messages : [];
 
@@ -84,7 +88,11 @@ public sealed class RedisChatMessageStore(
         await store.MarkTurnInFlightAsync(redisKey, TurnInFlightExpiry);
         var stored = await store.GetMessagesAsync(redisKey) ?? [];
         _failedTail.AddOrUpdate(context.Session, FailedTail.Of(stored));
-        var messages = ModelView(stored);
+
+        // A reroll's message is the one the line ends on, and the request carries it again: read once.
+        var rerun = Rerun.Of(stored, context.RequestMessages);
+        _rerun.AddOrUpdate(context.Session, rerun);
+        var messages = ModelView(rerun.TrailingId is null ? stored : stored.SkipLast(1));
         _lastProvided.AddOrUpdate(context.Session, messages);
         return messages;
     }
@@ -129,8 +137,19 @@ public sealed class RedisChatMessageStore(
         }
 
         var failed = context.ResponseMessages?.Any(m => m.IsFailedTurn()) == true;
-        var requests = failed ? context.RequestMessages.Select(Failed) : context.RequestMessages;
-        var newMessages = requests
+        var rerun = _rerun.TryGetValue(context.Session, out var read) ? read : Rerun.None;
+
+        // A name the line already holds elsewhere is not this message's: it is kept under a new one.
+        foreach (var taken in context.RequestMessages.Where(m => m.GetEntryId() is { } id && rerun.Taken.Contains(id)))
+        {
+            taken.SetEntryId(Guid.NewGuid().ToString("N"));
+        }
+
+        // A reroll's message is on the line already. Answered, it stays where it is; failed, it is taken
+        // off and kept again marked as the failed turn it was, in its place and under its name.
+        var rerunFailed = failed && rerun.TrailingId is not null;
+        var requests = context.RequestMessages.Where(m => rerunFailed || !rerun.Ends(m));
+        var newMessages = (failed ? requests.Select(Failed) : requests)
             .Concat(context.ResponseMessages ?? [])
             .ToArray();
 
@@ -139,7 +158,7 @@ public sealed class RedisChatMessageStore(
         var retried = _failedTail.TryGetValue(context.Session, out var tail) && tail?.RetriedBy(context.RequestMessages) == true
             ? tail
             : null;
-        var replaced = retried?.Count ?? 0;
+        var replaced = (retried?.Count ?? 0) + (rerunFailed ? 1 : 0);
 
         // A retry keeps the names of the messages it replaces, so whatever was kept under them — the
         // versions of a reroll that failed — is still found by them.
@@ -187,6 +206,28 @@ public sealed class RedisChatMessageStore(
         copy.AdditionalProperties = message.AdditionalProperties is null ? [] : new(message.AdditionalProperties);
         copy.MarkFailedTurn();
         return copy;
+    }
+
+    // A request's messages read against the line: the one it ends on that the request carries again (a
+    // reroll), and the names the line holds elsewhere, which a request's message cannot take.
+    private sealed record Rerun(string? TrailingId, IReadOnlySet<string> Taken)
+    {
+        public static readonly Rerun None = new(null, new HashSet<string>());
+
+        public static Rerun Of(IReadOnlyList<ChatMessage> stored, IEnumerable<ChatMessage> requests)
+        {
+            var asked = requests.Select(m => m.GetEntryId()).OfType<string>().ToHashSet();
+            if (asked.Count == 0)
+            {
+                return None;
+            }
+
+            var trailing = stored.LastOrDefault()?.GetEntryId() is { } last && asked.Contains(last) ? last : null;
+            var held = stored.Select(m => m.GetEntryId()).OfType<string>().Where(id => id != trailing).ToHashSet();
+            return new Rerun(trailing, asked.Where(held.Contains).ToHashSet());
+        }
+
+        public bool Ends(ChatMessage request) => TrailingId is not null && request.GetEntryId() == TrailingId;
     }
 
     // The failed turn a conversation ends on: how many messages it is, and what the person said in it.

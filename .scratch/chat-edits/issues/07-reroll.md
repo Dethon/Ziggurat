@@ -1,6 +1,6 @@
 # 07: Reroll the last reply
 
-Status: ready-for-agent
+Status: done (E2E pending)
 Blocked by: 04
 Spec: ../spec.md (Turns that rewrite)
 

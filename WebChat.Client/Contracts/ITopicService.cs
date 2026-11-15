@@ -47,6 +47,8 @@ public interface ITopicService
     Task<HubResult<Nothing>> EditInPlaceAsync(
         string agentId, string topicId, long chatId, string entryId, string text, string? lastSeen);
 
+    Task<HubResult<Nothing>> PutAsideReplyAsync(string agentId, string topicId, long chatId, string userEntryId, string? lastSeen);
+
     Task<HubResult<Nothing>> SwitchVersionAsync(
         string agentId, string topicId, long chatId, string slot, int index, string? lastSeen);
 

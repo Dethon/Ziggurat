@@ -10,6 +10,8 @@ public class MessageActionsLogicTests
 {
     private static readonly ChatMessageModel Stored = new() { Role = "user", Content = "hola", EntryId = "e1" };
 
+    private static readonly ChatMessageModel Reply = new() { Role = "assistant", Content = "buenas", EntryId = "e2" };
+
     [Fact]
     public void AStoredMessage_InATopicThePersonMayRewrite_OffersDelete() =>
         MessageActionsLogic.For(Stored, new MessageActionContext(Streaming: false, MayRewrite: true))
@@ -59,4 +61,24 @@ public class MessageActionsLogicTests
 
         MessageActionsLogic.ToolsFrom(messages, 1).ShouldBe(["timer_set", "print"]);
     }
+
+    [Fact]
+    public void TheLastReply_OffersReroll_AndRerollOnAnotherModel()
+    {
+        var actions = MessageActionsLogic.For(Reply, new MessageActionContext(false, true, IsLastReply: true));
+
+        actions.ShouldContain(MessageActionKind.Reroll);
+        actions.ShouldContain(MessageActionKind.RerollWith);
+    }
+
+    [Fact]
+    public void AnEarlierReply_OffersNoReroll() =>
+        MessageActionsLogic.For(Reply, new MessageActionContext(false, true, IsLastReply: false))
+            .ShouldNotContain(MessageActionKind.Reroll);
+
+    // A failed turn has its Retry, which replaces it rather than keeping it as a version.
+    [Fact]
+    public void AFailedReply_OffersNoReroll() =>
+        MessageActionsLogic.For(Reply with { IsError = true }, new MessageActionContext(false, true, IsLastReply: true))
+            .ShouldNotContain(MessageActionKind.Reroll);
 }

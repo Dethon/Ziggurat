@@ -28,6 +28,15 @@ public record SendMessage(
     string Message,
     IReadOnlyList<AttachmentReference>? Attachments = null) : IAction;
 
+// A reroll's turn: the message the conversation ends on (rerunOf, its entry id) answered again, with its
+// own files, on the model asked for (none: the topic's own).
+public record SendRerun(
+    string TopicId,
+    string Message,
+    IReadOnlyList<AttachmentReference> Attachments,
+    string RerunOf,
+    AgentConfigPatch? ConfigPatch) : IAction;
+
 public record CancelStreaming(string TopicId) : IAction;
 
 public sealed class StreamingStore : IDisposable

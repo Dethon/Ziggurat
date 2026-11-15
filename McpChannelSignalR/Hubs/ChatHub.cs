@@ -397,12 +397,35 @@ public sealed class ChatHub(
         }
     }
 
-    public async IAsyncEnumerable<ChatStreamMessage> SendMessage(
+    public IAsyncEnumerable<ChatStreamMessage> SendMessage(
         string topicId,
         string message,
         string? correlationId,
         AgentConfigPatch? configPatch,
         IReadOnlyList<AttachmentReference>? attachments,
+        CancellationToken cancellationToken) =>
+        SendTurn(topicId, message, correlationId, configPatch, attachments, rerunOf: null, cancellationToken);
+
+    // A reroll's turn: the person's message the conversation already ends on (rerunOf, its entry id),
+    // sent again as itself so the agent answers it again rather than hearing it twice. A method of its
+    // own, because an installed page from before binds SendMessage's arguments as they were.
+    public IAsyncEnumerable<ChatStreamMessage> SendRerun(
+        string topicId,
+        string message,
+        string? correlationId,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments,
+        string rerunOf,
+        CancellationToken cancellationToken) =>
+        SendTurn(topicId, message, correlationId, configPatch, attachments, rerunOf, cancellationToken);
+
+    private async IAsyncEnumerable<ChatStreamMessage> SendTurn(
+        string topicId,
+        string message,
+        string? correlationId,
+        AgentConfigPatch? configPatch,
+        IReadOnlyList<AttachmentReference>? attachments,
+        string? rerunOf,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         if (await SessionToContinueAsync(topicId) is not { } session)
@@ -487,6 +510,7 @@ public sealed class ChatHub(
                 Content = message,
                 AgentId = session.AgentId,
                 ConfigPatch = configPatch,
+                RerunOf = rerunOf,
                 Attachments = attachments,
                 Timestamp = DateTimeOffset.UtcNow
             },
@@ -959,6 +983,14 @@ public sealed class ChatHub(
     {
         var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
         await RewriteAsync(topic, key, new EditInPlace(entryId, text, lastSeen));
+    }
+
+    // A reroll, before the page sends the person's message again (SendRerun): the reply after it is kept
+    // as a version, and the line ends on the message.
+    public async Task PutAsideReply(string agentId, string topicId, long chatId, string userEntryId, string? lastSeen)
+    {
+        var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
+        await RewriteAsync(topic, key, new PutAsideReply(userEntryId, lastSeen));
     }
 
     // The slot shows another of its versions, by its place in the order a person flips through them.
