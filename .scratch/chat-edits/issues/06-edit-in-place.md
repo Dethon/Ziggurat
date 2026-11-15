@@ -1,6 +1,6 @@
 # 06: Edit a message in place, kept as a version
 
-Status: ready-for-agent
+Status: done
 Blocked by: 04
 Spec: ../spec.md (What a person can do, Versions)
 

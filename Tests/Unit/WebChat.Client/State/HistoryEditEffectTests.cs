@@ -97,6 +97,18 @@ public sealed class HistoryEditEffectTests : IDisposable
     }
 
     [Fact]
+    public async Task EditInPlace_AsksTheHub_AndSendsNothing()
+    {
+        var sends = 0;
+        using var _ = _dispatcher.RegisterHandler<SendMessage>(_ => sends++);
+
+        await _effect.HandleEditInPlaceAsync("t", "e2", "corrected");
+
+        _topicService.EditedInPlace.ShouldHaveSingleItem().ShouldBe(("jonas", "t", 7L, "e2", "corrected", "e2"));
+        sends.ShouldBe(0);
+    }
+
+    [Fact]
     public async Task EditAndRerun_Refused_SendsNothing()
     {
         _topicService.ThrowOnPutAside = new HubException($"HubException: {TopicRefusals.NotRerunnable}");

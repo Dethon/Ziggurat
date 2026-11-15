@@ -35,6 +35,11 @@ public class MessageActionsLogicTests
         MessageActionsLogic.For(Stored, new MessageActionContext(false, true)).ShouldContain(MessageActionKind.Edit);
 
     [Fact]
+    public void AReply_OffersEdit() =>
+        MessageActionsLogic.For(Stored with { Role = "assistant" }, new MessageActionContext(false, true))
+            .ShouldContain(MessageActionKind.Edit);
+
+    [Fact]
     public void AnError_OffersNoEdit() =>
         MessageActionsLogic.For(Stored with { Role = "assistant", IsError = true }, new MessageActionContext(false, true))
             .ShouldNotContain(MessageActionKind.Edit);

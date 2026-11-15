@@ -248,6 +248,15 @@
     // edit open, one that drops it closes it.
     private string? _editingEntryId;
 
+    private void HandleEditInPlace(ChatMessageModel message, string text)
+    {
+        _editingEntryId = null;
+        if (_topicId is not null && message.EntryId is not null)
+        {
+            Dispatcher.Dispatch(new EditMessageInPlace(_topicId, message.EntryId, text));
+        }
+    }
+
     private void HandleEditAndRerun(ChatMessageModel message, string text)
     {
         _editingEntryId = null;
@@ -360,7 +369,9 @@
             {
                 <MessageEditor Text="@message.Content"
                                Tools="@MessageActionsLogic.ToolsFrom(_messages, index)"
+                               AllowSave="true"
                                AllowRerun="@(message.Role == "user")"
+                               OnSave="@(text => HandleEditInPlace(message, text))"
                                OnRerun="@(text => HandleEditAndRerun(message, text))"
                                OnCancel="@(() => _editingEntryId = null)" />
                 continue;

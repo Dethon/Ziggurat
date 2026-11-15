@@ -43,6 +43,8 @@ public sealed class HistoryEditEffect : IDisposable
                 HandleDeleteFromAsync(a.TopicId, a.EntryId).LogFaults(_logger, nameof(DeleteMessagesFrom))),
             dispatcher.RegisterHandler<EditAndRerun>(a =>
                 HandleEditAndRerunAsync(a.TopicId, a.EntryId, a.Text).LogFaults(_logger, nameof(EditAndRerun))),
+            dispatcher.RegisterHandler<EditMessageInPlace>(a =>
+                HandleEditInPlaceAsync(a.TopicId, a.EntryId, a.Text).LogFaults(_logger, nameof(EditMessageInPlace))),
             dispatcher.RegisterHandler<SwitchMessageVersion>(a =>
                 HandleSwitchVersionAsync(a.TopicId, a.Slot, a.Index).LogFaults(_logger, nameof(SwitchMessageVersion))),
             dispatcher.RegisterHandler<HistoryChanged>(a =>
@@ -66,6 +68,10 @@ public sealed class HistoryEditEffect : IDisposable
             _dispatcher.Dispatch(new SendMessage(topicId, text, original?.Attachments ?? []));
         }
     }
+
+    public Task<bool> HandleEditInPlaceAsync(string topicId, string entryId, string text) =>
+        RewriteAsync(topicId, (topic, lastSeen) =>
+            _topicService.EditInPlaceAsync(topic.AgentId, topic.TopicId, topic.ChatId, entryId, text, lastSeen));
 
     public Task<bool> HandleSwitchVersionAsync(string topicId, string slot, int index) =>
         RewriteAsync(topicId, (topic, lastSeen) =>

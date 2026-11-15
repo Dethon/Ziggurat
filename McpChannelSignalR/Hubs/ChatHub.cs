@@ -954,6 +954,13 @@ public sealed class ChatHub(
         await RewriteAsync(topic, key, new PutAsideFrom(entryId, lastSeen));
     }
 
+    // A message or a reply corrected in place, no turn run; the old line is kept as a version.
+    public async Task EditInPlace(string agentId, string topicId, long chatId, string entryId, string text, string? lastSeen)
+    {
+        var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
+        await RewriteAsync(topic, key, new EditInPlace(entryId, text, lastSeen));
+    }
+
     // The slot shows another of its versions, by its place in the order a person flips through them.
     public async Task SwitchVersion(string agentId, string topicId, long chatId, string slot, int index, string? lastSeen)
     {

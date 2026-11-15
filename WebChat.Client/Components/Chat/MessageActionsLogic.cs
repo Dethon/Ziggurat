@@ -28,7 +28,7 @@ public static class MessageActionsLogic
             yield break;
         }
 
-        if (message is { Role: "user", IsError: false })
+        if (!message.IsError && (message.Role == "user" || !string.IsNullOrEmpty(message.Content)))
         {
             yield return MessageActionKind.Edit;
         }

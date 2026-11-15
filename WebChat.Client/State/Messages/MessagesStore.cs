@@ -17,6 +17,9 @@ public record DeleteMessagesFrom(string TopicId, string EntryId) : IAction;
 // A person sending their message again in other words, what followed it kept as a version.
 public record EditAndRerun(string TopicId, string EntryId, string Text) : IAction;
 
+// A person correcting a message or a reply in place, no turn run, the old line kept as a version.
+public record EditMessageInPlace(string TopicId, string EntryId, string Text) : IAction;
+
 // A person flipping a slot to another of its versions (HistoryEditEffect).
 public record SwitchMessageVersion(string TopicId, string Slot, int Index) : IAction;
 

@@ -187,6 +187,49 @@ public class HistoryRewriteTests
             .ShouldBeOfType<RewriteRefused>().Reason.ShouldBe(RewriteRefusal.NotRerunnable);
     }
 
+    // A message corrected in place: the old one and what followed it are a version of the slot before
+    // it, and the line goes on from the corrected message with what followed copied under new names.
+    [Fact]
+    public void EditInPlace_APersonsMessage_KeepsTheOldLineAsAVersion_AndCopiesWhatFollowed()
+    {
+        var original = Message("u1", "user");
+        original.SetTimestamp(Now.AddHours(-1));
+        var history = new ConversationHistory([original, Message("a1", "assistant")], new Dictionary<string, SlotVersions>());
+
+        var after = Apply(history, new EditInPlace("u1", "corrected", "a1"));
+
+        after.Messages.Select(m => (m.Role.Value, m.Text)).ShouldBe([("user", "corrected"), ("assistant", "a1")]);
+        after.Messages.Select(m => m.GetEntryId()).ShouldNotContain("u1");
+        after.Messages.Select(m => m.GetEntryId()).ShouldNotContain("a1");
+        after.Messages[0].GetTimestamp().ShouldBe(Now.AddHours(-1));
+        after.Versions[HistoryRewrite.Root].Inactive.Single().Messages.Select(m => m.GetEntryId()).ShouldBe(["u1", "a1"]);
+        after.PositionAt(HistoryRewrite.Root).ShouldBe(new VersionPosition(1, 2));
+    }
+
+    // A reply is one bubble over its turn: its corrected text is the turn's last word, the tool calls
+    // and their results stay paired, and what the model said along the way goes.
+    [Fact]
+    public void EditInPlace_AReply_PutsTheTextInItsLastMessage_AndKeepsItsToolCalls()
+    {
+        var thinking = new ChatMessage(ChatRole.Assistant,
+            [new TextContent("let me look"), new FunctionCallContent("c1", "lookup")]);
+        thinking.SetEntryId("a0");
+        var result = new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c1", "found")]);
+        result.SetEntryId("t0");
+        var history = new ConversationHistory(
+            [Message("u1", "user"), thinking, result, Message("a1", "assistant"), Message("u2", "user")],
+            new Dictionary<string, SlotVersions>());
+
+        var after = Apply(history, new EditInPlace("a1", "the right answer", "u2"));
+
+        after.Messages.Select(m => m.Role.Value).ShouldBe(["user", "assistant", "tool", "assistant", "user"]);
+        after.Messages[1].Contents.OfType<TextContent>().ShouldBeEmpty();
+        after.Messages[1].Contents.OfType<FunctionCallContent>().ShouldHaveSingleItem();
+        after.Messages[3].Text.ShouldBe("the right answer");
+        after.Messages[4].Text.ShouldBe("u2");
+        after.Versions["u1"].Inactive.Single().Messages.Count.ShouldBe(4);
+    }
+
     [Fact]
     public void ARewrite_OfALineThatChangedSinceThePageSawIt_IsRefused()
     {

@@ -98,9 +98,11 @@ public abstract record HistoryRewrite(string? LastSeen)
                 Messages = [.. history.Messages.Select(m => m.GetEntryId() is not null ? m : WithEntryId(m))]
             };
 
-    private static ChatMessage WithEntryId(ChatMessage message)
+    // A copy under a new entry id, its contents and properties its own.
+    private protected static ChatMessage WithEntryId(ChatMessage message, IEnumerable<AIContent>? contents = null)
     {
         var copy = message.Clone();
+        copy.Contents = [.. contents ?? message.Contents];
         copy.AdditionalProperties = message.AdditionalProperties is null ? [] : new(message.AdditionalProperties);
         copy.SetEntryId(Guid.NewGuid().ToString("N"));
         return copy;
@@ -165,6 +167,57 @@ public sealed record PutAsideFrom(string EntryId, string? LastSeen) : HistoryRew
 
     private protected override ConversationHistory Make(ConversationHistory history, int at, DateTimeOffset now) =>
         PutAside.Before(history, at, now);
+}
+
+// A message corrected in place, no turn run: the old line from it on is kept as a version of the slot
+// before it, and the line goes on from the corrected message with what followed copied under new entry
+// ids (the versions further down stay with the old line, and come back with it). A reply is corrected
+// as the one bubble it is drawn as: its turn's tool calls and results stay paired, what the model said
+// along the way goes, and the corrected text is the turn's last assistant word.
+public sealed record EditInPlace(string EntryId, string Text, string? LastSeen) : HistoryRewrite(LastSeen)
+{
+    private protected override int? Resolve(IReadOnlyList<ChatMessage> messages) => HistoryEntries.IndexOf(messages, EntryId);
+
+    private protected override ConversationHistory Make(ConversationHistory history, int at, DateTimeOffset now)
+    {
+        var messages = history.Messages;
+        var (from, to) = messages[at].Role == ChatRole.User ? (at, at) : TurnAround(messages, at);
+        var corrected = messages[at].Role == ChatRole.User
+            ? [WithEntryId(messages[at], Replaced(messages[at].Contents))]
+            : Reply(messages.Skip(from).Take(to - from + 1).ToList());
+        var aside = PutAside.Before(history, from, now);
+        return aside with
+        {
+            Messages = [.. aside.Messages, .. corrected, .. messages.Skip(to + 1).Select(m => WithEntryId(m))]
+        };
+    }
+
+    // The reply's turn: from the first message after the person's to the last before the next person's.
+    private static (int From, int To) TurnAround(IReadOnlyList<ChatMessage> messages, int at)
+    {
+        var from = messages.Take(at).Index().LastOrDefault(x => x.Item.Role == ChatRole.User) is { Item: not null } user
+            ? user.Index + 1
+            : 0;
+        var next = messages.Index().Skip(at + 1).FirstOrDefault(x => x.Item.Role == ChatRole.User);
+        return (from, next.Item is null ? messages.Count - 1 : next.Index - 1);
+    }
+
+    private IReadOnlyList<ChatMessage> Reply(IReadOnlyList<ChatMessage> turn)
+    {
+        var last = turn.Index().LastOrDefault(x => x.Item.Role == ChatRole.Assistant).Index;
+        var copies = turn.Index().Select(x => x.Item.Role != ChatRole.Assistant
+            ? WithEntryId(x.Item)
+            : x.Index == last
+                ? WithEntryId(x.Item, Replaced(x.Item.Contents))
+                : WithEntryId(x.Item, Unsaid(x.Item.Contents)));
+        return [.. copies.Where(m => m.Contents.Count > 0)];
+    }
+
+    private IEnumerable<AIContent> Replaced(IEnumerable<AIContent> contents) =>
+        [new TextContent(Text), .. Unsaid(contents)];
+
+    private static IEnumerable<AIContent> Unsaid(IEnumerable<AIContent> contents) =>
+        contents.Where(c => c is not TextContent and not TextReasoningContent);
 }
 
 // The slot shows another of its versions, by its place in the order a person flips through them.

@@ -196,6 +196,18 @@ public sealed class ChatHubHistoryEditTests : IDisposable
         refused.Message.ShouldBe(TopicRefusals.NotRerunnable);
     }
 
+    [Fact]
+    public async Task EditInPlace_CorrectsTheMessage_AndTellsTheTopicsAudience()
+    {
+        Holds(Topic());
+        Answers(new Rewritten(Empty, Empty));
+
+        await _hub.EditInPlace("jonas", TopicId, _identity.ChatId, "a1", "the right answer", "a1");
+
+        _store.Verify(s => s.RewriteAsync(Key, new EditInPlace("a1", "the right answer", "a1")));
+        _hubSender.Verify(s => s.SendToGroupAsync(It.IsAny<string>(), "OnHistoryChanged", It.IsAny<HistoryChangedNotification>()));
+    }
+
     // A file only the deleted messages held goes with them.
     [Fact]
     public async Task DeleteFrom_DeletesTheFilesNothingHoldsAnyMore()

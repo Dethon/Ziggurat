@@ -53,6 +53,10 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
         string agentId, string topicId, long chatId, string entryId, string? lastSeen) =>
         liveConnection.InvokeAsync("PutAsideFrom", agentId, topicId, chatId, entryId, lastSeen);
 
+    public Task<HubResult<Nothing>> EditInPlaceAsync(
+        string agentId, string topicId, long chatId, string entryId, string text, string? lastSeen) =>
+        liveConnection.InvokeAsync("EditInPlace", agentId, topicId, chatId, entryId, text, lastSeen);
+
     public Task<HubResult<Nothing>> SwitchVersionAsync(
         string agentId, string topicId, long chatId, string slot, int index, string? lastSeen) =>
         liveConnection.InvokeAsync("SwitchVersion", agentId, topicId, chatId, slot, index, lastSeen);
