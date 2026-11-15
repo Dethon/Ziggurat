@@ -163,6 +163,13 @@ public sealed class RedisChatMessageStore(
             message.SetTimestamp(now);
         }
 
+        // A reply that ran out of room to say more was cut off as surely as one the person stopped.
+        if (CutOffByTheLimit(context.Session))
+        {
+            context.ResponseMessages?.LastOrDefault(m => m.Role == ChatRole.Assistant && !string.IsNullOrEmpty(m.Text))
+                ?.MarkInterrupted();
+        }
+
         // Each reply message keeps the model its turn ran on, which the turn's message carries.
         var model = context.RequestMessages.LastOrDefault(m => m.Role == ChatRole.User)?.GetModel();
         foreach (var message in context.ResponseMessages?.Where(x => x.GetModel() is null) ?? [])
@@ -225,6 +232,19 @@ public sealed class RedisChatMessageStore(
             _lock.Release();
             await store.ClearTurnInFlightAsync(redisKey);
         }
+    }
+
+    // Whether the turn's last model call ended for its output limit, as the streamed updates said.
+    private bool CutOffByTheLimit(AgentSession session)
+    {
+        if (!_streamed.TryGetValue(session, out var updates))
+        {
+            return false;
+        }
+
+        _streamed.Remove(session);
+        return updates.Select(u => (u.RawRepresentation as ChatResponseUpdate)?.FinishReason)
+            .LastOrDefault(reason => reason is not null) == ChatFinishReason.Length;
     }
 
     // What a stopped reply had said: its text and every tool call that got its result, the last text

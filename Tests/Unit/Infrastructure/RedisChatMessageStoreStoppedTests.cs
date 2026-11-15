@@ -69,6 +69,54 @@ public class RedisChatMessageStoreStoppedTests
         next.Seen.Select(m => m.Text).ShouldBe(["hola", "Once upon ", "sigue"]);
     }
 
+    // A reply that ran out of room to say more is cut off as surely as a stopped one, and is marked so.
+    [Fact]
+    public async Task AReplyEndedByTheOutputLimit_IsMarkedInterrupted()
+    {
+        var history = new RedisChatMessageStore(_store.Object);
+        var agent = new LengthClient().AsAIAgent(new ChatClientAgentOptions { ChatHistoryProvider = history });
+        var session = await agent.CreateSessionAsync();
+        session.StateBag.SetValue(RedisChatMessageStore.StateKey, Key);
+        history.BeginCollecting(session);
+
+        await foreach (var update in agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hola")], session))
+        {
+            history.Collect(session, update);
+        }
+
+        _stored.Select(m => (m.Text, m.IsInterrupted())).ShouldBe([("hola", false), ("Once upon", true)]);
+    }
+
+    [Fact]
+    public async Task AReplyThatEnded_IsNotInterrupted()
+    {
+        await RunAsync(new Scripted([new TextContent("ok")]), "hola");
+
+        _stored.ShouldAllBe(m => !m.IsInterrupted());
+    }
+
+    private sealed class LengthClient : IChatClient
+    {
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "Once upon") { MessageId = "m1" };
+            yield return new ChatResponseUpdate { FinishReason = ChatFinishReason.Length, MessageId = "m1" };
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
+    }
+
     private async Task StopAfterAsync(IChatClient client, int updatesRead)
     {
         using var cts = new CancellationTokenSource();

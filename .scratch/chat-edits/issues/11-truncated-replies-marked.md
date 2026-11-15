@@ -1,6 +1,6 @@
 # 11: A reply cut off by the output limit is marked
 
-Status: ready-for-agent
+Status: done (live finish-reason mapping not checked against OpenRouter)
 Blocked by: 10
 Spec: ../spec.md (Cut-off replies)
 
