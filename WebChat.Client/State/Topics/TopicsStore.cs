@@ -2,6 +2,7 @@ using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
+using WebChat.Client.State.UserIdentity;
 
 namespace WebChat.Client.State.Topics;
 
@@ -60,10 +61,6 @@ public record ShareTopic(string TopicId, bool Shared) : IAction;
 public record RemoveTopic(string TopicId, string? AgentId = null, long? ChatId = null, long? ThreadId = null) : IAction;
 
 public record TopicRemoved(string TopicId) : IAction;
-
-// The row leaves the list and nothing else: the person still sees the topic, the list's filter just
-// leaves it out, so an open conversation stays open.
-public record UnlistTopic(string TopicId) : IAction;
 
 public record SetAgents(IReadOnlyList<AgentCatalogEntry> Agents) : IAction;
 
@@ -166,20 +163,24 @@ public sealed class TopicsStore : IDisposable
 
         AddTopic a => state with
         {
-            Paging = state.Paging.Insert(a.Topic),
+            Paging = state.Lists(a.Topic) ? state.Paging.Insert(a.Topic) : state.Paging,
             Error = null
         },
 
         // A row's mark that its name is still the file's is the client's alone, so news of the topic
         // under the same name keeps it: the hub telling every page a topic was read replaced the row
         // and left a conversation started by a file named after the file for good.
+        // A row the filter no longer lists is let go, and nothing else: the person still sees the
+        // topic, so one open on screen stays open.
         UpdateTopic a => state with
         {
-            Paging = state.Paging.Upsert(KeepingNameFromFile(state, a.Topic)),
+            Paging = state.Lists(a.Topic)
+                ? state.Paging.Upsert(KeepingNameFromFile(state, a.Topic))
+                : state.Paging.Remove(a.Topic.TopicId),
             Error = null
         },
 
-        UnlistTopic a => state with { Paging = state.Paging.Remove(a.TopicId) },
+        SignedIn a => state with { Viewer = a.Person.Viewer },
 
         TopicRemoved a => state with
         {

@@ -60,6 +60,36 @@ public partial class SeesAllWithdrawnE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(shown).ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 60_000 });
     }
 
+    // A conversation started while the list shows another person's is the starter's own: the list
+    // moves to theirs and holds its row, rather than leave it in the other person's list.
+    [SkippableFact]
+    public async Task ANewConversation_StartedWhileListingAnotherPersons_MovesTheListToMine()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var reader = $"Reader {tag}";
+        var owner = await fixture.CreatePageSignedInAsync((await PersonAsync($"Owner {tag}", "owner")).Session);
+        await PersonAsync($"Writer {tag}", "member");
+        await using var readerContext = await ContextOfAsync(owner, (await PersonAsync(reader, "member")).Session);
+        await SetSeesAllAsync(owner, reader, true);
+
+        var page = await readerContext.NewPageAsync();
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
+        await WebChatE2ETests.SelectAgentAsync(page);
+        var whose = page.GetByLabel("Whose conversations");
+        await Assertions.Expect(whose.Locator("option", new LocatorLocatorOptions { HasText = $"Writer {tag}'s" }))
+            .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+        await whose.SelectOptionAsync(new SelectOptionValue { Label = $"Writer {tag}'s" });
+
+        await page.Locator("textarea.chat-input").FillAsync($"Mine {tag}: answer in one short sentence.");
+        await page.Locator("textarea.chat-input").PressAsync("Enter");
+
+        await Assertions.Expect(whose).ToHaveValueAsync("mine", new LocatorAssertionsToHaveValueOptions { Timeout = 30_000 });
+        await page.Locator(".topic-item", new PageLocatorOptions { HasText = $"Mine {tag}" })
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+    }
+
     private async Task SetSeesAllAsync(IPage owner, string name, bool seesAll)
     {
         if (!owner.Url.EndsWith("/admin/members", StringComparison.Ordinal))

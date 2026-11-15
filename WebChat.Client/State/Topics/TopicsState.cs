@@ -33,6 +33,15 @@ public sealed record TopicsState
     // Whose topics someone who sees all may narrow the list to; nobody for anyone else.
     public IReadOnlyList<HouseholdMemberName> People { get; init; } = [];
 
+    // Who is reading the list, once the accounts service has said: what Lists holds a row to.
+    public TopicViewer? Viewer { get; init; }
+
+    // Whether the list shows this topic: what the person sees, narrowed by the filter. Every row is
+    // held to it, however it arrives — the hub's news, a topic this page started, a rename or a share
+    // it made — so a row the filter leaves out never sits in the list or counts on its badge. Until the
+    // person is known, the server's own answer is the only rule.
+    public bool Lists(StoredTopic topic) => Viewer is null || Viewer.Lists(topic.ToMetadata(), Filter);
+
     // The agent this page was on when the household removed it, named until the person picks another
     // or opens a conversation: its conversations went with it, and what they write now goes elsewhere.
     public string? RemovedAgentName { get; init; }

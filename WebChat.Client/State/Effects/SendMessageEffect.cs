@@ -130,7 +130,12 @@ public sealed class SendMessageEffect : IDisposable
                 AgentId = state.SelectedAgentId!,
                 Name = topicName,
                 CreatedAt = DateTime.UtcNow,
-                SpaceSlug = _spaceStore.State.CurrentSlug
+                SpaceSlug = _spaceStore.State.CurrentSlug,
+
+                // The starter's own, private, as the hub saves it whatever the browser sends: so the
+                // list judges its row by whose it is (TopicsState.Lists) before the server says so.
+                OwnerId = state.Viewer?.UserId,
+                TenantId = state.Viewer?.TenantId
             };
 
             var started = await _sessionService.StartSessionAsync(topic);
@@ -159,6 +164,8 @@ public sealed class SendMessageEffect : IDisposable
             {
                 _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
             }
+
+            TopicListMoves.ToTheStartersOwn(topic, _topicsStore.State, _dispatcher);
         }
         else
         {
