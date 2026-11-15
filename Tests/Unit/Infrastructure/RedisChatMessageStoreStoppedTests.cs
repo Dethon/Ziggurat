@@ -57,6 +57,50 @@ public class RedisChatMessageStoreStoppedTests
         _stored[0].Text.ShouldBe("hola");
     }
 
+    // A provider may refuse a call whose reasoning was taken from it, so the reasoning beside a kept call
+    // stays.
+    [Fact]
+    public async Task AStopAfterAToolCall_KeepsTheReasoningThatLedToIt()
+    {
+        await StopAfterAsync(
+            new Scripted([new TextReasoningContent("I should look"), new FunctionCallContent("c1", "lookup")], [new TextContent("never")]),
+            updatesRead: 1);
+
+        var withCall = _stored.Single(m => m.Contents.OfType<FunctionCallContent>().Any());
+        withCall.Contents.OfType<TextReasoningContent>().ShouldHaveSingleItem();
+    }
+
+    // Deleting a topic, or clearing a chat, stops its reply and removes the conversation at once; the
+    // stopped turn kept after that would bring back what the person removed.
+    [Fact]
+    public async Task AStoppedTurn_WhoseConversationWasRemovedMeanwhile_IsNotKept()
+    {
+        _stored.AddRange([new ChatMessage(ChatRole.User, "earlier"), new ChatMessage(ChatRole.Assistant, "answered")]);
+        _store.Setup(s => s.GetMessageCountAsync(Key)).ReturnsAsync(() => _stored.Count);
+        _store.Setup(s => s.GetTailMessagesAsync(Key, 1)).ReturnsAsync(() => _stored.Count == 0 ? null : [_stored[^1]]);
+
+        await StopAfterAsync(new Scripted([new TextContent("Once upon ")], [new TextContent("a time")]), updatesRead: 1,
+            whileStopping: () => _stored.Clear());
+
+        _stored.ShouldBeEmpty();
+    }
+
+    // The first turn of a conversation has no line to compare: its topic deleted is the conversation gone.
+    [Fact]
+    public async Task AStoppedFirstTurn_WhoseTopicWasDeletedMeanwhile_IsNotKept()
+    {
+        const string topicKey = "agent-key:jonas:7:42";
+        _store.Setup(s => s.GetMessagesAsync(topicKey)).ReturnsAsync((ChatMessage[]?)null);
+        _store.Setup(s => s.AppendMessagesAsync(topicKey, It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Callback<string, IReadOnlyList<ChatMessage>>((_, messages) => _stored.AddRange(messages))
+            .Returns(Task.CompletedTask);
+
+        await StopAfterAsync(new Scripted([new TextContent("Once upon ")], [new TextContent("a time")]), updatesRead: 1,
+            key: topicKey);
+
+        _stored.ShouldBeEmpty();
+    }
+
     // The next turn's model reads what was said before the stop.
     [Fact]
     public async Task TheNextTurn_ReadsTheInterruptedReply()
@@ -117,13 +161,13 @@ public class RedisChatMessageStoreStoppedTests
         }
     }
 
-    private async Task StopAfterAsync(IChatClient client, int updatesRead)
+    private async Task StopAfterAsync(IChatClient client, int updatesRead, Action? whileStopping = null, string key = Key)
     {
         using var cts = new CancellationTokenSource();
         var history = new RedisChatMessageStore(_store.Object);
         var agent = client.AsAIAgent(new ChatClientAgentOptions { ChatHistoryProvider = history });
         var session = await agent.CreateSessionAsync();
-        session.StateBag.SetValue(RedisChatMessageStore.StateKey, Key);
+        session.StateBag.SetValue(RedisChatMessageStore.StateKey, key);
         history.BeginCollecting(session);
         var read = 0;
         try
@@ -133,6 +177,7 @@ public class RedisChatMessageStoreStoppedTests
                 history.Collect(session, update);
                 if (++read >= Math.Max(1, updatesRead))
                 {
+                    whileStopping?.Invoke();
                     await cts.CancelAsync();
                 }
             }

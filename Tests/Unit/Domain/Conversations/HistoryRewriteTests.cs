@@ -294,6 +294,54 @@ public class HistoryRewriteTests
         after.Messages.Select(m => (m.GetEntryId(), m.IsFailedTurn())).ShouldBe([("u0", false), ("a0", false), ("u1", false)]);
     }
 
+    // A line ending on what no page shows — a tool's result a stop left, Continue's hidden ask — is seen
+    // by its last shown message, which is all a page can name.
+    [Fact]
+    public void ALineEndingOnWhatNoPageShows_IsSeenByItsLastShownMessage()
+    {
+        var call = new ChatMessage(ChatRole.Assistant, [new TextContent("let me look"), new FunctionCallContent("c1", "lookup")]);
+        call.SetEntryId("a1");
+        var result = new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c1", "found")]);
+        result.SetEntryId("t1");
+        var history = new ConversationHistory([Message("u1", "user"), call, result], new Dictionary<string, SlotVersions>());
+
+        var after = Apply(history, new CutFrom("u1", "a1"));
+
+        after.Messages.ShouldBeEmpty();
+    }
+
+    // Continue's hidden ask is no person's turn: a continued reply is one reply to the turn's boundaries.
+    [Fact]
+    public void AContinuedReply_IsOneReply_ToEveryRewrite()
+    {
+        var cut = Message("a1", "assistant");
+        var ask = Message("ask", "user");
+        ask.MarkContinuation();
+        var history = new ConversationHistory(
+            [Message("u1", "user"), cut, ask, Message("a2", "assistant")], new Dictionary<string, SlotVersions>());
+
+        Apply(history, new CutFrom("a2", "a2")).Messages.Select(m => m.GetEntryId()).ShouldBe(["u1"]);
+        Apply(history, new EditInPlace("a1", "the whole story", "a2")).Messages.Select(m => (m.Role.Value, m.Text))
+            .ShouldBe([("user", "u1"), ("assistant", "the whole story")]);
+        HistoryFork.Of(history.Messages, "a1")!.Messages.Count.ShouldBe(4);
+    }
+
+    // A failed turn is never kept as a version, however the line comes to be put aside.
+    [Fact]
+    public void SwitchingAwayFromAFailedTurn_KeepsNoVersionOfIt()
+    {
+        var history = Line(("u1", "user"), ("a1", "assistant"));
+        var aside = Apply(history, new PutAsideReply("u1", "a1"));
+        var error = Message("err", "assistant");
+        error.MarkFailedTurn();
+        aside = aside with { Messages = [.. aside.Messages, error] };
+
+        var after = Apply(aside, new SwitchVersion("u1", 0, "err"));
+
+        after.Messages.Select(m => m.GetEntryId()).ShouldBe(["u1", "a1"]);
+        after.Versions.ShouldNotContainKey("u1");
+    }
+
     [Fact]
     public void ARewrite_OfALineThatChangedSinceThePageSawIt_IsRefused()
     {

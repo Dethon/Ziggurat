@@ -1308,8 +1308,8 @@ h1, h2, h3 {
     z-index: 40;
 }
 
-/* Opens downward: overflow past the bottom of the messages area can be scrolled to, overflow above
-   its top cannot, and the first message's menu used to open where nothing could reach it. */
+/* Opens downward by default: overflow above the messages area's top cannot be scrolled to, and the
+   first message's menu used to open where nothing could reach it. */
 .message-actions-menu {
     position: absolute;
     right: 0;
@@ -1326,6 +1326,12 @@ h1, h2, h3 {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
     color: var(--text-primary);
     text-align: left;
+}
+
+/* Up, where the messages area has no room below and more above (messageActions.opensUp). */
+.message-actions-menu.up {
+    top: auto;
+    bottom: calc(100% + 0.25rem);
 }
 
 .message-action {

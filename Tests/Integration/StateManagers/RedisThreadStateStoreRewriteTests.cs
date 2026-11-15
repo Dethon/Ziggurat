@@ -237,6 +237,33 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         (await store.GetTopicAsync("home", _agentId, _chatId, "t"))!.MessageCount.ShouldBe(2);
     }
 
+    // A Continue that failed is its error, shown and counted as one; the reply it meant to carry on is
+    // still cut off, for Retry to continue again.
+    [Fact]
+    public async Task GetHistoryAsync_AFailedContinue_IsItsErrorAndLeavesTheReplyCutOff()
+    {
+        var cut = Message("a1", "assistant", "Once upon ");
+        cut.MarkInterrupted();
+        var ask = Message("c1", "user", Continuation.Instruction);
+        ask.MarkContinuation();
+        ask.MarkFailedTurn();
+        var error = Message("e1", "assistant", "OpenRouter refused the key.");
+        error.MarkFailedTurn();
+        var store = await SeededAsync(("u1", "user", "tell me a story"));
+        await store.AppendMessagesAsync(Key, [cut]);
+        await store.AppendMessagesAsync(Key, [ask, error]);
+
+        var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
+
+        history.Select(h => (h.Content, h.IsInterrupted, h.IsError, h.ContinuesPrevious)).ShouldBe(
+        [
+            ("tell me a story", false, false, false),
+            ("Once upon ", true, false, false),
+            ("OpenRouter refused the key.", false, true, false)
+        ]);
+        (await store.GetTopicAsync("home", _agentId, _chatId, "t"))!.MessageCount.ShouldBe(3);
+    }
+
     private async Task<RedisThreadStateStore> SeededAsync(params (string Id, string Role, string Text)[] messages)
     {
         var store = NewStore();

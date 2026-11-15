@@ -1,6 +1,8 @@
 @* A bubble's actions, behind one tap target: the app is used on a phone, where nothing hovers. A
    rewrite that discards anything, or runs tools again, is asked about once more inside the menu. *@
 
+@inject IJSRuntime Js
+
 @code {
     [Parameter] public IReadOnlyList<MessageActionKind> Actions { get; set; } = [];
     [Parameter] public EventCallback<MessageActionChoice> OnAction { get; set; }
@@ -12,14 +14,30 @@
     [Parameter] public IReadOnlyList<string> Tools { get; set; } = [];
 
     private bool _open;
+    private bool _up;
+    private ElementReference _button;
     private MessageActionKind? _confirming;
     private string? _model;
     private bool _pickingModel;
 
-    private void Toggle()
+    // Room for the longest menu: five items, or a question and its two answers.
+    private const int MenuHeight = 260;
+
+    private async Task Toggle()
     {
         _open = !_open;
         Reset();
+        if (_open)
+        {
+            try
+            {
+                _up = await Js.InvokeAsync<bool>("messageActions.opensUp", _button, MenuHeight);
+            }
+            catch (JSException)
+            {
+                _up = false;
+            }
+        }
     }
 
     private void Close()
@@ -57,7 +75,7 @@
 }
 
 <div class="message-actions">
-    <button class="btn-message-actions" @onclick="Toggle" aria-label="Message actions" aria-haspopup="menu"
+    <button class="btn-message-actions" @ref="_button" @onclick="Toggle" aria-label="Message actions" aria-haspopup="menu"
             aria-expanded="@(_open ? "true" : "false")" title="More">
         <Icon Glyph="Icons.More" Size="14" />
     </button>
@@ -65,7 +83,7 @@
     @if (_open)
     {
         <div class="message-actions-backdrop" @onclick="Close"></div>
-        <div class="message-actions-menu" role="menu">
+        <div class="message-actions-menu @(_up ? "up" : "")" role="menu">
             @if (_confirming is { } confirming)
             {
                 <div class="message-actions-question">@MessageActionLabels.Question(confirming, Tools)</div>

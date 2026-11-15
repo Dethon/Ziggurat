@@ -103,6 +103,27 @@ public sealed class SendMessageEffectTests : IDisposable
         await asked.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    // A Continue that failed is retried as Continue: sending the question again would answer it twice.
+    [Fact]
+    public void RetryLastMessage_AfterAFailedContinue_ContinuesAgain()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("topic-1",
+        [
+            new ChatMessageModel { Role = "user", Content = "a story" },
+            new ChatMessageModel { Role = "assistant", Content = "Once upon ", IsInterrupted = true },
+            new ChatMessageModel { Role = "assistant", Content = "refused", IsError = true }
+        ]));
+        ContinueReply? continued = null;
+        var sent = 0;
+        using var a = _dispatcher.RegisterHandler<ContinueReply>(x => continued = x);
+        using var b = _dispatcher.RegisterHandler<SendMessage>(_ => sent++);
+
+        _dispatcher.Dispatch(new RetryLastMessage("topic-1"));
+
+        continued.ShouldBe(new ContinueReply("topic-1"));
+        sent.ShouldBe(0);
+    }
+
     [Fact]
     public void RetryLastMessage_NoUserMessages_DoesNotDispatchSendMessage()
     {

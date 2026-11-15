@@ -45,7 +45,9 @@ public abstract record HistoryRewrite(string? LastSeen)
 
     public static RewriteOutcome Apply(ConversationHistory history, HistoryRewrite rewrite, DateTimeOffset now)
     {
-        var lastSeen = history.Messages.Count == 0 ? null : HistoryEntries.IdAt(history.Messages, history.Messages.Count - 1);
+        // The last message a page could have named: what the line ends on may be shown to nobody.
+        var shown = history.Messages.Index().LastOrDefault(x => Transcript.IsShown(x.Item));
+        var lastSeen = shown.Item is null ? null : HistoryEntries.IdAt(history.Messages, shown.Index);
         if (lastSeen != rewrite.LastSeen)
         {
             return new RewriteRefused(RewriteRefusal.Changed);
@@ -96,7 +98,7 @@ public abstract record HistoryRewrite(string? LastSeen)
     // A person's own words, which is all a page may send again as its person: never a reply, and never
     // a turn a service started, which acted for whoever its delegation named.
     private protected static bool IsPersonsMessage(ChatMessage message) =>
-        message.Role == ChatRole.User
+        Transcript.StartsPersonsTurn(message)
         && message.GetConversationContext()?.OriginKind is null
         && !ServiceSenders.IsService(message.GetSenderId() ?? "")
         && message.GetResponseFormat() is null;
@@ -214,8 +216,8 @@ public sealed record EditInPlace(string EntryId, string Text, string? LastSeen) 
     private protected override ConversationHistory Make(ConversationHistory history, int at, DateTimeOffset now)
     {
         var messages = history.Messages;
-        var (from, to) = messages[at].Role == ChatRole.User ? (at, at) : TurnAround(messages, at);
-        var corrected = messages[at].Role == ChatRole.User
+        var (from, to) = Transcript.StartsPersonsTurn(messages[at]) ? (at, at) : TurnAround(messages, at);
+        var corrected = Transcript.StartsPersonsTurn(messages[at])
             ? [WithEntryId(messages[at], Replaced(messages[at].Contents))]
             : Reply(messages.Skip(from).Take(to - from + 1).ToList());
         var aside = PutAside.Before(history, from, now);
@@ -228,15 +230,17 @@ public sealed record EditInPlace(string EntryId, string Text, string? LastSeen) 
     // The reply's turn: from the first message after the person's to the last before the next person's.
     private static (int From, int To) TurnAround(IReadOnlyList<ChatMessage> messages, int at)
     {
-        var from = messages.Take(at).Index().LastOrDefault(x => x.Item.Role == ChatRole.User) is { Item: not null } user
+        var from = messages.Take(at).Index().LastOrDefault(x => Transcript.StartsPersonsTurn(x.Item)) is { Item: not null } user
             ? user.Index + 1
             : 0;
-        var next = messages.Index().Skip(at + 1).FirstOrDefault(x => x.Item.Role == ChatRole.User);
+        var next = messages.Index().Skip(at + 1).FirstOrDefault(x => Transcript.StartsPersonsTurn(x.Item));
         return (from, next.Item is null ? messages.Count - 1 : next.Index - 1);
     }
 
     private IReadOnlyList<ChatMessage> Reply(IReadOnlyList<ChatMessage> turn)
     {
+        // Continue's asks go with the words they asked for: the corrected reply is one reply.
+        turn = [.. turn.Where(m => !m.IsContinuation())];
         var last = turn.Index().LastOrDefault(x => x.Item.Role == ChatRole.Assistant).Index;
         var copies = turn.Index().Select(x => x.Item.Role != ChatRole.Assistant
             ? WithEntryId(x.Item)
@@ -249,8 +253,14 @@ public sealed record EditInPlace(string EntryId, string Text, string? LastSeen) 
     private IEnumerable<AIContent> Replaced(IEnumerable<AIContent> contents) =>
         [new TextContent(Text), .. Unsaid(contents)];
 
-    private static IEnumerable<AIContent> Unsaid(IEnumerable<AIContent> contents) =>
-        contents.Where(c => c is not TextContent and not TextReasoningContent);
+    // What the model said goes; its reasoning stays beside a tool call it led to, since a provider may
+    // refuse a call whose reasoning was taken away.
+    private static IEnumerable<AIContent> Unsaid(IEnumerable<AIContent> contents)
+    {
+        var list = contents.ToList();
+        var calls = list.Any(c => c is FunctionCallContent);
+        return list.Where(c => c is not TextContent && (calls || c is not TextReasoningContent));
+    }
 }
 
 // A reroll, before the turn that answers the person's message again: the reply after it is kept as a
@@ -283,7 +293,8 @@ public sealed record SwitchVersion(string? SlotEntryId, int Index, string? LastS
             return history;
         }
 
-        var tail = history.Messages.Skip(at + 1).ToList();
+        // A failed turn is replaced, never kept as a version.
+        var tail = history.Messages.Skip(at + 1).Where(m => !m.IsFailedTurn()).ToList();
         IReadOnlyList<HistoryVersion> inactive =
         [
             .. current.Inactive.Where(v => !ReferenceEquals(v, chosen)),
@@ -312,9 +323,9 @@ public sealed record CutFrom(string EntryId, string? LastSeen) : HistoryRewrite(
     private protected override int? Resolve(IReadOnlyList<ChatMessage> messages) =>
         HistoryEntries.IndexOf(messages, EntryId) is not { } index
             ? null
-            : messages[index].Role == ChatRole.User
+            : Transcript.StartsPersonsTurn(messages[index])
                 ? index
-                : messages.Take(index).Index().LastOrDefault(x => x.Item.Role == ChatRole.User) is { Item: not null } user
+                : messages.Take(index).Index().LastOrDefault(x => Transcript.StartsPersonsTurn(x.Item)) is { Item: not null } user
                     ? user.Index + 1
                     : 0;
 

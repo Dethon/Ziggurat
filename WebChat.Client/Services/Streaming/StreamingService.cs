@@ -443,7 +443,8 @@ public sealed class StreamingService(
 
                 dispatcher.Dispatch(new EntryIdsLearned(topic.TopicId, history.Value!));
                 if (messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, [])
-                    .All(m => m.EntryId is not null || m.IsError || m.NoReply))
+                    .All(m => m.EntryId is not null || m.IsError || m.NoReply
+                              || (string.IsNullOrEmpty(m.Content) && m.Attachments is not { Count: > 0 })))
                 {
                     return;
                 }

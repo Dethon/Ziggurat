@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Domain.Agents;
 using Domain.Contracts;
 using Domain.Conversations;
 using Domain.DTOs.Metrics.Enums;
@@ -50,6 +51,12 @@ public sealed class RedisChatMessageStore(
     // What this turn's request said of the line it was read against, by session: a reroll's message is
     // the one the line ends on, and a message whose name the line already holds elsewhere is a new one.
     private readonly ConditionalWeakTable<AgentSession, Rerun> _rerun = [];
+
+    // How the line ended when this turn read it, by session: a stopped turn is kept only on the line it
+    // read, never on one a delete or a clear removed under it.
+    private readonly ConditionalWeakTable<AgentSession, LineRead> _lineRead = [];
+
+    private sealed record LineRead(int Count, string? LastEntryId);
 
     // What this turn's reply has streamed so far, by session, so a turn the person stops keeps what was
     // said before the stop. Fed by whoever reads the reply (McpAgent), since the framework hands a
@@ -106,6 +113,7 @@ public sealed class RedisChatMessageStore(
         _failedTail.AddOrUpdate(context.Session, FailedTail.Of(stored));
 
         // A reroll's message is the one the line ends on, and the request carries it again: read once.
+        _lineRead.AddOrUpdate(context.Session, new LineRead(stored.Length, stored.LastOrDefault()?.GetEntryId()));
         var rerun = Rerun.Of(stored, context.RequestMessages);
         _rerun.AddOrUpdate(context.Session, rerun);
         var messages = ModelView(rerun.TrailingId is null ? stored : stored.SkipLast(1));
@@ -127,12 +135,7 @@ public sealed class RedisChatMessageStore(
                 return default;
             }
 
-            var said = Said(context.Session);
-#pragma warning disable MAAI001 // the framework's own context, rebuilt with what the stopped reply said
-            // Not the turn's token, which the stop cancelled: what was said is kept all the same.
-            return base.InvokedCoreAsync(
-                new InvokedContext(context.Agent, context.Session, context.RequestMessages, said), CancellationToken.None);
-#pragma warning restore MAAI001
+            return KeepStoppedAsync(context, context.Session);
         }
 
         if (context.InvokeException is not { } failure)
@@ -234,6 +237,50 @@ public sealed class RedisChatMessageStore(
         }
     }
 
+    private async ValueTask KeepStoppedAsync(InvokedContext context, AgentSession session)
+    {
+        var said = Said(session);
+        if (!await StillTheLineReadAsync(session))
+        {
+            await ClearTurnInFlightAsync(session);
+            return;
+        }
+
+#pragma warning disable MAAI001 // the framework's own context, rebuilt with what the stopped reply said
+        // Not the turn's token, which the stop cancelled: what was said is kept all the same.
+        await base.InvokedCoreAsync(
+            new InvokedContext(context.Agent, session, context.RequestMessages, said), CancellationToken.None);
+#pragma warning restore MAAI001
+    }
+
+    // A delete or a clear stops the reply and removes the conversation at once, so the stop is kept only
+    // while the line ends where the turn read it — and a first turn's only while its topic still holds it.
+    private async Task<bool> StillTheLineReadAsync(AgentSession session)
+    {
+        if (!_lineRead.TryGetValue(session, out var read) || !TryGetStateKey(session, out var key))
+        {
+            return true;
+        }
+
+        if (read.Count == 0)
+        {
+            return AgentKey.ChatConversationParts(key!) is not { } parts
+                   || await store.GetTopicByChatIdAndThreadIdAsync(parts.AgentId, parts.ChatId, parts.ThreadId) is not null;
+        }
+
+        var tail = await store.GetTailMessagesAsync(key!, 1);
+        return await store.GetMessageCountAsync(key!) == read.Count
+               && (read.LastEntryId is null || tail?.LastOrDefault()?.GetEntryId() == read.LastEntryId);
+    }
+
+    private async ValueTask ClearTurnInFlightAsync(AgentSession session)
+    {
+        if (TryGetStateKey(session, out var key))
+        {
+            await store.ClearTurnInFlightAsync(key!);
+        }
+    }
+
     // Whether the turn's last model call ended for its output limit, as the streamed updates said.
     private bool CutOffByTheLimit(AgentSession session)
     {
@@ -248,7 +295,7 @@ public sealed class RedisChatMessageStore(
     }
 
     // What a stopped reply had said: its text and every tool call that got its result, the last text
-    // marked interrupted. Reasoning goes — it was the model's, not said — and a call with no answer
+    // marked interrupted. Reasoning goes unless it led to a call that is kept, and a call with no answer
     // goes too, since no model can continue from it.
     private IReadOnlyList<ChatMessage> Said(AgentSession session)
     {
@@ -265,11 +312,10 @@ public sealed class RedisChatMessageStore(
             .Select(m =>
             {
                 var copy = m.Clone();
-                copy.Contents =
-                [
-                    .. m.Contents.Where(c => c is not TextReasoningContent
-                                             && (c is not FunctionCallContent call || answered.Contains(call.CallId)))
-                ];
+                var kept = m.Contents.Where(c => c is not FunctionCallContent call || answered.Contains(call.CallId)).ToList();
+
+                // Reasoning stays beside a call it led to, which a provider may refuse without it.
+                copy.Contents = kept.Any(c => c is FunctionCallContent) ? kept : [.. kept.Where(c => c is not TextReasoningContent)];
                 return copy;
             })
             .Where(m => m.Contents.Count > 0 && (m.Role != ChatRole.Assistant || m.Contents.Any(c => c is not TextContent t || t.Text.Length > 0)))

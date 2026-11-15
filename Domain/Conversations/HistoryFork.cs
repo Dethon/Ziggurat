@@ -18,12 +18,12 @@ public static class HistoryFork
             return null;
         }
 
-        if (messages[at].Role == ChatRole.User)
+        if (Transcript.StartsPersonsTurn(messages[at]))
         {
             return new Fork(Copied(messages.Take(at)), messages[at].Text);
         }
 
-        var next = messages.Index().Skip(at + 1).FirstOrDefault(x => x.Item.Role == ChatRole.User);
+        var next = messages.Index().Skip(at + 1).FirstOrDefault(x => Transcript.StartsPersonsTurn(x.Item));
         return new Fork(Copied(next.Item is null ? messages : messages.Take(next.Index)), null);
     }
 

@@ -361,18 +361,9 @@ public sealed class RedisThreadStateStore(
     // A call the person turned down reads as a line of the reply: the turn ends on it with no text,
     // and a transcript of text alone showed the question with nothing under it.
     private static IEnumerable<ChatMessage> Readable(IEnumerable<ChatMessage> messages) =>
-        messages.Where(m =>
-            (m.Role == ChatRole.User || m.Role == ChatRole.Assistant || m.Role == ChatRole.Tool)
-            && !m.IsContinuation()
-            && (!string.IsNullOrWhiteSpace(TextOf(m)) || m.GetAttachments() is { Count: > 0 }));
+        messages.Where(Transcript.IsShown);
 
-    private static string TextOf(ChatMessage message) =>
-        message.Role == ChatRole.Tool
-            ? string.Join("\n", message.Contents.OfType<FunctionResultContent>()
-                .Select(c => ApprovalRejection.ToolOf(c.Result?.ToString()))
-                .OfType<string>()
-                .Select(ApprovalRejection.Line))
-            : string.Join("", message.Contents.OfType<TextContent>().Select(c => c.Text));
+    private static string TextOf(ChatMessage message) => Transcript.TextOf(message);
 
     private static string Text(IEnumerable<ChatMessage> messages) =>
         string.Join(
@@ -749,7 +740,7 @@ public sealed class RedisThreadStateStore(
                 continuing = m.IsContinuation();
             }
 
-            return !(continuing && m.Role == ChatRole.Assistant) && Readable([m]).Any();
+            return !(continuing && m.Role == ChatRole.Assistant && !m.IsFailedTurn()) && Readable([m]).Any();
         });
     }
 
@@ -770,6 +761,13 @@ public sealed class RedisThreadStateStore(
 
             if (message.Role != ChatRole.Assistant || string.IsNullOrWhiteSpace(TextOf(message)))
             {
+                continue;
+            }
+
+            // A failed Continue's error is the error it is, and carries nothing on.
+            if (message.IsFailedTurn())
+            {
+                continuing = false;
                 continue;
             }
 

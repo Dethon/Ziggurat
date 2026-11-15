@@ -127,8 +127,19 @@ public class ChatEditsE2ETests(WebChatE2EFixture fixture)
         await SendAsync(page, "Write a very long and detailed story about a space adventure. Do not call any tools.");
         var stop = page.Locator("[data-testid=composer-cancel]");
         await stop.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+
+        // Stopped once the reply is under way: a turn stopped before the agent began it keeps nothing.
+        await Assertions.Expect(page.Locator(".chat-message.assistant .message-content")).ToHaveCountAsync(2,
+            new LocatorAssertionsToHaveCountOptions { Timeout = 120_000 });
         await ClickThroughApprovalsAsync(page, stop);
         await IdleAsync(page);
+
+        // The agent keeps the stopped turn after the stop ended its stream; once its message is named,
+        // the turn is kept and over.
+        await Assertions.Expect(page.Locator(".chat-message.user", new PageLocatorOptions { HasText = "lighthouse" })
+                .Or(page.Locator(".chat-message.user", new PageLocatorOptions { HasText = "space adventure" }))
+                .GetByRole(AriaRole.Button, new LocatorGetByRoleOptions { Name = "Message actions" }))
+            .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
 
         await ChooseAsync(page.Locator(".chat-message.user", new PageLocatorOptions { HasText = $"Stop {tag}" }), "Delete from here",
             confirm: "Delete");

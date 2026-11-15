@@ -275,6 +275,15 @@ public sealed class SendMessageEffect : IDisposable
         _dispatcher.Dispatch(new RemoveTrailingErrors(action.TopicId));
 
         var messages = _messagesStore.State.MessagesByTopic.GetValueOrDefault(action.TopicId, []);
+
+        // What failed was a Continue, carrying on the cut-off reply the conversation now ends on: it is
+        // retried as one, since sending the question again would answer it twice.
+        if (messages.LastOrDefault() is { Role: "assistant", IsInterrupted: true })
+        {
+            _dispatcher.Dispatch(new ContinueReply(action.TopicId));
+            return;
+        }
+
         var lastUserMessage = messages.LastOrDefault(m => m.Role == "user");
         if (lastUserMessage is not null)
         {

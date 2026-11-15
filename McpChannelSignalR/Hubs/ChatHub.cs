@@ -431,7 +431,8 @@ public sealed class ChatHub(
         if (await SessionToContinueAsync(topicId) is { } session)
         {
             var messages = await threadStore.GetMessagesAsync(new AgentKey(session.Identity.ConversationId, session.AgentId).ToString()) ?? [];
-            var lastReply = messages.Reverse().TakeWhile(m => m.Role != ChatRole.User)
+            // Back to the person's turn, past any Continue's ask (a continuation stopped before it said anything).
+            var lastReply = messages.Reverse().TakeWhile(m => !Transcript.StartsPersonsTurn(m))
                 .FirstOrDefault(m => m.Role == ChatRole.Assistant && !string.IsNullOrEmpty(m.Text));
             if (lastReply?.IsInterrupted() != true)
             {
