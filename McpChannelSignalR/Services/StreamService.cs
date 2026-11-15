@@ -203,7 +203,7 @@ public sealed class StreamService(
         ChannelSession? finished = null;
         string? spaceSlug = null;
         string? topicName = null;
-        string? said = null;
+        IReadOnlyList<ChatStreamMessage> carried = [];
 
         lock (_streamLock)
         {
@@ -222,8 +222,12 @@ public sealed class StreamService(
                 topicName = session?.TopicName;
             }
 
-            // Read before the cleanup below drops the buffer.
-            said = _streamBuffers.TryGetValue(topicId, out var buffer) ? LastSaid(buffer.GetAll()) : null;
+            // Taken before the cleanup below drops the buffer, and read outside the lock every topic's
+            // IsStreaming waits on.
+            if (_streamBuffers.TryGetValue(topicId, out var buffer))
+            {
+                carried = buffer.GetAll();
+            }
 
             if (_responseChannels.TryRemove(topicId, out var channel))
             {
@@ -235,16 +239,17 @@ public sealed class StreamService(
 
         if (finished is not null && spaceSlug is not null)
         {
-            _ = SendPushNotificationAsync(finished, topicId, spaceSlug, topicName, said);
+            _ = SendPushNotificationAsync(finished, topicId, spaceSlug, topicName, LastSaid(carried));
         }
     }
 
     // The reply's last words, not its reasoning, its tool calls or a person's message on the stream.
     private static string? LastSaid(IReadOnlyList<ChatStreamMessage> carried) =>
         carried
+            .Reverse()
             .Where(m => m.UserMessage is null && !string.IsNullOrWhiteSpace(m.Content))
             .Select(m => m.Content!.Excerpt(PushExcerptLength))
-            .LastOrDefault(text => text.Length > 0);
+            .FirstOrDefault(text => text.Length > 0);
 
     // The topic's name and what the reply said ride on the push, so a private topic's goes to its
     // owner's devices alone, the way its news on the hub does (TopicAudience); any other topic's goes

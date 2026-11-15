@@ -36,9 +36,12 @@ public sealed class ScriptedChatClient : IAsyncDisposable
 {
     private readonly ServiceProvider _provider;
     private readonly AsyncServiceScope _scope;
+    private readonly string _startUri;
 
-    public ScriptedChatClient()
+    // The address the app was opened at: a notification's tap names a conversation in it.
+    public ScriptedChatClient(string startUri = "http://localhost/")
     {
+        _startUri = startUri;
         _provider = BuildRegistrations().BuildServiceProvider(
             new ServiceProviderOptions { ValidateScopes = true });
         _scope = _provider.CreateAsyncScope();
@@ -59,7 +62,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
             typeof(ApprovalStore), typeof(UserIdentityStore), typeof(ToastStore), typeof(AgentSettingsStore),
             typeof(SpaceStore), typeof(AgentActivityStore), typeof(ComposerStore),
             typeof(SessionRecoveryEffect), typeof(ReconnectionEffect), typeof(SendMessageEffect),
-            typeof(TopicSelectionEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
+            typeof(TopicSelectionEffect), typeof(OpenTopicEffect), typeof(TopicDeleteEffect), typeof(InitializationEffect),
             typeof(AgentSelectionEffect), typeof(UserIdentityEffect), typeof(SpaceEffect),
             typeof(AgentActivityEffect), typeof(AgentSettingsEffect), typeof(StreamResumeEffect),
             typeof(AttachmentEffect), typeof(DictationEffect), typeof(TopicRenameEffect),
@@ -133,7 +136,7 @@ public sealed class ScriptedChatClient : IAsyncDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<TimeProvider>(Clock);
-        services.AddScoped<NavigationManager>(_ => new FakeNavigationManager());
+        services.AddScoped<NavigationManager>(_ => new FakeNavigationManager(_startUri));
         services.AddScoped(_ => new Mock<IJSRuntime>().Object);
 
         services.AddScoped<IHubEventDispatcher, HubEventDispatcher>();
