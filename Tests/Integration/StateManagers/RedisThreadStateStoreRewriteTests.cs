@@ -186,6 +186,19 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         history.Select(h => h.ToolsCalled).ShouldBe([null, ["timer_set"], null, null]);
     }
 
+    [Fact]
+    public async Task GetHistoryAsync_AReplySaysTheModelThatWroteIt()
+    {
+        var reply = Message("a1", "assistant", "buenas");
+        reply.SetModel("other/model");
+        var store = await SeededAsync(("u1", "user", "hola"));
+        await store.AppendMessagesAsync(Key, [reply]);
+
+        var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
+
+        history.Select(h => h.Model).ShouldBe([null, "other/model"]);
+    }
+
     private async Task<RedisThreadStateStore> SeededAsync(params (string Id, string Role, string Text)[] messages)
     {
         var store = NewStore();

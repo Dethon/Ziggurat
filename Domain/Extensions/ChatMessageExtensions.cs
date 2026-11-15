@@ -27,6 +27,7 @@ public static class ChatMessageExtensions
     private const string OfflineServersKey = "OfflineServers";
     private const string FailedTurnKey = "FailedTurn";
     private const string EntryIdKey = "EntryId";
+    private const string ModelKey = "Model";
 
     extension(ChatMessage message)
     {
@@ -64,6 +65,28 @@ public static class ChatMessageExtensions
         {
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[EntryIdKey] = entryId;
+        }
+
+        // The model the turn ran on, as the agent resolved it: on the person's message as the turn
+        // starts, and on every reply message it kept.
+        public string? GetModel() =>
+            message.AdditionalProperties?.GetValueOrDefault(ModelKey) switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+
+        public void SetModel(string? model)
+        {
+            if (model is null)
+            {
+                message.AdditionalProperties?.Remove(ModelKey);
+                return;
+            }
+
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[ModelKey] = model;
         }
 
         public string? GetSenderId()

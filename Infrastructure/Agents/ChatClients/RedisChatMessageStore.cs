@@ -137,6 +137,13 @@ public sealed class RedisChatMessageStore(
             message.SetTimestamp(now);
         }
 
+        // Each reply message keeps the model its turn ran on, which the turn's message carries.
+        var model = context.RequestMessages.LastOrDefault(m => m.Role == ChatRole.User)?.GetModel();
+        foreach (var message in context.ResponseMessages?.Where(x => x.GetModel() is null) ?? [])
+        {
+            message.SetModel(model);
+        }
+
         var failed = context.ResponseMessages?.Any(m => m.IsFailedTurn()) == true;
         var rerun = _rerun.TryGetValue(context.Session, out var read) ? read : Rerun.None;
 

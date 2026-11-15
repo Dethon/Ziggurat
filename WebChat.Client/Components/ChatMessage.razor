@@ -16,6 +16,9 @@
     [Parameter] public EventCallback<MessageActionChoice> OnAction { get; set; }
     [Parameter] public IReadOnlyList<PatchableModel> RerollModels { get; set; } = [];
 
+    // The model the agent runs on by default: a reply written by another says which.
+    [Parameter] public string? AgentModel { get; set; }
+
     // Whether this person may flip the bubble's versions, and who is told the version chosen.
     [Parameter] public bool MaySwitchVersions { get; set; }
     [Parameter] public EventCallback<int> OnSwitchVersion { get; set; }
@@ -192,6 +195,11 @@
             @if (Message.Versions is { } versions)
             {
                 <VersionSwitcher Versions="@versions" Enabled="@(MaySwitchVersions && !IsStreaming)" OnSwitch="@OnSwitchVersion" />
+            }
+
+            @if (Message.Model is { } model && AgentModel is not null && !string.Equals(model, AgentModel, StringComparison.OrdinalIgnoreCase))
+            {
+                <span class="message-model" title="@model">@(RerollModels.FirstOrDefault(m => m.Id == model)?.Name ?? model)</span>
             }
 
             @if (!string.IsNullOrEmpty(timestamp))

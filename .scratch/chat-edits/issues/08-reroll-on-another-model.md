@@ -1,6 +1,6 @@
 # 08: Reroll on another model, and replies say their model
 
-Status: ready-for-agent
+Status: done
 Blocked by: 07
 Spec: ../spec.md (Turns that rewrite)
 

@@ -34,6 +34,9 @@ public record ChatMessageModel
     // The tools the turn this reply ends called (ChatHistoryMessage.ToolsCalled).
     public IReadOnlyList<string>? ToolsCalled { get; init; }
 
+    // The model a reply was written by (ChatHistoryMessage.Model).
+    public string? Model { get; init; }
+
     // A person's message as the page that sent it named the send (UserMessageInfo.CorrelationId): the
     // stream's copy of a message is the one shown when the ids match. None for one loaded from history.
     public string? CorrelationId { get; init; }

@@ -719,7 +719,8 @@ public sealed class RedisThreadStateStore(
                 IsError: m.Role == ChatRole.Assistant && m.IsFailedTurn(),
                 ResponseFormat: formats[m],
                 EntryId: names[m],
-                ToolsCalled: tools.GetValueOrDefault(m)))
+                ToolsCalled: tools.GetValueOrDefault(m),
+                Model: m.Role == ChatRole.User ? null : m.GetModel()))
             .ToList();
 
         return WithVersions(conversation, readable, projected);

@@ -36,7 +36,8 @@ public static class EntryIdNaming
             {
                 EntryId = history[at].EntryId,
                 Versions = history[at].Versions,
-                ToolsCalled = history[at].ToolsCalled
+                ToolsCalled = history[at].ToolsCalled,
+                Model = history[at].Model
             });
         }
 

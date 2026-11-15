@@ -282,6 +282,9 @@
     private IReadOnlyList<PatchableModel> RerollModels =>
         TopicsStore.State.Agents.FirstOrDefault(a => a.Id == _topic?.AgentId)?.PatchableModels ?? [];
 
+    private string? AgentModel =>
+        TopicsStore.State.Agents.FirstOrDefault(a => a.Id == _topic?.AgentId)?.DefaultModel;
+
     private void Reroll(string? model)
     {
         if (_topicId is not null)
@@ -419,6 +422,7 @@
                          OnRetry="@HandleRetry"
                          Actions="@ActionsFor(message, index)"
                          RerollModels="@RerollModels"
+                         AgentModel="@AgentModel"
                          MaySwitchVersions="@MayRewrite"
                          OnSwitchVersion="@(index => HandleSwitchVersion(message.Versions!, index))"
                          OnAction="@(action => HandleAction(message, action))"

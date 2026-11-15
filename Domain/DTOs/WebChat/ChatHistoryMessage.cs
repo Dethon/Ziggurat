@@ -39,6 +39,9 @@ public record ChatHistoryMessage(
 
     // The tools the turn this reply ends called, by their bare names: what running the message before
     // it again may do again.
-    IReadOnlyList<string>? ToolsCalled = null);
+    IReadOnlyList<string>? ToolsCalled = null,
+
+    // The model a reply was written by, as its turn resolved it; none on a person's message.
+    string? Model = null);
 
 public sealed record MessageVersions(string Slot, int Index, int Count);
