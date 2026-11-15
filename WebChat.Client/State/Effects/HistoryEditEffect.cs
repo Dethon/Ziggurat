@@ -4,6 +4,7 @@ using WebChat.Client.Extensions;
 using WebChat.Client.Helpers;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
@@ -40,6 +41,8 @@ public sealed class HistoryEditEffect : IDisposable
         [
             dispatcher.RegisterHandler<DeleteMessagesFrom>(a =>
                 HandleDeleteFromAsync(a.TopicId, a.EntryId).LogFaults(_logger, nameof(DeleteMessagesFrom))),
+            dispatcher.RegisterHandler<EditAndRerun>(a =>
+                HandleEditAndRerunAsync(a.TopicId, a.EntryId, a.Text).LogFaults(_logger, nameof(EditAndRerun))),
             dispatcher.RegisterHandler<SwitchMessageVersion>(a =>
                 HandleSwitchVersionAsync(a.TopicId, a.Slot, a.Index).LogFaults(_logger, nameof(SwitchMessageVersion))),
             dispatcher.RegisterHandler<HistoryChanged>(a =>
@@ -47,11 +50,24 @@ public sealed class HistoryEditEffect : IDisposable
         ];
     }
 
-    public Task HandleDeleteFromAsync(string topicId, string entryId) =>
+    public Task<bool> HandleDeleteFromAsync(string topicId, string entryId) =>
         RewriteAsync(topicId, (topic, lastSeen) =>
             _topicService.DeleteFromAsync(topic.AgentId, topic.TopicId, topic.ChatId, entryId, lastSeen));
 
-    public Task HandleSwitchVersionAsync(string topicId, string slot, int index) =>
+    // The message's own files go with the edited words; the composer may hold something else entirely.
+    public async Task HandleEditAndRerunAsync(string topicId, string entryId, string text)
+    {
+        var original = _messagesStore.State.MessagesByTopic.GetValueOrDefault(topicId, [])
+            .FirstOrDefault(m => m.EntryId == entryId);
+        var putAside = await RewriteAsync(topicId, (topic, lastSeen) =>
+            _topicService.PutAsideFromAsync(topic.AgentId, topic.TopicId, topic.ChatId, entryId, lastSeen));
+        if (putAside)
+        {
+            _dispatcher.Dispatch(new SendMessage(topicId, text, original?.Attachments ?? []));
+        }
+    }
+
+    public Task<bool> HandleSwitchVersionAsync(string topicId, string slot, int index) =>
         RewriteAsync(topicId, (topic, lastSeen) =>
             _topicService.SwitchVersionAsync(topic.AgentId, topic.TopicId, topic.ChatId, slot, index, lastSeen));
 
@@ -63,21 +79,25 @@ public sealed class HistoryEditEffect : IDisposable
         }
     }
 
-    private async Task RewriteAsync(
+    // Whether the rewrite was made.
+    private async Task<bool> RewriteAsync(
         string topicId, Func<Models.StoredTopic, string?, Task<HubResult<Nothing>>> rewrite)
     {
         if (_topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId) is not { } topic)
         {
-            return;
+            return false;
         }
 
+        var made = false;
         try
         {
             if (!(await rewrite(topic, LastSeen(topicId))).IsLive)
             {
                 _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
-                return;
+                return false;
             }
+
+            made = true;
         }
         catch (HubException refused)
         {
@@ -85,8 +105,9 @@ public sealed class HistoryEditEffect : IDisposable
         }
 
         // Refused or not, the page shows what the server holds: a refusal for a line that moved on is
-        // answered by showing the line as it is.
+        // answered by showing the line as it is, and a rewrite before a turn is shown before the turn.
         await ReloadAsync(topicId);
+        return made;
     }
 
     private string? LastSeen(string topicId) =>

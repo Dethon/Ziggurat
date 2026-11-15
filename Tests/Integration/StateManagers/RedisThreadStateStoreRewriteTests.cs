@@ -163,6 +163,29 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         history[1].Versions.ShouldBe(new MessageVersions("u1", 1, 2));
     }
 
+    // A reply names the tools its turn called, so running the message before it again can say what may
+    // be done again.
+    [Fact]
+    public async Task GetHistoryAsync_AReplyNamesTheToolsItsTurnCalled()
+    {
+        var store = NewStore();
+        await store.SaveTopicAsync(new TopicMetadata(
+            "t", _chatId, 0, _agentId, "Orchard", DateTimeOffset.UtcNow, null, TenantId: "home"));
+        await store.AppendMessagesAsync(Key,
+        [
+            Message("u1", "user", "set a timer"),
+            new ChatMessage(ChatRole.Assistant, [new FunctionCallContent("c1", "mcp__timers__timer_set")]),
+            new ChatMessage(ChatRole.Tool, [new FunctionResultContent("c1", "ok")]),
+            Message("a1", "assistant", "set"),
+            Message("u2", "user", "thanks"),
+            Message("a2", "assistant", "you're welcome")
+        ]);
+
+        var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
+
+        history.Select(h => h.ToolsCalled).ShouldBe([null, ["timer_set"], null, null]);
+    }
+
     private async Task<RedisThreadStateStore> SeededAsync(params (string Id, string Role, string Text)[] messages)
     {
         var store = NewStore();

@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.Extensions;
 using Microsoft.Extensions.AI;
 
@@ -12,7 +13,10 @@ public enum RewriteRefusal
     NotFound,
 
     // A turn is running on the conversation, and would write over whatever the rewrite left.
-    TurnInFlight
+    TurnInFlight,
+
+    // Only a person's own message is run again: not a reply, and not a turn a service started.
+    NotRerunnable
 }
 
 public abstract record RewriteOutcome;
@@ -47,9 +51,14 @@ public abstract record HistoryRewrite(string? LastSeen)
             return new RewriteRefused(RewriteRefusal.Changed);
         }
 
-        return rewrite.Resolve(history.Messages) is { } at
-            ? new Rewritten(history, rewrite.Make(Stamped(history), at, now))
-            : new RewriteRefused(RewriteRefusal.NotFound);
+        if (rewrite.Resolve(history.Messages) is not { } at)
+        {
+            return new RewriteRefused(RewriteRefusal.NotFound);
+        }
+
+        return rewrite.Refusal(history.Messages, at) is { } refusal
+            ? new RewriteRefused(refusal)
+            : new Rewritten(history, rewrite.Make(Stamped(history), at, now));
     }
 
     // Where on the line the rewrite acts, as an index, before anything is stamped: a legacy name is a
@@ -57,6 +66,17 @@ public abstract record HistoryRewrite(string? LastSeen)
     private protected abstract int? Resolve(IReadOnlyList<ChatMessage> messages);
 
     private protected abstract ConversationHistory Make(ConversationHistory history, int at, DateTimeOffset now);
+
+    // Why the message found may not be rewritten this way, where there is a reason.
+    private protected virtual RewriteRefusal? Refusal(IReadOnlyList<ChatMessage> messages, int at) => null;
+
+    // A person's own words, which is all a page may send again as its person: never a reply, and never
+    // a turn a service started, which acted for whoever its delegation named.
+    private protected static bool IsPersonsMessage(ChatMessage message) =>
+        message.Role == ChatRole.User
+        && message.GetConversationContext()?.OriginKind is null
+        && !ServiceSenders.IsService(message.GetSenderId() ?? "")
+        && message.GetResponseFormat() is null;
 
     // The slot after the message at an index; -1 is the root.
     private protected static string SlotAfter(IReadOnlyList<ChatMessage> messages, int index) =>
@@ -111,8 +131,13 @@ public sealed record PutAside(string? AfterEntryId, string? LastSeen) : HistoryR
 {
     private protected override int? Resolve(IReadOnlyList<ChatMessage> messages) => SlotIndex(messages, AfterEntryId);
 
-    private protected override ConversationHistory Make(ConversationHistory history, int at, DateTimeOffset now)
+    private protected override ConversationHistory Make(ConversationHistory history, int at, DateTimeOffset now) =>
+        Before(history, at + 1, now);
+
+    // The line from an index on put aside as a version of the slot before it.
+    internal static ConversationHistory Before(ConversationHistory history, int from, DateTimeOffset now)
     {
+        var at = from - 1;
         var slot = SlotAfter(history.Messages, at);
         var tail = history.Messages.Skip(at + 1).ToList();
         var versions = Copy(history);
@@ -127,6 +152,19 @@ public sealed record PutAside(string? AfterEntryId, string? LastSeen) : HistoryR
 
         return new ConversationHistory([.. history.Messages.Take(at + 1)], versions);
     }
+}
+
+// The person's message and everything after it are kept as a version of the slot before it, and the
+// line ends there: what an edit-and-re-run does before the edited words are sent as a turn.
+public sealed record PutAsideFrom(string EntryId, string? LastSeen) : HistoryRewrite(LastSeen)
+{
+    private protected override int? Resolve(IReadOnlyList<ChatMessage> messages) => HistoryEntries.IndexOf(messages, EntryId);
+
+    private protected override RewriteRefusal? Refusal(IReadOnlyList<ChatMessage> messages, int at) =>
+        IsPersonsMessage(messages[at]) ? null : RewriteRefusal.NotRerunnable;
+
+    private protected override ConversationHistory Make(ConversationHistory history, int at, DateTimeOffset now) =>
+        PutAside.Before(history, at, now);
 }
 
 // The slot shows another of its versions, by its place in the order a person flips through them.

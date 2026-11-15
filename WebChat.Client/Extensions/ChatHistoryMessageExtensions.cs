@@ -22,6 +22,7 @@ public static class ChatHistoryMessageExtensions
             ResponseFormat = history.ResponseFormat,
             EntryId = history.EntryId,
             Versions = history.Versions,
-            NoReply = history.NoReply
+            NoReply = history.NoReply,
+            ToolsCalled = history.ToolsCalled
         };
 }

@@ -35,6 +35,10 @@ public record ChatHistoryMessage(
 
     // Not a message: the line a slot with nothing shown is drawn as (a reroll stopped or failed), which
     // carries the slot's versions.
-    bool NoReply = false);
+    bool NoReply = false,
+
+    // The tools the turn this reply ends called, by their bare names: what running the message before
+    // it again may do again.
+    IReadOnlyList<string>? ToolsCalled = null);
 
 public sealed record MessageVersions(string Slot, int Index, int Count);

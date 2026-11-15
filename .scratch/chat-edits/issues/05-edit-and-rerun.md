@@ -1,6 +1,6 @@
 # 05: Edit my message and re-run
 
-Status: ready-for-agent
+Status: done (E2E pending, to run with 07)
 Blocked by: 04
 Spec: ../spec.md (Turns that rewrite, Side effects)
 

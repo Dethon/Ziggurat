@@ -31,6 +31,9 @@ public record ChatMessageModel
     // Not a message: a slot with nothing shown, drawn as a line carrying its versions.
     public bool NoReply { get; init; }
 
+    // The tools the turn this reply ends called (ChatHistoryMessage.ToolsCalled).
+    public IReadOnlyList<string>? ToolsCalled { get; init; }
+
     // A person's message as the page that sent it named the send (UserMessageInfo.CorrelationId): the
     // stream's copy of a message is the one shown when the ids match. None for one loaded from history.
     public string? CorrelationId { get; init; }

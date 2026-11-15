@@ -1,3 +1,4 @@
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,6 +9,7 @@ using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
+using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
 using WebChat.Client.State.Topics;
 
@@ -70,6 +72,41 @@ public sealed class HistoryEditEffectTests : IDisposable
 
         _topicService.SwitchedVersions.ShouldHaveSingleItem().ShouldBe(("jonas", "t", 7L, "e1", 0, "e2"));
         _messagesStore.State.MessagesByTopic["t"].Select(m => m.EntryId).ShouldBe(["e1"]);
+    }
+
+    // The edited message and what followed are put aside first, then the edited words go out as a turn
+    // with the message's own files, never whatever the composer holds.
+    [Fact]
+    public async Task EditAndRerun_PutsTheLineAside_ThenSendsTheEditedWordsWithTheirFiles()
+    {
+        var photo = new AttachmentReference { Id = "c/p", FileName = "p.png", MediaType = "image/png", SizeBytes = 1 };
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "hola", EntryId = "e1", Attachments = [photo] },
+            new ChatMessageModel { Role = "assistant", Content = "buenas", EntryId = "e2" }
+        ]));
+        SendMessage? sent = null;
+        using var _ = _dispatcher.RegisterHandler<SendMessage>(a => sent = a);
+
+        await _effect.HandleEditAndRerunAsync("t", "e1", "hola, ¿qué tal?");
+
+        _topicService.PutAside.ShouldHaveSingleItem().ShouldBe(("jonas", "t", 7L, "e1", "e2"));
+        sent.ShouldNotBeNull();
+        (sent.TopicId, sent.Message).ShouldBe(("t", "hola, ¿qué tal?"));
+        sent.Attachments.ShouldBe([photo]);
+    }
+
+    [Fact]
+    public async Task EditAndRerun_Refused_SendsNothing()
+    {
+        _topicService.ThrowOnPutAside = new HubException($"HubException: {TopicRefusals.NotRerunnable}");
+        var sends = 0;
+        using var _ = _dispatcher.RegisterHandler<SendMessage>(_ => sends++);
+
+        await _effect.HandleEditAndRerunAsync("t", "e1", "otra cosa");
+
+        sends.ShouldBe(0);
+        _toastStore.State.Toasts.ShouldContain(t => t.Message == TopicRefusals.NotRerunnable);
     }
 
     [Fact]

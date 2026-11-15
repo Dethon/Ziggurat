@@ -1,0 +1,62 @@
+@* A message being edited in place of its bubble. Re-running it runs everything after it again, so when
+   the replies from there called tools, the first press says which, and the second runs it. *@
+
+@code {
+    [Parameter] public string Text { get; set; } = "";
+
+    // The tools running it again may call again (MessageActionsLogic.ToolsFrom).
+    [Parameter] public IReadOnlyList<string> Tools { get; set; } = [];
+
+    // Whether the edit can be kept without running anything (a reply's text, or a message kept as is).
+    [Parameter] public bool AllowSave { get; set; }
+
+    // Whether the edit can be sent as a turn (a person's own message).
+    [Parameter] public bool AllowRerun { get; set; }
+
+    [Parameter] public EventCallback<string> OnSave { get; set; }
+    [Parameter] public EventCallback<string> OnRerun { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private string _text = "";
+    private bool _warned;
+
+    protected override void OnInitialized() => _text = Text;
+
+    private bool Unchanged => string.IsNullOrWhiteSpace(_text);
+
+    private async Task Rerun()
+    {
+        if (Tools.Count > 0 && !_warned)
+        {
+            _warned = true;
+            return;
+        }
+
+        await OnRerun.InvokeAsync(_text);
+    }
+}
+
+<div class="message-editor">
+    <textarea class="message-editor-text" @bind="_text" @bind:event="oninput" rows="4" aria-label="Edit message"></textarea>
+
+    @if (_warned)
+    {
+        <div class="message-editor-warning">
+            This used @string.Join(", ", Tools). Running it again may do them again.
+        </div>
+    }
+
+    <div class="message-editor-buttons">
+        <button class="message-editor-button" @onclick="OnCancel">Cancel</button>
+        @if (AllowSave)
+        {
+            <button class="message-editor-button" disabled="@Unchanged" @onclick="() => OnSave.InvokeAsync(_text)">Save</button>
+        }
+        @if (AllowRerun)
+        {
+            <button class="message-editor-button primary" disabled="@Unchanged" @onclick="Rerun">
+                @(_warned ? "Re-run anyway" : "Save & re-run")
+            </button>
+        }
+    </div>
+</div>

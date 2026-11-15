@@ -687,6 +687,23 @@ public sealed class RedisThreadStateStore(
             names[message] = HistoryEntries.IdAt(messages, index);
         }
 
+        // A turn's tool calls are hidden; the reply they lead to names them.
+        var tools = new Dictionary<ChatMessage, IReadOnlyList<string>>(ReferenceEqualityComparer.Instance);
+        List<string> calling = [];
+        foreach (var message in messages)
+        {
+            calling.AddRange(message.Contents.OfType<FunctionCallContent>().Select(c => BareToolName(c.Name)));
+            if (message.Role == ChatRole.User)
+            {
+                calling.Clear();
+            }
+            else if (calling.Count > 0 && message.Role == ChatRole.Assistant && !string.IsNullOrWhiteSpace(TextOf(message)))
+            {
+                tools[message] = [.. calling.Distinct()];
+                calling.Clear();
+            }
+        }
+
         // Projected from the same set a badge counts, so unread never says more than the
         // transcript shows.
         var readable = Readable(messages).ToList();
@@ -701,11 +718,16 @@ public sealed class RedisThreadStateStore(
                 m.GetSenderId(),
                 IsError: m.Role == ChatRole.Assistant && m.IsFailedTurn(),
                 ResponseFormat: formats[m],
-                EntryId: names[m]))
+                EntryId: names[m],
+                ToolsCalled: tools.GetValueOrDefault(m)))
             .ToList();
 
         return WithVersions(conversation, readable, projected);
     }
+
+    // mcp__timers__timer_set is timer_set to a person.
+    private static string BareToolName(string name) =>
+        name.LastIndexOf("__", StringComparison.Ordinal) is var at and >= 0 ? name[(at + 2)..] : name;
 
     // Each slot's versions on the first bubble after it, the one a person flips. A slot ending the line
     // with nothing after it — a reroll stopped or failed — is drawn as a line saying so, carrying them. A

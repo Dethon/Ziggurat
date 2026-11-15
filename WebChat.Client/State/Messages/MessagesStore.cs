@@ -14,6 +14,9 @@ public record ClearMessages(string TopicId) : IAction;
 // A person deleting a message and everything after it on the line (HistoryEditEffect).
 public record DeleteMessagesFrom(string TopicId, string EntryId) : IAction;
 
+// A person sending their message again in other words, what followed it kept as a version.
+public record EditAndRerun(string TopicId, string EntryId, string Text) : IAction;
+
 // A person flipping a slot to another of its versions (HistoryEditEffect).
 public record SwitchMessageVersion(string TopicId, string Slot, int Index) : IAction;
 

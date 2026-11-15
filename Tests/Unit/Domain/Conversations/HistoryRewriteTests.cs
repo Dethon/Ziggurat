@@ -148,6 +148,45 @@ public class HistoryRewriteTests
         outcome.AttachmentsNoLongerHeld().ShouldBeEmpty();
     }
 
+    // Edit and re-run: the person's message and what followed become a version of the slot before it,
+    // and the line ends there for the edited words to be sent.
+    [Fact]
+    public void PutAsideFrom_APersonsMessage_KeepsItAndItsTailAsAVersionOfTheSlotBeforeIt()
+    {
+        var history = Line(("u1", "user"), ("a1", "assistant"), ("u2", "user"), ("a2", "assistant"));
+
+        var after = Apply(history, new PutAsideFrom("u2", "a2"));
+
+        after.Messages.Select(m => m.GetEntryId()).ShouldBe(["u1", "a1"]);
+        after.Versions["a1"].Inactive.Single().Messages.Select(m => m.GetEntryId()).ShouldBe(["u2", "a2"]);
+    }
+
+    [Fact]
+    public void PutAsideFrom_TheFirstMessage_IsAVersionOfTheRoot()
+    {
+        var after = Apply(Line(("u1", "user"), ("a1", "assistant")), new PutAsideFrom("u1", "a1"));
+
+        after.Messages.ShouldBeEmpty();
+        after.Versions.Keys.ShouldBe([HistoryRewrite.Root]);
+    }
+
+    // Only a person's own words are run again: a reply is not a message anyone sent, and a turn a
+    // service started acts for whoever its delegation names, which a page cannot be.
+    [Theory]
+    [InlineData("a1")]
+    [InlineData("fire")]
+    public void PutAsideFrom_AnythingButAPersonsMessage_IsNotRunAgain(string entryId)
+    {
+        var fire = Message("fire", "user");
+        fire.SetSenderId(ServiceSenders.Scheduler);
+        var history = new ConversationHistory(
+            [Message("u1", "user"), Message("a1", "assistant"), fire, Message("a2", "assistant")],
+            new Dictionary<string, SlotVersions>());
+
+        HistoryRewrite.Apply(history, new PutAsideFrom(entryId, "a2"), Now)
+            .ShouldBeOfType<RewriteRefused>().Reason.ShouldBe(RewriteRefusal.NotRerunnable);
+    }
+
     [Fact]
     public void ARewrite_OfALineThatChangedSinceThePageSawIt_IsRefused()
     {

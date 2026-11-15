@@ -16,6 +16,9 @@ public static class TopicRefusals
     // The page acted on a conversation that moved on since it was drawn.
     public const string Changed = "This conversation changed since it was shown. Look again and retry.";
 
+    // Only a person's own message is sent again: not a reply, not a turn a service started.
+    public const string NotRerunnable = "Only a message somebody wrote can be run again.";
+
     // A turn is writing to the conversation, and would write over the change.
     public const string ReplyRunning = "A reply is still being written. Wait for it to finish, or stop it.";
 }

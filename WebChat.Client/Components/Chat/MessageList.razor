@@ -244,6 +244,19 @@
         }
     }
 
+    // The message being edited in place of its bubble, by entry id: a reload that keeps it keeps the
+    // edit open, one that drops it closes it.
+    private string? _editingEntryId;
+
+    private void HandleEditAndRerun(ChatMessageModel message, string text)
+    {
+        _editingEntryId = null;
+        if (_topicId is not null && message.EntryId is not null)
+        {
+            Dispatcher.Dispatch(new EditAndRerun(_topicId, message.EntryId, text));
+        }
+    }
+
     private bool MayRewrite => !_isStreaming && _topic?.MayRewrite(_currentUserId) == true;
 
     private IReadOnlyList<MessageActionKind> ActionsFor(ChatMessageModel message) =>
@@ -267,6 +280,9 @@
 
         switch (action)
         {
+            case MessageActionKind.Edit:
+                _editingEntryId = message.EntryId;
+                break;
             case MessageActionKind.Delete:
                 Dispatcher.Dispatch(new DeleteMessagesFrom(_topicId, message.EntryId));
                 break;
@@ -337,6 +353,16 @@
                     <VersionSwitcher Versions="@slotVersions" Enabled="@MayRewrite"
                                      OnSwitch="@(index => HandleSwitchVersion(slotVersions, index))" />
                 </div>
+                continue;
+            }
+
+            if (_editingEntryId is not null && message.EntryId == _editingEntryId)
+            {
+                <MessageEditor Text="@message.Content"
+                               Tools="@MessageActionsLogic.ToolsFrom(_messages, index)"
+                               AllowRerun="@(message.Role == "user")"
+                               OnRerun="@(text => HandleEditAndRerun(message, text))"
+                               OnCancel="@(() => _editingEntryId = null)" />
                 continue;
             }
 

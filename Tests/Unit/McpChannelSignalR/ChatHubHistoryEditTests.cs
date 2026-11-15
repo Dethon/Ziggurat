@@ -171,6 +171,31 @@ public sealed class ChatHubHistoryEditTests : IDisposable
         refused.Message.ShouldBe(TopicRefusals.Mirrored);
     }
 
+    // An edit's re-run: the message and what followed it are put aside before the page sends the
+    // edited words, and every page on the topic is told before that turn is.
+    [Fact]
+    public async Task PutAsideFrom_KeepsTheLineAsAVersion_AndTellsTheTopicsAudience()
+    {
+        Holds(Topic());
+        Answers(new Rewritten(Empty, Empty));
+
+        await _hub.PutAsideFrom("jonas", TopicId, _identity.ChatId, "u2", "a2");
+
+        _store.Verify(s => s.RewriteAsync(Key, new PutAsideFrom("u2", "a2")));
+        _hubSender.Verify(s => s.SendToGroupAsync(It.IsAny<string>(), "OnHistoryChanged", It.IsAny<HistoryChangedNotification>()));
+    }
+
+    [Fact]
+    public async Task PutAsideFrom_SomethingThatIsNotAPersonsMessage_IsRefusedInItsWords()
+    {
+        Holds(Topic());
+        Answers(new RewriteRefused(RewriteRefusal.NotRerunnable));
+
+        var refused = await Should.ThrowAsync<HubException>(() => _hub.PutAsideFrom("jonas", TopicId, _identity.ChatId, "a2", "a2"));
+
+        refused.Message.ShouldBe(TopicRefusals.NotRerunnable);
+    }
+
     // A file only the deleted messages held goes with them.
     [Fact]
     public async Task DeleteFrom_DeletesTheFilesNothingHoldsAnyMore()

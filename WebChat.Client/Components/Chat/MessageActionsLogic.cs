@@ -4,6 +4,7 @@ namespace WebChat.Client.Components.Chat;
 
 public enum MessageActionKind
 {
+    Edit,
     Delete
 }
 
@@ -18,8 +19,24 @@ public static class MessageActionsLogic
     public static IReadOnlyList<MessageActionKind> For(ChatMessageModel message, MessageActionContext context) =>
         context.Streaming || message.EntryId is null
             ? []
-            : [.. Rewrites(context)];
+            : [.. Rewrites(message, context)];
 
-    private static IEnumerable<MessageActionKind> Rewrites(MessageActionContext context) =>
-        context.MayRewrite ? [MessageActionKind.Delete] : [];
+    private static IEnumerable<MessageActionKind> Rewrites(ChatMessageModel message, MessageActionContext context)
+    {
+        if (!context.MayRewrite)
+        {
+            yield break;
+        }
+
+        if (message is { Role: "user", IsError: false })
+        {
+            yield return MessageActionKind.Edit;
+        }
+
+        yield return MessageActionKind.Delete;
+    }
+
+    // What running the message at an index again may do again: every tool a reply from there on called.
+    public static IReadOnlyList<string> ToolsFrom(IReadOnlyList<ChatMessageModel> messages, int index) =>
+        [.. messages.Skip(index).SelectMany(m => m.ToolsCalled ?? []).Distinct()];
 }

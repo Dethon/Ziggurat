@@ -42,6 +42,8 @@ public interface ITopicService
     // last stored message the page shows, so a line that moved on is refused rather than cut blind.
     Task<HubResult<Nothing>> DeleteFromAsync(string agentId, string topicId, long chatId, string entryId, string? lastSeen);
 
+    Task<HubResult<Nothing>> PutAsideFromAsync(string agentId, string topicId, long chatId, string entryId, string? lastSeen);
+
     Task<HubResult<Nothing>> SwitchVersionAsync(
         string agentId, string topicId, long chatId, string slot, int index, string? lastSeen);
 

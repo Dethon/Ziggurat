@@ -946,6 +946,14 @@ public sealed class ChatHub(
         await RewriteAsync(topic, key, new CutFrom(entryId, lastSeen));
     }
 
+    // An edit's re-run, before the page sends the edited words: the message and what followed it are
+    // kept as a version of the slot before it, and the line ends there.
+    public async Task PutAsideFrom(string agentId, string topicId, long chatId, string entryId, string? lastSeen)
+    {
+        var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
+        await RewriteAsync(topic, key, new PutAsideFrom(entryId, lastSeen));
+    }
+
     // The slot shows another of its versions, by its place in the order a person flips through them.
     public async Task SwitchVersion(string agentId, string topicId, long chatId, string slot, int index, string? lastSeen)
     {
@@ -980,6 +988,8 @@ public sealed class ChatHub(
         {
             case RewriteRefused { Reason: RewriteRefusal.TurnInFlight }:
                 throw new HubException(TopicRefusals.ReplyRunning);
+            case RewriteRefused { Reason: RewriteRefusal.NotRerunnable }:
+                throw new HubException(TopicRefusals.NotRerunnable);
             case RewriteRefused:
                 throw new HubException(TopicRefusals.Changed);
             case Rewritten rewritten:

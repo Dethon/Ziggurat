@@ -152,6 +152,9 @@ public static class Icons
     public static readonly IconGlyph ChevronRight = Stroked("""<polyline points="9 18 15 12 9 6" />""");
 
     // A bubble's actions menu.
+    public static readonly IconGlyph Pencil = Stroked(
+        """<path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />""");
+
     public static readonly IconGlyph More = Stroked(
         """<circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" />""");
 

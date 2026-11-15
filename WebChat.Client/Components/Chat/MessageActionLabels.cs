@@ -5,12 +5,14 @@ public static class MessageActionLabels
 {
     public static string Label(MessageActionKind action) => action switch
     {
+        MessageActionKind.Edit => "Edit",
         MessageActionKind.Delete => "Delete from here",
         _ => action.ToString()
     };
 
     public static IconGlyph Glyph(MessageActionKind action) => action switch
     {
+        MessageActionKind.Edit => Icons.Pencil,
         MessageActionKind.Delete => Icons.TrashStroked,
         _ => Icons.More
     };

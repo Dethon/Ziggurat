@@ -55,6 +55,22 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     public List<(string AgentId, string TopicId, long ChatId, string Slot, int Index, string? LastSeen)> SwitchedVersions { get; } = [];
 
+    public List<(string AgentId, string TopicId, long ChatId, string EntryId, string? LastSeen)> PutAside { get; } = [];
+
+    public Exception? ThrowOnPutAside { get; set; }
+
+    public Task<HubResult<Nothing>> PutAsideFromAsync(
+        string agentId, string topicId, long chatId, string entryId, string? lastSeen)
+    {
+        if (ThrowOnPutAside is not null)
+        {
+            return Task.FromException<HubResult<Nothing>>(ThrowOnPutAside);
+        }
+
+        PutAside.Add((agentId, topicId, chatId, entryId, lastSeen));
+        return Task.FromResult(NotLive ? HubResult<Nothing>.NotLive : HubResult<Nothing>.Answered(default));
+    }
+
     public Task<HubResult<Nothing>> SwitchVersionAsync(
         string agentId, string topicId, long chatId, string slot, int index, string? lastSeen)
     {

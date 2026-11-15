@@ -29,4 +29,29 @@ public class MessageActionsLogicTests
     public void ATopicThePersonMayNotRewrite_OffersNoDelete() =>
         MessageActionsLogic.For(Stored, new MessageActionContext(false, MayRewrite: false))
             .ShouldNotContain(MessageActionKind.Delete);
+
+    [Fact]
+    public void APersonsMessage_OffersEdit() =>
+        MessageActionsLogic.For(Stored, new MessageActionContext(false, true)).ShouldContain(MessageActionKind.Edit);
+
+    [Fact]
+    public void AnError_OffersNoEdit() =>
+        MessageActionsLogic.For(Stored with { Role = "assistant", IsError = true }, new MessageActionContext(false, true))
+            .ShouldNotContain(MessageActionKind.Edit);
+
+    // Running a message again runs everything after it again: the tools every reply from there called.
+    [Fact]
+    public void ToolsFrom_AreEveryToolCalledFromThatMessageOn()
+    {
+        List<ChatMessageModel> messages =
+        [
+            new() { Role = "assistant", Content = "earlier", ToolsCalled = ["web_search"] },
+            new() { Role = "user", Content = "hola", EntryId = "e1" },
+            new() { Role = "assistant", Content = "set", ToolsCalled = ["timer_set"] },
+            new() { Role = "user", Content = "again" },
+            new() { Role = "assistant", Content = "printed", ToolsCalled = ["print", "timer_set"] }
+        ];
+
+        MessageActionsLogic.ToolsFrom(messages, 1).ShouldBe(["timer_set", "print"]);
+    }
 }
