@@ -42,7 +42,7 @@ public sealed class TopicFilterEffect : IDisposable
         _signedInRegistration = dispatcher.RegisterHandler<SignedIn>(
             action => SettleAsync(action.Person).LogFaults(logger, nameof(SignedIn)));
         _agentsRegistration = dispatcher.RegisterHandler<SetAgents>(
-            _ => LoadPeopleIfMissingAsync().LogFaults(logger, nameof(SetAgents)));
+            _ => LoadPeopleAsync().LogFaults(logger, nameof(SetAgents)));
         _chooseRegistration = dispatcher.RegisterHandler<ChooseTopicFilter>(
             action => ChooseAsync(action.Filter).LogFaults(logger, nameof(ChooseTopicFilter)));
     }
@@ -57,7 +57,7 @@ public sealed class TopicFilterEffect : IDisposable
         }
 
         Apply(TopicFilterChoice.Parse(await _localStorage.GetAsync(StorageKey)));
-        await LoadPeopleIfMissingAsync();
+        await LoadPeopleAsync();
     }
 
     private async Task ChooseAsync(TopicFilter filter)
@@ -66,16 +66,27 @@ public sealed class TopicFilterEffect : IDisposable
         await _localStorage.SetAsync(StorageKey, TopicFilterChoice.Format(filter));
     }
 
-    private async Task LoadPeopleIfMissingAsync()
+    // Asked again whenever the agents are (after connecting, and when the agent registers again) as
+    // well as on every sign-in, so somebody joining or renamed reaches the picker without a reload.
+    private async Task LoadPeopleAsync()
     {
-        if (_identityStore.State.SignedIn?.Viewer?.SeesAll != true || _topicsStore.State.People.Count > 0)
+        if (_identityStore.State.SignedIn?.Viewer?.SeesAll != true)
         {
             return;
         }
 
-        if (await _topicService.GetHouseholdPeopleAsync() is { IsLive: true, Value: { } people })
+        if (await _topicService.GetHouseholdPeopleAsync() is not { IsLive: true, Value: { } people })
         {
-            _dispatcher.Dispatch(new HouseholdPeopleLoaded(people));
+            return;
+        }
+
+        _dispatcher.Dispatch(new HouseholdPeopleLoaded(people));
+
+        // A person this device remembered who is no longer the household's has no option to show,
+        // and the picker would read "Mine" over their list.
+        if (_topicsStore.State.Filter.OwnerId is { } owner && people.All(p => p.UserId != owner))
+        {
+            Apply(TopicFilter.Mine);
         }
     }
 

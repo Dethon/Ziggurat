@@ -145,9 +145,11 @@ public sealed class HubEventDispatcherTests : IDisposable
     }
 
     // A list narrowed to "mine" takes in no other person's private topic on news of it, and lets one
-    // go that the news says it no longer lists: the badge counts only what the list shows.
+    // go that the news says it no longer lists: the badge counts only what the list shows. Only the row
+    // goes — the person may still see the topic, and may have it open: removing it as a topic they may
+    // no longer see closed the conversation on their screen at its next news (their own reading of it).
     [Fact]
-    public void HandleTopicChanged_ATopicTheFilterLeavesOut_IsNotListed()
+    public void HandleTopicChanged_ATopicTheFilterLeavesOut_IsNotListed_ButNotClosed()
     {
         _realDispatcher.Dispatch(new SignedIn(new SignedInPerson("olga", "Olga", null, "home", ["member", "sees-all"])));
         _realDispatcher.Dispatch(new FilterTopics(TopicFilter.Mine));
@@ -158,7 +160,23 @@ public sealed class HubEventDispatcherTests : IDisposable
 
         _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<AddTopic>()), Times.Never);
         _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<UpdateTopic>()), Times.Never);
-        _mockDispatcher.Verify(d => d.Dispatch(It.Is<RemoveTopic>(a => a.TopicId == "topic-1")), Times.Once);
+        _mockDispatcher.Verify(d => d.Dispatch(It.IsAny<RemoveTopic>()), Times.Never);
+        _mockDispatcher.Verify(d => d.Dispatch(It.Is<UnlistTopic>(a => a.TopicId == "topic-1")), Times.Once);
+    }
+
+    // The row leaves the list; the conversation on screen stays open.
+    [Fact]
+    public void UnlistingTheOpenTopic_KeepsItOpen()
+    {
+        var topic = StoredTopic.FromMetadata(CreateTopicMetadata());
+        _realDispatcher.Dispatch(new TopicsLoaded([topic]));
+        _realDispatcher.Dispatch(new SelectTopic("topic-1"));
+
+        _realDispatcher.Dispatch(new UnlistTopic("topic-1"));
+
+        _topicsStore.State.Topics.ShouldBeEmpty();
+        _topicsStore.State.SelectedTopicId.ShouldBe("topic-1");
+        _topicsStore.State.SelectedTopic.ShouldNotBeNull();
     }
 
     [Fact]

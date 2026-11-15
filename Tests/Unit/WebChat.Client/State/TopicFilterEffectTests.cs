@@ -65,6 +65,19 @@ public sealed class TopicFilterEffectTests : IDisposable
             () => _storage.Values.GetValueOrDefault(TopicFilterEffect.StorageKey) == "everyone", "the pick to be remembered");
     }
 
+    // A person remembered on this device who is no longer the household's has no option in the picker,
+    // which would then show "Mine" over that person's list: the list goes back to the person's own.
+    [Fact]
+    public async Task ARememberedPersonTheHouseholdNoLongerHas_FallsBackToMine()
+    {
+        _storage.Seed(TopicFilterEffect.StorageKey, "of:gone");
+
+        _dispatcher.Dispatch(new SignedIn(Olga));
+
+        await Eventually.Until(() => _topicsStore.State.People.Count == 2, "the household's people to be named");
+        await Eventually.Until(() => _topicsStore.State.Filter == TopicFilter.Mine, "the list to be the person's own");
+    }
+
     // A member who does not see all has nobody else's private topics to sort, so nothing narrows their
     // list — whatever an earlier grant left remembered on the device.
     [Fact]

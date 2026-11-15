@@ -23,7 +23,7 @@ public sealed class HubEventDispatcher(
         switch (notification.ChangeType)
         {
             case TopicChangeType.Created when notification.Topic is not null:
-                if (MaySee(notification.Topic))
+                if (Lists(notification.Topic))
                 {
                     dispatcher.Dispatch(new AddTopic(StoredTopic.FromMetadata(AsRead(notification.Topic))));
                 }
@@ -31,8 +31,13 @@ public sealed class HubEventDispatcher(
                 break;
             // Sharing and unsharing are told to the whole space, so the same news adds a row for
             // whoever may now see the topic and takes it from whoever no longer may.
-            case TopicChangeType.Updated when notification.Topic is not null && MaySee(notification.Topic):
+            case TopicChangeType.Updated when notification.Topic is not null && Lists(notification.Topic):
                 dispatcher.Dispatch(new UpdateTopic(StoredTopic.FromMetadata(AsRead(notification.Topic))));
+                break;
+            // Still theirs to see, just not in the list they chose: the row goes, an open
+            // conversation stays open.
+            case TopicChangeType.Updated when notification.Topic is not null && MaySee(notification.Topic):
+                dispatcher.Dispatch(new UnlistTopic(notification.TopicId));
                 break;
             case TopicChangeType.Updated when notification.Topic is not null:
                 dispatcher.Dispatch(new RemoveTopic(notification.TopicId));
@@ -52,11 +57,14 @@ public sealed class HubEventDispatcher(
     // page counts its own person's.
     private TopicMetadata AsRead(TopicMetadata topic) => topic.ReadFor(identityStore.State.SignedIn?.UserId);
 
-    // Until the accounts service has answered, the server's own audience is the only rule. After, the
-    // list's own: what the person sees, narrowed by whose topics they chose to list — news of another
-    // person's private topic reaches whoever sees all, and would otherwise put it back in a list of
-    // their own and on its badge.
+    // Until the accounts service has answered, the server's own audience is the only rule.
     private bool MaySee(TopicMetadata topic) =>
+        identityStore.State.SignedIn?.Viewer is not { } viewer || viewer.Sees(topic);
+
+    // What the list shows: what the person sees, narrowed by whose topics they chose to list — news of
+    // another person's private topic reaches whoever sees all, and would otherwise put it back in a
+    // list of their own and on its badge.
+    private bool Lists(TopicMetadata topic) =>
         identityStore.State.SignedIn?.Viewer is not { } viewer || viewer.Lists(topic, topicsStore.State.Filter);
 
     // Reporting the push is all this type does. Deciding whether to resume the stream or just

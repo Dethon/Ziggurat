@@ -61,6 +61,10 @@ public record RemoveTopic(string TopicId, string? AgentId = null, long? ChatId =
 
 public record TopicRemoved(string TopicId) : IAction;
 
+// The row leaves the list and nothing else: the person still sees the topic, the list's filter just
+// leaves it out, so an open conversation stays open.
+public record UnlistTopic(string TopicId) : IAction;
+
 public record SetAgents(IReadOnlyList<AgentCatalogEntry> Agents) : IAction;
 
 // The hub said agents may have changed; what they are is asked of it again (InitializationEffect).
@@ -174,6 +178,8 @@ public sealed class TopicsStore : IDisposable
             Paging = state.Paging.Upsert(KeepingNameFromFile(state, a.Topic)),
             Error = null
         },
+
+        UnlistTopic a => state with { Paging = state.Paging.Remove(a.TopicId) },
 
         TopicRemoved a => state with
         {
