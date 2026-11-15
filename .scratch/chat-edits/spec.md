@@ -1,6 +1,6 @@
 # Chat edits: reroll, versions, delete, edit, fork, continue
 
-Status: ready-for-agent
+Status: done (all 13 tickets, 2026-11-15)
 Branch: `chat-edits`, from `web-identity`
 
 ## What a person can do
@@ -161,3 +161,14 @@ The hub refuses any rewrite of a mirrored topic with "This conversation mirrors 
   - a reroll that is itself stopped.
 - **Hub.** Each operation's permission and streaming refusals, the mirrored refusal, and the `OnHistoryChanged` ordering.
 - **Client.** Reducer and component tests for the menu, the switcher and the edit box. One WebChat E2E test drives reroll, switch, edit-and-re-run, delete and fork through the real stack.
+
+## As built (where it differs from the above)
+
+- **Hub methods.** `DeleteFrom`, `PutAsideFrom` (edit and re-run, before the page sends the edited words), `PutAsideReply` (reroll, before `SendRerun`), `EditInPlace`, `SwitchVersion`, `Fork`, and the streaming `SendRerun` and `SendContinue`, beside `SendMessage`, whose arguments an installed page from before still binds.
+- **Mirrored** is a bool on `TopicMetadata`, not a channel id. Review copies and voice topics set it; older topics are told by shape (`TopicMirrors`).
+- **The guard** compares the page's last named message with the line's last *shown* message (`Transcript.IsShown`). A line can end on what no page shows: a tool result left by a stop, or Continue's ask.
+- **Continue is not merged on the server.** What followed a Continue is projected separately, marked `ContinuesPrevious`. The client draws it in the reply's bubble, so a page that read the turn through a resume learns it the same way.
+- **A stopped turn** is kept only while the line ends where the turn read it, and a first turn only while its topic still holds the conversation. A delete or clear that stopped the turn is not undone. Reasoning stays beside any tool call that is kept.
+- **A failed turn stays whole** across rewrites. It is never kept as a version, and its mark comes off once a real reply follows it.
+- **A legacy name** (`legacy:…`) is never stored. A reroll of a legacy conversation answers again under the name the rewrite stamped.
+- **The actions menu** opens below its button, and above when the messages area has no room below.
