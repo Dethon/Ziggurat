@@ -20,6 +20,8 @@ public static class ChatHistoryMessageExtensions
             Attachments = history.Attachments,
             IsError = history.IsError,
             ResponseFormat = history.ResponseFormat,
-            EntryId = history.EntryId
+            EntryId = history.EntryId,
+            Versions = history.Versions,
+            NoReply = history.NoReply
         };
 }

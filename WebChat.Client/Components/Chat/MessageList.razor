@@ -109,15 +109,16 @@
         string? accReasoning = null;
         string? accToolCalls = null;
         string? accContent = null;
+        MessageVersions? accVersions = null;
         ChatMessageModel? anchor = null;
 
         for (var i = 0; i < messages.Count; i++)
         {
             var message = messages[i];
 
-            if (message.Role != "assistant")
+            if (message.Role != "assistant" || message.NoReply)
             {
-                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions);
                 result.Add(message);
                 continue;
             }
@@ -127,12 +128,13 @@
                 if (accContent is not null)
                 {
                     // Previous message(s) already had content — flush them as a separate bubble
-                    Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+                    Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions);
                 }
 
                 accContent = message.Content;
             }
 
+            accVersions ??= message.Versions;
             accReasoning = MessageFieldMerger.Merge(
                 accReasoning, message.Reasoning, MessageFieldMerger.ReasoningSeparator);
             accToolCalls = MessageFieldMerger.Merge(
@@ -144,11 +146,11 @@
             var nextIsAssistant = i < messages.Count - 1 && messages[i + 1].Role == "assistant";
             if (!nextIsAssistant)
             {
-                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions);
             }
         }
 
-        Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls);
+        Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions);
         return result;
 
         static void Flush(
@@ -156,7 +158,8 @@
             ref ChatMessageModel? anchor,
             ref string? content,
             ref string? reasoning,
-            ref string? toolCalls)
+            ref string? toolCalls,
+            ref MessageVersions? versions)
         {
             if (anchor is null)
             {
@@ -167,13 +170,15 @@
             {
                 Content = content ?? "",
                 Reasoning = reasoning,
-                ToolCalls = toolCalls
+                ToolCalls = toolCalls,
+                Versions = versions ?? anchor.Versions
             });
 
             anchor = null;
             content = null;
             reasoning = null;
             toolCalls = null;
+            versions = null;
         }
     }
 
@@ -239,9 +244,19 @@
         }
     }
 
+    private bool MayRewrite => !_isStreaming && _topic?.MayRewrite(_currentUserId) == true;
+
     private IReadOnlyList<MessageActionKind> ActionsFor(ChatMessageModel message) =>
         MessageActionsLogic.For(message, new MessageActionContext(
             _isStreaming, _topic?.MayRewrite(_currentUserId) == true));
+
+    private void HandleSwitchVersion(MessageVersions versions, int index)
+    {
+        if (_topicId is not null)
+        {
+            Dispatcher.Dispatch(new SwitchMessageVersion(_topicId, versions.Slot, index));
+        }
+    }
 
     private void HandleAction(ChatMessageModel message, MessageActionKind action)
     {
@@ -315,12 +330,24 @@
                 continue;
             }
 
+            if (message is { NoReply: true, Versions: { } slotVersions })
+            {
+                <div class="no-reply-line">
+                    <span>No reply</span>
+                    <VersionSwitcher Versions="@slotVersions" Enabled="@MayRewrite"
+                                     OnSwitch="@(index => HandleSwitchVersion(slotVersions, index))" />
+                </div>
+                continue;
+            }
+
             <ChatMessage Message="@message"
                          ShowAvatar="@ShouldShowAvatar(index)"
                          IsOwnMessage="@IsOwnMessage(message)"
                          ShowRetry="@(message.IsError && index == _messages.Count - 1 && !_isStreaming)"
                          OnRetry="@HandleRetry"
                          Actions="@ActionsFor(message)"
+                         MaySwitchVersions="@MayRewrite"
+                         OnSwitchVersion="@(index => HandleSwitchVersion(message.Versions!, index))"
                          OnAction="@(action => HandleAction(message, action))"
                          TopicOwnerId="@_topic?.OwnerId"
                          TopicOwnerName="@_topic?.OwnerName" />

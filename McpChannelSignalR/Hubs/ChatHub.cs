@@ -946,6 +946,13 @@ public sealed class ChatHub(
         await RewriteAsync(topic, key, new CutFrom(entryId, lastSeen));
     }
 
+    // The slot shows another of its versions, by its place in the order a person flips through them.
+    public async Task SwitchVersion(string agentId, string topicId, long chatId, string slot, int index, string? lastSeen)
+    {
+        var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
+        await RewriteAsync(topic, key, new SwitchVersion(slot, index, lastSeen));
+    }
+
     // A topic this person may write in, over its own conversation, that no other channel goes on
     // showing and no reply is being written to.
     private async Task<(TopicMetadata Topic, string Key)> RewritableAsync(string agentId, string topicId, long chatId)

@@ -665,14 +665,8 @@ public sealed class RedisThreadStateStore(
 
     public async Task<IReadOnlyList<ChatHistoryMessage>> GetHistoryAsync(string agentId, long chatId, long threadId)
     {
-        var messages = await GetMessagesAsync(new AgentKey($"{chatId}:{threadId}", agentId).ToString());
-
-        // Projected from the same set a badge counts, so unread never says more than the
-        // transcript shows.
-        if (messages is null)
-        {
-            return [];
-        }
+        var conversation = await GetConversationAsync(new AgentKey($"{chatId}:{threadId}", agentId).ToString());
+        var messages = conversation.Messages;
 
         // A turn's format is on its request alone; the answers until the next request are its.
         var formats = new Dictionary<ChatMessage, string?>(ReferenceEqualityComparer.Instance);
@@ -693,19 +687,56 @@ public sealed class RedisThreadStateStore(
             names[message] = HistoryEntries.IdAt(messages, index);
         }
 
-        return Readable(messages)
-                .Select(m => new ChatHistoryMessage(
-                    m.MessageId,
-                    m.Role == ChatRole.Tool ? ChatRole.Assistant.Value : m.Role.Value,
-                    TextOf(m),
-                    m.GetAuthorId(),
-                    m.GetTimestamp(),
-                    m.GetAttachments(),
-                    m.GetSenderId(),
-                    IsError: m.Role == ChatRole.Assistant && m.IsFailedTurn(),
-                    ResponseFormat: formats[m],
-                    EntryId: names[m]))
-                .ToList();
+        // Projected from the same set a badge counts, so unread never says more than the
+        // transcript shows.
+        var readable = Readable(messages).ToList();
+        var projected = readable
+            .Select(m => new ChatHistoryMessage(
+                m.MessageId,
+                m.Role == ChatRole.Tool ? ChatRole.Assistant.Value : m.Role.Value,
+                TextOf(m),
+                m.GetAuthorId(),
+                m.GetTimestamp(),
+                m.GetAttachments(),
+                m.GetSenderId(),
+                IsError: m.Role == ChatRole.Assistant && m.IsFailedTurn(),
+                ResponseFormat: formats[m],
+                EntryId: names[m]))
+            .ToList();
+
+        return WithVersions(conversation, readable, projected);
+    }
+
+    // Each slot's versions on the first bubble after it, the one a person flips. A slot ending the line
+    // with nothing after it — a reroll stopped or failed — is drawn as a line saying so, carrying them. A
+    // slot inside a version put aside is not on the line, and draws nothing.
+    private static IReadOnlyList<ChatHistoryMessage> WithVersions(
+        ConversationHistory conversation, IReadOnlyList<ChatMessage> readable, List<ChatHistoryMessage> projected)
+    {
+        var messages = conversation.Messages;
+        var shown = readable.Index().ToDictionary(x => x.Item, x => x.Index, ReferenceEqualityComparer.Instance);
+        ChatHistoryMessage? noReply = null;
+        foreach (var slot in conversation.Versions.Keys)
+        {
+            var after = slot == HistoryRewrite.Root ? -1 : HistoryEntries.IndexOf(messages, slot);
+            if (after is not { } at || conversation.PositionAt(slot) is not { } position)
+            {
+                continue;
+            }
+
+            var versions = new MessageVersions(slot, position.Index, position.Count);
+            if (messages.Skip(at + 1).FirstOrDefault(shown.ContainsKey) is { } first)
+            {
+                projected[shown[first]] = projected[shown[first]] with { Versions = versions };
+            }
+            else if (at + 1 == messages.Count)
+            {
+                noReply = new ChatHistoryMessage(
+                    null, ChatRole.Assistant.Value, "", null, null, Versions: versions, NoReply: true);
+            }
+        }
+
+        return noReply is null ? projected : [.. projected, noReply];
     }
 
     public Task<TopicMetadata?> GetTopicAsync(string tenantId, string agentId, long chatId, string topicId) =>

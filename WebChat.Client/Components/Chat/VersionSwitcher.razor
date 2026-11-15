@@ -1,0 +1,28 @@
+@* Which version of a slot is shown, of how many, and the way to the others. Somebody who may only
+   read the topic sees the count and no buttons: switching rewrites what everyone on it reads. *@
+
+@code {
+    [Parameter, EditorRequired] public MessageVersions Versions { get; set; } = null!;
+    [Parameter] public bool Enabled { get; set; }
+    [Parameter] public EventCallback<int> OnSwitch { get; set; }
+
+    private Task Go(int index) => OnSwitch.InvokeAsync(index);
+}
+
+<span class="version-switcher">
+    @if (Enabled)
+    {
+        <button class="btn-version" disabled="@(Versions.Index <= 0)" aria-label="Previous version"
+                @onclick="() => Go(Versions.Index - 1)">
+            <Icon Glyph="Icons.ChevronLeft" Size="14" />
+        </button>
+    }
+    <span class="version-position">@(Versions.Index + 1)/@Versions.Count</span>
+    @if (Enabled)
+    {
+        <button class="btn-version" disabled="@(Versions.Index >= Versions.Count - 1)" aria-label="Next version"
+                @onclick="() => Go(Versions.Index + 1)">
+            <Icon Glyph="Icons.ChevronRight" Size="14" />
+        </button>
+    }
+</span>

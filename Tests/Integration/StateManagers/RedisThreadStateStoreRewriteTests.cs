@@ -120,6 +120,49 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         (await db.KeyExistsAsync(versionsKey)).ShouldBeFalse();
     }
 
+    // A reroll's versions branch after the person's message, so their place is on the reply; an edit's
+    // before it, so theirs is on the person's message.
+    [Fact]
+    public async Task GetHistoryAsync_PutsEachSlotsVersionsOnItsFirstBubble()
+    {
+        var store = await SeededAsync(("u1", "user", "hola"), ("a1", "assistant", "first answer"));
+        await store.RewriteAsync(Key, new PutAside("u1", "a1"));
+        await store.AppendMessagesAsync(Key, [Message("a2", "assistant", "second answer")]);
+        await store.RewriteAsync(Key, new PutAside(null, "a2"));
+        await store.AppendMessagesAsync(Key, [Message("u3", "user", "hola otra vez"), Message("a3", "assistant", "otra")]);
+
+        var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
+
+        history.Select(h => (h.EntryId, h.Versions)).ShouldBe(
+        [
+            ("u3", new MessageVersions(HistoryRewrite.Root, 1, 2)),
+            ("a3", null)
+        ]);
+
+        await store.RewriteAsync(Key, new SwitchVersion(null, 0, "a3"));
+        (await store.GetHistoryAsync(_agentId, _chatId, 0)).Select(h => (h.EntryId, h.Versions)).ShouldBe(
+        [
+            ("u1", new MessageVersions(HistoryRewrite.Root, 0, 2)),
+            ("a2", new MessageVersions("u1", 1, 2))
+        ]);
+    }
+
+    // A reroll that was stopped or failed left the person's message with nothing under it on the line;
+    // the earlier replies are still reached through a line saying so.
+    [Fact]
+    public async Task GetHistoryAsync_ASlotWithNothingShown_IsALineSayingNoReply()
+    {
+        var store = await SeededAsync(("u1", "user", "hola"), ("a1", "assistant", "first answer"));
+        await store.RewriteAsync(Key, new PutAside("u1", "a1"));
+
+        var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
+
+        history.Count.ShouldBe(2);
+        history[1].NoReply.ShouldBeTrue();
+        history[1].Role.ShouldBe("assistant");
+        history[1].Versions.ShouldBe(new MessageVersions("u1", 1, 2));
+    }
+
     private async Task<RedisThreadStateStore> SeededAsync(params (string Id, string Role, string Text)[] messages)
     {
         var store = NewStore();

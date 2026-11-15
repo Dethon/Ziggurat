@@ -62,6 +62,17 @@ public sealed class HistoryEditEffectTests : IDisposable
     }
 
     [Fact]
+    public async Task SwitchingAVersion_AsksTheHub_AndShowsTheLineAsItIsNow()
+    {
+        _topicService.SetHistory(7, 8, new ChatHistoryMessage(null, "user", "hola", null, null, EntryId: "e1"));
+
+        await _effect.HandleSwitchVersionAsync("t", "e1", 0);
+
+        _topicService.SwitchedVersions.ShouldHaveSingleItem().ShouldBe(("jonas", "t", 7L, "e1", 0, "e2"));
+        _messagesStore.State.MessagesByTopic["t"].Select(m => m.EntryId).ShouldBe(["e1"]);
+    }
+
+    [Fact]
     public async Task ARefusal_IsShownInTheHubsWords()
     {
         _topicService.ThrowOnDeleteFrom = new HubException(

@@ -15,6 +15,10 @@
     [Parameter] public IReadOnlyList<MessageActionKind> Actions { get; set; } = [];
     [Parameter] public EventCallback<MessageActionKind> OnAction { get; set; }
 
+    // Whether this person may flip the bubble's versions, and who is told the version chosen.
+    [Parameter] public bool MaySwitchVersions { get; set; }
+    [Parameter] public EventCallback<int> OnSwitchVersion { get; set; }
+
     // The topic's owner, by the name stamped when it began: who a message is drawn as when the reader
     // is somebody else.
     [Parameter] public string? TopicOwnerId { get; set; }
@@ -184,6 +188,11 @@
             var timestamp = GetFormattedTimestamp();
         }
         <div class="message-footer">
+            @if (Message.Versions is { } versions)
+            {
+                <VersionSwitcher Versions="@versions" Enabled="@(MaySwitchVersions && !IsStreaming)" OnSwitch="@OnSwitchVersion" />
+            }
+
             @if (!string.IsNullOrEmpty(timestamp))
             {
                 <span class="message-timestamp">@timestamp</span>

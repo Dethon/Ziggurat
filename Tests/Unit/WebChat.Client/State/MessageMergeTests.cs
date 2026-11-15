@@ -6,6 +6,23 @@ namespace Tests.Unit.WebChat.Client.State;
 
 public sealed class MessageMergeTests
 {
+    // A reply's versions are on the first message of its turn, whichever message of it the merged bubble
+    // keeps for its id: the switcher sits on the bubble the reply is drawn as.
+    [Fact]
+    public void AReplysVersions_SurviveTheMerge()
+    {
+        var versions = new global::Domain.DTOs.WebChat.MessageVersions("u1", 1, 2);
+        var messages = new List<ChatMessageModel>
+        {
+            new() { Role = "assistant", Content = "", Reasoning = "Thinking", Versions = versions },
+            new() { Role = "assistant", Content = "Answer" }
+        };
+
+        var result = MessageList.MergeConsecutiveAssistantMessages(messages);
+
+        result.ShouldHaveSingleItem().Versions.ShouldBe(versions);
+    }
+
     [Fact]
     public void ReasoningOnly_FollowedByContent_MergesIntoOne()
     {

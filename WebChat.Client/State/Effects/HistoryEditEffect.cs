@@ -40,6 +40,8 @@ public sealed class HistoryEditEffect : IDisposable
         [
             dispatcher.RegisterHandler<DeleteMessagesFrom>(a =>
                 HandleDeleteFromAsync(a.TopicId, a.EntryId).LogFaults(_logger, nameof(DeleteMessagesFrom))),
+            dispatcher.RegisterHandler<SwitchMessageVersion>(a =>
+                HandleSwitchVersionAsync(a.TopicId, a.Slot, a.Index).LogFaults(_logger, nameof(SwitchMessageVersion))),
             dispatcher.RegisterHandler<HistoryChanged>(a =>
                 HandleHistoryChangedAsync(a.TopicId).LogFaults(_logger, nameof(HistoryChanged)))
         ];
@@ -48,6 +50,10 @@ public sealed class HistoryEditEffect : IDisposable
     public Task HandleDeleteFromAsync(string topicId, string entryId) =>
         RewriteAsync(topicId, (topic, lastSeen) =>
             _topicService.DeleteFromAsync(topic.AgentId, topic.TopicId, topic.ChatId, entryId, lastSeen));
+
+    public Task HandleSwitchVersionAsync(string topicId, string slot, int index) =>
+        RewriteAsync(topicId, (topic, lastSeen) =>
+            _topicService.SwitchVersionAsync(topic.AgentId, topic.TopicId, topic.ChatId, slot, index, lastSeen));
 
     public async Task HandleHistoryChangedAsync(string topicId)
     {

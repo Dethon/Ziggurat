@@ -1349,6 +1349,58 @@ h1, h2, h3 {
     color: #ef4444;
 }
 
+.version-switcher {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.125rem;
+    margin-right: auto;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.chat-message.user .version-switcher {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.btn-version {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    padding: 0.25rem;
+    border-radius: 6px;
+    color: inherit;
+    cursor: pointer;
+}
+
+.btn-version:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.btn-version:not(:disabled):hover {
+    background-color: var(--bg-tertiary);
+}
+
+.version-position {
+    min-width: 2.25rem;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.no-reply-line {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.25rem 0 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 10px;
+    border: 1px dashed var(--border-color);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
 .message-actions-question {
     padding: 0.5rem 0.625rem 0.25rem;
     font-size: 0.8125rem;

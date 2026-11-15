@@ -146,6 +146,11 @@ public static class Icons
     public static readonly IconGlyph Retry = Stroked(
         """<polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />""");
 
+    // A slot's versions, flipped one way or the other.
+    public static readonly IconGlyph ChevronLeft = Stroked("""<polyline points="15 18 9 12 15 6" />""");
+
+    public static readonly IconGlyph ChevronRight = Stroked("""<polyline points="9 18 15 12 9 6" />""");
+
     // A bubble's actions menu.
     public static readonly IconGlyph More = Stroked(
         """<circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" />""");

@@ -147,6 +147,30 @@ public sealed class ChatHubHistoryEditTests : IDisposable
         _hubSender.Verify(s => s.SendToGroupAsync(It.IsAny<string>(), "OnHistoryChanged", It.IsAny<object>()), Times.Never);
     }
 
+    [Fact]
+    public async Task SwitchVersion_ShowsTheChosenVersion_AndTellsTheTopicsAudience()
+    {
+        Holds(Topic());
+        Answers(new Rewritten(Empty, Empty));
+
+        await _hub.SwitchVersion("jonas", TopicId, _identity.ChatId, "u1", 0, "a2");
+
+        _store.Verify(s => s.RewriteAsync(Key, new SwitchVersion("u1", 0, "a2")));
+        _hubSender.Verify(s => s.SendToGroupAsync(It.IsAny<string>(), "OnHistoryChanged", It.IsAny<HistoryChangedNotification>()));
+    }
+
+    // Switching is rewriting what everyone on the topic reads, so it is held to the same rule.
+    [Fact]
+    public async Task SwitchVersion_AMirroredTopic_IsRefused()
+    {
+        Holds(Topic() with { Mirrored = true });
+
+        var refused = await Should.ThrowAsync<HubException>(
+            () => _hub.SwitchVersion("jonas", TopicId, _identity.ChatId, "u1", 0, "a2"));
+
+        refused.Message.ShouldBe(TopicRefusals.Mirrored);
+    }
+
     // A file only the deleted messages held goes with them.
     [Fact]
     public async Task DeleteFrom_DeletesTheFilesNothingHoldsAnyMore()

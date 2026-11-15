@@ -27,4 +27,14 @@ public record ChatHistoryMessage(
     string? ResponseFormat = null,
 
     // The message's name in its conversation (HistoryEntries), what a page rewrites or forks from.
-    string? EntryId = null);
+    string? EntryId = null,
+
+    // The message begins a place the conversation branched: which version of how many is shown, and the
+    // slot to switch it by.
+    MessageVersions? Versions = null,
+
+    // Not a message: the line a slot with nothing shown is drawn as (a reroll stopped or failed), which
+    // carries the slot's versions.
+    bool NoReply = false);
+
+public sealed record MessageVersions(string Slot, int Index, int Count);

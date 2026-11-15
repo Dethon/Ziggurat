@@ -1,6 +1,6 @@
 # 04: Versions are projected and switched
 
-Status: ready-for-agent
+Status: done (E2E pending, folded into 07)
 Blocked by: 03
 Spec: ../spec.md (Versions)
 

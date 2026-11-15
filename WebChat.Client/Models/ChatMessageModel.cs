@@ -1,4 +1,5 @@
 using Domain.DTOs.Channel;
+using Domain.DTOs.WebChat;
 
 namespace WebChat.Client.Models;
 
@@ -23,6 +24,12 @@ public record ChatMessageModel
     // The message's name in its stored conversation (ChatHistoryMessage.EntryId): what a rewrite or a
     // fork names it by. None until the turn that wrote it was stored.
     public string? EntryId { get; init; }
+
+    // The message begins a place the conversation branched (ChatHistoryMessage.Versions).
+    public MessageVersions? Versions { get; init; }
+
+    // Not a message: a slot with nothing shown, drawn as a line carrying its versions.
+    public bool NoReply { get; init; }
 
     // A person's message as the page that sent it named the send (UserMessageInfo.CorrelationId): the
     // stream's copy of a message is the one shown when the ids match. None for one loaded from history.
