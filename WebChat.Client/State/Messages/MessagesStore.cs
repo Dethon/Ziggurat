@@ -1,3 +1,4 @@
+using Domain.DTOs.WebChat;
 using WebChat.Client.Models;
 
 namespace WebChat.Client.State.Messages;
@@ -9,6 +10,9 @@ public record AddMessage(string TopicId, ChatMessageModel Message, string? Strea
 public record UpdateMessage(string TopicId, string MessageId, ChatMessageModel Message) : IAction;
 
 public record ClearMessages(string TopicId) : IAction;
+
+// The history read once a streamed turn was stored, naming the bubbles the stream drew.
+public record EntryIdsLearned(string TopicId, IReadOnlyList<ChatHistoryMessage> History) : IAction;
 
 public record RemoveTrailingErrors(string TopicId) : IAction;
 
@@ -77,6 +81,13 @@ public sealed class MessagesStore : IDisposable
             LoadedTopics = new HashSet<string>(state.LoadedTopics.Where(t => t != a.TopicId)),
             FinalizedMessageIdsByTopic = state.FinalizedMessageIdsByTopic.Without(a.TopicId)
         },
+
+        EntryIdsLearned a when state.MessagesByTopic.TryGetValue(a.TopicId, out var msgs) => state with
+        {
+            MessagesByTopic = state.MessagesByTopic.With(a.TopicId, EntryIdNaming.Apply(msgs, a.History))
+        },
+
+        EntryIdsLearned => state,
 
         ClearAllMessages => MessagesState.Initial,
 

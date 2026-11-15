@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Domain.Agents;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
@@ -554,6 +555,12 @@ public sealed class RedisThreadStateStore(
             formats[message] = format;
         }
 
+        var names = new Dictionary<ChatMessage, string>(ReferenceEqualityComparer.Instance);
+        foreach (var (index, message) in messages.Index())
+        {
+            names[message] = HistoryEntries.IdAt(messages, index);
+        }
+
         return Readable(messages)
                 .Select(m => new ChatHistoryMessage(
                     m.MessageId,
@@ -564,7 +571,8 @@ public sealed class RedisThreadStateStore(
                     m.GetAttachments(),
                     m.GetSenderId(),
                     IsError: m.Role == ChatRole.Assistant && m.IsFailedTurn(),
-                    ResponseFormat: formats[m]))
+                    ResponseFormat: formats[m],
+                    EntryId: names[m]))
                 .ToList();
     }
 

@@ -24,4 +24,7 @@ public record ChatHistoryMessage(
 
     // The structured answer its turn asked for (ResponseFormat.Name), on the request an app composed and
     // on the answer it got: how the chat tells an app's request from a typed one, and reads the answer.
-    string? ResponseFormat = null);
+    string? ResponseFormat = null,
+
+    // The message's name in its conversation (HistoryEntries), what a page rewrites or forks from.
+    string? EntryId = null);

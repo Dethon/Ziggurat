@@ -1,4 +1,5 @@
 using Domain.Agents;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
@@ -243,6 +244,24 @@ public class RedisThreadStateStoreTests(RedisFixture redisFixture) : IClassFixtu
         var history = await store.GetHistoryAsync("agent-hist", 900, 0);
 
         history.Select(h => h.Content).ShouldBe(["hello there", "hi, how can I help?"]);
+    }
+
+    // Each message read back carries its entry id, which is what a page names it by to rewrite or fork
+    // from; one stored before entry ids is named by its place and what it says.
+    [Fact]
+    public async Task GetHistoryAsync_NamesEveryMessageByItsEntryId()
+    {
+        var store = NewStore();
+        var stamped = new ChatMessage(ChatRole.User, "hello there");
+        stamped.SetEntryId("entry-1");
+        var legacy = new ChatMessage(ChatRole.Assistant, "hi, how can I help?");
+        var key = HistoryKey("agent-entry", 904);
+        await store.AppendMessagesAsync(key, [stamped, legacy]);
+
+        var history = await store.GetHistoryAsync("agent-entry", 904, 0);
+
+        var stored = (await store.GetMessagesAsync(key))!;
+        history.Select(h => h.EntryId).ShouldBe(["entry-1", HistoryEntries.IdAt(stored, 1)]);
     }
 
     // A turn that stopped on a call the person turned down has no text: the rejection is the tool's

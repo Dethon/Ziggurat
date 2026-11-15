@@ -1,6 +1,6 @@
 # 01: Every stored message has an entry id
 
-Status: ready-for-agent
+Status: done
 Spec: ../spec.md (Entry ids)
 
 ## What

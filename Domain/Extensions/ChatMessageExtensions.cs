@@ -26,6 +26,7 @@ public static class ChatMessageExtensions
     private const string LandingFailuresKey = "LandingFailures";
     private const string OfflineServersKey = "OfflineServers";
     private const string FailedTurnKey = "FailedTurn";
+    private const string EntryIdKey = "EntryId";
 
     extension(ChatMessage message)
     {
@@ -44,6 +45,23 @@ public static class ChatMessageExtensions
         {
             message.AdditionalProperties ??= [];
             message.AdditionalProperties[FailedTurnKey] = true;
+        }
+
+        // The message's own name in its conversation, given as it is stored: how a page addresses one
+        // message to rewrite or fork from. Not MessageId, which is the provider's per-call response id
+        // that approvals and the stream's bubbles are keyed by.
+        public string? GetEntryId() =>
+            message.AdditionalProperties?.GetValueOrDefault(EntryIdKey) switch
+            {
+                string s => s,
+                JsonElement { ValueKind: JsonValueKind.String } je => je.GetString(),
+                _ => null
+            };
+
+        public void SetEntryId(string entryId)
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[EntryIdKey] = entryId;
         }
 
         public string? GetSenderId()

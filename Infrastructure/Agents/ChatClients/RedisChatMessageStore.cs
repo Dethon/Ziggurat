@@ -124,9 +124,20 @@ public sealed class RedisChatMessageStore(
 
         // The same words sent again after a failed turn are its retry, which takes its place: the
         // conversation keeps what was said once, as the person's screen does after retrying.
-        var replaced = _failedTail.TryGetValue(context.Session, out var tail) && tail?.RetriedBy(context.RequestMessages) == true
-            ? tail.Count
-            : 0;
+        var retried = _failedTail.TryGetValue(context.Session, out var tail) && tail?.RetriedBy(context.RequestMessages) == true
+            ? tail
+            : null;
+        var replaced = retried?.Count ?? 0;
+
+        // A retry keeps the names of the messages it replaces, so whatever was kept under them — the
+        // versions of a reroll that failed — is still found by them.
+        var retriedIds = new Queue<string>(retried?.UserEntryIds ?? []);
+        foreach (var message in newMessages.Where(m => m.GetEntryId() is null))
+        {
+            message.SetEntryId(message.Role == ChatRole.User && retriedIds.TryDequeue(out var kept)
+                ? kept
+                : Guid.NewGuid().ToString("N"));
+        }
 
         // The lock serializes concurrent same-conversation turns through the one-time
         // legacy migration in AppendMessagesAsync and preserves per-turn message ordering.
@@ -157,12 +168,15 @@ public sealed class RedisChatMessageStore(
     }
 
     // The failed turn a conversation ends on: how many messages it is, and what the person said in it.
-    private sealed record FailedTail(int Count, IReadOnlyList<string> Said)
+    private sealed record FailedTail(int Count, IReadOnlyList<string> Said, IReadOnlyList<string> UserEntryIds)
     {
         public static FailedTail? Of(IReadOnlyList<ChatMessage> stored)
         {
             var tail = stored.Reverse().TakeWhile(m => m.IsFailedTurn()).Reverse().ToList();
-            return tail.Count == 0 ? null : new FailedTail(tail.Count, SaidIn(tail));
+            return tail.Count == 0
+                ? null
+                : new FailedTail(tail.Count, SaidIn(tail),
+                    [.. tail.Where(m => m.Role == ChatRole.User).Select(m => m.GetEntryId()).OfType<string>()]);
         }
 
         public bool RetriedBy(IEnumerable<ChatMessage> requests) => SaidIn(requests).SequenceEqual(Said);
