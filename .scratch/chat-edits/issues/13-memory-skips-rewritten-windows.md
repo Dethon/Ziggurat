@@ -1,6 +1,6 @@
 # 13: A pending extraction over a rewritten window is dropped
 
-Status: ready-for-agent
+Status: done
 Blocked by: 02
 Spec: ../spec.md (Side effects)
 

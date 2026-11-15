@@ -2,6 +2,7 @@ using Domain.Agents;
 using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Metrics;
+using Domain.Extensions;
 using Domain.Judgments;
 using Domain.Memory;
 using Infrastructure.Memory;
@@ -96,5 +97,59 @@ public class MemoryExtractionWorkerDriftTests(MemorySearchFixture redisFixture)
         capturedWindow.ShouldNotContain(m => m.Text == "Great choice!");
         capturedWindow[^1].Text.ShouldBe("Japan in April");
         capturedWindow[^1].Role.ShouldBe(ChatRole.User);
+    }
+
+    // A person rewrote the conversation before the worker got to it: the messages the anchor pointed at
+    // are not the ones there now, so nothing is extracted from a window that was never said that way.
+    [Fact]
+    public async Task ProcessRequestAsync_WhenTheWindowWasRewritten_ExtractsNothing()
+    {
+        var stateKey = $"rewritten-test-{Guid.NewGuid():N}";
+        var threadStore = new RedisThreadStateStore(redisFixture.Connection, new RetentionSettings { PurgeHorizon = TimeSpan.FromMinutes(5) }, TimeProvider.System);
+        var said = new ChatMessage(ChatRole.User, "I'm planning a trip");
+        said.SetEntryId("e1");
+        var reply = new ChatMessage(ChatRole.Assistant, "Where to?");
+        reply.SetEntryId("e2");
+        await threadStore.SetMessagesAsync(stateKey, [said, reply]);
+
+        var extractor = new Mock<IMemoryExtractor>();
+        var worker = Worker(threadStore, extractor.Object);
+        var request = new MemoryExtractionRequest(
+            UserId: $"user-{Guid.NewGuid():N}",
+            ThreadStateKey: stateKey,
+            Anchor: MemoryAnchor.TakenBeforeCurrentTurnIsPersisted(2, "e2"),
+            ConversationId: "conv-rewritten",
+            AgentId: null)
+        {
+            FallbackContent = "Japan in April"
+        };
+
+        var corrected = new ChatMessage(ChatRole.Assistant, "Which country?");
+        corrected.SetEntryId("e3");
+        await threadStore.SetMessagesAsync(stateKey, [said, corrected]);
+
+        await worker.ProcessRequestAsync(request, CancellationToken.None);
+
+        extractor.Verify(e => e.ExtractAsync(
+            It.IsAny<IReadOnlyList<ChatMessage>>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<ModelPayer>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    private MemoryExtractionWorker Worker(RedisThreadStateStore threadStore, IMemoryExtractor extractor)
+    {
+        var agentDefs = new Mock<IAgentDefinitionProvider>();
+        agentDefs.Setup(p => p.ForHouseholdAsync(It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(HouseholdAgents.Fixed([]));
+        return new MemoryExtractionWorker(
+            new MemoryExtractionQueue(),
+            extractor,
+            new Mock<IEmbeddingService>().Object,
+            new RedisStackMemoryStore(redisFixture.Connection, TestEmbeddingOptions.At(MemorySearchFixture.VectorWidth)),
+            threadStore,
+            new Mock<IMetricsPublisher>().Object,
+            agentDefs.Object,
+            new MemoryJudge(StubJudge.Absent(AbsenceReason.Unconfigured), new MemoryJudgmentSettings(), TimeProvider.System),
+            NullLogger<MemoryExtractionWorker>.Instance,
+            new MemoryExtractionOptions());
     }
 }
