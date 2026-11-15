@@ -1,5 +1,6 @@
 using Domain.Agents;
 using Domain.Conversations;
+using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using McpChannelSignalR.Settings;
 
@@ -81,6 +82,23 @@ public sealed class AttachmentService(
         store.ReadBytesAsync(attachmentId, ct);
 
     public void DeleteConversation(string conversationId) => store.DeleteConversation(conversationId);
+
+    // A file of this store copied into another conversation, which keeps it under its own name: a fork's
+    // pictures outlive the topic they came from and are checked against the fork. None for a file this
+    // store does not hold (one another channel keeps).
+    public async Task<AttachmentReference?> CopyAsync(string id, AgentKey to, string? spaceSlug, CancellationToken ct)
+    {
+        if (store.Find(id) is not { } record || await store.ReadBytesAsync(id, ct) is not { } bytes)
+        {
+            return null;
+        }
+
+        var copyId = $"{AttachmentStore.ConversationKey(to.ConversationId)}/{Guid.NewGuid():N}";
+        return await store.SaveCopyAsync(
+            copyId, to, spaceSlug, record.Reference.FileName, record.Reference.MediaType, bytes, ct)
+            ? record.Reference with { Id = copyId }
+            : null;
+    }
 
     // Files a rewrite left nothing holding. Another channel's reference is no file of this store's.
     public void Delete(IEnumerable<string> attachmentIds)

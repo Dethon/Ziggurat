@@ -6,6 +6,7 @@ using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
 using Domain.Extensions;
+using Domain.Security;
 using Mcp.Hosting;
 using McpChannelSignalR.Attachments;
 using McpChannelSignalR.Hubs;
@@ -218,6 +219,92 @@ public sealed class ChatHubHistoryEditTests : IDisposable
 
         _store.Verify(s => s.RewriteAsync(Key, new PutAsideReply("u1", "a1")));
         _hubSender.Verify(s => s.SendToGroupAsync(It.IsAny<string>(), "OnHistoryChanged", It.IsAny<HistoryChangedNotification>()));
+    }
+
+    // Seeing a topic is enough to fork it, another person's private one through sees-all included: the
+    // fork is the forker's, private, with the copied line in it.
+    [Fact]
+    public async Task Fork_AnotherPersonsTopic_IsTheForkersPrivateTopic()
+    {
+        Holds(Topic() with { OwnerId = "maria", Mirrored = true });
+        var hub = HubAs(new ForwardedAccount("fran", "home", ["member", "sees-all"], SessionId: "session-1"));
+        _store.Setup(s => s.GetMessagesAsync(Key)).ReturnsAsync([Stamped(ChatRole.User, "hola", "u1"), Stamped(ChatRole.Assistant, "buenas", "a1")]);
+        TopicMetadata? saved = null;
+        _store.Setup(s => s.SaveTopicAsync(It.IsAny<TopicMetadata>(), It.IsAny<bool>()))
+            .Callback<TopicMetadata, bool>((t, _) => saved = t).Returns(Task.CompletedTask);
+        IReadOnlyList<ChatMessage>? copied = null;
+        string? copiedTo = null;
+        _store.Setup(s => s.AppendMessagesAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Callback<string, IReadOnlyList<ChatMessage>>((k, m) => (copiedTo, copied) = (k, m)).Returns(Task.CompletedTask);
+
+        var fork = await hub.Fork("jonas", TopicId, _identity.ChatId, "a1");
+
+        saved.ShouldNotBeNull();
+        (saved.OwnerId, saved.TenantId, saved.Shared, saved.Mirrored).ShouldBe(("fran", "home", false, false));
+        saved.TopicId.ShouldNotBe(TopicId);
+        fork.Topic.TopicId.ShouldBe(saved.TopicId);
+        copiedTo.ShouldBe(new AgentKey(ConversationIdGenerator.CreateFor(saved.TopicId).ConversationId, "jonas").ToString());
+        copied!.Select(m => m.Text).ShouldBe(["hola", "buenas"]);
+    }
+
+    [Fact]
+    public async Task Fork_ATopicThePersonDoesNotSee_IsNoSuchConversation()
+    {
+        Holds(Topic() with { OwnerId = "maria" });
+
+        var refused = await Should.ThrowAsync<HubException>(() => _hub.Fork("jonas", TopicId, _identity.ChatId, "a1"));
+
+        refused.Message.ShouldBe(TopicRefusals.NoSuchConversation);
+    }
+
+    // The fork keeps its pictures when the topic it came from is deleted: they are copied into its own
+    // conversation, where its downloads are checked against it.
+    [Fact]
+    public async Task Fork_CopiesItsFilesIntoItsOwnConversation()
+    {
+        Holds(Topic());
+        var source = new AgentKey(_identity.ConversationId, "jonas");
+        var photo = await _attachments.SaveAsync(source, "default", "photo.png", "image/png", new MemoryStream([1, 2, 3]), CancellationToken.None);
+        var withPhoto = Stamped(ChatRole.User, "look", "u1");
+        withPhoto.SetAttachments([photo]);
+        _store.Setup(s => s.GetMessagesAsync(Key)).ReturnsAsync([withPhoto, Stamped(ChatRole.Assistant, "nice", "a1")]);
+        IReadOnlyList<ChatMessage>? copied = null;
+        _store.Setup(s => s.AppendMessagesAsync(It.IsAny<string>(), It.IsAny<IReadOnlyList<ChatMessage>>()))
+            .Callback<string, IReadOnlyList<ChatMessage>>((_, m) => copied = m).Returns(Task.CompletedTask);
+
+        var fork = await _hub.Fork("jonas", TopicId, _identity.ChatId, "a1");
+        _attachments.DeleteConversation(_identity.ConversationId);
+
+        var kept = copied![0].GetAttachments().ShouldNotBeNull().ShouldHaveSingleItem();
+        kept.Id.ShouldNotBe(photo.Id);
+        var file = _attachments.Find(kept.Id).ShouldNotBeNull();
+        file.ConversationId.ShouldBe(ConversationIdGenerator.CreateFor(fork.Topic.TopicId).ConversationId);
+    }
+
+    [Fact]
+    public async Task Fork_FromAPersonsMessage_HandsItsWordsBack()
+    {
+        Holds(Topic());
+        _store.Setup(s => s.GetMessagesAsync(Key)).ReturnsAsync([Stamped(ChatRole.User, "hola", "u1"), Stamped(ChatRole.Assistant, "buenas", "a1")]);
+
+        var fork = await _hub.Fork("jonas", TopicId, _identity.ChatId, "u1");
+
+        fork.ComposerText.ShouldBe("hola");
+    }
+
+    private static ChatMessage Stamped(ChatRole role, string text, string id)
+    {
+        var message = new ChatMessage(role, text);
+        message.SetEntryId(id);
+        return message;
+    }
+
+    private ChatHub HubAs(ForwardedAccount account)
+    {
+        var context = new SignedInCaller();
+        context.Items[ChatHub.AccountItem] = account;
+        _hub.Context = context;
+        return _hub;
     }
 
     // A file only the deleted messages held goes with them.

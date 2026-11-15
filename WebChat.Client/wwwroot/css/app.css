@@ -1308,10 +1308,12 @@ h1, h2, h3 {
     z-index: 40;
 }
 
+/* Opens downward: overflow past the bottom of the messages area can be scrolled to, overflow above
+   its top cannot, and the first message's menu used to open where nothing could reach it. */
 .message-actions-menu {
     position: absolute;
     right: 0;
-    bottom: calc(100% + 0.25rem);
+    top: calc(100% + 0.25rem);
     z-index: 41;
     min-width: 12rem;
     max-width: min(18rem, calc(100vw - 2rem));

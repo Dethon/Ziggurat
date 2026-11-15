@@ -15,6 +15,7 @@ using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.AI;
 
 namespace McpChannelSignalR.Hubs;
 
@@ -998,6 +999,70 @@ public sealed class ChatHub(
     {
         var (topic, key) = await RewritableAsync(agentId, topicId, chatId);
         await RewriteAsync(topic, key, new SwitchVersion(slot, index, lastSeen));
+    }
+
+    // A new topic of the forker's, private, holding the line up to the message forked from (HistoryFork),
+    // its files copied into its own conversation. Seeing the topic is enough: a sees-all reader, and a
+    // topic another channel goes on showing, are forked like any other.
+    public async Task<ForkedTopic> Fork(string agentId, string topicId, long chatId, string entryId)
+    {
+        var source = await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, chatId, topicId)
+                     ?? throw new HubException(NoSuchConversation);
+        RequireSees(source);
+        var from = new AgentKey(new ConversationIdentity(source.ChatId, source.ThreadId).ConversationId, agentId);
+        var fork = HistoryFork.Of(await threadStore.GetMessagesAsync(from.ToString()) ?? [], entryId)
+                   ?? throw new HubException(TopicRefusals.Changed);
+
+        var forkId = ConversationIdGenerator.NewTopicId();
+        var identity = ConversationIdGenerator.CreateFor(forkId);
+        var to = new AgentKey(identity.ConversationId, agentId);
+        var topic = new TopicMetadata(
+            forkId, identity.ChatId, identity.ThreadId, agentId, $"{source.Name} (fork)", DateTimeOffset.UtcNow, null,
+            source.SpaceSlug, OwnerId: SignedIn.UserId, TenantId: SignedIn.TenantId, Shared: false, OwnerName: TurnSender);
+        await threadStore.SaveTopicAsync(topic);
+
+        var copied = new List<ChatMessage>();
+        foreach (var message in fork.Messages)
+        {
+            copied.Add(await WithOwnFilesAsync(message, to, source.SpaceSlug));
+        }
+
+        if (copied.Count > 0)
+        {
+            await threadStore.AppendMessagesAsync(to.ToString(), copied);
+        }
+
+        await threadStore.MarkTopicReadAsync(SignedIn.TenantId, agentId, identity.ChatId, forkId, SignedIn.UserId);
+        return new ForkedTopic(
+            await threadStore.GetTopicAsync(SignedIn.TenantId, agentId, identity.ChatId, forkId) ?? topic, fork.ComposerText);
+    }
+
+    // A message's files copied into the fork's conversation, when this store holds them all; one another
+    // channel keeps (a Telegram photo) is fetched from that channel by its reference, as before. Where
+    // the files landed in the sandbox is kept as it is: those paths are the household's sandbox's, not
+    // the conversation's, and the copy reads them as the original did.
+    private async Task<ChatMessage> WithOwnFilesAsync(ChatMessage message, AgentKey to, string spaceSlug)
+    {
+        if (message.GetAttachments() is not { Count: > 0 } attachments)
+        {
+            return message;
+        }
+
+        var copies = new List<AttachmentReference>();
+        foreach (var attachment in attachments)
+        {
+            if (await attachmentService.CopyAsync(attachment.Id, to, spaceSlug, Context.ConnectionAborted) is not { } copy)
+            {
+                return message;
+            }
+
+            copies.Add(copy);
+        }
+
+        message.SetAttachments(copies);
+        message.SetAttachmentChannelId(ChannelIds.SignalR);
+        message.SetAttachmentHouseholdId(null);
+        return message;
     }
 
     // A topic this person may write in, over its own conversation, that no other channel goes on

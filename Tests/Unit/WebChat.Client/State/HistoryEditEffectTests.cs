@@ -7,6 +7,7 @@ using Tests.Unit.WebChat.Client.Fixtures;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Effects;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
@@ -131,6 +132,23 @@ public sealed class HistoryEditEffectTests : IDisposable
 
         _topicService.RepliesPutAside.ShouldHaveSingleItem().UserEntryId.ShouldBe("legacy:0:aaa");
         asked.ShouldNotBeNull().RerunOf.ShouldBe("stamped");
+    }
+
+    // The fork opens at once, its words in the composer when it was forked from a person's message.
+    [Fact]
+    public async Task Fork_OpensTheNewTopic_WithTheMessagesWordsInTheComposer()
+    {
+        var forked = new TopicMetadata("fork-1", 70, 80, "jonas", "Chat (fork)", DateTimeOffset.UtcNow, null, OwnerId: "me");
+        _topicService.ForkAnswer = new ForkedTopic(forked, "hola");
+        string? offered = null;
+        using var _ = _dispatcher.RegisterHandler<OfferComposerText>(a => offered = a.Text);
+
+        await _effect.HandleForkAsync("t", "e1");
+
+        _topicService.Forked.ShouldHaveSingleItem().ShouldBe(("jonas", "t", 7L, "e1"));
+        _topicsStore.State.Topics.ShouldContain(t => t.TopicId == "fork-1");
+        _topicsStore.State.SelectedTopicId.ShouldBe("fork-1");
+        offered.ShouldBe("hola");
     }
 
     [Fact]

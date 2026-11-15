@@ -61,6 +61,9 @@ public sealed class TopicService(IChatLiveConnection liveConnection) : ITopicSer
         string agentId, string topicId, long chatId, string userEntryId, string? lastSeen) =>
         liveConnection.InvokeAsync("PutAsideReply", agentId, topicId, chatId, userEntryId, lastSeen);
 
+    public Task<HubResult<ForkedTopic>> ForkAsync(string agentId, string topicId, long chatId, string entryId) =>
+        liveConnection.InvokeAsync<ForkedTopic>("Fork", agentId, topicId, chatId, entryId);
+
     public Task<HubResult<Nothing>> SwitchVersionAsync(
         string agentId, string topicId, long chatId, string slot, int index, string? lastSeen) =>
         liveConnection.InvokeAsync("SwitchVersion", agentId, topicId, chatId, slot, index, lastSeen);

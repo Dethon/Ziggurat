@@ -318,6 +318,9 @@
             case MessageActionKind.Edit:
                 _editingEntryId = message.EntryId;
                 break;
+            case MessageActionKind.Fork:
+                Dispatcher.Dispatch(new ForkFrom(_topicId, message.EntryId));
+                break;
             case MessageActionKind.Delete:
                 Dispatcher.Dispatch(new DeleteMessagesFrom(_topicId, message.EntryId));
                 break;

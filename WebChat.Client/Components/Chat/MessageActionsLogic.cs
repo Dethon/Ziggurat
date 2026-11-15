@@ -7,6 +7,7 @@ public enum MessageActionKind
     Reroll,
     RerollWith,
     Edit,
+    Fork,
     Delete
 }
 
@@ -22,9 +23,9 @@ public static class MessageActionsLogic
     public static IReadOnlyList<MessageActionKind> For(ChatMessageModel message, MessageActionContext context) =>
         context.Streaming || message.EntryId is null
             ? []
-            : [.. Rewrites(message, context)];
+            : [.. Rewrites(message, context).Order()];
 
-    private static IEnumerable<MessageActionKind> Rewrites(ChatMessageModel message, MessageActionContext context)
+    private static IEnumerable<MessageActionKind> RewritesOf(ChatMessageModel message, MessageActionContext context)
     {
         if (!context.MayRewrite)
         {
@@ -45,6 +46,10 @@ public static class MessageActionsLogic
 
         yield return MessageActionKind.Delete;
     }
+
+    // Forking reads the conversation and writes nothing of it, so whoever sees a topic may.
+    private static IEnumerable<MessageActionKind> Rewrites(ChatMessageModel message, MessageActionContext context) =>
+        [.. RewritesOf(message, context), MessageActionKind.Fork];
 
     // What running the message at an index again may do again: every tool a reply from there on called.
     public static IReadOnlyList<string> ToolsFrom(IReadOnlyList<ChatMessageModel> messages, int index) =>

@@ -11,6 +11,7 @@ public static class MessageActionLabels
         MessageActionKind.Reroll => "Reroll",
         MessageActionKind.RerollWith => "Reroll with…",
         MessageActionKind.Edit => "Edit",
+        MessageActionKind.Fork => "Fork from here",
         MessageActionKind.Delete => "Delete from here",
         _ => action.ToString()
     };
@@ -19,6 +20,7 @@ public static class MessageActionLabels
     {
         MessageActionKind.Reroll or MessageActionKind.RerollWith => Icons.Retry,
         MessageActionKind.Edit => Icons.Pencil,
+        MessageActionKind.Fork => Icons.Fork,
         MessageActionKind.Delete => Icons.TrashStroked,
         _ => Icons.More
     };

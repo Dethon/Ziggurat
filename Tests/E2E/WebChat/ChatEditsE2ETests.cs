@@ -92,6 +92,26 @@ public class ChatEditsE2ETests(WebChatE2EFixture fixture)
             .ToHaveCountAsync(1);
     }
 
+    [SkippableFact]
+    public async Task AForkFromAReply_OpensANewTopicHoldingTheLineSoFar()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var page = await OpenAsync();
+
+        await SendAsync(page, $"Fork {tag}: answer only OK. Do not call any tools.");
+        await RepliesAsync(page, 1);
+
+        await ChooseAsync(Replies(page).Last, "Fork from here");
+
+        await page.Locator(".topic-item", new PageLocatorOptions { HasText = $"Fork {tag}" })
+            .Filter(new LocatorFilterOptions { HasText = "(fork)" }).First
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        await Assertions.Expect(page.Locator(".chat-message.user", new PageLocatorOptions { HasText = $"Fork {tag}" }))
+            .ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+        await Assertions.Expect(Replies(page)).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+    }
+
     // Stopping a reply ends its turn: the conversation can be rewritten at once, not once the turn's
     // in-flight mark expires.
     [SkippableFact]

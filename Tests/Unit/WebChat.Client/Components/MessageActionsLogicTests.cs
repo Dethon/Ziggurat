@@ -81,4 +81,11 @@ public class MessageActionsLogicTests
     public void AFailedReply_OffersNoReroll() =>
         MessageActionsLogic.For(Reply with { IsError = true }, new MessageActionContext(false, true, IsLastReply: true))
             .ShouldNotContain(MessageActionKind.Reroll);
+
+    // Forking reads a conversation and writes nothing of it: anyone who sees it may, another channel's
+    // mirrored one and another person's seen through sees-all included.
+    [Fact]
+    public void ATopicThePersonMayOnlyRead_OffersFork() =>
+        MessageActionsLogic.For(Stored, new MessageActionContext(false, MayRewrite: false))
+            .ShouldBe([MessageActionKind.Fork]);
 }

@@ -1,6 +1,6 @@
 # 09: Fork from here
 
-Status: ready-for-agent
+Status: done
 Blocked by: 01, 03
 Spec: ../spec.md (Fork, Who may do what)
 

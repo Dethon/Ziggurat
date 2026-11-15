@@ -59,6 +59,18 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     public Exception? ThrowOnPutAside { get; set; }
 
+    public ForkedTopic? ForkAnswer { get; set; }
+
+    public List<(string AgentId, string TopicId, long ChatId, string EntryId)> Forked { get; } = [];
+
+    public Task<HubResult<ForkedTopic>> ForkAsync(string agentId, string topicId, long chatId, string entryId)
+    {
+        Forked.Add((agentId, topicId, chatId, entryId));
+        return Task.FromResult(NotLive || ForkAnswer is null
+            ? HubResult<ForkedTopic>.NotLive
+            : HubResult<ForkedTopic>.Answered(ForkAnswer));
+    }
+
     public List<(string AgentId, string TopicId, long ChatId, string UserEntryId, string? LastSeen)> RepliesPutAside { get; } = [];
 
     public Task<HubResult<Nothing>> PutAsideReplyAsync(

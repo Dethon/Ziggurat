@@ -22,6 +22,9 @@ public record StreamStartedNotification(
     string TopicId,
     string? SpaceSlug = null);
 
+// A fork: the new topic, and the words of the message it was forked from, handed back to the composer.
+public record ForkedTopic(TopicMetadata Topic, string? ComposerText);
+
 // A person rewrote the conversation — deleted, edited, rerolled, switched a version — so every page on
 // it reads its history again.
 public record HistoryChangedNotification(

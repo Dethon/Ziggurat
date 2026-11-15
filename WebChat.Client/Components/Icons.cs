@@ -158,6 +158,9 @@ public static class Icons
     public static readonly IconGlyph More = Stroked(
         """<circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" />""");
 
+    public static readonly IconGlyph Fork = Stroked(
+        """<circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="7" r="2" /><path d="M6 7v10" /><path d="M18 9a6 6 0 0 1-6 6H6" />""");
+
     public static readonly IconGlyph TrashStroked = Stroked(
         """<polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />""");
 

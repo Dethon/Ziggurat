@@ -4,6 +4,7 @@ using WebChat.Client.Contracts;
 using WebChat.Client.Extensions;
 using WebChat.Client.Helpers;
 using WebChat.Client.Services.Streaming;
+using WebChat.Client.State.Composer;
 using WebChat.Client.State.Messages;
 using WebChat.Client.State.Streaming;
 using WebChat.Client.State.Toast;
@@ -48,6 +49,8 @@ public sealed class HistoryEditEffect : IDisposable
                 HandleEditInPlaceAsync(a.TopicId, a.EntryId, a.Text).LogFaults(_logger, nameof(EditMessageInPlace))),
             dispatcher.RegisterHandler<RerollLastReply>(a =>
                 HandleRerollAsync(a.TopicId, a.ConfigPatch).LogFaults(_logger, nameof(RerollLastReply))),
+            dispatcher.RegisterHandler<ForkFrom>(a =>
+                HandleForkAsync(a.TopicId, a.EntryId).LogFaults(_logger, nameof(ForkFrom))),
             dispatcher.RegisterHandler<SwitchMessageVersion>(a =>
                 HandleSwitchVersionAsync(a.TopicId, a.Slot, a.Index).LogFaults(_logger, nameof(SwitchMessageVersion))),
             dispatcher.RegisterHandler<HistoryChanged>(a =>
@@ -96,6 +99,41 @@ public sealed class HistoryEditEffect : IDisposable
         if (putAside && named is not null)
         {
             _dispatcher.Dispatch(new SendRerun(topicId, asked.Content, asked.Attachments ?? [], named, configPatch));
+        }
+    }
+
+    // The fork is opened at once; forked from a person's message, its words wait in the composer.
+    public async Task HandleForkAsync(string topicId, string entryId)
+    {
+        if (_topicsStore.State.Topics.FirstOrDefault(t => t.TopicId == topicId) is not { } topic)
+        {
+            return;
+        }
+
+        try
+        {
+            var forked = await _topicService.ForkAsync(topic.AgentId, topic.TopicId, topic.ChatId, entryId);
+            if (!forked.IsLive)
+            {
+                _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
+                return;
+            }
+
+            var fork = Models.StoredTopic.FromMetadata(forked.Value!.Topic);
+
+            // A fork of another person's topic, made while the list shows theirs, is the forker's: the
+            // list moves to theirs, as for a conversation they start there.
+            TopicListMoves.ToTheStartersOwn(fork, _topicsStore.State, _dispatcher);
+            _dispatcher.Dispatch(new AddTopic(fork));
+            _dispatcher.Dispatch(new SelectTopic(fork.TopicId));
+            if (forked.Value.ComposerText is { Length: > 0 } text)
+            {
+                _dispatcher.Dispatch(new OfferComposerText(text));
+            }
+        }
+        catch (HubException refused)
+        {
+            _dispatcher.Dispatch(new ShowError(HubRefusal.MessageOf(refused)));
         }
     }
 
