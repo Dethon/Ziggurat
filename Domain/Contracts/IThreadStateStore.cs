@@ -1,4 +1,5 @@
 using Domain.Agents;
+using Domain.Conversations;
 using Domain.DTOs.WebChat;
 using Microsoft.Extensions.AI;
 
@@ -22,6 +23,19 @@ public interface IThreadStateStore
     // that a retry of it replaces.
     Task DropTailAsync(string key, int count);
     Task<bool> ExistsAsync(string key, CancellationToken ct = default);
+
+    // The line with the versions put aside beside it (HistoryRewrite).
+    Task<ConversationHistory> GetConversationAsync(string key);
+
+    // A change a person asked for, made in one transaction with the versions beside the line, and the
+    // topic's record left saying what the new line holds. Refused, changing nothing, when the line moved
+    // on from what the page saw or a turn is running on it.
+    Task<RewriteOutcome> RewriteAsync(string key, HistoryRewrite rewrite);
+
+    // A turn on the conversation reads its line as it starts and appends to it as it ends, and no rewrite
+    // is made in between. The expiry is only a backstop for an agent that died mid-turn.
+    Task MarkTurnInFlightAsync(string key, TimeSpan expiry);
+    Task ClearTurnInFlightAsync(string key);
 
     // One page of the ordinary list, most recently written first. There is no call that returns
     // every topic: the list is read one way only, so a new caller cannot reintroduce a fetch

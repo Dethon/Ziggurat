@@ -41,9 +41,117 @@ public sealed class RedisThreadStateStore(
 
     private readonly TopicSearchDocuments _searchDocuments = new(redis, retention.PurgeHorizon);
 
+    private const string HistoryPrefix = "agent-key:";
+
     public async Task DeleteAsync(AgentKey key)
     {
-        await _db.KeyDeleteAsync(key.ToString());
+        var history = key.ToString();
+        await _db.KeyDeleteAsync([history, VersionsKey(history)]);
+    }
+
+    // Beside a conversation's line, under the same name: the versions put aside at each slot, and the
+    // mark a running turn holds (IThreadStateStore.MarkTurnInFlightAsync).
+    public static string VersionsKey(string historyKey) => $"agent-versions:{Unprefixed(historyKey)}";
+
+    public static string TurnInFlightKey(string historyKey) => $"agent-turn:{Unprefixed(historyKey)}";
+
+    private static string Unprefixed(string historyKey) =>
+        historyKey.StartsWith(HistoryPrefix, StringComparison.Ordinal) ? historyKey[HistoryPrefix.Length..] : historyKey;
+
+    public async Task<ConversationHistory> GetConversationAsync(string key)
+    {
+        var (_, history) = await ReadConversationAsync(key);
+        return history;
+    }
+
+    private async Task<(RedisValue[] Raw, ConversationHistory History)> ReadConversationAsync(string key)
+    {
+        var raw = await _db.ListRangeAsync(key);
+        var fields = await _db.HashGetAllAsync(VersionsKey(key));
+        return (raw, new ConversationHistory(
+            [.. raw.Select(v => JsonSerializer.Deserialize<ChatMessage>(v.ToString())!)],
+            fields.ToDictionary(f => f.Name.ToString(), f => JsonSerializer.Deserialize<SlotVersions>(f.Value.ToString())!)));
+    }
+
+    // Read, decided in Domain, then written only if the line is still the one read and no turn began
+    // meanwhile — the same two things checked on the read, checked again inside the transaction.
+    public async Task<RewriteOutcome> RewriteAsync(string key, HistoryRewrite rewrite)
+    {
+        var (raw, history) = await ReadConversationAsync(key);
+        if (await _db.KeyExistsAsync(TurnInFlightKey(key)))
+        {
+            return new RewriteRefused(RewriteRefusal.TurnInFlight);
+        }
+
+        var outcome = HistoryRewrite.Apply(history, rewrite, time.GetUtcNow());
+        if (outcome is not Rewritten { After: var after })
+        {
+            return outcome;
+        }
+
+        var transaction = _db.CreateTransaction();
+        transaction.AddCondition(Condition.ListLengthEqual(key, raw.Length));
+        if (raw.Length > 0)
+        {
+            transaction.AddCondition(Condition.ListIndexEqual(key, raw.Length - 1, raw[^1]));
+        }
+
+        transaction.AddCondition(Condition.KeyNotExists(TurnInFlightKey(key)));
+        var versionsKey = VersionsKey(key);
+        _ = transaction.KeyDeleteAsync([key, versionsKey]);
+        if (after.Messages.Count > 0)
+        {
+            _ = transaction.ListRightPushAsync(key, Serialize(after.Messages));
+            _ = transaction.KeyExpireAsync(key, _expiration);
+        }
+
+        if (after.Versions.Count > 0)
+        {
+            _ = transaction.HashSetAsync(versionsKey,
+            [
+                .. after.Versions.Select(v => new HashEntry(v.Key, JsonSerializer.Serialize(v.Value)))
+            ]);
+            _ = transaction.KeyExpireAsync(versionsKey, _expiration);
+        }
+
+        if (!await transaction.ExecuteAsync())
+        {
+            return new RewriteRefused(RewriteRefusal.Changed);
+        }
+
+        await RestampAsync(key, after.Messages);
+        return outcome;
+    }
+
+    public async Task MarkTurnInFlightAsync(string key, TimeSpan expiry) =>
+        await _db.StringSetAsync(TurnInFlightKey(key), "1", expiry);
+
+    public async Task ClearTurnInFlightAsync(string key) =>
+        await _db.KeyDeleteAsync(TurnInFlightKey(key));
+
+    // The topic's record told what the rewritten line holds: its count, every reader's position no
+    // further than that, its preview from the last thing said, and what it is found by. Its place in
+    // the list is left, since a rewrite is not something said.
+    private async Task RestampAsync(string historyKey, IReadOnlyList<ChatMessage> line)
+    {
+        if (AgentKey.ChatConversationParts(historyKey) is not { } parts
+            || await HolderAsync(parts.AgentId, parts.ChatId, parts.ThreadId) is not (var household, var topicId))
+        {
+            return;
+        }
+
+        var result = await _db.ScriptEvaluateAsync(
+            _recountScript,
+            [TopicKey(household, parts.AgentId, parts.ChatId, topicId)],
+            [Readable(line).Count(), Snippet(line) ?? "", (long)_expiration.TotalMilliseconds]);
+        if (result.IsNull)
+        {
+            return;
+        }
+
+        var topic = JsonSerializer.Deserialize<TopicMetadata>(result.ToString())!;
+        await _db.KeyExpireAsync(ConversationKey(parts.AgentId, parts.ChatId, parts.ThreadId), _expiration);
+        await _searchDocuments.WriteAsync(topic, wholeText: Text(Readable(line)));
     }
 
     public async Task<ChatMessage[]?> GetMessagesAsync(string key)
@@ -88,6 +196,9 @@ public sealed class RedisThreadStateStore(
 
         await _db.ListRightPushAsync(key, Serialize(messages));
         await _db.KeyExpireAsync(key, _expiration);
+
+        // The versions beside the line live as long as it does.
+        await _db.KeyExpireAsync(VersionsKey(key), _expiration);
         await StampLastWriteAsync(key, messages);
     }
 
@@ -160,6 +271,27 @@ public sealed class RedisThreadStateStore(
         end
         {{KeepWideIds}}
         redis.call('SET', KEYS[1], updated, 'KEEPTTL')
+        """;
+
+    // A line rewritten: what it now holds counted, every position past that brought back to it, and its
+    // preview the last thing said on it (none when nothing is).
+    private static readonly string _recountScript =
+        $$"""
+        local json = redis.call('GET', KEYS[1])
+        if not json then return nil end
+        local topic = cjson.decode(json)
+        local count = tonumber(ARGV[1])
+        topic['MessageCount'] = count
+        if (topic['ReadPosition'] or 0) > count then topic['ReadPosition'] = count end
+        if type(topic['ReadBy']) == 'table' then
+            for person, position in pairs(topic['ReadBy']) do
+                if position > count then topic['ReadBy'][person] = count end
+            end
+        end
+        if ARGV[2] == '' then topic['LastMessageSnippet'] = nil else topic['LastMessageSnippet'] = ARGV[2] end
+        {{KeepWideIds}}
+        redis.call('SET', KEYS[1], updated, 'PX', ARGV[3])
+        return updated
         """;
 
     // KEEPTTL, because reading a conversation is not writing to it: a mark-read that reset the

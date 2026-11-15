@@ -29,6 +29,10 @@ public sealed class RedisChatMessageStore(
         return false;
     }
 
+    // Longer than any turn runs, approvals waited on included: it only frees a conversation whose agent
+    // died mid-turn.
+    private static readonly TimeSpan TurnInFlightExpiry = TimeSpan.FromMinutes(15);
+
     private readonly SemaphoreSlim _lock = new(1, 1);
     private readonly IMetricsPublisher _metricsPublisher = metricsPublisher ?? NoOpMetricsPublisher.Instance;
 
@@ -75,6 +79,9 @@ public sealed class RedisChatMessageStore(
     {
         ArgumentNullException.ThrowIfNull(context.Session);
         var redisKey = ResolveRedisKey(context.Session);
+
+        // Before the read: a rewrite made after it would be written over by this turn's append.
+        await store.MarkTurnInFlightAsync(redisKey, TurnInFlightExpiry);
         var stored = await store.GetMessagesAsync(redisKey) ?? [];
         _failedTail.AddOrUpdate(context.Session, FailedTail.Of(stored));
         var messages = ModelView(stored);
@@ -88,7 +95,12 @@ public sealed class RedisChatMessageStore(
     // decide which of the request's messages are new.
     protected override ValueTask InvokedCoreAsync(InvokedContext context, CancellationToken cancellationToken = default)
     {
-        if (context.InvokeException is not { } failure || failure is OperationCanceledException)
+        if (context.InvokeException is OperationCanceledException)
+        {
+            return ClearTurnInFlightAsync(context.Session);
+        }
+
+        if (context.InvokeException is not { } failure)
         {
             return base.InvokedCoreAsync(context, cancellationToken);
         }
@@ -156,6 +168,16 @@ public sealed class RedisChatMessageStore(
         finally
         {
             _lock.Release();
+            await store.ClearTurnInFlightAsync(redisKey);
+        }
+    }
+
+    // A stopped turn keeps nothing, so nothing of it waits for its mark to go.
+    private async ValueTask ClearTurnInFlightAsync(AgentSession? session)
+    {
+        if (session is not null && TryGetStateKey(session, out var key))
+        {
+            await store.ClearTurnInFlightAsync(key!);
         }
     }
 

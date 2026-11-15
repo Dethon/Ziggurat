@@ -1,6 +1,6 @@
 # 02: One rewrite primitive keeps the list, the versions and the topic in step
 
-Status: ready-for-agent
+Status: done
 Blocked by: 01
 Spec: ../spec.md (Versions, One rewrite primitive)
 

@@ -51,7 +51,10 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
         Unavailable = 2
     }
 
-    public async Task WriteAsync(TopicMetadata topic, string? appendedText = null, bool keepTtl = false)
+    // wholeText replaces what the conversation is found by, for a line rewritten: what left it must stop
+    // being found, and appending never forgets.
+    public async Task WriteAsync(
+        TopicMetadata topic, string? appendedText = null, bool keepTtl = false, string? wholeText = null)
     {
         if (!await EnsureIndexAsync())
         {
@@ -59,9 +62,11 @@ internal sealed class TopicSearchDocuments(IConnectionMultiplexer redis, TimeSpa
         }
 
         var key = DocumentKey(topic);
-        var text = appendedText is { Length: > 0 }
-            ? Append(await _db.HashGetAsync(key, "text"), appendedText)
-            : (string?)null;
+        var text = wholeText is not null
+            ? Append(RedisValue.Null, wholeText)
+            : appendedText is { Length: > 0 }
+                ? Append(await _db.HashGetAsync(key, "text"), appendedText)
+                : (string?)null;
 
         HashEntry[] entries =
         [
