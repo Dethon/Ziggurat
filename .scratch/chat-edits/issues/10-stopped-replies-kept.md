@@ -1,6 +1,6 @@
 # 10: A stopped reply is kept
 
-Status: ready-for-agent
+Status: done
 Spec: ../spec.md (Cut-off replies)
 
 ## What

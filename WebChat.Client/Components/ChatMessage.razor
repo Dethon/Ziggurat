@@ -202,6 +202,11 @@
                 <span class="message-model" title="@model">@(RerollModels.FirstOrDefault(m => m.Id == model)?.Name ?? model)</span>
             }
 
+            @if (Message.IsInterrupted && !IsStreaming)
+            {
+                <span class="message-interrupted">Stopped</span>
+            }
+
             @if (!string.IsNullOrEmpty(timestamp))
             {
                 <span class="message-timestamp">@timestamp</span>

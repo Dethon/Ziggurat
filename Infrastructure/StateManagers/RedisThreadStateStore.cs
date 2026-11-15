@@ -720,7 +720,8 @@ public sealed class RedisThreadStateStore(
                 ResponseFormat: formats[m],
                 EntryId: names[m],
                 ToolsCalled: tools.GetValueOrDefault(m),
-                Model: m.Role == ChatRole.User ? null : m.GetModel()))
+                Model: m.Role == ChatRole.User ? null : m.GetModel(),
+                IsInterrupted: m.IsInterrupted()))
             .ToList();
 
         return WithVersions(conversation, readable, projected);

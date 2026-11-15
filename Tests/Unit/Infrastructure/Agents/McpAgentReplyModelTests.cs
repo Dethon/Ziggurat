@@ -32,6 +32,52 @@ public class McpAgentReplyModelTests
         persisted.Values.Single().Last().GetModel().ShouldBe(answeredBy);
     }
 
+    // The agent hands the history what its reply streamed, so a reply the person stopped is kept as far
+    // as it got.
+    [Fact]
+    public async Task AReplyStoppedMidSentence_IsKeptAsFarAsItGot()
+    {
+        var (store, persisted) = InMemoryStore();
+        var agent = new McpAgent(TestAgentSpec.Default, new SlowClient(), store, NoOpMetricsPublisher.Instance,
+            TimeProvider.System, [], []);
+        using var cts = new CancellationTokenSource();
+        try
+        {
+            await foreach (var _ in agent.RunStreamingAsync([new ChatMessage(ChatRole.User, "hola")], cancellationToken: cts.Token))
+            {
+                await cts.CancelAsync();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        var kept = persisted.Values.Single();
+        kept.Select(m => (m.Role.Value, m.Text, m.IsInterrupted())).ShouldBe([("user", "hola", false), ("assistant", "Once upon ", true)]);
+    }
+
+    private sealed class SlowClient : IChatClient
+    {
+        public Task<ChatResponse> GetResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+            IEnumerable<ChatMessage> messages, ChatOptions? options = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "Once upon ") { MessageId = "m1" };
+            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+            yield return new ChatResponseUpdate(ChatRole.Assistant, "a time") { MessageId = "m1" };
+        }
+
+        public object? GetService(Type serviceType, object? serviceKey = null) => null;
+
+        public void Dispose()
+        {
+        }
+    }
+
     private static (IThreadStateStore Store, Dictionary<string, List<ChatMessage>> Persisted) InMemoryStore()
     {
         var persisted = new Dictionary<string, List<ChatMessage>>();

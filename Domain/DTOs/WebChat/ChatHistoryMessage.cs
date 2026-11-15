@@ -42,6 +42,9 @@ public record ChatHistoryMessage(
     IReadOnlyList<string>? ToolsCalled = null,
 
     // The model a reply was written by, as its turn resolved it; none on a person's message.
-    string? Model = null);
+    string? Model = null,
+
+    // A reply cut off before it ended (stopped, or out of room), which Continue picks up.
+    bool IsInterrupted = false);
 
 public sealed record MessageVersions(string Slot, int Index, int Count);

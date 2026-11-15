@@ -51,6 +51,21 @@ public sealed class RedisChatMessageStore(
     // the one the line ends on, and a message whose name the line already holds elsewhere is a new one.
     private readonly ConditionalWeakTable<AgentSession, Rerun> _rerun = [];
 
+    // What this turn's reply has streamed so far, by session, so a turn the person stops keeps what was
+    // said before the stop. Fed by whoever reads the reply (McpAgent), since the framework hands a
+    // cancelled turn's history provider nothing of it.
+    private readonly ConditionalWeakTable<AgentSession, List<AgentResponseUpdate>> _streamed = [];
+
+    public void BeginCollecting(AgentSession session) => _streamed.AddOrUpdate(session, []);
+
+    public void Collect(AgentSession session, AgentResponseUpdate update)
+    {
+        if (_streamed.TryGetValue(session, out var updates))
+        {
+            updates.Add(update);
+        }
+    }
+
     public IReadOnlyList<ChatMessage> LastProvided(AgentSession? session) =>
         session is not null && _lastProvided.TryGetValue(session, out var messages) ? messages : [];
 
@@ -104,9 +119,20 @@ public sealed class RedisChatMessageStore(
     // decide which of the request's messages are new.
     protected override ValueTask InvokedCoreAsync(InvokedContext context, CancellationToken cancellationToken = default)
     {
+        // A turn the person stopped was said as far as it got: kept, marked interrupted, and read.
         if (context.InvokeException is OperationCanceledException)
         {
-            return ClearTurnInFlightAsync(context.Session);
+            if (context.Session is null)
+            {
+                return default;
+            }
+
+            var said = Said(context.Session);
+#pragma warning disable MAAI001 // the framework's own context, rebuilt with what the stopped reply said
+            // Not the turn's token, which the stop cancelled: what was said is kept all the same.
+            return base.InvokedCoreAsync(
+                new InvokedContext(context.Agent, context.Session, context.RequestMessages, said), CancellationToken.None);
+#pragma warning restore MAAI001
         }
 
         if (context.InvokeException is not { } failure)
@@ -201,13 +227,36 @@ public sealed class RedisChatMessageStore(
         }
     }
 
-    // A stopped turn keeps nothing, so nothing of it waits for its mark to go.
-    private async ValueTask ClearTurnInFlightAsync(AgentSession? session)
+    // What a stopped reply had said: its text and every tool call that got its result, the last text
+    // marked interrupted. Reasoning goes — it was the model's, not said — and a call with no answer
+    // goes too, since no model can continue from it.
+    private IReadOnlyList<ChatMessage> Said(AgentSession session)
     {
-        if (session is not null && TryGetStateKey(session, out var key))
+        if (!_streamed.TryGetValue(session, out var updates) || updates.Count == 0)
         {
-            await store.ClearTurnInFlightAsync(key!);
+            return [];
         }
+
+        _streamed.Remove(session);
+        var messages = updates.ToAgentResponse().Messages;
+        var answered = messages.SelectMany(m => m.Contents).OfType<FunctionResultContent>()
+            .Select(r => r.CallId).ToHashSet();
+        var kept = messages
+            .Select(m =>
+            {
+                var copy = m.Clone();
+                copy.Contents =
+                [
+                    .. m.Contents.Where(c => c is not TextReasoningContent
+                                             && (c is not FunctionCallContent call || answered.Contains(call.CallId)))
+                ];
+                return copy;
+            })
+            .Where(m => m.Contents.Count > 0 && (m.Role != ChatRole.Assistant || m.Contents.Any(c => c is not TextContent t || t.Text.Length > 0)))
+            .ToList();
+
+        kept.LastOrDefault(m => m.Role == ChatRole.Assistant && !string.IsNullOrEmpty(m.Text))?.MarkInterrupted();
+        return kept;
     }
 
     private static ChatMessage Failed(ChatMessage message)

@@ -28,6 +28,7 @@ public static class ChatMessageExtensions
     private const string FailedTurnKey = "FailedTurn";
     private const string EntryIdKey = "EntryId";
     private const string ModelKey = "Model";
+    private const string InterruptedKey = "Interrupted";
 
     extension(ChatMessage message)
     {
@@ -49,6 +50,24 @@ public static class ChatMessageExtensions
         }
 
         public void UnmarkFailedTurn() => message.AdditionalProperties?.Remove(FailedTurnKey);
+
+        // A reply cut off before it ended — the person stopped it, or it ran out of room to say more —
+        // kept as far as it got and read by the model like anything said. Continue picks it up.
+        public bool IsInterrupted() =>
+            message.AdditionalProperties?.GetValueOrDefault(InterruptedKey) switch
+            {
+                true => true,
+                JsonElement { ValueKind: JsonValueKind.True } => true,
+                _ => false
+            };
+
+        public void MarkInterrupted()
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[InterruptedKey] = true;
+        }
+
+        public void UnmarkInterrupted() => message.AdditionalProperties?.Remove(InterruptedKey);
 
         // The message's own name in its conversation, given as it is stored: how a page addresses one
         // message to rewrite or fork from. Not MessageId, which is the provider's per-call response id

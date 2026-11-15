@@ -1351,6 +1351,12 @@ h1, h2, h3 {
     color: #ef4444;
 }
 
+.message-interrupted {
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
 .message-model {
     font-size: 0.6875rem;
     color: var(--text-muted);

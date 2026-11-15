@@ -199,6 +199,19 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         history.Select(h => h.Model).ShouldBe([null, "other/model"]);
     }
 
+    [Fact]
+    public async Task GetHistoryAsync_AReplyCutOffSaysSo()
+    {
+        var reply = Message("a1", "assistant", "Once upon ");
+        reply.MarkInterrupted();
+        var store = await SeededAsync(("u1", "user", "hola"));
+        await store.AppendMessagesAsync(Key, [reply]);
+
+        var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
+
+        history.Select(h => h.IsInterrupted).ShouldBe([false, true]);
+    }
+
     private async Task<RedisThreadStateStore> SeededAsync(params (string Id, string Role, string Text)[] messages)
     {
         var store = NewStore();

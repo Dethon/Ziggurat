@@ -24,6 +24,7 @@ public static class ChatHistoryMessageExtensions
             Versions = history.Versions,
             NoReply = history.NoReply,
             ToolsCalled = history.ToolsCalled,
-            Model = history.Model
+            Model = history.Model,
+            IsInterrupted = history.IsInterrupted
         };
 }

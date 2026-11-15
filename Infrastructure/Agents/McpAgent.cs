@@ -340,8 +340,12 @@ public sealed class McpAgent : DisposableAgent
 
         options ??= CreateRunOptions(session, conversationContext, turnConfig);
 
+        // What the reply streams goes to the history as it passes, so a reply the person stops is kept
+        // as far as it got.
+        _history.BeginCollecting(thread);
         await foreach (var update in _innerAgent.RunStreamingAsync(messageList, thread, options, cancellationToken))
         {
+            _history.Collect(thread, update);
             yield return update;
         }
     }
