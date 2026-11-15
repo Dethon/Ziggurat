@@ -1,6 +1,6 @@
 # 07: Reroll the last reply
 
-Status: done (E2E pending)
+Status: done
 Blocked by: 04
 Spec: ../spec.md (Turns that rewrite)
 

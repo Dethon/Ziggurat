@@ -1,6 +1,6 @@
 # 03: Delete from here, with the message actions menu
 
-Status: done (E2E pending, to run with 05/07)
+Status: done
 Blocked by: 02
 Spec: ../spec.md (What a person can do, Who may do what, Mirrored topics, History changed)
 

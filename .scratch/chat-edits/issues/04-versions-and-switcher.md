@@ -1,6 +1,6 @@
 # 04: Versions are projected and switched
 
-Status: done (E2E pending, folded into 07)
+Status: done
 Blocked by: 03
 Spec: ../spec.md (Versions)
 
