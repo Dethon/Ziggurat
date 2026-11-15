@@ -118,6 +118,15 @@ public sealed class FakeChatMessagingService : IChatMessagingService
         return SendMessageAsync(topicId, message, correlationId, configPatch, attachments);
     }
 
+    public bool Continued { get; private set; }
+
+    public Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendContinueAsync(
+        string topicId, string? correlationId, AgentConfigPatch? configPatch)
+    {
+        Continued = true;
+        return SendMessageAsync(topicId, "", correlationId, configPatch);
+    }
+
     // Answers before the wire would: the real connection opens a hub stream by pulling its
     // first chunk, so a real resume does not come back until the reply next speaks. That
     // timing is modelled one seam down, in FakeHubConnection, and pinned by

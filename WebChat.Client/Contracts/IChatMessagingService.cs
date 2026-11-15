@@ -18,6 +18,8 @@ public interface IChatMessagingService
     Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendRerunAsync(
         string topicId, string message, string? correlationId, AgentConfigPatch? configPatch,
         IReadOnlyList<AttachmentReference>? attachments, string rerunOf);
+    Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> SendContinueAsync(
+        string topicId, string? correlationId, AgentConfigPatch? configPatch);
     Task<HubResult<IAsyncEnumerable<ChatStreamMessage>>> ResumeStreamAsync(string topicId, StreamSeen? seen = null);
     Task<HubResult<StreamState>> GetStreamStateAsync(string topicId);
     Task<HubResult<Nothing>> CancelTopicAsync(string topicId);

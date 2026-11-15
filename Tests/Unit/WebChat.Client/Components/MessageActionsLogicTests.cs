@@ -88,4 +88,17 @@ public class MessageActionsLogicTests
     public void ATopicThePersonMayOnlyRead_OffersFork() =>
         MessageActionsLogic.For(Stored, new MessageActionContext(false, MayRewrite: false))
             .ShouldBe([MessageActionKind.Fork]);
+
+    // Continue is a message sent like any other, so whoever may write in the topic may ask for it, on its
+    // last reply when that was cut off.
+    [Fact]
+    public void ACutOffLastReply_OffersContinue_ToWhoeverMayWrite() =>
+        MessageActionsLogic.For(Reply with { IsInterrupted = true },
+                new MessageActionContext(false, MayRewrite: false, IsLast: true, MayContinue: true))
+            .ShouldContain(MessageActionKind.Continue);
+
+    [Fact]
+    public void AReplyThatEnded_OffersNoContinue() =>
+        MessageActionsLogic.For(Reply, new MessageActionContext(false, true, IsLastReply: true, IsLast: true, MayContinue: true))
+            .ShouldNotContain(MessageActionKind.Continue);
 }

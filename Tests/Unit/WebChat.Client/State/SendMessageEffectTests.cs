@@ -89,6 +89,21 @@ public sealed class SendMessageEffectTests : IDisposable
     }
 
     [Fact]
+    public async Task ContinueReply_AsksForTheCutOffReplyToGoOn()
+    {
+        var topic = new StoredTopic { TopicId = "topic-1", AgentId = "agent-1", ChatId = 1, ThreadId = 1, Name = "Test" };
+        _dispatcher.Dispatch(new TopicsLoaded([topic]));
+        _mockSessionService.Setup(s => s.CurrentTopic).Returns(topic);
+        var asked = new TaskCompletionSource();
+        _mockStreamingService.Setup(s => s.ContinueAsync(It.IsAny<StoredTopic>()))
+            .Callback(() => asked.TrySetResult()).Returns(Task.CompletedTask);
+
+        _dispatcher.Dispatch(new ContinueReply("topic-1"));
+
+        await asked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
     public void RetryLastMessage_NoUserMessages_DoesNotDispatchSendMessage()
     {
         // Arrange

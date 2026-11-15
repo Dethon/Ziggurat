@@ -1,14 +1,18 @@
 using Domain.Agents;
 using Domain.Channels;
 using Domain.Contracts;
+using Domain.Conversations;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.Household;
 using Domain.DTOs.WebChat;
+using Domain.Extensions;
 using Mcp.Hosting;
 using McpChannelSignalR.Hubs;
 using McpChannelSignalR.Services;
 using McpChannelSignalR.Settings;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Moq;
@@ -26,6 +30,7 @@ public sealed class ChatHubRerunTests : IDisposable
     private readonly SessionService _sessionService = new();
     private readonly StreamService _streamService;
     private readonly ChannelInbox _inbox = new(new FakeTimeProvider());
+    private readonly Mock<IThreadStateStore> _store = new();
     private readonly ChatHub _hub;
 
     public ChatHubRerunTests()
@@ -50,7 +55,7 @@ public sealed class ChatHubRerunTests : IDisposable
         _hub = new ChatHub(
             _sessionService, _streamService, approvalService: null!,
             new ChannelNotificationEmitter(_inbox, DeliveryPolicy.Broadcast), catalog,
-            new Mock<IThreadStateStore>().Object, pushSubscriptionStore: null!, attachmentService: null!,
+            _store.Object, pushSubscriptionStore: null!, attachmentService: null!,
             new Mock<IHubNotificationSender>().Object, new RetentionSettings(), new DictationSettings(),
             new VouchingAccounts(), households, NullLogger<ChatHub>.Instance)
         {
@@ -80,6 +85,38 @@ public sealed class ChatHubRerunTests : IDisposable
         var emitted = await EmittedAsync(ct => _hub.SendMessage(TopicId, "hola", null, null, null, ct));
 
         emitted.RerunOf.ShouldBeNull();
+    }
+
+    // Continue asks the model to carry on the reply that was cut off: its ask goes hidden, in the words
+    // the agent is told to read as one.
+    [Fact]
+    public async Task SendContinue_AsksForTheCutOffReplyToGoOn()
+    {
+        var cut = new ChatMessage(ChatRole.Assistant, "Once upon ");
+        cut.MarkInterrupted();
+        _store.Setup(s => s.GetMessagesAsync(new AgentKey("7:42", "jack").ToString()))
+            .ReturnsAsync([new ChatMessage(ChatRole.User, "a story"), cut]);
+
+        var emitted = await EmittedAsync(ct => _hub.SendContinue(TopicId, null, null, ct));
+
+        emitted.Continuation.ShouldBeTrue();
+        emitted.Content.ShouldBe(Continuation.Instruction);
+    }
+
+    [Fact]
+    public async Task SendContinue_AReplyThatEnded_IsRefused()
+    {
+        _store.Setup(s => s.GetMessagesAsync(new AgentKey("7:42", "jack").ToString()))
+            .ReturnsAsync([new ChatMessage(ChatRole.User, "a story"), new ChatMessage(ChatRole.Assistant, "The end.")]);
+
+        var refused = await Should.ThrowAsync<HubException>(async () =>
+        {
+            await foreach (var _ in _hub.SendContinue(TopicId, null, null, CancellationToken.None))
+            {
+            }
+        });
+
+        refused.Message.ShouldBe(TopicRefusals.NothingToContinue);
     }
 
     // The send waits for a reply nobody gives here, so it is read until the agent has been told, then let go.

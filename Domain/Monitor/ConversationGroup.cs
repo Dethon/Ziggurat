@@ -1047,6 +1047,12 @@ internal sealed class ConversationGroup(
             userMessage.SetEntryId(rerun);
         }
 
+        // Continue's ask is hidden: never drawn, counted or remembered.
+        if (message.Continuation)
+        {
+            userMessage.MarkContinuation();
+        }
+
         userMessage.SetResponseFormat(message.ResponseFormat);
         // References only. The bytes rest wherever the channel keeps them and are put back on the
         // way to the model, so a history read costs the same whether or not files were sent
@@ -1083,8 +1089,8 @@ internal sealed class ConversationGroup(
                 userMessage, message.Principal?.Account, state.DeliveryKey.ConversationId, message.AgentId,
                 state.Thread, _turnCt);
 
-            // What a reroll's person said was extracted when they first said it.
-            return (userMessage, message.RerunOf is null ? extraction : null);
+            // What a reroll's person said was extracted when they first said it; Continue's ask is nobody's.
+            return (userMessage, message.RerunOf is null && !message.Continuation ? extraction : null);
         }
 
         return (userMessage, null);

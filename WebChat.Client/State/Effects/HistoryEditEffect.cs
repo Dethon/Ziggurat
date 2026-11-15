@@ -25,6 +25,11 @@ public sealed class HistoryEditEffect : IDisposable
     private readonly ILogger<HistoryEditEffect> _logger;
     private readonly IDisposable[] _registrations;
 
+    // The echoes still to come of rewrites this page made, by topic: the hub tells the topic's whole
+    // audience, this page included, and this page shows the result already — and may be sending the
+    // edited words by the time its echo lands.
+    private readonly Dictionary<string, int> _ownEchoes = [];
+
     public HistoryEditEffect(
         Dispatcher dispatcher,
         TopicsStore topicsStore,
@@ -143,6 +148,15 @@ public sealed class HistoryEditEffect : IDisposable
 
     public async Task HandleHistoryChangedAsync(string topicId)
     {
+        lock (_ownEchoes)
+        {
+            if (_ownEchoes.GetValueOrDefault(topicId) > 0)
+            {
+                _ownEchoes[topicId]--;
+                return;
+            }
+        }
+
         if (_messagesStore.State.LoadedTopics.Contains(topicId) && !_topicStreams.Snapshot(topicId).HasStream)
         {
             await ReloadAsync(topicId);
@@ -158,11 +172,14 @@ public sealed class HistoryEditEffect : IDisposable
             return false;
         }
 
+        // Counted before the call: the hub tells the audience before it answers its caller.
         var made = false;
+        Expect(topicId, +1);
         try
         {
             if (!(await rewrite(topic, LastSeen(topicId))).IsLive)
             {
+                Expect(topicId, -1);
                 _dispatcher.Dispatch(new ShowError(NotLiveToast.Message));
                 return false;
             }
@@ -171,6 +188,7 @@ public sealed class HistoryEditEffect : IDisposable
         }
         catch (HubException refused)
         {
+            Expect(topicId, -1);
             _dispatcher.Dispatch(new ShowError(HubRefusal.MessageOf(refused)));
         }
 
@@ -178,6 +196,14 @@ public sealed class HistoryEditEffect : IDisposable
         // answered by showing the line as it is, and a rewrite before a turn is shown before the turn.
         await ReloadAsync(topicId);
         return made;
+    }
+
+    private void Expect(string topicId, int echoes)
+    {
+        lock (_ownEchoes)
+        {
+            _ownEchoes[topicId] = Math.Max(0, _ownEchoes.GetValueOrDefault(topicId) + echoes);
+        }
     }
 
     private string? LastSeen(string topicId) =>

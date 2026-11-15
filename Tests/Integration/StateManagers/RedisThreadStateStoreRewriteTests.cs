@@ -212,6 +212,31 @@ public class RedisThreadStateStoreRewriteTests(TopicSearchFixture redis) : IClas
         history.Select(h => h.IsInterrupted).ShouldBe([false, true]);
     }
 
+    // A continued reply reads as the one reply it is: what came after the Continue says it is the rest of
+    // the reply before, which is no longer cut off, and the hidden ask between them is neither shown nor
+    // counted.
+    [Fact]
+    public async Task GetHistoryAsync_AContinuedReply_IsOneReply()
+    {
+        var cut = Message("a1", "assistant", "Once upon ");
+        cut.MarkInterrupted();
+        var ask = Message("c1", "user", Continuation.Instruction);
+        ask.MarkContinuation();
+        var store = await SeededAsync(("u1", "user", "tell me a story"));
+        await store.AppendMessagesAsync(Key, [cut]);
+        await store.AppendMessagesAsync(Key, [ask, Message("a2", "assistant", "a time.")]);
+
+        var history = await store.GetHistoryAsync(_agentId, _chatId, 0);
+
+        history.Select(h => (h.Role, h.Content, h.IsInterrupted, h.ContinuesPrevious)).ShouldBe(
+        [
+            ("user", "tell me a story", false, false),
+            ("assistant", "Once upon ", false, false),
+            ("assistant", "a time.", false, true)
+        ]);
+        (await store.GetTopicAsync("home", _agentId, _chatId, "t"))!.MessageCount.ShouldBe(2);
+    }
+
     private async Task<RedisThreadStateStore> SeededAsync(params (string Id, string Role, string Text)[] messages)
     {
         var store = NewStore();

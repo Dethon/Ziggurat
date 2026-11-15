@@ -198,6 +198,24 @@ public sealed class HistoryEditEffectTests : IDisposable
         _messagesStore.State.MessagesByTopic["t"].Select(m => m.Content).ShouldBe(["otra"]);
     }
 
+    // The page that rewrote the conversation shows the result already, and may already be sending the
+    // edited words: the echo of its own rewrite reads nothing over them.
+    [Fact]
+    public async Task HistoryChanged_ForThePagesOwnRewrite_ReadsNothing()
+    {
+        await _effect.HandleDeleteFromAsync("t", "e2");
+        _topicService.SetHistory(7, 8, new ChatHistoryMessage(null, "user", "otra", null, null, EntryId: "e9"));
+        _dispatcher.Dispatch(new MessagesLoaded("t", [new ChatMessageModel { Role = "user", Content = "sending", EntryId = "x" }]));
+
+        await _effect.HandleHistoryChangedAsync("t");
+
+        _messagesStore.State.MessagesByTopic["t"].Select(m => m.Content).ShouldBe(["sending"]);
+
+        await _effect.HandleHistoryChangedAsync("t");
+
+        _messagesStore.State.MessagesByTopic["t"].Select(m => m.Content).ShouldBe(["otra"]);
+    }
+
     [Fact]
     public async Task HistoryChanged_ForATopicThePageNeverLoaded_ReadsNothing()
     {

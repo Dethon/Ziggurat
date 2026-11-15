@@ -29,6 +29,9 @@ public interface IStreamingService
         AgentConfigPatch? configPatch,
         IReadOnlyList<AttachmentReference> attachments);
 
+    // Continue, on a topic with no reply running: the cut-off last reply carried on.
+    Task ContinueAsync(StoredTopic topic);
+
     bool TryShowResumedStream(StreamLease lease, ChatMessageModel streamingMessage, string? startMessageId);
 
     Task<bool> TryReadResumedStreamAsync(StreamLease lease, StoredTopic topic, StreamSeen? seen = null);

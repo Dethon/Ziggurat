@@ -1,4 +1,5 @@
 using Microsoft.Playwright;
+using Shouldly;
 using Tests.E2E.Fixtures;
 using static Tests.E2E.WebChat.WebChatE2ETests;
 
@@ -135,6 +136,33 @@ public class ChatEditsE2ETests(WebChatE2EFixture fixture)
         await Assertions.Expect(page.Locator(".chat-message.user", new PageLocatorOptions { HasText = $"Stop {tag}" }))
             .ToHaveCountAsync(0, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
         await Assertions.Expect(page.Locator(".toast", new PageLocatorOptions { HasText = "still being written" })).ToHaveCountAsync(0);
+    }
+
+    // A reply the person stopped is kept as far as it got, and Continue carries it on in the same bubble.
+    [SkippableFact]
+    public async Task AStoppedReply_IsKept_AndContinuedInTheSameBubble()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+        var page = await OpenAsync();
+
+        await SendAsync(page, "Write a very long and detailed story about a lighthouse keeper. Do not call any tools.");
+        await WebChatConversationE2ETests.WaitForAssistantTextAsync(page);
+        var stop = page.Locator("[data-testid=composer-cancel]");
+        await ClickThroughApprovalsAsync(page, stop);
+        await IdleAsync(page);
+
+        var reply = Replies(page).Last;
+        await Assertions.Expect(reply.Locator(".message-interrupted")).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 30_000 });
+        var before = (await reply.Locator(".message-content").InnerTextAsync()).Length;
+
+        await ChooseAsync(reply, "Continue");
+        await Assertions.Expect(page.Locator("[data-testid=composer-cancel]")).ToBeVisibleAsync(new LocatorAssertionsToBeVisibleOptions { Timeout = 60_000 });
+        await IdleAsync(page);
+
+        await Assertions.Expect(Replies(page)).ToHaveCountAsync(1, new LocatorAssertionsToHaveCountOptions { Timeout = 30_000 });
+        await Assertions.Expect(page.Locator(".chat-message.user")).ToHaveCountAsync(1);
+        var after = (await Replies(page).Last.Locator(".message-content").InnerTextAsync()).Length;
+        after.ShouldBeGreaterThan(before);
     }
 
     private async Task<IPage> OpenAsync()

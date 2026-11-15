@@ -37,6 +37,9 @@ public record SendRerun(
     string RerunOf,
     AgentConfigPatch? ConfigPatch) : IAction;
 
+// Continue: the topic's cut-off last reply carried on, its ask hidden.
+public record ContinueReply(string TopicId) : IAction;
+
 public record CancelStreaming(string TopicId) : IAction;
 
 public sealed class StreamingStore : IDisposable

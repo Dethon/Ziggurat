@@ -110,6 +110,7 @@
         string? accToolCalls = null;
         string? accContent = null;
         MessageVersions? accVersions = null;
+        bool? accInterrupted = null;
         ChatMessageModel? anchor = null;
 
         for (var i = 0; i < messages.Count; i++)
@@ -118,20 +119,23 @@
 
             if (message.Role != "assistant" || message.NoReply)
             {
-                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions);
+                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
                 result.Add(message);
                 continue;
             }
 
+            // What followed a Continue is the rest of the reply before it, so it joins that bubble.
+            var continues = message.ContinuesPrevious && accContent is not null;
             if (!string.IsNullOrEmpty(message.Content))
             {
-                if (accContent is not null)
+                if (accContent is not null && !continues)
                 {
                     // Previous message(s) already had content — flush them as a separate bubble
-                    Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions);
+                    Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
                 }
 
-                accContent = message.Content;
+                accContent = continues ? accContent + message.Content : message.Content;
+                accInterrupted = message.IsInterrupted;
             }
 
             accVersions ??= message.Versions;
@@ -140,17 +144,18 @@
             accToolCalls = MessageFieldMerger.Merge(
                 accToolCalls, message.ToolCalls, MessageFieldMerger.ToolCallsSeparator);
 
-            // Prefer the message that carries content as anchor for MessageId/Timestamp
-            anchor = anchor is null || !string.IsNullOrEmpty(message.Content) ? message : anchor;
+            // Prefer the message that carries content as anchor for MessageId/Timestamp; a continuation
+            // keeps the reply it continues as the bubble's own.
+            anchor = anchor is null || (!string.IsNullOrEmpty(message.Content) && !continues) ? message : anchor;
 
             var nextIsAssistant = i < messages.Count - 1 && messages[i + 1].Role == "assistant";
             if (!nextIsAssistant)
             {
-                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions);
+                Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
             }
         }
 
-        Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions);
+        Flush(result, ref anchor, ref accContent, ref accReasoning, ref accToolCalls, ref accVersions, ref accInterrupted);
         return result;
 
         static void Flush(
@@ -159,7 +164,8 @@
             ref string? content,
             ref string? reasoning,
             ref string? toolCalls,
-            ref MessageVersions? versions)
+            ref MessageVersions? versions,
+            ref bool? interrupted)
         {
             if (anchor is null)
             {
@@ -171,7 +177,8 @@
                 Content = content ?? "",
                 Reasoning = reasoning,
                 ToolCalls = toolCalls,
-                Versions = versions ?? anchor.Versions
+                Versions = versions ?? anchor.Versions,
+                IsInterrupted = interrupted ?? anchor.IsInterrupted
             });
 
             anchor = null;
@@ -179,6 +186,7 @@
             reasoning = null;
             toolCalls = null;
             versions = null;
+            interrupted = null;
         }
     }
 
@@ -271,7 +279,9 @@
     private IReadOnlyList<MessageActionKind> ActionsFor(ChatMessageModel message, int index) =>
         MessageActionsLogic.For(message, new MessageActionContext(
             _isStreaming, _topic?.MayRewrite(_currentUserId) == true,
-            IsLastReply: index == _messages.Count - 1 && AnswersAPerson(index)));
+            IsLastReply: index == _messages.Count - 1 && AnswersAPerson(index),
+            IsLast: index == _messages.Count - 1,
+            MayContinue: _topic?.MayContinue(_currentUserId) == true));
 
     // The reply at an index answers a person's own message, which a reroll may send again: not a turn a
     // service started (a fire, a login), which acted for whoever its delegation named.
@@ -311,6 +321,9 @@
 
         switch (choice.Kind)
         {
+            case MessageActionKind.Continue:
+                Dispatcher.Dispatch(new ContinueReply(_topicId));
+                break;
             case MessageActionKind.Reroll:
             case MessageActionKind.RerollWith:
                 Reroll(choice.Model);

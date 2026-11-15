@@ -51,6 +51,9 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
 
     public Exception? ThrowOnDeleteFrom { get; set; }
 
+    // Answers given before the history SetHistory holds, one per read: what a read made too early saw.
+    public Queue<List<ChatHistoryMessage>> HistoryAnswers { get; } = new();
+
     public List<(string AgentId, string TopicId, long ChatId, string EntryId, string? LastSeen)> DeletedFrom { get; } = [];
 
     public List<(string AgentId, string TopicId, long ChatId, string Slot, int Index, string? LastSeen)> SwitchedVersions { get; } = [];
@@ -394,6 +397,11 @@ public sealed class FakeTopicService(CallRecorder? recorder = null) : ITopicServ
         if (NotLive)
         {
             return Task.FromResult(HubResult<IReadOnlyList<ChatHistoryMessage>>.NotLive);
+        }
+
+        if (HistoryAnswers.TryDequeue(out var early))
+        {
+            return Task.FromResult(HubResult<IReadOnlyList<ChatHistoryMessage>>.Answered(early));
         }
 
         return Task.FromResult(HubResult<IReadOnlyList<ChatHistoryMessage>>.Answered(

@@ -40,6 +40,9 @@ public record ChannelMessage
 
     // The entry id of the message the conversation ends on, when this turn answers it again (a reroll).
     public string? RerunOf { get; init; }
+
+    // Continue's hidden ask (Domain.Conversations.Continuation).
+    public bool Continuation { get; init; }
     public ResponseFormat? ResponseFormat { get; init; }
 
     // The channel asks for this conversation to be shown on the review host too (ADR 0046).

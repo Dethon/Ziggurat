@@ -40,6 +40,9 @@ public record ChatMessageModel
     // A reply cut off before it ended (ChatHistoryMessage.IsInterrupted).
     public bool IsInterrupted { get; init; }
 
+    // The rest of the reply before it, after a Continue (ChatHistoryMessage.ContinuesPrevious).
+    public bool ContinuesPrevious { get; init; }
+
     // A person's message as the page that sent it named the send (UserMessageInfo.CorrelationId): the
     // stream's copy of a message is the one shown when the ids match. None for one loaded from history.
     public string? CorrelationId { get; init; }

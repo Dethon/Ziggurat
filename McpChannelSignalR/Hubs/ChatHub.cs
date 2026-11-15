@@ -420,6 +420,33 @@ public sealed class ChatHub(
         CancellationToken cancellationToken) =>
         SendTurn(topicId, message, correlationId, configPatch, attachments, rerunOf, cancellationToken);
 
+    // Continue: the model carries on the reply that was cut off — stopped, or out of room — with an ask of
+    // its own words the conversation keeps hidden (Continuation). Allowed wherever a message may be sent.
+    public async IAsyncEnumerable<ChatStreamMessage> SendContinue(
+        string topicId,
+        string? correlationId,
+        AgentConfigPatch? configPatch,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (await SessionToContinueAsync(topicId) is { } session)
+        {
+            var messages = await threadStore.GetMessagesAsync(new AgentKey(session.Identity.ConversationId, session.AgentId).ToString()) ?? [];
+            var lastReply = messages.Reverse().TakeWhile(m => m.Role != ChatRole.User)
+                .FirstOrDefault(m => m.Role == ChatRole.Assistant && !string.IsNullOrEmpty(m.Text));
+            if (lastReply?.IsInterrupted() != true)
+            {
+                throw new HubException(TopicRefusals.NothingToContinue);
+            }
+        }
+
+        await foreach (var chunk in SendTurn(
+                           topicId, Continuation.Instruction, correlationId, configPatch, null, rerunOf: null, cancellationToken,
+                           continuation: true))
+        {
+            yield return chunk;
+        }
+    }
+
     private async IAsyncEnumerable<ChatStreamMessage> SendTurn(
         string topicId,
         string message,
@@ -427,7 +454,8 @@ public sealed class ChatHub(
         AgentConfigPatch? configPatch,
         IReadOnlyList<AttachmentReference>? attachments,
         string? rerunOf,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        bool continuation = false)
     {
         if (await SessionToContinueAsync(topicId) is not { } session)
         {
@@ -442,8 +470,9 @@ public sealed class ChatHub(
         var userId = SignedIn.UserId;
         var conversationId = session.Identity.ConversationId;
 
+        // The stream's prompt is what a page joining it draws as the person's message: Continue's ask is none.
         var (broadcastChannel, linkedToken) =
-            streamService.GetOrCreateStream(topicId, message, userId, cancellationToken);
+            streamService.GetOrCreateStream(topicId, continuation ? "" : message, userId, cancellationToken);
         streamService.TryIncrementPending(topicId);
 
         // Subscribe before emitting so no early reply chunks are lost
@@ -481,15 +510,18 @@ public sealed class ChatHub(
             yield break;
         }
 
-        // Write user message to buffer for other browsers
-        var timestamp = DateTimeOffset.UtcNow;
-        var userMessage = new ChatStreamMessage
+        // Write user message to buffer for other browsers; Continue's ask is nobody's message to draw.
+        if (!continuation)
         {
-            Content = message,
-            UserMessage = new UserMessageInfo(userId, timestamp, TurnSender, correlationId),
-            Attachments = attachments
-        };
-        await streamService.WriteMessageAsync(topicId, userMessage);
+            var timestamp = DateTimeOffset.UtcNow;
+            var userMessage = new ChatStreamMessage
+            {
+                Content = message,
+                UserMessage = new UserMessageInfo(userId, timestamp, TurnSender, correlationId),
+                Attachments = attachments
+            };
+            await streamService.WriteMessageAsync(topicId, userMessage);
+        }
 
         // The other browsers on the topic - a member reading a shared one, the same person's phone -
         // follow a stream they are told started, replaying the message just buffered; the one sending
@@ -512,6 +544,7 @@ public sealed class ChatHub(
                 AgentId = session.AgentId,
                 ConfigPatch = configPatch,
                 RerunOf = rerunOf,
+                Continuation = continuation,
                 Attachments = attachments,
                 Timestamp = DateTimeOffset.UtcNow
             },

@@ -1,3 +1,4 @@
+using Domain.Extensions;
 using Microsoft.Extensions.AI;
 
 namespace Domain.Memory;
@@ -73,10 +74,11 @@ public static class ExtractionWindow
         return string.Join("\n", lines);
     }
 
-    // Tool-role messages, and assistant messages that carry only a tool call. A user message is
-    // always conversation, whatever it carries.
+    // Tool-role messages, assistant messages that carry only a tool call, and Continue's ask, which is
+    // nobody's words. Any other user message is conversation, whatever it carries.
     private static bool IsConversation(ChatMessage message) =>
         message.Role != ChatRole.Tool
+        && !message.IsContinuation()
         && !(message.Role == ChatRole.Assistant && string.IsNullOrEmpty(message.Text));
 
     private static string RoleLabel(ChatRole role) =>

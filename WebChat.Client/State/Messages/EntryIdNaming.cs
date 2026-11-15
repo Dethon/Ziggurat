@@ -38,7 +38,8 @@ public static class EntryIdNaming
                 Versions = history[at].Versions,
                 ToolsCalled = history[at].ToolsCalled,
                 Model = history[at].Model,
-                IsInterrupted = history[at].IsInterrupted
+                IsInterrupted = history[at].IsInterrupted,
+                ContinuesPrevious = history[at].ContinuesPrevious
             });
         }
 

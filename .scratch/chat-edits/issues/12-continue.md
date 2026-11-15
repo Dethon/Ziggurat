@@ -1,6 +1,6 @@
 # 12: Continue a cut-off reply
 
-Status: ready-for-agent
+Status: done
 Blocked by: 10, 11
 Spec: ../spec.md (Turns that rewrite: Continue)
 

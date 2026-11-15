@@ -94,6 +94,26 @@ public sealed class StreamingService(
         }
     }
 
+    public async Task ContinueAsync(StoredTopic topic)
+    {
+        await _streamLock.WaitAsync();
+        try
+        {
+            var seen = topicStreams.Snapshot(topic.TopicId);
+            if (seen.HasStream)
+            {
+                return;
+            }
+
+            await StartNewStreamAsync(
+                new Outgoing(topic, "", null, GetConfigPatch(topic), null, [], Continuation: true), seen);
+        }
+        finally
+        {
+            _streamLock.Release();
+        }
+    }
+
     // One message on its way out: what to say, where it goes, and the composer entries the send
     // empties when it lands. Six arguments travelled together through four methods before this.
     // RerunOf: the message the conversation ends on, answered again (a reroll).
@@ -104,7 +124,8 @@ public sealed class StreamingService(
         AgentConfigPatch? ConfigPatch,
         IReadOnlyList<AttachmentReference>? Attachments,
         IReadOnlyList<ComposerAttachment> Sending,
-        string? RerunOf = null);
+        string? RerunOf = null,
+        bool Continuation = false);
 
     private async Task EnqueueOrStartAsync(Outgoing outgoing, TopicStreamSnapshot seen)
     {
@@ -240,7 +261,9 @@ public sealed class StreamingService(
     // this is the one stream verb that raises a toast.
     private async Task<IAsyncEnumerable<ChatStreamMessage>?> OpenSendStreamAsync(Outgoing outgoing)
     {
-        var chunks = outgoing.RerunOf is { } rerunOf
+        var chunks = outgoing.Continuation
+            ? await messagingService.SendContinueAsync(outgoing.Topic.TopicId, outgoing.CorrelationId, outgoing.ConfigPatch)
+            : outgoing.RerunOf is { } rerunOf
             ? await messagingService.SendRerunAsync(
                 outgoing.Topic.TopicId, outgoing.Message, outgoing.CorrelationId,
                 outgoing.ConfigPatch, outgoing.Attachments, rerunOf)
@@ -400,14 +423,30 @@ public sealed class StreamingService(
         await topicService.MarkTopicReadAsync(topic.AgentId, topic.ChatId, topic.TopicId);
     }
 
+    // A turn the person stopped is kept by the agent after the stop ended its stream, so the first read
+    // can come before it: asked again, a little later each time, until what the page drew is named.
+    private static readonly TimeSpan[] LearnAgainAfter =
+        [TimeSpan.Zero, TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(1.5), TimeSpan.FromSeconds(4)];
+
     private async Task LearnEntryIdsAsync(StoredTopic topic)
     {
         try
         {
-            var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
-            if (history.IsLive)
+            foreach (var wait in LearnAgainAfter)
             {
+                await Task.Delay(wait);
+                var history = await topicService.GetHistoryAsync(topic.AgentId, topic.ChatId, topic.ThreadId);
+                if (!history.IsLive)
+                {
+                    return;
+                }
+
                 dispatcher.Dispatch(new EntryIdsLearned(topic.TopicId, history.Value!));
+                if (messagesStore.State.MessagesByTopic.GetValueOrDefault(topic.TopicId, [])
+                    .All(m => m.EntryId is not null || m.IsError || m.NoReply))
+                {
+                    return;
+                }
             }
         }
         catch (Exception)

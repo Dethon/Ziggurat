@@ -1,3 +1,5 @@
+using Domain.Conversations;
+using Domain.Extensions;
 using Domain.Memory;
 using Domain.Prompts;
 using Microsoft.Extensions.AI;
@@ -39,6 +41,22 @@ public class ExtractionWindowTests
         window[^1].Role.ShouldBe(ChatRole.User);
         window.ShouldNotContain(m => m.Text == "turn4 assistant");
         window.ShouldNotContain(m => m.Text == "turn5 user (drift)");
+    }
+
+    // Continue's ask is nobody's words: the window never shows it to the memory writer.
+    [Fact]
+    public void Build_LeavesOutContinuesAsk()
+    {
+        var ask = new ChatMessage(ChatRole.User, Continuation.Instruction);
+        ask.MarkContinuation();
+        var history = new ChatMessage[]
+        {
+            new(ChatRole.User, "tell me a story"), new(ChatRole.Assistant, "Once upon "), ask, new(ChatRole.Assistant, "a time.")
+        };
+
+        var window = ExtractionWindow.Build(history, Anchor(4), "next", windowSize: 6);
+
+        window.Select(m => m.Text).ShouldBe(["tell me a story", "Once upon ", "a time.", "next"]);
     }
 
     [Fact]

@@ -29,6 +29,7 @@ public static class ChatMessageExtensions
     private const string EntryIdKey = "EntryId";
     private const string ModelKey = "Model";
     private const string InterruptedKey = "Interrupted";
+    private const string ContinuationKey = "Continuation";
 
     extension(ChatMessage message)
     {
@@ -68,6 +69,21 @@ public static class ChatMessageExtensions
         }
 
         public void UnmarkInterrupted() => message.AdditionalProperties?.Remove(InterruptedKey);
+
+        // The hidden ask of a Continue (Continuation): read by the model, never drawn, counted or remembered.
+        public bool IsContinuation() =>
+            message.AdditionalProperties?.GetValueOrDefault(ContinuationKey) switch
+            {
+                true => true,
+                JsonElement { ValueKind: JsonValueKind.True } => true,
+                _ => false
+            };
+
+        public void MarkContinuation()
+        {
+            message.AdditionalProperties ??= [];
+            message.AdditionalProperties[ContinuationKey] = true;
+        }
 
         // The message's own name in its conversation, given as it is stored: how a page addresses one
         // message to rewrite or fork from. Not MessageId, which is the provider's per-call response id

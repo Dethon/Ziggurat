@@ -4,6 +4,7 @@ namespace WebChat.Client.Components.Chat;
 
 public enum MessageActionKind
 {
+    Continue,
     Reroll,
     RerollWith,
     Edit,
@@ -13,8 +14,11 @@ public enum MessageActionKind
 
 // What the page knows about the topic a bubble is in: whether a reply is being written to it, and
 // whether this person may rewrite it (StoredTopic.MayRewrite).
-// IsLastReply: the bubble is the conversation's last reply, the one a reroll answers again.
-public sealed record MessageActionContext(bool Streaming, bool MayRewrite, bool IsLastReply = false);
+// IsLastReply: the bubble is the conversation's last reply to a person, the one a reroll answers again.
+// IsLast: it is the conversation's last bubble, which Continue carries on. MayContinue: this person may
+// write in the topic (StoredTopic.MayContinue), which Continue is.
+public sealed record MessageActionContext(
+    bool Streaming, bool MayRewrite, bool IsLastReply = false, bool IsLast = false, bool MayContinue = false);
 
 // The actions a bubble's menu offers. None while a reply streams, since the hub refuses every rewrite
 // then, and none for a message not stored yet, which has no entry id to name it by.
@@ -47,9 +51,16 @@ public static class MessageActionsLogic
         yield return MessageActionKind.Delete;
     }
 
-    // Forking reads the conversation and writes nothing of it, so whoever sees a topic may.
+    // Forking reads the conversation and writes nothing of it, so whoever sees a topic may. Continue is a
+    // message like any other, for whoever may write.
     private static IEnumerable<MessageActionKind> Rewrites(ChatMessageModel message, MessageActionContext context) =>
-        [.. RewritesOf(message, context), MessageActionKind.Fork];
+    [
+        .. RewritesOf(message, context),
+        MessageActionKind.Fork,
+        .. context is { IsLast: true, MayContinue: true } && message is { Role: "assistant", IsInterrupted: true, IsError: false }
+            ? [MessageActionKind.Continue]
+            : Array.Empty<MessageActionKind>()
+    ];
 
     // What running the message at an index again may do again: every tool a reply from there on called.
     public static IReadOnlyList<string> ToolsFrom(IReadOnlyList<ChatMessageModel> messages, int index) =>

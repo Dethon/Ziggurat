@@ -6,6 +6,24 @@ namespace Tests.Unit.WebChat.Client.State;
 
 public sealed class MessageMergeTests
 {
+    // What followed a Continue is the rest of the reply before it: one bubble, named as the reply it
+    // continues, cut off only if the rest was.
+    [Fact]
+    public void AContinuation_IsDrawnInTheBubbleOfTheReplyItContinues()
+    {
+        var messages = new List<ChatMessageModel>
+        {
+            new() { Role = "user", Content = "a story" },
+            new() { Role = "assistant", Content = "Once upon ", EntryId = "a1", MessageId = "m1" },
+            new() { Role = "assistant", Content = "a time.", EntryId = "a2", MessageId = "m2", ContinuesPrevious = true, IsInterrupted = true }
+        };
+
+        var result = MessageList.MergeConsecutiveAssistantMessages(messages);
+
+        result.Count.ShouldBe(2);
+        (result[1].Content, result[1].EntryId, result[1].IsInterrupted).ShouldBe(("Once upon a time.", "a1", true));
+    }
+
     // A reply's versions are on the first message of its turn, whichever message of it the merged bubble
     // keeps for its id: the switcher sits on the bubble the reply is drawn as.
     [Fact]

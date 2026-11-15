@@ -8,6 +8,7 @@ public static class MessageActionLabels
 {
     public static string Label(MessageActionKind action) => action switch
     {
+        MessageActionKind.Continue => "Continue",
         MessageActionKind.Reroll => "Reroll",
         MessageActionKind.RerollWith => "Reroll with…",
         MessageActionKind.Edit => "Edit",
@@ -18,6 +19,7 @@ public static class MessageActionLabels
 
     public static IconGlyph Glyph(MessageActionKind action) => action switch
     {
+        MessageActionKind.Continue => Icons.ChevronRight,
         MessageActionKind.Reroll or MessageActionKind.RerollWith => Icons.Retry,
         MessageActionKind.Edit => Icons.Pencil,
         MessageActionKind.Fork => Icons.Fork,

@@ -58,6 +58,8 @@ public record ChannelMessageNotification
     // A reroll: the entry id of the person's message the conversation already ends on, which this turn
     // answers again. Populated by the SignalR channel alone.
     public string? RerunOf { get; init; }
+    // Continue: the turn asks the model to carry on a reply that was cut off, its message hidden.
+    public bool Continuation { get; init; }
     // Optional structured-output request for this turn's final answer, beside the config patch and
     // like it honoured for this message only. Part of the shared protocol; populated by a channel
     // that parses the reply (Sugary), left null by every other.

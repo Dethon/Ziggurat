@@ -143,7 +143,7 @@ public sealed class RedisThreadStateStore(
         var result = await _db.ScriptEvaluateAsync(
             _recountScript,
             [TopicKey(household, parts.AgentId, parts.ChatId, topicId)],
-            [Readable(line).Count(), Snippet(line) ?? "", (long)_expiration.TotalMilliseconds]);
+            [Shown(line), Snippet(line) ?? "", (long)_expiration.TotalMilliseconds]);
         if (result.IsNull)
         {
             return;
@@ -217,7 +217,7 @@ public sealed class RedisThreadStateStore(
         }
 
         await _db.ScriptEvaluateAsync(
-            _uncountScript, [TopicKey(household, parts.AgentId, parts.ChatId, topicId)], [Readable(dropped).Count()]);
+            _uncountScript, [TopicKey(household, parts.AgentId, parts.ChatId, topicId)], [Shown(dropped)]);
     }
 
     // Lua numbers are doubles and a WebChat chat id is a 63-bit hash, so the id is noise from
@@ -336,7 +336,7 @@ public sealed class RedisThreadStateStore(
                 // Counted in the same messages a reader is shown, so a badge means what a person
                 // would count on screen. The raw list holds tool and system turns too, and one
                 // reply with six tool calls would otherwise badge as seven unread.
-                Readable(appended).Count(),
+                Shown(appended),
                 (long)_expiration.TotalMilliseconds
             ]);
 
@@ -363,6 +363,7 @@ public sealed class RedisThreadStateStore(
     private static IEnumerable<ChatMessage> Readable(IEnumerable<ChatMessage> messages) =>
         messages.Where(m =>
             (m.Role == ChatRole.User || m.Role == ChatRole.Assistant || m.Role == ChatRole.Tool)
+            && !m.IsContinuation()
             && (!string.IsNullOrWhiteSpace(TextOf(m)) || m.GetAttachments() is { Count: > 0 }));
 
     private static string TextOf(ChatMessage message) =>
@@ -704,6 +705,13 @@ public sealed class RedisThreadStateStore(
             }
         }
 
+        // A continued reply is one reply: what followed a Continue is drawn as the rest of the reply it
+        // continues (ContinuesPrevious), which is cut off only if the last of it was.
+        var continues = Continued(messages);
+        var rest = continues
+            .GroupBy(x => x.Value, x => x.Key, ReferenceEqualityComparer.Instance)
+            .ToDictionary(g => (ChatMessage)g.Key!, g => g.ToList(), ReferenceEqualityComparer.Instance);
+
         // Projected from the same set a badge counts, so unread never says more than the
         // transcript shows.
         var readable = Readable(messages).ToList();
@@ -721,10 +729,59 @@ public sealed class RedisThreadStateStore(
                 EntryId: names[m],
                 ToolsCalled: tools.GetValueOrDefault(m),
                 Model: m.Role == ChatRole.User ? null : m.GetModel(),
-                IsInterrupted: m.IsInterrupted()))
+                IsInterrupted: m.IsInterrupted() && !rest.ContainsKey(m)
+                               && !(continues.TryGetValue(m, out var root) && !ReferenceEquals(rest[root][^1], m)),
+                ContinuesPrevious: continues.ContainsKey(m)))
             .ToList();
 
         return WithVersions(conversation, readable, projected);
+    }
+
+    // How many bubbles messages make: what a reader is shown, a reply after a Continue being the rest of
+    // the one before it rather than one more.
+    private static int Shown(IReadOnlyList<ChatMessage> messages)
+    {
+        var continuing = false;
+        return messages.Count(m =>
+        {
+            if (m.Role == ChatRole.User)
+            {
+                continuing = m.IsContinuation();
+            }
+
+            return !(continuing && m.Role == ChatRole.Assistant) && Readable([m]).Any();
+        });
+    }
+
+    // Each reply read after a Continue, to the reply it continues (the first of a chain of continues).
+    private static Dictionary<ChatMessage, ChatMessage> Continued(IReadOnlyList<ChatMessage> messages)
+    {
+        var continued = new Dictionary<ChatMessage, ChatMessage>(ReferenceEqualityComparer.Instance);
+        ChatMessage? reply = null;
+        var continuing = false;
+        foreach (var message in messages)
+        {
+            if (message.Role == ChatRole.User)
+            {
+                continuing = message.IsContinuation() && reply is not null;
+                reply = continuing ? reply : null;
+                continue;
+            }
+
+            if (message.Role != ChatRole.Assistant || string.IsNullOrWhiteSpace(TextOf(message)))
+            {
+                continue;
+            }
+
+            if (continuing)
+            {
+                continued[message] = continued.GetValueOrDefault(reply!) ?? reply!;
+            }
+
+            reply = message;
+        }
+
+        return continued;
     }
 
     // mcp__timers__timer_set is timer_set to a person.

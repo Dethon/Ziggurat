@@ -19,6 +19,9 @@ public static class TopicRefusals
     // Only a person's own message is sent again: not a reply, not a turn a service started.
     public const string NotRerunnable = "Only a message somebody wrote can be run again.";
 
+    // Continue carries on a reply that was cut off, and the last one ended.
+    public const string NothingToContinue = "The last reply finished, so there is nothing to continue.";
+
     // A turn is writing to the conversation, and would write over the change.
     public const string ReplyRunning = "A reply is still being written. Wait for it to finish, or stop it.";
 }

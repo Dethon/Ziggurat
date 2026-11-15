@@ -45,6 +45,9 @@ public record ChatHistoryMessage(
     string? Model = null,
 
     // A reply cut off before it ended (stopped, or out of room), which Continue picks up.
-    bool IsInterrupted = false);
+    bool IsInterrupted = false,
+
+    // The rest of the reply before it, after a Continue: drawn in that reply's bubble.
+    bool ContinuesPrevious = false);
 
 public sealed record MessageVersions(string Slot, int Index, int Count);
