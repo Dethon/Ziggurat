@@ -39,6 +39,7 @@ builder.Services.AddScoped<AlertDismisser>();
 
 builder.Services.AddScoped<ILocalStorageService, LocalStorageService>();
 builder.Services.AddScoped<IOpenTopicMemory, OpenTopicMemory>();
+builder.Services.AddScoped<ILaunchLink, LaunchLink>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 
 builder.Services.AddWebChatStores();

@@ -2,6 +2,7 @@ using Domain.DTOs.Channel;
 using Microsoft.Extensions.Logging.Abstractions;
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
+using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.Services.Streaming;
 using WebChat.Client.State;
@@ -34,6 +35,7 @@ public sealed class InitializationEffectTests : IDisposable
     private readonly FakeLocalStorageService _localStorage;
     private readonly FakeStreamResumeService _streamResumeService;
     private readonly FakePushSubscriptionService _pushService;
+    private readonly FakeLaunchLink _launch = new();
     private readonly RecordingLogger<InitializationEffect> _logger = new();
     private readonly InitializationEffect _effect;
     private readonly ArmedClock _time = new();
@@ -66,6 +68,7 @@ public sealed class InitializationEffectTests : IDisposable
             _pushService,
             _spaceStore,
             _topicsStore,
+            _launch,
             _logger,
             _time);
     }
@@ -186,6 +189,36 @@ public sealed class InitializationEffectTests : IDisposable
         await _effect.HandleInitializeAsync();
 
         _topicsStore.State.SelectedAgentId.ShouldBe("agent-2");
+    }
+
+    // Topics are listed per agent, so a notification's tap opens the app on the agent whose
+    // conversation it names, whatever the space would have opened on.
+    [Fact]
+    public async Task HandleInitializeAsync_AnAddressNamingAConversation_OpensOnItsAgent()
+    {
+        _topicService.WithSpace("kitchen", name: "Kitchen", defaultAgent: "agent-1");
+        _dispatcher.Dispatch(new SelectSpace("kitchen"));
+        _localStorage.Seed("selectedAgentId:kitchen", "agent-1");
+        _agentService.Agents = [_agentOne, _agentTwo];
+        _launch.Topic = new LaunchTopic("agent-2", "topic-9");
+
+        await _effect.HandleInitializeAsync();
+
+        _topicsStore.State.SelectedAgentId.ShouldBe("agent-2");
+        _calls.Calls.ShouldContain("topics:agent-2");
+        _localStorage.Values.GetValueOrDefault("selectedAgentId:kitchen").ShouldBe("agent-1");
+    }
+
+    [Fact]
+    public async Task HandleInitializeAsync_AnAddressNamingAnAgentTheHouseholdLacks_OpensAsEver()
+    {
+        _topicService.WithSpace("default");
+        _agentService.Agents = [_agentOne, _agentTwo];
+        _launch.Topic = new LaunchTopic("agent-gone", "topic-9");
+
+        await _effect.HandleInitializeAsync();
+
+        _topicsStore.State.SelectedAgentId.ShouldBe("agent-1");
     }
 
     [Fact]

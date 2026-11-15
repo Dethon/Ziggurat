@@ -11,7 +11,7 @@
          role="radiogroup" aria-label="Select agent">
         @foreach (var agent in Agents)
         {
-            <button class="agent-seg @(agent.Id == SelectedAgentId ? "on" : "")"
+            <button class="agent-seg @(agent.Id == SelectedAgentId ? "on" : "")" data-agent-id="@agent.Id"
                     role="radio" aria-checked="@(agent.Id == SelectedAgentId)"
                     @onclick="() => Select(agent.Id)">
                 <span class="agent-mono" style="background:@AvatarHelper.GetColorForUser(agent.Id)">@AvatarHelper.GetInitials(agent.Name)</span>

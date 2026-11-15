@@ -61,6 +61,26 @@ public static class StringExtensions
             return _whitespace.Replace(string.Join(' ', lines), " ").Trim();
         }
 
+        // The opening of a reply as one line, as a notification shows it: a structured answer's words
+        // or the markdown's text, cut at a word once it runs past max, never inside a character.
+        public string Excerpt(int max)
+        {
+            var text = str.JsonObjectWords() ?? str.MarkdownToPlainText();
+            if (text.Length <= max)
+            {
+                return text;
+            }
+
+            var space = text.LastIndexOf(' ', max);
+            var end = space > max / 2 ? space : max;
+            if (char.IsLowSurrogate(text[end]) && char.IsHighSurrogate(text[end - 1]))
+            {
+                end--;
+            }
+
+            return text[..end].TrimEnd() + "…";
+        }
+
         public string HtmlSanitize()
         {
             return str

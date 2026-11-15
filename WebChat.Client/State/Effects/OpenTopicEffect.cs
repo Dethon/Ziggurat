@@ -9,20 +9,25 @@ namespace WebChat.Client.State.Effects;
 // again. The agent's login link, the account page and sign-in are full loads away from the app, and an
 // installed app has no address bar to say where it was: coming back landed on the list, away from the
 // conversation the agent's reply was arriving in. Only the first list the app loads reopens anything,
-// so a later reload of the list never takes the person somewhere they did not ask to go.
+// so a later reload of the list never takes the person somewhere they did not ask to go. An address
+// naming a conversation — a notification tapped — is what the person asked to see, so it wins over the
+// remembered one; if the list does not hold it, nothing opens rather than something else.
 public sealed class OpenTopicEffect : IDisposable
 {
     private readonly Dispatcher _dispatcher;
     private readonly TopicsStore _topics;
     private readonly SpaceStore _space;
     private readonly IOpenTopicMemory _memory;
+    private readonly ILaunchLink _launch;
     private readonly IDisposable _selected;
     private readonly IDisposable _loaded;
     private int _reopened;
 
     public OpenTopicEffect(
-        Dispatcher dispatcher, TopicsStore topics, SpaceStore space, IOpenTopicMemory memory, ILogger<OpenTopicEffect> logger)
+        Dispatcher dispatcher, TopicsStore topics, SpaceStore space, IOpenTopicMemory memory, ILaunchLink launch,
+        ILogger<OpenTopicEffect> logger)
     {
+        _launch = launch;
         _dispatcher = dispatcher;
         _topics = topics;
         _space = space;
@@ -40,8 +45,11 @@ public sealed class OpenTopicEffect : IDisposable
             return;
         }
 
+        var asked = _launch.Topic;
+        _launch.Spend();
+
         if (_topics.State.SelectedTopicId is not null
-            || await _memory.RecallAsync(_space.State.CurrentSlug) is not { } topicId
+            || (asked?.TopicId ?? await _memory.RecallAsync(_space.State.CurrentSlug)) is not { } topicId
             || loaded.Topics.All(t => t.TopicId != topicId))
         {
             return;

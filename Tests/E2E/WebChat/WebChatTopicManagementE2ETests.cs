@@ -71,6 +71,40 @@ public class WebChatTopicManagementE2ETests(WebChatE2EFixture fixture)
         }
     }
 
+    // A finished reply's notification, tapped, opens the app at its space with the conversation in the
+    // address (push-handler.js). The window is made to forget the conversation it had open, so the
+    // one on screen after the load is the address's doing; the address is cleaned after.
+    [SkippableFact]
+    public async Task AnAddressNamingAConversation_OpensIt()
+    {
+        Skip.If(string.IsNullOrEmpty(fixture.WebChatUrl), "WebChat stack not available");
+
+        var page = await fixture.CreateSignedInPageAsync(fixture.NextUserIndex());
+        await WebChatE2ETests.GotoWebChatAsync(page, fixture.WebChatUrl);
+        await WebChatE2ETests.SelectAgentAsync(page);
+
+        var tag = Guid.NewGuid().ToString("N")[..4];
+        var chatInput = page.Locator("textarea.chat-input");
+        await chatInput.FillAsync($"Launched {tag} for E2E — answer in one short sentence.");
+        await chatInput.PressAsync("Enter");
+        await page.Locator(".message-content").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+        await WebChatE2ETests.WaitForRowsToStopMovingAsync(page, tag);
+
+        // The household's first space, whichever the stack made it; its page is where a push leads.
+        var slug = await page.EvaluateAsync<string>("() => location.pathname.split('/').filter(Boolean)[0] || 'default'");
+        var topicId = await page.WaitForFunctionAsync($"() => sessionStorage.getItem('openTopic:{slug}')");
+        var agentId = await page.Locator(".agent-seg.on:visible").First.GetAttributeAsync("data-agent-id");
+
+        await page.EvaluateAsync($"() => sessionStorage.removeItem('openTopic:{slug}')");
+
+        await WebChatE2ETests.GotoWebChatAsync(page,
+            $"{new Uri(page.Url).GetLeftPart(UriPartial.Authority)}/{slug}?agent={Uri.EscapeDataString(agentId!)}&topic={Uri.EscapeDataString(await topicId.JsonValueAsync<string>())}");
+
+        await page.Locator(".message-content", new PageLocatorOptions { HasText = $"Launched {tag} for E2E" }).First
+            .WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
+        await page.WaitForFunctionAsync("() => !location.search.includes('topic=')");
+    }
+
     // The stack serves one row a page, so a second conversation is only reachable if the sidebar
     // asks for the page below its cursor. Real-browser scroll behaviour with rows reordering
     // underneath is the case a fake cannot reproduce.

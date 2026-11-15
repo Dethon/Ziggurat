@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Domain.Contracts;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
@@ -14,7 +15,9 @@ public sealed class WebPushNotificationServiceTests
 {
     private readonly Mock<IPushSubscriptionStore> _store = new();
     private readonly List<string> _reached = [];
+    private readonly List<string> _payloads = [];
     private readonly WebPushNotificationService _sut;
+    private static readonly PushNotice _notice = new("Plum jam", "The agent has finished responding", "/default");
 
     public WebPushNotificationServiceTests()
     {
@@ -27,7 +30,11 @@ public sealed class WebPushNotificationServiceTests
         var sender = new Mock<IPushMessageSender>();
         sender.Setup(s => s.SendAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback((string endpoint, string _, string _, string _, CancellationToken _) => _reached.Add(endpoint))
+            .Callback((string endpoint, string _, string _, string payload, CancellationToken _) =>
+            {
+                _reached.Add(endpoint);
+                _payloads.Add(payload);
+            })
             .Returns(Task.CompletedTask);
         _sut = new WebPushNotificationService(_store.Object, sender.Object, NullLogger<WebPushNotificationService>.Instance);
     }
@@ -35,7 +42,7 @@ public sealed class WebPushNotificationServiceTests
     [Fact]
     public async Task APersonsPush_ReachesTheirDevicesInTheSpaceAndNobodyElses()
     {
-        await _sut.SendToPersonAsync(new Account("home", "fran"), "default", "Plum jam", "The agent has finished responding", "/default");
+        await _sut.SendToPersonAsync(new Account("home", "fran"), "default", _notice);
 
         _reached.ShouldBe(["https://push.example/fran-phone", "https://push.example/fran-laptop"]);
     }
@@ -43,7 +50,7 @@ public sealed class WebPushNotificationServiceTests
     [Fact]
     public async Task ASpacesPush_ReachesEveryoneInIt()
     {
-        await _sut.SendToSpaceAsync("home", "default", "Plum jam", "The agent has finished responding", "/default");
+        await _sut.SendToSpaceAsync("home", "default", _notice);
 
         _reached.Count.ShouldBe(3);
     }
@@ -74,7 +81,7 @@ public sealed class WebPushNotificationServiceTests
         var sut = new WebPushNotificationService(
             _store.Object, sender.Object, NullLogger<WebPushNotificationService>.Instance, sessions.Object);
 
-        await sut.SendToSpaceAsync("home", "default", "Plum jam", "The agent has finished responding", "/default");
+        await sut.SendToSpaceAsync("home", "default", _notice);
 
         _reached.ShouldBe(["https://push.example/fran-laptop"]);
         _store.Verify(s => s.RemoveByEndpointAsync("https://push.example/fran-phone", It.IsAny<CancellationToken>()), Times.Once);

@@ -4,6 +4,7 @@ using Domain.Contracts;
 using Domain.DTOs;
 using Domain.DTOs.Channel;
 using Domain.DTOs.WebChat;
+using Domain.Extensions;
 using McpChannelSignalR.Internal;
 
 namespace McpChannelSignalR.Services;
@@ -193,11 +194,16 @@ public sealed class StreamService(
         }
     }
 
+    // How much of a finished reply its push shows: a phone draws a line or two of it.
+    public const int PushExcerptLength = 140;
+    private const string NoExcerpt = "The agent has finished responding";
+
     private void CompleteStream(string topicId)
     {
         ChannelSession? finished = null;
         string? spaceSlug = null;
         string? topicName = null;
+        string? said = null;
 
         lock (_streamLock)
         {
@@ -216,6 +222,9 @@ public sealed class StreamService(
                 topicName = session?.TopicName;
             }
 
+            // Read before the cleanup below drops the buffer.
+            said = _streamBuffers.TryGetValue(topicId, out var buffer) ? LastSaid(buffer.GetAll()) : null;
+
             if (_responseChannels.TryRemove(topicId, out var channel))
             {
                 channel.Complete();
@@ -226,19 +235,27 @@ public sealed class StreamService(
 
         if (finished is not null && spaceSlug is not null)
         {
-            _ = SendPushNotificationAsync(finished, spaceSlug, topicName);
+            _ = SendPushNotificationAsync(finished, topicId, spaceSlug, topicName, said);
         }
     }
 
-    // The topic's name rides on the push, so a private topic's goes to its owner's devices alone,
-    // the way its news on the hub does (TopicAudience); any other topic's goes to the space.
-    private async Task SendPushNotificationAsync(ChannelSession session, string spaceSlug, string? topicName)
+    // The reply's last words, not its reasoning, its tool calls or a person's message on the stream.
+    private static string? LastSaid(IReadOnlyList<ChatStreamMessage> carried) =>
+        carried
+            .Where(m => m.UserMessage is null && !string.IsNullOrWhiteSpace(m.Content))
+            .Select(m => m.Content!.Excerpt(PushExcerptLength))
+            .LastOrDefault(text => text.Length > 0);
+
+    // The topic's name and what the reply said ride on the push, so a private topic's goes to its
+    // owner's devices alone, the way its news on the hub does (TopicAudience); any other topic's goes
+    // to the space.
+    private async Task SendPushNotificationAsync(
+        ChannelSession session, string topicId, string spaceSlug, string? topicName, string? said)
     {
         try
         {
-            var url = $"/{spaceSlug}";
-            var title = topicName ?? "New response";
-            const string body = "The agent has finished responding";
+            var notice = new PushNotice(
+                topicName ?? "New response", said ?? NoExcerpt, $"/{spaceSlug}", new PushTopic(session.AgentId, topicId));
             var topic = await threadStore.GetTopicByChatIdAndThreadIdAsync(
                 session.AgentId, session.ChatId, session.ThreadId);
 
@@ -251,11 +268,11 @@ public sealed class StreamService(
 
             if (topic is { IsPrivate: true, OwnerId: { } owner })
             {
-                await pushNotificationService.SendToPersonAsync(new Account(household, owner), spaceSlug, title, body, url);
+                await pushNotificationService.SendToPersonAsync(new Account(household, owner), spaceSlug, notice);
                 return;
             }
 
-            await pushNotificationService.SendToSpaceAsync(household, spaceSlug, title, body, url);
+            await pushNotificationService.SendToSpaceAsync(household, spaceSlug, notice);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

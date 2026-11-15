@@ -13,24 +13,32 @@ public sealed class WebPushNotificationService(
     ILogger<WebPushNotificationService> logger,
     ISessionAccounts? sessions = null) : IPushNotificationService
 {
-    public async Task SendToSpaceAsync(string tenantId, string spaceSlug, string title, string body, string url,
-        CancellationToken ct = default)
+    public async Task SendToSpaceAsync(string tenantId, string spaceSlug, PushNotice notice, CancellationToken ct = default)
     {
-        await SendAsync(await store.GetBySpaceAsync(tenantId, spaceSlug, ct), spaceSlug, title, body, url, ct);
+        await SendAsync(await store.GetBySpaceAsync(tenantId, spaceSlug, ct), spaceSlug, notice, ct);
     }
 
-    public async Task SendToPersonAsync(Account person, string spaceSlug, string title, string body, string url,
-        CancellationToken ct = default)
+    public async Task SendToPersonAsync(Account person, string spaceSlug, PushNotice notice, CancellationToken ct = default)
     {
         var subscriptions = await store.GetBySpaceAsync(person.TenantId, spaceSlug, ct);
-        await SendAsync([.. subscriptions.Where(s => s.UserId == person.UserId)], spaceSlug, title, body, url, ct);
+        await SendAsync([.. subscriptions.Where(s => s.UserId == person.UserId)], spaceSlug, notice, ct);
     }
 
+    // The conversation rides beside the space's address rather than inside it: the worker compares the
+    // address with the page on screen, and a worker from before reads the push exactly as it did.
     private async Task SendAsync(
         IReadOnlyList<(string UserId, PushSubscriptionDto Subscription)> subscriptions,
-        string spaceSlug, string title, string body, string url, CancellationToken ct)
+        string spaceSlug, PushNotice notice, CancellationToken ct)
     {
-        var payload = JsonSerializer.Serialize(new { title, body, url, spaceSlug });
+        var payload = JsonSerializer.Serialize(new
+        {
+            title = notice.Title,
+            body = notice.Body,
+            url = notice.Url,
+            spaceSlug,
+            agentId = notice.Topic?.AgentId,
+            topicId = notice.Topic?.TopicId
+        });
 
         foreach (var (userId, subscription) in subscriptions)
         {

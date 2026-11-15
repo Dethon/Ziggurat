@@ -1,5 +1,6 @@
 using Shouldly;
 using Tests.Unit.WebChat.Client.Fixtures;
+using WebChat.Client.Contracts;
 using WebChat.Client.Models;
 using WebChat.Client.State;
 using WebChat.Client.State.Effects;
@@ -17,13 +18,14 @@ public sealed class OpenTopicEffectTests : IDisposable
     private readonly TopicsStore _topics;
     private readonly SpaceStore _space;
     private readonly FakeOpenTopicMemory _memory = new();
+    private readonly FakeLaunchLink _launch = new();
     private readonly OpenTopicEffect _effect;
 
     public OpenTopicEffectTests()
     {
         _topics = new TopicsStore(_dispatcher);
         _space = new SpaceStore(_dispatcher);
-        _effect = new OpenTopicEffect(_dispatcher, _topics, _space, _memory, new RecordingLogger<OpenTopicEffect>());
+        _effect = new OpenTopicEffect(_dispatcher, _topics, _space, _memory, _launch, new RecordingLogger<OpenTopicEffect>());
     }
 
     [Fact]
@@ -70,6 +72,36 @@ public sealed class OpenTopicEffectTests : IDisposable
         await Tests.Eventually.Settle();
 
         _topics.State.SelectedTopicId.ShouldBeNull();
+    }
+
+    // A notification's tap names the conversation its reply finished in, and that is what the person
+    // asked to see — not the one this window had open before.
+    [Fact]
+    public async Task TheFirstTopicsLoaded_OpenTheConversationTheAddressNames_OverTheRememberedOne()
+    {
+        _memory.Remembered["default"] = "topic-2";
+        _launch.Topic = new LaunchTopic("agent-1", "topic-1");
+
+        _dispatcher.Dispatch(new TopicsLoaded([Topic("topic-1"), Topic("topic-2")]));
+
+        await TestChat.Eventually(() => _topics.State.SelectedTopicId == "topic-1");
+        _launch.Spent.ShouldBe(1);
+    }
+
+    // A conversation the list does not hold (archived, past the first page, left out by the list's
+    // filter) opens nothing — not the remembered one, which is not what the tap was about. The app
+    // lands on the space's list.
+    [Fact]
+    public async Task AnAddressNamingAConversationNotListed_OpensNothing()
+    {
+        _memory.Remembered["default"] = "topic-2";
+        _launch.Topic = new LaunchTopic("agent-1", "topic-gone");
+
+        _dispatcher.Dispatch(new TopicsLoaded([Topic("topic-1"), Topic("topic-2")]));
+        await Tests.Eventually.Settle();
+
+        _topics.State.SelectedTopicId.ShouldBeNull();
+        _launch.Spent.ShouldBe(1);
     }
 
     private static StoredTopic Topic(string id) => StoredTopic.FromMetadata(TestChat.Topic(id));

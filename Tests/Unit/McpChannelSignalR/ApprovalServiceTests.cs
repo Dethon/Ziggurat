@@ -158,8 +158,8 @@ public class ApprovalServiceTests : IDisposable
         _ = _sut.OfferApprovalAsync(Offer(approvalId));
 
         _push.Verify(push => push.SendToPersonAsync(
-                It.Is<Account>(a => a.UserId == "fran"), SpaceConfig.DefaultSlug, It.IsAny<string>(), It.Is<string>(body => body.Contains("buy")),
-                It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                It.Is<Account>(a => a.UserId == "fran"), SpaceConfig.DefaultSlug, It.Is<PushNotice>(n => n.Body.Contains("buy")),
+                It.IsAny<CancellationToken>()),
             Times.Once);
         _sut.OfferedTo("fran").ShouldHaveSingleItem().ApprovalId.ShouldBe(approvalId);
     }

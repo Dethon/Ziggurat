@@ -22,6 +22,7 @@ public sealed class InitializationEffect : IDisposable
     private readonly IPushSubscriptionService _pushNotificationService;
     private readonly SpaceStore _spaceStore;
     private readonly TopicsStore _topicsStore;
+    private readonly ILaunchLink _launch;
     private readonly ILogger<InitializationEffect> _logger;
     private readonly IDisposable _initializeRegistration;
     private readonly IDisposable _setAgentsRegistration;
@@ -44,9 +45,11 @@ public sealed class InitializationEffect : IDisposable
         IPushSubscriptionService pushNotificationService,
         SpaceStore spaceStore,
         TopicsStore topicsStore,
+        ILaunchLink launch,
         ILogger<InitializationEffect> logger,
         TimeProvider timeProvider)
     {
+        _launch = launch;
         _topicsStore = topicsStore;
         _timeProvider = timeProvider;
         _dispatcher = dispatcher;
@@ -230,8 +233,10 @@ public sealed class InitializationEffect : IDisposable
         }
 
         // Not remembered: what the space opened on is the person's pick only once they pick it, so a
-        // default the household changes later still reaches them.
-        var agentToSelect = await SpaceAgent.ChooseAsync(_localStorage, agents, _spaceStore.State);
+        // default the household changes later still reaches them. An address naming a conversation
+        // (a notification tapped) opens on that conversation's agent, whose list holds it.
+        var agentToSelect = agents.FirstOrDefault(a => a.Id == _launch.Topic?.AgentId)
+                            ?? await SpaceAgent.ChooseAsync(_localStorage, agents, _spaceStore.State);
         _dispatcher.Dispatch(new SelectAgent(agentToSelect.Id, Picked: false));
 
         // Asked under the list's filter, and dropped if the filter changed under the round trip: the
