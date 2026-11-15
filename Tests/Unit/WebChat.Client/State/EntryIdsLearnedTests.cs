@@ -133,6 +133,32 @@ public class EntryIdsLearnedTests : IDisposable
         _store.State.MessagesByTopic["t"].Select(m => m.NoReply).ShouldBe([false, true]);
     }
 
+    // Two people's turns in a shared topic: the page drew both messages before both replies, the store
+    // kept each reply after its message. The page keeps its order and draws nothing twice — two bubbles
+    // with one provider id break the next resume's rebuild.
+    [Fact]
+    public void TurnsThePageDrewInAnotherOrder_AreNamed_AndNothingIsDrawnTwice()
+    {
+        _dispatcher.Dispatch(new MessagesLoaded("t",
+        [
+            new ChatMessageModel { Role = "user", Content = "ana" },
+            new ChatMessageModel { Role = "user", Content = "carlos" },
+            new ChatMessageModel { Role = "assistant", Content = "OK", MessageId = "m1" },
+            new ChatMessageModel { Role = "assistant", Content = "OK", MessageId = "m2" }
+        ]));
+
+        _dispatcher.Dispatch(new EntryIdsLearned("t",
+        [
+            History("user", "ana", "e1"),
+            History("assistant", "OK", "e2", "m1"),
+            History("user", "carlos", "e3"),
+            History("assistant", "OK", "e4", "m2")
+        ]));
+
+        _store.State.MessagesByTopic["t"].Select(m => (m.Content, m.EntryId)).ShouldBe(
+            [("ana", "e1"), ("carlos", "e3"), ("OK", "e2"), ("OK", "e4")]);
+    }
+
     private static ChatHistoryMessage History(string role, string content, string entryId, string? messageId = null) =>
         new(messageId, role, content, null, null, EntryId: entryId);
 }

@@ -379,8 +379,9 @@ public sealed class StreamingService(
             // be read up to. A topic nobody is looking at keeps its badge.
             await MarkReadIfViewedAsync(topic);
 
-            // The turn was stored before its stream ended, so the history now names what it drew.
-            await LearnEntryIdsAsync(topic);
+            // The turn was stored before its stream ended, so the history now names what it drew. Not
+            // awaited: ending this reader waits on nothing the next turn does not need.
+            _ = LearnEntryIdsAsync(topic);
 
             // The conversation has been written to, so its row has a new preview, a new position
             // and possibly a badge — none of which this client can work out for itself now that
@@ -409,9 +410,9 @@ public sealed class StreamingService(
                 dispatcher.Dispatch(new EntryIdsLearned(topic.TopicId, history.Value!));
             }
         }
-        catch (Exception ex) when (ex is Microsoft.AspNetCore.SignalR.HubException || TransientErrorFilter.IsTransientException(ex))
+        catch (Exception)
         {
-            // Unnamed bubbles only lack their actions until the topic is next read.
+            // Nobody awaits this: unnamed bubbles only lack their actions until the topic is next read.
         }
     }
 
