@@ -15,13 +15,18 @@ namespace Tests.Unit.Observability;
 // the person the accounts service's assertion names, for the dashboard's channel, and never the three
 // plain headers beside it, which anything on the compose network could write. A request naming
 // nobody believable is signed out; a believable person who is not the operator is refused.
-public sealed class OperatorGateTests
+public sealed class OperatorGateTests : IDisposable
 {
     private const string Home = "fedcba9876543210fedcba9876543210";
     private static readonly Account _operator = new(Home, "0123456789abcdef0123456789abcdef");
     private static readonly Account _member = new(Home, "91eb477ecd34251c52fd4493523a0334");
 
     private static readonly string[] _operatorRoles = ["owner", ForwardedAccount.OperatorRole];
+
+    // The client's files the gate serves signed out, made per test and removed with it.
+    private readonly string _webRoot = Directory.CreateTempSubdirectory("operator-gate-").FullName;
+
+    public void Dispose() => Directory.Delete(_webRoot, recursive: true);
 
     [Fact]
     public async Task TheOperatorsAssertion_IsAnswered()
@@ -101,9 +106,9 @@ public sealed class OperatorGateTests
         response.StatusCode.ShouldBe(expected, path);
     }
 
-    private static async Task<WebApplication> StartAsync(bool withClientFiles = false)
+    private async Task<WebApplication> StartAsync(bool withClientFiles = false)
     {
-        var webRoot = Directory.CreateTempSubdirectory("operator-gate-").FullName;
+        var webRoot = _webRoot;
         foreach (var file in new[] { "service-worker.js", "index.html", "_framework/blazor.webassembly.js" })
         {
             Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(webRoot, file))!);

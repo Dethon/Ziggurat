@@ -75,8 +75,12 @@ for this, and each shape below is one that has already failed here.
   directory. Docker Desktop on WSL keeps a staging mount for every source path it has seen, for
   good, and each one makes every later container start slower, so a new path per test slows every
   run after it. A stable path reuses its staging. A container that writes its mount as root leaves
-  nothing that can be emptied; such a fixture keeps a temp directory and should be one per run, not
-  one per test
+  files this process cannot remove: empty the directory through the same image once the container
+  has stopped (`TryEmptyAsRootAsync`), as the Home Assistant fixtures do
+- What a test writes outside the repository it removes, or keeps in one fixed place and reuses. A
+  fresh directory per run that nothing deletes grows `/tmp` for good: the test clips alone reached
+  5 GB. Output that comes out the same every run, such as an encoded clip, is made once and kept,
+  named by what it was made from (`ClipCache`)
 
 ## E2E Tests
 

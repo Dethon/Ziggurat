@@ -21,6 +21,7 @@ namespace Tests.Integration.Fixtures;
 public class HomeAssistantFixture : IAsyncLifetime
 {
     private IContainer _container = null!;
+    private HostMountDirectory? _mount;
     private string _configDir = null!;
     private IHost _listener = null!;
     private readonly ConcurrentQueue<WatchCallback> _fires = new();
@@ -60,7 +61,8 @@ public class HomeAssistantFixture : IAsyncLifetime
         await app.StartAsync();
         _listener = app;
 
-        _configDir = Path.Combine(Path.GetTempPath(), $"ha-test-{Guid.NewGuid():N}");
+        _mount = HostMountDirectory.Claim("ha-test");
+        _configDir = _mount.Path;
         Token = HomeAssistantSeed.WriteConfig(
             _configDir, watchCallbackUrl: $"http://host.docker.internal:{port}/api/homeassistant/watch-fired");
 
@@ -97,11 +99,12 @@ public class HomeAssistantFixture : IAsyncLifetime
         {
             await _listener.StopAsync();
             _listener.Dispose();
-            if (_configDir is not null && Directory.Exists(_configDir))
+            // Home Assistant writes its config as root; emptied through its own image, the directory is
+            // handed to the next run rather than left behind with a staging mount of its own.
+            if (_mount is not null)
             {
-                try
-                { Directory.Delete(_configDir, recursive: true); }
-                catch { /* best effort — container may still hold handles momentarily */ }
+                await _mount.TryEmptyAsRootAsync(HomeAssistantSeed.ContainerImage);
+                _mount.Dispose();
             }
         }
     }

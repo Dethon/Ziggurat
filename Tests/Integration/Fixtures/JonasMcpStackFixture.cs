@@ -20,6 +20,7 @@ public class JonasMcpStackFixture : IAsyncLifetime
     private INetwork? _network;
     private IContainer? _redis;
     private IContainer? _homeAssistant;
+    private HostMountDirectory? _haMount;
     private string? _haConfigDir;
     private IContainer? _mcpVault;
     private IContainer? _mcpSandbox;
@@ -90,7 +91,8 @@ public class JonasMcpStackFixture : IAsyncLifetime
         // Boot a real Home Assistant on the benchmark network under the alias the agent's HA client
         // expects by default (http://homeassistant:8123). Started before the MCP servers so its
         // ~30-60s cold start overlaps their startup; the API-ready wait runs once everything is up.
-        _haConfigDir = Path.Combine(Path.GetTempPath(), $"ha-bench-{Guid.NewGuid():N}");
+        _haMount = HostMountDirectory.Claim("ha-bench");
+        _haConfigDir = _haMount.Path;
         var haToken = HomeAssistantSeed.WriteConfig(_haConfigDir);
         _homeAssistant = TestContainers.Container(HomeAssistantSeed.ContainerImage)
             .WithName($"homeassistant-bench-{Guid.NewGuid():N}")
@@ -200,11 +202,10 @@ public class JonasMcpStackFixture : IAsyncLifetime
         {
             await _network.DeleteAsync();
         }
-        if (_haConfigDir is not null && Directory.Exists(_haConfigDir))
+        if (_haMount is not null)
         {
-            try
-            { Directory.Delete(_haConfigDir, recursive: true); }
-            catch { /* best effort — container may still hold handles momentarily */ }
+            await _haMount.TryEmptyAsRootAsync(HomeAssistantSeed.ContainerImage);
+            _haMount.Dispose();
         }
     }
 }
